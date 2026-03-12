@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 // --- Helper: load a QWeight from GGUF tensor + scale tensor ---
 
@@ -244,10 +245,19 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
     int x_q_size = c->dim > c->hidden_dim ? c->dim : c->hidden_dim;
     s->x_q = (int8_t *)calloc(x_q_size, sizeof(int8_t));
 
+    // Precompute RoPE frequencies: freq[i] = 1/theta^(2i/head_size)
+    int half_head = c->head_size / 2;
+    s->rope_freq = (float *)malloc(half_head * sizeof(float));
+    if (s->rope_freq) {
+        for (int i = 0; i < half_head; i++) {
+            s->rope_freq[i] = 1.0f / powf(c->rope_theta, (float)(2 * i) / (float)c->head_size);
+        }
+    }
+
     // #1: Check all allocations succeeded
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 ||
         !s->q || !s->att || !s->logits || !s->key_cache || !s->value_cache ||
-        !s->x_q) {
+        !s->x_q || !s->rope_freq) {
         fprintf(stderr, "model: failed to allocate run state\n");
         goto fail_state;
     }
@@ -278,6 +288,7 @@ void model_free(Model *m) {
     free(s->key_cache);
     free(s->value_cache);
     free(s->x_q);
+    free(s->rope_freq);
 }
 
 // #8: Bounds-check token before accessing embedding table

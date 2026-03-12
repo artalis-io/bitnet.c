@@ -36,6 +36,7 @@ typedef struct {
     float *key_cache;             // [n_layers * seq_len * kv_dim]
     float *value_cache;           // [n_layers * seq_len * kv_dim]
     int8_t *x_q;                  // [max(dim, hidden_dim)] scratch for int8 quantized x
+    float *rope_freq;             // [head_size/2] precomputed RoPE frequencies
 } RunState;
 
 typedef struct {

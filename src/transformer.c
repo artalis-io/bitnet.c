@@ -65,11 +65,11 @@ static void softmax(float *x, int size) {
     for (int i = 0; i < size; i++) x[i] /= sum;
 }
 
-static void rope(float *vec, int dim, int head_size, int pos, float theta) {
+static void rope(float *vec, int dim, int head_size, int pos, const float *freq) {
+    int half_head = head_size / 2;
     for (int i = 0; i < dim; i += 2) {
-        int head_dim = i % head_size;
-        float freq = 1.0f / powf(theta, (float)head_dim / (float)head_size);
-        float angle = pos * freq;
+        int fi = (i / 2) % half_head;
+        float angle = pos * freq[fi];
         float cos_a = cosf(angle);
         float sin_a = sinf(angle);
         float v0 = vec[i];
@@ -127,9 +127,9 @@ float *transformer_forward(Model *m, int token, int pos) {
         };
         ternary_matvec_batch(qkv, 3, s->xb, s->x_q);
 
-        // RoPE on q and k
-        rope(s->q, dim, head_size, pos, c->rope_theta);
-        rope(key_cache_row, kv_dim, head_size, pos, c->rope_theta);
+        // RoPE on q and k (using precomputed frequency table)
+        rope(s->q, dim, head_size, pos, s->rope_freq);
+        rope(key_cache_row, kv_dim, head_size, pos, s->rope_freq);
 
         // Grouped Query Attention (GQA)
         #ifdef _OPENMP
@@ -141,14 +141,21 @@ float *transformer_forward(Model *m, int token, int pos) {
             int kv_h = h / kv_mul;  // which KV head this query head attends to
 
             // Attention scores: q · k for all positions up to pos
+            {
+            float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
             for (int t = 0; t <= pos; t++) {
                 float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
 #ifdef __ARM_NEON
-                float32x4_t acc = vdupq_n_f32(0);
-                for (int d = 0; d < head_size; d += 4) {
-                    acc = vmlaq_f32(acc, vld1q_f32(q_h + d), vld1q_f32(k_t + d));
+                float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
+                float32x4_t a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+                for (int d = 0; d < head_size; d += 16) {
+                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vld1q_f32(k_t + d));
+                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vld1q_f32(k_t + d + 4));
+                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
+                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
                 }
-                att[t] = neon_hsum_f32(acc) / sqrtf((float)head_size);
+                float32x4_t sum = vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3));
+                att[t] = neon_hsum_f32(sum) * inv_sqrt_hs;
 #else
                 float score = 0.0f;
                 #ifdef _OPENMP
@@ -157,8 +164,9 @@ float *transformer_forward(Model *m, int token, int pos) {
                 for (int d = 0; d < head_size; d++) {
                     score += q_h[d] * k_t[d];
                 }
-                att[t] = score / sqrtf((float)head_size);
+                att[t] = score * inv_sqrt_hs;
 #endif
+            }
             }
 
             // Softmax over attention scores
@@ -172,8 +180,11 @@ float *transformer_forward(Model *m, int token, int pos) {
                 float a = att[t];
 #ifdef __ARM_NEON
                 float32x4_t a_v = vdupq_n_f32(a);
-                for (int d = 0; d < head_size; d += 4) {
-                    vst1q_f32(xb_h + d, vmlaq_f32(vld1q_f32(xb_h + d), a_v, vld1q_f32(v_t + d)));
+                for (int d = 0; d < head_size; d += 16) {
+                    vst1q_f32(xb_h + d,      vmlaq_f32(vld1q_f32(xb_h + d),      a_v, vld1q_f32(v_t + d)));
+                    vst1q_f32(xb_h + d + 4,  vmlaq_f32(vld1q_f32(xb_h + d + 4),  a_v, vld1q_f32(v_t + d + 4)));
+                    vst1q_f32(xb_h + d + 8,  vmlaq_f32(vld1q_f32(xb_h + d + 8),  a_v, vld1q_f32(v_t + d + 8)));
+                    vst1q_f32(xb_h + d + 12, vmlaq_f32(vld1q_f32(xb_h + d + 12), a_v, vld1q_f32(v_t + d + 12)));
                 }
 #else
                 #ifdef _OPENMP
