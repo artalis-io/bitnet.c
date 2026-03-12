@@ -1,3 +1,7 @@
+#if defined(__linux__)
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #include "platform.h"
 #include <stdio.h>
 #include <stdlib.h>
