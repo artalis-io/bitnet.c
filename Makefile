@@ -2,6 +2,12 @@ CC      ?= cc
 CFLAGS  = -O2 -Wall -Wextra -std=c11 -Iinclude
 LDFLAGS = -lm
 
+# On Linux, enable GNU extensions for strdup, qsort_r, clock_gettime, etc.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+CFLAGS += -D_GNU_SOURCE
+endif
+
 SRCS = src/platform.c src/gguf.c src/quant.c src/model.c \
        src/transformer.c src/tokenizer.c src/sampler.c src/main.c
 OBJS = $(SRCS:.c=.o)
