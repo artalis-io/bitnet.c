@@ -1,6 +1,8 @@
 #include "quant.h"
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
+#include <assert.h>
 
 // --- FP16 <-> FP32 conversion ---
 
@@ -14,7 +16,9 @@ float fp16_to_fp32(uint16_t h) {
         if (mant == 0) {
             f = sign;  // ±0
         } else {
-            // Subnormal: convert to normalized float
+            // #37: Subnormal: normalize by shifting mantissa left until hidden bit appears.
+            // At most 10 shifts (10 mantissa bits), so exp goes from 1 down to at most -9.
+            // Result: exp+112 ranges from 103 to 113, always valid for float32 exponent.
             exp = 1;
             while (!(mant & 0x0400)) { mant <<= 1; exp--; }
             mant &= 0x03FF;
@@ -101,13 +105,74 @@ void dequant_tq1_block(const BlockTQ1 *block, float *out) {
             out[idx++] = (float)(xi - 1) * d;
         }
     }
+
+    // #35: Assert we produced exactly QK_K values (160 + 80 + 16 = 256)
+    assert(idx == QK_K);
+}
+
+// --- I2_S dequantization (Microsoft BitNet format) ---
+// 2-bit ternary, interleaved byte layout, single per-tensor scale
+// Each byte: bits 7-6=subrow0, 5-4=subrow1, 3-2=subrow2, 1-0=subrow3
+// Processes 128 elements (4 × 32) per 32-byte chunk
+
+// #36: I2_S uses an interleaved byte layout where each byte contains 2-bit values
+// from 4 sub-rows of 32 elements. This means each 128-element chunk always uses
+// exactly 32 bytes. Model dimensions are always multiples of 128 in practice.
+void dequant_i2s_row(const uint8_t *data, float *out, int n, float scale) {
+    static const float map2bit[4] = { -1.0f, 0.0f, +1.0f, 0.0f };
+    int done = 0;
+
+    while (done < n) {
+        int blk_e = (n - done >= 128) ? 128 : (n - done);
+        int cols0 = blk_e >= 32  ? 32 : blk_e;
+        int cols1 = blk_e >= 64  ? 32 : (blk_e > 32  ? blk_e - 32  : 0);
+        int cols2 = blk_e >= 96  ? 32 : (blk_e > 64  ? blk_e - 64  : 0);
+        int cols3 = blk_e >= 128 ? 32 : (blk_e > 96  ? blk_e - 96  : 0);
+
+        for (int gp = 0; gp < 32; gp++) {
+            uint8_t b = data[gp];
+            uint8_t c0 = (b >> 6) & 0x3;
+            uint8_t c1 = (b >> 4) & 0x3;
+            uint8_t c2 = (b >> 2) & 0x3;
+            uint8_t c3 = (b >> 0) & 0x3;
+
+            if (gp < cols0) out[done + 0*32 + gp] = scale * map2bit[c0];
+            if (gp < cols1) out[done + 1*32 + gp] = scale * map2bit[c1];
+            if (gp < cols2) out[done + 2*32 + gp] = scale * map2bit[c2];
+            if (gp < cols3) out[done + 3*32 + gp] = scale * map2bit[c3];
+        }
+
+        data += 32;
+        done += blk_e;
+    }
 }
 
 // --- Ternary matrix-vector multiply ---
 // out[rows] = W[rows × cols] @ x[cols]
-// Phase 1: naive dequant-then-dot approach
 
 void ternary_matvec(float *out, const QWeight *W, const float *x) {
+
+    if (W->type == 36) {  // I2_S
+        // I2_S: flat packed data, one row = cols/4 bytes
+        int row_bytes = W->cols / 4;
+        const uint8_t *base = (const uint8_t *)W->data;
+        // #5: Use malloc instead of __builtin_alloca to avoid stack overflow
+        float *row_buf = (float *)malloc((size_t)W->cols * sizeof(float));
+        if (!row_buf) return;  // OOM: leave output zeroed
+
+        for (int row = 0; row < W->rows; row++) {
+            dequant_i2s_row(base + (size_t)row * row_bytes, row_buf, W->cols, W->scale);
+            float sum = 0.0f;
+            for (int k = 0; k < W->cols; k++) {
+                sum += row_buf[k] * x[k];
+            }
+            out[row] = sum;
+        }
+        free(row_buf);
+        return;
+    }
+
+    // TQ1_0 / TQ2_0: block-based format
     int n_blocks_per_row = W->cols / QK_K;
     float block_out[QK_K];
 

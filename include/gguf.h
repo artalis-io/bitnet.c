@@ -28,6 +28,7 @@ enum {
     GGUF_TENSOR_Q6_K  = 14,
     GGUF_TENSOR_TQ1_0 = 34,
     GGUF_TENSOR_TQ2_0 = 35,
+    GGUF_TENSOR_I2_S  = 36,
 };
 
 typedef struct {
@@ -79,6 +80,7 @@ typedef struct {
     size_t        alignment;
     size_t        data_offset;
     uint8_t      *raw;       // pointer to start of buffer (for tensor data access)
+    size_t        raw_size;  // total buffer size (for bounds checking)
 } GGUFFile;
 
 GGUFFile   *gguf_open(const uint8_t *buf, size_t size);

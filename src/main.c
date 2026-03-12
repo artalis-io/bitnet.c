@@ -120,10 +120,19 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "Tokenizer: %d tokens\n", tokenizer.vocab_size);
 
-    // Encode prompt
-    int *prompt_tokens = (int *)malloc((strlen(args.prompt) + 3) * sizeof(int));
+    // #30: Encode prompt — upper bound is 1 token per byte + BOS + margin
+    int max_prompt_tokens = (int)strlen(args.prompt) + 3;
+    int *prompt_tokens = (int *)malloc(max_prompt_tokens * sizeof(int));
+    if (!prompt_tokens) {
+        fprintf(stderr, "Failed to allocate prompt token buffer\n");
+        tokenizer_free(&tokenizer);
+        model_free(&model);
+        gguf_free(gf);
+        platform_unload_file(&mf);
+        return 1;
+    }
     int n_prompt = tokenizer_encode(&tokenizer, args.prompt, 1, prompt_tokens,
-                                    (int)strlen(args.prompt) + 3);
+                                    max_prompt_tokens);
     fprintf(stderr, "Prompt tokens (%d): ", n_prompt);
     for (int i = 0; i < n_prompt; i++) fprintf(stderr, "%d ", prompt_tokens[i]);
     fprintf(stderr, "\n");
@@ -141,6 +150,10 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < n_prompt + args.n_tokens; i++) {
         float *logits = transformer_forward(&model, token, pos);
+        if (!logits) {
+            fprintf(stderr, "\n[transformer_forward returned NULL at pos %d]\n", pos);
+            break;
+        }
 
         int next;
         if (i < n_prompt - 1) {
@@ -160,6 +173,9 @@ int main(int argc, char **argv) {
         // Print token (skip BOS)
         if (i >= n_prompt - 1) {
             const char *piece = tokenizer_decode(&tokenizer, next);
+            #ifdef DEBUG
+            fprintf(stderr, "[tok %d = \"%s\" raw=\"%s\"]\n", next, piece, tokenizer.vocab[next]);
+            #endif
             printf("%s", piece);
             fflush(stdout);
         }

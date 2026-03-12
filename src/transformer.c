@@ -51,6 +51,18 @@ float *transformer_forward(Model *m, int token, int pos) {
     int kv_mul = c->kv_mul;
     int head_size = c->head_size;
 
+    // #9: Validate token bounds
+    if (token < 0 || token >= c->vocab_size) {
+        fprintf(stderr, "transformer: token %d out of range [0, %d)\n", token, c->vocab_size);
+        return NULL;
+    }
+
+    // #10: Validate pos bounds to prevent KV-cache OOB write
+    if (pos < 0 || pos >= c->seq_len) {
+        fprintf(stderr, "transformer: pos %d out of range [0, %d)\n", pos, c->seq_len);
+        return NULL;
+    }
+
     // Embed the token
     model_embed_token(m, s->x, token);
 

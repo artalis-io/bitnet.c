@@ -18,8 +18,11 @@ MappedFile platform_load_file(const char *path) {
 #ifdef __EMSCRIPTEN__
     FILE *fp = fopen(path, "rb");
     if (!fp) return f;
+    // #26: Check ftell return value for errors
     fseek(fp, 0, SEEK_END);
-    f.size = (size_t)ftell(fp);
+    long tell_result = ftell(fp);
+    if (tell_result < 0) { fclose(fp); return f; }
+    f.size = (size_t)tell_result;
     fseek(fp, 0, SEEK_SET);
     f.data = (uint8_t *)malloc(f.size);
     if (!f.data) { fclose(fp); f.size = 0; return f; }
@@ -36,6 +39,8 @@ MappedFile platform_load_file(const char *path) {
     struct stat st;
     if (fstat(fd, &st) < 0) { close(fd); return f; }
     f.size = (size_t)st.st_size;
+    // #27: Guard against mmap with size 0 (POSIX says behavior is unspecified)
+    if (f.size == 0) { close(fd); return f; }
     f.data = (uint8_t *)mmap(NULL, f.size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     if (f.data == MAP_FAILED) { f.data = NULL; f.size = 0; return f; }
@@ -44,24 +49,28 @@ MappedFile platform_load_file(const char *path) {
     return f;
 }
 
+// #19, #20: platform_load_buffer wraps an external buffer without taking ownership.
+// The is_mmap=2 flag distinguishes it from both mmap'd and malloc'd buffers,
+// preventing platform_unload_file from freeing memory it doesn't own.
 MappedFile platform_load_buffer(const uint8_t *buf, size_t size) {
     MappedFile f = {0};
-    f.data = (uint8_t *)buf;  // wrap external buffer, no copy
+    f.data = (uint8_t *)buf;  // intentional const-discard for zero-copy interface
     f.size = size;
-    f.is_mmap = 0;
+    f.is_mmap = 2;  // 2 = externally owned, do not free
     return f;
 }
 
 void platform_unload_file(MappedFile *f) {
     if (!f || !f->data) return;
 #ifdef __EMSCRIPTEN__
-    free(f->data);
-#else
-    if (f->is_mmap) {
-        munmap(f->data, f->size);
-    } else {
-        // External buffer — don't free
+    if (f->is_mmap != 2) {  // Don't free externally-owned buffers
+        free(f->data);
     }
+#else
+    if (f->is_mmap == 1) {
+        munmap(f->data, f->size);
+    }
+    // is_mmap == 0 or 2: don't free (external buffer or unused)
 #endif
     f->data = NULL;
     f->size = 0;

@@ -14,18 +14,29 @@ static int load_qweight(QWeight *w, GGUFFile *f, const char *weight_name, const 
 
     GGUFTensorInfo *info = &f->tensors[ti];
     w->data = gguf_tensor_data(f, ti);
+    if (!w->data) {
+        fprintf(stderr, "model: tensor '%s' data out of bounds\n", weight_name);
+        return -1;
+    }
     w->type = info->type;
     w->rows = (int)info->dims[1];
     w->cols = (int)info->dims[0];
 
-    // Load companion scale tensor
-    int si = gguf_find_tensor(f, scale_name);
-    if (si >= 0) {
-        // Scale tensor is a single F32 value
-        float *scale_ptr = (float *)gguf_tensor_data(f, si);
+    if (w->type == GGUF_TENSOR_I2_S) {
+        // I2_S: per-tensor scale stored at end of packed data (offset = nelements/4)
+        size_t nelements = (size_t)w->rows * w->cols;
+        const uint8_t *base = (const uint8_t *)w->data;
+        const float *scale_ptr = (const float *)(base + nelements / 4);
         w->scale = *scale_ptr;
     } else {
-        w->scale = 1.0f;
+        // TQ1_0/TQ2_0: companion .scale tensor
+        int si = gguf_find_tensor(f, scale_name);
+        if (si >= 0) {
+            float *scale_ptr = (float *)gguf_tensor_data(f, si);
+            w->scale = scale_ptr ? *scale_ptr : 1.0f;
+        } else {
+            w->scale = 1.0f;
+        }
     }
 
     return 0;
@@ -86,7 +97,15 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
     // Vocab size from tokenizer metadata
     c->vocab_size = (int)gguf_get_arr_n(f, "tokenizer.ggml.tokens");
 
-    // Derived dimensions
+    // #15, #38: Validate BEFORE computing derived dimensions to avoid division by zero
+    if (c->dim <= 0 || c->n_layers <= 0 || c->n_heads <= 0 ||
+        c->vocab_size <= 0 || c->n_kv_heads <= 0 || c->hidden_dim <= 0) {
+        fprintf(stderr, "model: invalid config (dim=%d hidden=%d layers=%d heads=%d kv_heads=%d vocab=%d)\n",
+                c->dim, c->hidden_dim, c->n_layers, c->n_heads, c->n_kv_heads, c->vocab_size);
+        return -1;
+    }
+
+    // Derived dimensions (safe now — denominators validated above)
     c->head_size = c->dim / c->n_heads;
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
@@ -95,18 +114,10 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
     c->has_ffn_gate = (gguf_find_tensor(f, "blk.0.ffn_gate.weight") >= 0) ? 1 : 0;
 
     // Check for activation type: bitnet uses ReLU² (act_type=1)
-    // Check architecture-specific key or default based on arch
-    if (arch && strcmp(arch, "bitnet") == 0) {
+    if (arch && strncmp(arch, "bitnet", 6) == 0) {
         c->act_type = 1;  // ReLU²
     } else {
         c->act_type = 0;  // SiLU (default for LLaMA-like)
-    }
-
-    // Validate
-    if (c->dim == 0 || c->n_layers == 0 || c->n_heads == 0 || c->vocab_size == 0) {
-        fprintf(stderr, "model: invalid config (dim=%d layers=%d heads=%d vocab=%d)\n",
-                c->dim, c->n_layers, c->n_heads, c->vocab_size);
-        return -1;
     }
 
     #ifdef DEBUG
@@ -127,67 +138,89 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
         return -1;
     }
     w->token_embedding = gguf_tensor_data(f, emb_idx);
+    if (!w->token_embedding) {
+        fprintf(stderr, "model: token_embd.weight data out of bounds\n");
+        return -1;
+    }
     w->emb_type = f->tensors[emb_idx].type;
 
-    // Output norm
+    // #24: Output norm — must exist
     w->output_norm = load_f32_tensor(f, "output_norm.weight");
+    if (!w->output_norm) {
+        fprintf(stderr, "model: output_norm.weight not found\n");
+        return -1;
+    }
 
     // Allocate per-layer weights
     w->layers = (LayerWeights *)calloc(c->n_layers, sizeof(LayerWeights));
+    if (!w->layers) {
+        fprintf(stderr, "model: failed to allocate layer weights\n");
+        return -1;
+    }
 
     for (int i = 0; i < c->n_layers; i++) {
         LayerWeights *lw = &w->layers[i];
         char wname[128], sname[128];
 
-        // Attention norms
+        // #25: Attention norms — must exist
         snprintf(wname, sizeof(wname), "blk.%d.attn_norm.weight", i);
         lw->attn_norm = load_f32_tensor(f, wname);
+        if (!lw->attn_norm) {
+            fprintf(stderr, "model: %s not found\n", wname);
+            goto fail_layers;
+        }
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_sub_norm.weight", i);
-        lw->attn_sub_norm = load_f32_tensor(f, wname);
+        lw->attn_sub_norm = load_f32_tensor(f, wname);  // optional
 
-        // Attention Q/K/V/O weights
+        // #23: Check load_qweight return values
         snprintf(wname, sizeof(wname), "blk.%d.attn_q.weight", i);
         snprintf(sname, sizeof(sname), "blk.%d.attn_q.scale", i);
-        load_qweight(&lw->wq, f, wname, sname);
+        if (load_qweight(&lw->wq, f, wname, sname) != 0) goto fail_layers;
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_k.weight", i);
         snprintf(sname, sizeof(sname), "blk.%d.attn_k.scale", i);
-        load_qweight(&lw->wk, f, wname, sname);
+        if (load_qweight(&lw->wk, f, wname, sname) != 0) goto fail_layers;
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_v.weight", i);
         snprintf(sname, sizeof(sname), "blk.%d.attn_v.scale", i);
-        load_qweight(&lw->wv, f, wname, sname);
+        if (load_qweight(&lw->wv, f, wname, sname) != 0) goto fail_layers;
 
         snprintf(wname, sizeof(wname), "blk.%d.attn_output.weight", i);
         snprintf(sname, sizeof(sname), "blk.%d.attn_output.scale", i);
-        load_qweight(&lw->wo, f, wname, sname);
+        if (load_qweight(&lw->wo, f, wname, sname) != 0) goto fail_layers;
 
-        // FFN norms
+        // #25: FFN norms — must exist
         snprintf(wname, sizeof(wname), "blk.%d.ffn_norm.weight", i);
         lw->ffn_norm = load_f32_tensor(f, wname);
+        if (!lw->ffn_norm) {
+            fprintf(stderr, "model: %s not found\n", wname);
+            goto fail_layers;
+        }
 
         snprintf(wname, sizeof(wname), "blk.%d.ffn_sub_norm.weight", i);
-        lw->ffn_sub_norm = load_f32_tensor(f, wname);
+        lw->ffn_sub_norm = load_f32_tensor(f, wname);  // optional
 
         // FFN gate/up/down weights
         if (c->has_ffn_gate) {
             snprintf(wname, sizeof(wname), "blk.%d.ffn_gate.weight", i);
             snprintf(sname, sizeof(sname), "blk.%d.ffn_gate.scale", i);
-            load_qweight(&lw->ffn_gate, f, wname, sname);
+            if (load_qweight(&lw->ffn_gate, f, wname, sname) != 0) goto fail_layers;
         }
 
         snprintf(wname, sizeof(wname), "blk.%d.ffn_up.weight", i);
         snprintf(sname, sizeof(sname), "blk.%d.ffn_up.scale", i);
-        load_qweight(&lw->ffn_up, f, wname, sname);
+        if (load_qweight(&lw->ffn_up, f, wname, sname) != 0) goto fail_layers;
 
         snprintf(wname, sizeof(wname), "blk.%d.ffn_down.weight", i);
         snprintf(sname, sizeof(sname), "blk.%d.ffn_down.scale", i);
-        load_qweight(&lw->ffn_down, f, wname, sname);
+        if (load_qweight(&lw->ffn_down, f, wname, sname) != 0) goto fail_layers;
     }
 
     // --- Allocate RunState ---
+    // #1, #14: Check all allocations and guard against overflow
     RunState *s = &m->state;
+
     s->x       = (float *)calloc(c->dim, sizeof(float));
     s->xb      = (float *)calloc(c->dim, sizeof(float));
     s->xb2     = (float *)calloc(c->dim, sizeof(float));
@@ -196,10 +229,34 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
     s->q       = (float *)calloc(c->dim, sizeof(float));
     s->att     = (float *)calloc(c->n_heads * c->seq_len, sizeof(float));
     s->logits  = (float *)calloc(c->vocab_size, sizeof(float));
-    s->key_cache   = (float *)calloc((size_t)c->n_layers * c->seq_len * c->kv_dim, sizeof(float));
-    s->value_cache = (float *)calloc((size_t)c->n_layers * c->seq_len * c->kv_dim, sizeof(float));
+
+    // #14: Check for overflow before large KV cache allocations
+    size_t kv_cache_size = (size_t)c->n_layers * c->seq_len * c->kv_dim;
+    if (c->n_layers > 0 && c->seq_len > 0 && c->kv_dim > 0 &&
+        kv_cache_size / c->n_layers / c->seq_len != (size_t)c->kv_dim) {
+        fprintf(stderr, "model: KV cache size overflow\n");
+        goto fail_state;
+    }
+
+    s->key_cache   = (float *)calloc(kv_cache_size, sizeof(float));
+    s->value_cache = (float *)calloc(kv_cache_size, sizeof(float));
+
+    // #1: Check all allocations succeeded
+    if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 ||
+        !s->q || !s->att || !s->logits || !s->key_cache || !s->value_cache) {
+        fprintf(stderr, "model: failed to allocate run state\n");
+        goto fail_state;
+    }
 
     return 0;
+
+fail_state:
+    model_free(m);
+    return -1;
+
+fail_layers:
+    model_free(m);
+    return -1;
 }
 
 void model_free(Model *m) {
@@ -218,8 +275,15 @@ void model_free(Model *m) {
     free(s->value_cache);
 }
 
+// #8: Bounds-check token before accessing embedding table
 void model_embed_token(const Model *m, float *out, int token) {
     int dim = m->config.dim;
+
+    if (token < 0 || token >= m->config.vocab_size) {
+        fprintf(stderr, "model: token %d out of range [0, %d)\n", token, m->config.vocab_size);
+        memset(out, 0, dim * sizeof(float));
+        return;
+    }
 
     if (m->weights.emb_type == GGUF_TENSOR_F16) {
         // Dequantize one row of F16 embedding

@@ -9,17 +9,22 @@ typedef struct {
     const uint8_t *buf;
     size_t pos;
     size_t size;
+    int error;  // set on OOB read
 } Reader;
 
 static int reader_ok(Reader *r, size_t need) {
+    if (r->error) return 0;
     return r->pos + need <= r->size;
 }
 
+// #12: All read helpers now check bounds and set error flag on OOB
 static uint8_t read_u8(Reader *r) {
+    if (!reader_ok(r, 1)) { r->error = 1; return 0; }
     return r->buf[r->pos++];
 }
 
 static uint16_t read_u16(Reader *r) {
+    if (!reader_ok(r, 2)) { r->error = 1; return 0; }
     uint16_t v;
     memcpy(&v, r->buf + r->pos, 2);
     r->pos += 2;
@@ -27,6 +32,7 @@ static uint16_t read_u16(Reader *r) {
 }
 
 static uint32_t read_u32(Reader *r) {
+    if (!reader_ok(r, 4)) { r->error = 1; return 0; }
     uint32_t v;
     memcpy(&v, r->buf + r->pos, 4);
     r->pos += 4;
@@ -34,6 +40,7 @@ static uint32_t read_u32(Reader *r) {
 }
 
 static uint64_t read_u64(Reader *r) {
+    if (!reader_ok(r, 8)) { r->error = 1; return 0; }
     uint64_t v;
     memcpy(&v, r->buf + r->pos, 8);
     r->pos += 8;
@@ -41,6 +48,7 @@ static uint64_t read_u64(Reader *r) {
 }
 
 static float read_f32(Reader *r) {
+    if (!reader_ok(r, 4)) { r->error = 1; return 0.0f; }
     float v;
     memcpy(&v, r->buf + r->pos, 4);
     r->pos += 4;
@@ -48,30 +56,38 @@ static float read_f32(Reader *r) {
 }
 
 static double read_f64(Reader *r) {
+    if (!reader_ok(r, 8)) { r->error = 1; return 0.0; }
     double v;
     memcpy(&v, r->buf + r->pos, 8);
     r->pos += 8;
     return v;
 }
 
+// #3: NULL-check malloc return
 static char *read_string(Reader *r) {
     uint64_t len = read_u64(r);
-    if (!reader_ok(r, len)) return NULL;
-    char *s = (char *)malloc(len + 1);
-    memcpy(s, r->buf + r->pos, len);
+    if (r->error || !reader_ok(r, len)) { r->error = 1; return NULL; }
+    // #22: Guard against huge len causing malloc issues
+    if (len > (uint64_t)1 << 30) { r->error = 1; return NULL; }
+    char *s = (char *)malloc((size_t)len + 1);
+    if (!s) { r->error = 1; return NULL; }
+    memcpy(s, r->buf + r->pos, (size_t)len);
     s[len] = '\0';
-    r->pos += len;
+    r->pos += (size_t)len;
     return s;
 }
 
+// #3: NULL-check malloc return
 static GGUFString read_gguf_string(Reader *r) {
     GGUFString s = {0};
     s.len = read_u64(r);
-    if (!reader_ok(r, s.len)) return s;
-    s.str = (char *)malloc(s.len + 1);
-    memcpy(s.str, r->buf + r->pos, s.len);
+    if (r->error || !reader_ok(r, s.len)) { r->error = 1; return s; }
+    if (s.len > (uint64_t)1 << 30) { r->error = 1; return s; }
+    s.str = (char *)malloc((size_t)s.len + 1);
+    if (!s.str) { r->error = 1; s.len = 0; return s; }
+    memcpy(s.str, r->buf + r->pos, (size_t)s.len);
     s.str[s.len] = '\0';
-    r->pos += s.len;
+    r->pos += (size_t)s.len;
     return s;
 }
 
@@ -94,6 +110,7 @@ static size_t gguf_type_size(uint32_t type) {
 }
 
 static void read_kv_value(Reader *r, GGUFKeyValue *kv) {
+    if (r->error) return;
     switch (kv->type) {
         case GGUF_TYPE_UINT8:   kv->value.u8 = read_u8(r);   break;
         case GGUF_TYPE_INT8:    kv->value.i8 = (int8_t)read_u8(r); break;
@@ -113,20 +130,31 @@ static void read_kv_value(Reader *r, GGUFKeyValue *kv) {
             a->n = read_u64(r);
             a->data = NULL;
             a->strings = NULL;
+            if (r->error) break;
+
+            // #4: Overflow check on array size
             if (a->elem_type == GGUF_TYPE_STRING) {
-                a->strings = (GGUFString *)malloc(a->n * sizeof(GGUFString));
+                if (a->n > SIZE_MAX / sizeof(GGUFString)) { r->error = 1; break; }
+                // #18: NULL-check malloc
+                a->strings = (GGUFString *)malloc((size_t)a->n * sizeof(GGUFString));
+                if (!a->strings) { r->error = 1; break; }
                 for (uint64_t i = 0; i < a->n; i++) {
                     a->strings[i] = read_gguf_string(r);
+                    if (r->error) break;
                 }
             } else {
                 size_t elem_sz = gguf_type_size(a->elem_type);
-                if (elem_sz > 0 && reader_ok(r, a->n * elem_sz)) {
+                // #4: Check multiplication overflow
+                if (elem_sz > 0 && a->n <= SIZE_MAX / elem_sz && reader_ok(r, (size_t)a->n * elem_sz)) {
                     a->data = (void *)(r->buf + r->pos);  // point into buffer
-                    r->pos += a->n * elem_sz;
+                    r->pos += (size_t)a->n * elem_sz;
                 }
             }
             break;
         }
+        default:
+            r->error = 1;  // unknown type
+            break;
     }
 }
 
@@ -135,7 +163,7 @@ static size_t align_up(size_t offset, size_t alignment) {
 }
 
 GGUFFile *gguf_open(const uint8_t *buf, size_t size) {
-    Reader r = { buf, 0, size };
+    Reader r = { buf, 0, size, 0 };
 
     // Check minimum size and magic
     if (!reader_ok(&r, 4 + 4 + 8 + 8)) return NULL;
@@ -147,7 +175,9 @@ GGUFFile *gguf_open(const uint8_t *buf, size_t size) {
     }
 
     GGUFFile *f = (GGUFFile *)calloc(1, sizeof(GGUFFile));
+    if (!f) return NULL;
     f->raw = (uint8_t *)buf;
+    f->raw_size = size;  // #13: store buffer size for bounds checking
     f->version = read_u32(&r);
     f->n_tensors = read_u64(&r);
     f->n_kv = read_u64(&r);
@@ -159,35 +189,58 @@ GGUFFile *gguf_open(const uint8_t *buf, size_t size) {
         return NULL;
     }
 
+    // #22: Sanity check counts to avoid huge allocations from malicious files
+    if (f->n_kv > (uint64_t)1 << 20 || f->n_tensors > (uint64_t)1 << 20) {
+        fprintf(stderr, "gguf: unreasonable counts (kv=%llu tensors=%llu)\n",
+                (unsigned long long)f->n_kv, (unsigned long long)f->n_tensors);
+        free(f);
+        return NULL;
+    }
+
     // Read KV pairs
-    f->kvs = (GGUFKeyValue *)calloc(f->n_kv, sizeof(GGUFKeyValue));
+    f->kvs = (GGUFKeyValue *)calloc((size_t)f->n_kv, sizeof(GGUFKeyValue));
+    if (f->n_kv > 0 && !f->kvs) { free(f); return NULL; }
+
     for (uint64_t i = 0; i < f->n_kv; i++) {
-        if (!reader_ok(&r, 8)) goto fail;
         f->kvs[i].key = read_string(&r);
-        if (!reader_ok(&r, 4)) goto fail;
+        if (r.error) goto fail;
         f->kvs[i].type = read_u32(&r);
+        if (r.error) goto fail;
         read_kv_value(&r, &f->kvs[i]);
+        if (r.error) goto fail;
 
         // Check for alignment override
-        if (f->kvs[i].key && strcmp(f->kvs[i].key, "general.alignment") == 0) {
+        if (f->kvs[i].key && strcmp(f->kvs[i].key, "general.alignment") == 0
+            && f->kvs[i].type == GGUF_TYPE_UINT32) {
             f->alignment = f->kvs[i].value.u32;
         }
     }
 
     // Read tensor infos
-    f->tensors = (GGUFTensorInfo *)calloc(f->n_tensors, sizeof(GGUFTensorInfo));
+    f->tensors = (GGUFTensorInfo *)calloc((size_t)f->n_tensors, sizeof(GGUFTensorInfo));
+    if (f->n_tensors > 0 && !f->tensors) goto fail;
+
     for (uint64_t i = 0; i < f->n_tensors; i++) {
-        if (!reader_ok(&r, 8)) goto fail;
         f->tensors[i].name = read_string(&r);
-        if (!reader_ok(&r, 4)) goto fail;
+        if (r.error) goto fail;
         f->tensors[i].n_dims = read_u32(&r);
-        for (uint32_t d = 0; d < f->tensors[i].n_dims; d++) {
-            if (!reader_ok(&r, 8)) goto fail;
-            f->tensors[i].dims[d] = read_u64(&r);
+        if (r.error) goto fail;
+
+        // #11: Validate n_dims <= 4 to prevent dims[] buffer overflow
+        if (f->tensors[i].n_dims > 4) {
+            fprintf(stderr, "gguf: tensor '%s' has %u dims (max 4)\n",
+                    f->tensors[i].name ? f->tensors[i].name : "?",
+                    f->tensors[i].n_dims);
+            goto fail;
         }
-        if (!reader_ok(&r, 4 + 8)) goto fail;
+
+        for (uint32_t d = 0; d < f->tensors[i].n_dims; d++) {
+            f->tensors[i].dims[d] = read_u64(&r);
+            if (r.error) goto fail;
+        }
         f->tensors[i].type = read_u32(&r);
         f->tensors[i].offset = read_u64(&r);
+        if (r.error) goto fail;
     }
 
     // Compute data offset (aligned after header)
@@ -230,58 +283,75 @@ void gguf_free(GGUFFile *f) {
 
 int gguf_find_key(GGUFFile *f, const char *key) {
     for (uint64_t i = 0; i < f->n_kv; i++) {
-        if (f->kvs[i].key && strcmp(f->kvs[i].key, key) == 0) return (int)i;
+        if (f->kvs[i].key && strcmp(f->kvs[i].key, key) == 0) {
+            // #22: Guard against truncation of huge index
+            if (i > (uint64_t)INT32_MAX) return -1;
+            return (int)i;
+        }
     }
     return -1;
 }
 
+// #21: Type-validated getters
 uint32_t gguf_get_u32(GGUFFile *f, const char *key) {
     int i = gguf_find_key(f, key);
     if (i < 0) return 0;
+    if (f->kvs[i].type != GGUF_TYPE_UINT32) return 0;
     return f->kvs[i].value.u32;
 }
 
 float gguf_get_f32(GGUFFile *f, const char *key) {
     int i = gguf_find_key(f, key);
     if (i < 0) return 0.0f;
+    if (f->kvs[i].type != GGUF_TYPE_FLOAT32) return 0.0f;
     return f->kvs[i].value.f32;
 }
 
 const char *gguf_get_str(GGUFFile *f, const char *key) {
     int i = gguf_find_key(f, key);
     if (i < 0) return NULL;
+    if (f->kvs[i].type != GGUF_TYPE_STRING) return NULL;
     return f->kvs[i].value.str.str;
 }
 
 uint64_t gguf_get_arr_n(GGUFFile *f, const char *key) {
     int i = gguf_find_key(f, key);
     if (i < 0) return 0;
+    if (f->kvs[i].type != GGUF_TYPE_ARRAY) return 0;
     return f->kvs[i].value.arr.n;
 }
 
+// #34: Explicit negative idx check
 const char *gguf_get_arr_str(GGUFFile *f, const char *key, int idx) {
     int i = gguf_find_key(f, key);
     if (i < 0) return NULL;
+    if (f->kvs[i].type != GGUF_TYPE_ARRAY) return NULL;
     GGUFArray *a = &f->kvs[i].value.arr;
-    if (!a->strings || (uint64_t)idx >= a->n) return NULL;
+    if (!a->strings || idx < 0 || (uint64_t)idx >= a->n) return NULL;
     return a->strings[idx].str;
 }
 
 const void *gguf_get_arr_data(GGUFFile *f, const char *key) {
     int i = gguf_find_key(f, key);
     if (i < 0) return NULL;
+    if (f->kvs[i].type != GGUF_TYPE_ARRAY) return NULL;
     return f->kvs[i].value.arr.data;
 }
 
 int gguf_find_tensor(GGUFFile *f, const char *name) {
     for (uint64_t i = 0; i < f->n_tensors; i++) {
-        if (f->tensors[i].name && strcmp(f->tensors[i].name, name) == 0)
+        if (f->tensors[i].name && strcmp(f->tensors[i].name, name) == 0) {
+            if (i > (uint64_t)INT32_MAX) return -1;
             return (int)i;
+        }
     }
     return -1;
 }
 
+// #13: Validate that tensor data pointer falls within the mapped buffer
 void *gguf_tensor_data(GGUFFile *f, int idx) {
     if (idx < 0 || (uint64_t)idx >= f->n_tensors) return NULL;
-    return f->raw + f->data_offset + f->tensors[idx].offset;
+    size_t offset = f->data_offset + f->tensors[idx].offset;
+    if (offset >= f->raw_size) return NULL;
+    return f->raw + offset;
 }

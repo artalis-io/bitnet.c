@@ -20,7 +20,9 @@ void sampler_init(Sampler *s, int vocab_size, float temp, float topp, uint64_t s
     s->rng_state = seed ? seed : 42;
 }
 
+// #28: Handle n <= 0
 static int argmax(float *v, int n) {
+    if (n <= 0) return 0;
     int best = 0;
     float best_val = v[0];
     for (int i = 1; i < n; i++) {
@@ -29,7 +31,9 @@ static int argmax(float *v, int n) {
     return best;
 }
 
+// #28: Handle n <= 0
 static void softmax(float *x, int n) {
+    if (n <= 0) return;
     float max_val = x[0];
     for (int i = 1; i < n; i++) {
         if (x[i] > max_val) max_val = x[i];
@@ -63,10 +67,16 @@ static int cmp_prob_desc(const void *a, const void *b) {
 }
 
 static int sample_topp(float *probs, int n, float topp, uint64_t *rng) {
+    // #29: Handle n <= 1
+    if (n <= 0) return 0;
+    if (n == 1) return 0;
+
     // Cutoff: skip tokens with very low probability
     float cutoff = (1.0f - topp) / (float)(n - 1);
 
+    // #2: NULL-check malloc return
     ProbIndex *candidates = (ProbIndex *)malloc(n * sizeof(ProbIndex));
+    if (!candidates) return argmax(probs, n);  // fallback to argmax
     int n_candidates = 0;
     for (int i = 0; i < n; i++) {
         if (probs[i] >= cutoff) {
