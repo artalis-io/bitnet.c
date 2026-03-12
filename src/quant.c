@@ -153,30 +153,45 @@ void dequant_i2s_row(const uint8_t *data, float *out, int n, float scale) {
 void ternary_matvec(float *out, const QWeight *W, const float *x) {
 
     if (W->type == 36) {  // I2_S
-        // I2_S: flat packed data, one row = cols/4 bytes
+        // Fused dequant + dot product: decode each byte and accumulate directly,
+        // avoiding malloc/free and intermediate buffer per row.
         int row_bytes = W->cols / 4;
         const uint8_t *base = (const uint8_t *)W->data;
-        // #5: Use malloc instead of __builtin_alloca to avoid stack overflow
-        float *row_buf = (float *)malloc((size_t)W->cols * sizeof(float));
-        if (!row_buf) return;  // OOM: leave output zeroed
+        const int8_t imap[4] = {-1, 0, 1, 0};  // 2-bit -> ternary {-1, 0, +1}
+        float scale = W->scale;
+        int cols = W->cols;
 
+        #ifdef _OPENMP
+        #pragma omp parallel for
+        #endif
         for (int row = 0; row < W->rows; row++) {
-            dequant_i2s_row(base + (size_t)row * row_bytes, row_buf, W->cols, W->scale);
             float sum = 0.0f;
-            for (int k = 0; k < W->cols; k++) {
-                sum += row_buf[k] * x[k];
+            const uint8_t *rd = base + (size_t)row * row_bytes;
+            int done = 0;
+            while (done < cols) {
+                for (int gp = 0; gp < 32; gp++) {
+                    uint8_t b = rd[gp];
+                    sum += imap[(b >> 6) & 3] * x[done + 0*32 + gp];
+                    sum += imap[(b >> 4) & 3] * x[done + 1*32 + gp];
+                    sum += imap[(b >> 2) & 3] * x[done + 2*32 + gp];
+                    sum += imap[(b >> 0) & 3] * x[done + 3*32 + gp];
+                }
+                rd += 32;
+                done += 128;
             }
-            out[row] = sum;
+            out[row] = sum * scale;
         }
-        free(row_buf);
         return;
     }
 
     // TQ1_0 / TQ2_0: block-based format
     int n_blocks_per_row = W->cols / QK_K;
-    float block_out[QK_K];
 
+    #ifdef _OPENMP
+    #pragma omp parallel for
+    #endif
     for (int row = 0; row < W->rows; row++) {
+        float block_out[QK_K];
         float sum = 0.0f;
 
         for (int b = 0; b < n_blocks_per_row; b++) {
@@ -191,6 +206,9 @@ void ternary_matvec(float *out, const QWeight *W, const float *x) {
                 dequant_tq1_block(&blocks[block_idx], block_out);
             }
 
+            #ifdef _OPENMP
+            #pragma omp simd reduction(+:sum)
+            #endif
             for (int k = 0; k < QK_K; k++) {
                 sum += block_out[k] * x[col_offset + k];
             }

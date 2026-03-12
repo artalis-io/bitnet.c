@@ -7,13 +7,22 @@
 
 static void rmsnorm(float *out, const float *x, const float *w, int size, float eps) {
     float ss = 0.0f;
+    #ifdef _OPENMP
+    #pragma omp simd reduction(+:ss)
+    #endif
     for (int i = 0; i < size; i++) ss += x[i] * x[i];
     ss = 1.0f / sqrtf(ss / size + eps);
+    #ifdef _OPENMP
+    #pragma omp simd
+    #endif
     for (int i = 0; i < size; i++) out[i] = x[i] * ss * w[i];
 }
 
 static void softmax(float *x, int size) {
     float max_val = x[0];
+    #ifdef _OPENMP
+    #pragma omp simd reduction(max:max_val)
+    #endif
     for (int i = 1; i < size; i++) {
         if (x[i] > max_val) max_val = x[i];
     }
@@ -22,6 +31,9 @@ static void softmax(float *x, int size) {
         x[i] = expf(x[i] - max_val);
         sum += x[i];
     }
+    #ifdef _OPENMP
+    #pragma omp simd
+    #endif
     for (int i = 0; i < size; i++) x[i] /= sum;
 }
 
@@ -90,6 +102,9 @@ float *transformer_forward(Model *m, int token, int pos) {
         rope(key_cache_row, kv_dim, head_size, pos, c->rope_theta);
 
         // Grouped Query Attention (GQA)
+        #ifdef _OPENMP
+        #pragma omp parallel for
+        #endif
         for (int h = 0; h < c->n_heads; h++) {
             float *q_h = s->q + h * head_size;
             float *att = s->att + h * c->seq_len;
@@ -99,6 +114,9 @@ float *transformer_forward(Model *m, int token, int pos) {
             for (int t = 0; t <= pos; t++) {
                 float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 float score = 0.0f;
+                #ifdef _OPENMP
+                #pragma omp simd reduction(+:score)
+                #endif
                 for (int d = 0; d < head_size; d++) {
                     score += q_h[d] * k_t[d];
                 }
@@ -114,6 +132,9 @@ float *transformer_forward(Model *m, int token, int pos) {
             for (int t = 0; t <= pos; t++) {
                 float *v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 float a = att[t];
+                #ifdef _OPENMP
+                #pragma omp simd
+                #endif
                 for (int d = 0; d < head_size; d++) {
                     xb_h[d] += a * v_t[d];
                 }
@@ -129,6 +150,9 @@ float *transformer_forward(Model *m, int token, int pos) {
         ternary_matvec(s->xb2, &lw->wo, s->xb);
 
         // Residual connection
+        #ifdef _OPENMP
+        #pragma omp simd
+        #endif
         for (int i = 0; i < dim; i++) s->x[i] += s->xb2[i];
 
         // ---- FFN block ----
@@ -142,16 +166,19 @@ float *transformer_forward(Model *m, int token, int pos) {
             ternary_matvec(s->hb2, &lw->ffn_up,   s->xb);  // up
 
             if (c->act_type == 1) {
-                // ReLU²: relu(x)² for gate, relu(x)² for up... actually:
-                // BitNet uses: relu²(gate) * up  or  gate * relu²(up)?
-                // Standard SwiGLU: silu(gate) * up
                 // BitNet b1.58 with ReLU²: relu²(gate) * up
+                #ifdef _OPENMP
+                #pragma omp simd
+                #endif
                 for (int i = 0; i < hidden_dim; i++) {
                     float g = s->hb[i] > 0 ? s->hb[i] : 0;  // ReLU
                     s->hb[i] = g * g * s->hb2[i];            // ReLU² * up
                 }
             } else {
                 // SiLU (SwiGLU): silu(gate) * up
+                #ifdef _OPENMP
+                #pragma omp simd
+                #endif
                 for (int i = 0; i < hidden_dim; i++) {
                     float g = s->hb[i];
                     s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
@@ -161,11 +188,17 @@ float *transformer_forward(Model *m, int token, int pos) {
             // No gate: just up + activation
             ternary_matvec(s->hb, &lw->ffn_up, s->xb);
             if (c->act_type == 1) {
+                #ifdef _OPENMP
+                #pragma omp simd
+                #endif
                 for (int i = 0; i < hidden_dim; i++) {
                     float v = s->hb[i] > 0 ? s->hb[i] : 0;
                     s->hb[i] = v * v;
                 }
             } else {
+                #ifdef _OPENMP
+                #pragma omp simd
+                #endif
                 for (int i = 0; i < hidden_dim; i++) {
                     float v = s->hb[i];
                     s->hb[i] = v / (1.0f + expf(-v));
@@ -182,6 +215,9 @@ float *transformer_forward(Model *m, int token, int pos) {
         ternary_matvec(s->xb, &lw->ffn_down, s->hb);
 
         // Residual connection
+        #ifdef _OPENMP
+        #pragma omp simd
+        #endif
         for (int i = 0; i < dim; i++) s->x[i] += s->xb[i];
 
         #ifdef DEBUG
@@ -199,6 +235,9 @@ float *transformer_forward(Model *m, int token, int pos) {
     // Compute logits as dot product of each embedding row with x
     if (m->weights.emb_type == GGUF_TENSOR_F16) {
         const uint16_t *emb = (const uint16_t *)w->token_embedding;
+        #ifdef _OPENMP
+        #pragma omp parallel for
+        #endif
         for (int v = 0; v < c->vocab_size; v++) {
             const uint16_t *row = emb + (size_t)v * dim;
             float sum = 0.0f;
@@ -210,9 +249,15 @@ float *transformer_forward(Model *m, int token, int pos) {
     } else {
         // F32 embeddings
         const float *emb = (const float *)w->token_embedding;
+        #ifdef _OPENMP
+        #pragma omp parallel for
+        #endif
         for (int v = 0; v < c->vocab_size; v++) {
             const float *row = emb + (size_t)v * dim;
             float sum = 0.0f;
+            #ifdef _OPENMP
+            #pragma omp simd reduction(+:sum)
+            #endif
             for (int d = 0; d < dim; d++) {
                 sum += row[d] * s->x[d];
             }
