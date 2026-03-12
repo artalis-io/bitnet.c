@@ -303,27 +303,77 @@ float *transformer_forward(Model *m, int token, int pos) {
     // Compute logits as dot product of each embedding row with x
     if (m->weights.emb_type == GGUF_TENSOR_F16) {
         const uint16_t *emb = (const uint16_t *)w->token_embedding;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+        // F16 native FMA: 8 multiply-adds per instruction, no F16→F32 conversion
+        // Block-accumulate in F16 (64 elements), reduce to F32 per block
+        uint16_t *x_f16 = (uint16_t *)malloc(dim * sizeof(uint16_t));
+        for (int d = 0; d < dim; d += 8) {
+            float16x4_t lo = vcvt_f16_f32(vld1q_f32(s->x + d));
+            float16x4_t hi = vcvt_f16_f32(vld1q_f32(s->x + d + 4));
+            vst1q_u16(x_f16 + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
+        }
+
         #ifdef _OPENMP
         #pragma omp parallel for
         #endif
         for (int v = 0; v < c->vocab_size; v++) {
             const uint16_t *row = emb + (size_t)v * dim;
-            float sum = 0.0f;
-#ifdef __ARM_NEON
+            float32x4_t fsum = vdupq_n_f32(0);
+            const float16x8_t fz = vreinterpretq_f16_u16(vdupq_n_u16(0));
+            int d = 0;
+
+            #define LDF16(p) vreinterpretq_f16_u16(vld1q_u16(p))
+            for (; d + 63 < dim; d += 64) {
+                float16x8_t a0 = fz, a1 = fz, a2 = fz, a3 = fz;
+                a0 = vfmaq_f16(a0, LDF16(row+d),    LDF16(x_f16+d));
+                a1 = vfmaq_f16(a1, LDF16(row+d+8),  LDF16(x_f16+d+8));
+                a2 = vfmaq_f16(a2, LDF16(row+d+16), LDF16(x_f16+d+16));
+                a3 = vfmaq_f16(a3, LDF16(row+d+24), LDF16(x_f16+d+24));
+                a0 = vfmaq_f16(a0, LDF16(row+d+32), LDF16(x_f16+d+32));
+                a1 = vfmaq_f16(a1, LDF16(row+d+40), LDF16(x_f16+d+40));
+                a2 = vfmaq_f16(a2, LDF16(row+d+48), LDF16(x_f16+d+48));
+                a3 = vfmaq_f16(a3, LDF16(row+d+56), LDF16(x_f16+d+56));
+                float16x8_t s = vaddq_f16(vaddq_f16(a0, a1), vaddq_f16(a2, a3));
+                fsum = vaddq_f32(fsum, vcvt_f32_f16(vget_low_f16(s)));
+                fsum = vaddq_f32(fsum, vcvt_f32_f16(vget_high_f16(s)));
+            }
+            for (; d + 7 < dim; d += 8) {
+                float16x8_t p = vmulq_f16(LDF16(row+d), LDF16(x_f16+d));
+                fsum = vaddq_f32(fsum, vcvt_f32_f16(vget_low_f16(p)));
+                fsum = vaddq_f32(fsum, vcvt_f32_f16(vget_high_f16(p)));
+            }
+            #undef LDF16
+
+            s->logits[v] = neon_hsum_f32(fsum);
+        }
+        free(x_f16);
+#elif defined(__ARM_NEON)
+        #ifdef _OPENMP
+        #pragma omp parallel for
+        #endif
+        for (int v = 0; v < c->vocab_size; v++) {
+            const uint16_t *row = emb + (size_t)v * dim;
             float32x4_t acc0 = vdupq_n_f32(0), acc1 = vdupq_n_f32(0);
             for (int d = 0; d < dim; d += 8) {
                 float16x8_t f16 = vreinterpretq_f16_u16(vld1q_u16(row + d));
                 acc0 = vmlaq_f32(acc0, vcvt_f32_f16(vget_low_f16(f16)),  vld1q_f32(s->x + d));
                 acc1 = vmlaq_f32(acc1, vcvt_f32_f16(vget_high_f16(f16)), vld1q_f32(s->x + d + 4));
             }
-            sum = neon_hsum_f32(vaddq_f32(acc0, acc1));
+            s->logits[v] = neon_hsum_f32(vaddq_f32(acc0, acc1));
+        }
 #else
+        #ifdef _OPENMP
+        #pragma omp parallel for
+        #endif
+        for (int v = 0; v < c->vocab_size; v++) {
+            const uint16_t *row = emb + (size_t)v * dim;
+            float sum = 0.0f;
             for (int d = 0; d < dim; d++) {
                 sum += fp16_to_fp32(row[d]) * s->x[d];
             }
-#endif
             s->logits[v] = sum;
         }
+#endif
     } else {
         // F32 embeddings
         const float *emb = (const float *)w->token_embedding;
