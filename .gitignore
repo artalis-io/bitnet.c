@@ -1,0 +1,27 @@
+# Build artifacts
+bitnet
+src/*.o
+test_gguf
+test_quant
+test_tokenizer
+test_transformer
+test_e2e
+
+# WASM build output
+wasm/bitnet.js
+wasm/bitnet.wasm
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Model files (large)
+*.gguf
+models/

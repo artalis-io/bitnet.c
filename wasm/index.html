@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitNet.c — Browser Inference</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; background: #0a0a0a; color: #e0e0e0; }
+        h1 { margin-bottom: 0.5rem; }
+        .subtitle { color: #888; margin-bottom: 2rem; }
+        .controls { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        input[type="text"] { flex: 1; min-width: 200px; padding: 0.5rem; border: 1px solid #333; border-radius: 4px; background: #1a1a1a; color: #e0e0e0; font-size: 1rem; }
+        button { padding: 0.5rem 1rem; border: 1px solid #333; border-radius: 4px; background: #2a2a2a; color: #e0e0e0; cursor: pointer; font-size: 1rem; }
+        button:hover { background: #3a3a3a; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .params { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
+        .params label { display: flex; align-items: center; gap: 0.25rem; color: #888; font-size: 0.9rem; }
+        .params input[type="number"] { width: 5rem; padding: 0.25rem; border: 1px solid #333; border-radius: 4px; background: #1a1a1a; color: #e0e0e0; }
+        #output { background: #111; border: 1px solid #333; border-radius: 4px; padding: 1rem; min-height: 200px; white-space: pre-wrap; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.5; }
+        #status { color: #888; margin-top: 1rem; font-size: 0.9rem; }
+        .progress { width: 100%; height: 4px; background: #333; border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
+        .progress-bar { height: 100%; background: #4a9eff; transition: width 0.2s; }
+        .model-input { margin-bottom: 1rem; }
+        .model-input input { width: 100%; }
+    </style>
+</head>
+<body>
+    <h1>BitNet.c</h1>
+    <p class="subtitle">Pure C BitNet b1.58 inference in the browser via WASM</p>
+
+    <div class="model-input">
+        <input type="text" id="modelUrl" placeholder="Model URL (GGUF file)" value="">
+        <button id="loadBtn" onclick="loadModel()">Load Model</button>
+    </div>
+
+    <div class="controls">
+        <input type="text" id="prompt" placeholder="Enter prompt..." value="Hello">
+        <button id="generateBtn" onclick="startGenerate()" disabled>Generate</button>
+        <button id="stopBtn" onclick="stopGenerate()" disabled>Stop</button>
+    </div>
+
+    <div class="params">
+        <label>Tokens: <input type="number" id="maxTokens" value="256" min="1" max="2048"></label>
+        <label>Temp: <input type="number" id="temperature" value="0" min="0" max="2" step="0.1"></label>
+        <label>Top-p: <input type="number" id="topp" value="0.9" min="0" max="1" step="0.05"></label>
+    </div>
+
+    <div id="output"></div>
+    <div id="status">Ready. Enter a model URL and click Load.</div>
+    <div class="progress" id="progressContainer" style="display:none">
+        <div class="progress-bar" id="progressBar" style="width:0%"></div>
+    </div>
+
+    <script>
+        let worker = null;
+        let generating = false;
+
+        function setStatus(msg) {
+            document.getElementById('status').textContent = msg;
+        }
+
+        function loadModel() {
+            const url = document.getElementById('modelUrl').value.trim();
+            if (!url) { setStatus('Please enter a model URL'); return; }
+
+            if (worker) worker.terminate();
+            worker = new Worker('worker.js');
+
+            document.getElementById('loadBtn').disabled = true;
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('progressContainer').style.display = 'block';
+
+            worker.onmessage = function(e) {
+                const { type, ...data } = e.data;
+
+                switch (type) {
+                    case 'status':
+                        setStatus(data.message);
+                        break;
+                    case 'progress':
+                        document.getElementById('progressBar').style.width = data.percent + '%';
+                        setStatus(`Downloading: ${(data.loaded/1e6).toFixed(1)} / ${(data.total/1e6).toFixed(1)} MB (${data.percent}%)`);
+                        break;
+                    case 'ready':
+                        document.getElementById('loadBtn').disabled = false;
+                        document.getElementById('generateBtn').disabled = false;
+                        document.getElementById('progressContainer').style.display = 'none';
+                        setStatus(`Model loaded. Vocab size: ${data.vocabSize}`);
+                        break;
+                    case 'token':
+                        document.getElementById('output').textContent += data.text;
+                        break;
+                    case 'done':
+                        generating = false;
+                        document.getElementById('generateBtn').disabled = false;
+                        document.getElementById('stopBtn').disabled = true;
+                        setStatus('Generation complete.');
+                        break;
+                    case 'error':
+                        setStatus('Error: ' + data.message);
+                        document.getElementById('loadBtn').disabled = false;
+                        document.getElementById('progressContainer').style.display = 'none';
+                        break;
+                }
+            };
+
+            worker.postMessage({ type: 'init', modelUrl: url });
+        }
+
+        function startGenerate() {
+            if (!worker || generating) return;
+            generating = true;
+            document.getElementById('output').textContent = '';
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            setStatus('Generating...');
+
+            worker.postMessage({
+                type: 'generate',
+                prompt: document.getElementById('prompt').value,
+                maxTokens: parseInt(document.getElementById('maxTokens').value),
+                temperature: parseFloat(document.getElementById('temperature').value),
+                topp: parseFloat(document.getElementById('topp').value),
+            });
+        }
+
+        function stopGenerate() {
+            if (worker) {
+                worker.terminate();
+                worker = null;
+                generating = false;
+                document.getElementById('generateBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = true;
+                setStatus('Stopped. Reload model to continue.');
+            }
+        }
+
+        // Enter key to generate
+        document.getElementById('prompt').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !document.getElementById('generateBtn').disabled) {
+                startGenerate();
+            }
+        });
+    </script>
+</body>
+</html>
