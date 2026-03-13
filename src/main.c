@@ -4,6 +4,7 @@
 #include "transformer.h"
 #include "tokenizer.h"
 #include "sampler.h"
+#include "threadpool.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,9 +13,6 @@
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <pthread/qos.h>
-#endif
-#ifdef _OPENMP
-#include <omp.h>
 #endif
 
 typedef struct {
@@ -80,17 +78,16 @@ static CLIArgs parse_args(int argc, char **argv) {
 int main(int argc, char **argv) {
     CLIArgs args = parse_args(argc, argv);
 
-    // Pin to performance cores on Apple Silicon
+    // Detect P-core count on Apple Silicon for thread pool sizing
+    int n_workers = 0;
 #if defined(__APPLE__)
     pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-#ifdef _OPENMP
     {
         int ncores = 0;
         size_t len = sizeof(ncores);
-        if (sysctlbyname("hw.perflevel0.logicalcpu", &ncores, &len, NULL, 0) == 0 && ncores > 0)
-            omp_set_num_threads(ncores);
+        if (sysctlbyname("hw.perflevel0.logicalcpu", &ncores, &len, NULL, 0) == 0 && ncores > 1)
+            n_workers = ncores - 1;  // main thread counts as one
     }
-#endif
 #endif
 
     // Load model file
@@ -125,6 +122,16 @@ int main(int argc, char **argv) {
         return 1;
     }
     model.file = mf;  // keep mmap alive
+
+    // Create thread pool
+    model.pool = tp_create(n_workers);
+    if (model.pool) {
+        fprintf(stderr, "Thread pool: %d threads (%d workers + main)\n",
+                tp_num_threads(model.pool), n_workers);
+    } else if (n_workers > 0) {
+        fprintf(stderr, "Warning: failed to create thread pool, running single-threaded\n");
+    }
+
     Config *cfg = &model.config;
 
     fprintf(stderr, "Model: dim=%d layers=%d heads=%d vocab=%d seq=%d\n",
@@ -141,7 +148,7 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "Tokenizer: %d tokens\n", tokenizer.vocab_size);
 
-    // #30: Encode prompt — upper bound is 1 token per byte + BOS + margin
+    // #30: Encode prompt -- upper bound is 1 token per byte + BOS + margin
     int max_prompt_tokens = (int)strlen(args.prompt) + 3;
     int *prompt_tokens = (int *)malloc(max_prompt_tokens * sizeof(int));
     if (!prompt_tokens) {
@@ -194,6 +201,7 @@ int main(int argc, char **argv) {
         // Print token (skip BOS)
         if (i >= n_prompt - 1) {
             const char *piece = tokenizer_decode(&tokenizer, next);
+            if (!piece) piece = "";
             #ifdef DEBUG
             fprintf(stderr, "[tok %d = \"%s\" raw=\"%s\"]\n", next, piece, tokenizer.vocab[next]);
             #endif

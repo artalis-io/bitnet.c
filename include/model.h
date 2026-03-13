@@ -4,6 +4,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "quant.h"
+#include "threadpool.h"
 
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
@@ -44,6 +45,7 @@ typedef struct {
     Weights weights;
     RunState state;
     MappedFile file;  // keeps mmap/buffer alive
+    ThreadPool *pool; // thread pool for parallel dispatch
 } Model;
 
 int  model_load(Model *m, GGUFFile *f, int max_seq_len);

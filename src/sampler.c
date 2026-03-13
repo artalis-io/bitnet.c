@@ -35,9 +35,6 @@ static int argmax(float *v, int n) {
 static void softmax(float *x, int n) {
     if (n <= 0) return;
     float max_val = x[0];
-    #ifdef _OPENMP
-    #pragma omp simd reduction(max:max_val)
-    #endif
     for (int i = 1; i < n; i++) {
         if (x[i] > max_val) max_val = x[i];
     }
@@ -46,9 +43,6 @@ static void softmax(float *x, int n) {
         x[i] = expf(x[i] - max_val);
         sum += x[i];
     }
-    #ifdef _OPENMP
-    #pragma omp simd
-    #endif
     for (int i = 0; i < n; i++) x[i] /= sum;
 }
 
@@ -120,9 +114,6 @@ int sampler_sample(Sampler *s, float *logits) {
     }
 
     // Apply temperature
-    #ifdef _OPENMP
-    #pragma omp simd
-    #endif
     for (int i = 0; i < s->vocab_size; i++) {
         logits[i] /= s->temperature;
     }

@@ -2,6 +2,7 @@
 #define QUANT_H
 
 #include <stdint.h>
+#include "threadpool.h"
 
 #define QK_K 256
 
@@ -39,32 +40,21 @@ uint16_t fp32_to_fp16(float f);
 void     dequant_tq1_block(const BlockTQ1 *block, float *out);
 void     dequant_tq2_block(const BlockTQ2 *block, float *out);
 void     dequant_i2s_row(const uint8_t *data, float *out, int n, float scale);
-void     ternary_matvec(float *out, const QWeight *W, const float *x);
+void     ternary_matvec(float *out, const QWeight *W, const float *x,
+                         int8_t *x_q_buf, ThreadPool *pool);
 
-// Batch matvec: run multiple independent matvecs with a single OMP fork/join
+// Batch matvec: run multiple independent matvecs with a single dispatch
 typedef struct {
     float *out;
     const QWeight *W;
 } MatvecTask;
 
 void ternary_matvec_batch(const MatvecTask *tasks, int n_tasks,
-                           const float *x, int8_t *x_q_buf);
+                           const float *x, int8_t *x_q_buf, ThreadPool *pool);
 
-// Inner batch matvec: must be called from within #pragma omp parallel.
-// x_scale_out must point to a shared float (written by one thread, read by all).
-// Includes an omp barrier at the end to ensure outputs are complete.
-void ternary_matvec_batch_inner(const MatvecTask *tasks, int n_tasks,
-                                 const float *x, int8_t *x_q_buf,
-                                 float *x_scale_out);
-
-// Low-level SDOT primitives for building merged parallel regions.
-// quantize_x_to_i8: quantize float vector to int8, returns scale = amax/127.
-// i2s_matvec_sdot: I2_S matvec using SDOT, must be inside #pragma omp parallel.
-//                  Uses #pragma omp for nowait internally.
+// Quantize float vector to int8, returns scale = amax/127.
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 float quantize_x_to_i8(const float *x, int8_t *x_q, int n);
-void  i2s_matvec_sdot(float *out, const QWeight *W,
-                       const int8_t *x_q, float x_scale);
 #endif
 
 #endif // QUANT_H

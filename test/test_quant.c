@@ -61,18 +61,18 @@ static void test_tq2_dequant(void) {
     dequant_tq2_block(&block, out);
 
     // Check first 4 values from byte 0 (output order: l=0 first 32 bytes, then l=1, etc.)
-    // l=0, m=0: (qs[0] >> 0) & 3 = 2 → value = (2-1)*1.0 = +1.0
+    // l=0, m=0: (qs[0] >> 0) & 3 = 2 -> value = (2-1)*1.0 = +1.0
     assert(fabsf(out[0] - 1.0f) < 1e-6f);
-    // l=0, m=1: (qs[1] >> 0) & 3 = 1 → value = (1-1)*1.0 = 0.0
+    // l=0, m=1: (qs[1] >> 0) & 3 = 1 -> value = (1-1)*1.0 = 0.0
     assert(fabsf(out[1] - 0.0f) < 1e-6f);
 
-    // l=1, m=0 (index 32): (qs[0] >> 2) & 3 = 0 → value = (0-1)*1.0 = -1.0
+    // l=1, m=0 (index 32): (qs[0] >> 2) & 3 = 0 -> value = (0-1)*1.0 = -1.0
     assert(fabsf(out[32] - (-1.0f)) < 1e-6f);
 
-    // l=2, m=0 (index 64): (qs[0] >> 4) & 3 = 1 → value = (1-1)*1.0 = 0.0
+    // l=2, m=0 (index 64): (qs[0] >> 4) & 3 = 1 -> value = (1-1)*1.0 = 0.0
     assert(fabsf(out[64] - 0.0f) < 1e-6f);
 
-    // l=3, m=0 (index 96): (qs[0] >> 6) & 3 = 2 → value = (2-1)*1.0 = +1.0
+    // l=3, m=0 (index 96): (qs[0] >> 6) & 3 = 2 -> value = (2-1)*1.0 = +1.0
     assert(fabsf(out[96] - 1.0f) < 1e-6f);
 
     printf("PASSED\n");
@@ -89,8 +89,8 @@ static void test_tq1_dequant(void) {
     // Set scale to 1.0 in FP16
     block.d = 0x3C00;
 
-    // For TQ1_0, encoding 5 values {-1,0,1} → {0,1,2} as base-3:
-    // All zeros → all values = -1 (mapped: 0,0,0,0,0 = base3 number 0)
+    // For TQ1_0, encoding 5 values {-1,0,1} -> {0,1,2} as base-3:
+    // All zeros -> all values = -1 (mapped: 0,0,0,0,0 = base3 number 0)
     // Encoded: q = 0, scaled = (0 * 256 + 242) / 243 = 0
     block.qs[0] = 0;
 
@@ -113,7 +113,7 @@ static void test_tq1_dequant(void) {
 static void test_ternary_matvec(void) {
     printf("test_ternary_matvec... ");
 
-    // Create a small TQ2_0 matrix: 2 rows × 256 cols
+    // Create a small TQ2_0 matrix: 2 rows x 256 cols
     int n_blocks = 2;  // 2 rows, each 1 block of 256
     BlockTQ2 *blocks = (BlockTQ2 *)calloc(n_blocks, sizeof(BlockTQ2));
 
@@ -134,12 +134,13 @@ static void test_ternary_matvec(void) {
     for (int i = 0; i < 256; i++) x[i] = 1.0f;
 
     float out[2];
-    ternary_matvec(out, &W, x);
+    int8_t x_q[256];
+    ternary_matvec(out, &W, x, x_q, NULL);
 
-    // Row 0: all +1 → sum of 256 ones * 1.0 = 256.0 * scale(1.0)
+    // Row 0: all +1 -> sum of 256 ones * 1.0 = 256.0 * scale(1.0)
     assert(fabsf(out[0] - 256.0f) < 1e-3f);
 
-    // Row 1: all 0 → 0.0
+    // Row 1: all 0 -> 0.0
     assert(fabsf(out[1] - 0.0f) < 1e-3f);
 
     free(blocks);
@@ -151,7 +152,7 @@ static void test_ternary_matvec(void) {
 static void test_i2s_matvec(void) {
     printf("test_i2s_matvec... ");
 
-    // Create I2_S weight matrix: 4 rows × 256 cols
+    // Create I2_S weight matrix: 4 rows x 256 cols
     // Each row needs 256/4 = 64 packed bytes + 4 bytes for float scale at end
     int rows = 4, cols = 256;
     int row_bytes = cols / 4;  // 64
@@ -180,7 +181,8 @@ static void test_i2s_matvec(void) {
 
     // Reference: single-call matvec
     float ref[4];
-    ternary_matvec(ref, &W, x);
+    int8_t x_q_ref[256];
+    ternary_matvec(ref, &W, x, x_q_ref, NULL);
 
     // Batch call
     float out1[4], out2[4];
@@ -197,7 +199,7 @@ static void test_i2s_matvec(void) {
         { out1, &W1 },
         { out2, &W2 },
     };
-    ternary_matvec_batch(tasks, 2, x, x_q);
+    ternary_matvec_batch(tasks, 2, x, x_q, NULL);
 
     // Compare with 2% relative tolerance (int8 quantization error)
     for (int i = 0; i < 2; i++) {
@@ -220,7 +222,7 @@ static void test_i2s_matvec(void) {
 static void test_matvec_batch(void) {
     printf("test_matvec_batch... ");
 
-    // Create two TQ2_0 weight matrices: 2 rows × 256 cols each
+    // Create two TQ2_0 weight matrices: 2 rows x 256 cols each
     int n_blocks = 2;
     BlockTQ2 *blocks1 = (BlockTQ2 *)calloc(n_blocks, sizeof(BlockTQ2));
     BlockTQ2 *blocks2 = (BlockTQ2 *)calloc(n_blocks, sizeof(BlockTQ2));
@@ -245,8 +247,9 @@ static void test_matvec_batch(void) {
 
     // Reference: individual calls
     float ref1[2], ref2[2];
-    ternary_matvec(ref1, &W1, x);
-    ternary_matvec(ref2, &W2, x);
+    int8_t x_q_ref[256];
+    ternary_matvec(ref1, &W1, x, x_q_ref, NULL);
+    ternary_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     // Batch call
     float out1[2], out2[2];
@@ -255,7 +258,7 @@ static void test_matvec_batch(void) {
         { out1, &W1 },
         { out2, &W2 },
     };
-    ternary_matvec_batch(tasks, 2, x, x_q);
+    ternary_matvec_batch(tasks, 2, x, x_q, NULL);
 
     for (int i = 0; i < 2; i++) {
         assert(fabsf(out1[i] - ref1[i]) < 1e-3f);
@@ -267,6 +270,53 @@ static void test_matvec_batch(void) {
     printf("PASSED\n");
 }
 
+// --- Test threaded matvec: compare threaded vs serial output ---
+
+static void test_matvec_threaded(void) {
+    printf("test_matvec_threaded... ");
+
+    // Create I2_S weight matrix: 8 rows x 256 cols
+    int rows = 8, cols = 256;
+    int row_bytes = cols / 4;
+    size_t data_size = (size_t)rows * row_bytes + sizeof(float);
+    uint8_t *data = (uint8_t *)calloc(data_size, 1);
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < row_bytes; b++) {
+            data[r * row_bytes + b] = 0x25;
+        }
+    }
+
+    float tensor_scale = 0.5f;
+    memcpy(data + (size_t)rows * row_bytes, &tensor_scale, sizeof(float));
+
+    QWeight W = { data, 36, rows, cols, tensor_scale };
+
+    float x[256];
+    for (int i = 0; i < cols; i++) x[i] = 0.1f * (i % 13) - 0.6f;
+
+    // Serial reference
+    float ref[8];
+    int8_t x_q_ref[256];
+    ternary_matvec(ref, &W, x, x_q_ref, NULL);
+
+    // Threaded
+    ThreadPool *pool = tp_create(3);
+    float out[8];
+    int8_t x_q[256];
+    ternary_matvec(out, &W, x, x_q, pool);
+
+    for (int i = 0; i < rows; i++) {
+        float err = fabsf(out[i] - ref[i]);
+        float mag = fabsf(ref[i]) + 1e-6f;
+        assert(err / mag < 0.02f);
+    }
+
+    tp_free(pool);
+    free(data);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Tests ===\n");
     test_fp16_conversion();
@@ -275,6 +325,7 @@ int main(void) {
     test_ternary_matvec();
     test_i2s_matvec();
     test_matvec_batch();
+    test_matvec_threaded();
     printf("All quant tests passed!\n");
     return 0;
 }

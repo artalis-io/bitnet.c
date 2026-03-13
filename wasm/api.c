@@ -50,8 +50,8 @@ int bitnet_init(const uint8_t *data, size_t size) {
 EMSCRIPTEN_KEEPALIVE
 int bitnet_forward_token(int token, int pos) {
     if (!g_initialized) return -1;
-    transformer_forward(&g_model, token, pos);
-    return 0;
+    float *logits = transformer_forward(&g_model, token, pos);
+    return logits ? 0 : -1;
 }
 
 EMSCRIPTEN_KEEPALIVE

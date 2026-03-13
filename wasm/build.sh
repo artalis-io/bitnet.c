@@ -14,8 +14,10 @@ emcc \
     "$PROJECT_DIR/src/tokenizer.c" \
     "$PROJECT_DIR/src/sampler.c" \
     "$PROJECT_DIR/src/platform.c" \
+    "$PROJECT_DIR/src/threadpool.c" \
     "$PROJECT_DIR/wasm/api.c" \
     -I"$PROJECT_DIR/include" \
+    -std=c11 -Wall -Wextra \
     -O2 \
     -sWASM=1 \
     -sALLOW_MEMORY_GROWTH=1 \

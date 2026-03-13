@@ -100,9 +100,10 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
 
     // #15, #38: Validate BEFORE computing derived dimensions to avoid division by zero
     if (c->dim <= 0 || c->n_layers <= 0 || c->n_heads <= 0 ||
-        c->vocab_size <= 0 || c->n_kv_heads <= 0 || c->hidden_dim <= 0) {
-        fprintf(stderr, "model: invalid config (dim=%d hidden=%d layers=%d heads=%d kv_heads=%d vocab=%d)\n",
-                c->dim, c->hidden_dim, c->n_layers, c->n_heads, c->n_kv_heads, c->vocab_size);
+        c->vocab_size <= 0 || c->n_kv_heads <= 0 || c->hidden_dim <= 0 ||
+        c->seq_len <= 0) {
+        fprintf(stderr, "model: invalid config (dim=%d hidden=%d layers=%d heads=%d kv_heads=%d vocab=%d seq=%d)\n",
+                c->dim, c->hidden_dim, c->n_layers, c->n_heads, c->n_kv_heads, c->vocab_size, c->seq_len);
         return -1;
     }
 
@@ -110,6 +111,16 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
     c->head_size = c->dim / c->n_heads;
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
+
+    // Validate alignment for NEON vectorized paths
+    if (c->dim % c->n_heads != 0) {
+        fprintf(stderr, "model: dim (%d) not divisible by n_heads (%d)\n", c->dim, c->n_heads);
+        return -1;
+    }
+    if (c->n_heads % c->n_kv_heads != 0) {
+        fprintf(stderr, "model: n_heads (%d) not divisible by n_kv_heads (%d)\n", c->n_heads, c->n_kv_heads);
+        return -1;
+    }
 
     // Detect FFN gate and activation type
     c->has_ffn_gate = (gguf_find_tensor(f, "blk.0.ffn_gate.weight") >= 0) ? 1 : 0;
@@ -228,7 +239,12 @@ int model_load(Model *m, GGUFFile *f, int max_seq_len) {
     s->hb      = (float *)calloc(c->hidden_dim, sizeof(float));
     s->hb2     = (float *)calloc(c->hidden_dim, sizeof(float));
     s->q       = (float *)calloc(c->dim, sizeof(float));
-    s->att     = (float *)calloc(c->n_heads * c->seq_len, sizeof(float));
+    size_t att_size = (size_t)c->n_heads * c->seq_len;
+    if (att_size / c->n_heads != (size_t)c->seq_len) {
+        fprintf(stderr, "model: attention buffer size overflow\n");
+        goto fail_state;
+    }
+    s->att     = (float *)calloc(att_size, sizeof(float));
     s->logits  = (float *)calloc(c->vocab_size, sizeof(float));
 
     // #14: Check for overflow before large KV cache allocations
@@ -275,6 +291,7 @@ fail_layers:
 
 void model_free(Model *m) {
     if (!m) return;
+    tp_free(m->pool);
     free(m->weights.layers);
     RunState *s = &m->state;
     free(s->x);
@@ -289,6 +306,7 @@ void model_free(Model *m) {
     free(s->value_cache);
     free(s->x_q);
     free(s->rope_freq);
+    memset(m, 0, sizeof(Model));
 }
 
 // #8: Bounds-check token before accessing embedding table

@@ -1,4 +1,5 @@
 #include "quant.h"
+#include "gguf.h"
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -38,7 +39,7 @@ float fp16_to_fp32(uint16_t h) {
 
     if (exp == 0) {
         if (mant == 0) {
-            f = sign;  // ±0
+            f = sign;  // +/-0
         } else {
             // #37: Subnormal: normalize by shifting mantissa left until hidden bit appears.
             // At most 10 shifts (10 mantissa bits), so exp goes from 1 down to at most -9.
@@ -103,7 +104,7 @@ void dequant_tq1_block(const BlockTQ1 *block, float *out) {
     int idx = 0;
 
     // Process qs: 48 bytes, in two chunks (32 + 16)
-    // First chunk: bytes 0..31, 5 trits each → 160 values
+    // First chunk: bytes 0..31, 5 trits each -> 160 values
     for (int n = 0; n < 5; n++) {
         for (int m = 0; m < 32; m++) {
             uint8_t q = block->qs[m] * pow3[n];  // uint8 overflow is intentional
@@ -112,7 +113,7 @@ void dequant_tq1_block(const BlockTQ1 *block, float *out) {
         }
     }
 
-    // Second chunk: bytes 32..47, 5 trits each → 80 values
+    // Second chunk: bytes 32..47, 5 trits each -> 80 values
     for (int n = 0; n < 5; n++) {
         for (int m = 0; m < 16; m++) {
             uint8_t q = block->qs[32 + m] * pow3[n];
@@ -121,7 +122,7 @@ void dequant_tq1_block(const BlockTQ1 *block, float *out) {
         }
     }
 
-    // Process qh: 4 bytes, 4 trits each → 16 values
+    // Process qh: 4 bytes, 4 trits each -> 16 values
     for (int n = 0; n < 4; n++) {
         for (int m = 0; m < 4; m++) {
             uint8_t q = block->qh[m] * pow3[n];
@@ -137,7 +138,7 @@ void dequant_tq1_block(const BlockTQ1 *block, float *out) {
 // --- I2_S dequantization (Microsoft BitNet format) ---
 // 2-bit ternary, interleaved byte layout, single per-tensor scale
 // Each byte: bits 7-6=subrow0, 5-4=subrow1, 3-2=subrow2, 1-0=subrow3
-// Processes 128 elements (4 × 32) per 32-byte chunk
+// Processes 128 elements (4 x 32) per 32-byte chunk
 
 // #36: I2_S uses an interleaved byte layout where each byte contains 2-bit values
 // from 4 sub-rows of 32 elements. This means each 128-element chunk always uses
@@ -227,19 +228,24 @@ float quantize_x_to_i8(const float *x, int8_t *x_q, int n) {
     return scale;
 }
 
-// SDOT I2_S matvec inner loop — called from within an OMP parallel region.
-// Accumulates int32, converts at the end. Uses omp for nowait.
-void i2s_matvec_sdot(float *out, const QWeight *W,
-                      const int8_t *x_q, float x_scale) {
-    int row_bytes = W->cols / 4;
-    const uint8_t *base = (const uint8_t *)W->data;
-    float combined_scale = W->scale * x_scale;
-    int cols = W->cols;
+// Context for I2_S SDOT range function
+typedef struct {
+    float *out;
+    const QWeight *W;
+    const int8_t *x_q;
+    float combined_scale;
+} I2SCtx;
 
-    #ifdef _OPENMP
-    #pragma omp for nowait
-    #endif
-    for (int row = 0; row < W->rows; row++) {
+// I2_S SDOT matvec for a range of rows [row_start, row_end)
+static void i2s_sdot_range(void *ctx, int row_start, int row_end) {
+    I2SCtx *c = (I2SCtx *)ctx;
+    int row_bytes = c->W->cols / 4;
+    const uint8_t *base = (const uint8_t *)c->W->data;
+    float combined_scale = c->combined_scale;
+    int cols = c->W->cols;
+    const int8_t *x_q = c->x_q;
+
+    for (int row = row_start; row < row_end; row++) {
         const uint8_t *rd = base + (size_t)row * row_bytes;
         int done = 0;
 
@@ -249,27 +255,31 @@ void i2s_matvec_sdot(float *out, const QWeight *W,
         const uint8x16_t mask3 = vdupq_n_u8(3);
 
         while (done < cols) {
-            __builtin_prefetch(rd + 128, 0, 0);
-            for (int h = 0; h < 2; h++) {
-                uint8x16_t raw = vld1q_u8(rd + h * 16);
-                const int8_t *xp = x_q + done + h * 16;
-
-                // Arithmetic ternary decode: (bits - 1) maps {0,1,2} → {-1,0,+1}
+            // First 16 weight bytes -> 64 elements from sub-rows 0-3
+            {
+                uint8x16_t raw = vld1q_u8(rd);
+                const int8_t *xp = x_q + done;
                 int8x16_t t0 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 6)), one);
                 int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one);
                 int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one);
                 int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one);
-
-                // SDOT: 16 int8×int8 multiply-adds per instruction
-                int8x16_t xv0 = vld1q_s8(xp + 0*32);
-                int8x16_t xv1 = vld1q_s8(xp + 1*32);
-                int8x16_t xv2 = vld1q_s8(xp + 2*32);
-                int8x16_t xv3 = vld1q_s8(xp + 3*32);
-
-                iaccA = vdotq_s32(iaccA, t0, xv0);
-                iaccB = vdotq_s32(iaccB, t1, xv1);
-                iaccC = vdotq_s32(iaccC, t2, xv2);
-                iaccD = vdotq_s32(iaccD, t3, xv3);
+                iaccA = vdotq_s32(iaccA, t0, vld1q_s8(xp));
+                iaccB = vdotq_s32(iaccB, t1, vld1q_s8(xp + 32));
+                iaccC = vdotq_s32(iaccC, t2, vld1q_s8(xp + 64));
+                iaccD = vdotq_s32(iaccD, t3, vld1q_s8(xp + 96));
+            }
+            // Second 16 weight bytes -> 64 elements from sub-rows 0-3
+            {
+                uint8x16_t raw = vld1q_u8(rd + 16);
+                const int8_t *xp = x_q + done + 16;
+                int8x16_t t0 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 6)), one);
+                int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one);
+                int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one);
+                int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one);
+                iaccA = vdotq_s32(iaccA, t0, vld1q_s8(xp));
+                iaccB = vdotq_s32(iaccB, t1, vld1q_s8(xp + 32));
+                iaccC = vdotq_s32(iaccC, t2, vld1q_s8(xp + 64));
+                iaccD = vdotq_s32(iaccD, t3, vld1q_s8(xp + 96));
             }
             rd += 32;
             done += 128;
@@ -278,360 +288,355 @@ void i2s_matvec_sdot(float *out, const QWeight *W,
         // Reduce int32 accumulators to scalar
         int32x4_t sum4 = vaddq_s32(vaddq_s32(iaccA, iaccB), vaddq_s32(iaccC, iaccD));
         int32_t total = vaddvq_s32(sum4);
-        out[row] = (float)total * combined_scale;
+        c->out[row] = (float)total * combined_scale;
     }
 }
 
 #endif // __ARM_NEON && __ARM_FEATURE_DOTPROD
 
-// --- Ternary matrix-vector multiply ---
-// out[rows] = W[rows × cols] @ x[cols]
+// --- Range function contexts for non-SDOT paths ---
 
-void ternary_matvec(float *out, const QWeight *W, const float *x) {
+// I2_S float NEON range context
+typedef struct {
+    float *out;
+    const QWeight *W;
+    const float *x;
+} I2SFloatCtx;
 
-    if (W->type == 36) {  // I2_S
-        int cols = W->cols;
+#if defined(__ARM_NEON) && !defined(__ARM_FEATURE_DOTPROD)
+static void i2s_neon_range(void *ctx, int row_start, int row_end) {
+    I2SFloatCtx *c = (I2SFloatCtx *)ctx;
+    int cols = c->W->cols;
+    int row_bytes = cols / 4;
+    const uint8_t *base = (const uint8_t *)c->W->data;
+    float scale = c->W->scale;
+    const float *x = c->x;
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-        // SDOT path: quantize x once, then use integer dot products
-        int8_t *x_q = (int8_t *)malloc(cols * sizeof(int8_t));
-        float x_scale = quantize_x_to_i8(x, x_q, cols);
-
-        #ifdef _OPENMP
-        #pragma omp parallel
-        #endif
-        {
-            i2s_matvec_sdot(out, W, x_q, x_scale);
+    for (int row = row_start; row < row_end; row++) {
+        const uint8_t *rd = base + (size_t)row * row_bytes;
+        int done = 0;
+        float32x4_t accA0 = vdupq_n_f32(0), accA1 = vdupq_n_f32(0);
+        float32x4_t accA2 = vdupq_n_f32(0), accA3 = vdupq_n_f32(0);
+        float32x4_t accB0 = vdupq_n_f32(0), accB1 = vdupq_n_f32(0);
+        float32x4_t accB2 = vdupq_n_f32(0), accB3 = vdupq_n_f32(0);
+        const int8x16_t one = vdupq_n_s8(1);
+        const uint8x16_t mask3 = vdupq_n_u8(3);
+        while (done < cols) {
+            __builtin_prefetch(rd + 128, 0, 0);
+            __builtin_prefetch(rd + 192, 0, 0);
+            for (int h = 0; h < 2; h++) {
+                uint8x16_t raw = vld1q_u8(rd + h * 16);
+                const float *xp = x + done + h * 16;
+                int8x16_t t0 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 6)), one);
+                int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one);
+                int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one);
+                int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one);
+                neon_acc_i8x16_f32(t0, xp + 0*32, &accA0, &accA1, &accA2, &accA3);
+                neon_acc_i8x16_f32(t1, xp + 1*32, &accB0, &accB1, &accB2, &accB3);
+                neon_acc_i8x16_f32(t2, xp + 2*32, &accA0, &accA1, &accA2, &accA3);
+                neon_acc_i8x16_f32(t3, xp + 3*32, &accB0, &accB1, &accB2, &accB3);
+            }
+            rd += 32;
+            done += 128;
         }
-        free(x_q);
-#elif defined(__ARM_NEON)
-        // Float NEON path (no dotprod)
-        {
-        int row_bytes = cols / 4;
-        const uint8_t *base = (const uint8_t *)W->data;
-        float scale = W->scale;
-        #ifdef _OPENMP
-        #pragma omp parallel for
-        #endif
-        for (int row = 0; row < W->rows; row++) {
-            const uint8_t *rd = base + (size_t)row * row_bytes;
-            int done = 0;
+        c->out[row] = (neon_reduce4(accA0, accA1, accA2, accA3) +
+                    neon_reduce4(accB0, accB1, accB2, accB3)) * scale;
+    }
+}
+#endif // __ARM_NEON && !__ARM_FEATURE_DOTPROD
+
+// I2_S scalar range
+#if !defined(__ARM_NEON)
+static void i2s_scalar_range(void *ctx, int row_start, int row_end) {
+    I2SFloatCtx *c = (I2SFloatCtx *)ctx;
+    int cols = c->W->cols;
+    int row_bytes = cols / 4;
+    const uint8_t *base = (const uint8_t *)c->W->data;
+    float scale = c->W->scale;
+    const float *x = c->x;
+
+    for (int row = row_start; row < row_end; row++) {
+        const uint8_t *rd = base + (size_t)row * row_bytes;
+        int done = 0;
+        const int8_t imap[4] = {-1, 0, 1, 0};
+        float sum = 0.0f;
+        while (done < cols) {
+            for (int gp = 0; gp < 32; gp++) {
+                uint8_t b = rd[gp];
+                sum += imap[(b >> 6) & 3] * x[done + 0*32 + gp];
+                sum += imap[(b >> 4) & 3] * x[done + 1*32 + gp];
+                sum += imap[(b >> 2) & 3] * x[done + 2*32 + gp];
+                sum += imap[(b >> 0) & 3] * x[done + 3*32 + gp];
+            }
+            rd += 32;
+            done += 128;
+        }
+        c->out[row] = sum * scale;
+    }
+}
+#endif // !__ARM_NEON
+
+// TQ2_0 range context
+typedef struct {
+    float *out;
+    const QWeight *W;
+    const float *x;
+} TQ2Ctx;
+
+static void tq2_range(void *ctx, int row_start, int row_end) {
+    TQ2Ctx *c = (TQ2Ctx *)ctx;
+    const BlockTQ2 *blocks = (const BlockTQ2 *)c->W->data;
+    int n_blocks_per_row = c->W->cols / QK_K;
+    float tensor_scale = c->W->scale;
+    const float *x = c->x;
+
+    for (int row = row_start; row < row_end; row++) {
+        float row_sum = 0.0f;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BlockTQ2 *blk = &blocks[row * n_blocks_per_row + b];
+            __builtin_prefetch(blk + 2, 0, 0);
+            float d = fp16_to_fp32(blk->d);
+            const float *xb = x + b * QK_K;
+#ifdef __ARM_NEON
             float32x4_t accA0 = vdupq_n_f32(0), accA1 = vdupq_n_f32(0);
             float32x4_t accA2 = vdupq_n_f32(0), accA3 = vdupq_n_f32(0);
             float32x4_t accB0 = vdupq_n_f32(0), accB1 = vdupq_n_f32(0);
             float32x4_t accB2 = vdupq_n_f32(0), accB3 = vdupq_n_f32(0);
-            const int8x16_t one = vdupq_n_s8(1);
             const uint8x16_t mask3 = vdupq_n_u8(3);
-            while (done < cols) {
-                __builtin_prefetch(rd + 128, 0, 0);
-                __builtin_prefetch(rd + 192, 0, 0);
-                for (int h = 0; h < 2; h++) {
-                    uint8x16_t raw = vld1q_u8(rd + h * 16);
-                    const float *xp = x + done + h * 16;
-                    int8x16_t t0 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 6)), one);
-                    int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one);
-                    int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one);
-                    int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one);
+            const int8x16_t one_s8 = vdupq_n_s8(1);
+            for (int half = 0; half < 2; half++) {
+                const uint8_t *qs = blk->qs + half * 32;
+                const float *xh = xb + half * 128;
+                for (int i = 0; i < 2; i++) {
+                    uint8x16_t raw = vld1q_u8(qs + i * 16);
+                    const float *xp = xh + i * 16;
+                    int8x16_t t0 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one_s8);
+                    int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one_s8);
+                    int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one_s8);
+                    int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 6), mask3)), one_s8);
                     neon_acc_i8x16_f32(t0, xp + 0*32, &accA0, &accA1, &accA2, &accA3);
                     neon_acc_i8x16_f32(t1, xp + 1*32, &accB0, &accB1, &accB2, &accB3);
                     neon_acc_i8x16_f32(t2, xp + 2*32, &accA0, &accA1, &accA2, &accA3);
                     neon_acc_i8x16_f32(t3, xp + 3*32, &accB0, &accB1, &accB2, &accB3);
                 }
-                rd += 32;
-                done += 128;
             }
-            out[row] = (neon_reduce4(accA0, accA1, accA2, accA3) +
-                        neon_reduce4(accB0, accB1, accB2, accB3)) * scale;
-        }
-        }
+            row_sum += (neon_reduce4(accA0, accA1, accA2, accA3) +
+                        neon_reduce4(accB0, accB1, accB2, accB3)) * d;
 #else
-        // Scalar fallback
-        {
-        int row_bytes = cols / 4;
-        const uint8_t *base = (const uint8_t *)W->data;
-        float scale = W->scale;
-        #ifdef _OPENMP
-        #pragma omp parallel for
-        #endif
-        for (int row = 0; row < W->rows; row++) {
-            const uint8_t *rd = base + (size_t)row * row_bytes;
-            int done = 0;
-            const int8_t imap[4] = {-1, 0, 1, 0};
-            float sum = 0.0f;
-            while (done < cols) {
-                for (int gp = 0; gp < 32; gp++) {
-                    uint8_t b = rd[gp];
-                    sum += imap[(b >> 6) & 3] * x[done + 0*32 + gp];
-                    sum += imap[(b >> 4) & 3] * x[done + 1*32 + gp];
-                    sum += imap[(b >> 2) & 3] * x[done + 2*32 + gp];
-                    sum += imap[(b >> 0) & 3] * x[done + 3*32 + gp];
+            float block_sum = 0.0f;
+            for (int half = 0; half < 2; half++) {
+                const uint8_t *qs = blk->qs + half * 32;
+                const float *xh = xb + half * 128;
+                for (int m = 0; m < 32; m++) {
+                    uint8_t byte = qs[m];
+                    int8_t q0 = (int8_t)((byte >> 0) & 3) - 1;
+                    int8_t q1 = (int8_t)((byte >> 2) & 3) - 1;
+                    int8_t q2 = (int8_t)((byte >> 4) & 3) - 1;
+                    int8_t q3 = (int8_t)((byte >> 6) & 3) - 1;
+                    block_sum += q0 * xh[0*32 + m];
+                    block_sum += q1 * xh[1*32 + m];
+                    block_sum += q2 * xh[2*32 + m];
+                    block_sum += q3 * xh[3*32 + m];
                 }
-                rd += 32;
-                done += 128;
             }
-            out[row] = sum * scale;
-        }
-        }
+            row_sum += block_sum * d;
 #endif
-        return;
-    }
-
-    if (W->type == 35) {  // TQ2_0: fused dequant + dot product
-        const BlockTQ2 *blocks = (const BlockTQ2 *)W->data;
-        int n_blocks_per_row = W->cols / QK_K;
-        float tensor_scale = W->scale;
-
-        #ifdef _OPENMP
-        #pragma omp parallel for
-        #endif
-        for (int row = 0; row < W->rows; row++) {
-            float row_sum = 0.0f;
-            for (int b = 0; b < n_blocks_per_row; b++) {
-                const BlockTQ2 *blk = &blocks[row * n_blocks_per_row + b];
-                __builtin_prefetch(blk + 2, 0, 0);
-                float d = fp16_to_fp32(blk->d);
-                const float *xb = x + b * QK_K;
-#ifdef __ARM_NEON
-                float32x4_t accA0 = vdupq_n_f32(0), accA1 = vdupq_n_f32(0);
-                float32x4_t accA2 = vdupq_n_f32(0), accA3 = vdupq_n_f32(0);
-                float32x4_t accB0 = vdupq_n_f32(0), accB1 = vdupq_n_f32(0);
-                float32x4_t accB2 = vdupq_n_f32(0), accB3 = vdupq_n_f32(0);
-                const uint8x16_t mask3 = vdupq_n_u8(3);
-                const int8x16_t one_s8 = vdupq_n_s8(1);
-                for (int half = 0; half < 2; half++) {
-                    const uint8_t *qs = blk->qs + half * 32;
-                    const float *xh = xb + half * 128;
-                    for (int i = 0; i < 2; i++) {
-                        uint8x16_t raw = vld1q_u8(qs + i * 16);
-                        const float *xp = xh + i * 16;
-                        int8x16_t t0 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask3)), one_s8);
-                        int8x16_t t1 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 2), mask3)), one_s8);
-                        int8x16_t t2 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 4), mask3)), one_s8);
-                        int8x16_t t3 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vshrq_n_u8(raw, 6), mask3)), one_s8);
-                        neon_acc_i8x16_f32(t0, xp + 0*32, &accA0, &accA1, &accA2, &accA3);
-                        neon_acc_i8x16_f32(t1, xp + 1*32, &accB0, &accB1, &accB2, &accB3);
-                        neon_acc_i8x16_f32(t2, xp + 2*32, &accA0, &accA1, &accA2, &accA3);
-                        neon_acc_i8x16_f32(t3, xp + 3*32, &accB0, &accB1, &accB2, &accB3);
-                    }
-                }
-                row_sum += (neon_reduce4(accA0, accA1, accA2, accA3) +
-                            neon_reduce4(accB0, accB1, accB2, accB3)) * d;
-#else
-                float block_sum = 0.0f;
-                for (int half = 0; half < 2; half++) {
-                    const uint8_t *qs = blk->qs + half * 32;
-                    const float *xh = xb + half * 128;
-                    for (int m = 0; m < 32; m++) {
-                        uint8_t byte = qs[m];
-                        int8_t q0 = (int8_t)((byte >> 0) & 3) - 1;
-                        int8_t q1 = (int8_t)((byte >> 2) & 3) - 1;
-                        int8_t q2 = (int8_t)((byte >> 4) & 3) - 1;
-                        int8_t q3 = (int8_t)((byte >> 6) & 3) - 1;
-                        block_sum += q0 * xh[0*32 + m];
-                        block_sum += q1 * xh[1*32 + m];
-                        block_sum += q2 * xh[2*32 + m];
-                        block_sum += q3 * xh[3*32 + m];
-                    }
-                }
-                row_sum += block_sum * d;
-#endif
-            }
-            out[row] = row_sum * tensor_scale;
         }
-        return;
+        c->out[row] = row_sum * tensor_scale;
     }
+}
 
-    // TQ1_0 (type == 34): fused dequant + dot product
-    {
-        const BlockTQ1 *blocks = (const BlockTQ1 *)W->data;
-        int n_blocks_per_row = W->cols / QK_K;
-        float tensor_scale = W->scale;
-        static const uint8_t pow3[6] = {1, 3, 9, 27, 81, 243};
+// TQ1_0 range context
+typedef struct {
+    float *out;
+    const QWeight *W;
+    const float *x;
+} TQ1Ctx;
 
-        #ifdef _OPENMP
-        #pragma omp parallel for
-        #endif
-        for (int row = 0; row < W->rows; row++) {
-            float row_sum = 0.0f;
-            for (int b = 0; b < n_blocks_per_row; b++) {
-                const BlockTQ1 *blk = &blocks[row * n_blocks_per_row + b];
-                __builtin_prefetch(blk + 2, 0, 0);
-                float d = fp16_to_fp32(blk->d);
-                float block_sum = 0.0f;
-                const float *xb = x + b * QK_K;
+static void tq1_range(void *ctx, int row_start, int row_end) {
+    TQ1Ctx *c = (TQ1Ctx *)ctx;
+    const BlockTQ1 *blocks = (const BlockTQ1 *)c->W->data;
+    int n_blocks_per_row = c->W->cols / QK_K;
+    float tensor_scale = c->W->scale;
+    const float *x = c->x;
+    static const uint8_t pow3[6] = {1, 3, 9, 27, 81, 243};
+
+    for (int row = row_start; row < row_end; row++) {
+        float row_sum = 0.0f;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BlockTQ1 *blk = &blocks[row * n_blocks_per_row + b];
+            __builtin_prefetch(blk + 2, 0, 0);
+            float d = fp16_to_fp32(blk->d);
+            float block_sum = 0.0f;
+            const float *xb = x + b * QK_K;
 #ifdef __ARM_NEON
-                float32x4_t accA0 = vdupq_n_f32(0), accA1 = vdupq_n_f32(0);
-                float32x4_t accA2 = vdupq_n_f32(0), accA3 = vdupq_n_f32(0);
-                float32x4_t accB0 = vdupq_n_f32(0), accB1 = vdupq_n_f32(0);
-                float32x4_t accB2 = vdupq_n_f32(0), accB3 = vdupq_n_f32(0);
-                const int8x16_t one_s8 = vdupq_n_s8(1);
-                const uint8x8_t three_u8 = vdup_n_u8(3);
-                int acc_flip = 0;
+            float32x4_t accA0 = vdupq_n_f32(0), accA1 = vdupq_n_f32(0);
+            float32x4_t accA2 = vdupq_n_f32(0), accA3 = vdupq_n_f32(0);
+            float32x4_t accB0 = vdupq_n_f32(0), accB1 = vdupq_n_f32(0);
+            float32x4_t accB2 = vdupq_n_f32(0), accB3 = vdupq_n_f32(0);
+            const int8x16_t one_s8 = vdupq_n_s8(1);
+            const uint8x8_t three_u8 = vdup_n_u8(3);
+            int acc_flip = 0;
 
-                // Section 1: qs[0..31], 5 trits/byte -> 160 values
-                for (int n = 0; n < 5; n++) {
-                    uint8x16_t pow3_vec = vdupq_n_u8(pow3[n]);
-                    for (int i = 0; i < 2; i++) {
-                        uint8x16_t raw = vld1q_u8(blk->qs + i * 16);
-                        uint8x16_t q = vmulq_u8(raw, pow3_vec);
-                        uint8x8_t xi_lo = vshrn_n_u16(vmull_u8(vget_low_u8(q), three_u8), 8);
-                        uint8x8_t xi_hi = vshrn_n_u16(vmull_u8(vget_high_u8(q), three_u8), 8);
-                        int8x16_t ternary = vsubq_s8(vreinterpretq_s8_u8(vcombine_u8(xi_lo, xi_hi)), one_s8);
-                        if (acc_flip++ & 1)
-                            neon_acc_i8x16_f32(ternary, xb + n*32 + i*16, &accB0, &accB1, &accB2, &accB3);
-                        else
-                            neon_acc_i8x16_f32(ternary, xb + n*32 + i*16, &accA0, &accA1, &accA2, &accA3);
-                    }
-                }
-
-                // Section 2: qs[32..47], 5 trits/byte -> 80 values
-                for (int n = 0; n < 5; n++) {
-                    uint8x16_t raw = vld1q_u8(blk->qs + 32);
-                    uint8x16_t q = vmulq_u8(raw, vdupq_n_u8(pow3[n]));
+            // Section 1: qs[0..31], 5 trits/byte -> 160 values
+            for (int n = 0; n < 5; n++) {
+                uint8x16_t pow3_vec = vdupq_n_u8(pow3[n]);
+                for (int i = 0; i < 2; i++) {
+                    uint8x16_t raw = vld1q_u8(blk->qs + i * 16);
+                    uint8x16_t q = vmulq_u8(raw, pow3_vec);
                     uint8x8_t xi_lo = vshrn_n_u16(vmull_u8(vget_low_u8(q), three_u8), 8);
                     uint8x8_t xi_hi = vshrn_n_u16(vmull_u8(vget_high_u8(q), three_u8), 8);
                     int8x16_t ternary = vsubq_s8(vreinterpretq_s8_u8(vcombine_u8(xi_lo, xi_hi)), one_s8);
                     if (acc_flip++ & 1)
-                        neon_acc_i8x16_f32(ternary, xb + 160 + n*16, &accB0, &accB1, &accB2, &accB3);
+                        neon_acc_i8x16_f32(ternary, xb + n*32 + i*16, &accB0, &accB1, &accB2, &accB3);
                     else
-                        neon_acc_i8x16_f32(ternary, xb + 160 + n*16, &accA0, &accA1, &accA2, &accA3);
+                        neon_acc_i8x16_f32(ternary, xb + n*32 + i*16, &accA0, &accA1, &accA2, &accA3);
                 }
-
-                block_sum = neon_reduce4(accA0, accA1, accA2, accA3) +
-                            neon_reduce4(accB0, accB1, accB2, accB3);
-
-                // Section 3: qh[0..3], 4 trits/byte -> 16 values (scalar)
-                for (int n = 0; n < 4; n++) {
-                    for (int m = 0; m < 4; m++) {
-                        uint8_t q = blk->qh[m] * pow3[n];
-                        int16_t xi = ((uint16_t)q * 3) >> 8;
-                        block_sum += (xi - 1) * xb[240 + n*4 + m];
-                    }
-                }
-#else
-                // Section 1: qs[0..31], 5 trits/byte -> 160 values
-                for (int n = 0; n < 5; n++) {
-                    for (int m = 0; m < 32; m++) {
-                        uint8_t q = blk->qs[m] * pow3[n];
-                        int16_t xi = ((uint16_t)q * 3) >> 8;
-                        block_sum += (xi - 1) * xb[n*32 + m];
-                    }
-                }
-
-                // Section 2: qs[32..47], 5 trits/byte -> 80 values
-                for (int n = 0; n < 5; n++) {
-                    for (int m = 0; m < 16; m++) {
-                        uint8_t q = blk->qs[32 + m] * pow3[n];
-                        int16_t xi = ((uint16_t)q * 3) >> 8;
-                        block_sum += (xi - 1) * xb[160 + n*16 + m];
-                    }
-                }
-
-                // Section 3: qh[0..3], 4 trits/byte -> 16 values
-                for (int n = 0; n < 4; n++) {
-                    for (int m = 0; m < 4; m++) {
-                        uint8_t q = blk->qh[m] * pow3[n];
-                        int16_t xi = ((uint16_t)q * 3) >> 8;
-                        block_sum += (xi - 1) * xb[240 + n*4 + m];
-                    }
-                }
-#endif
-                row_sum += block_sum * d;
             }
-            out[row] = row_sum * tensor_scale;
+
+            // Section 2: qs[32..47], 5 trits/byte -> 80 values
+            for (int n = 0; n < 5; n++) {
+                uint8x16_t raw = vld1q_u8(blk->qs + 32);
+                uint8x16_t q = vmulq_u8(raw, vdupq_n_u8(pow3[n]));
+                uint8x8_t xi_lo = vshrn_n_u16(vmull_u8(vget_low_u8(q), three_u8), 8);
+                uint8x8_t xi_hi = vshrn_n_u16(vmull_u8(vget_high_u8(q), three_u8), 8);
+                int8x16_t ternary = vsubq_s8(vreinterpretq_s8_u8(vcombine_u8(xi_lo, xi_hi)), one_s8);
+                if (acc_flip++ & 1)
+                    neon_acc_i8x16_f32(ternary, xb + 160 + n*16, &accB0, &accB1, &accB2, &accB3);
+                else
+                    neon_acc_i8x16_f32(ternary, xb + 160 + n*16, &accA0, &accA1, &accA2, &accA3);
+            }
+
+            block_sum = neon_reduce4(accA0, accA1, accA2, accA3) +
+                        neon_reduce4(accB0, accB1, accB2, accB3);
+
+            // Section 3: qh[0..3], 4 trits/byte -> 16 values (scalar)
+            for (int n = 0; n < 4; n++) {
+                for (int m = 0; m < 4; m++) {
+                    uint8_t q = blk->qh[m] * pow3[n];
+                    int16_t xi = ((uint16_t)q * 3) >> 8;
+                    block_sum += (xi - 1) * xb[240 + n*4 + m];
+                }
+            }
+#else
+            // Section 1: qs[0..31], 5 trits/byte -> 160 values
+            for (int n = 0; n < 5; n++) {
+                for (int m = 0; m < 32; m++) {
+                    uint8_t q = blk->qs[m] * pow3[n];
+                    int16_t xi = ((uint16_t)q * 3) >> 8;
+                    block_sum += (xi - 1) * xb[n*32 + m];
+                }
+            }
+
+            // Section 2: qs[32..47], 5 trits/byte -> 80 values
+            for (int n = 0; n < 5; n++) {
+                for (int m = 0; m < 16; m++) {
+                    uint8_t q = blk->qs[32 + m] * pow3[n];
+                    int16_t xi = ((uint16_t)q * 3) >> 8;
+                    block_sum += (xi - 1) * xb[160 + n*16 + m];
+                }
+            }
+
+            // Section 3: qh[0..3], 4 trits/byte -> 16 values
+            for (int n = 0; n < 4; n++) {
+                for (int m = 0; m < 4; m++) {
+                    uint8_t q = blk->qh[m] * pow3[n];
+                    int16_t xi = ((uint16_t)q * 3) >> 8;
+                    block_sum += (xi - 1) * xb[240 + n*4 + m];
+                }
+            }
+#endif
+            row_sum += block_sum * d;
         }
+        c->out[row] = row_sum * tensor_scale;
+    }
+}
+
+// --- Ternary matrix-vector multiply ---
+// out[rows] = W[rows x cols] @ x[cols]
+
+void ternary_matvec(float *out, const QWeight *W, const float *x,
+                     int8_t *x_q_buf, ThreadPool *pool) {
+
+    if (W->type == GGUF_TENSOR_I2_S) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        // SDOT path: quantize x once, then use integer dot products
+        float x_scale = quantize_x_to_i8(x, x_q_buf, W->cols);
+        I2SCtx ctx = { out, W, x_q_buf, W->scale * x_scale };
+        TPTask task = { i2s_sdot_range, &ctx, W->rows };
+        tp_dispatch(pool, &task, 1);
+#elif defined(__ARM_NEON)
+        (void)x_q_buf;
+        I2SFloatCtx ctx = { out, W, x };
+        TPTask task = { i2s_neon_range, &ctx, W->rows };
+        tp_dispatch(pool, &task, 1);
+#else
+        (void)x_q_buf;
+        I2SFloatCtx ctx = { out, W, x };
+        TPTask task = { i2s_scalar_range, &ctx, W->rows };
+        tp_dispatch(pool, &task, 1);
+#endif
+        return;
+    }
+
+    if (W->type == GGUF_TENSOR_TQ2_0) {
+        (void)x_q_buf;
+        TQ2Ctx ctx = { out, W, x };
+        TPTask task = { tq2_range, &ctx, W->rows };
+        tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    // TQ1_0
+    {
+        (void)x_q_buf;
+        TQ1Ctx ctx = { out, W, x };
+        TPTask task = { tq1_range, &ctx, W->rows };
+        tp_dispatch(pool, &task, 1);
     }
 }
 
 // --- Batch ternary matvec ---
-// Runs multiple independent matvecs with a single OMP parallel region.
+// Runs multiple independent matvecs with a single dispatch.
 
 void ternary_matvec_batch(const MatvecTask *tasks, int n_tasks,
-                           const float *x, int8_t *x_q_buf) {
+                           const float *x, int8_t *x_q_buf, ThreadPool *pool) {
     if (n_tasks <= 0) return;
 
-    // Check if all tasks are I2_S (for SDOT fast path)
     int cols = tasks[0].W->cols;
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     int all_i2s = 1;
     for (int t = 0; t < n_tasks; t++) {
-        if (tasks[t].W->type != 36) { all_i2s = 0; break; }
+        if (tasks[t].W->type != GGUF_TENSOR_I2_S) { all_i2s = 0; break; }
     }
 
     if (all_i2s) {
+        assert(n_tasks <= 4 && "ternary_matvec_batch: max 4 tasks");
+
         // Quantize x to int8 once, shared across all tasks
         float x_scale = quantize_x_to_i8(x, x_q_buf, cols);
 
-        #ifdef _OPENMP
-        #pragma omp parallel
-        #endif
-        {
-            for (int t = 0; t < n_tasks; t++) {
-                i2s_matvec_sdot(tasks[t].out, tasks[t].W, x_q_buf, x_scale);
-            }
-        }
-        return;
-    }
-#else
-    (void)x_q_buf;  // unused on non-DOTPROD platforms
-#endif
+        // Build one TPTask per matvec task
+        I2SCtx ctxs[4];
+        TPTask tp_tasks[4];
 
-    // Fallback: use existing per-task matvec (each forks its own OMP region)
-    for (int t = 0; t < n_tasks; t++) {
-        ternary_matvec(tasks[t].out, tasks[t].W, x);
-    }
-}
-
-// --- Inner batch matvec (for use inside persistent OMP parallel region) ---
-// Must be called from within #pragma omp parallel.
-// Uses omp single for serial quantization, omp for nowait for SDOT rows,
-// and omp barrier to ensure all outputs are complete.
-
-void ternary_matvec_batch_inner(const MatvecTask *tasks, int n_tasks,
-                                 const float *x, int8_t *x_q_buf,
-                                 float *x_scale_out) {
-    if (n_tasks <= 0) return;
-
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-    int all_i2s = 1;
-    for (int t = 0; t < n_tasks; t++) {
-        if (tasks[t].W->type != 36) { all_i2s = 0; break; }
-    }
-
-    if (all_i2s) {
-        int cols = tasks[0].W->cols;
-
-        // One thread quantizes x; implicit barrier makes x_q_buf visible to all
-        #ifdef _OPENMP
-        #pragma omp single
-        #endif
-        {
-            *x_scale_out = quantize_x_to_i8(x, x_q_buf, cols);
-        }
-
-        float x_scale = *x_scale_out;
         for (int t = 0; t < n_tasks; t++) {
-            i2s_matvec_sdot(tasks[t].out, tasks[t].W, x_q_buf, x_scale);
+            ctxs[t] = (I2SCtx){ tasks[t].out, tasks[t].W, x_q_buf,
+                                tasks[t].W->scale * x_scale };
+            tp_tasks[t] = (TPTask){ i2s_sdot_range, &ctxs[t], tasks[t].W->rows };
         }
 
-        #ifdef _OPENMP
-        #pragma omp barrier
-        #endif
+        tp_dispatch(pool, tp_tasks, n_tasks);
         return;
     }
 #else
     (void)x_q_buf;
-    (void)x_scale_out;
+    (void)cols;
 #endif
 
-    // Fallback: serialize (non-I2S types, rare in production)
-    #ifdef _OPENMP
-    #pragma omp single
-    #endif
-    {
-        for (int t = 0; t < n_tasks; t++) {
-            ternary_matvec(tasks[t].out, tasks[t].W, x);
-        }
+    // Fallback: use existing per-task matvec
+    for (int t = 0; t < n_tasks; t++) {
+        ternary_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
     }
 }
