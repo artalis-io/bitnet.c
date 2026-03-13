@@ -3,6 +3,9 @@
 
 #include "gguf.h"
 
+#define BN_BPE_UNICODE_OFFSET  0x100    // non-printable bytes → U+0100..U+0143
+#define BN_BPE_UNICODE_END     0x143
+
 typedef struct {
     char  **vocab;
     float  *scores;

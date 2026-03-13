@@ -1,4 +1,5 @@
 #include "tokenizer.h"
+#include "sh_log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,14 +64,14 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
 
     t->vocab_size = (int)bn_gguf_get_arr_n(f, "tokenizer.ggml.tokens");
     if (t->vocab_size == 0) {
-        fprintf(stderr, "tokenizer: no tokens found in GGUF\n");
+        SH_LOG_ERROR("No tokens found in GGUF");
         return -1;
     }
 
     // #16: Check all allocations
     t->vocab = (char **)malloc(t->vocab_size * sizeof(char *));
     if (!t->vocab) {
-        fprintf(stderr, "tokenizer: failed to allocate vocab\n");
+        SH_LOG_ERROR("Failed to allocate vocab");
         return -1;
     }
     t->max_token_length = 0;
@@ -187,13 +188,13 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
             // Non-printable byte: maps to U+0100..U+0143
             int cp;
             if (byte <= 0x20) {
-                cp = 0x100 + byte;           // 0x00-0x20 → U+0100-U+0120
+                cp = BN_BPE_UNICODE_OFFSET + byte;  // 0x00-0x20 → U+0100-U+0120
             } else if (byte == 0x7F) {
-                cp = 0x121;                   // DEL → U+0121
+                cp = 0x121;                          // DEL → U+0121
             } else if (byte >= 0x80 && byte <= 0xA0) {
-                cp = 0x122 + (byte - 0x80);  // 0x80-0xA0 → U+0122-U+0142
+                cp = 0x122 + (byte - 0x80);          // 0x80-0xA0 → U+0122-U+0142
             } else {
-                cp = 0x143;                   // 0xAD → U+0143
+                cp = BN_BPE_UNICODE_END;              // 0xAD → U+0143
             }
             bpe_char[0] = (char)(0xC0 | (cp >> 6));
             bpe_char[1] = (char)(0x80 | (cp & 0x3F));
@@ -311,7 +312,8 @@ static int decode_bpe_cp(const unsigned char **p) {
         if (cp >= 0xA1 && cp <= 0xAC) return cp;
         if (cp >= 0xAE && cp <= 0xFF) return cp;
         // Non-printable byte mapping (U+0100..U+0143)
-        if (cp >= 0x100 && cp <= 0x143) return bpe_n2b[cp - 0x100];
+        if (cp >= BN_BPE_UNICODE_OFFSET && cp <= BN_BPE_UNICODE_END)
+            return bpe_n2b[cp - BN_BPE_UNICODE_OFFSET];
         return cp;  // other codepoints: return as-is
     }
     // 3+ byte UTF-8: skip and return first byte

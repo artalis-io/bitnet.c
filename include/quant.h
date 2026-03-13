@@ -6,6 +6,20 @@
 
 #define BN_QK_K 256
 
+// FP16 bit field constants
+#define BN_FP16_SIGN_MASK    0x8000
+#define BN_FP16_EXP_MASK     0x1F
+#define BN_FP16_MANT_MASK    0x03FF
+#define BN_FP16_HIDDEN_BIT   0x0400
+#define BN_FP16_INF          0x7C00
+#define BN_FP16_EXP_REBIAS   112        // FP32 bias (127) - FP16 bias (15)
+#define BN_FP32_EXP_INF      0x7F800000
+#define BN_FP32_MANT_MASK    0x007FFFFF
+
+#define BN_I8_MAX             127
+#define BN_I2S_BLOCK_ELEMS   128         // elements per I2S interleaved block
+#define BN_I2S_SUBROW_SIZE   32          // elements per sub-row
+
 // TQ1_0: base-3 ternary packing, 256 weights per block
 // qs packs 240 values (5 per byte in base-3), qh packs remaining 16 (4 per byte)
 // Total: 48 + 4 + 2 = 54 bytes per 256-element block (1.6875 bpw)

@@ -206,12 +206,14 @@ static void test_sampler_edge_cases(void) {
     float logits[] = {1.0f, 3.0f, 2.0f, 0.5f};
     int tok = bn_sampler_sample(&s, logits);
     assert(tok == 1);  // argmax should pick index 1
+    bn_sampler_free(&s);
 
     // Test with vocab_size=1
     bn_sampler_init(&s, 1, 0.5f, 0.9f, 42);
     float logits1[] = {5.0f};
     tok = bn_sampler_sample(&s, logits1);
     assert(tok == 0);
+    bn_sampler_free(&s);
 
     printf("PASSED\n");
 }

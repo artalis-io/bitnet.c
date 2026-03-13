@@ -1,4 +1,5 @@
 #include "gguf.h"
+#include "sh_log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +69,7 @@ static char *read_string(Reader *r) {
     uint64_t len = read_u64(r);
     if (r->error || !reader_ok(r, len)) { r->error = 1; return NULL; }
     // #22: Guard against huge len causing malloc issues
-    if (len > (uint64_t)1 << 30) { r->error = 1; return NULL; }
+    if (len > BN_GGUF_MAX_STRING_LEN) { r->error = 1; return NULL; }
     char *s = (char *)malloc((size_t)len + 1);
     if (!s) { r->error = 1; return NULL; }
     memcpy(s, r->buf + r->pos, (size_t)len);
@@ -82,7 +83,7 @@ static BnGGUFString read_gguf_string(Reader *r) {
     BnGGUFString s = {0};
     s.len = read_u64(r);
     if (r->error || !reader_ok(r, s.len)) { r->error = 1; return s; }
-    if (s.len > (uint64_t)1 << 30) { r->error = 1; return s; }
+    if (s.len > BN_GGUF_MAX_STRING_LEN) { r->error = 1; return s; }
     s.str = (char *)malloc((size_t)s.len + 1);
     if (!s.str) { r->error = 1; s.len = 0; return s; }
     memcpy(s.str, r->buf + r->pos, (size_t)s.len);
@@ -169,8 +170,9 @@ BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size) {
     if (!reader_ok(&r, 4 + 4 + 8 + 8)) return NULL;
 
     uint32_t magic = read_u32(&r);
-    if (magic != 0x46554747) {  // "GGUF" in little-endian
-        fprintf(stderr, "gguf: bad magic 0x%08x\n", magic);
+    if (magic != BN_GGUF_MAGIC) {
+        char buf[16]; snprintf(buf, sizeof(buf), "0x%08x", magic);
+        SH_LOG_ERROR("Bad GGUF magic", "got", buf);
         return NULL;
     }
 
@@ -181,18 +183,18 @@ BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size) {
     f->version = read_u32(&r);
     f->n_tensors = read_u64(&r);
     f->n_kv = read_u64(&r);
-    f->alignment = 32;  // default
+    f->alignment = BN_GGUF_DEFAULT_ALIGNMENT;
 
     if (f->version < 2 || f->version > 3) {
-        fprintf(stderr, "gguf: unsupported version %u\n", f->version);
+        char buf[16]; snprintf(buf, sizeof(buf), "%u", f->version);
+        SH_LOG_ERROR("Unsupported GGUF version", "version", buf);
         free(f);
         return NULL;
     }
 
     // #22: Sanity check counts to avoid huge allocations from malicious files
-    if (f->n_kv > (uint64_t)1 << 20 || f->n_tensors > (uint64_t)1 << 20) {
-        fprintf(stderr, "gguf: unreasonable counts (kv=%llu tensors=%llu)\n",
-                (unsigned long long)f->n_kv, (unsigned long long)f->n_tensors);
+    if (f->n_kv > BN_GGUF_MAX_COUNT || f->n_tensors > BN_GGUF_MAX_COUNT) {
+        SH_LOG_ERROR("Unreasonable GGUF counts");
         free(f);
         return NULL;
     }
@@ -226,11 +228,10 @@ BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size) {
         f->tensors[i].n_dims = read_u32(&r);
         if (r.error) goto fail;
 
-        // #11: Validate n_dims <= 4 to prevent dims[] buffer overflow
-        if (f->tensors[i].n_dims > 4) {
-            fprintf(stderr, "gguf: tensor '%s' has %u dims (max 4)\n",
-                    f->tensors[i].name ? f->tensors[i].name : "?",
-                    f->tensors[i].n_dims);
+        // #11: Validate n_dims to prevent dims[] buffer overflow
+        if (f->tensors[i].n_dims > BN_GGUF_MAX_DIMS) {
+            SH_LOG_ERROR("Tensor has too many dims",
+                         "tensor", f->tensors[i].name ? f->tensors[i].name : "?");
             goto fail;
         }
 

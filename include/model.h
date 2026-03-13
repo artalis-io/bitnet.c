@@ -5,6 +5,10 @@
 #include "gguf.h"
 #include "quant.h"
 #include "threadpool.h"
+#include "sh_arena.h"
+
+#define BN_DEFAULT_ROPE_THETA  10000.0f
+#define BN_DEFAULT_NORM_EPS    1e-5f
 
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
@@ -46,6 +50,7 @@ typedef struct {
     BnRunState state;
     BnMappedFile file;  // keeps mmap/buffer alive
     BnThreadPool *pool; // thread pool for parallel dispatch
+    SHArena *arena;     // arena for all RunState buffers
 } BnModel;
 
 int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len);

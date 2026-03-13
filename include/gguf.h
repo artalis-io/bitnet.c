@@ -4,6 +4,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define BN_GGUF_MAGIC              0x46554747   // "GGUF" little-endian
+#define BN_GGUF_MAX_DIMS           4
+#define BN_GGUF_DEFAULT_ALIGNMENT  32
+#define BN_GGUF_MAX_STRING_LEN     ((uint64_t)1 << 30)
+#define BN_GGUF_MAX_COUNT          ((uint64_t)1 << 20)
+
 // GGUF value types
 enum {
     BN_GGUF_TYPE_UINT8   = 0,

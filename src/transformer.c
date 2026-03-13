@@ -1,4 +1,5 @@
 #include "transformer.h"
+#include "sh_log.h"
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -240,13 +241,13 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
 
     // #9: Validate token bounds
     if (token < 0 || token >= c->vocab_size) {
-        fprintf(stderr, "transformer: token %d out of range [0, %d)\n", token, c->vocab_size);
+        SH_LOG_ERROR("Token out of range");
         return NULL;
     }
 
     // #10: Validate pos bounds to prevent KV-cache OOB write
     if (pos < 0 || pos >= c->seq_len) {
-        fprintf(stderr, "transformer: pos %d out of range [0, %d)\n", pos, c->seq_len);
+        SH_LOG_ERROR("Position out of range");
         return NULL;
     }
 
@@ -392,12 +393,14 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
         for (int i = 0; i < dim; i++) s->x[i] += s->xb[i];
 #endif
 
-        #ifdef DEBUG
         if (l == 0 && pos == 0) {
-            fprintf(stderr, "debug: layer 0 pos 0 x[0..3] = %.6f %.6f %.6f %.6f\n",
-                    s->x[0], s->x[1], s->x[2], s->x[3]);
+            char v0[16], v1[16], v2[16], v3[16];
+            snprintf(v0, sizeof(v0), "%.6f", s->x[0]);
+            snprintf(v1, sizeof(v1), "%.6f", s->x[1]);
+            snprintf(v2, sizeof(v2), "%.6f", s->x[2]);
+            snprintf(v3, sizeof(v3), "%.6f", s->x[3]);
+            SH_LOG_DEBUG("Layer 0 pos 0", "x0", v0, "x1", v1, "x2", v2, "x3", v3);
         }
-        #endif
     }
 
     // Final RMSNorm

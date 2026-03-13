@@ -32,9 +32,9 @@ static inline float neon_reduce4(float32x4_t a, float32x4_t b,
 // --- FP16 <-> FP32 conversion ---
 
 float bn_fp16_to_fp32(uint16_t h) {
-    uint32_t sign = (uint32_t)(h & 0x8000) << 16;
-    uint32_t exp  = (h >> 10) & 0x1F;
-    uint32_t mant = h & 0x03FF;
+    uint32_t sign = (uint32_t)(h & BN_FP16_SIGN_MASK) << 16;
+    uint32_t exp  = (h >> 10) & BN_FP16_EXP_MASK;
+    uint32_t mant = h & BN_FP16_MANT_MASK;
     uint32_t f;
 
     if (exp == 0) {
@@ -42,17 +42,15 @@ float bn_fp16_to_fp32(uint16_t h) {
             f = sign;  // +/-0
         } else {
             // #37: Subnormal: normalize by shifting mantissa left until hidden bit appears.
-            // At most 10 shifts (10 mantissa bits), so exp goes from 1 down to at most -9.
-            // Result: exp+112 ranges from 103 to 113, always valid for float32 exponent.
             exp = 1;
-            while (!(mant & 0x0400)) { mant <<= 1; exp--; }
-            mant &= 0x03FF;
-            f = sign | ((uint32_t)(exp + 112) << 23) | ((uint32_t)mant << 13);
+            while (!(mant & BN_FP16_HIDDEN_BIT)) { mant <<= 1; exp--; }
+            mant &= BN_FP16_MANT_MASK;
+            f = sign | ((uint32_t)(exp + BN_FP16_EXP_REBIAS) << 23) | ((uint32_t)mant << 13);
         }
     } else if (exp == 31) {
-        f = sign | 0x7F800000 | ((uint32_t)mant << 13);  // Inf/NaN
+        f = sign | BN_FP32_EXP_INF | ((uint32_t)mant << 13);  // Inf/NaN
     } else {
-        f = sign | ((uint32_t)(exp + 112) << 23) | ((uint32_t)mant << 13);
+        f = sign | ((uint32_t)(exp + BN_FP16_EXP_REBIAS) << 23) | ((uint32_t)mant << 13);
     }
 
     float result;
@@ -64,12 +62,12 @@ uint16_t bn_fp32_to_fp16(float val) {
     uint32_t f;
     memcpy(&f, &val, 4);
 
-    uint32_t sign = (f >> 16) & 0x8000;
+    uint32_t sign = (f >> 16) & BN_FP16_SIGN_MASK;
     int32_t  exp  = ((f >> 23) & 0xFF) - 127;
-    uint32_t mant = f & 0x007FFFFF;
+    uint32_t mant = f & BN_FP32_MANT_MASK;
 
     if (exp > 15) {
-        return (uint16_t)(sign | 0x7C00);  // Inf
+        return (uint16_t)(sign | BN_FP16_INF);  // Inf
     } else if (exp < -14) {
         return (uint16_t)sign;  // Zero (flush subnormals)
     } else {
@@ -201,8 +199,8 @@ float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n) {
         return 0.0f;
     }
 
-    float scale = amax / 127.0f;
-    float inv_scale = 127.0f / amax;
+    float scale = amax / (float)BN_I8_MAX;
+    float inv_scale = (float)BN_I8_MAX / amax;
     float32x4_t vinv = vdupq_n_f32(inv_scale);
 
     i = 0;
@@ -223,7 +221,7 @@ float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n) {
     }
     for (; i < n; i++) {
         int v = (int)roundf(x[i] * inv_scale);
-        x_q[i] = (int8_t)(v < -127 ? -127 : (v > 127 ? 127 : v));
+        x_q[i] = (int8_t)(v < -BN_I8_MAX ? -BN_I8_MAX : (v > BN_I8_MAX ? BN_I8_MAX : v));
     }
     return scale;
 }
