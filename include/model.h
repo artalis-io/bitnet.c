@@ -16,6 +16,7 @@ typedef struct {
     float rope_theta, norm_eps;
     int head_size, kv_dim, kv_mul;  // derived
     int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU²
+    int flash_attn;                 // use flash attention (online softmax)
 } BnConfig;
 
 typedef struct {

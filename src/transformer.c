@@ -54,7 +54,7 @@ static void softmax(float *x, int size) {
     for (int i = 0; i < size; i++) x[i] /= sum;
 }
 
-// --- GQA attention range function ---
+// --- GQA context (shared by both attention paths) ---
 
 typedef struct {
     const BnConfig *c;
@@ -123,6 +123,86 @@ static void gqa_range(void *ctx, int h_start, int h_end) {
         }
     }
 }
+
+// --- Flash GQA attention (online softmax, per-head, single-pass) ---
+
+#ifdef __ARM_NEON
+#define FLASH_ATTN_TILE 64
+
+static void flash_gqa_range(void *ctx, int h_start, int h_end) {
+    GQACtx *g = (GQACtx *)ctx;
+    BnRunState *s = g->s;
+    int head_size = g->head_size;
+    int kv_dim = g->kv_dim;
+    int kv_mul = g->kv_mul;
+    int pos = g->pos;
+    size_t loff = g->loff;
+    int n_pos = pos + 1;
+    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+
+    for (int h = h_start; h < h_end; h++) {
+        float *q_h = s->q + h * head_size;
+        int kv_h = h / kv_mul;
+
+        // Stack-allocated online softmax state
+        float out_buf[head_size];
+        memset(out_buf, 0, head_size * sizeof(float));
+        float running_max = -INFINITY;
+        float running_sum = 0.0f;
+
+        // Single pass over KV cache in tiles
+        for (int t_start = 0; t_start < n_pos; t_start += FLASH_ATTN_TILE) {
+            int t_end = t_start + FLASH_ATTN_TILE;
+            if (t_end > n_pos) t_end = n_pos;
+
+            for (int t = t_start; t < t_end; t++) {
+                float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+
+                if (t + 1 < t_end)
+                    __builtin_prefetch(s->key_cache + loff + (size_t)(t+1) * kv_dim + kv_h * head_size, 0, 0);
+
+                // Score: dot(Q, K) * scale
+                float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
+                float32x4_t a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+                for (int d = 0; d < head_size; d += 16) {
+                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vld1q_f32(k_t + d));
+                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vld1q_f32(k_t + d + 4));
+                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
+                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
+                }
+                float score = neon_hsum_f32(vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3))) * inv_sqrt_hs;
+
+                // Online softmax update
+                float *v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                __builtin_prefetch(v_t, 0, 0);
+
+                float old_max = running_max;
+                if (score > old_max) {
+                    float rescale = expf(old_max - score);
+                    running_max = score;
+                    running_sum *= rescale;
+                    float32x4_t rs = vdupq_n_f32(rescale);
+                    for (int d = 0; d < head_size; d += 4)
+                        vst1q_f32(out_buf + d, vmulq_f32(vld1q_f32(out_buf + d), rs));
+                }
+
+                float w = expf(score - running_max);
+                running_sum += w;
+                float32x4_t wv = vdupq_n_f32(w);
+                for (int d = 0; d < head_size; d += 4)
+                    vst1q_f32(out_buf + d, vmlaq_f32(vld1q_f32(out_buf + d), wv, vld1q_f32(v_t + d)));
+            }
+        }
+
+        // Finalize: output = out_buf / running_sum
+        float *xb_h = s->xb + h * head_size;
+        float inv_sum = 1.0f / running_sum;
+        float32x4_t is = vdupq_n_f32(inv_sum);
+        for (int d = 0; d < head_size; d += 4)
+            vst1q_f32(xb_h + d, vmulq_f32(vld1q_f32(out_buf + d), is));
+    }
+}
+#endif // __ARM_NEON
 
 // --- Logits range functions ---
 
@@ -339,7 +419,12 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
         // GQA attention
         {
             GQACtx gctx = { c, s, loff, pos, kv_mul, head_size, kv_dim };
-            BnTPTask gqa = { gqa_range, &gctx, c->n_heads };
+#ifdef __ARM_NEON
+            bn_tp_fn attn_fn = c->flash_attn ? flash_gqa_range : gqa_range;
+#else
+            bn_tp_fn attn_fn = gqa_range;
+#endif
+            BnTPTask gqa = { attn_fn, &gctx, c->n_heads };
             bn_tp_dispatch(m->pool, &gqa, 1);
         }
 

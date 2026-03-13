@@ -24,6 +24,7 @@ typedef struct {
     float topp;
     uint64_t seed;
     int max_seq_len;
+    int flash_attn;
 } CLIArgs;
 
 static void print_usage(const char *prog) {
@@ -35,6 +36,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --topp <float>  Top-p sampling (default: 0.9)\n");
     fprintf(stderr, "  --seed <int>    Random seed (default: 42)\n");
     fprintf(stderr, "  --maxseq <int>  Max sequence length (default: model max)\n");
+    fprintf(stderr, "  --flash         Use flash attention (online softmax)\n");
 }
 
 static CLIArgs parse_args(int argc, char **argv) {
@@ -66,6 +68,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.seed = (uint64_t)atoll(argv[++i]);
         } else if (strcmp(argv[i], "--maxseq") == 0 && i + 1 < argc) {
             args.max_seq_len = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--flash") == 0) {
+            args.flash_attn = 1;
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -132,6 +136,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     model.file = mf;  // keep mmap alive
+    model.config.flash_attn = args.flash_attn;
 
     // Create thread pool
     model.pool = bn_tp_create(n_workers);
