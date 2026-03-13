@@ -346,7 +346,9 @@ static void logits_f32_range(void *ctx, int v_start, int v_end) {
 
 // --- Forward pass ---
 
-float *bn_transformer_forward(BnModel *m, int token, int pos) {
+// Embed + all layers (attention + FFN). Populates KV cache at `pos`.
+// Leaves final activation in s->x. Returns 0 on success, -1 on error.
+static int forward_layers(BnModel *m, int token, int pos) {
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &m->state;
@@ -359,13 +361,13 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
     // #9: Validate token bounds
     if (token < 0 || token >= c->vocab_size) {
         SH_LOG_ERROR("Token out of range");
-        return NULL;
+        return -1;
     }
 
     // #10: Validate pos bounds to prevent KV-cache OOB write
     if (pos < 0 || pos >= c->seq_len) {
         SH_LOG_ERROR("Position out of range");
-        return NULL;
+        return -1;
     }
 
     // Embed the token
@@ -525,6 +527,17 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
         }
     }
 
+    return 0;
+}
+
+// Final RMSNorm + logits computation. Reads s->x, writes s->logits.
+// Returns s->logits.
+static float *forward_logits(BnModel *m) {
+    BnConfig *c = &m->config;
+    BnWeights *w = &m->weights;
+    BnRunState *s = &m->state;
+    int dim = c->dim;
+
     // Final RMSNorm
     rmsnorm(s->x, s->x, w->output_norm, dim, c->norm_eps);
 
@@ -572,4 +585,17 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
     }
 
     return s->logits;
+}
+
+float *bn_transformer_forward(BnModel *m, int token, int pos) {
+    if (forward_layers(m, token, pos) != 0) return NULL;
+    return forward_logits(m);
+}
+
+float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int pos0) {
+    if (n_tokens <= 0) return NULL;
+    for (int i = 0; i < n_tokens; i++) {
+        if (forward_layers(m, tokens[i], pos0 + i) != 0) return NULL;
+    }
+    return forward_logits(m);
 }

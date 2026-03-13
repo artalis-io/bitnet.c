@@ -29,6 +29,7 @@ typedef struct {
     int temp_set;       // whether user explicitly set --temp
     float repeat_penalty;
     int repeat_set;     // whether user explicitly set --repeat-penalty
+    int no_prefill;
 } CLIArgs;
 
 static void print_usage(const char *prog) {
@@ -43,6 +44,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --flash         Use flash attention (online softmax)\n");
     fprintf(stderr, "  --chat          Interactive chat REPL mode\n");
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.0, chat: 1.1)\n");
+    fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
 }
 
 static CLIArgs parse_args(int argc, char **argv) {
@@ -79,6 +81,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.flash_attn = 1;
         } else if (strcmp(argv[i], "--chat") == 0) {
             args.chat = 1;
+        } else if (strcmp(argv[i], "--no-prefill") == 0) {
+            args.no_prefill = 1;
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
             args.repeat_penalty = (float)atof(argv[++i]);
             args.repeat_set = 1;
@@ -258,10 +262,15 @@ int main(int argc, char **argv) {
 
             // Feed prompt tokens through forward pass
             float *logits = NULL;
-            for (int i = 0; i < n; i++) {
-                if (pos >= cfg->seq_len - 1) break;
-                logits = bn_transformer_forward(&model, tokens[i], pos);
-                pos++;
+            if (!args.no_prefill && n > 1 && pos + n < cfg->seq_len) {
+                logits = bn_transformer_prefill(&model, tokens, n, pos);
+                pos += n;
+            } else {
+                for (int i = 0; i < n; i++) {
+                    if (pos >= cfg->seq_len - 1) break;
+                    logits = bn_transformer_forward(&model, tokens[i], pos);
+                    pos++;
+                }
             }
 
             if (!logits) {
@@ -354,46 +363,51 @@ int main(int argc, char **argv) {
             SH_LOG_INFO("Starting generation", "n_tokens", nt);
         }
         double gen_start = bn_platform_time_ms();
-        int token = prompt_tokens[0];
         int pos = 0;
         int n_generated = 0;
+        float *logits;
 
-        for (int i = 0; i < n_prompt + args.n_tokens; i++) {
-            float *logits = bn_transformer_forward(&model, token, pos);
-            if (!logits) {
-                SH_LOG_ERROR("Forward pass returned NULL");
-                break;
+        // Prefill prompt tokens (skip logits for intermediate tokens)
+        if (!args.no_prefill && n_prompt > 1) {
+            logits = bn_transformer_prefill(&model, prompt_tokens, n_prompt, 0);
+            pos = n_prompt;
+        } else {
+            logits = NULL;
+            for (int i = 0; i < n_prompt; i++) {
+                logits = bn_transformer_forward(&model, prompt_tokens[i], i);
             }
+            pos = n_prompt;
+        }
 
-            int next;
-            if (i < n_prompt - 1) {
-                // Still in prompt: force-feed next prompt token
-                next = prompt_tokens[i + 1];
-            } else {
-                // Generate
-                next = bn_sampler_sample(&sampler, logits);
+        if (!logits) {
+            SH_LOG_ERROR("Forward pass returned NULL during prompt");
+        } else {
+            // Generate tokens
+            for (int i = 0; i < args.n_tokens; i++) {
+                int next = bn_sampler_sample(&sampler, logits);
                 n_generated++;
 
                 // Check for EOS/EOT
                 if (next == tokenizer.eos_id || next == tokenizer.eot_id) {
                     break;
                 }
-            }
 
-            // Print token (skip BOS)
-            if (i >= n_prompt - 1) {
                 const char *piece = bn_tokenizer_decode(&tokenizer, next);
                 if (!piece) piece = "";
                 printf("%s", piece);
                 fflush(stdout);
-            }
 
-            token = next;
-            pos++;
+                if (pos >= cfg->seq_len) {
+                    SH_LOG_WARN("Reached max sequence length");
+                    break;
+                }
 
-            if (pos >= cfg->seq_len) {
-                SH_LOG_WARN("Reached max sequence length");
-                break;
+                logits = bn_transformer_forward(&model, next, pos);
+                pos++;
+                if (!logits) {
+                    SH_LOG_ERROR("Forward pass returned NULL");
+                    break;
+                }
             }
         }
 
