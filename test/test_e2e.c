@@ -23,41 +23,41 @@ int main(int argc, char **argv) {
     printf("=== E2E Test ===\n");
     printf("Loading %s...\n", argv[1]);
 
-    MappedFile mf = platform_load_file(argv[1]);
+    BnMappedFile mf = bn_platform_load_file(argv[1]);
     if (!mf.data) {
         fprintf(stderr, "Failed to load file\n");
         return 1;
     }
 
-    GGUFFile *gf = gguf_open(mf.data, mf.size);
+    BnGGUFFile *gf = bn_gguf_open(mf.data, mf.size);
     if (!gf) {
         fprintf(stderr, "Failed to parse GGUF\n");
         return 1;
     }
 
-    Model model;
-    if (model_load(&model, gf, 2048) != 0) {
+    BnModel model;
+    if (bn_model_load(&model, gf, 2048, 0) != 0) {
         fprintf(stderr, "Failed to load model\n");
         return 1;
     }
     model.file = mf;
 
-    Tokenizer tok;
-    if (tokenizer_init(&tok, gf) != 0) {
+    BnTokenizer tok;
+    if (bn_tokenizer_init(&tok, gf) != 0) {
         fprintf(stderr, "Failed to init tokenizer\n");
         return 1;
     }
 
     // Encode prompt
     int prompt_tokens[64];
-    int n_prompt = tokenizer_encode(&tok, "Hello", 1, prompt_tokens, 64);
+    int n_prompt = bn_tokenizer_encode(&tok, "Hello", 1, prompt_tokens, 64);
     printf("Prompt tokens (%d): ", n_prompt);
     for (int i = 0; i < n_prompt; i++) printf("%d ", prompt_tokens[i]);
     printf("\n");
 
     // Greedy decode 20 tokens
-    Sampler sampler;
-    sampler_init(&sampler, model.config.vocab_size, 0.0f, 0.0f, 42);
+    BnSampler sampler;
+    bn_sampler_init(&sampler, model.config.vocab_size, 0.0f, 0.0f, 42);
 
     int token = prompt_tokens[0];
     int pos = 0;
@@ -67,16 +67,16 @@ int main(int argc, char **argv) {
 
     printf("Output: ");
     for (int i = 0; i < n_prompt + n_gen; i++) {
-        float *logits = transformer_forward(&model, token, pos);
+        float *logits = bn_transformer_forward(&model, token, pos);
 
         int next;
         if (i < n_prompt - 1) {
             next = prompt_tokens[i + 1];
         } else {
-            next = sampler_sample(&sampler, logits);
+            next = bn_sampler_sample(&sampler, logits);
             output_tokens[n_output++] = next;
 
-            const char *piece = tokenizer_decode(&tok, next);
+            const char *piece = bn_tokenizer_decode(&tok, next);
             printf("%s", piece);
 
             if (next == tok.eos_id || next == tok.eot_id) break;
@@ -97,10 +97,10 @@ int main(int argc, char **argv) {
         // Simple check: first few tokens should match
     }
 
-    tokenizer_free(&tok);
-    model_free(&model);
-    gguf_free(gf);
-    platform_unload_file(&mf);
+    bn_sampler_free(&sampler);
+    bn_tokenizer_free(&tok);
+    bn_model_free(&model);
+    bn_gguf_free(gf);
 
     printf("E2E test completed.\n");
     return 0;

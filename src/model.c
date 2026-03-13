@@ -346,6 +346,7 @@ void bn_model_free(BnModel *m) {
     bn_tp_free(m->pool);
     free(m->weights.layers);
     sh_arena_free(m->arena);  // frees INT8 embeddings too
+    bn_platform_unload_file(&m->file);  // safe even if file.data is NULL
     memset(m, 0, sizeof(BnModel));
 }
 

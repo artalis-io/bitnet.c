@@ -68,6 +68,12 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
         return -1;
     }
 
+    // Overflow check before allocation
+    if ((size_t)t->vocab_size > SIZE_MAX / sizeof(char *)) {
+        SH_LOG_ERROR("Vocab size overflow");
+        return -1;
+    }
+
     // #16: Check all allocations
     t->vocab = (char **)malloc(t->vocab_size * sizeof(char *));
     if (!t->vocab) {
@@ -115,6 +121,10 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     t->eot_id = (idx >= 0) ? (int)bn_gguf_get_u32(f, "tokenizer.ggml.eot_token_id") : -1;
 
     // #16: Build sorted index for binary search
+    if ((size_t)t->vocab_size > SIZE_MAX / sizeof(int)) {
+        bn_tokenizer_free(t);
+        return -1;
+    }
     t->sorted_indices = (int *)malloc(t->vocab_size * sizeof(int));
     if (!t->sorted_indices) {
         bn_tokenizer_free(t);

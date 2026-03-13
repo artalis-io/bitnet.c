@@ -15,6 +15,8 @@ emcc \
     "$PROJECT_DIR/src/sampler.c" \
     "$PROJECT_DIR/src/platform.c" \
     "$PROJECT_DIR/src/threadpool.c" \
+    "$PROJECT_DIR/src/sh_arena.c" \
+    "$PROJECT_DIR/src/sh_log.c" \
     "$PROJECT_DIR/wasm/api.c" \
     -I"$PROJECT_DIR/include" \
     -std=c11 -Wall -Wextra \
@@ -37,6 +39,11 @@ emcc \
         "_bitnet_bos_id",
         "_bitnet_eos_id",
         "_bitnet_free",
+        "_bitnet_chat_init",
+        "_bitnet_chat_reset",
+        "_bitnet_chat_submit",
+        "_bitnet_chat_next",
+        "_bitnet_chat_end_turn",
         "_malloc",
         "_free"
     ]' \

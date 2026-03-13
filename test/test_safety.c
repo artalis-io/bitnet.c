@@ -219,6 +219,58 @@ static void test_sampler_edge_cases(void) {
 }
 
 // ===================================================================
+// Test: sampler repeat penalty + top-p
+// ===================================================================
+static void test_sampler_repeat_penalty(void) {
+    printf("test_sampler_repeat_penalty... ");
+
+    BnSampler s;
+    bn_sampler_init(&s, 4, 0.0f, 0.9f, 42);
+    bn_sampler_set_repeat_penalty(&s, 1.5f, 4);
+
+    // Accept token 1 multiple times
+    bn_sampler_accept(&s, 1);
+    bn_sampler_accept(&s, 1);
+    bn_sampler_accept(&s, 1);
+
+    // Token 1 has highest logit but should be penalized
+    float logits[] = {2.0f, 2.1f, 2.0f, 2.0f};
+    int tok = bn_sampler_sample(&s, logits);
+    // With penalty 1.5, logit[1]=2.1 becomes 2.1/1.5=1.4, so token 0 or 2 should win
+    assert(tok != 1);
+
+    // Reset and verify penalty is cleared
+    bn_sampler_reset_recent(&s);
+    float logits2[] = {1.0f, 5.0f, 1.0f, 1.0f};
+    tok = bn_sampler_sample(&s, logits2);
+    assert(tok == 1);  // no penalty, token 1 should win
+
+    bn_sampler_free(&s);
+    printf("PASSED\n");
+}
+
+static void test_sampler_topp(void) {
+    printf("test_sampler_topp... ");
+
+    BnSampler s;
+    bn_sampler_init(&s, 4, 1.0f, 0.5f, 42);
+
+    // Run multiple samples to verify top-p constrains to high-prob tokens
+    int counts[4] = {0};
+    for (int trial = 0; trial < 100; trial++) {
+        float logits[] = {10.0f, 0.0f, 0.0f, 0.0f};  // token 0 dominates
+        int tok = bn_sampler_sample(&s, logits);
+        assert(tok >= 0 && tok < 4);
+        counts[tok]++;
+    }
+    // Token 0 should get the vast majority with topp=0.5
+    assert(counts[0] > 80);
+
+    bn_sampler_free(&s);
+    printf("PASSED\n");
+}
+
+// ===================================================================
 // Test: bn_model_embed_token with out-of-range token (#8)
 // ===================================================================
 static void test_embed_token_oob(void) {
@@ -377,6 +429,8 @@ int main(void) {
 
     // Sampler safety
     test_sampler_edge_cases();
+    test_sampler_repeat_penalty();
+    test_sampler_topp();
 
     // Model safety
     test_embed_token_oob();

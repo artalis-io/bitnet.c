@@ -69,8 +69,10 @@ void bn_platform_unload_file(BnMappedFile *f) {
 #else
     if (f->is_mmap == 1) {
         munmap(f->data, f->size);
+    } else if (f->is_mmap == 0) {
+        free(f->data);
     }
-    // is_mmap == 0 or 2: don't free (external buffer or unused)
+    // is_mmap == 2: externally owned, don't free
 #endif
     f->data = NULL;
     f->size = 0;

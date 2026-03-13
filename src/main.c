@@ -10,6 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+
+// Callback for streaming token output. Return non-zero to stop generation.
+typedef int (*bn_token_callback)(const char *piece, int token_id, void *user_data);
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -49,6 +53,26 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
 }
 
+static int parse_int(const char *s, const char *name) {
+    char *end;
+    long val = strtol(s, &end, 10);
+    if (*end != '\0' || val < INT_MIN || val > INT_MAX) {
+        fprintf(stderr, "Invalid value for %s: %s\n", name, s);
+        exit(1);
+    }
+    return (int)val;
+}
+
+static float parse_float(const char *s, const char *name) {
+    char *end;
+    float val = strtof(s, &end);
+    if (*end != '\0') {
+        fprintf(stderr, "Invalid value for %s: %s\n", name, s);
+        exit(1);
+    }
+    return val;
+}
+
 static CLIArgs parse_args(int argc, char **argv) {
     CLIArgs args = {0};
     args.prompt = "Hello";
@@ -69,16 +93,18 @@ static CLIArgs parse_args(int argc, char **argv) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             args.prompt = argv[++i];
         } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            args.n_tokens = atoi(argv[++i]);
+            args.n_tokens = parse_int(argv[++i], "-n");
         } else if (strcmp(argv[i], "--temp") == 0 && i + 1 < argc) {
-            args.temperature = (float)atof(argv[++i]);
+            args.temperature = parse_float(argv[++i], "--temp");
             args.temp_set = 1;
         } else if (strcmp(argv[i], "--topp") == 0 && i + 1 < argc) {
-            args.topp = (float)atof(argv[++i]);
+            args.topp = parse_float(argv[++i], "--topp");
         } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
-            args.seed = (uint64_t)atoll(argv[++i]);
+            char *end;
+            args.seed = (uint64_t)strtoull(argv[++i], &end, 10);
+            if (*end != '\0') { fprintf(stderr, "Invalid value for --seed: %s\n", argv[i]); exit(1); }
         } else if (strcmp(argv[i], "--maxseq") == 0 && i + 1 < argc) {
-            args.max_seq_len = atoi(argv[++i]);
+            args.max_seq_len = parse_int(argv[++i], "--maxseq");
         } else if (strcmp(argv[i], "--flash") == 0) {
             args.flash_attn = 1;
         } else if (strcmp(argv[i], "--chat") == 0) {
@@ -88,7 +114,7 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--no-prefill") == 0) {
             args.no_prefill = 1;
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
-            args.repeat_penalty = (float)atof(argv[++i]);
+            args.repeat_penalty = parse_float(argv[++i], "--repeat-penalty");
             args.repeat_set = 1;
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
@@ -98,6 +124,67 @@ static CLIArgs parse_args(int argc, char **argv) {
     }
 
     return args;
+}
+
+// Loop detection constants
+#define LOOP_BUF_SIZE 32
+#define LOOP_NGRAM    4
+
+// Generate tokens with callback-based streaming.
+// Returns: n_generated, -1 on loop, -2 on error.
+static int generate_response(BnModel *model, BnTokenizer *tok, BnSampler *sampler,
+                              int max_tokens, int *pos,
+                              bn_token_callback cb, void *user_data) {
+    int loop_buf[LOOP_BUF_SIZE];
+    int loop_idx = 0, gen_count = 0;
+    memset(loop_buf, -1, sizeof(loop_buf));
+
+    float *logits = model->state.logits;
+    if (!logits) return -2;
+
+    for (int i = 0; i < max_tokens; i++) {
+        int next = bn_sampler_sample(sampler, logits);
+
+        if (next == tok->eot_id || next == tok->eos_id)
+            break;
+
+        // Ring buffer loop detection
+        loop_buf[loop_idx] = next;
+        loop_idx = (loop_idx + 1) % LOOP_BUF_SIZE;
+        gen_count++;
+
+        if (gen_count >= 2 * LOOP_NGRAM) {
+            int looping = 1;
+            for (int k = 0; k < LOOP_NGRAM; k++) {
+                int a = loop_buf[((loop_idx - 1 - k) % LOOP_BUF_SIZE + LOOP_BUF_SIZE) % LOOP_BUF_SIZE];
+                int b = loop_buf[((loop_idx - 1 - k - LOOP_NGRAM) % LOOP_BUF_SIZE + LOOP_BUF_SIZE) % LOOP_BUF_SIZE];
+                if (a != b) { looping = 0; break; }
+            }
+            if (looping) return -1;
+        }
+
+        bn_sampler_accept(sampler, next);
+
+        const char *piece = bn_tokenizer_decode(tok, next);
+        if (piece && cb) {
+            if (cb(piece, next, user_data))
+                break;
+        }
+
+        logits = bn_transformer_forward(model, next, *pos);
+        (*pos)++;
+        if (!logits) return -2;
+    }
+
+    return gen_count;
+}
+
+static int print_token(const char *piece, int token_id, void *user_data) {
+    (void)token_id;
+    (void)user_data;
+    printf("%s", piece);
+    fflush(stdout);
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -187,7 +274,6 @@ int main(int argc, char **argv) {
         SH_LOG_ERROR("Failed to init tokenizer");
         bn_model_free(&model);
         bn_gguf_free(gf);
-        bn_platform_unload_file(&mf);
         return 1;
     }
     {
@@ -220,7 +306,6 @@ int main(int argc, char **argv) {
             bn_tokenizer_free(&tokenizer);
             bn_model_free(&model);
             bn_gguf_free(gf);
-            bn_platform_unload_file(&mf);
             return 1;
         }
 
@@ -287,48 +372,9 @@ int main(int argc, char **argv) {
                 break;
             }
 
-            // Generate until eot_id, eos_id, or seq_len
-            // Loop detector: ring buffer of recent tokens, check for repeating n-grams
-            #define LOOP_BUF_SIZE 32
-            #define LOOP_NGRAM    4
-            int loop_buf[LOOP_BUF_SIZE];
-            int loop_idx = 0, gen_count = 0;
-            memset(loop_buf, -1, sizeof(loop_buf));
-
-            for (int i = 0; i < args.n_tokens; i++) {
-                int next = bn_sampler_sample(&sampler, logits);
-
-                if (next == tokenizer.eot_id || next == tokenizer.eos_id)
-                    break;
-
-                // Record token in ring buffer and check for loops
-                loop_buf[loop_idx] = next;
-                loop_idx = (loop_idx + 1) % LOOP_BUF_SIZE;
-                gen_count++;
-
-                if (gen_count >= 2 * LOOP_NGRAM) {
-                    // Check if last LOOP_NGRAM tokens match the LOOP_NGRAM before them
-                    int looping = 1;
-                    for (int k = 0; k < LOOP_NGRAM; k++) {
-                        int a = loop_buf[((loop_idx - 1 - k) % LOOP_BUF_SIZE + LOOP_BUF_SIZE) % LOOP_BUF_SIZE];
-                        int b = loop_buf[((loop_idx - 1 - k - LOOP_NGRAM) % LOOP_BUF_SIZE + LOOP_BUF_SIZE) % LOOP_BUF_SIZE];
-                        if (a != b) { looping = 0; break; }
-                    }
-                    if (looping) { gen_count = -1; break; }
-                }
-
-                bn_sampler_accept(&sampler, next);
-
-                const char *piece = bn_tokenizer_decode(&tokenizer, next);
-                if (piece) {
-                    printf("%s", piece);
-                    fflush(stdout);
-                }
-
-                logits = bn_transformer_forward(&model, next, pos);
-                pos++;
-                if (!logits) break;
-            }
+            int gen_count = generate_response(&model, &tokenizer, &sampler,
+                                               args.n_tokens, &pos,
+                                               print_token, NULL);
 
             // Feed EOT into KV cache to close the assistant turn
             bn_transformer_forward(&model, tokenizer.eot_id, pos);
@@ -337,7 +383,7 @@ int main(int argc, char **argv) {
             printf("\n");
 
             turn_count++;
-            int should_reset = (turn_count >= 2) || (gen_count == -1);
+            int should_reset = (turn_count >= 2) || (gen_count < 0);
             if (should_reset) {
                 printf("[auto-reset: starting fresh]\n");
                 pos = 0;
@@ -360,7 +406,6 @@ int main(int argc, char **argv) {
             bn_tokenizer_free(&tokenizer);
             bn_model_free(&model);
             bn_gguf_free(gf);
-            bn_platform_unload_file(&mf);
             return 1;
         }
         int n_prompt = bn_tokenizer_encode(&tokenizer, args.prompt, 1, prompt_tokens,
@@ -442,9 +487,8 @@ int main(int argc, char **argv) {
     // Cleanup
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tokenizer);
-    bn_model_free(&model);
+    bn_model_free(&model);  // also unloads mmap'd file
     bn_gguf_free(gf);
-    bn_platform_unload_file(&mf);
 
     return 0;
 }

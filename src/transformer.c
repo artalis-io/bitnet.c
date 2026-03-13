@@ -13,6 +13,10 @@ static inline float neon_hsum_f32(float32x4_t v) {
 }
 #endif
 
+// Max elements for stack VLAs (head_size, dim). Prevents stack overflow
+// from malicious model configs. 8192 = 32KB of floats, well within stack.
+#define BN_MAX_VLA_ELEMS 8192
+
 // --- Helper functions ---
 
 static void rmsnorm(float *out, const float *x, const float *w, int size, float eps) {
@@ -42,6 +46,7 @@ static void rmsnorm(float *out, const float *x, const float *w, int size, float 
 }
 
 static void softmax(float *x, int size) {
+    if (size <= 0) return;
     float max_val = x[0];
     for (int i = 1; i < size; i++) {
         if (x[i] > max_val) max_val = x[i];
@@ -426,6 +431,12 @@ static int forward_layers(BnModel *m, int token, int pos) {
     int kv_mul = c->kv_mul;
     int head_size = c->head_size;
 
+    // Guard against stack overflow from VLAs sized by model config
+    if (head_size > BN_MAX_VLA_ELEMS || dim > BN_MAX_VLA_ELEMS) {
+        SH_LOG_ERROR("Model dimensions too large for stack VLAs");
+        return -1;
+    }
+
     // #9: Validate token bounds
     if (token < 0 || token >= c->vocab_size) {
         SH_LOG_ERROR("Token out of range");
@@ -651,6 +662,11 @@ static float *forward_logits(BnModel *m) {
     BnWeights *w = &m->weights;
     BnRunState *s = &m->state;
     int dim = c->dim;
+
+    if (dim > BN_MAX_VLA_ELEMS) {
+        SH_LOG_ERROR("Model dim too large for stack VLAs");
+        return NULL;
+    }
 
     // Final RMSNorm
     rmsnorm(s->x, s->x, w->output_norm, dim, c->norm_eps);

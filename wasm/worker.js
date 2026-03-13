@@ -5,6 +5,7 @@ importScripts('bitnet.js');
 
 let bitnet = null;
 let initialized = false;
+let chatStopped = false;
 
 async function init(modelUrl) {
     try {
@@ -65,6 +66,12 @@ async function init(modelUrl) {
             bosId: module.cwrap('bitnet_bos_id', 'number', []),
             eosId: module.cwrap('bitnet_eos_id', 'number', []),
             free: module.cwrap('bitnet_free', null, []),
+            // Chat API
+            chatInit: module.cwrap('bitnet_chat_init', null, ['number', 'number', 'number']),
+            chatReset: module.cwrap('bitnet_chat_reset', null, []),
+            chatSubmit: module.cwrap('bitnet_chat_submit', 'number', ['string']),
+            chatNext: module.cwrap('bitnet_chat_next', 'number', []),
+            chatEndTurn: module.cwrap('bitnet_chat_end_turn', 'number', []),
         };
 
         initialized = true;
@@ -142,6 +149,52 @@ function generate(prompt, maxTokens, temperature, topp) {
     }
 }
 
+// Async chat generation — yields per token via setTimeout(0) for stop support
+async function chatGenerate(text, maxTokens) {
+    if (!initialized) {
+        postMessage({ type: 'error', message: 'Not initialized' });
+        return;
+    }
+
+    chatStopped = false;
+
+    try {
+        bitnet.chatSubmit(text);
+
+        for (let i = 0; i < maxTokens; i++) {
+            if (chatStopped) {
+                // End the turn even if stopped early
+                const didReset = bitnet.chatEndTurn();
+                postMessage({ type: 'chat_turn_done', stopped: true, didReset });
+                return;
+            }
+
+            const tokenId = bitnet.chatNext();
+
+            if (tokenId === -1) {
+                // Natural end of turn (EOT/EOS)
+                break;
+            }
+            if (tokenId === -2) {
+                // Loop detected or error
+                postMessage({ type: 'chat_token', text: '\n[loop detected]', id: -1 });
+                break;
+            }
+
+            const piece = bitnet.decode(tokenId);
+            postMessage({ type: 'chat_token', text: piece, id: tokenId });
+
+            // Yield to allow stop messages to be processed
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        const didReset = bitnet.chatEndTurn();
+        postMessage({ type: 'chat_turn_done', stopped: false, didReset });
+    } catch (e) {
+        postMessage({ type: 'error', message: e.message });
+    }
+}
+
 // Message handler
 onmessage = function(e) {
     const { type, ...params } = e.data;
@@ -157,6 +210,31 @@ onmessage = function(e) {
                 params.temperature || 0.0,
                 params.topp || 0.9
             );
+            break;
+        case 'chat_init':
+            if (initialized) {
+                bitnet.chatInit(
+                    params.temperature ?? 0.5,
+                    params.topp ?? 0.9,
+                    params.repeatPenalty ?? 1.1
+                );
+                postMessage({ type: 'chat_reset_done' });
+            }
+            break;
+        case 'chat_send':
+            chatGenerate(
+                params.text || '',
+                params.maxTokens || 512
+            );
+            break;
+        case 'chat_stop':
+            chatStopped = true;
+            break;
+        case 'chat_reset':
+            if (initialized) {
+                bitnet.chatReset();
+                postMessage({ type: 'chat_reset_done' });
+            }
             break;
         case 'free':
             if (bitnet) {

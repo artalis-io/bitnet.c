@@ -171,8 +171,8 @@ BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size) {
 
     uint32_t magic = read_u32(&r);
     if (magic != BN_GGUF_MAGIC) {
-        char buf[16]; snprintf(buf, sizeof(buf), "0x%08x", magic);
-        SH_LOG_ERROR("Bad GGUF magic", "got", buf);
+        char hex[16]; snprintf(hex, sizeof(hex), "0x%08x", magic);
+        SH_LOG_ERROR("Bad GGUF magic", "got", hex);
         return NULL;
     }
 
@@ -186,8 +186,8 @@ BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size) {
     f->alignment = BN_GGUF_DEFAULT_ALIGNMENT;
 
     if (f->version < 2 || f->version > 3) {
-        char buf[16]; snprintf(buf, sizeof(buf), "%u", f->version);
-        SH_LOG_ERROR("Unsupported GGUF version", "version", buf);
+        char ver[16]; snprintf(ver, sizeof(ver), "%u", f->version);
+        SH_LOG_ERROR("Unsupported GGUF version", "version", ver);
         free(f);
         return NULL;
     }
@@ -349,10 +349,39 @@ int bn_gguf_find_tensor(BnGGUFFile *f, const char *name) {
     return -1;
 }
 
-// #13: Validate that tensor data pointer falls within the mapped buffer
+// Compute byte size for a tensor given its type and element count.
+// Returns 0 for unknown types.
+static size_t tensor_type_size(uint32_t type, uint64_t nelements) {
+    switch (type) {
+        case BN_GGUF_TENSOR_F32:   return (size_t)nelements * 4;
+        case BN_GGUF_TENSOR_F16:   return (size_t)nelements * 2;
+        // I2_S: 2 bits per element + 4-byte per-tensor scale
+        case BN_GGUF_TENSOR_I2_S:  return (size_t)(nelements / 4) + 4;
+        // TQ1_0: 54 bytes per 256-element block
+        case BN_GGUF_TENSOR_TQ1_0: return (size_t)(nelements / 256) * 54;
+        // TQ2_0: 66 bytes per 256-element block
+        case BN_GGUF_TENSOR_TQ2_0: return (size_t)(nelements / 256) * 66;
+        default: return 0;
+    }
+}
+
+// #13: Validate that tensor data falls entirely within the mapped buffer
 void *bn_gguf_tensor_data(BnGGUFFile *f, int idx) {
     if (idx < 0 || (uint64_t)idx >= f->n_tensors) return NULL;
-    size_t offset = f->data_offset + f->tensors[idx].offset;
+    BnGGUFTensorInfo *t = &f->tensors[idx];
+    size_t offset = f->data_offset + t->offset;
     if (offset >= f->raw_size) return NULL;
+
+    // Compute total elements from dims
+    uint64_t nelements = 1;
+    for (uint32_t d = 0; d < t->n_dims; d++)
+        nelements *= t->dims[d];
+
+    size_t tsize = tensor_type_size(t->type, nelements);
+    if (tsize > 0 && offset + tsize > f->raw_size) {
+        SH_LOG_ERROR("Tensor data exceeds buffer", "tensor", t->name ? t->name : "?");
+        return NULL;
+    }
+
     return f->raw + offset;
 }

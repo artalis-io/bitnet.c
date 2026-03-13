@@ -671,7 +671,12 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     }
 
     if (all_i2s) {
-        assert(n_tasks <= 4 && "bn_quant_matvec_batch: max 4 tasks");
+        // Fall back to individual matvecs if too many tasks for stack arrays
+        if (n_tasks > 4) {
+            for (int t = 0; t < n_tasks; t++)
+                bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
+            return;
+        }
 
         // Quantize x to int8 once, shared across all tasks
         float x_scale = bn_quant_x_to_i8(x, x_q_buf, cols);

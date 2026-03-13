@@ -23,6 +23,24 @@
         .progress-bar { height: 100%; background: #4a9eff; transition: width 0.2s; }
         .model-input { margin-bottom: 1rem; }
         .model-input input { width: 100%; }
+
+        /* Mode tabs */
+        .tabs { display: flex; gap: 0; margin-bottom: 1rem; }
+        .tab { padding: 0.5rem 1.5rem; border: 1px solid #333; background: #1a1a1a; color: #888; cursor: pointer; font-size: 0.9rem; }
+        .tab:first-child { border-radius: 4px 0 0 4px; }
+        .tab:last-child { border-radius: 0 4px 4px 0; }
+        .tab.active { background: #2a2a2a; color: #e0e0e0; border-color: #4a9eff; }
+        .mode-section { display: none; }
+        .mode-section.active { display: block; }
+
+        /* Chat UI */
+        #chatHistory { background: #111; border: 1px solid #333; border-radius: 4px; padding: 1rem; min-height: 300px; max-height: 500px; overflow-y: auto; margin-bottom: 1rem; }
+        .msg { margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; max-width: 85%; line-height: 1.5; }
+        .msg.user { background: #1a3a5c; margin-left: auto; text-align: right; }
+        .msg.assistant { background: #1a1a1a; font-family: 'SF Mono', 'Fira Code', monospace; white-space: pre-wrap; }
+        .msg.system { color: #888; font-size: 0.85rem; text-align: center; max-width: 100%; }
+        .chat-controls { display: flex; gap: 0.5rem; }
+        .chat-controls input { flex: 1; }
     </style>
 </head>
 <body>
@@ -34,19 +52,47 @@
         <button id="loadBtn" onclick="loadModel()">Load Model</button>
     </div>
 
-    <div class="controls">
-        <input type="text" id="prompt" placeholder="Enter prompt..." value="Hello">
-        <button id="generateBtn" onclick="startGenerate()" disabled>Generate</button>
-        <button id="stopBtn" onclick="stopGenerate()" disabled>Stop</button>
+    <div class="tabs">
+        <div class="tab active" onclick="switchMode('completion')">Completion</div>
+        <div class="tab" onclick="switchMode('chat')">Chat</div>
     </div>
 
-    <div class="params">
-        <label>Tokens: <input type="number" id="maxTokens" value="256" min="1" max="2048"></label>
-        <label>Temp: <input type="number" id="temperature" value="0" min="0" max="2" step="0.1"></label>
-        <label>Top-p: <input type="number" id="topp" value="0.9" min="0" max="1" step="0.05"></label>
+    <!-- Completion mode -->
+    <div id="completionMode" class="mode-section active">
+        <div class="controls">
+            <input type="text" id="prompt" placeholder="Enter prompt..." value="Hello">
+            <button id="generateBtn" onclick="startGenerate()" disabled>Generate</button>
+            <button id="stopBtn" onclick="stopGenerate()" disabled>Stop</button>
+        </div>
+
+        <div class="params">
+            <label>Tokens: <input type="number" id="maxTokens" value="256" min="1" max="2048"></label>
+            <label>Temp: <input type="number" id="temperature" value="0" min="0" max="2" step="0.1"></label>
+            <label>Top-p: <input type="number" id="topp" value="0.9" min="0" max="1" step="0.05"></label>
+        </div>
+
+        <div id="output"></div>
     </div>
 
-    <div id="output"></div>
+    <!-- Chat mode -->
+    <div id="chatMode" class="mode-section">
+        <div class="params">
+            <label>Tokens: <input type="number" id="chatMaxTokens" value="512" min="1" max="2048"></label>
+            <label>Temp: <input type="number" id="chatTemp" value="0.5" min="0" max="2" step="0.1"></label>
+            <label>Top-p: <input type="number" id="chatTopp" value="0.9" min="0" max="1" step="0.05"></label>
+            <label>Repeat: <input type="number" id="chatRepeat" value="1.1" min="1" max="2" step="0.05"></label>
+        </div>
+
+        <div id="chatHistory"></div>
+
+        <div class="chat-controls">
+            <input type="text" id="chatInput" placeholder="Type a message..." disabled>
+            <button id="chatSendBtn" onclick="chatSend()" disabled>Send</button>
+            <button id="chatStopBtn" onclick="chatStop()" disabled>Stop</button>
+            <button id="chatResetBtn" onclick="chatReset()" disabled>Reset</button>
+        </div>
+    </div>
+
     <div id="status">Ready. Enter a model URL and click Load.</div>
     <div class="progress" id="progressContainer" style="display:none">
         <div class="progress-bar" id="progressBar" style="width:0%"></div>
@@ -55,9 +101,37 @@
     <script>
         let worker = null;
         let generating = false;
+        let chatGenerating = false;
+        let chatInited = false;
+        let currentMode = 'completion';
 
         function setStatus(msg) {
             document.getElementById('status').textContent = msg;
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.mode-section').forEach(s => s.classList.remove('active'));
+            if (mode === 'completion') {
+                document.querySelectorAll('.tab')[0].classList.add('active');
+                document.getElementById('completionMode').classList.add('active');
+            } else {
+                document.querySelectorAll('.tab')[1].classList.add('active');
+                document.getElementById('chatMode').classList.add('active');
+                if (worker && !chatInited) initChat();
+            }
+        }
+
+        function initChat() {
+            if (!worker) return;
+            chatInited = true;
+            worker.postMessage({
+                type: 'chat_init',
+                temperature: parseFloat(document.getElementById('chatTemp').value),
+                topp: parseFloat(document.getElementById('chatTopp').value),
+                repeatPenalty: parseFloat(document.getElementById('chatRepeat').value),
+            });
         }
 
         function loadModel() {
@@ -66,6 +140,7 @@
 
             if (worker) worker.terminate();
             worker = new Worker('worker.js');
+            chatInited = false;
 
             document.getElementById('loadBtn').disabled = true;
             document.getElementById('generateBtn').disabled = true;
@@ -86,7 +161,11 @@
                         document.getElementById('loadBtn').disabled = false;
                         document.getElementById('generateBtn').disabled = false;
                         document.getElementById('progressContainer').style.display = 'none';
+                        document.getElementById('chatInput').disabled = false;
+                        document.getElementById('chatSendBtn').disabled = false;
+                        document.getElementById('chatResetBtn').disabled = false;
                         setStatus(`Model loaded. Vocab size: ${data.vocabSize}`);
+                        if (currentMode === 'chat') initChat();
                         break;
                     case 'token':
                         document.getElementById('output').textContent += data.text;
@@ -97,10 +176,28 @@
                         document.getElementById('stopBtn').disabled = true;
                         setStatus('Generation complete.');
                         break;
+                    case 'chat_token':
+                        appendToAssistant(data.text);
+                        break;
+                    case 'chat_turn_done':
+                        chatGenerating = false;
+                        document.getElementById('chatInput').disabled = false;
+                        document.getElementById('chatSendBtn').disabled = false;
+                        document.getElementById('chatStopBtn').disabled = true;
+                        if (data.didReset) {
+                            addSystemMessage('[auto-reset: starting fresh]');
+                        }
+                        setStatus(data.stopped ? 'Stopped.' : 'Ready.');
+                        break;
+                    case 'chat_reset_done':
+                        addSystemMessage('[conversation reset]');
+                        setStatus('Chat reset.');
+                        break;
                     case 'error':
                         setStatus('Error: ' + data.message);
                         document.getElementById('loadBtn').disabled = false;
                         document.getElementById('progressContainer').style.display = 'none';
+                        chatGenerating = false;
                         break;
                 }
             };
@@ -108,6 +205,7 @@
             worker.postMessage({ type: 'init', modelUrl: url });
         }
 
+        // --- Completion mode ---
         function startGenerate() {
             if (!worker || generating) return;
             generating = true;
@@ -130,16 +228,88 @@
                 worker.terminate();
                 worker = null;
                 generating = false;
+                chatInited = false;
                 document.getElementById('generateBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = true;
+                document.getElementById('chatInput').disabled = true;
+                document.getElementById('chatSendBtn').disabled = true;
+                document.getElementById('chatResetBtn').disabled = true;
                 setStatus('Stopped. Reload model to continue.');
             }
         }
 
-        // Enter key to generate
+        // --- Chat mode ---
+        let currentAssistantEl = null;
+
+        function addMessage(cls, text) {
+            const el = document.createElement('div');
+            el.className = 'msg ' + cls;
+            el.textContent = text;
+            document.getElementById('chatHistory').appendChild(el);
+            el.scrollIntoView({ behavior: 'smooth' });
+            return el;
+        }
+
+        function addSystemMessage(text) {
+            addMessage('system', text);
+        }
+
+        function appendToAssistant(text) {
+            if (!currentAssistantEl) {
+                currentAssistantEl = addMessage('assistant', '');
+            }
+            currentAssistantEl.textContent += text;
+            currentAssistantEl.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function chatSend() {
+            if (!worker || chatGenerating) return;
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            if (!chatInited) initChat();
+
+            addMessage('user', text);
+            currentAssistantEl = null;
+            input.value = '';
+
+            chatGenerating = true;
+            document.getElementById('chatInput').disabled = true;
+            document.getElementById('chatSendBtn').disabled = true;
+            document.getElementById('chatStopBtn').disabled = false;
+            setStatus('Generating...');
+
+            worker.postMessage({
+                type: 'chat_send',
+                text: text,
+                maxTokens: parseInt(document.getElementById('chatMaxTokens').value),
+            });
+        }
+
+        function chatStop() {
+            if (worker && chatGenerating) {
+                worker.postMessage({ type: 'chat_stop' });
+            }
+        }
+
+        function chatReset() {
+            if (!worker) return;
+            document.getElementById('chatHistory').innerHTML = '';
+            currentAssistantEl = null;
+            chatInited = false;
+            initChat();
+        }
+
+        // Enter key bindings
         document.getElementById('prompt').addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !document.getElementById('generateBtn').disabled) {
                 startGenerate();
+            }
+        });
+        document.getElementById('chatInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !document.getElementById('chatSendBtn').disabled) {
+                chatSend();
             }
         });
     </script>

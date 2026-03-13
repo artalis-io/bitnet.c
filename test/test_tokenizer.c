@@ -133,11 +133,85 @@ static void test_tokenizer_encode(void) {
     printf("PASSED\n");
 }
 
+static void test_tokenizer_encode_empty(void) {
+    printf("test_tokenizer_encode_empty... ");
+
+    uint8_t buf[8192];
+    size_t size = build_tokenizer_gguf(buf, sizeof(buf));
+    BnGGUFFile *gf = bn_gguf_open(buf, size);
+    BnTokenizer t;
+    bn_tokenizer_init(&t, gf);
+
+    int tokens[32];
+    int n;
+
+    // Empty string with BOS should return just BOS
+    n = bn_tokenizer_encode(&t, "", 1, tokens, 32);
+    assert(n == 1);
+    assert(tokens[0] == 0);  // BOS
+
+    // Empty string without BOS
+    n = bn_tokenizer_encode(&t, "", 0, tokens, 32);
+    assert(n == 0);
+
+    bn_tokenizer_free(&t);
+    bn_gguf_free(gf);
+    printf("PASSED\n");
+}
+
+static void test_tokenizer_encode_max_tokens(void) {
+    printf("test_tokenizer_encode_max_tokens... ");
+
+    uint8_t buf[8192];
+    size_t size = build_tokenizer_gguf(buf, sizeof(buf));
+    BnGGUFFile *gf = bn_gguf_open(buf, size);
+    BnTokenizer t;
+    bn_tokenizer_init(&t, gf);
+
+    int tokens[2];
+    int n;
+
+    // Encode with very small buffer — should not overflow
+    n = bn_tokenizer_encode(&t, "hello", 1, tokens, 2);
+    assert(n <= 2);
+    assert(tokens[0] == 0);  // BOS
+
+    bn_tokenizer_free(&t);
+    bn_gguf_free(gf);
+    printf("PASSED\n");
+}
+
+static void test_tokenizer_decode_oob(void) {
+    printf("test_tokenizer_decode_oob... ");
+
+    uint8_t buf[8192];
+    size_t size = build_tokenizer_gguf(buf, sizeof(buf));
+    BnGGUFFile *gf = bn_gguf_open(buf, size);
+    BnTokenizer t;
+    bn_tokenizer_init(&t, gf);
+
+    // Out-of-bounds decode should return empty string
+    const char *piece = bn_tokenizer_decode(&t, -1);
+    assert(piece != NULL);
+    assert(strlen(piece) == 0);
+
+    piece = bn_tokenizer_decode(&t, 999);
+    assert(piece != NULL);
+    assert(strlen(piece) == 0);
+
+    bn_tokenizer_free(&t);
+    bn_gguf_free(gf);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Tokenizer Tests ===\n");
     test_tokenizer_init();
     test_tokenizer_decode();
     test_tokenizer_encode();
+    test_tokenizer_encode_empty();
+    test_tokenizer_encode_max_tokens();
+    test_tokenizer_decode_oob();
     printf("All tokenizer tests passed!\n");
     return 0;
 }

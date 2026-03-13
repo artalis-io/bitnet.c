@@ -62,8 +62,8 @@ static size_t build_test_gguf(uint8_t *buf, size_t buf_size) {
     // Tensor info
     wb_str(&wb, "test.weight");
     wb_u32(&wb, 2);           // n_dims
-    wb_u64(&wb, 256);         // dim[0]
-    wb_u64(&wb, 128);         // dim[1]
+    wb_u64(&wb, 2);           // dim[0]
+    wb_u64(&wb, 2);           // dim[1]
     wb_u32(&wb, 0);           // type = F32
     wb_u64(&wb, 0);           // offset (relative to data section)
 
@@ -105,8 +105,8 @@ static void test_parse_synthetic(void) {
     int ti = bn_gguf_find_tensor(f, "test.weight");
     assert(ti >= 0);
     assert(f->tensors[ti].n_dims == 2);
-    assert(f->tensors[ti].dims[0] == 256);
-    assert(f->tensors[ti].dims[1] == 128);
+    assert(f->tensors[ti].dims[0] == 2);
+    assert(f->tensors[ti].dims[1] == 2);
     assert(f->tensors[ti].type == 0);
 
     // Check tensor data
