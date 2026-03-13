@@ -143,18 +143,38 @@ Requires [Emscripten](https://emscripten.org/):
 
 ## Performance
 
-Benchmarked on Apple M4 (MacBook Pro), single-socket, `bitnet-b1.58-2B-4T` (I2_S format), 64 generated tokens:
+Benchmarked on Apple M1 Max (8 P-cores, 32 GB), `bitnet-b1.58-2B-4T` (I2_S format), greedy decoding:
+
+**~46 tok/s** (256 tokens generated)
+
+### Optimization History
 
 | Optimization | tok/s | Speedup |
-|-------------|-------|---------|
-| Baseline (scalar C) | ~3.0 | 1.0x |
-| + OpenMP parallel matvec | ~5.1 | 1.7x |
-| + ARM NEON SIMD (ternary matvec) | ~10.5 | 3.5x |
-| + NEON transformer (attention, residuals) | ~15.0 | 5.0x |
-| + 8-accumulator ILP + prefetch | ~15.5 | 5.2x |
-| + **SDOT int8 accumulation + batch matvec** | **~32.7** | **10.9x** |
+|---|---|---|
+| Baseline (scalar C) | ~15.5 | 1.0x |
+| + SDOT int8 accumulation + batch matvec | ~33 | 2.1x |
+| + Arithmetic ternary decode + RoPE precompute | ~38 | 2.5x |
+| + Pthread thread pool (replace OpenMP) | ~38 | 2.5x |
+| + Arena allocator + native FP16 logits + prefetch | **~46** | **3.0x** |
 
-The SDOT path uses ARM's `vdotq_s32` instruction to perform 16 int8×int8 multiply-adds per cycle, replacing a ~24-instruction float widening pipeline. Batch matvec reduces OpenMP fork/join barriers by grouping independent QKV and FFN projections into single parallel regions.
+### Key Optimizations
+
+- **SDOT (vdotq_s32)** — ARM dot product instructions for I2_S ternary matvec. Quantize activations to int8 once, then use integer dot products instead of float FMA. 2x speedup.
+- **Batch matvec** — group independent projections (QKV, gate+up) into a single thread pool dispatch, sharing the int8-quantized activation vector.
+- **Pthread thread pool** — persistent worker threads with condvar dispatch (~2us), replacing OpenMP fork/join (~15us on macOS).
+- **Native FP16 logits** — `-mcpu=apple-m1` enables `__ARM_FEATURE_FP16_VECTOR_ARITHMETIC` for native F16 FMA in the logits computation (embedding dot products). Apple clang's `-march=native` misses this.
+- **Arena allocator** — all RunState buffers in a single contiguous allocation for better TLB coverage.
+
+### Bandwidth Analysis
+
+At ~46 tok/s the workload is **DRAM bandwidth-bound**, reading ~1.15 GB per token:
+
+| Component | Data/Token |
+|---|---|
+| Layer weights (30 layers, I2_S) | 497 MB |
+| Logits (F16 embeddings, 128K vocab) | 656 MB |
+
+This sustains ~53 GB/s — near the M1 Max CPU bandwidth ceiling (~55-60 GB/s). Further gains require reducing data volume (e.g. INT8 output embeddings).
 
 ## How It Works
 

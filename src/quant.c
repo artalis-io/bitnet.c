@@ -253,6 +253,7 @@ static void i2s_sdot_range(void *ctx, int row_start, int row_end) {
         const uint8x16_t mask3 = vdupq_n_u8(3);
 
         while (done < cols) {
+            __builtin_prefetch(rd + 64, 0, 0);
             // First 16 weight bytes -> 64 elements from sub-rows 0-3
             {
                 uint8x16_t raw = vld1q_u8(rd);

@@ -1,9 +1,17 @@
 CC      ?= cc
-CFLAGS  = -O3 -march=native -Wall -Wextra -std=c11 -Iinclude
 LDFLAGS = -lm
 
-# On Linux, enable GNU extensions for strdup, qsort_r, clock_gettime, etc.
+# Platform-specific arch flags:
+# -mcpu=apple-m1 on Darwin enables FP16 vector arithmetic + dotprod.
+# -march=native on Apple clang misses __ARM_FEATURE_FP16_VECTOR_ARITHMETIC.
 UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+CFLAGS  = -O3 -mcpu=apple-m1 -Wall -Wextra -std=c11 -Iinclude
+else
+CFLAGS  = -O3 -march=native -Wall -Wextra -std=c11 -Iinclude
+endif
+
+# On Linux, enable GNU extensions for strdup, qsort_r, clock_gettime, etc.
 ifeq ($(UNAME_S),Linux)
 CFLAGS += -D_GNU_SOURCE
 LDFLAGS += -lpthread

@@ -173,7 +173,7 @@ static void logits_f16_native_range(void *ctx, int v_start, int v_end) {
 }
 #endif
 
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) && !defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
 static void logits_f16_neon_range(void *ctx, int v_start, int v_end) {
     LogitsCtx *lc = (LogitsCtx *)ctx;
     const uint16_t *emb = (const uint16_t *)lc->emb;
