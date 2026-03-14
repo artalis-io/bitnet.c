@@ -866,35 +866,54 @@ static float *forward_logits(BnModel *m) {
 
     // Untied output weight: logits = output_weight @ x
     if (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16) {
-        // F16 untied output weight — use the same F16 logits kernel as tied path
-        const uint16_t *emb = (const uint16_t *)w->output_weight.data;
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
-        uint16_t x_f16[dim];
-        for (int d = 0; d < dim; d += 8) {
-            float16x4_t lo = vcvt_f16_f32(vld1q_f32(s->x + d));
-            float16x4_t hi = vcvt_f16_f32(vld1q_f32(s->x + d + 4));
-            vst1q_u16(x_f16 + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
-        }
-        LogitsCtx lctx = { s->logits, (const float *)(void *)x_f16, emb, dim };
-        BnTPTask logits_task = { logits_f16_native_range, &lctx, c->vocab_size };
-        bn_tp_dispatch(m->pool, &logits_task, 1);
-#elif defined(__ARM_NEON)
-        LogitsCtx lctx = { s->logits, s->x, emb, dim };
-        BnTPTask logits_task = { logits_f16_neon_range, &lctx, c->vocab_size };
-        bn_tp_dispatch(m->pool, &logits_task, 1);
+        int n_rows = w->output_weight.rows;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        if (w->emb_out_i8) {
+            float x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
+            LogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
+                                 s->x_q, x_scale, dim };
+            BnTPTask logits_task = { logits_i8_sdot_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+        } else
 #elif defined(__AVX2__)
-        LogitsCtx lctx = { s->logits, s->x, emb, dim };
-        BnTPTask logits_task = { logits_f16_avx2_range, &lctx, c->vocab_size };
-        bn_tp_dispatch(m->pool, &logits_task, 1);
-#elif defined(__wasm_simd128__)
-        LogitsCtx lctx = { s->logits, s->x, emb, dim };
-        BnTPTask logits_task = { logits_f16_wasm_range, &lctx, c->vocab_size };
-        bn_tp_dispatch(m->pool, &logits_task, 1);
-#else
-        LogitsCtx lctx = { s->logits, s->x, emb, dim };
-        BnTPTask logits_task = { logits_f16_scalar_range, &lctx, c->vocab_size };
-        bn_tp_dispatch(m->pool, &logits_task, 1);
+        if (w->emb_out_i8) {
+            float x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
+            LogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
+                                 s->x_q, x_scale, dim };
+            BnTPTask logits_task = { logits_i8_sdot_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+        } else
 #endif
+        {
+            const uint16_t *emb = (const uint16_t *)w->output_weight.data;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+            uint16_t x_f16[dim];
+            for (int d = 0; d < dim; d += 8) {
+                float16x4_t lo = vcvt_f16_f32(vld1q_f32(s->x + d));
+                float16x4_t hi = vcvt_f16_f32(vld1q_f32(s->x + d + 4));
+                vst1q_u16(x_f16 + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
+            }
+            LogitsCtx lctx = { s->logits, (const float *)(void *)x_f16, emb, dim };
+            BnTPTask logits_task = { logits_f16_native_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+#elif defined(__ARM_NEON)
+            LogitsCtx lctx = { s->logits, s->x, emb, dim };
+            BnTPTask logits_task = { logits_f16_neon_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+#elif defined(__AVX2__)
+            LogitsCtx lctx = { s->logits, s->x, emb, dim };
+            BnTPTask logits_task = { logits_f16_avx2_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+#elif defined(__wasm_simd128__)
+            LogitsCtx lctx = { s->logits, s->x, emb, dim };
+            BnTPTask logits_task = { logits_f16_wasm_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+#else
+            LogitsCtx lctx = { s->logits, s->x, emb, dim };
+            BnTPTask logits_task = { logits_f16_scalar_range, &lctx, n_rows };
+            bn_tp_dispatch(m->pool, &logits_task, 1);
+#endif
+        }
     }
     else if (w->output_weight.data) {
         bn_quant_matvec(s->logits, &w->output_weight, s->x, s->x_q, m->pool);

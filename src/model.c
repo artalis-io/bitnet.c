@@ -307,10 +307,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     size_t emb_i8_bytes = 0;
     size_t emb_i8_scales_bytes = 0;
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__)
-    int want_i8_emb = (w->emb_type == BN_GGUF_TENSOR_F16);
+    int want_i8_emb = (w->emb_type == BN_GGUF_TENSOR_F16) ||
+                       (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16);
+    int i8_emb_rows = 0;
     if (want_i8_emb) {
-        emb_i8_bytes = (size_t)c->vocab_size * c->dim;
-        emb_i8_scales_bytes = (size_t)c->vocab_size * sizeof(float);
+        // For untied F16 output weight, quantize that; otherwise quantize tied embeddings
+        i8_emb_rows = (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16)
+                       ? w->output_weight.rows : c->vocab_size;
+        emb_i8_bytes = (size_t)i8_emb_rows * c->dim;
+        emb_i8_scales_bytes = (size_t)i8_emb_rows * sizeof(float);
     }
 #endif
 
@@ -365,10 +370,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         w->emb_out_i8 = (int8_t *)sh_arena_alloc(m->arena, emb_i8_bytes);
         w->emb_out_scales = (float *)sh_arena_alloc(m->arena, emb_i8_scales_bytes);
         if (w->emb_out_i8 && w->emb_out_scales) {
-            bn_quant_f16_rows_to_i8((const uint16_t *)w->token_embedding,
-                                    w->emb_out_i8, w->emb_out_scales,
-                                    c->vocab_size, c->dim);
-            SH_LOG_DEBUG("INT8 embeddings ready", "vocab", "ok");
+            const uint16_t *src = (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16)
+                                  ? (const uint16_t *)w->output_weight.data
+                                  : (const uint16_t *)w->token_embedding;
+            bn_quant_f16_rows_to_i8(src, w->emb_out_i8, w->emb_out_scales,
+                                    i8_emb_rows, c->dim);
+            char i8_mb[16]; snprintf(i8_mb, sizeof(i8_mb), "%.0f", (double)emb_i8_bytes / (1024*1024));
+            SH_LOG_INFO("INT8 output embeddings ready", "MB", i8_mb);
         } else {
             w->emb_out_i8 = NULL;
             w->emb_out_scales = NULL;

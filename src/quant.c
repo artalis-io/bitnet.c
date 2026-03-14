@@ -990,14 +990,11 @@ typedef struct {
     float combined_scale;   // tensor_scale * x_scale
 } TQ1SdotCtx;
 
-// Decode 16 base-3 trits from raw bytes × pow3 multiplier → int8 ternary
-static inline int8x16_t tq1_decode_trits(uint8x16_t raw, uint8x16_t pow3_vec,
-                                           uint8x8_t three_u8, int8x16_t one_s8) {
-    uint8x16_t q = vmulq_u8(raw, pow3_vec);
-    uint8x8_t xi_lo = vshrn_n_u16(vmull_u8(vget_low_u8(q), three_u8), 8);
-    uint8x8_t xi_hi = vshrn_n_u16(vmull_u8(vget_high_u8(q), three_u8), 8);
-    return vsubq_s8(vreinterpretq_s8_u8(vcombine_u8(xi_lo, xi_hi)), one_s8);
-}
+// Fast trit decode: vhaddq approach (3 ops vs 6 for vmull+vshrn).
+// Produces {0,1,2} instead of {-1,0,1}; corrected via bsums subtraction.
+// floor((q + q>>1) / 2) >> 6 = floor(q*3/256), same as (uint16_t)(q*3) >> 8.
+#define TQ1_DECODE(qx) vreinterpretq_s8_u8( \
+    vshrq_n_u8(vhaddq_u8((qx), vshrq_n_u8((qx), 1)), 6))
 
 static void tq1_sdot_range(void *ctx, int row_start, int row_end) {
     TQ1SdotCtx *c = (TQ1SdotCtx *)ctx;
@@ -1005,9 +1002,6 @@ static void tq1_sdot_range(void *ctx, int row_start, int row_end) {
     int n_blocks_per_row = c->W->cols / BN_QK_K;
     float combined_scale = c->combined_scale;
     const int8_t *x_q = c->x_q;
-    static const uint8_t pow3[6] = {1, 3, 9, 27, 81, 243};
-    const int8x16_t one_s8 = vdupq_n_s8(1);
-    const uint8x8_t three_u8 = vdup_n_u8(3);
 
     for (int row = row_start; row < row_end; row++) {
         float row_sum = 0.0f;
@@ -1019,38 +1013,82 @@ static void tq1_sdot_range(void *ctx, int row_start, int row_end) {
             const int8_t *xb = x_q + b * BN_QK_K;
 
             int32x4_t bacc = vdupq_n_s32(0);
+            int16x8_t xsum_acc = vdupq_n_s16(0);  // bsums: accumulate sum(xb)
 
-            // Section 1: qs[0..31], 5 trits/byte -> 160 values
-            for (int n = 0; n < 5; n++) {
-                uint8x16_t pow3_vec = vdupq_n_u8(pow3[n]);
-                int8x16_t t0 = tq1_decode_trits(vld1q_u8(blk->qs),      pow3_vec, three_u8, one_s8);
-                int8x16_t t1 = tq1_decode_trits(vld1q_u8(blk->qs + 16), pow3_vec, three_u8, one_s8);
-                bacc = vdotq_s32(bacc, t0, vld1q_s8(xb + n*32));
-                bacc = vdotq_s32(bacc, t1, vld1q_s8(xb + n*32 + 16));
+            // Section 1: qs[0..31] -> 160 values (5 trits per byte)
+            // Hoist loads + pow3 multiplications for ILP
+            {
+                uint8x16_t r0 = vld1q_u8(blk->qs);
+                uint8x16_t r1 = vld1q_u8(blk->qs + 16);
+                uint8x16_t m0_1 = vmulq_u8(r0, vdupq_n_u8(3));
+                uint8x16_t m0_2 = vmulq_u8(r0, vdupq_n_u8(9));
+                uint8x16_t m0_3 = vmulq_u8(r0, vdupq_n_u8(27));
+                uint8x16_t m0_4 = vmulq_u8(r0, vdupq_n_u8(81));
+                uint8x16_t m1_1 = vmulq_u8(r1, vdupq_n_u8(3));
+                uint8x16_t m1_2 = vmulq_u8(r1, vdupq_n_u8(9));
+                uint8x16_t m1_3 = vmulq_u8(r1, vdupq_n_u8(27));
+                uint8x16_t m1_4 = vmulq_u8(r1, vdupq_n_u8(81));
+
+                #define S1_TRIT(mx0, mx1, off) do { \
+                    int8x16_t y0 = vld1q_s8(xb + (off)); \
+                    int8x16_t y1 = vld1q_s8(xb + (off) + 16); \
+                    xsum_acc = vpadalq_s8(xsum_acc, y0); \
+                    xsum_acc = vpadalq_s8(xsum_acc, y1); \
+                    bacc = vdotq_s32(bacc, TQ1_DECODE(mx0), y0); \
+                    bacc = vdotq_s32(bacc, TQ1_DECODE(mx1), y1); \
+                } while(0)
+                S1_TRIT(r0,   r1,   0);
+                S1_TRIT(m0_1, m1_1, 32);
+                S1_TRIT(m0_2, m1_2, 64);
+                S1_TRIT(m0_3, m1_3, 96);
+                S1_TRIT(m0_4, m1_4, 128);
+                #undef S1_TRIT
             }
 
-            // Section 2: qs[32..47], 5 trits/byte -> 80 values
-            for (int n = 0; n < 5; n++) {
-                int8x16_t t = tq1_decode_trits(vld1q_u8(blk->qs + 32),
-                                                vdupq_n_u8(pow3[n]), three_u8, one_s8);
-                bacc = vdotq_s32(bacc, t, vld1q_s8(xb + 160 + n*16));
+            // Section 2: qs[32..47] -> 80 values (5 trits per byte)
+            {
+                uint8x16_t r = vld1q_u8(blk->qs + 32);
+                uint8x16_t m_1 = vmulq_u8(r, vdupq_n_u8(3));
+                uint8x16_t m_2 = vmulq_u8(r, vdupq_n_u8(9));
+                uint8x16_t m_3 = vmulq_u8(r, vdupq_n_u8(27));
+                uint8x16_t m_4 = vmulq_u8(r, vdupq_n_u8(81));
+
+                #define S2_TRIT(mx, off) do { \
+                    int8x16_t y = vld1q_s8(xb + (off)); \
+                    xsum_acc = vpadalq_s8(xsum_acc, y); \
+                    bacc = vdotq_s32(bacc, TQ1_DECODE(mx), y); \
+                } while(0)
+                S2_TRIT(r,   160);
+                S2_TRIT(m_1, 176);
+                S2_TRIT(m_2, 192);
+                S2_TRIT(m_3, 208);
+                S2_TRIT(m_4, 224);
+                #undef S2_TRIT
             }
 
-            // Section 3: qh[0..3], 4 trits/byte -> 16 values (scalar, only 16 elements)
-            int32_t qh_sum = 0;
+            // Section 3: qh[0..3] -> 16 values (scalar, 4 trits per byte)
+            // Decode to {0,1,2} matching NEON path, accumulate bsums
+            int32_t qh_dot = 0, qh_xsum = 0;
+            static const uint8_t pow3s[] = {1, 3, 9, 27};
             for (int n = 0; n < 4; n++) {
                 for (int m = 0; m < 4; m++) {
-                    uint8_t q = blk->qh[m] * pow3[n];
-                    int16_t xi = ((uint16_t)q * 3) >> 8;
-                    qh_sum += (xi - 1) * xb[240 + n*4 + m];
+                    uint8_t q = blk->qh[m] * pow3s[n];
+                    int16_t xi = ((uint16_t)q * 3) >> 8;  // {0,1,2}
+                    int8_t xv = xb[240 + n*4 + m];
+                    qh_dot += xi * xv;
+                    qh_xsum += xv;
                 }
             }
 
-            row_sum += d * (float)(vaddvq_s32(bacc) + qh_sum);
+            // Correct {0,1,2} to {-1,0,1}: result = dot - sum(xb)
+            int32_t x_sum = vaddlvq_s16(xsum_acc) + qh_xsum;
+            row_sum += d * (float)(vaddvq_s32(bacc) + qh_dot - x_sum);
         }
         c->out[row] = row_sum * combined_scale;
     }
 }
+
+#undef TQ1_DECODE
 
 #endif // __ARM_NEON && __ARM_FEATURE_DOTPROD
 
