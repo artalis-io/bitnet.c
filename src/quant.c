@@ -973,13 +973,88 @@ static void tq2_range(void *ctx, int row_start, int row_end) {
     }
 }
 
-// TQ1_0 range context
+// TQ1_0 range context (float activation path)
 typedef struct {
     float *out;
     const BnQWeight *W;
     const float *x;
 } TQ1Ctx;
 
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+
+// TQ1_0 SDOT context: int8 activations, integer dot products
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const int8_t *x_q;
+    float combined_scale;   // tensor_scale * x_scale
+} TQ1SdotCtx;
+
+// Decode 16 base-3 trits from raw bytes × pow3 multiplier → int8 ternary
+static inline int8x16_t tq1_decode_trits(uint8x16_t raw, uint8x16_t pow3_vec,
+                                           uint8x8_t three_u8, int8x16_t one_s8) {
+    uint8x16_t q = vmulq_u8(raw, pow3_vec);
+    uint8x8_t xi_lo = vshrn_n_u16(vmull_u8(vget_low_u8(q), three_u8), 8);
+    uint8x8_t xi_hi = vshrn_n_u16(vmull_u8(vget_high_u8(q), three_u8), 8);
+    return vsubq_s8(vreinterpretq_s8_u8(vcombine_u8(xi_lo, xi_hi)), one_s8);
+}
+
+static void tq1_sdot_range(void *ctx, int row_start, int row_end) {
+    TQ1SdotCtx *c = (TQ1SdotCtx *)ctx;
+    const BnBlockTQ1 *blocks = (const BnBlockTQ1 *)c->W->data;
+    int n_blocks_per_row = c->W->cols / BN_QK_K;
+    float combined_scale = c->combined_scale;
+    const int8_t *x_q = c->x_q;
+    static const uint8_t pow3[6] = {1, 3, 9, 27, 81, 243};
+    const int8x16_t one_s8 = vdupq_n_s8(1);
+    const uint8x8_t three_u8 = vdup_n_u8(3);
+
+    for (int row = row_start; row < row_end; row++) {
+        float row_sum = 0.0f;
+
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BnBlockTQ1 *blk = &blocks[row * n_blocks_per_row + b];
+            __builtin_prefetch(blk + 2, 0, 0);
+            float d = bn_fp16_to_fp32(blk->d);
+            const int8_t *xb = x_q + b * BN_QK_K;
+
+            int32x4_t bacc = vdupq_n_s32(0);
+
+            // Section 1: qs[0..31], 5 trits/byte -> 160 values
+            for (int n = 0; n < 5; n++) {
+                uint8x16_t pow3_vec = vdupq_n_u8(pow3[n]);
+                int8x16_t t0 = tq1_decode_trits(vld1q_u8(blk->qs),      pow3_vec, three_u8, one_s8);
+                int8x16_t t1 = tq1_decode_trits(vld1q_u8(blk->qs + 16), pow3_vec, three_u8, one_s8);
+                bacc = vdotq_s32(bacc, t0, vld1q_s8(xb + n*32));
+                bacc = vdotq_s32(bacc, t1, vld1q_s8(xb + n*32 + 16));
+            }
+
+            // Section 2: qs[32..47], 5 trits/byte -> 80 values
+            for (int n = 0; n < 5; n++) {
+                int8x16_t t = tq1_decode_trits(vld1q_u8(blk->qs + 32),
+                                                vdupq_n_u8(pow3[n]), three_u8, one_s8);
+                bacc = vdotq_s32(bacc, t, vld1q_s8(xb + 160 + n*16));
+            }
+
+            // Section 3: qh[0..3], 4 trits/byte -> 16 values (scalar, only 16 elements)
+            int32_t qh_sum = 0;
+            for (int n = 0; n < 4; n++) {
+                for (int m = 0; m < 4; m++) {
+                    uint8_t q = blk->qh[m] * pow3[n];
+                    int16_t xi = ((uint16_t)q * 3) >> 8;
+                    qh_sum += (xi - 1) * xb[240 + n*4 + m];
+                }
+            }
+
+            row_sum += d * (float)(vaddvq_s32(bacc) + qh_sum);
+        }
+        c->out[row] = row_sum * combined_scale;
+    }
+}
+
+#endif // __ARM_NEON && __ARM_FEATURE_DOTPROD
+
+#if !(defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
 static void tq1_range(void *ctx, int row_start, int row_end) {
     TQ1Ctx *c = (TQ1Ctx *)ctx;
     const BnBlockTQ1 *blocks = (const BnBlockTQ1 *)c->W->data;
@@ -1078,6 +1153,7 @@ static void tq1_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum * tensor_scale;
     }
 }
+#endif // !(NEON+DOTPROD) — TQ1_0 float fallback
 
 // --- Q8_0 matrix-vector multiply ---
 
@@ -1688,10 +1764,17 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
 
     // TQ1_0
     {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        float x_scale = bn_quant_x_to_i8(x, x_q_buf, W->cols);
+        TQ1SdotCtx ctx = { out, W, x_q_buf, W->scale * x_scale };
+        BnTPTask task = { tq1_sdot_range, &ctx, W->rows };
+        bn_tp_dispatch(pool, &task, 1);
+#else
         (void)x_q_buf;
         TQ1Ctx ctx = { out, W, x };
         BnTPTask task = { tq1_range, &ctx, W->rows };
         bn_tp_dispatch(pool, &task, 1);
+#endif
     }
 }
 
@@ -1705,11 +1788,12 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     int cols = tasks[0].W->cols;
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-    int all_i2s = 1, all_q4 = 1;
+    int all_i2s = 1, all_q4 = 1, all_tq1 = 1;
     for (int t = 0; t < n_tasks; t++) {
         if (tasks[t].W->type != BN_GGUF_TENSOR_I2_S) all_i2s = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_0) all_q4 = 0;
-        if (!all_i2s && !all_q4) break;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_TQ1_0) all_tq1 = 0;
+        if (!all_i2s && !all_q4 && !all_tq1) break;
     }
 
     if (all_i2s) {
@@ -1745,6 +1829,22 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (Q4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
             tp_tasks[t] = (BnTPTask){ q4_sdot_range, &ctxs[t], tasks[t].W->rows };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_tq1 && n_tasks <= 4) {
+        float x_scale = bn_quant_x_to_i8(x, x_q_buf, cols);
+
+        TQ1SdotCtx ctxs[4];
+        BnTPTask tp_tasks[4];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (TQ1SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
+                                     tasks[t].W->scale * x_scale };
+            tp_tasks[t] = (BnTPTask){ tq1_sdot_range, &ctxs[t], tasks[t].W->rows };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
