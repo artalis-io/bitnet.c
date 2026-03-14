@@ -41,7 +41,11 @@ int bitnet_init(const uint8_t *data, size_t size) {
         return -1;
     }
 
-    bn_sampler_init(&g_sampler, g_model.config.vocab_size, 0.0f, 0.9f, 42);
+    if (bn_sampler_init(&g_sampler, g_model.config.vocab_size, 0.0f, 0.9f, 42) != 0) {
+        bn_model_free(&g_model);
+        bn_gguf_free(g_gguf);
+        return -1;
+    }
     g_initialized = 1;
 
     return 0;
@@ -101,6 +105,7 @@ int bitnet_eos_id(void) {
 EMSCRIPTEN_KEEPALIVE
 void bitnet_free(void) {
     if (!g_initialized) return;
+    bn_sampler_free(&g_sampler);
     bn_tokenizer_free(&g_tokenizer);
     bn_model_free(&g_model);
     bn_gguf_free(g_gguf);

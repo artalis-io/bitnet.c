@@ -215,6 +215,7 @@ BnGGUFFile *bn_gguf_open(const uint8_t *buf, size_t size) {
         if (f->kvs[i].key && strcmp(f->kvs[i].key, "general.alignment") == 0
             && f->kvs[i].type == BN_GGUF_TYPE_UINT32) {
             f->alignment = f->kvs[i].value.u32;
+            if (f->alignment == 0) f->alignment = 1;
         }
     }
 
@@ -375,13 +376,16 @@ static size_t tensor_type_size(uint32_t type, uint64_t nelements) {
 void *bn_gguf_tensor_data(BnGGUFFile *f, int idx) {
     if (idx < 0 || (uint64_t)idx >= f->n_tensors) return NULL;
     BnGGUFTensorInfo *t = &f->tensors[idx];
+    if (t->offset > SIZE_MAX - f->data_offset) return NULL;
     size_t offset = f->data_offset + t->offset;
     if (offset >= f->raw_size) return NULL;
 
     // Compute total elements from dims
     uint64_t nelements = 1;
-    for (uint32_t d = 0; d < t->n_dims; d++)
+    for (uint32_t d = 0; d < t->n_dims; d++) {
+        if (t->dims[d] != 0 && nelements > UINT64_MAX / t->dims[d]) return NULL;
         nelements *= t->dims[d];
+    }
 
     size_t tsize = tensor_type_size(t->type, nelements);
     if (tsize > 0 && offset + tsize > f->raw_size) {

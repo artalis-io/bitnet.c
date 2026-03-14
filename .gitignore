@@ -1,6 +1,7 @@
 # Build artifacts
 bitnet
 src/*.o
+src/quant/*.o
 test_gguf
 test_quant
 test_tokenizer

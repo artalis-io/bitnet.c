@@ -50,6 +50,34 @@ typedef struct {
     uint8_t  qs[16];  // packed nibbles (2 values per byte)
 } BnBlockQ4_0;
 
+// Q3_K: 3-bit k-quant, 256 elements per block
+// 32 bytes hmask + 64 bytes qs + 12 bytes scales + 2 bytes d = 110 bytes
+typedef struct {
+    uint8_t  hmask[BN_QK_K / 8]; // 32 bytes: high bit of each 3-bit quant
+    uint8_t  qs[BN_QK_K / 4];   // 64 bytes: low 2 bits of each quant
+    uint8_t  scales[12];         // 12 bytes: 16 packed 6-bit scales
+    uint16_t d;                  //  2 bytes: FP16 super-block scale
+} BnBlockQ3K;                    // 110 bytes total
+
+// Q4_K: 4-bit k-quant, 256 elements per block
+// 2 bytes d + 2 bytes dmin + 12 bytes scales + 128 bytes qs = 144 bytes
+typedef struct {
+    uint16_t d;                  //  2 bytes: FP16 super-block scale
+    uint16_t dmin;               //  2 bytes: FP16 super-block min
+    uint8_t  scales[12];         // 12 bytes: 8 packed 6-bit scales + 8 packed 6-bit mins
+    uint8_t  qs[BN_QK_K / 2];   // 128 bytes: 4-bit quants (0-15)
+} BnBlockQ4K;                    // 144 bytes total
+
+// Q5_K: 5-bit k-quant, 256 elements per block
+// 2 bytes d + 2 bytes dmin + 12 bytes scales + 32 bytes qh + 128 bytes qs = 176 bytes
+typedef struct {
+    uint16_t d;                  //  2 bytes: FP16 super-block scale
+    uint16_t dmin;               //  2 bytes: FP16 super-block min
+    uint8_t  scales[12];         // 12 bytes: same packing as Q4_K
+    uint8_t  qh[BN_QK_K / 8];   // 32 bytes: high bit of each 5-bit quant
+    uint8_t  qs[BN_QK_K / 2];   // 128 bytes: low 4 bits of each quant
+} BnBlockQ5K;                    // 176 bytes total
+
 // Q6_K: 6-bit k-quant, 256 elements per block
 // 128 bytes ql (lower 4 bits) + 64 bytes qh (upper 2 bits) + 16 int8 scales + FP16 d = 210 bytes
 typedef struct {
@@ -58,6 +86,14 @@ typedef struct {
     int8_t  scales[BN_QK_K / 16]; // 16 bytes: 8-bit sub-block scales
     uint16_t d;                  //   2 bytes: FP16 super-block scale
 } BnBlockQ6K;                    // 210 bytes total
+
+// Q8_K: 8-bit k-quant, 256 elements per block
+// 4 bytes d (float32!) + 256 bytes qs + 32 bytes bsums = 292 bytes
+typedef struct {
+    float    d;                        //  4 bytes: float32 scale (NOT FP16!)
+    int8_t   qs[BN_QK_K];             // 256 bytes: signed int8 quants
+    int16_t  bsums[BN_QK_K / 16];     //  32 bytes: sum of quants in groups of 16
+} BnBlockQ8K;                          // 292 bytes total
 
 // I2_S: Microsoft BitNet 2-bit ternary, no per-block scale
 // Interleaved byte layout: each byte packs 4 values from 4 sub-rows of 32
@@ -78,7 +114,11 @@ void     bn_quant_dequant_tq1(const BnBlockTQ1 *block, float *out);
 void     bn_quant_dequant_tq2(const BnBlockTQ2 *block, float *out);
 void     bn_quant_dequant_q8_0(const BnBlockQ8_0 *block, float *out);
 void     bn_quant_dequant_q4_0(const BnBlockQ4_0 *block, float *out);
+void     bn_quant_dequant_q3k(const BnBlockQ3K *block, float *out);
+void     bn_quant_dequant_q4k(const BnBlockQ4K *block, float *out);
+void     bn_quant_dequant_q5k(const BnBlockQ5K *block, float *out);
 void     bn_quant_dequant_q6k(const BnBlockQ6K *block, float *out);
+void     bn_quant_dequant_q8k(const BnBlockQ8K *block, float *out);
 void     bn_quant_dequant_i2s(const uint8_t *data, float *out, int n, float scale);
 void     bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
                          int8_t *x_q_buf, BnThreadPool *pool);

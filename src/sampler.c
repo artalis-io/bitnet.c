@@ -13,7 +13,7 @@ static float rng_float(uint64_t *state) {
     return (rng_next(state) >> 8) / BN_RNG_FLOAT_DIVISOR;
 }
 
-void bn_sampler_init(BnSampler *s, int vocab_size, float temp, float topp, uint64_t seed) {
+int bn_sampler_init(BnSampler *s, int vocab_size, float temp, float topp, uint64_t seed) {
     s->vocab_size = vocab_size;
     s->temperature = temp;
     s->topp = topp;
@@ -25,6 +25,7 @@ void bn_sampler_init(BnSampler *s, int vocab_size, float temp, float topp, uint6
     s->recent_cap = 0;
     s->recent_len = 0;
     s->recent_pos = 0;
+    return s->candidates ? 0 : -1;
 }
 
 void bn_sampler_free(BnSampler *s) {

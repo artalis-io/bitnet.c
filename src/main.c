@@ -290,7 +290,12 @@ int main(int argc, char **argv) {
     }
     // Initialize sampler
     BnSampler sampler;
-    bn_sampler_init(&sampler, cfg->vocab_size, args.temperature, args.topp, args.seed);
+    if (bn_sampler_init(&sampler, cfg->vocab_size, args.temperature, args.topp, args.seed) != 0) {
+        fprintf(stderr, "Failed to allocate sampler\n");
+        bn_model_free(&model);
+        bn_gguf_free(gf);
+        return 1;
+    }
     if (args.repeat_penalty > 1.0f)
         bn_sampler_set_repeat_penalty(&sampler, args.repeat_penalty, 64);
 

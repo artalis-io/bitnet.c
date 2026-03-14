@@ -517,6 +517,315 @@ static void test_q6k_matvec(void) {
     printf("PASSED\n");
 }
 
+// --- Test Q8_K dequantization ---
+
+static void test_q8k_dequant(void) {
+    printf("test_q8k_dequant... ");
+
+    BnBlockQ8K block;
+    memset(&block, 0, sizeof(block));
+    block.d = 0.5f;  // float32 scale (NOT FP16!)
+
+    // Set some known qs values
+    block.qs[0] = 10;
+    block.qs[1] = -20;
+    block.qs[127] = 127;
+    block.qs[255] = -128;
+
+    float out[256];
+    bn_quant_dequant_q8k(&block, out);
+
+    // val = d * qs[i]
+    assert(fabsf(out[0] - (0.5f * 10)) < 1e-4f);
+    assert(fabsf(out[1] - (0.5f * -20)) < 1e-4f);
+    assert(fabsf(out[127] - (0.5f * 127)) < 1e-4f);
+    assert(fabsf(out[255] - (0.5f * -128)) < 1e-4f);
+    // Zero elements should be zero
+    assert(fabsf(out[100]) < 1e-6f);
+
+    printf("PASSED\n");
+}
+
+// --- Test Q8_K matvec ---
+
+static void test_q8k_matvec(void) {
+    printf("test_q8k_matvec... ");
+
+    // 2 rows × 256 cols (1 block per row)
+    int rows = 2, cols = 256;
+    BnBlockQ8K *blocks = (BnBlockQ8K *)calloc(rows, sizeof(BnBlockQ8K));
+
+    // Row 0: d=1.0, all qs=1 → dot with all-ones x = 256
+    blocks[0].d = 1.0f;
+    for (int i = 0; i < 256; i++) blocks[0].qs[i] = 1;
+
+    // Row 1: d=0.5, alternating +2/-2 → sum = 0
+    blocks[1].d = 0.5f;
+    for (int i = 0; i < 256; i++) blocks[1].qs[i] = (i % 2 == 0) ? 2 : -2;
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q8_K, rows, cols, 1.0f };
+
+    float x[256];
+    for (int i = 0; i < 256; i++) x[i] = 1.0f;
+
+    float out[2];
+    int8_t x_q[256];
+    bn_quant_matvec(out, &W, x, x_q, NULL);
+
+    // Row 0: 256 * 1 * 1.0 = 256.0
+    assert(fabsf(out[0] - 256.0f) < 0.1f);
+    // Row 1: (128*2 - 128*2) * 0.5 = 0.0
+    assert(fabsf(out[1] - 0.0f) < 0.1f);
+
+    free(blocks);
+    printf("PASSED\n");
+}
+
+// --- Test Q4_K dequantization ---
+
+static void test_q4k_dequant(void) {
+    printf("test_q4k_dequant... ");
+
+    BnBlockQ4K block;
+    memset(&block, 0, sizeof(block));
+    block.d = 0x3C00;     // FP16 1.0
+    block.dmin = 0x3800;  // FP16 0.5
+
+    // Set scales for sub-block 0: sc=2, m=1 (j<4 path)
+    // scales[0] = (sc & 63) = 2, scales[4] = (m & 63) = 1
+    block.scales[0] = 2;
+    block.scales[4] = 1;
+
+    // Set qs[0] = 0x53: lo nibble = 3, hi nibble = 5
+    block.qs[0] = 0x53;
+
+    float out[256];
+    bn_quant_dequant_q4k(&block, out);
+
+    // Element 0: lo nibble = 3, sc=2, m=1
+    // val = d * sc * nibble - dmin * m = 1.0 * 2 * 3 - 0.5 * 1 = 5.5
+    assert(fabsf(out[0] - 5.5f) < 0.01f);
+
+    // Element 32: hi nibble = 5, sub-block 1 (scales[1]/scales[5] both 0)
+    // val = d * 0 * 5 - dmin * 0 = 0
+    assert(fabsf(out[32]) < 0.01f);
+
+    printf("PASSED\n");
+}
+
+// --- Test Q4_K matvec ---
+
+static void test_q4k_matvec(void) {
+    printf("test_q4k_matvec... ");
+
+    // 2 rows × 256 cols (1 block per row)
+    int rows = 2, cols = 256;
+    BnBlockQ4K *blocks = (BnBlockQ4K *)calloc(rows, sizeof(BnBlockQ4K));
+
+    // Row 0: d=1.0, dmin=0, all scales sc=1 m=0, all qs nibbles = 2
+    // Each byte: lo=2, hi=2 → 0x22
+    blocks[0].d = 0x3C00;
+    blocks[0].dmin = 0x0000;
+    for (int j = 0; j < 8; j++) {
+        // Set sc=1 for all 8 sub-blocks
+        if (j < 4) {
+            blocks[0].scales[j] = 1;      // sc
+            blocks[0].scales[j + 4] = 0;  // m
+        } else {
+            // j >= 4: sc = (scales[j+4] & 0xF) | ((scales[j-4] >> 6) << 4)
+            // Set scales[j+4] lo nibble = 1 for sc, hi nibble = 0 for m
+            blocks[0].scales[j + 4] = 1;
+        }
+    }
+    for (int i = 0; i < 128; i++) blocks[0].qs[i] = 0x22;
+
+    // Row 1: d=0.5, dmin=0.25, sc=1, m=1, all nibbles = 0
+    blocks[1].d = 0x3800;     // FP16 0.5
+    blocks[1].dmin = 0x3400;  // FP16 0.25
+    for (int j = 0; j < 4; j++) {
+        blocks[1].scales[j] = 1;      // sc
+        blocks[1].scales[j + 4] = 1;  // m
+    }
+    // qs all zeros (nibbles = 0)
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q4_K, rows, cols, 1.0f };
+
+    float x[256];
+    for (int i = 0; i < 256; i++) x[i] = 1.0f;
+
+    float out[2];
+    int8_t x_q[256];
+    bn_quant_matvec(out, &W, x, x_q, NULL);
+
+    // Row 0: each element = 1.0 * 1 * 2 - 0 = 2.0, sum = 256 * 2.0 = 512
+    // But only sub-blocks 0-3 have sc=1, sub-blocks 4-7 have sc from j>=4 path
+    // For j>=4: sc = (scales[j+4] & 0xF) | ((scales[j-4] >> 6) << 4) = (1 & 0xF) | 0 = 1
+    // So all sub-blocks have sc=1, each elem = 2, sum = 512
+    assert(fabsf(out[0] - 512.0f) < 1.0f);
+
+    // Row 1: sub-blocks 0-3 have sc=1, m=1; sub-blocks 4-7 have sc=0, m=0
+    // For sub-blocks 0-3 (128 elements): val = 0.5*1*0 - 0.25*1 = -0.25
+    // For sub-blocks 4-7 (128 elements): val = 0.5*0*0 - 0.25*0 = 0
+    // Sum = 128 * (-0.25) + 128 * 0 = -32
+    assert(fabsf(out[1] - (-32.0f)) < 1.0f);
+
+    free(blocks);
+    printf("PASSED\n");
+}
+
+// --- Test Q5_K dequantization ---
+
+static void test_q5k_dequant(void) {
+    printf("test_q5k_dequant... ");
+
+    BnBlockQ5K block;
+    memset(&block, 0, sizeof(block));
+    block.d = 0x3C00;     // FP16 1.0
+    block.dmin = 0x3800;  // FP16 0.5
+
+    // Sub-block 0: sc=1, m=0
+    block.scales[0] = 1;  // sc for sub-block 0
+    block.scales[4] = 0;  // m for sub-block 0
+
+    // Element 0: qs lo nibble = 7, qh bit 0 = 1 → q5 = 7 | 16 = 23
+    block.qs[0] = 0x07;  // lo nibble = 7
+    block.qh[0] = 0x01;  // bit 0 set → element 0 has high bit
+
+    float out[256];
+    bn_quant_dequant_q5k(&block, out);
+
+    // Element 0: q5=23, val = d * sc * q5 - dmin * m = 1.0 * 1 * 23 - 0.5 * 0 = 23.0
+    assert(fabsf(out[0] - 23.0f) < 0.01f);
+
+    // Element 1: qs[1] = 0 (lo=0), qh bit 1 (qh[0] & 2 = 0) → q5 = 0
+    // val = 1.0 * 1 * 0 - 0 = 0
+    assert(fabsf(out[1]) < 0.01f);
+
+    printf("PASSED\n");
+}
+
+// --- Test Q5_K matvec ---
+
+static void test_q5k_matvec(void) {
+    printf("test_q5k_matvec... ");
+
+    // 2 rows × 256 cols
+    int rows = 2, cols = 256;
+    BnBlockQ5K *blocks = (BnBlockQ5K *)calloc(rows, sizeof(BnBlockQ5K));
+
+    // Row 0: d=1.0, dmin=0, sc=1, m=0 for sub-blocks 0-3, qs=0, qh=0 → all q5=0
+    blocks[0].d = 0x3C00;
+    blocks[0].dmin = 0x0000;
+    for (int j = 0; j < 4; j++) blocks[0].scales[j] = 1;
+
+    // Row 1: d=0.5, dmin=0, sc=2, all qs lo=3, qh=0 → q5=3
+    blocks[1].d = 0x3800;
+    blocks[1].dmin = 0x0000;
+    for (int j = 0; j < 4; j++) blocks[1].scales[j] = 2;
+    for (int i = 0; i < 128; i++) blocks[1].qs[i] = 0x33;  // lo=3, hi=3
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f };
+
+    float x[256];
+    for (int i = 0; i < 256; i++) x[i] = 1.0f;
+
+    float out[2];
+    int8_t x_q[256];
+    bn_quant_matvec(out, &W, x, x_q, NULL);
+
+    // Row 0: all q5=0, sc=1, d=1 → val=0 for all → sum=0
+    assert(fabsf(out[0]) < 1.0f);
+
+    // Row 1: sub-blocks 0-3 have sc=2, q5=3, d=0.5 → val=0.5*2*3=3.0
+    // Sub-blocks 4-7 have sc=0 → val=0
+    // Sum = 128 * 3.0 + 128 * 0 = 384
+    assert(fabsf(out[1] - 384.0f) < 1.0f);
+
+    free(blocks);
+    printf("PASSED\n");
+}
+
+// --- Test Q3_K dequantization ---
+
+static void test_q3k_dequant(void) {
+    printf("test_q3k_dequant... ");
+
+    BnBlockQ3K block;
+    memset(&block, 0, sizeof(block));
+    block.d = 0x3C00;  // FP16 1.0
+
+    // Set all scales to 32 (→ signed scale = 32-32 = 0)
+    // With scale 0, all outputs should be 0 regardless of quant values
+    // Pack scales: all bytes to encode scale=32 for all 16 sub-blocks
+    // After q3k_unpack_scales: each byte should be 32
+    // aux[0] = 0x20202020 (each byte=32=0x20, low nibble=0, upper=2)
+    // Actually the packing is complex. Let's just set scales to make
+    // the unpacked result be 32 (→ signed 0). With all zeros output is trivially 0.
+
+    // Instead, test with a simple case: set scale[0] to known value
+    // Use direct bytes: scales[0..11]
+    // After unpacking, scales[0] should give a known 6-bit value.
+    // The simplest test: all scale bytes = 0 → all 6-bit scales = 0
+    // signed scale = 0 - 32 = -32
+    // With qs all 0 and hmask all 0:
+    //   2bit = 0, hmask=0 → q3 = 0 - 4 = -4
+    //   val = d * (0 - 32) * (-4) = 1.0 * -32 * -4 = 128
+    float out[256];
+    bn_quant_dequant_q3k(&block, out);
+
+    // All scales = 0 → signed scale = -32
+    // All qs = 0 → 2-bit = 0, all hmask = 0 → q3 = 0 - 4 = -4
+    // val = 1.0 * -32 * -4 = 128
+    assert(fabsf(out[0] - 128.0f) < 0.01f);
+    assert(fabsf(out[100] - 128.0f) < 0.01f);
+    assert(fabsf(out[255] - 128.0f) < 0.01f);
+
+    // Test with hmask bit set: q3 = 0 - 0 = 0 → val = -32 * 0 = 0
+    memset(&block, 0, sizeof(block));
+    block.d = 0x3C00;
+    block.hmask[0] = 0xFF;  // All 8 bits set
+    bn_quant_dequant_q3k(&block, out);
+    // Element 0 reads hm[0] & 1 = 1, so q3 = 0 - 0 = 0, val = -32 * 0 = 0
+    assert(fabsf(out[0]) < 0.01f);
+
+    printf("PASSED\n");
+}
+
+// --- Test Q3_K matvec ---
+
+static void test_q3k_matvec(void) {
+    printf("test_q3k_matvec... ");
+
+    // 2 rows × 256 cols
+    int rows = 2, cols = 256;
+    BnBlockQ3K *blocks = (BnBlockQ3K *)calloc(rows, sizeof(BnBlockQ3K));
+
+    // Row 0: d=1.0, all scales=0 (→ signed -32), all qs=0, all hmask=0xFF
+    // hmask all set → q3 = 0 - 0 = 0 → val = -32 * 0 = 0 → dot = 0
+    blocks[0].d = 0x3C00;
+    memset(blocks[0].hmask, 0xFF, 32);
+
+    // Row 1: d=0.5, all scales=0 (→ signed -32), all qs=0, hmask=0
+    // hmask=0 → q3 = 0 - 4 = -4, val = 0.5 * -32 * -4 = 64
+    // dot with all-1 x = 256 * 64 = 16384
+    blocks[1].d = 0x3800;  // FP16 0.5
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q3_K, rows, cols, 1.0f };
+
+    float x[256];
+    for (int i = 0; i < 256; i++) x[i] = 1.0f;
+
+    float out[2];
+    int8_t x_q[256];
+    bn_quant_matvec(out, &W, x, x_q, NULL);
+
+    assert(fabsf(out[0]) < 1.0f);
+    assert(fabsf(out[1] - 16384.0f) < 10.0f);
+
+    free(blocks);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Tests ===\n");
     test_fp16_conversion();
@@ -531,6 +840,14 @@ int main(void) {
     test_matvec_threaded();
     test_q6k_dequant();
     test_q6k_matvec();
+    test_q8k_dequant();
+    test_q8k_matvec();
+    test_q4k_dequant();
+    test_q4k_matvec();
+    test_q5k_dequant();
+    test_q5k_matvec();
+    test_q3k_dequant();
+    test_q3k_matvec();
     printf("All quant tests passed!\n");
     return 0;
 }

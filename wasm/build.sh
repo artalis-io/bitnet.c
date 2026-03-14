@@ -8,7 +8,27 @@ echo "Building bitnet.c WASM module..."
 
 emcc \
     "$PROJECT_DIR/src/gguf.c" \
-    "$PROJECT_DIR/src/quant.c" \
+    "$PROJECT_DIR/src/quant/fp16.c" \
+    "$PROJECT_DIR/src/quant/dequant.c" \
+    "$PROJECT_DIR/src/quant/dispatch.c" \
+    "$PROJECT_DIR/src/quant/i2s_wasm.c" \
+    "$PROJECT_DIR/src/quant/i2s_scalar.c" \
+    "$PROJECT_DIR/src/quant/tq2_scalar.c" \
+    "$PROJECT_DIR/src/quant/tq1_scalar.c" \
+    "$PROJECT_DIR/src/quant/q8_wasm.c" \
+    "$PROJECT_DIR/src/quant/q8_scalar.c" \
+    "$PROJECT_DIR/src/quant/q4_wasm.c" \
+    "$PROJECT_DIR/src/quant/q4_scalar.c" \
+    "$PROJECT_DIR/src/quant/q6k_wasm.c" \
+    "$PROJECT_DIR/src/quant/q6k_scalar.c" \
+    "$PROJECT_DIR/src/quant/q8k_wasm.c" \
+    "$PROJECT_DIR/src/quant/q8k_scalar.c" \
+    "$PROJECT_DIR/src/quant/q4k_wasm.c" \
+    "$PROJECT_DIR/src/quant/q4k_scalar.c" \
+    "$PROJECT_DIR/src/quant/q5k_wasm.c" \
+    "$PROJECT_DIR/src/quant/q5k_scalar.c" \
+    "$PROJECT_DIR/src/quant/q3k_wasm.c" \
+    "$PROJECT_DIR/src/quant/q3k_scalar.c" \
     "$PROJECT_DIR/src/model.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/tokenizer.c" \
