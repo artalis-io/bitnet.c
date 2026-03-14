@@ -10,7 +10,7 @@ Zero dependencies beyond libc and libm, four SIMD backends, compiles to WASM, an
 
 - **Pure C11** — no C++, no frameworks, no dependencies beyond libc and libm
 - **GGUF model loading** — loads any GGUF file with supported tensor types
-- **Quantization formats** — I2_S, TQ1_0, TQ2_0 (ternary), Q4_0 (4-bit), Q8_0 (8-bit)
+- **Quantization formats** — I2_S, TQ1_0, TQ2_0 (ternary), Q4_0 (4-bit), Q6_K (6-bit k-quant), Q8_0 (8-bit)
 - **Full transformer forward pass** — RoPE, GQA, RMSNorm, sub-norms, tied embeddings
 - **Flash GQA attention** — online softmax with KV-head grouping, single-pass over KV cache
 - **Optional F16 KV cache** — `--kv16` halves attention DRAM bandwidth with minimal precision loss
@@ -35,12 +35,13 @@ Auto-selected at compile time based on target architecture.
 
 ## Tested Models
 
-| Model | Format | Status |
-|-------|--------|--------|
-| [bitnet-b1.58-2B-4T](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf) | I2_S / TQ2_0 | Primary development target |
-| [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) | Q4_0 + Q8_0 | Working (Q4_0 weights, Q8_0 output, attention biases) |
+| Model | Params | Format | Status |
+|-------|--------|--------|--------|
+| [bitnet-b1.58-2B-4T](https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf) | 2B | I2_S / TQ2_0 | Primary development target |
+| [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) | 0.5B | Q4_0 + Q8_0 | Working |
+| [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF) | 3B | Q4_0 + Q6_K | Working |
 
-Models must use only supported weight types (Q4_0, Q8_0, I2_S, TQ1_0, TQ2_0, F16). GGUF files with k-quant types (Q4_K, Q5_K, Q6_K, etc.) are not yet supported.
+Models must use only supported weight types (Q4_0, Q6_K, Q8_0, I2_S, TQ1_0, TQ2_0, F16). GGUF files with other k-quant types (Q4_K, Q5_K, etc.) are not yet supported.
 
 ## Quick Start
 
@@ -192,11 +193,18 @@ Requires [Emscripten](https://emscripten.org/):
 
 ## Performance
 
-Benchmarked on Apple M1 Max (8 P-cores, 32 GB), `bitnet-b1.58-2B-4T` (I2_S format), greedy decoding:
+### Benchmarks
 
-**~52 tok/s** (256 tokens generated)
+Measured on Apple M1 Max (8 P-cores, 32 GB), greedy decoding (`--temp 0`), 8 threads.
 
-### Optimization History
+| Model | Size | Quant | bitnet.c | llama.cpp CPU | llama.cpp Metal |
+|-------|------|-------|----------|---------------|-----------------|
+| bitnet-b1.58-2B-4T | 620 MB | I2_S (ternary) | **52 tok/s** | — | — |
+| Qwen2.5-3B-Instruct | 1.7 GB | Q4_0 + Q6_K | **14 tok/s** | 25 tok/s | 112 tok/s |
+
+bitnet.c is a pure CPU engine with no GPU backend. On ternary models it's competitive with anything — the workload is DRAM-bandwidth-bound and GPU dispatch overhead adds latency for zero throughput gain. On standard quant models (Q4_0/Q6_K), llama.cpp's CPU path is ~1.8x faster due to weight repacking and more aggressive integer dot product kernels; its Metal path is ~8x faster via GPU offload.
+
+### Optimization History (bitnet-b1.58-2B-4T)
 
 | Optimization | tok/s | Speedup |
 |---|---|---|
@@ -212,11 +220,11 @@ Benchmarked on Apple M1 Max (8 P-cores, 32 GB), `bitnet-b1.58-2B-4T` (I2_S forma
 - **SDOT (vdotq_s32)** — ARM dot product instructions for I2_S ternary matvec. Quantize activations to int8 once, then use integer dot products instead of float FMA. 2x speedup.
 - **Batch matvec** — group independent projections (QKV, gate+up) into a single thread pool dispatch, sharing the int8-quantized activation vector.
 - **Pthread thread pool** — persistent worker threads with condvar dispatch (~2us), replacing OpenMP fork/join (~15us on macOS).
-- **Native FP16 logits** — `-mcpu=apple-m1` enables `__ARM_FEATURE_FP16_VECTOR_ARITHMETIC` for native F16 FMA in the logits computation (embedding dot products). Apple clang's `-march=native` misses this.
+- **SIMD Q6_K kernels** — vectorized 6-bit dequant + float FMA for NEON, AVX2, and WASM SIMD128. 78% speedup on Q6_K-bottlenecked logits.
+- **Q4_0 integer dot product** — per-block Q8_0 activation quantization with SDOT/DPBUSD integer matvec, matching llama.cpp's approach. 6/8 first-word match on greedy decoding.
 - **INT8 output embeddings** — pre-quantize F16 embedding table to INT8 with per-row scales at load time. SDOT logits kernel reads 328 MB/token instead of 656 MB.
-- **Arena allocator** — all RunState buffers in a single contiguous allocation for better TLB coverage.
 
-### Bandwidth Analysis
+### Bandwidth Analysis (bitnet-b1.58-2B-4T)
 
 At ~52 tok/s the workload is **DRAM bandwidth-bound**, reading ~825 MB per token:
 
@@ -245,6 +253,7 @@ BitNet b1.58 is a transformer variant where all linear layer weights are constra
 | TQ1_0  | 1.6875      | Base-3 (5 values/byte) + residual | 256 |
 | TQ2_0  | 2.0625      | 2-bit fields (4 values/byte) | 256 |
 | Q4_0   | 4.5         | 4-bit nibbles (2 values/byte) + FP16 per-block scale | 32 |
+| Q6_K   | 6.5625      | 6-bit quants (split ql/qh) + int8 sub-block scales + FP16 super-block scale | 256 |
 | Q8_0   | 8.5         | 8-bit values + FP16 per-block scale | 32 |
 
 ### Memory Budget (bitnet-b1.58-2B-4T, 2048 context)
