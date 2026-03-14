@@ -1233,6 +1233,18 @@ static void q4_range(void *ctx, int row_start, int row_end) {
 #endif // !(NEON+DOTPROD) && !AVX2 — Q4_0 float fallback
 
 // --- Q6_K matrix-vector multiply ---
+// Layout per 256-element block (2 chunks of 128):
+//   ql[0..63]: lower 4 bits (split: ql[0..31] and ql[32..63] per chunk)
+//   qh[0..31]: upper 2 bits packed (2 bits per sub-group per element)
+//   sc[0..7]: int8 sub-block scales (per 16 elements, 8 per chunk)
+//   d: FP16 super-block scale
+//
+// Per chunk, 4 sub-groups of 32 elements (offsets 0, 32, 64, 96):
+//   q1[l] = (ql[l] & 0xF)      | ((qh[l]>>0)&3)<<4 - 32  (elements 0..31)
+//   q2[l] = (ql[l+32] & 0xF)   | ((qh[l]>>2)&3)<<4 - 32  (elements 32..63)
+//   q3[l] = (ql[l] >> 4)       | ((qh[l]>>4)&3)<<4 - 32  (elements 64..95)
+//   q4[l] = (ql[l+32] >> 4)    | ((qh[l]>>6)&3)<<4 - 32  (elements 96..127)
+//   Sub-block scale index: sc[l/16 + {0,2,4,6}] per sub-group
 
 typedef struct {
     float *out;
@@ -1240,6 +1252,315 @@ typedef struct {
     const float *x;
 } Q6KCtx;
 
+#ifdef __ARM_NEON
+static void q6k_range(void *ctx, int row_start, int row_end) {
+    Q6KCtx *c = (Q6KCtx *)ctx;
+    int cols = c->W->cols;
+    int n_blocks_per_row = cols / BN_QK_K;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)c->W->data;
+    const float *x = c->x;
+
+    const uint8x16_t mask_lo4 = vdupq_n_u8(0xF);
+    const uint8x16_t mask_2 = vdupq_n_u8(3);
+    const int8x16_t bias32 = vdupq_n_s8(32);
+
+    for (int row = row_start; row < row_end; row++) {
+        float row_sum = 0.0f;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BnBlockQ6K *blk = &blocks[row * n_blocks_per_row + b];
+            __builtin_prefetch(blk + 1, 0, 0);
+            float d = bn_fp16_to_fp32(blk->d);
+            const uint8_t *ql = blk->ql;
+            const uint8_t *qh = blk->qh;
+            const int8_t  *sc = blk->scales;
+            const float *xb = x + b * BN_QK_K;
+
+            for (int chunk = 0; chunk < 2; chunk++) {
+                // Load ql: 64 bytes (ql[0..31] and ql[32..63])
+                uint8x16_t ql0 = vld1q_u8(ql);        // ql[0..15]
+                uint8x16_t ql1 = vld1q_u8(ql + 16);   // ql[16..31]
+                uint8x16_t ql2 = vld1q_u8(ql + 32);   // ql[32..47]
+                uint8x16_t ql3 = vld1q_u8(ql + 48);   // ql[48..63]
+
+                // Load qh: 32 bytes
+                uint8x16_t qh0 = vld1q_u8(qh);        // qh[0..15]
+                uint8x16_t qh1 = vld1q_u8(qh + 16);   // qh[16..31]
+
+                // Sub-group 0 (elements 0..31): lo4 of ql[0..31], qh bits 0-1
+                int8x16_t w0a = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vandq_u8(ql0, mask_lo4),
+                    vshlq_n_u8(vandq_u8(qh0, mask_2), 4))), bias32);
+                int8x16_t w0b = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vandq_u8(ql1, mask_lo4),
+                    vshlq_n_u8(vandq_u8(qh1, mask_2), 4))), bias32);
+
+                // Sub-group 1 (elements 32..63): lo4 of ql[32..63], qh bits 2-3
+                int8x16_t w1a = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vandq_u8(ql2, mask_lo4),
+                    vshlq_n_u8(vandq_u8(vshrq_n_u8(qh0, 2), mask_2), 4))), bias32);
+                int8x16_t w1b = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vandq_u8(ql3, mask_lo4),
+                    vshlq_n_u8(vandq_u8(vshrq_n_u8(qh1, 2), mask_2), 4))), bias32);
+
+                // Sub-group 2 (elements 64..95): hi4 of ql[0..31], qh bits 4-5
+                int8x16_t w2a = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vshrq_n_u8(ql0, 4),
+                    vshlq_n_u8(vandq_u8(vshrq_n_u8(qh0, 4), mask_2), 4))), bias32);
+                int8x16_t w2b = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vshrq_n_u8(ql1, 4),
+                    vshlq_n_u8(vandq_u8(vshrq_n_u8(qh1, 4), mask_2), 4))), bias32);
+
+                // Sub-group 3 (elements 96..127): hi4 of ql[32..63], qh bits 6-7
+                int8x16_t w3a = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vshrq_n_u8(ql2, 4),
+                    vshlq_n_u8(vshrq_n_u8(qh0, 6), 4))), bias32);
+                int8x16_t w3b = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
+                    vshrq_n_u8(ql3, 4),
+                    vshlq_n_u8(vshrq_n_u8(qh1, 6), 4))), bias32);
+
+                // Accumulate: widen int8 weights to float, FMA with x
+                // 8 sub-blocks of 16 elements each, with per-16-element scales
+                float32x4_t acc0 = vdupq_n_f32(0), acc1 = vdupq_n_f32(0);
+                float32x4_t acc2 = vdupq_n_f32(0), acc3 = vdupq_n_f32(0);
+
+                #define Q6K_ACC_16(w_vec, xp, scale_val) do { \
+                    float ds = d * (float)(scale_val); \
+                    float32x4_t vds = vdupq_n_f32(ds); \
+                    int16x8_t lo16 = vmovl_s8(vget_low_s8(w_vec)); \
+                    int16x8_t hi16 = vmovl_s8(vget_high_s8(w_vec)); \
+                    acc0 = vmlaq_f32(acc0, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(lo16))), vds), vld1q_f32(xp)); \
+                    acc1 = vmlaq_f32(acc1, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(lo16))), vds), vld1q_f32(xp + 4)); \
+                    acc2 = vmlaq_f32(acc2, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(hi16))), vds), vld1q_f32(xp + 8)); \
+                    acc3 = vmlaq_f32(acc3, vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(hi16))), vds), vld1q_f32(xp + 12)); \
+                } while(0)
+
+                Q6K_ACC_16(w0a, xb +  0, sc[0]);
+                Q6K_ACC_16(w0b, xb + 16, sc[1]);
+                Q6K_ACC_16(w1a, xb + 32, sc[2]);
+                Q6K_ACC_16(w1b, xb + 48, sc[3]);
+                Q6K_ACC_16(w2a, xb + 64, sc[4]);
+                Q6K_ACC_16(w2b, xb + 80, sc[5]);
+                Q6K_ACC_16(w3a, xb + 96, sc[6]);
+                Q6K_ACC_16(w3b, xb +112, sc[7]);
+
+                #undef Q6K_ACC_16
+
+                float32x4_t s = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+                float32x2_t r = vadd_f32(vget_low_f32(s), vget_high_f32(s));
+                row_sum += vget_lane_f32(vpadd_f32(r, r), 0);
+
+                xb += 128;
+                ql += 64;
+                qh += 32;
+                sc += 8;
+            }
+        }
+        c->out[row] = row_sum;
+    }
+}
+
+#elif defined(__AVX2__)
+static void q6k_range(void *ctx, int row_start, int row_end) {
+    Q6KCtx *c = (Q6KCtx *)ctx;
+    int cols = c->W->cols;
+    int n_blocks_per_row = cols / BN_QK_K;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)c->W->data;
+    const float *x = c->x;
+
+    const __m128i mask_lo4 = _mm_set1_epi8(0xF);
+    const __m128i mask_2 = _mm_set1_epi8(3);
+    const __m128i bias32 = _mm_set1_epi8(32);
+
+    for (int row = row_start; row < row_end; row++) {
+        float row_sum = 0.0f;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BnBlockQ6K *blk = &blocks[row * n_blocks_per_row + b];
+            _mm_prefetch((const char *)(blk + 1), _MM_HINT_T0);
+            float d = bn_fp16_to_fp32(blk->d);
+            const uint8_t *ql = blk->ql;
+            const uint8_t *qh = blk->qh;
+            const int8_t  *sc = blk->scales;
+            const float *xb = x + b * BN_QK_K;
+
+            for (int chunk = 0; chunk < 2; chunk++) {
+                // Load ql (4×16 bytes) and qh (2×16 bytes)
+                __m128i ql0 = _mm_loadu_si128((const __m128i *)(ql));
+                __m128i ql1 = _mm_loadu_si128((const __m128i *)(ql + 16));
+                __m128i ql2 = _mm_loadu_si128((const __m128i *)(ql + 32));
+                __m128i ql3 = _mm_loadu_si128((const __m128i *)(ql + 48));
+                __m128i qh0 = _mm_loadu_si128((const __m128i *)(qh));
+                __m128i qh1 = _mm_loadu_si128((const __m128i *)(qh + 16));
+
+                // Reconstruct 6-bit weights for 8 sub-blocks of 16 elements
+                // Sub-group 0: lo4 of ql[0..31], qh bits 0-1
+                __m128i w0a = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(ql0, mask_lo4),
+                    _mm_slli_epi16(_mm_and_si128(qh0, mask_2), 4)), bias32);
+                __m128i w0b = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(ql1, mask_lo4),
+                    _mm_slli_epi16(_mm_and_si128(qh1, mask_2), 4)), bias32);
+
+                // Sub-group 1: lo4 of ql[32..63], qh bits 2-3
+                __m128i w1a = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(ql2, mask_lo4),
+                    _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh0, 2), mask_2), 4)), bias32);
+                __m128i w1b = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(ql3, mask_lo4),
+                    _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh1, 2), mask_2), 4)), bias32);
+
+                // Sub-group 2: hi4 of ql[0..31], qh bits 4-5
+                __m128i w2a = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(_mm_srli_epi16(ql0, 4), mask_lo4),
+                    _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh0, 4), mask_2), 4)), bias32);
+                __m128i w2b = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(_mm_srli_epi16(ql1, 4), mask_lo4),
+                    _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh1, 4), mask_2), 4)), bias32);
+
+                // Sub-group 3: hi4 of ql[32..63], qh bits 6-7
+                __m128i w3a = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(_mm_srli_epi16(ql2, 4), mask_lo4),
+                    _mm_slli_epi16(_mm_srli_epi16(qh0, 6), 4)), bias32);
+                __m128i w3b = _mm_sub_epi8(_mm_or_si128(
+                    _mm_and_si128(_mm_srli_epi16(ql3, 4), mask_lo4),
+                    _mm_slli_epi16(_mm_srli_epi16(qh1, 6), 4)), bias32);
+
+                // Accumulate: widen int8 weights to float, FMA with x
+                // Each sub-block is 16 elements with its own scale
+                __m256 acc = _mm256_setzero_ps();
+
+                #define Q6K_AVX2_ACC_16(w128, xp, scale_val) do { \
+                    __m256 vds = _mm256_set1_ps(d * (float)(scale_val)); \
+                    __m256 w_lo = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(w128)), vds); \
+                    __m256 w_hi = _mm256_mul_ps(_mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(w128, 8))), vds); \
+                    acc = _mm256_add_ps(acc, _mm256_mul_ps(w_lo, _mm256_loadu_ps(xp))); \
+                    acc = _mm256_add_ps(acc, _mm256_mul_ps(w_hi, _mm256_loadu_ps(xp + 8))); \
+                } while(0)
+
+                Q6K_AVX2_ACC_16(w0a, xb +   0, sc[0]);
+                Q6K_AVX2_ACC_16(w0b, xb +  16, sc[1]);
+                Q6K_AVX2_ACC_16(w1a, xb +  32, sc[2]);
+                Q6K_AVX2_ACC_16(w1b, xb +  48, sc[3]);
+                Q6K_AVX2_ACC_16(w2a, xb +  64, sc[4]);
+                Q6K_AVX2_ACC_16(w2b, xb +  80, sc[5]);
+                Q6K_AVX2_ACC_16(w3a, xb +  96, sc[6]);
+                Q6K_AVX2_ACC_16(w3b, xb + 112, sc[7]);
+
+                #undef Q6K_AVX2_ACC_16
+
+                row_sum += bn_avx2_hsum_ps(acc);
+
+                xb += 128;
+                ql += 64;
+                qh += 32;
+                sc += 8;
+            }
+        }
+        c->out[row] = row_sum;
+    }
+}
+
+#elif defined(__wasm_simd128__)
+static void q6k_range(void *ctx, int row_start, int row_end) {
+    Q6KCtx *c = (Q6KCtx *)ctx;
+    int cols = c->W->cols;
+    int n_blocks_per_row = cols / BN_QK_K;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)c->W->data;
+    const float *x = c->x;
+
+    const v128_t mask_lo4 = wasm_i8x16_splat(0xF);
+    const v128_t mask_2 = wasm_i8x16_splat(3);
+    const v128_t bias32 = wasm_i8x16_splat(32);
+
+    for (int row = row_start; row < row_end; row++) {
+        float row_sum = 0.0f;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BnBlockQ6K *blk = &blocks[row * n_blocks_per_row + b];
+            float d = bn_fp16_to_fp32(blk->d);
+            const uint8_t *ql = blk->ql;
+            const uint8_t *qh = blk->qh;
+            const int8_t  *sc = blk->scales;
+            const float *xb = x + b * BN_QK_K;
+
+            for (int chunk = 0; chunk < 2; chunk++) {
+                v128_t ql0 = wasm_v128_load(ql);
+                v128_t ql1 = wasm_v128_load(ql + 16);
+                v128_t ql2 = wasm_v128_load(ql + 32);
+                v128_t ql3 = wasm_v128_load(ql + 48);
+                v128_t qh0 = wasm_v128_load(qh);
+                v128_t qh1 = wasm_v128_load(qh + 16);
+
+                // Sub-group 0
+                v128_t w0a = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(ql0, mask_lo4),
+                    wasm_i8x16_shl(wasm_v128_and(qh0, mask_2), 4)), bias32);
+                v128_t w0b = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(ql1, mask_lo4),
+                    wasm_i8x16_shl(wasm_v128_and(qh1, mask_2), 4)), bias32);
+                // Sub-group 1
+                v128_t w1a = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(ql2, mask_lo4),
+                    wasm_i8x16_shl(wasm_v128_and(wasm_u8x16_shr(qh0, 2), mask_2), 4)), bias32);
+                v128_t w1b = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(ql3, mask_lo4),
+                    wasm_i8x16_shl(wasm_v128_and(wasm_u8x16_shr(qh1, 2), mask_2), 4)), bias32);
+                // Sub-group 2
+                v128_t w2a = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(wasm_u8x16_shr(ql0, 4), mask_lo4),
+                    wasm_i8x16_shl(wasm_v128_and(wasm_u8x16_shr(qh0, 4), mask_2), 4)), bias32);
+                v128_t w2b = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(wasm_u8x16_shr(ql1, 4), mask_lo4),
+                    wasm_i8x16_shl(wasm_v128_and(wasm_u8x16_shr(qh1, 4), mask_2), 4)), bias32);
+                // Sub-group 3
+                v128_t w3a = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(wasm_u8x16_shr(ql2, 4), mask_lo4),
+                    wasm_i8x16_shl(wasm_u8x16_shr(qh0, 6), 4)), bias32);
+                v128_t w3b = wasm_i8x16_sub(wasm_v128_or(
+                    wasm_v128_and(wasm_u8x16_shr(ql3, 4), mask_lo4),
+                    wasm_i8x16_shl(wasm_u8x16_shr(qh1, 6), 4)), bias32);
+
+                v128_t acc0 = wasm_f32x4_splat(0), acc1 = wasm_f32x4_splat(0);
+                v128_t acc2 = wasm_f32x4_splat(0), acc3 = wasm_f32x4_splat(0);
+
+                #define Q6K_WASM_ACC_16(w_vec, xp, scale_val) do { \
+                    v128_t vds = wasm_f32x4_splat(d * (float)(scale_val)); \
+                    v128_t lo16 = wasm_i16x8_extend_low_i8x16(w_vec); \
+                    v128_t hi16 = wasm_i16x8_extend_high_i8x16(w_vec); \
+                    acc0 = wasm_f32x4_add(acc0, wasm_f32x4_mul(wasm_f32x4_mul( \
+                        wasm_f32x4_convert_i32x4(wasm_i32x4_extend_low_i16x8(lo16)), vds), wasm_v128_load(xp))); \
+                    acc1 = wasm_f32x4_add(acc1, wasm_f32x4_mul(wasm_f32x4_mul( \
+                        wasm_f32x4_convert_i32x4(wasm_i32x4_extend_high_i16x8(lo16)), vds), wasm_v128_load(xp + 4))); \
+                    acc2 = wasm_f32x4_add(acc2, wasm_f32x4_mul(wasm_f32x4_mul( \
+                        wasm_f32x4_convert_i32x4(wasm_i32x4_extend_low_i16x8(hi16)), vds), wasm_v128_load(xp + 8))); \
+                    acc3 = wasm_f32x4_add(acc3, wasm_f32x4_mul(wasm_f32x4_mul( \
+                        wasm_f32x4_convert_i32x4(wasm_i32x4_extend_high_i16x8(hi16)), vds), wasm_v128_load(xp + 12))); \
+                } while(0)
+
+                Q6K_WASM_ACC_16(w0a, xb +   0, sc[0]);
+                Q6K_WASM_ACC_16(w0b, xb +  16, sc[1]);
+                Q6K_WASM_ACC_16(w1a, xb +  32, sc[2]);
+                Q6K_WASM_ACC_16(w1b, xb +  48, sc[3]);
+                Q6K_WASM_ACC_16(w2a, xb +  64, sc[4]);
+                Q6K_WASM_ACC_16(w2b, xb +  80, sc[5]);
+                Q6K_WASM_ACC_16(w3a, xb +  96, sc[6]);
+                Q6K_WASM_ACC_16(w3b, xb + 112, sc[7]);
+
+                #undef Q6K_WASM_ACC_16
+
+                v128_t sum = wasm_f32x4_add(wasm_f32x4_add(acc0, acc1), wasm_f32x4_add(acc2, acc3));
+                row_sum += bn_wasm_hsum_f32x4(sum);
+
+                xb += 128;
+                ql += 64;
+                qh += 32;
+                sc += 8;
+            }
+        }
+        c->out[row] = row_sum;
+    }
+}
+
+#else
+// Scalar fallback
 static void q6k_range(void *ctx, int row_start, int row_end) {
     Q6KCtx *c = (Q6KCtx *)ctx;
     int cols = c->W->cols;
@@ -1278,6 +1599,7 @@ static void q6k_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum;
     }
 }
+#endif
 
 // --- Quantized matrix-vector multiply ---
 // out[rows] = W[rows x cols] @ x[cols]
