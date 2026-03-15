@@ -4,13 +4,13 @@ A minimal, embeddable LLM inference engine in pure C11.
 
 Started as a clean-room inference engine for Microsoft's [BitNet b1.58](https://arxiv.org/abs/2402.17764) ternary models, inspired by Karpathy's [llama2.c](https://github.com/karpathy/llama2.c). Now supports standard GGUF quantization formats (Q4_0, Q8_0) alongside ternary (I2_S, TQ1_0, TQ2_0) — covering most small language models on HuggingFace.
 
-Zero dependencies beyond libc and libm, four SIMD backends, compiles to WASM, and fits in ~4,500 lines of modular C.
+Zero dependencies beyond libc and libm, four SIMD backends, compiles to WASM, and fits in ~8,000 lines of modular C.
 
 ## Features
 
 - **Pure C11** — no C++, no frameworks, no dependencies beyond libc and libm
 - **GGUF model loading** — loads any GGUF file with supported tensor types
-- **Quantization formats** — I2_S, TQ1_0, TQ2_0 (ternary), Q4_0 (4-bit), Q6_K (6-bit k-quant), Q8_0 (8-bit)
+- **Quantization formats** — I2_S, TQ1_0, TQ2_0 (ternary), Q3_K, Q4_0, Q4_K, Q5_K, Q6_K (k-quants), Q8_0, Q8_K
 - **Full transformer forward pass** — RoPE, GQA, RMSNorm, sub-norms, tied embeddings
 - **Flash GQA attention** — online softmax with KV-head grouping, single-pass over KV cache
 - **Optional F16 KV cache** — `--kv16` halves attention DRAM bandwidth with minimal precision loss
@@ -41,7 +41,7 @@ Auto-selected at compile time based on target architecture.
 | [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) | 0.5B | Q4_0 + Q8_0 | Working |
 | [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF) | 3B | Q4_0 + Q6_K | Working |
 
-Models must use only supported weight types (Q4_0, Q6_K, Q8_0, I2_S, TQ1_0, TQ2_0, F16). GGUF files with other k-quant types (Q4_K, Q5_K, etc.) are not yet supported.
+Models must use only supported weight types (I2_S, TQ1_0, TQ2_0, Q3_K, Q4_0, Q4_K, Q5_K, Q6_K, Q8_0, Q8_K, F16, F32).
 
 ## Quick Start
 
@@ -116,46 +116,48 @@ The `model/` directory is git-ignored — model files won't be committed.
 ```
 bitnet.c/
 ├── include/
-│   ├── platform.h      # Platform abstraction (mmap, timing)
-│   ├── gguf.h          # GGUF v3 reader API
-│   ├── quant.h         # Quantization: I2_S/TQ/Q4_0/Q8_0 dequant + matvec
-│   ├── model.h         # Config, Weights, model loading
-│   ├── transformer.h   # Forward pass API
-│   ├── tokenizer.h     # BPE tokenizer API
-│   ├── sampler.h       # Sampling strategies
-│   ├── threadpool.h    # Persistent pthread thread pool
-│   ├── sh_arena.h      # Arena allocator
-│   └── sh_log.h        # Structured logging
+│   ├── platform.h              # Platform abstraction (mmap, timing)
+│   ├── gguf.h                  # GGUF v3 reader API
+│   ├── quant.h                 # Public quant API: block structs, matvec, dequant
+│   ├── quant_internal.h        # Quant backend context structs + range function decls
+│   ├── model.h                 # Config, Weights, model loading
+│   ├── transformer.h           # Forward pass public API
+│   ├── transformer_internal.h  # Transformer backend context structs + range function decls
+│   ├── tokenizer.h             # BPE tokenizer API
+│   ├── sampler.h               # Sampling strategies
+│   ├── threadpool.h            # Persistent pthread thread pool
+│   ├── simd_helpers.h          # Shared AVX2/WASM SIMD inline helpers
+│   ├── sh_arena.h              # Arena allocator
+│   └── sh_log.h                # Structured logging
 ├── src/
-│   ├── platform.c      # mmap/fread/timing abstraction
-│   ├── gguf.c          # GGUF binary format parser
-│   ├── quant.c         # FP16 conversion, dequant + matvec for all quant formats
-│   ├── model.c         # GGUF → Config/Weights mapping
-│   ├── transformer.c   # Forward pass: flash attention, FFN, sub-norms
-│   ├── tokenizer.c     # BPE encode/decode from GGUF vocab
-│   ├── sampler.c       # Argmax, multinomial, top-p sampling
-│   ├── threadpool.c    # Thread pool with condvar dispatch
-│   ├── sh_arena.c      # Arena allocator implementation
-│   ├── sh_log.c        # Structured logging implementation
-│   └── main.c          # CLI entry point
-├── test/
-│   ├── test_gguf.c     # GGUF parser tests
-│   ├── test_quant.c    # Dequantization + matvec tests
-│   ├── test_transformer.c  # RMSNorm, softmax, RoPE tests
-│   ├── test_tokenizer.c    # BPE encode/decode tests
-│   ├── test_threadpool.c   # Thread pool dispatch tests
-│   ├── test_safety.c       # Safety/bounds-checking regression tests
-│   ├── test_prefill.c      # Prefill vs sequential correctness test
-│   ├── test_kv_f16.c       # F16 KV cache correctness test
-│   └── test_e2e.c          # End-to-end greedy decode test
-├── wasm/
-│   ├── api.c           # WASM-exported API wrapper
-│   ├── build.sh        # Emscripten build script
-│   ├── worker.js       # Web Worker for non-blocking inference
-│   └── index.html      # Browser demo
+│   ├── platform.c              # mmap/fread/timing abstraction
+│   ├── gguf.c                  # GGUF binary format parser
+│   ├── quant/                  # Per-format per-backend matvec kernels
+│   │   ├── dispatch.c          # Format dispatch + batch matvec
+│   │   ├── dequant.c           # Dequantization functions
+│   │   ├── fp16.c              # FP16 ↔ FP32 conversion
+│   │   ├── i2s_neon_sdot.c     # I2_S SDOT kernel (ARM dotprod)
+│   │   ├── i2s_scalar.c        # I2_S scalar fallback
+│   │   ├── q4_neon_sdot.c      # Q4_0 SDOT kernel
+│   │   ├── q6k_neon.c          # Q6_K NEON kernel
+│   │   └── ...                 # ~50 backend files total
+│   ├── transformer/            # Per-backend transformer kernels
+│   │   ├── rmsnorm_{neon,avx2,wasm,scalar}.c
+│   │   ├── gqa_{neon,avx2,wasm,scalar}.c
+│   │   └── logits_{neon,avx2,wasm,scalar}.c
+│   ├── model.c                 # GGUF → Config/Weights mapping
+│   ├── transformer.c           # Forward pass: layer loop, FFN, dispatch
+│   ├── tokenizer.c             # BPE encode/decode from GGUF vocab
+│   ├── sampler.c               # Argmax, multinomial, top-p sampling
+│   ├── threadpool.c            # Thread pool with condvar dispatch
+│   ├── sh_arena.c              # Arena allocator implementation
+│   ├── sh_log.c                # Structured logging implementation
+│   └── main.c                  # CLI entry point
+├── test/                       # Assert-based unit tests (synthetic data, no model needed)
+├── wasm/                       # Emscripten WASM build + browser demo
 ├── docs/
-│   ├── roadmap.md      # Development roadmap
-│   └── audit.md        # Security/correctness audit
+│   ├── inference.md            # Inference pipeline: math, algorithms, code map
+│   └── roadmap.md              # Development roadmap + optimization history
 └── Makefile
 ```
 
@@ -252,9 +254,13 @@ BitNet b1.58 is a transformer variant where all linear layer weights are constra
 | I2_S   | 2.0         | 2-bit interleaved (4 values/byte) + per-tensor scale | 128 |
 | TQ1_0  | 1.6875      | Base-3 (5 values/byte) + residual | 256 |
 | TQ2_0  | 2.0625      | 2-bit fields (4 values/byte) | 256 |
+| Q3_K   | 3.4375      | 3-bit quants (split ql/qh) + 6-bit sub-block scales | 256 |
 | Q4_0   | 4.5         | 4-bit nibbles (2 values/byte) + FP16 per-block scale | 32 |
-| Q6_K   | 6.5625      | 6-bit quants (split ql/qh) + int8 sub-block scales + FP16 super-block scale | 256 |
+| Q4_K   | 4.5         | 4-bit quants + 6-bit sub-block scales/mins | 256 |
+| Q5_K   | 5.5         | 5-bit quants (split ql/qh) + 6-bit sub-block scales/mins | 256 |
+| Q6_K   | 6.5625      | 6-bit quants (split ql/qh) + int8 sub-block scales | 256 |
 | Q8_0   | 8.5         | 8-bit values + FP16 per-block scale | 32 |
+| Q8_K   | 9.125       | 8-bit values + float32 scale + int16 block sums | 256 |
 
 ### Memory Budget (bitnet-b1.58-2B-4T, 2048 context)
 
@@ -287,9 +293,9 @@ llama.cpp supports dozens of quantization formats, model architectures, GPU back
 bitnet.c exists because BitNet's ternary weights ({-1, 0, +1}) make most of that machinery irrelevant:
 
 - **No GPU needed.** Ternary matvec is memory-bandwidth-bound, not compute-bound. A single M1 Max CPU core sustains ~52 tok/s — there's no FLOPs deficit to offload. GPU dispatch overhead and PCIe transfers would add latency for zero throughput gain.
-- **No quantization format zoo.** The model has one weight type (I2_S ternary). llama.cpp's `ggml_compute_forward` dispatches through dozens of quant format×operation combinations. bitnet.c has one kernel.
+- **Minimal format support.** bitnet.c supports ~10 quant formats vs llama.cpp's dozens of format x operation x backend combinations.
 - **No abstraction layers.** llama.cpp routes tensor operations through GGML's graph-based backend abstraction. bitnet.c calls the matvec kernel directly — the forward pass is a flat loop over layers with inline SIMD.
-- **Embeddable.** The entire engine is ~4,500 lines of C11 with zero dependencies. It compiles to WASM and runs in a browser. Try that with llama.cpp's Metal backend.
+- **Embeddable.** The entire engine is ~8,000 lines of C11 with zero dependencies. It compiles to WASM and runs in a browser. Try that with llama.cpp's Metal backend.
 
 Microsoft's own [BitNet inference framework](https://github.com/microsoft/BitNet) takes the opposite approach: it forks llama.cpp and patches in ternary kernel support. This inherits llama.cpp's full dependency tree (CMake, Python, conda) for a model that only needs addition and subtraction.
 
@@ -297,16 +303,16 @@ Microsoft's own [BitNet inference framework](https://github.com/microsoft/BitNet
 
 ### Why C
 
-**The inner loop is 8 NEON intrinsics.** The entire I2_S SDOT matvec kernel — the function that consumes >90% of runtime — is 40 lines of C with ARM intrinsics. There is no abstraction to manage, no object lifetime to track, no type system to appease. The code *is* the assembly, minus register allocation.
+**The inner loop is 8 NEON intrinsics.** The I2_S SDOT matvec kernel — the function that dominates runtime on ternary models — is 40 lines of C with ARM intrinsics. There is no abstraction to manage, no object lifetime to track, no type system to appease. The code *is* the assembly, minus register allocation.
 
 **Why not Rust?** Rust solves memory safety at the type system level, which is genuinely valuable at scale — large teams, deep dependency trees, long-lived codebases with contributor churn. For a small, focused inference engine with zero dependencies and one or two authors who understand every line, the tradeoffs don't pay off:
 
 - *The hot path is NEON intrinsics.* The matvec kernel, logits computation, and attention scoring are all hand-written SIMD. These are `unsafe` by definition in Rust — you get the borrow checker's overhead without its guarantees where performance matters.
 - *Zero-copy GGUF loading.* The model is mmap'd and weights are read directly from the mapped buffer as raw pointers into packed binary data. This is one `mmap` call in C. In Rust it's `unsafe` pointer arithmetic wrapped in lifetime-annotated structs, or a dependency on `memmap2` + `bytemuck` + `zerocopy`.
 - *No dependencies to protect against.* This project links libc, libm, and nothing else. No crates, no supply chain, no transitive dependencies. Cargo's safety story is about managing a dependency graph — there is no graph here.
-- *Build time.* Clean build: under 2 seconds. A comparable Rust project with `memmap2`, `half`, `rayon`: 20-40 seconds.
+- *Build time.* Clean build: under 3 seconds. A comparable Rust project with `memmap2`, `half`, `rayon`: 20-40 seconds.
 
-**Why not C++?** Everything C gives you here but with a language that actively fights simplicity. The GGUF parser is a flat struct with pointer arithmetic. The thread pool is pthreads + condvar. The transformer forward pass is a `for` loop over layers. In C++ someone would reach for `std::variant` for tensor types, `std::jthread` with `std::barrier`, and a template-based layer abstraction. All objectively worse for 4,100 lines of inference code.
+**Why not C++?** Everything C gives you here but with a language that actively fights simplicity. The GGUF parser is a flat struct with pointer arithmetic. The thread pool is pthreads + condvar. The transformer forward pass is a `for` loop over layers. In C++ someone would reach for `std::variant` for tensor types, `std::jthread` with `std::barrier`, and a template-based layer abstraction. All objectively worse for a focused inference engine.
 
 **Why not Zig?** Zig's `comptime`, explicit allocators, and native SIMD vectors are genuinely appealing. For a new project not needing Emscripten WASM support, it would be a strong choice. But Zig's WASM target doesn't support the Emscripten features this project relies on (`EXPORTED_FUNCTIONS`, `MODULARIZE`, `SINGLE_FILE`), and the ecosystem isn't there yet for production inference workloads.
 

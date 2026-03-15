@@ -33,17 +33,17 @@ Development roadmap for bitnet.c.
 
 ## Phase 4: SIMD Optimization — Done
 
-- [x] ARM NEON kernels for I2_S/TQ1_0/TQ2_0 ternary matvec (in `src/quant.c`)
-- [x] SDOT (vdotq_s32) int8 accumulation for I2_S — 2× speedup over float FMA
+- [x] ARM NEON kernels for I2_S/TQ1_0/TQ2_0 ternary matvec
+- [x] SDOT (vdotq_s32) int8 accumulation for I2_S — 2x speedup over float FMA
 - [x] Arithmetic ternary decode `(bits - 1)` — 15% speedup over compare-based
 - [x] Batch matvec dispatch (QKV, gate+up grouped)
-- [x] Native FP16 logits path via `-mcpu=apple-m1` (enables `__ARM_FEATURE_FP16_VECTOR_ARITHMETIC`)
-- [ ] x86 AVX2 kernels for ternary matvec
-- [ ] WASM SIMD128 kernels using `wasm_simd128.h` intrinsics
+- [x] Native FP16 logits path via `-mcpu=apple-m1`
+- [x] x86 AVX2 kernels for all quant formats (I2_S, Q4_0, Q8_0, Q6_K, Q8_K, Q4_K, Q5_K, Q3_K)
+- [x] WASM SIMD128 kernels for all quant formats
 
 ## Phase 5: Memory & Performance — Done
 
-- [x] Pthread thread pool (~2μs condvar dispatch, replaces OMP fork/join)
+- [x] Pthread thread pool (~2us condvar dispatch, replaces OMP fork/join)
 - [x] Arena allocator for RunState (single allocation for all buffers)
 - [x] RoPE frequency + cos/sin precomputation
 - [x] Preallocated sampler candidates buffer (eliminates per-token malloc)
@@ -54,6 +54,25 @@ Development roadmap for bitnet.c.
 - [x] Profile-guided optimization (PGO build)
 - [x] INT8 output embeddings (~52.5 tok/s)
 
+## Phase 6: Modular Backend Architecture — Done
+
+- [x] Split `quant.c` into per-format per-backend modules (`src/quant/`)
+- [x] Split `transformer.c` into per-backend modules (`src/transformer/`)
+- [x] Internal headers (`quant_internal.h`, `transformer_internal.h`) with context structs
+- [x] Backend selection via Makefile variables (ARM: NEON+scalar, x86: AVX2+scalar)
+- [x] AVX2 cross-compile syntax check (`make avx2-check`)
+
+## Phase 7: Extended Quantization Formats — Done
+
+- [x] Q4_0 (4-bit) with SDOT/DPBUSD integer matvec
+- [x] Q8_0 (8-bit) with NEON/AVX2/WASM kernels
+- [x] Q6_K (6-bit k-quant) with NEON/AVX2/WASM kernels
+- [x] Q8_K (8-bit k-quant) with NEON/AVX2/WASM kernels
+- [x] Q4_K (4-bit k-quant) with NEON/AVX2/WASM kernels
+- [x] Q5_K (5-bit k-quant) with NEON/AVX2/WASM kernels
+- [x] Q3_K (3-bit k-quant) with NEON/AVX2/WASM kernels
+- [x] Non-tied output weights (separate output projection matrix)
+
 ## Performance Analysis (M1 Max, bitnet-b1.58-2B-4T)
 
 ### Current: ~52.5 tok/s (8 P-cores)
@@ -62,23 +81,23 @@ The workload is **DRAM bandwidth-bound**. Each token reads ~0.83 GB from memory:
 
 | Component | Data Read | % of Total |
 |---|---|---|
-| 30× layer I2_S weights (Q/K/V/O + gate/up/down) | 497 MB | 60% |
-| Logits (INT8 embedding × 128K vocab) | 328 MB | 40% |
+| 30x layer I2_S weights (Q/K/V/O + gate/up/down) | 497 MB | 60% |
+| Logits (INT8 embedding x 128K vocab) | 328 MB | 40% |
 | KV cache (pos-dependent) | ~18 MB | <2% |
 
 M1 Max CPU aggregate DRAM bandwidth: ~55 GB/s (CPU-only; the 400 GB/s spec is GPU-inclusive).
-At 52.5 tok/s × 0.83 GB = **~43 GB/s sustained** — 79% of max bandwidth.
+At 52.5 tok/s x 0.83 GB = **~43 GB/s sustained** — 79% of max bandwidth.
 
-### Scaling behavior (bandwidth-limited)
+### Optimization history
 
-| Cores | Est. BW (GB/s) | Est. tok/s | Speedup vs 1 |
-|---|---|---|---|
-| 1 | 7 | 8 | 1.0× |
-| 2 | 14 | 17 | 2.0× |
-| 4 | 28 | 33 | 4.0× |
-| 8 | 55 | 53 | 6.6× |
-
-Diminishing returns start at ~4 cores as DRAM interface saturates.
+| Change | tok/s | Delta |
+|---|---|---|
+| Baseline (naive C) | ~15.5 | — |
+| SDOT int8 accumulation + batch matvec | ~33 | +113% |
+| Arithmetic ternary decode + RoPE precompute | ~38 | +15% |
+| Pthread thread pool (replace OMP) | ~41 | +8% |
+| Arena allocator + FP16 native logits + prefetch | ~46 | +12% |
+| INT8 output embeddings + SDOT logits | ~52.5 | +14% |
 
 ### What would move the needle
 
@@ -88,36 +107,21 @@ Only **reducing data volume** helps at this point:
 2. **KV cache quantization to INT8** — further reduces attention data at long positions.
 3. **Weight clustering / pruning** — reduce I2_S weight data below 497 MB.
 
-### Optimization history
+## Future Work
 
-| Change | tok/s | Δ |
-|---|---|---|
-| Baseline (naive C) | ~15.5 | — |
-| SDOT int8 accumulation + batch matvec | ~33 | +113% |
-| Arithmetic ternary decode + RoPE precompute | ~38 | +15% |
-| Pthread thread pool (replace OMP) | ~41 | +8% |
-| Arena allocator + sh_log + FP16 native logits | ~46 | +12% |
-| INT8 output embeddings + SDOT logits | ~52.5 | +14% |
-
-## Phase 6: Extended Model Support
-
-- [ ] Q6_K embedding dequantization (some models use Q6_K for token_embd)
-- [ ] Non-tied output weights (separate output projection matrix)
+### Extended Model Support
 - [ ] Multiple architecture support beyond BitNet (detect from GGUF metadata)
 - [ ] Chat template support (system/user/assistant formatting)
 - [ ] LoRA adapter loading
 
-## Phase 7: Developer Experience
-
+### Developer Experience
 - [x] Interactive mode (--chat REPL with sliding window)
 - [ ] Token probability output mode (for debugging/research)
 - [ ] JSON output mode (structured generation metadata)
 - [ ] Model info dump command (`--info` to print config without inference)
-- [ ] Progress bar for model loading
 - [ ] Completion callback API (for embedding in other C programs)
 
-## Phase 8: Platform Expansion
-
+### Platform Expansion
 - [ ] Windows support (VirtualAlloc instead of mmap)
 - [ ] iOS/Android builds (static library)
 - [ ] Python bindings (ctypes or cffi wrapper)
@@ -126,7 +130,7 @@ Only **reducing data volume** helps at this point:
 
 ## Non-Goals
 
-- Full GGUF compatibility (only BitNet-relevant types)
+- Full GGUF compatibility (only supported types listed above)
 - Training or fine-tuning
 - Multi-GPU / distributed inference
 - Replacing llama.cpp for general LLM inference
