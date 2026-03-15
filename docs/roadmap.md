@@ -39,6 +39,7 @@ Development roadmap for bitnet.c.
 - [x] Batch matvec dispatch (QKV, gate+up grouped)
 - [x] Native FP16 logits path via `-mcpu=apple-m1`
 - [x] x86 AVX2 kernels for all quant formats (I2_S, Q4_0, Q8_0, Q6_K, Q8_K, Q4_K, Q5_K, Q3_K)
+- [x] AVX2 fine-tuning: FMA across all kernels, Q8_0 DPBUSD, TQ1/TQ2 AVX2 kernels, Q5_K/Q3_K vectorization
 - [x] WASM SIMD128 kernels for all quant formats
 
 ## Phase 5: Memory & Performance — Done
@@ -112,6 +113,14 @@ At 52.5 tok/s x 0.83 GB = **~43 GB/s sustained** — 79% of max bandwidth.
 | Arena allocator + FP16 native logits + prefetch | ~46 | +12% |
 | INT8 output embeddings + SDOT logits | ~52.5 | +14% |
 
+### Multi-model benchmarks (M1 Max, 8 P-cores, PGO)
+
+| Model | Format | Size | tok/s |
+|---|---|---|---|
+| bitnet-b1.58-2B-4T | I2_S | 1.1 GB | 52.5 |
+| Qwen2.5-3B-Instruct | Q4_0 | 1.7 GB | 30.0 |
+| Llama3-8B-1.58 | TQ1_0 | 3.4 GB | 14.5 |
+
 ### What would move the needle
 
 Only **reducing data volume** helps at this point:
@@ -133,6 +142,9 @@ Only **reducing data volume** helps at this point:
 - [ ] JSON output mode (structured generation metadata)
 - [ ] Model info dump command (`--info` to print config without inference)
 - [ ] Completion callback API (for embedding in other C programs)
+
+### SIMD Backends
+- [ ] AVX-512 VNNI — native `vpdpbusd`, 512-bit vectors (Ice Lake+, Zen 4+)
 
 ### Platform Expansion
 - [ ] Windows support (VirtualAlloc instead of mmap)

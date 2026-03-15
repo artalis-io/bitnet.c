@@ -81,12 +81,14 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 static size_t q4_repack_bytes(const BnQWeight *w) {
     if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return 0;
+    if (w->rows % 4 != 0) return 0;  // need complete 4-row groups
     size_t n_blocks = (size_t)w->rows * (w->cols / 32);
     return n_blocks * sizeof(float) + n_blocks * 16 + 2 * SH_ARENA_ALIGN;
 }
 
 static void q4_repack(BnQWeight *w, SHArena *arena) {
     if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return;
+    if (w->rows % 4 != 0) return;  // need complete 4-row groups
     int n_blocks_per_row = w->cols / 32;
     size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
 
@@ -98,10 +100,19 @@ static void q4_repack(BnQWeight *w, SHArena *arena) {
         return;
     }
 
+    // 4-row interleaved layout: group g (rows 4g..4g+3), block b, row offset r
+    // dst index = g * n_blocks_per_row * 4 + b * 4 + r
     const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)w->data;
-    for (size_t i = 0; i < n_blocks; i++) {
-        w->rp_scales[i] = bn_fp16_to_fp32(blocks[i].d);
-        memcpy(w->rp_qs + i * 16, blocks[i].qs, 16);
+    int n_groups = w->rows / 4;
+    for (int g = 0; g < n_groups; g++) {
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            for (int r = 0; r < 4; r++) {
+                size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
+                size_t dst = (size_t)g * n_blocks_per_row * 4 + b * 4 + r;
+                w->rp_scales[dst] = bn_fp16_to_fp32(blocks[src].d);
+                memcpy(w->rp_qs + dst * 16, blocks[src].qs, 16);
+            }
+        }
     }
 }
 #endif
