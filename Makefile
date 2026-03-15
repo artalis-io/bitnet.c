@@ -28,12 +28,21 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/quant/tq1_neon_sdot.c src/quant/tq1_neon.c src/quant/tq1_scalar.c \
     src/quant/q8_neon.c src/quant/q8_scalar.c \
     src/quant/q4_neon_sdot.c src/quant/q4_neon.c src/quant/q4_scalar.c \
+    src/quant/q4_1_neon.c src/quant/q4_1_scalar.c \
+    src/quant/bf16_neon.c src/quant/bf16_scalar.c \
     src/quant/q6k_neon.c src/quant/q6k_scalar.c \
     src/quant/q8k_neon.c src/quant/q8k_scalar.c \
     src/quant/q4k_neon.c src/quant/q4k_scalar.c \
     src/quant/q5k_neon.c src/quant/q5k_scalar.c \
     src/quant/q3k_neon.c src/quant/q3k_scalar.c \
-    src/quant/q2k_neon.c src/quant/q2k_scalar.c
+    src/quant/q2k_neon.c src/quant/q2k_scalar.c \
+    src/quant/iq4nl_neon.c src/quant/iq4nl_scalar.c \
+    src/quant/iq4xs_neon.c src/quant/iq4xs_scalar.c \
+    src/quant/iq3xxs_neon.c src/quant/iq3xxs_scalar.c \
+    src/quant/iq3s_neon.c src/quant/iq3s_scalar.c \
+    src/quant/iq2xxs_neon.c src/quant/iq2xxs_scalar.c \
+    src/quant/iq2xs_neon.c src/quant/iq2xs_scalar.c \
+    src/quant/iq2s_neon.c src/quant/iq2s_scalar.c
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_neon.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_neon.c src/transformer/gqa_scalar.c \
@@ -45,12 +54,21 @@ else
     src/quant/tq2_scalar.c src/quant/tq1_scalar.c \
     src/quant/q8_avx2.c src/quant/q8_scalar.c \
     src/quant/q4_avx2.c src/quant/q4_scalar.c \
+    src/quant/q4_1_avx2.c src/quant/q4_1_scalar.c \
+    src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_scalar.c \
     src/quant/q8k_avx2.c src/quant/q8k_scalar.c \
     src/quant/q4k_avx2.c src/quant/q4k_scalar.c \
     src/quant/q5k_avx2.c src/quant/q5k_scalar.c \
     src/quant/q3k_avx2.c src/quant/q3k_scalar.c \
-    src/quant/q2k_avx2.c src/quant/q2k_scalar.c
+    src/quant/q2k_avx2.c src/quant/q2k_scalar.c \
+    src/quant/iq4nl_avx2.c src/quant/iq4nl_scalar.c \
+    src/quant/iq4xs_avx2.c src/quant/iq4xs_scalar.c \
+    src/quant/iq3xxs_avx2.c src/quant/iq3xxs_scalar.c \
+    src/quant/iq3s_avx2.c src/quant/iq3s_scalar.c \
+    src/quant/iq2xxs_avx2.c src/quant/iq2xxs_scalar.c \
+    src/quant/iq2xs_avx2.c src/quant/iq2xs_scalar.c \
+    src/quant/iq2s_avx2.c src/quant/iq2s_scalar.c
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
@@ -158,12 +176,21 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
     src/quant/tq2_scalar.c src/quant/tq1_scalar.c \
     src/quant/q8_avx2.c src/quant/q8_scalar.c \
     src/quant/q4_avx2.c src/quant/q4_scalar.c \
+    src/quant/q4_1_avx2.c src/quant/q4_1_scalar.c \
+    src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_scalar.c \
     src/quant/q8k_avx2.c src/quant/q8k_scalar.c \
     src/quant/q4k_avx2.c src/quant/q4k_scalar.c \
     src/quant/q5k_avx2.c src/quant/q5k_scalar.c \
     src/quant/q3k_avx2.c src/quant/q3k_scalar.c \
-    src/quant/q2k_avx2.c src/quant/q2k_scalar.c
+    src/quant/q2k_avx2.c src/quant/q2k_scalar.c \
+    src/quant/iq4nl_avx2.c src/quant/iq4nl_scalar.c \
+    src/quant/iq4xs_avx2.c src/quant/iq4xs_scalar.c \
+    src/quant/iq3xxs_avx2.c src/quant/iq3xxs_scalar.c \
+    src/quant/iq3s_avx2.c src/quant/iq3s_scalar.c \
+    src/quant/iq2xxs_avx2.c src/quant/iq2xxs_scalar.c \
+    src/quant/iq2xs_avx2.c src/quant/iq2xs_scalar.c \
+    src/quant/iq2s_avx2.c src/quant/iq2s_scalar.c
 
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \

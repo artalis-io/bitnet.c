@@ -94,6 +94,69 @@ typedef struct {
     const float *x;
 } BnQ5KCtx;
 
+// Q4_1 context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnQ4_1Ctx;
+
+// BF16 weight context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnBF16Ctx;
+
+// IQ4_NL context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ4NLCtx;
+
+// IQ4_XS context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ4XSCtx;
+
+// IQ3_XXS context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ3XXSCtx;
+
+// IQ3_S context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ3SCtx;
+
+// IQ2_XXS context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ2XXSCtx;
+
+// IQ2_XS context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ2XSCtx;
+
+// IQ2_S context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnIQ2SCtx;
+
 // Q2_K context
 typedef struct {
     float *out;
@@ -162,6 +225,60 @@ void bn_quant_q5k_neon_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q5k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q5k_scalar_range(void *ctx, int start, int end);
+
+// Q4_1 kernels
+void bn_quant_q4_1_neon_range(void *ctx, int start, int end);
+void bn_quant_q4_1_avx2_range(void *ctx, int start, int end);
+void bn_quant_q4_1_wasm_range(void *ctx, int start, int end);
+void bn_quant_q4_1_scalar_range(void *ctx, int start, int end);
+
+// BF16 weight kernels
+void bn_quant_bf16_neon_range(void *ctx, int start, int end);
+void bn_quant_bf16_avx2_range(void *ctx, int start, int end);
+void bn_quant_bf16_wasm_range(void *ctx, int start, int end);
+void bn_quant_bf16_scalar_range(void *ctx, int start, int end);
+
+// IQ4_NL kernels
+void bn_quant_iq4nl_neon_range(void *ctx, int start, int end);
+void bn_quant_iq4nl_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq4nl_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq4nl_scalar_range(void *ctx, int start, int end);
+
+// IQ4_XS kernels
+void bn_quant_iq4xs_neon_range(void *ctx, int start, int end);
+void bn_quant_iq4xs_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq4xs_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq4xs_scalar_range(void *ctx, int start, int end);
+
+// IQ3_XXS kernels
+void bn_quant_iq3xxs_neon_range(void *ctx, int start, int end);
+void bn_quant_iq3xxs_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq3xxs_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq3xxs_scalar_range(void *ctx, int start, int end);
+
+// IQ3_S kernels
+void bn_quant_iq3s_neon_range(void *ctx, int start, int end);
+void bn_quant_iq3s_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq3s_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq3s_scalar_range(void *ctx, int start, int end);
+
+// IQ2_XXS kernels
+void bn_quant_iq2xxs_neon_range(void *ctx, int start, int end);
+void bn_quant_iq2xxs_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq2xxs_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq2xxs_scalar_range(void *ctx, int start, int end);
+
+// IQ2_XS kernels
+void bn_quant_iq2xs_neon_range(void *ctx, int start, int end);
+void bn_quant_iq2xs_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq2xs_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq2xs_scalar_range(void *ctx, int start, int end);
+
+// IQ2_S kernels
+void bn_quant_iq2s_neon_range(void *ctx, int start, int end);
+void bn_quant_iq2s_avx2_range(void *ctx, int start, int end);
+void bn_quant_iq2s_wasm_range(void *ctx, int start, int end);
+void bn_quant_iq2s_scalar_range(void *ctx, int start, int end);
 
 // Q2_K kernels
 void bn_quant_q2k_neon_range(void *ctx, int start, int end);

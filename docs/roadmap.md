@@ -73,11 +73,18 @@ Development roadmap for bitnet.c.
 - [x] Q3_K (3-bit k-quant) with NEON/AVX2/WASM kernels
 - [x] Non-tied output weights (separate output projection matrix)
 
-## Phase 8: Extended Format Coverage
+## Phase 8: Extended Format Coverage — Done
 
 - [x] Q2_K (2-bit k-quant) with NEON/AVX2/WASM kernels
-- [ ] IQ2_XXS, IQ2_XS, IQ2_S (codebook-based ~2 bpw, designed)
-- [ ] F16/BF16 weight types (unquantized dense matvec, designed)
+- [x] Q4_1 (4-bit with min) with NEON/AVX2/WASM kernels
+- [x] BF16 weight type with NEON/AVX2/WASM kernels
+- [x] IQ4_NL (4-bit non-linear codebook) with NEON/AVX2/WASM kernels
+- [x] IQ4_XS (4-bit non-linear with sub-block scales) with NEON/AVX2/WASM kernels
+- [x] IQ3_XXS (3-bit codebook) with NEON/AVX2/WASM kernels
+- [x] IQ3_S (3-bit codebook with separate signs) with NEON/AVX2/WASM kernels
+- [x] IQ2_XXS (2-bit codebook) with NEON/AVX2/WASM kernels
+- [x] IQ2_XS (2-bit codebook with scales) with NEON/AVX2/WASM kernels
+- [x] IQ2_S (2-bit codebook, 1024-entry grid) with NEON/AVX2/WASM kernels
 
 ## Performance Analysis (M1 Max, bitnet-b1.58-2B-4T)
 

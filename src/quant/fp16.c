@@ -30,6 +30,17 @@ float bn_fp16_to_fp32(uint16_t h) {
     return result;
 }
 
+// --- BF16 -> FP32 conversion ---
+// BF16 is the upper 16 bits of an IEEE 754 float32.
+// Conversion: zero-pad the low 16 bits.
+
+float bn_bf16_to_fp32(uint16_t h) {
+    uint32_t bits = (uint32_t)h << 16;
+    float result;
+    memcpy(&result, &bits, 4);
+    return result;
+}
+
 uint16_t bn_fp32_to_fp16(float val) {
     uint32_t f;
     memcpy(&f, &val, 4);

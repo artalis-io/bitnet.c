@@ -31,6 +31,24 @@ emcc \
     "$PROJECT_DIR/src/quant/q3k_scalar.c" \
     "$PROJECT_DIR/src/quant/q2k_wasm.c" \
     "$PROJECT_DIR/src/quant/q2k_scalar.c" \
+    "$PROJECT_DIR/src/quant/q4_1_wasm.c" \
+    "$PROJECT_DIR/src/quant/q4_1_scalar.c" \
+    "$PROJECT_DIR/src/quant/bf16_wasm.c" \
+    "$PROJECT_DIR/src/quant/bf16_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq4nl_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq4nl_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq4xs_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq4xs_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq3xxs_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq3xxs_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq3s_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq3s_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq2xxs_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq2xxs_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq2xs_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq2xs_scalar.c" \
+    "$PROJECT_DIR/src/quant/iq2s_wasm.c" \
+    "$PROJECT_DIR/src/quant/iq2s_scalar.c" \
     "$PROJECT_DIR/src/model.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \

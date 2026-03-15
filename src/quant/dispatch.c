@@ -183,6 +183,150 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         return;
     }
 
+    if (W->type == BN_GGUF_TENSOR_Q4_1) {
+        (void)x_q_buf;
+        BnQ4_1Ctx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_q4_1_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_q4_1_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_q4_1_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_q4_1_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_BF16) {
+        (void)x_q_buf;
+        BnBF16Ctx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_bf16_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_bf16_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_bf16_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_bf16_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ4_NL) {
+        (void)x_q_buf;
+        BnIQ4NLCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq4nl_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq4nl_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq4nl_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq4nl_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ4_XS) {
+        (void)x_q_buf;
+        BnIQ4XSCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq4xs_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq4xs_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq4xs_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq4xs_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ3_XXS) {
+        (void)x_q_buf;
+        BnIQ3XXSCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq3xxs_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq3xxs_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq3xxs_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq3xxs_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ3_S) {
+        (void)x_q_buf;
+        BnIQ3SCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq3s_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq3s_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq3s_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq3s_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ2_XXS) {
+        (void)x_q_buf;
+        BnIQ2XXSCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq2xxs_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq2xxs_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq2xxs_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq2xxs_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ2_XS) {
+        (void)x_q_buf;
+        BnIQ2XSCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq2xs_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq2xs_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq2xs_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq2xs_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_IQ2_S) {
+        (void)x_q_buf;
+        BnIQ2SCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_iq2s_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_iq2s_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_iq2s_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_iq2s_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
     if (W->type == BN_GGUF_TENSOR_TQ2_0) {
         (void)x_q_buf;
         BnTQ2Ctx ctx = { out, W, x };

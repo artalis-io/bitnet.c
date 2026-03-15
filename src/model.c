@@ -31,11 +31,16 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
 
     // Validate supported tensor types
     if (w->type != BN_GGUF_TENSOR_I2_S && w->type != BN_GGUF_TENSOR_Q4_0 &&
-        w->type != BN_GGUF_TENSOR_Q8_0 && w->type != BN_GGUF_TENSOR_TQ1_0 &&
-        w->type != BN_GGUF_TENSOR_TQ2_0 && w->type != BN_GGUF_TENSOR_Q2_K &&
-        w->type != BN_GGUF_TENSOR_Q3_K && w->type != BN_GGUF_TENSOR_Q4_K &&
-        w->type != BN_GGUF_TENSOR_Q5_K && w->type != BN_GGUF_TENSOR_Q6_K &&
-        w->type != BN_GGUF_TENSOR_Q8_K) {
+        w->type != BN_GGUF_TENSOR_Q4_1 && w->type != BN_GGUF_TENSOR_Q8_0 &&
+        w->type != BN_GGUF_TENSOR_TQ1_0 && w->type != BN_GGUF_TENSOR_TQ2_0 &&
+        w->type != BN_GGUF_TENSOR_Q2_K && w->type != BN_GGUF_TENSOR_Q3_K &&
+        w->type != BN_GGUF_TENSOR_Q4_K && w->type != BN_GGUF_TENSOR_Q5_K &&
+        w->type != BN_GGUF_TENSOR_Q6_K && w->type != BN_GGUF_TENSOR_Q8_K &&
+        w->type != BN_GGUF_TENSOR_BF16 &&
+        w->type != BN_GGUF_TENSOR_IQ4_NL && w->type != BN_GGUF_TENSOR_IQ4_XS &&
+        w->type != BN_GGUF_TENSOR_IQ3_XXS && w->type != BN_GGUF_TENSOR_IQ3_S &&
+        w->type != BN_GGUF_TENSOR_IQ2_XXS && w->type != BN_GGUF_TENSOR_IQ2_XS &&
+        w->type != BN_GGUF_TENSOR_IQ2_S) {
         SH_LOG_ERROR("Unsupported tensor type", "name", weight_name);
         return -1;
     }
@@ -45,10 +50,16 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
         size_t nelements = (size_t)w->rows * w->cols;
         const uint8_t *base = (const uint8_t *)w->data;
         memcpy(&w->scale, base + nelements / 4, sizeof(float));
-    } else if (w->type == BN_GGUF_TENSOR_Q4_0 || w->type == BN_GGUF_TENSOR_Q8_0 ||
+    } else if (w->type == BN_GGUF_TENSOR_Q4_0 || w->type == BN_GGUF_TENSOR_Q4_1 ||
+               w->type == BN_GGUF_TENSOR_Q8_0 ||
                w->type == BN_GGUF_TENSOR_Q2_K || w->type == BN_GGUF_TENSOR_Q3_K ||
                w->type == BN_GGUF_TENSOR_Q4_K || w->type == BN_GGUF_TENSOR_Q5_K ||
-               w->type == BN_GGUF_TENSOR_Q6_K || w->type == BN_GGUF_TENSOR_Q8_K) {
+               w->type == BN_GGUF_TENSOR_Q6_K || w->type == BN_GGUF_TENSOR_Q8_K ||
+               w->type == BN_GGUF_TENSOR_BF16 ||
+               w->type == BN_GGUF_TENSOR_IQ4_NL || w->type == BN_GGUF_TENSOR_IQ4_XS ||
+               w->type == BN_GGUF_TENSOR_IQ3_XXS || w->type == BN_GGUF_TENSOR_IQ3_S ||
+               w->type == BN_GGUF_TENSOR_IQ2_XXS || w->type == BN_GGUF_TENSOR_IQ2_XS ||
+               w->type == BN_GGUF_TENSOR_IQ2_S) {
         // Per-block scales embedded in each block's d field
         w->scale = 1.0f;
     } else {
@@ -188,12 +199,18 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     if (out_idx >= 0) {
         BnGGUFTensorInfo *out_info = &f->tensors[out_idx];
         int ot = out_info->type;
-        if (ot != BN_GGUF_TENSOR_Q4_0 && ot != BN_GGUF_TENSOR_Q8_0 &&
+        if (ot != BN_GGUF_TENSOR_Q4_0 && ot != BN_GGUF_TENSOR_Q4_1 &&
+            ot != BN_GGUF_TENSOR_Q8_0 &&
             ot != BN_GGUF_TENSOR_Q2_K && ot != BN_GGUF_TENSOR_Q3_K &&
             ot != BN_GGUF_TENSOR_Q4_K && ot != BN_GGUF_TENSOR_Q5_K &&
             ot != BN_GGUF_TENSOR_Q6_K && ot != BN_GGUF_TENSOR_Q8_K &&
             ot != BN_GGUF_TENSOR_I2_S && ot != BN_GGUF_TENSOR_TQ1_0 &&
-            ot != BN_GGUF_TENSOR_TQ2_0 && ot != BN_GGUF_TENSOR_F16) {
+            ot != BN_GGUF_TENSOR_TQ2_0 && ot != BN_GGUF_TENSOR_F16 &&
+            ot != BN_GGUF_TENSOR_BF16 &&
+            ot != BN_GGUF_TENSOR_IQ4_NL && ot != BN_GGUF_TENSOR_IQ4_XS &&
+            ot != BN_GGUF_TENSOR_IQ3_XXS && ot != BN_GGUF_TENSOR_IQ3_S &&
+            ot != BN_GGUF_TENSOR_IQ2_XXS && ot != BN_GGUF_TENSOR_IQ2_XS &&
+            ot != BN_GGUF_TENSOR_IQ2_S) {
             SH_LOG_ERROR("Unsupported output.weight type");
             return -1;
         }
@@ -205,10 +222,16 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         w->output_weight.type = ot;
         w->output_weight.rows = (int)out_info->dims[1];
         w->output_weight.cols = (int)out_info->dims[0];
-        if (ot == BN_GGUF_TENSOR_Q4_0 || ot == BN_GGUF_TENSOR_Q8_0 ||
+        if (ot == BN_GGUF_TENSOR_Q4_0 || ot == BN_GGUF_TENSOR_Q4_1 ||
+            ot == BN_GGUF_TENSOR_Q8_0 ||
             ot == BN_GGUF_TENSOR_Q2_K || ot == BN_GGUF_TENSOR_Q3_K ||
             ot == BN_GGUF_TENSOR_Q4_K || ot == BN_GGUF_TENSOR_Q5_K ||
-            ot == BN_GGUF_TENSOR_Q6_K || ot == BN_GGUF_TENSOR_Q8_K) {
+            ot == BN_GGUF_TENSOR_Q6_K || ot == BN_GGUF_TENSOR_Q8_K ||
+            ot == BN_GGUF_TENSOR_BF16 ||
+            ot == BN_GGUF_TENSOR_IQ4_NL || ot == BN_GGUF_TENSOR_IQ4_XS ||
+            ot == BN_GGUF_TENSOR_IQ3_XXS || ot == BN_GGUF_TENSOR_IQ3_S ||
+            ot == BN_GGUF_TENSOR_IQ2_XXS || ot == BN_GGUF_TENSOR_IQ2_XS ||
+            ot == BN_GGUF_TENSOR_IQ2_S) {
             w->output_weight.scale = 1.0f;
         } else if (ot == BN_GGUF_TENSOR_I2_S) {
             size_t nel = (size_t)w->output_weight.rows * w->output_weight.cols;
@@ -495,6 +518,68 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
         const BnBlockQ8K *row = blocks + (size_t)token * n_blocks_per_row;
         for (int b = 0; b < n_blocks_per_row; b++) {
             bn_quant_dequant_q8k(&row[b], out + b * BN_QK_K);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_Q4_1) {
+        const BnBlockQ4_1 *blocks = (const BnBlockQ4_1 *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / 32;
+        const BnBlockQ4_1 *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_q4_1(&row[b], out + b * 32);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_BF16) {
+        const uint16_t *emb = (const uint16_t *)m->weights.token_embedding;
+        const uint16_t *row = emb + (size_t)token * dim;
+        for (int i = 0; i < dim; i++) {
+            out[i] = bn_bf16_to_fp32(row[i]);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ4_NL) {
+        const BnBlockIQ4NL *blocks = (const BnBlockIQ4NL *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / 32;
+        const BnBlockIQ4NL *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq4nl(&row[b], out + b * 32);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ4_XS) {
+        const BnBlockIQ4XS *blocks = (const BnBlockIQ4XS *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / BN_QK_K;
+        const BnBlockIQ4XS *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq4xs(&row[b], out + b * BN_QK_K);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ3_XXS) {
+        const BnBlockIQ3XXS *blocks = (const BnBlockIQ3XXS *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / BN_QK_K;
+        const BnBlockIQ3XXS *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq3xxs(&row[b], out + b * BN_QK_K);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ3_S) {
+        const BnBlockIQ3S *blocks = (const BnBlockIQ3S *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / BN_QK_K;
+        const BnBlockIQ3S *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq3s(&row[b], out + b * BN_QK_K);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ2_XXS) {
+        const BnBlockIQ2XXS *blocks = (const BnBlockIQ2XXS *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / BN_QK_K;
+        const BnBlockIQ2XXS *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq2xxs(&row[b], out + b * BN_QK_K);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ2_XS) {
+        const BnBlockIQ2XS *blocks = (const BnBlockIQ2XS *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / BN_QK_K;
+        const BnBlockIQ2XS *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq2xs(&row[b], out + b * BN_QK_K);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_IQ2_S) {
+        const BnBlockIQ2S *blocks = (const BnBlockIQ2S *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / BN_QK_K;
+        const BnBlockIQ2S *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_iq2s(&row[b], out + b * BN_QK_K);
         }
     } else if (m->weights.emb_type == BN_GGUF_TENSOR_F32) {
         const float *emb = (const float *)m->weights.token_embedding;

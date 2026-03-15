@@ -50,6 +50,14 @@ typedef struct {
     uint8_t  qs[16];  // packed nibbles (2 values per byte)
 } BnBlockQ4_0;
 
+// Q4_1: 4-bit quantization with min, 32 elements per block
+// FP16 scale + FP16 min + 16 packed nibble bytes = 20 bytes
+typedef struct {
+    uint16_t d;       // FP16 scale (delta)
+    uint16_t m;       // FP16 min
+    uint8_t  qs[16];  // packed nibbles (2 values per byte)
+} BnBlockQ4_1;
+
 // Q2_K: 2-bit k-quant, 256 elements per block
 // 16 bytes scales + 64 bytes qs + 2 bytes d + 2 bytes dmin = 84 bytes
 typedef struct {
@@ -104,6 +112,57 @@ typedef struct {
     int16_t  bsums[BN_QK_K / 16];     //  32 bytes: sum of quants in groups of 16
 } BnBlockQ8K;                          // 292 bytes total
 
+// IQ4_NL: 4-bit non-linear quantization, 32 elements per block
+// Same layout as Q4_0 but values are indices into a 16-entry codebook
+typedef struct {
+    uint16_t d;       // FP16 scale
+    uint8_t  qs[16];  // packed 4-bit codebook indices
+} BnBlockIQ4NL;       // 18 bytes (same as Q4_0)
+
+// IQ4_XS: 4-bit non-linear with sub-block scales, 256 elements per block
+typedef struct {
+    uint16_t d;                     //  2 bytes: FP16 super-block scale
+    uint16_t scales_h;              //  2 bytes: high 2 bits of 8 6-bit scales
+    uint8_t  scales_l[BN_QK_K/64]; //  4 bytes: low 4 bits of 8 scales (nibble-packed)
+    uint8_t  qs[BN_QK_K / 2];      // 128 bytes: packed 4-bit IQ4_NL indices
+} BnBlockIQ4XS;                     // 136 bytes total
+
+// IQ3_XXS: 3-bit codebook quantization, 256 elements per block
+typedef struct {
+    uint16_t d;                         //  2 bytes: FP16 super-block scale
+    uint8_t  qs[3 * BN_QK_K / 8];      // 96 bytes: grid indices + packed signs/scales
+} BnBlockIQ3XXS;                        // 98 bytes total
+
+// IQ3_S: 3-bit codebook with separate signs/scales, 256 elements per block
+typedef struct {
+    uint16_t d;                     //  2 bytes: FP16 super-block scale
+    uint8_t  qs[BN_QK_K / 4];      // 64 bytes: 8-bit grid indices
+    uint8_t  qh[BN_QK_K / 32];     //  8 bytes: high bits for 9-bit grid indices
+    uint8_t  signs[BN_QK_K / 8];   // 32 bytes: sign bits (1 per element)
+    uint8_t  scales[BN_QK_K / 32]; //  8 bytes: 4-bit sub-block scales (nibble-packed)
+} BnBlockIQ3S;                      // 114 bytes total
+
+// IQ2_XXS: 2-bit codebook quantization, 256 elements per block
+typedef struct {
+    uint16_t d;                     //  2 bytes: FP16 super-block scale
+    uint16_t qs[BN_QK_K / 8];      // 64 bytes: packed grid indices + signs/scales
+} BnBlockIQ2XXS;                    // 66 bytes total
+
+// IQ2_XS: 2-bit codebook with explicit scales, 256 elements per block
+typedef struct {
+    uint16_t d;                     //  2 bytes: FP16 super-block scale
+    uint16_t qs[BN_QK_K / 8];      // 64 bytes: packed grid indices + signs
+    uint8_t  scales[BN_QK_K / 32]; //  8 bytes: 4-bit sub-block scales
+} BnBlockIQ2XS;                     // 74 bytes total
+
+// IQ2_S: 2-bit codebook (1024-entry grid), 256 elements per block
+typedef struct {
+    uint16_t d;                     //  2 bytes: FP16 super-block scale
+    uint8_t  qs[BN_QK_K / 4];      // 64 bytes: 8-bit grid indices
+    uint8_t  qh[BN_QK_K / 32];     //  8 bytes: high bits for grid indices
+    uint8_t  scales[BN_QK_K / 32]; //  8 bytes: 4-bit sub-block scales
+} BnBlockIQ2S;                      // 82 bytes total
+
 // I2_S: Microsoft BitNet 2-bit ternary, no per-block scale
 // Interleaved byte layout: each byte packs 4 values from 4 sub-rows of 32
 // Single per-tensor scale stored at offset nelements/4 in the data
@@ -123,12 +182,21 @@ void     bn_quant_dequant_tq1(const BnBlockTQ1 *block, float *out);
 void     bn_quant_dequant_tq2(const BnBlockTQ2 *block, float *out);
 void     bn_quant_dequant_q8_0(const BnBlockQ8_0 *block, float *out);
 void     bn_quant_dequant_q4_0(const BnBlockQ4_0 *block, float *out);
+void     bn_quant_dequant_q4_1(const BnBlockQ4_1 *block, float *out);
 void     bn_quant_dequant_q2k(const BnBlockQ2K *block, float *out);
 void     bn_quant_dequant_q3k(const BnBlockQ3K *block, float *out);
 void     bn_quant_dequant_q4k(const BnBlockQ4K *block, float *out);
 void     bn_quant_dequant_q5k(const BnBlockQ5K *block, float *out);
 void     bn_quant_dequant_q6k(const BnBlockQ6K *block, float *out);
 void     bn_quant_dequant_q8k(const BnBlockQ8K *block, float *out);
+void     bn_quant_dequant_iq4nl(const BnBlockIQ4NL *block, float *out);
+void     bn_quant_dequant_iq4xs(const BnBlockIQ4XS *block, float *out);
+void     bn_quant_dequant_iq3xxs(const BnBlockIQ3XXS *block, float *out);
+void     bn_quant_dequant_iq3s(const BnBlockIQ3S *block, float *out);
+void     bn_quant_dequant_iq2xxs(const BnBlockIQ2XXS *block, float *out);
+void     bn_quant_dequant_iq2xs(const BnBlockIQ2XS *block, float *out);
+void     bn_quant_dequant_iq2s(const BnBlockIQ2S *block, float *out);
+float    bn_bf16_to_fp32(uint16_t h);
 void     bn_quant_dequant_i2s(const uint8_t *data, float *out, int n, float scale);
 void     bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
                          int8_t *x_q_buf, BnThreadPool *pool);
