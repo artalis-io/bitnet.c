@@ -120,15 +120,28 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
     }
 
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        int n_blocks = W->cols / 32;
+        if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
+        float x_scales[n_blocks];
+        bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
+        BnQ6KSdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnTPTask task = { bn_quant_q6k_neon_sdot_range, &ctx, W->rows };
+#elif defined(__ARM_NEON)
         (void)x_q_buf;
         BnQ6KCtx ctx = { out, W, x };
-#ifdef __ARM_NEON
         BnTPTask task = { bn_quant_q6k_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
+        (void)x_q_buf;
+        BnQ6KCtx ctx = { out, W, x };
         BnTPTask task = { bn_quant_q6k_avx2_range, &ctx, W->rows };
 #elif defined(__wasm_simd128__)
+        (void)x_q_buf;
+        BnQ6KCtx ctx = { out, W, x };
         BnTPTask task = { bn_quant_q6k_wasm_range, &ctx, W->rows };
 #else
+        (void)x_q_buf;
+        BnQ6KCtx ctx = { out, W, x };
         BnTPTask task = { bn_quant_q6k_scalar_range, &ctx, W->rows };
 #endif
         bn_tp_dispatch(pool, &task, 1);

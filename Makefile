@@ -30,7 +30,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/quant/q4_neon_sdot.c src/quant/q4_neon.c src/quant/q4_scalar.c \
     src/quant/q4_1_neon.c src/quant/q4_1_scalar.c \
     src/quant/bf16_neon.c src/quant/bf16_scalar.c \
-    src/quant/q6k_neon.c src/quant/q6k_scalar.c \
+    src/quant/q6k_neon_sdot.c src/quant/q6k_neon.c src/quant/q6k_scalar.c \
     src/quant/q8k_neon.c src/quant/q8k_scalar.c \
     src/quant/q4k_neon.c src/quant/q4k_scalar.c \
     src/quant/q5k_neon.c src/quant/q5k_scalar.c \
