@@ -50,6 +50,15 @@ typedef struct {
     uint8_t  qs[16];  // packed nibbles (2 values per byte)
 } BnBlockQ4_0;
 
+// Q2_K: 2-bit k-quant, 256 elements per block
+// 16 bytes scales + 64 bytes qs + 2 bytes d + 2 bytes dmin = 84 bytes
+typedef struct {
+    uint8_t  scales[BN_QK_K / 16]; // 16 bytes: 4-bit scale + 4-bit min per 16-element group
+    uint8_t  qs[BN_QK_K / 4];     // 64 bytes: 2-bit quants (4 per byte)
+    uint16_t d;                     //  2 bytes: FP16 super-block scale
+    uint16_t dmin;                  //  2 bytes: FP16 super-block min
+} BnBlockQ2K;                       // 84 bytes total
+
 // Q3_K: 3-bit k-quant, 256 elements per block
 // 32 bytes hmask + 64 bytes qs + 12 bytes scales + 2 bytes d = 110 bytes
 typedef struct {
@@ -114,6 +123,7 @@ void     bn_quant_dequant_tq1(const BnBlockTQ1 *block, float *out);
 void     bn_quant_dequant_tq2(const BnBlockTQ2 *block, float *out);
 void     bn_quant_dequant_q8_0(const BnBlockQ8_0 *block, float *out);
 void     bn_quant_dequant_q4_0(const BnBlockQ4_0 *block, float *out);
+void     bn_quant_dequant_q2k(const BnBlockQ2K *block, float *out);
 void     bn_quant_dequant_q3k(const BnBlockQ3K *block, float *out);
 void     bn_quant_dequant_q4k(const BnBlockQ4K *block, float *out);
 void     bn_quant_dequant_q5k(const BnBlockQ5K *block, float *out);

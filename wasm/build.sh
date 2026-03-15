@@ -29,6 +29,8 @@ emcc \
     "$PROJECT_DIR/src/quant/q5k_scalar.c" \
     "$PROJECT_DIR/src/quant/q3k_wasm.c" \
     "$PROJECT_DIR/src/quant/q3k_scalar.c" \
+    "$PROJECT_DIR/src/quant/q2k_wasm.c" \
+    "$PROJECT_DIR/src/quant/q2k_scalar.c" \
     "$PROJECT_DIR/src/model.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \

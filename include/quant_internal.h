@@ -94,6 +94,13 @@ typedef struct {
     const float *x;
 } BnQ5KCtx;
 
+// Q2_K context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnQ2KCtx;
+
 // Q3_K context
 typedef struct {
     float *out;
@@ -155,6 +162,12 @@ void bn_quant_q5k_neon_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q5k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q5k_scalar_range(void *ctx, int start, int end);
+
+// Q2_K kernels
+void bn_quant_q2k_neon_range(void *ctx, int start, int end);
+void bn_quant_q2k_avx2_range(void *ctx, int start, int end);
+void bn_quant_q2k_wasm_range(void *ctx, int start, int end);
+void bn_quant_q2k_scalar_range(void *ctx, int start, int end);
 
 // Q3_K kernels
 void bn_quant_q3k_neon_range(void *ctx, int start, int end);

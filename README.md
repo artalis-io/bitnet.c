@@ -10,7 +10,7 @@ Zero dependencies beyond libc and libm, four SIMD backends, compiles to WASM, an
 
 - **Pure C11** — no C++, no frameworks, no dependencies beyond libc and libm
 - **GGUF model loading** — loads any GGUF file with supported tensor types
-- **Quantization formats** — I2_S, TQ1_0, TQ2_0 (ternary), Q3_K, Q4_0, Q4_K, Q5_K, Q6_K (k-quants), Q8_0, Q8_K
+- **Quantization formats** — I2_S, TQ1_0, TQ2_0 (ternary), Q2_K, Q3_K, Q4_0, Q4_K, Q5_K, Q6_K (k-quants), Q8_0, Q8_K
 - **Full transformer forward pass** — RoPE, GQA, RMSNorm, sub-norms, tied embeddings
 - **Flash GQA attention** — online softmax with KV-head grouping, single-pass over KV cache
 - **Optional F16 KV cache** — `--kv16` halves attention DRAM bandwidth with minimal precision loss
@@ -41,7 +41,7 @@ Auto-selected at compile time based on target architecture.
 | [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) | 0.5B | Q4_0 + Q8_0 | Working |
 | [Qwen2.5-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF) | 3B | Q4_0 + Q6_K | Working |
 
-Models must use only supported weight types (I2_S, TQ1_0, TQ2_0, Q3_K, Q4_0, Q4_K, Q5_K, Q6_K, Q8_0, Q8_K, F16, F32).
+Models must use only supported weight types (I2_S, TQ1_0, TQ2_0, Q2_K, Q3_K, Q4_0, Q4_K, Q5_K, Q6_K, Q8_0, Q8_K, F16, F32).
 
 ## Quick Start
 
@@ -254,6 +254,7 @@ BitNet b1.58 is a transformer variant where all linear layer weights are constra
 | I2_S   | 2.0         | 2-bit interleaved (4 values/byte) + per-tensor scale | 128 |
 | TQ1_0  | 1.6875      | Base-3 (5 values/byte) + residual | 256 |
 | TQ2_0  | 2.0625      | 2-bit fields (4 values/byte) | 256 |
+| Q2_K   | 2.625       | 2-bit quants + 4-bit sub-block scales/mins | 256 |
 | Q3_K   | 3.4375      | 3-bit quants (split ql/qh) + 6-bit sub-block scales | 256 |
 | Q4_0   | 4.5         | 4-bit nibbles (2 values/byte) + FP16 per-block scale | 32 |
 | Q4_K   | 4.5         | 4-bit quants + 6-bit sub-block scales/mins | 256 |

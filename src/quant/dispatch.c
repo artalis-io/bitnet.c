@@ -151,6 +151,22 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         return;
     }
 
+    if (W->type == BN_GGUF_TENSOR_Q2_K) {
+        (void)x_q_buf;
+        BnQ2KCtx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_q2k_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_q2k_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_q2k_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_q2k_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
     if (W->type == BN_GGUF_TENSOR_Q3_K) {
         (void)x_q_buf;
         BnQ3KCtx ctx = { out, W, x };

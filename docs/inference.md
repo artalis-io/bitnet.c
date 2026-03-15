@@ -121,6 +121,8 @@ For bitnet-b1.58-2B-4T: d = 2,560, kv_dim = 640 (5 KV heads × 128 head_size), s
 
 **BitNet ternary weights:** In BitNet b1.58, these weight matrices are constrained to {-1, 0, +1}. This means matrix-vector multiply reduces to conditional addition/subtraction — no floating-point multiplications needed for the weight side.
 
+**Q2_K format (2.625 bpw, 84 bytes per 256 elements):** Each block has 64 bytes of 2-bit quantized values (4 per byte), 16 bytes of 4-bit scale+min pairs (one per 16-element group), and FP16 super-block scale `d` and minimum `dmin`. Dequantization: `value = d * (scale & 0xF) * q2_value - dmin * (scale >> 4)` where `q2_value` is a 2-bit unsigned integer [0,3].
+
 The I2_S format packs 4 ternary values per byte using 2-bit encoding: `0 → -1, 1 → 0, 2 → +1`. Each weight row also has a single per-tensor floating-point scale factor s, so the actual computation is:
 
 ```

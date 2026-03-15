@@ -196,6 +196,33 @@ void bn_quant_dequant_q5k(const BnBlockQ5K *block, float *out) {
     }
 }
 
+// --- Q2_K dequantization ---
+
+void bn_quant_dequant_q2k(const BnBlockQ2K *block, float *out) {
+    float d    = bn_fp16_to_fp32(block->d);
+    float dmin = bn_fp16_to_fp32(block->dmin);
+    const uint8_t *q = block->qs;
+
+    int is = 0, out_idx = 0;
+    for (int n = 0; n < BN_QK_K; n += 128) {
+        int shift = 0;
+        for (int j = 0; j < 4; j++) {
+            uint8_t sc = block->scales[is++];
+            float dl = d * (sc & 0xF);
+            float ml = dmin * (sc >> 4);
+            for (int l = 0; l < 16; l++)
+                out[out_idx++] = dl * ((q[l] >> shift) & 3) - ml;
+            sc = block->scales[is++];
+            dl = d * (sc & 0xF);
+            ml = dmin * (sc >> 4);
+            for (int l = 0; l < 16; l++)
+                out[out_idx++] = dl * ((q[l + 16] >> shift) & 3) - ml;
+            shift += 2;
+        }
+        q += 32;
+    }
+}
+
 // --- Q3_K dequantization ---
 
 void bn_quant_dequant_q3k(const BnBlockQ3K *block, float *out) {

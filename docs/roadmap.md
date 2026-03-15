@@ -73,6 +73,12 @@ Development roadmap for bitnet.c.
 - [x] Q3_K (3-bit k-quant) with NEON/AVX2/WASM kernels
 - [x] Non-tied output weights (separate output projection matrix)
 
+## Phase 8: Extended Format Coverage
+
+- [x] Q2_K (2-bit k-quant) with NEON/AVX2/WASM kernels
+- [ ] IQ2_XXS, IQ2_XS, IQ2_S (codebook-based ~2 bpw, designed)
+- [ ] F16/BF16 weight types (unquantized dense matvec, designed)
+
 ## Performance Analysis (M1 Max, bitnet-b1.58-2B-4T)
 
 ### Current: ~52.5 tok/s (8 P-cores)
