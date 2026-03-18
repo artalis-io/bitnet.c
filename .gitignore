@@ -2,13 +2,25 @@
 bitnet
 src/*.o
 src/quant/*.o
+src/transformer/*.o
+*.dSYM/
 test_gguf
 test_quant
 test_tokenizer
 test_transformer
 test_e2e
 test_safety
+test_threadpool
+test_arena
+test_q2k
+test_prefill
+test_kv_f16
 dump_model
+bench_kernels
+bench/*.wasm
+bench/*.js
+bitnet_prof*
+__pycache__/
 
 # WASM build output
 wasm/bitnet.js

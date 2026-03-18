@@ -28,6 +28,8 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             const int8_t *xb = x_q + (b * BN_QK_K);
             const float *xs = x_scales + (b * 8);
 
+            // Accumulate per-block to reduce float rounding from repeated d*
+            float block_sum = 0.0f;
             for (int chunk = 0; chunk < 2; chunk++) {
                 uint8x16_t ql0 = vld1q_u8(ql);
                 uint8x16_t ql1 = vld1q_u8(ql + 16);
@@ -36,7 +38,7 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                 uint8x16_t qh0 = vld1q_u8(qh);
                 uint8x16_t qh1 = vld1q_u8(qh + 16);
 
-                // Unpack 8 weight vectors (identical to q6k_neon.c)
+                // Unpack 8 weight vectors
                 int8x16_t w0a = vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(
                     vandq_u8(ql0, mask_lo4),
                     vshlq_n_u8(vandq_u8(qh0, mask_2), 4))), bias32);
@@ -62,40 +64,37 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                     vshrq_n_u8(ql3, 4),
                     vshlq_n_u8(vshrq_n_u8(qh1, 6), 4))), bias32);
 
-                // 4 pairs, each pair = 32 elements = 2 weight sub-blocks sharing 1 activation scale
-                // Pair 0: w0a(sc[0]) + w0b(sc[1]), dx = xs[chunk*4 + 0]
+                // 4 pairs: d factored out, accumulated into block_sum
                 float dx0 = xs[chunk * 4 + 0];
                 int32x4_t s0a = vdotq_s32(zero, w0a, vld1q_s8(xb));
                 int32x4_t s0b = vdotq_s32(zero, w0b, vld1q_s8(xb + 16));
-                row_sum += d * dx0 * ((float)sc[0] * (float)vaddvq_s32(s0a)
-                                    + (float)sc[1] * (float)vaddvq_s32(s0b));
+                block_sum += dx0 * ((float)sc[0] * (float)vaddvq_s32(s0a)
+                                  + (float)sc[1] * (float)vaddvq_s32(s0b));
 
-                // Pair 1: w1a(sc[2]) + w1b(sc[3]), dx = xs[chunk*4 + 1]
                 float dx1 = xs[chunk * 4 + 1];
                 int32x4_t s1a = vdotq_s32(zero, w1a, vld1q_s8(xb + 32));
                 int32x4_t s1b = vdotq_s32(zero, w1b, vld1q_s8(xb + 48));
-                row_sum += d * dx1 * ((float)sc[2] * (float)vaddvq_s32(s1a)
-                                    + (float)sc[3] * (float)vaddvq_s32(s1b));
+                block_sum += dx1 * ((float)sc[2] * (float)vaddvq_s32(s1a)
+                                  + (float)sc[3] * (float)vaddvq_s32(s1b));
 
-                // Pair 2: w2a(sc[4]) + w2b(sc[5]), dx = xs[chunk*4 + 2]
                 float dx2 = xs[chunk * 4 + 2];
                 int32x4_t s2a = vdotq_s32(zero, w2a, vld1q_s8(xb + 64));
                 int32x4_t s2b = vdotq_s32(zero, w2b, vld1q_s8(xb + 80));
-                row_sum += d * dx2 * ((float)sc[4] * (float)vaddvq_s32(s2a)
-                                    + (float)sc[5] * (float)vaddvq_s32(s2b));
+                block_sum += dx2 * ((float)sc[4] * (float)vaddvq_s32(s2a)
+                                  + (float)sc[5] * (float)vaddvq_s32(s2b));
 
-                // Pair 3: w3a(sc[6]) + w3b(sc[7]), dx = xs[chunk*4 + 3]
                 float dx3 = xs[chunk * 4 + 3];
                 int32x4_t s3a = vdotq_s32(zero, w3a, vld1q_s8(xb + 96));
                 int32x4_t s3b = vdotq_s32(zero, w3b, vld1q_s8(xb + 112));
-                row_sum += d * dx3 * ((float)sc[6] * (float)vaddvq_s32(s3a)
-                                    + (float)sc[7] * (float)vaddvq_s32(s3b));
+                block_sum += dx3 * ((float)sc[6] * (float)vaddvq_s32(s3a)
+                                  + (float)sc[7] * (float)vaddvq_s32(s3b));
 
                 xb += 128;
                 ql += 64;
                 qh += 32;
                 sc += 8;
             }
+            row_sum += d * block_sum;
         }
         c->out[row] = row_sum;
     }

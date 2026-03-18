@@ -46,7 +46,8 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_neon.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_neon.c src/transformer/gqa_scalar.c \
-    src/transformer/logits_neon.c src/transformer/logits_scalar.c
+    src/transformer/logits_neon.c src/transformer/logits_scalar.c \
+    src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
   # x86: AVX2 + scalar
   QUANT_BACKEND = src/quant/x_quant_avx2.c \
@@ -73,7 +74,8 @@ else
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
-    src/transformer/logits_avx2.c src/transformer/logits_scalar.c
+    src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
+    src/transformer/ssm_scalar.c
 endif
 
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
@@ -204,7 +206,8 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
 
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
-    src/transformer/logits_avx2.c src/transformer/logits_scalar.c
+    src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
+    src/transformer/ssm_scalar.c
 
 AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/model.c \
             src/transformer.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \

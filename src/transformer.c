@@ -2,7 +2,6 @@
 #include "quant_internal.h"
 #include "sh_log.h"
 #include <stdio.h>
-#include <stdlib.h>
 
 // Max elements for stack VLAs (head_size, dim). Prevents stack overflow
 // from malicious model configs. 8192 = 32KB of floats, well within stack.
@@ -52,6 +51,19 @@ static inline void apply_rope_heads(float *buf, int n_heads, int head_size,
     }
 }
 
+// Backend selection for SSM kernels
+#ifdef __ARM_NEON
+#define ssm_conv_silu bn_transformer_ssm_conv_silu_neon_range
+#define ssm_l2norm    bn_transformer_ssm_l2norm_neon_range
+#define ssm_delta     bn_transformer_ssm_delta_neon_range
+#define ssm_gate      bn_transformer_ssm_gate_neon_range
+#else
+#define ssm_conv_silu bn_transformer_ssm_conv_silu_scalar_range
+#define ssm_l2norm    bn_transformer_ssm_l2norm_scalar_range
+#define ssm_delta     bn_transformer_ssm_delta_scalar_range
+#define ssm_gate      bn_transformer_ssm_gate_scalar_range
+#endif
+
 // SSM block: Gated DeltaNet recurrence. Reads s->x, writes s->xb (result for residual).
 static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
     BnConfig *c = &m->config;
@@ -65,7 +77,6 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
     int value_dim   = c->ssm_inner_size;            // 4096
     int qkv_dim     = key_dim * 2 + value_dim;      // 8192
     int kern        = c->ssm_conv_kernel;           // 4
-    (void)0; // kv_ratio not needed: GGUF uses tiled V-head order (hk = hv % num_k_heads)
 
     // SSM layer index (contiguous among SSM layers)
     int ssm_idx = l - (l + 1) / c->full_attn_interval;
@@ -76,20 +87,6 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
 
     // 1. Norm input
     rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
-
-#ifdef DEBUG
-    if (l == 0) {
-        fprintf(stderr, "SSM L%d norm: %.6f %.6f %.6f %.6f\n", l, s->xb[0], s->xb[1], s->xb[2], s->xb[3]);
-        // Dump normed vector, embedding, and norm weights for Python verification
-        FILE *df = fopen("/tmp/bitnet_debug_norm.bin", "wb");
-        if (df) {
-            fwrite(s->x, sizeof(float), dim, df);     // embedding
-            fwrite(s->xb, sizeof(float), dim, df);    // normed
-            fwrite(lw->attn_norm, sizeof(float), dim, df); // norm weights
-            fclose(df);
-        }
-    }
-#endif
 
     // 2. QKV + Z gate projections (both read from s->xb)
     float *qkv = s->hb;   // [hidden_dim] >= qkv_dim
@@ -102,99 +99,23 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         bn_quant_matvec_batch(tasks, 2, s->xb, s->x_q, m->pool);
     }
 
-#ifdef DEBUG
-    if (l == 0) {
-        fprintf(stderr, "SSM L%d qkv: %.6f %.6f %.6f %.6f | z: %.6f %.6f\n", l, qkv[0], qkv[1], qkv[2], qkv[3], z[0], z[1]);
-        // Dump first 4 bytes of Q5K raw data to verify correct GGUF read
-        {
-            const uint8_t *raw = (const uint8_t *)lw->wqkv.data;
-            fprintf(stderr, "Q5K raw hex[0..19]:");
-            for (int i = 0; i < 20; i++) fprintf(stderr, " %02x", raw[i]);
-            fprintf(stderr, "\n");
-        }
-        // Validate Q5K NEON vs scalar for first 4 rows of wqkv
-        float ref[4];
-        BnQ5KCtx ref_ctx = { ref, &lw->wqkv, s->xb };
-        bn_quant_q5k_scalar_range(&ref_ctx, 0, 4);
-        fprintf(stderr, "Q5K validate: neon=[%.6f %.6f %.6f %.6f] scalar=[%.6f %.6f %.6f %.6f]\n",
-            qkv[0], qkv[1], qkv[2], qkv[3], ref[0], ref[1], ref[2], ref[3]);
-        float max_diff = 0;
-        for (int i = 0; i < 4; i++) {
-            float d = fabsf(qkv[i] - ref[i]);
-            if (d > max_diff) max_diff = d;
-        }
-        fprintf(stderr, "Q5K max_diff=%.2e\n", max_diff);
-        // Validate Q4K NEON vs scalar for ALL rows of wz (4096 rows)
-        {
-            int n = lw->wz.rows;
-            float *zref_all = (float *)malloc(n * sizeof(float));
-            if (zref_all) {
-                BnQ4KCtx zref_ctx = { zref_all, &lw->wz, s->xb };
-                bn_quant_q4k_scalar_range(&zref_ctx, 0, n);
-                float q4k_max = 0;
-                int q4k_worst_row = 0;
-                for (int i = 0; i < n; i++) {
-                    float d = fabsf(z[i] - zref_all[i]);
-                    if (d > q4k_max) { q4k_max = d; q4k_worst_row = i; }
-                }
-                fprintf(stderr, "Q4K full validate (wz, %d rows): max_diff=%.2e at row %d (neon=%.6f scalar=%.6f)\n",
-                    n, q4k_max, q4k_worst_row, z[q4k_worst_row], zref_all[q4k_worst_row]);
-                free(zref_all);
-            }
-        }
-    }
-#endif
-
-    // 3. Causal conv1d (depthwise, kernel=4)
-    // Conv state holds (kern-1) previous QKV projections per channel.
-    // conv1d weight layout: GGUF dims [kern, qkv_dim] → channel-major: weight(ch,k) = data[ch * kern + k]
-    for (int ch = 0; ch < qkv_dim; ch++) {
-        float sum = 0;
-        for (int k = 0; k < kern - 1; k++)
-            sum += conv_state[(size_t)k * qkv_dim + ch] *
-                   lw->ssm_conv1d[(size_t)ch * kern + k];
-        float cur = qkv[ch];
-        sum += cur * lw->ssm_conv1d[(size_t)ch * kern + (kern - 1)];
-        // Shift conv_state for this channel
-        for (int k = 0; k < kern - 2; k++)
-            conv_state[(size_t)k * qkv_dim + ch] =
-                conv_state[(size_t)(k + 1) * qkv_dim + ch];
-        conv_state[(size_t)(kern - 2) * qkv_dim + ch] = cur;
-        qkv[ch] = sum;
-    }
-
-    // 4. SiLU activation on conv output
-    for (int i = 0; i < qkv_dim; i++) {
-        float v = qkv[i];
-        qkv[i] = v / (1.0f + expf(-v));
+    // 3+4. Causal conv1d + SiLU (dispatched over channels)
+    {
+        BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm_conv1d, qkv_dim, kern };
+        BnTPTask conv_task = { ssm_conv_silu, &conv_ctx, qkv_dim };
+        bn_tp_dispatch(m->pool, &conv_task, 1);
     }
 
     // 5. Split xBC: [Q(key_dim), K(key_dim), V(value_dim)]
-    //    GGUF attn_qkv stores [Q_all, K_all, V_all] (confirmed by llama.cpp conversion)
     float *q_raw = qkv;
     float *k_raw = qkv + key_dim;
     float *v_raw = qkv + 2 * key_dim;
 
-#ifdef DEBUG
-    if (l == 0) fprintf(stderr, "SSM L%d post-conv-silu Q: %.6f %.6f K: %.6f %.6f V: %.6f %.6f\n",
-        l, q_raw[0], q_raw[1], k_raw[0], k_raw[1], v_raw[0], v_raw[1]);
-#endif
-
-    // 6. L2 normalize Q and K per head
-    for (int h = 0; h < num_k_heads; h++) {
-        float *qh = q_raw + h * head_k_dim;
-        float *kh = k_raw + h * head_k_dim;
-        float qn = 0, kn = 0;
-        for (int d = 0; d < head_k_dim; d++) {
-            qn += qh[d] * qh[d];
-            kn += kh[d] * kh[d];
-        }
-        qn = 1.0f / (sqrtf(qn) + 1e-6f);
-        kn = 1.0f / (sqrtf(kn) + 1e-6f);
-        for (int d = 0; d < head_k_dim; d++) {
-            qh[d] *= qn;
-            kh[d] *= kn;
-        }
+    // 6. L2 normalize Q and K per head (dispatched over heads)
+    {
+        BnSSML2NormCtx norm_ctx = { q_raw, k_raw, head_k_dim };
+        BnTPTask norm_task = { ssm_l2norm, &norm_ctx, num_k_heads };
+        bn_tp_dispatch(m->pool, &norm_task, 1);
     }
 
     // 7. Alpha (decay) and Beta (update rate) from normalized input
@@ -207,115 +128,30 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         bn_quant_matvec_batch(ab, 2, s->xb, s->x_q, m->pool);
     }
     for (int h = 0; h < num_v_heads; h++) {
-        // GGUF stores ssm_a = -exp(A_log) (pre-transformed, always negative)
-        // decay = exp(softplus(alpha_proj + dt_bias) * ssm_a)
         float dt = alpha_arr[h] + lw->ssm_dt_bias[h];
-        float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt)); // softplus
-        alpha_arr[h] = expf(dt_sp * lw->ssm_a[h]);  // decay ∈ (0, 1]
-        // beta: sigmoid
+        float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt));
+        alpha_arr[h] = expf(dt_sp * lw->ssm_a[h]);
         beta_arr[h] = 1.0f / (1.0f + expf(-beta_arr[h]));
     }
 
-#ifdef DEBUG
-    if (l == 0) {
-        fprintf(stderr, "SSM L%d alpha: %.6f %.6f %.6f beta: %.6f %.6f %.6f | A_log[0]=%.4f dt_bias[0]=%.4f\n",
-            l, alpha_arr[0], alpha_arr[1], alpha_arr[2], beta_arr[0], beta_arr[1], beta_arr[2],
-            lw->ssm_a[0], lw->ssm_dt_bias[0]);
-        // Dump all alpha/beta for Python verification
-        FILE *df2 = fopen("/tmp/bitnet_debug_ab.bin", "wb");
-        if (df2) {
-            fwrite(alpha_arr, sizeof(float), num_v_heads, df2);  // decay values
-            fwrite(beta_arr, sizeof(float), num_v_heads, df2);   // beta values
-            fclose(df2);
-        }
-    }
-#endif
-
-    // 8. Delta rule recurrence (per V-head)
-    // Scale Q by 1/sqrt(head_k_dim) (matches llama.cpp delta net readout scaling)
-    float q_scale = 1.0f / sqrtf((float)head_k_dim);
-    for (int i = 0; i < key_dim; i++)
-        q_raw[i] *= q_scale;
-
-    float *out = s->xb2;  // [dim] >= value_dim
-
-    for (int hv = 0; hv < num_v_heads; hv++) {
-        int hk = hv % num_k_heads;  // tiled order: GGUF reorders V-heads for broadcast
-        const float *qh = q_raw + hk * head_k_dim;
-        const float *kh = k_raw + hk * head_k_dim;
-        float *vh = v_raw + hv * head_v_dim;
-        float *S = state + (size_t)hv * head_k_dim * head_v_dim;
-        float decay = alpha_arr[hv];
-        float beta = beta_arr[hv];
-
-        // Decay state
-        for (int i = 0; i < head_k_dim * head_v_dim; i++)
-            S[i] *= decay;
-
-        // sk = S @ k  (prediction: what state expects for this key)
-        float sk[head_v_dim];
-        for (int v = 0; v < head_v_dim; v++) {
-            float sum = 0;
-            for (int k = 0; k < head_k_dim; k++)
-                sum += S[(size_t)k * head_v_dim + v] * kh[k];
-            sk[v] = sum;
-        }
-
-        // State update: S += k ⊗ (beta * (v - sk))
-        for (int k = 0; k < head_k_dim; k++) {
-            float kk = kh[k];
-            for (int v = 0; v < head_v_dim; v++)
-                S[(size_t)k * head_v_dim + v] += kk * beta * (vh[v] - sk[v]);
-        }
-
-        // Read output: o = S^T @ q * scale
-        float *oh = out + hv * head_v_dim;
-        for (int v = 0; v < head_v_dim; v++) {
-            float sum = 0;
-            for (int k = 0; k < head_k_dim; k++)
-                sum += S[(size_t)k * head_v_dim + v] * qh[k];
-            oh[v] = sum;
-        }
+    // 8. Delta rule recurrence (dispatched over V-heads)
+    float *out = s->xb2;
+    {
+        float q_scale = 1.0f / sqrtf((float)head_k_dim);
+        BnSSMDeltaCtx delta_ctx = {
+            state, out, q_raw, k_raw, v_raw,
+            alpha_arr, beta_arr,
+            num_k_heads, head_k_dim, head_v_dim, q_scale
+        };
+        BnTPTask delta_task = { ssm_delta, &delta_ctx, num_v_heads };
+        bn_tp_dispatch(m->pool, &delta_task, 1);
     }
 
-#ifdef DEBUG
-    if (l == 0) {
-        // Compute L2 norm and max of full recurrence output
-        float l2 = 0, mx = 0;
-        for (int i = 0; i < value_dim; i++) {
-            l2 += out[i] * out[i];
-            float a = fabsf(out[i]);
-            if (a > mx) mx = a;
-        }
-        l2 = sqrtf(l2);
-        // Also compute L2 norm of state for head 0
-        float *S0 = state;
-        float s_l2 = 0;
-        for (int i = 0; i < head_k_dim * head_v_dim; i++)
-            s_l2 += S0[i] * S0[i];
-        s_l2 = sqrtf(s_l2);
-        fprintf(stderr, "SSM L%d recurrence: out_l2=%.6f out_max=%.6f state_h0_l2=%.6f\n", l, l2, mx, s_l2);
-        fprintf(stderr, "SSM L%d out[0..7]: %.8f %.8f %.8f %.8f %.8f %.8f %.8f %.8f\n",
-            l, out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
-        // Print V values (first 8)
-        float *v0 = qkv + key_dim * 2;
-        fprintf(stderr, "SSM L%d V[0..7]: %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
-            l, v0[0], v0[1], v0[2], v0[3], v0[4], v0[5], v0[6], v0[7]);
-        // Print z gate values (first 8)
-        fprintf(stderr, "SSM L%d z[0..7]: %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
-            l, z[0], z[1], z[2], z[3], z[4], z[5], z[6], z[7]);
-    }
-#endif
-
-    // 9. Per-head RMSNorm + SiLU-gated output with z
-    for (int hv = 0; hv < num_v_heads; hv++) {
-        float *oh = out + hv * head_v_dim;
-        float *zh = z + hv * head_v_dim;
-        rmsnorm(oh, oh, lw->ssm_norm, head_v_dim, c->norm_eps);
-        for (int d = 0; d < head_v_dim; d++) {
-            float g = zh[d];
-            oh[d] *= g / (1.0f + expf(-g));  // SiLU(z)
-        }
+    // 9. Per-head RMSNorm + SiLU gate (dispatched over V-heads)
+    {
+        BnSSMGateCtx gate_ctx = { out, z, lw->ssm_norm, c->norm_eps, head_v_dim };
+        BnTPTask gate_task = { ssm_gate, &gate_ctx, num_v_heads };
+        bn_tp_dispatch(m->pool, &gate_task, 1);
     }
 
     // 10. Output projection: out[value_dim] → xb[dim]
@@ -323,25 +159,10 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         BnMatvecTask proj[1] = {{ s->xb, &lw->ssm_out }};
         bn_quant_matvec_batch(proj, 1, out, s->x_q, m->pool);
     }
-
-#ifdef DEBUG
-    if (l == 0) {
-        fprintf(stderr, "SSM L%d final xb: %.6f %.6f %.6f %.6f\n", l, s->xb[0], s->xb[1], s->xb[2], s->xb[3]);
-        // Dump recurrence output (pre-norm) and final projection output
-        FILE *df3 = fopen("/tmp/bitnet_debug_ssm_out.bin", "wb");
-        if (df3) {
-            fwrite(out, sizeof(float), value_dim, df3);   // recurrence output
-            fwrite(s->xb, sizeof(float), dim, df3);       // final projected output
-            fclose(df3);
-        }
-    }
-#endif
-    // (debug zero-SSM removed)
 }
 
 // FFN block: shared by both attention and SSM layers.
 // Reads s->x, uses s->xb/hb/hb2/x_q as scratch. Adds result to s->x.
-static int ffn_call_count = 0;
 static void forward_ffn_block(BnModel *m, BnLayerWeights *lw) {
     BnConfig *c = &m->config;
     BnRunState *s = &m->state;
@@ -349,14 +170,6 @@ static void forward_ffn_block(BnModel *m, BnLayerWeights *lw) {
     int hidden_dim = c->hidden_dim;
 
     rmsnorm(s->xb, s->x, lw->ffn_norm, dim, c->norm_eps);
-
-#ifdef DEBUG
-    if (ffn_call_count == 0) {
-        fprintf(stderr, "FFN L0: x_pre[0..3]= %.6f %.6f %.6f %.6f normed[0..3]= %.6f %.6f %.6f %.6f\n",
-            s->x[0], s->x[1], s->x[2], s->x[3],
-            s->xb[0], s->xb[1], s->xb[2], s->xb[3]);
-    }
-#endif
 
     if (c->has_ffn_gate) {
         {
@@ -366,25 +179,6 @@ static void forward_ffn_block(BnModel *m, BnLayerWeights *lw) {
             };
             bn_quant_matvec_batch(ffn, 2, s->xb, s->x_q, m->pool);
         }
-
-#ifdef DEBUG
-        if (ffn_call_count == 0) {
-            fprintf(stderr, "FFN L0: gate[0..3]= %.6f %.6f %.6f %.6f up[0..3]= %.6f %.6f %.6f %.6f\n",
-                s->hb[0], s->hb[1], s->hb[2], s->hb[3],
-                s->hb2[0], s->hb2[1], s->hb2[2], s->hb2[3]);
-            // Validate Q4K for ffn_gate (first 4 rows)
-            float gref[4];
-            BnQ4KCtx gref_ctx = { gref, &lw->ffn_gate, s->xb };
-            bn_quant_q4k_scalar_range(&gref_ctx, 0, 4);
-            float q4k_ffn_diff = 0;
-            for (int i = 0; i < 4; i++) {
-                float d = fabsf(s->hb[i] - gref[i]);
-                if (d > q4k_ffn_diff) q4k_ffn_diff = d;
-            }
-            fprintf(stderr, "FFN L0 Q4K gate validate: scalar=[%.6f %.6f %.6f %.6f] max_diff=%.2e\n",
-                gref[0], gref[1], gref[2], gref[3], q4k_ffn_diff);
-        }
-#endif
 
         if (c->act_type == 1) {
 #ifdef __ARM_NEON
@@ -444,14 +238,6 @@ static void forward_ffn_block(BnModel *m, BnLayerWeights *lw) {
         bn_quant_matvec_batch(down, 1, s->hb, s->x_q, m->pool);
     }
 
-#ifdef DEBUG
-    if (ffn_call_count == 0) {
-        fprintf(stderr, "FFN L0: down[0..3]= %.6f %.6f %.6f %.6f\n",
-            s->xb[0], s->xb[1], s->xb[2], s->xb[3]);
-    }
-    ffn_call_count++;
-#endif
-
     residual_add(s->x, s->xb, dim);
 }
 
@@ -488,27 +274,6 @@ static int forward_layers(BnModel *m, int token, int pos) {
     // Embed the token
     bn_model_embed_token(m, s->x, token);
 
-#ifdef DEBUG
-    if (pos <= 1) {
-        float emb_l2 = 0;
-        for (int d = 0; d < dim; d++) emb_l2 += s->x[d] * s->x[d];
-        emb_l2 = sqrtf(emb_l2);
-        fprintf(stderr, "DBG embed tok=%d pos=%d x[0..3]= %.6f %.6f %.6f %.6f |x|=%.3f\n",
-            token, pos, s->x[0], s->x[1], s->x[2], s->x[3], emb_l2);
-    }
-    // Diagnostic: test embedding→logits directly (skip all layers)
-    if (pos == 0) {
-        float x_copy[dim];
-        memcpy(x_copy, s->x, dim * sizeof(float));
-        rmsnorm(s->x, s->x, w->output_norm, dim, c->norm_eps);
-        // Quick logits for first 10 vocab entries
-        fprintf(stderr, "DBG embed→logits (skip layers): x_normed[0..3]= %.6f %.6f %.6f %.6f\n",
-            s->x[0], s->x[1], s->x[2], s->x[3]);
-        // Restore
-        memcpy(s->x, x_copy, dim * sizeof(float));
-    }
-#endif
-
     // Precompute RoPE cos/sin for this position
     int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
     int half_rope = rope_dims / 2;
@@ -539,12 +304,6 @@ static int forward_layers(BnModel *m, int token, int pos) {
             int q_gated = lw->wq.data && (lw->wq.rows > dim);
 
             rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
-
-#ifdef DEBUG
-            if (pos == 0 && l == 3)
-                fprintf(stderr, "ATN L%d q_gated=%d wq.rows=%d wq.cols=%d dim=%d head_size=%d n_heads=%d\n",
-                    l, q_gated, lw->wq.rows, lw->wq.cols, dim, head_size, n_heads);
-#endif
 
             if (q_gated) {
                 // --- Gated Q path (Qwen3.5 attention) ---
@@ -622,28 +381,6 @@ static int forward_layers(BnModel *m, int token, int pos) {
                                q_full + h * 2 * head_size,
                                head_size * sizeof(float));
 
-#ifdef DEBUG
-                    if (l == 3 && pos == 0) {
-                        fprintf(stderr, "ATN L3 Q_h0[0..3]= %.6f %.6f %.6f %.6f Q_h1[0..3]= %.6f %.6f %.6f %.6f\n",
-                            q_full[0], q_full[1], q_full[2], q_full[3],
-                            q_full[head_size], q_full[head_size+1], q_full[head_size+2], q_full[head_size+3]);
-                        fprintf(stderr, "ATN L3 gate_h0[0..3]= %.6f %.6f %.6f %.6f (at q_full+dim=%d)\n",
-                            q_full[dim], q_full[dim+1], q_full[dim+2], q_full[dim+3], dim);
-                        fprintf(stderr, "ATN L3 K[0..3]= %.6f %.6f %.6f %.6f V[0..3]= %.6f %.6f %.6f %.6f\n",
-                            key_cache_row[0], key_cache_row[1], key_cache_row[2], key_cache_row[3],
-                            value_cache_row[0], value_cache_row[1], value_cache_row[2], value_cache_row[3]);
-                        // Dump all ATN L3 intermediates for Python verification
-                        FILE *df = fopen("/tmp/bitnet_debug_attn3.bin", "wb");
-                        if (df) {
-                            fwrite(s->xb, sizeof(float), dim, df);        // normed input
-                            fwrite(q_full, sizeof(float), 2 * dim, df);   // Q + gate interleaved
-                            fwrite(key_cache_row, sizeof(float), kv_dim, df);  // K
-                            fwrite(value_cache_row, sizeof(float), kv_dim, df); // V
-                            fclose(df);
-                        }
-                    }
-#endif
-
                     // Q/K RMSNorm
                     if (lw->q_norm)
                         for (int h = 0; h < n_heads; h++)
@@ -655,25 +392,11 @@ static int forward_layers(BnModel *m, int token, int pos) {
                                     key_cache_row + h*head_size,
                                     lw->k_norm, head_size, c->norm_eps);
 
-#ifdef DEBUG
-                    if (l == 3 && pos == 0)
-                        fprintf(stderr, "ATN L3 post-norm Q[0..3]= %.6f %.6f %.6f %.6f K[0..3]= %.6f %.6f %.6f %.6f\n",
-                            s->q[0], s->q[1], s->q[2], s->q[3],
-                            key_cache_row[0], key_cache_row[1], key_cache_row[2], key_cache_row[3]);
-#endif
-
                     // Partial RoPE
                     apply_rope_heads(s->q, n_heads, head_size,
                                      rope_dims, rope_cos, rope_sin);
                     apply_rope_heads(key_cache_row, c->n_kv_heads, head_size,
                                      rope_dims, rope_cos, rope_sin);
-
-#ifdef DEBUG
-                    if (l == 3 && pos == 0)
-                        fprintf(stderr, "ATN L3 post-rope Q[0..3]= %.6f %.6f %.6f %.6f K[0..3]= %.6f %.6f %.6f %.6f\n",
-                            s->q[0], s->q[1], s->q[2], s->q[3],
-                            key_cache_row[0], key_cache_row[1], key_cache_row[2], key_cache_row[3]);
-#endif
                 }
 
                 // GQA attention
@@ -694,13 +417,6 @@ static int forward_layers(BnModel *m, int token, int pos) {
                 }
 
                 // Sigmoid gate: xb *= sigmoid(gate)
-                // Gate is at q_full[h*2*hs + hs] for each head (interleaved layout)
-#ifdef DEBUG
-                if (l == 3 && pos == 0) {
-                    fprintf(stderr, "ATN L3 xb_h0[0..3] (pre-gate)= %.6f %.6f %.6f %.6f\n",
-                        s->xb[0], s->xb[1], s->xb[2], s->xb[3]);
-                }
-#endif
                 for (int h = 0; h < n_heads; h++) {
                     float *gate_h = q_full + h * 2 * head_size + head_size;
                     float *xb_h = s->xb + h * head_size;
@@ -711,27 +427,10 @@ static int forward_layers(BnModel *m, int token, int pos) {
                 // wo projection + residual
                 if (lw->attn_sub_norm)
                     rmsnorm(s->xb, s->xb, lw->attn_sub_norm, dim, c->norm_eps);
-#ifdef DEBUG
-                if (l == 3 && pos == 0) {
-                    fprintf(stderr, "ATN L3 post-gate xb[0..3]= %.6f %.6f %.6f %.6f\n",
-                        s->xb[0], s->xb[1], s->xb[2], s->xb[3]);
-                    // Dump post-gate xb for verification
-                    FILE *df = fopen("/tmp/bitnet_debug_attn3_xb.bin", "wb");
-                    if (df) { fwrite(s->xb, sizeof(float), dim, df); fclose(df); }
-                }
-#endif
                 {
                     BnMatvecTask wo[1] = {{ s->xb2, &lw->wo }};
                     bn_quant_matvec_batch(wo, 1, s->xb, s->x_q, m->pool);
                 }
-#ifdef DEBUG
-                if (l == 3 && pos == 0) {
-                    fprintf(stderr, "ATN L3 wo_out[0..3]= %.6f %.6f %.6f %.6f\n",
-                        s->xb2[0], s->xb2[1], s->xb2[2], s->xb2[3]);
-                    FILE *df = fopen("/tmp/bitnet_debug_attn3_wo.bin", "wb");
-                    if (df) { fwrite(s->xb2, sizeof(float), dim, df); fclose(df); }
-                }
-#endif
                 residual_add(s->x, s->xb2, dim);
 
             } else {
@@ -841,25 +540,6 @@ static int forward_layers(BnModel *m, int token, int pos) {
             snprintf(v3, sizeof(v3), "%.6f", s->x[3]);
             SH_LOG_DEBUG("Layer 0 pos 0", "x0", v0, "x1", v1, "x2", v2, "x3", v3);
         }
-#ifdef DEBUG
-        if (pos == 0) {
-            float l2 = 0;
-            for (int d = 0; d < dim; d++) l2 += s->x[d] * s->x[d];
-            l2 = sqrtf(l2);
-            fprintf(stderr, "DBG layer=%d %s x[0..3]= %.6f %.6f %.6f %.6f |x|=%.3f\n",
-                    l, is_attn ? "ATN" : "SSM",
-                    s->x[0], s->x[1], s->x[2], s->x[3], l2);
-            // Dump hidden state at key layers for Python verification
-            if (l == 2) {  // Before layer 3 (first ATN) = after layer 2 (SSM)
-                FILE *df = fopen("/tmp/bitnet_debug_layer2.bin", "wb");
-                if (df) { fwrite(s->x, sizeof(float), dim, df); fclose(df); }
-            }
-            if (l == 3) {  // After layer 3 (first ATN + FFN)
-                FILE *df = fopen("/tmp/bitnet_debug_layer3.bin", "wb");
-                if (df) { fwrite(s->x, sizeof(float), dim, df); fclose(df); }
-            }
-        }
-#endif
     }
 
     return 0;
@@ -879,36 +559,7 @@ static float *forward_logits(BnModel *m) {
     }
 
     // Final RMSNorm
-#ifdef DEBUG
-    {
-        // Dump pre-norm hidden state for Python verification
-        FILE *df = fopen("/tmp/bitnet_debug_hidden.bin", "wb");
-        if (df) {
-            fwrite(s->x, sizeof(float), dim, df);
-            fwrite(w->output_norm, sizeof(float), dim, df);
-            fclose(df);
-        }
-        float xl2 = 0;
-        for (int d = 0; d < dim; d++) xl2 += s->x[d] * s->x[d];
-        fprintf(stderr, "LOGITS pre-norm |x|=%.3f x[0..7]= %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
-            sqrtf(xl2), s->x[0], s->x[1], s->x[2], s->x[3], s->x[4], s->x[5], s->x[6], s->x[7]);
-    }
-#endif
     rmsnorm(s->x, s->x, w->output_norm, dim, c->norm_eps);
-#ifdef DEBUG
-    {
-        // Dump post-norm hidden state
-        FILE *df = fopen("/tmp/bitnet_debug_hidden_normed.bin", "wb");
-        if (df) {
-            fwrite(s->x, sizeof(float), dim, df);
-            fclose(df);
-        }
-        float xl2 = 0;
-        for (int d = 0; d < dim; d++) xl2 += s->x[d] * s->x[d];
-        fprintf(stderr, "LOGITS post-norm |x|=%.3f x[0..7]= %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
-            sqrtf(xl2), s->x[0], s->x[1], s->x[2], s->x[3], s->x[4], s->x[5], s->x[6], s->x[7]);
-    }
-#endif
 
     // Untied output weight: logits = output_weight @ x
     if (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16) {
@@ -1026,47 +677,6 @@ static float *forward_logits(BnModel *m) {
         BnTPTask logits_task = { bn_transformer_logits_f32_range, &lctx, c->vocab_size };
         bn_tp_dispatch(m->pool, &logits_task, 1);
     }
-
-
-#ifdef DEBUG
-    // Q6K NEON vs scalar validation for output weight
-    if (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_Q6_K) {
-        int test_toks[] = {169479, 69759, 11471, 0, 1, 2};
-        int n_test = sizeof(test_toks) / sizeof(test_toks[0]);
-        float *scalar_buf = (float *)calloc(c->vocab_size, sizeof(float));
-        if (scalar_buf) {
-            BnQ6KCtx ref_ctx = { scalar_buf, &w->output_weight, s->x };
-            for (int t = 0; t < n_test; t++) {
-                int tok = test_toks[t];
-                bn_quant_q6k_scalar_range(&ref_ctx, tok, tok + 1);
-                float diff = fabsf(scalar_buf[tok] - s->logits[tok]);
-                fprintf(stderr, "Q6K validate token %d: scalar=%.4f neon=%.4f diff=%.2e\n",
-                    tok, scalar_buf[tok], s->logits[tok], diff);
-            }
-            free(scalar_buf);
-        }
-    }
-    // Print top-5 logits
-    {
-        int top5[5] = {0};
-        for (int i = 1; i < c->vocab_size; i++) {
-            for (int j = 0; j < 5; j++) {
-                if (s->logits[i] > s->logits[top5[j]]) {
-                    for (int k = 4; k > j; k--) top5[k] = top5[k-1];
-                    top5[j] = i;
-                    break;
-                }
-            }
-        }
-        fprintf(stderr, "LOGITS top5: [%d]=%.4f [%d]=%.4f [%d]=%.4f [%d]=%.4f [%d]=%.4f\n",
-            top5[0], s->logits[top5[0]], top5[1], s->logits[top5[1]],
-            top5[2], s->logits[top5[2]], top5[3], s->logits[top5[3]],
-            top5[4], s->logits[top5[4]]);
-        // Print x before final norm
-        fprintf(stderr, "LOGITS x_prenorm l2=%.3f x[0..3]=%.6f %.6f %.6f %.6f\n",
-            0.0f, s->logits[0], s->logits[1], s->logits[2], s->logits[3]);
-    }
-#endif
 
     return s->logits;
 }
