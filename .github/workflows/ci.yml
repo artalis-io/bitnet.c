@@ -45,11 +45,11 @@ jobs:
       - name: Build and test with sanitizer
         run: |
           if [ "${{ matrix.sanitizer }}" = "asan" ]; then
-            make test CFLAGS="-O1 -g -std=c11 -D_GNU_SOURCE -Iinclude -Wall -Wextra \
+            make test CFLAGS="-O1 -g -march=native -std=c11 -D_GNU_SOURCE -Iinclude -Wall -Wextra \
                                -fsanitize=address,undefined -fno-omit-frame-pointer" \
                       LDFLAGS="-lm -lpthread -fsanitize=address,undefined"
           else
-            make test CFLAGS="-O1 -g -std=c11 -D_GNU_SOURCE -Iinclude -Wall -Wextra \
+            make test CFLAGS="-O1 -g -march=native -std=c11 -D_GNU_SOURCE -Iinclude -Wall -Wextra \
                                -fsanitize=thread" \
                       LDFLAGS="-lm -lpthread -fsanitize=thread"
           fi

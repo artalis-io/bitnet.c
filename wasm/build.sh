@@ -68,7 +68,7 @@ emcc \
     "$PROJECT_DIR/src/sh_log.c" \
     "$PROJECT_DIR/wasm/api.c" \
     -I"$PROJECT_DIR/include" \
-    -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra \
+    -std=c11 -D_GNU_SOURCE -Wall -Wextra \
     -O3 -flto -msimd128 -mrelaxed-simd \
     -sWASM=1 \
     -sALLOW_MEMORY_GROWTH=1 \
