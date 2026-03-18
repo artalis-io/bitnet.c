@@ -32,3 +32,59 @@ jobs:
         run: make test
         env:
           CC: ${{ matrix.cc }}
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        sanitizer: [asan, tsan]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test with sanitizer
+        run: |
+          if [ "${{ matrix.sanitizer }}" = "asan" ]; then
+            make test CFLAGS="$CFLAGS -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
+                      LDFLAGS="$LDFLAGS -fsanitize=address,undefined"
+          else
+            make test CFLAGS="$CFLAGS -fsanitize=thread -g -O1" \
+                      LDFLAGS="$LDFLAGS -fsanitize=thread"
+          fi
+        env:
+          CC: clang
+
+  cppcheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: cppcheck --error-exitcode=1 --enable=warning,performance --suppress=missingIncludeSystem -Iinclude src/
+
+  avx2-syntax:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AVX2 syntax check
+        run: make avx2-check
+        env:
+          CC: clang
+
+  wasm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+
+      - name: Build WASM
+        run: wasm/build.sh

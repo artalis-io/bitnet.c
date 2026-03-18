@@ -57,6 +57,16 @@ static inline void apply_rope_heads(float *buf, int n_heads, int head_size,
 #define ssm_l2norm    bn_transformer_ssm_l2norm_neon_range
 #define ssm_delta     bn_transformer_ssm_delta_neon_range
 #define ssm_gate      bn_transformer_ssm_gate_neon_range
+#elif defined(__AVX2__)
+#define ssm_conv_silu bn_transformer_ssm_conv_silu_avx2_range
+#define ssm_l2norm    bn_transformer_ssm_l2norm_avx2_range
+#define ssm_delta     bn_transformer_ssm_delta_avx2_range
+#define ssm_gate      bn_transformer_ssm_gate_avx2_range
+#elif defined(__wasm_simd128__)
+#define ssm_conv_silu bn_transformer_ssm_conv_silu_wasm_range
+#define ssm_l2norm    bn_transformer_ssm_l2norm_wasm_range
+#define ssm_delta     bn_transformer_ssm_delta_wasm_range
+#define ssm_gate      bn_transformer_ssm_gate_wasm_range
 #else
 #define ssm_conv_silu bn_transformer_ssm_conv_silu_scalar_range
 #define ssm_l2norm    bn_transformer_ssm_l2norm_scalar_range

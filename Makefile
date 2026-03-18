@@ -75,7 +75,7 @@ else
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
-    src/transformer/ssm_scalar.c
+    src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 endif
 
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
@@ -116,11 +116,11 @@ BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
 bench_kernels: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k pgo avx2-check clean
+.PHONY: debug asan bench test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz pgo avx2-check clean
 
 bench: bench_kernels
 
-test: test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena
+test: test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz
 
 test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
@@ -145,6 +145,13 @@ test_safety: test/test_safety.c src/platform.c src/gguf.c $(QUANT_SRCS) src/mode
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_arena: test/test_arena.c src/sh_arena.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+SSM_BACKEND = $(filter src/transformer/ssm_%, $(TRANSFORMER_BACKEND))
+test_ssm: test/test_ssm.c src/transformer/ssm_scalar.c $(SSM_BACKEND)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+test_gguf_fuzz: test/test_gguf_fuzz.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_q2k: test/test_q2k.c $(QUANT_SRCS) src/threadpool.c
@@ -207,15 +214,20 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
-    src/transformer/ssm_scalar.c
+    src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 
 AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/model.c \
             src/transformer.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
             src/threadpool.c src/sh_arena.c src/sh_log.c
 
 avx2-check:
+ifeq ($(UNAME_M),x86_64)
+	$(CC) -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow \
+		-std=c11 -Iinclude -fsyntax-only $(AVX2_SRCS)
+else
 	$(CC) -target x86_64-apple-darwin -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow \
 		-std=c11 -Iinclude -fsyntax-only $(AVX2_SRCS)
+endif
 
 clean:
-	rm -f bitnet bench_kernels src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_e2e test_prefill test_kv_f16 default.profraw default.profdata
+	rm -f bitnet bench_kernels src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_e2e test_prefill test_kv_f16 default.profraw default.profdata

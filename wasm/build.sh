@@ -58,6 +58,8 @@ emcc \
     "$PROJECT_DIR/src/transformer/gqa_scalar.c" \
     "$PROJECT_DIR/src/transformer/logits_wasm.c" \
     "$PROJECT_DIR/src/transformer/logits_scalar.c" \
+    "$PROJECT_DIR/src/transformer/ssm_wasm.c" \
+    "$PROJECT_DIR/src/transformer/ssm_scalar.c" \
     "$PROJECT_DIR/src/tokenizer.c" \
     "$PROJECT_DIR/src/sampler.c" \
     "$PROJECT_DIR/src/platform.c" \

@@ -123,15 +123,23 @@ typedef struct {
 // --- SSM range function declarations ---
 
 void bn_transformer_ssm_conv_silu_neon_range(void *ctx, int start, int end);
+void bn_transformer_ssm_conv_silu_avx2_range(void *ctx, int start, int end);
+void bn_transformer_ssm_conv_silu_wasm_range(void *ctx, int start, int end);
 void bn_transformer_ssm_conv_silu_scalar_range(void *ctx, int start, int end);
 
 void bn_transformer_ssm_l2norm_neon_range(void *ctx, int start, int end);
+void bn_transformer_ssm_l2norm_avx2_range(void *ctx, int start, int end);
+void bn_transformer_ssm_l2norm_wasm_range(void *ctx, int start, int end);
 void bn_transformer_ssm_l2norm_scalar_range(void *ctx, int start, int end);
 
 void bn_transformer_ssm_delta_neon_range(void *ctx, int start, int end);
+void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end);
+void bn_transformer_ssm_delta_wasm_range(void *ctx, int start, int end);
 void bn_transformer_ssm_delta_scalar_range(void *ctx, int start, int end);
 
 void bn_transformer_ssm_gate_neon_range(void *ctx, int start, int end);
+void bn_transformer_ssm_gate_avx2_range(void *ctx, int start, int end);
+void bn_transformer_ssm_gate_wasm_range(void *ctx, int start, int end);
 void bn_transformer_ssm_gate_scalar_range(void *ctx, int start, int end);
 
 #endif // BN_TRANSFORMER_INTERNAL_H
