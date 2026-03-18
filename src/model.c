@@ -286,13 +286,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
             SH_LOG_DEBUG("Hybrid SSM+Attn", "attn_interval", fai_s,
                          "ssm_inner", ssm_s);
         }
-#ifdef DEBUG
-        fprintf(stderr, "CFG rope_theta=%.1f norm_eps=%.2e rope_dim_count=%d n_kv_heads=%d kv_dim=%d head_size=%d kv_mul=%d\n",
-                c->rope_theta, c->norm_eps, c->rope_dim_count, c->n_kv_heads, c->kv_dim, c->head_size, c->kv_mul);
-        fprintf(stderr, "CFG full_attn=%d ssm_state=%d ssm_conv=%d ssm_inner=%d ssm_rank=%d ssm_group=%d\n",
-                c->full_attn_interval, c->ssm_state_size, c->ssm_conv_kernel, c->ssm_inner_size, c->ssm_time_step_rank, c->ssm_group_count);
-        fprintf(stderr, "CFG act_type=%d has_ffn_gate=%d arch=%s\n", c->act_type, c->has_ffn_gate, arch ? arch : "(null)");
-#endif
     }
 
     // --- Load weights ---
@@ -693,69 +686,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         q4_repack(&w->output_weight, m->arena);
         char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f", (double)q4_repack_total / (1024*1024));
         SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
-    }
-#endif
-
-#ifdef DEBUG
-    // Validate SSM weight dimensions and values after loading
-    if (c->full_attn_interval > 0) {
-        BnLayerWeights *lw0 = &w->layers[0];
-        // Print all SSM tensor dimensions for layer 0
-        fprintf(stderr, "=== SSM L0 tensor dimensions ===\n");
-        fprintf(stderr, "wqkv: type=%d rows=%d cols=%d (expect rows=%d cols=%d)\n",
-            lw0->wqkv.type, lw0->wqkv.rows, lw0->wqkv.cols,
-            c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size, c->dim);
-        fprintf(stderr, "wz: type=%d rows=%d cols=%d (expect rows=%d cols=%d)\n",
-            lw0->wz.type, lw0->wz.rows, lw0->wz.cols, c->ssm_inner_size, c->dim);
-        fprintf(stderr, "ssm_alpha: type=%d rows=%d cols=%d (expect rows=%d cols=%d)\n",
-            lw0->ssm_alpha.type, lw0->ssm_alpha.rows, lw0->ssm_alpha.cols,
-            c->ssm_time_step_rank, c->dim);
-        fprintf(stderr, "ssm_beta: type=%d rows=%d cols=%d (expect rows=%d cols=%d)\n",
-            lw0->ssm_beta.type, lw0->ssm_beta.rows, lw0->ssm_beta.cols,
-            c->ssm_time_step_rank, c->dim);
-        fprintf(stderr, "ssm_out: type=%d rows=%d cols=%d (expect rows=%d cols=%d)\n",
-            lw0->ssm_out.type, lw0->ssm_out.rows, lw0->ssm_out.cols,
-            c->dim, c->ssm_inner_size);
-        fprintf(stderr, "ssm_norm: %p (expect [%d] = head_v_dim)\n",
-            (void*)lw0->ssm_norm, c->ssm_inner_size / c->ssm_time_step_rank);
-        if (lw0->ssm_norm)
-            fprintf(stderr, "ssm_norm[0..3]: %.6f %.6f %.6f %.6f\n",
-                lw0->ssm_norm[0], lw0->ssm_norm[1], lw0->ssm_norm[2], lw0->ssm_norm[3]);
-        // Print attention layer (L3) dimensions
-        int attn_l = c->full_attn_interval - 1;
-        if (attn_l < c->n_layers) {
-            BnLayerWeights *lwa = &w->layers[attn_l];
-            fprintf(stderr, "=== ATN L%d tensor dimensions ===\n", attn_l);
-            fprintf(stderr, "wq: type=%d rows=%d cols=%d\n", lwa->wq.type, lwa->wq.rows, lwa->wq.cols);
-            fprintf(stderr, "wk: type=%d rows=%d cols=%d\n", lwa->wk.type, lwa->wk.rows, lwa->wk.cols);
-            fprintf(stderr, "wv: type=%d rows=%d cols=%d\n", lwa->wv.type, lwa->wv.rows, lwa->wv.cols);
-            fprintf(stderr, "wo: type=%d rows=%d cols=%d\n", lwa->wo.type, lwa->wo.rows, lwa->wo.cols);
-            fprintf(stderr, "q_norm: %p  k_norm: %p\n", (void*)lwa->q_norm, (void*)lwa->k_norm);
-            if (lwa->q_norm)
-                fprintf(stderr, "q_norm[0..3]: %.6f %.6f %.6f %.6f\n",
-                    lwa->q_norm[0], lwa->q_norm[1], lwa->q_norm[2], lwa->q_norm[3]);
-        }
-        if (lw0->ssm_conv1d) {
-            int kern = c->ssm_conv_kernel;
-            fprintf(stderr, "CONV1D L0 [ch=0]: %.6f %.6f %.6f %.6f\n",
-                lw0->ssm_conv1d[0*kern+0], lw0->ssm_conv1d[0*kern+1],
-                lw0->ssm_conv1d[0*kern+2], lw0->ssm_conv1d[0*kern+3]);
-        }
-        if (lw0->ssm_a)
-            fprintf(stderr, "SSM_A L0 [0..7]: %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
-                lw0->ssm_a[0], lw0->ssm_a[1], lw0->ssm_a[2], lw0->ssm_a[3],
-                lw0->ssm_a[4], lw0->ssm_a[5], lw0->ssm_a[6], lw0->ssm_a[7]);
-        if (lw0->ssm_dt_bias)
-            fprintf(stderr, "DT_BIAS L0 [0..7]: %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f\n",
-                lw0->ssm_dt_bias[0], lw0->ssm_dt_bias[1], lw0->ssm_dt_bias[2], lw0->ssm_dt_bias[3],
-                lw0->ssm_dt_bias[4], lw0->ssm_dt_bias[5], lw0->ssm_dt_bias[6], lw0->ssm_dt_bias[7]);
-        fprintf(stderr, "OUTPUT type=%d rows=%d cols=%d\n",
-                w->output_weight.type, w->output_weight.rows, w->output_weight.cols);
-        fprintf(stderr, "=== Buffer sizes ===\n");
-        fprintf(stderr, "hb_size=%d hb2_size=%d xb2_size=%d x_q_size=%d\n",
-                hb_size, hb2_size, xb2_size, x_q_size);
-        fprintf(stderr, "n_attn=%d n_ssm=%d ssm_state_total=%zu ssm_conv_total=%zu\n",
-                n_attn_layers, n_ssm_layers, ssm_state_size_total, ssm_conv_state_total);
     }
 #endif
 
