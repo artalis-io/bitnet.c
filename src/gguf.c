@@ -380,10 +380,11 @@ void *bn_gguf_tensor_data(BnGGUFFile *f, int idx) {
     size_t offset = f->data_offset + t->offset;
     if (offset >= f->raw_size) return NULL;
 
-    // Compute total elements from dims
+    // Compute total elements from dims (reject zero-dimension tensors)
     uint64_t nelements = 1;
     for (uint32_t d = 0; d < t->n_dims; d++) {
-        if (t->dims[d] != 0 && nelements > UINT64_MAX / t->dims[d]) return NULL;
+        if (t->dims[d] == 0) return NULL;
+        if (nelements > UINT64_MAX / t->dims[d]) return NULL;
         nelements *= t->dims[d];
     }
 

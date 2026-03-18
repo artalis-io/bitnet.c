@@ -292,6 +292,7 @@ int main(int argc, char **argv) {
     BnSampler sampler;
     if (bn_sampler_init(&sampler, cfg->vocab_size, args.temperature, args.topp, args.seed) != 0) {
         fprintf(stderr, "Failed to allocate sampler\n");
+        bn_tokenizer_free(&tokenizer);
         bn_model_free(&model);
         bn_gguf_free(gf);
         return 1;

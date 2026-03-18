@@ -18,9 +18,12 @@ void bn_quant_i2s_neon_range(void *ctx, int row_start, int row_end) {
         float32x4_t accB2 = vdupq_n_f32(0), accB3 = vdupq_n_f32(0);
         const int8x16_t one = vdupq_n_s8(1);
         const uint8x16_t mask3 = vdupq_n_u8(3);
+        const uint8_t *rd_end = rd + row_bytes;
         while (done < cols) {
-            __builtin_prefetch(rd + 128, 0, 0);
-            __builtin_prefetch(rd + 192, 0, 0);
+            if (rd + 192 < rd_end) {
+                __builtin_prefetch(rd + 128, 0, 0);
+                __builtin_prefetch(rd + 192, 0, 0);
+            }
             for (int h = 0; h < 2; h++) {
                 uint8x16_t raw = vld1q_u8(rd + h * 16);
                 const float *xp = x + done + h * 16;

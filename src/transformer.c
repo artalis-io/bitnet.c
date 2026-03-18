@@ -119,6 +119,10 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
     }
 
     // 7. Alpha (decay) and Beta (update rate) from normalized input
+    if (num_v_heads > BN_MAX_VLA_ELEMS || head_v_dim > BN_MAX_VLA_ELEMS) {
+        SH_LOG_ERROR("SSM dimensions too large for stack VLAs");
+        return;
+    }
     float alpha_arr[num_v_heads], beta_arr[num_v_heads];
     {
         BnMatvecTask ab[2] = {

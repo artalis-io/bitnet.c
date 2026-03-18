@@ -18,8 +18,9 @@ void bn_quant_i2s_neon_sdot_range(void *ctx, int row_start, int row_end) {
         const int8x16_t one = vdupq_n_s8(1);
         const uint8x16_t mask3 = vdupq_n_u8(3);
 
+        const uint8_t *rd_end = rd + row_bytes;
         while (done < cols) {
-            __builtin_prefetch(rd + 64, 0, 0);
+            if (rd + 64 < rd_end) __builtin_prefetch(rd + 64, 0, 0);
             {
                 uint8x16_t raw = vld1q_u8(rd);
                 const int8_t *xp = x_q + done;

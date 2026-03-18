@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <math.h>
 
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
@@ -26,6 +27,10 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
         return -1;
     }
     w->type = info->type;
+    if (info->dims[1] > INT_MAX || info->dims[0] > INT_MAX) {
+        SH_LOG_ERROR("Tensor dimensions exceed INT_MAX", "name", weight_name);
+        return -1;
+    }
     w->rows = (int)info->dims[1];
     w->cols = (int)info->dims[0];
 
@@ -200,13 +205,21 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
 
-    // Validate alignment for NEON vectorized paths
+    // Validate alignment for SIMD vectorized paths
     if (c->dim % c->n_heads != 0) {
         SH_LOG_ERROR("dim not divisible by n_heads");
         return -1;
     }
     if (c->n_heads % c->n_kv_heads != 0) {
         SH_LOG_ERROR("n_heads not divisible by n_kv_heads");
+        return -1;
+    }
+    if (c->dim % 128 != 0) {
+        SH_LOG_ERROR("dim must be multiple of 128 for SIMD kernels");
+        return -1;
+    }
+    if (c->head_size % 16 != 0) {
+        SH_LOG_ERROR("head_size must be multiple of 16 for SIMD kernels");
         return -1;
     }
 
@@ -231,6 +244,22 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
 
     snprintf(key, sizeof(key), "%s.ssm.group_count", prefix);
     c->ssm_group_count = (int)bn_gguf_get_u32(f, key);
+
+    // Validate SSM config when hybrid model
+    if (c->full_attn_interval > 0) {
+        if (c->ssm_time_step_rank <= 0) {
+            SH_LOG_ERROR("ssm_time_step_rank must be > 0 for hybrid models");
+            return -1;
+        }
+        if (c->ssm_inner_size <= 0 || c->ssm_inner_size % c->ssm_time_step_rank != 0) {
+            SH_LOG_ERROR("ssm_inner_size must be > 0 and divisible by ssm_time_step_rank");
+            return -1;
+        }
+        if (c->ssm_state_size <= 0 || c->ssm_group_count <= 0) {
+            SH_LOG_ERROR("ssm_state_size and ssm_group_count must be > 0");
+            return -1;
+        }
+    }
 
     // Detect FFN gate and activation type
     c->has_ffn_gate = (bn_gguf_find_tensor(f, "blk.0.ffn_gate.weight") >= 0) ? 1 : 0;
@@ -311,6 +340,10 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         }
         w->output_weight.data = bn_gguf_tensor_data(f, out_idx);
         w->output_weight.type = ot;
+        if (out_info->dims[1] > INT_MAX || out_info->dims[0] > INT_MAX) {
+            SH_LOG_ERROR("output.weight dimensions exceed INT_MAX");
+            return -1;
+        }
         w->output_weight.rows = (int)out_info->dims[1];
         w->output_weight.cols = (int)out_info->dims[0];
         if (ot == BN_GGUF_TENSOR_Q4_0 || ot == BN_GGUF_TENSOR_Q4_1 ||
@@ -568,6 +601,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     arena_size += emb_i8_bytes + emb_i8_scales_bytes;          // INT8 embeddings
     arena_size += q4_repack_total;                              // Q4_0 repacked weights
     arena_size += 16 * SH_ARENA_ALIGN;                         // alignment padding
+
+    if (arena_size > SIZE_MAX / 2) {
+        SH_LOG_ERROR("Arena size overflow");
+        goto fail_state;
+    }
 
     m->arena = sh_arena_create(arena_size);
     if (!m->arena) {
