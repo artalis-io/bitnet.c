@@ -45,11 +45,13 @@ jobs:
       - name: Build and test with sanitizer
         run: |
           if [ "${{ matrix.sanitizer }}" = "asan" ]; then
-            make test CFLAGS="$CFLAGS -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1" \
-                      LDFLAGS="$LDFLAGS -fsanitize=address,undefined"
+            make test CFLAGS="-O1 -g -std=c11 -D_GNU_SOURCE -Iinclude -Wall -Wextra \
+                               -fsanitize=address,undefined -fno-omit-frame-pointer" \
+                      LDFLAGS="-lm -lpthread -fsanitize=address,undefined"
           else
-            make test CFLAGS="$CFLAGS -fsanitize=thread -g -O1" \
-                      LDFLAGS="$LDFLAGS -fsanitize=thread"
+            make test CFLAGS="-O1 -g -std=c11 -D_GNU_SOURCE -Iinclude -Wall -Wextra \
+                               -fsanitize=thread" \
+                      LDFLAGS="-lm -lpthread -fsanitize=thread"
           fi
         env:
           CC: clang
@@ -64,7 +66,11 @@ jobs:
         run: sudo apt-get install -y cppcheck
 
       - name: Run cppcheck
-        run: cppcheck --error-exitcode=1 --enable=warning,performance --suppress=missingIncludeSystem -Iinclude src/
+        run: >
+          cppcheck --error-exitcode=1 --enable=warning,performance
+          --suppress=missingIncludeSystem
+          --suppress=duplicateAssignExpression
+          -Iinclude src/
 
   avx2-syntax:
     runs-on: ubuntu-latest

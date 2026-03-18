@@ -220,13 +220,16 @@ AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/model.c \
             src/transformer.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
             src/threadpool.c src/sh_arena.c src/sh_log.c
 
+AVX2_CHECK_FLAGS = -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -fsyntax-only
+ifeq ($(UNAME_S),Linux)
+AVX2_CHECK_FLAGS += -D_GNU_SOURCE
+endif
+
 avx2-check:
 ifeq ($(UNAME_M),x86_64)
-	$(CC) -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow \
-		-std=c11 -Iinclude -fsyntax-only $(AVX2_SRCS)
+	$(CC) $(AVX2_CHECK_FLAGS) $(AVX2_SRCS)
 else
-	$(CC) -target x86_64-apple-darwin -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow \
-		-std=c11 -Iinclude -fsyntax-only $(AVX2_SRCS)
+	$(CC) -target x86_64-apple-darwin $(AVX2_CHECK_FLAGS) $(AVX2_SRCS)
 endif
 
 clean:
