@@ -70,3 +70,4 @@ WASM build requires Emscripten. Run `./wasm/build.sh`. The API wrapper in `wasm/
 - **Modify the forward pass**: edit `transformer_forward()` in `src/transformer.c`
 - **Add a new sampling strategy**: extend `sampler_sample()` in `src/sampler.c`
 - **Export a new function to WASM**: add `EMSCRIPTEN_KEEPALIVE` wrapper in `wasm/api.c`, update `build.sh` exported functions list
+
