@@ -54,6 +54,54 @@ static inline __m256i bn_avx2_dpbusd(__m256i acc, __m256i a, __m256i b) {
     return _mm256_add_epi32(acc, _mm256_madd_epi16(prod16, _mm256_set1_epi16(1)));
 }
 
+// Fast vectorized exp approximation using range reduction + polynomial.
+// Accurate to ~1e-5 relative error over [-87, 88], sufficient for inference.
+// Method: exp(x) = 2^n * exp(r) where n = floor(x/ln2), r = x - n*ln2.
+// exp(r) approximated by degree-4 polynomial on [-0.5*ln2, 0.5*ln2].
+static inline __m256 bn_avx2_fast_exp_ps(__m256 x) {
+    const __m256 log2e   = _mm256_set1_ps(1.4426950409f);   // 1/ln(2)
+    const __m256 ln2     = _mm256_set1_ps(0.6931471806f);   // ln(2)
+    const __m256 half    = _mm256_set1_ps(0.5f);
+    const __m256 one     = _mm256_set1_ps(1.0f);
+    // Minimax coefficients for exp(r) on [-ln2/2, ln2/2]
+    const __m256 p2      = _mm256_set1_ps(0.49999994f);     // ~1/2!
+    const __m256 p3      = _mm256_set1_ps(0.16666667f);     // ~1/3!
+    const __m256 p4      = _mm256_set1_ps(0.04166664f);     // ~1/4!
+
+    // Clamp to prevent overflow/underflow
+    x = _mm256_max_ps(_mm256_set1_ps(-87.3f), _mm256_min_ps(_mm256_set1_ps(88.7f), x));
+
+    // n = round(x / ln2) = floor(x * log2e + 0.5)
+    __m256 t   = _mm256_fmadd_ps(x, log2e, half);
+    __m256 n   = _mm256_floor_ps(t);
+    __m256i ni = _mm256_cvtps_epi32(n);    // integer n
+
+    // r = x - n * ln2 (reduced argument, |r| <= ln2/2)
+    __m256 r = _mm256_fnmadd_ps(n, ln2, x);
+
+    // Polynomial: exp(r) ≈ 1 + r + r²/2! + r³/3! + r⁴/4! (Horner form)
+    __m256 poly = _mm256_fmadd_ps(p4, r, p3);
+    poly = _mm256_fmadd_ps(poly, r, p2);
+    poly = _mm256_fmadd_ps(poly, r, one);
+    poly = _mm256_fmadd_ps(poly, r, one);
+
+    // Scale by 2^n: add n to IEEE754 exponent field (bias=127)
+    __m256i e2n = _mm256_slli_epi32(_mm256_add_epi32(ni, _mm256_set1_epi32(127)), 23);
+    return _mm256_mul_ps(poly, _mm256_castsi256_ps(e2n));
+}
+
+// Fast vectorized sigmoid: 1 / (1 + exp(-x))
+static inline __m256 bn_avx2_fast_sigmoid_ps(__m256 x) {
+    __m256 one = _mm256_set1_ps(1.0f);
+    __m256 ex = bn_avx2_fast_exp_ps(_mm256_sub_ps(_mm256_setzero_ps(), x));
+    return _mm256_div_ps(one, _mm256_add_ps(one, ex));
+}
+
+// Fast vectorized SiLU: x * sigmoid(x)
+static inline __m256 bn_avx2_fast_silu_ps(__m256 x) {
+    return _mm256_mul_ps(x, bn_avx2_fast_sigmoid_ps(x));
+}
+
 #endif // __AVX2__
 
 #ifdef __wasm_simd128__

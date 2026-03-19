@@ -16,7 +16,8 @@ void bn_quant_q4_avx2_range(void *ctx, int row_start, int row_end) {
         float row_sum = 0.0f;
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ4_0 *blk = &blocks[row * n_blocks_per_row + b];
-            _mm_prefetch((const char *)(blk + 2), _MM_HINT_T0);
+            _mm_prefetch((const char *)(blk + 4), _MM_HINT_T0);
+            _mm_prefetch((const char *)(blk + 8), _MM_HINT_T1);
             float d_q4 = bn_fp16_to_fp32(blk->d);
             float d_q8 = x_scales[b];
 

@@ -27,8 +27,8 @@
 extern "C" {
 #endif
 
-/* Alignment for allocations (8 bytes for double/pointer) */
-#define SH_ARENA_ALIGN 8
+/* Alignment for allocations (32 bytes for AVX2) */
+#define SH_ARENA_ALIGN 32
 
 /* Arena allocator structure */
 typedef struct SHArena {
@@ -44,7 +44,7 @@ typedef struct SHArena {
 SHArena *sh_arena_create(size_t capacity);
 
 /*
- * Allocate from arena with 8-byte alignment.
+ * Allocate from arena with 32-byte alignment.
  * Returns NULL if arena is NULL or out of space.
  * Memory is NOT initialized.
  */

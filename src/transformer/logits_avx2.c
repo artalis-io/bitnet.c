@@ -12,7 +12,8 @@ void bn_transformer_logits_i8_avx2_range(void *ctx, int v_start, int v_end) {
 
     for (int v = v_start; v < v_end; v++) {
         const int8_t *row = emb_i8 + (size_t)v * dim;
-        _mm_prefetch((const char *)(row + (size_t)dim), _MM_HINT_T0);
+        _mm_prefetch((const char *)(row + 128), _MM_HINT_T0);
+        _mm_prefetch((const char *)(row + 256), _MM_HINT_T1);
         __m256i acc0 = _mm256_setzero_si256(), acc1 = _mm256_setzero_si256();
         __m256i acc2 = _mm256_setzero_si256(), acc3 = _mm256_setzero_si256();
         for (int d = 0; d < dim; d += 128) {
