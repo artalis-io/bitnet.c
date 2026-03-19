@@ -714,8 +714,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
-    // Non-gated models with q_dim > dim still need hb for gated-Q check
-    if (2 * q_dim > hb_size) hb_size = 2 * q_dim;
     // MoE shared expert may need larger hb/hb2 buffers
     if (c->has_shared_expert && c->shared_expert_intermediate_size > hb_size)
         hb_size = c->shared_expert_intermediate_size;

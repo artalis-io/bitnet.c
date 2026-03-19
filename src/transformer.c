@@ -284,8 +284,14 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
             ? (l + 1) / c->full_attn_interval - 1 : l;
         size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
 
-        // Gated Q: Q weight produces 2x dim (interleaved [Q,gate] per head)
-        int q_gated = lw->wq.data && (lw->wq.rows > dim);
+        // Q projection width detection:
+        // q_dim = n_heads * head_size (total Q output elements)
+        // Gated Q (Qwen3.5): wq.rows = 2 * q_dim (interleaved [Q, gate] per head)
+        // Wide Q (Qwen3 MoE): wq.rows = q_dim > dim (head_size > dim/n_heads)
+        // Classic: wq.rows = dim = q_dim
+        int q_dim = n_heads * head_size;
+        int q_gated = lw->wq.data && (lw->wq.rows > q_dim);
+        int q_wide  = !q_gated && lw->wq.data && (lw->wq.rows > dim);
 
         rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
 
@@ -401,6 +407,69 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
             // wo projection + residual
             if (lw->attn_sub_norm)
                 rmsnorm(s->xb, s->xb, lw->attn_sub_norm, dim, c->norm_eps);
+            {
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->wo }};
+                bn_quant_matvec_batch(wo, 1, s->xb, s->x_q, m->pool);
+            }
+            residual_add(s->x, s->xb2, dim);
+
+        } else if (q_wide) {
+            // --- Wide Q path (Qwen3 MoE: head_size > dim/n_heads, no gate) ---
+            // Q projection: dim → q_dim (larger than dim)
+            // K/V: dim → kv_dim (uses head_size from attention.key_length)
+            float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_dim;
+            float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_dim;
+
+            // Q matvec: xb[dim] → q[q_dim]
+            {
+                BnMatvecTask q_task[1] = {{ s->q, &lw->wq }};
+                bn_quant_matvec_batch(q_task, 1, s->xb, s->x_q, m->pool);
+            }
+            // K/V matvec: xb[dim] → kv_dim
+            {
+                BnMatvecTask kv[2] = {
+                    { key_cache_row,   &lw->wk },
+                    { value_cache_row, &lw->wv },
+                };
+                bn_quant_matvec_batch(kv, 2, s->xb, s->x_q, m->pool);
+            }
+
+            if (lw->q_norm)
+                for (int h = 0; h < n_heads; h++)
+                    rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                            lw->q_norm + h*qk_stride, head_size, c->norm_eps);
+            if (lw->k_norm)
+                for (int h = 0; h < c->n_kv_heads; h++)
+                    rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
+                            lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+
+            apply_rope_heads(s->q, n_heads, head_size,
+                             rope_dims, rope_cos, rope_sin);
+            apply_rope_heads(key_cache_row, c->n_kv_heads, head_size,
+                             rope_dims, rope_cos, rope_sin);
+
+            // GQA attention
+            {
+                int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
+#ifdef __ARM_NEON
+                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
+#elif defined(__AVX2__)
+                bn_tp_fn attn_fn = bn_transformer_gqa_avx2_range;
+#elif defined(__wasm_simd128__)
+                bn_tp_fn attn_fn = bn_transformer_gqa_wasm_range;
+#else
+                bn_tp_fn attn_fn = bn_transformer_gqa_scalar_range;
+#endif
+                BnTPTask gqa = { attn_fn, &gctx, n_heads };
+                bn_tp_dispatch(m->pool, &gqa, 1);
+            }
+
+            // No sigmoid gate (unlike gated-Q path)
+
+            // wo projection (q_dim → dim) + residual
+            if (lw->attn_sub_norm)
+                rmsnorm(s->xb, s->xb, lw->attn_sub_norm, q_dim, c->norm_eps);
             {
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->wo }};
                 bn_quant_matvec_batch(wo, 1, s->xb, s->x_q, m->pool);
