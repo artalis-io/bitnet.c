@@ -276,12 +276,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     }
 
     // Derived dimensions (safe now — denominators validated above)
-    c->head_size = c->dim / c->n_heads;
+    // Check for explicit head size (Qwen3 has key_length != dim/n_heads)
+    snprintf(key, sizeof(key), "%s.attention.key_length", prefix);
+    int explicit_head_size = (int)bn_gguf_get_u32(f, key);
+    c->head_size = (explicit_head_size > 0) ? explicit_head_size : (c->dim / c->n_heads);
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
 
     // Validate alignment for SIMD vectorized paths
-    if (c->dim % c->n_heads != 0) {
+    if (explicit_head_size == 0 && c->dim % c->n_heads != 0) {
         SH_LOG_ERROR("dim not divisible by n_heads");
         return -1;
     }
@@ -687,7 +690,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         goto fail_state;
     }
 
+    // q_dim = n_heads * head_size (may differ from dim when attention.key_length is set)
+    int q_dim = c->n_heads * c->head_size;
+    int xb_size = q_dim > c->dim ? q_dim : c->dim;  // xb must hold attention output
+    int q_size = xb_size;  // q must match xb for attention head access pattern
+
     int x_q_size = c->dim > c->hidden_dim ? c->dim : c->hidden_dim;
+    if (q_dim > x_q_size) x_q_size = q_dim;
     int half_head = c->head_size / 2;
 
     // Scratch buffer sizes — enlarged for hybrid SSM + gated-Q attention
@@ -702,9 +711,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         if (c->ssm_inner_size > xb2_size) xb2_size = c->ssm_inner_size;
         if (c->ssm_inner_size > x_q_size) x_q_size = c->ssm_inner_size;
         // Gated Q attention: q_full (Q + gate) → hb
-        int gq = 2 * c->dim;
+        int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
+    // Non-gated models with q_dim > dim still need hb for gated-Q check
+    if (2 * q_dim > hb_size) hb_size = 2 * q_dim;
     // MoE shared expert may need larger hb/hb2 buffers
     if (c->has_shared_expert && c->shared_expert_intermediate_size > hb_size)
         hb_size = c->shared_expert_intermediate_size;
@@ -787,7 +798,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
 
     // Compute total arena capacity (all RunState buffers + INT8 embeddings + Q4 repacking)
     size_t arena_size = 0;
-    arena_size += (3 * (size_t)c->dim + (size_t)xb2_size) * sizeof(float); // x, xb, xb2, q  (xb2 may be > dim for SSM)
+    arena_size += ((size_t)c->dim + (size_t)xb_size + (size_t)xb2_size + (size_t)q_size) * sizeof(float); // x, xb, xb2, q
     arena_size += ((size_t)hb_size + (size_t)hb2_size) * sizeof(float);    // hb, hb2
     arena_size += att_size * sizeof(float);                     // att
     arena_size += (size_t)c->vocab_size * sizeof(float);       // logits
@@ -813,9 +824,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     }
 
     s->x           = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
-    s->xb          = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+    s->xb          = (float *)sh_arena_calloc(m->arena, xb_size, sizeof(float));
     s->xb2         = (float *)sh_arena_calloc(m->arena, xb2_size, sizeof(float));
-    s->q           = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+    s->q           = (float *)sh_arena_calloc(m->arena, q_size, sizeof(float));
     s->hb          = (float *)sh_arena_calloc(m->arena, hb_size, sizeof(float));
     s->hb2         = (float *)sh_arena_calloc(m->arena, hb2_size, sizeof(float));
     s->att         = (float *)sh_arena_calloc(m->arena, att_size, sizeof(float));
