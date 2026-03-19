@@ -12,7 +12,9 @@ SHArena *sh_arena_create(size_t capacity)
     SHArena *arena = malloc(sizeof(SHArena));
     if (!arena) return NULL;
 
-    arena->buffer = malloc(capacity);
+    /* Round capacity up to alignment so aligned_alloc is happy */
+    size_t aligned_cap = (capacity + SH_ARENA_ALIGN - 1) & ~(size_t)(SH_ARENA_ALIGN - 1);
+    arena->buffer = aligned_alloc(SH_ARENA_ALIGN, aligned_cap);
     if (!arena->buffer) {
         free(arena);
         return NULL;
@@ -27,7 +29,7 @@ void *sh_arena_alloc(SHArena *arena, size_t size)
 {
     if (!arena || !arena->buffer) return NULL;
 
-    /* Align to SH_ARENA_ALIGN bytes for double/pointer alignment */
+    /* Align to SH_ARENA_ALIGN bytes (32B for AVX2) */
     size = (size + SH_ARENA_ALIGN - 1) & ~(size_t)(SH_ARENA_ALIGN - 1);
 
     if (arena->used + size > arena->capacity) {

@@ -18,6 +18,8 @@ typedef int (*bn_token_callback)(const char *piece, int token_id, void *user_dat
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <pthread/qos.h>
+#else
+#include <unistd.h>
 #endif
 
 typedef struct {
@@ -35,6 +37,7 @@ typedef struct {
     int repeat_set;     // whether user explicitly set --repeat-penalty
     int no_prefill;
     int kv_f16;
+    int threads;        // 0 = auto-detect
 } CLIArgs;
 
 static void print_usage(const char *prog) {
@@ -51,6 +54,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.1)\n");
     fprintf(stderr, "  --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)\n");
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
+    fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
 }
 
 static int parse_int(const char *s, const char *name) {
@@ -114,6 +118,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.kv_f16 = 1;
         } else if (strcmp(argv[i], "--no-prefill") == 0) {
             args.no_prefill = 1;
+        } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
+            args.threads = parse_int(argv[++i], "-t");
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
             args.repeat_penalty = parse_float(argv[++i], "--repeat-penalty");
             args.repeat_set = 1;
@@ -193,17 +199,24 @@ int main(int argc, char **argv) {
     sh_log_init(NULL);
     CLIArgs args = parse_args(argc, argv);
 
-    // Detect P-core count on Apple Silicon for thread pool sizing
+    // Determine thread count: -t flag > Apple P-core detect > sysconf > 1
     int n_workers = 0;
+    if (args.threads > 0) {
+        n_workers = args.threads - 1;  // main thread counts as one
+    } else {
 #if defined(__APPLE__)
-    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-    {
-        int ncores = 0;
-        size_t len = sizeof(ncores);
-        if (sysctlbyname("hw.perflevel0.logicalcpu", &ncores, &len, NULL, 0) == 0 && ncores > 1)
-            n_workers = ncores - 1;  // main thread counts as one
-    }
+        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+        {
+            int ncores = 0;
+            size_t len = sizeof(ncores);
+            if (sysctlbyname("hw.perflevel0.logicalcpu", &ncores, &len, NULL, 0) == 0 && ncores > 1)
+                n_workers = ncores - 1;
+        }
+#else
+        long ncores = sysconf(_SC_NPROCESSORS_ONLN);
+        if (ncores > 1) n_workers = (int)ncores - 1;
 #endif
+    }
 
     // Load model file
     SH_LOG_INFO("Loading model", "path", args.model_path);

@@ -201,6 +201,7 @@ typedef struct {
 void bn_quant_i2s_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_i2s_neon_range(void *ctx, int start, int end);
 void bn_quant_i2s_avx2_range(void *ctx, int start, int end);
+void bn_quant_i2s_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_i2s_wasm_range(void *ctx, int start, int end);
 void bn_quant_i2s_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_i2s_scalar_range(void *ctx, int start, int end);
@@ -230,6 +231,7 @@ void bn_quant_q4_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4_repacked_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4_neon_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_range(void *ctx, int start, int end);
+void bn_quant_q4_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q4_wasm_range(void *ctx, int start, int end);
 void bn_quant_q4_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4_scalar_range(void *ctx, int start, int end);
