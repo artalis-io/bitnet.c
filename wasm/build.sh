@@ -51,6 +51,7 @@ emcc \
     "$PROJECT_DIR/src/quant/iq2s_wasm.c" \
     "$PROJECT_DIR/src/quant/iq2s_scalar.c" \
     "$PROJECT_DIR/src/model.c" \
+    "$PROJECT_DIR/src/moe.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_scalar.c" \
