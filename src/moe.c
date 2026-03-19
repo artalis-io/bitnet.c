@@ -186,25 +186,38 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
         float weight = ms->expert_weights[k];
         if (eidx < 0) continue;
 
-        // Load gate projection and compute gate_proj @ xb
-        const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
-        if (!gate_data) {
-            SH_LOG_ERROR("Failed to load expert gate projection");
-            continue;
-        }
-        BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
-                                            lw->expert_map.gate_rows, lw->expert_map.gate_cols);
-        bn_quant_matvec(ms->expert_hb, &wgate, s->xb, s->x_q, NULL);
+        // Load gate + up projections and compute gate/up @ xb
+        if (ms->mmap_base) {
+            // mmap: both pointers valid simultaneously — batch dispatch
+            const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
+            const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
+            if (!gate_data || !up_data) {
+                SH_LOG_ERROR("Failed to load expert gate/up projection");
+                continue;
+            }
+            BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
+                                                lw->expert_map.gate_rows, lw->expert_map.gate_cols);
+            BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
+                                              lw->expert_map.up_rows, lw->expert_map.up_cols);
+            BnMatvecTask gu[2] = {
+                { ms->expert_hb,  &wgate },
+                { ms->expert_hb2, &wup   },
+            };
+            bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
+        } else {
+            // pread: single buffer — load and compute sequentially
+            const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
+            if (!gate_data) { SH_LOG_ERROR("Failed to load expert gate"); continue; }
+            BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
+                                                lw->expert_map.gate_rows, lw->expert_map.gate_cols);
+            bn_quant_matvec(ms->expert_hb, &wgate, s->xb, s->x_q, m->pool);
 
-        // Load up projection and compute up_proj @ xb
-        const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
-        if (!up_data) {
-            SH_LOG_ERROR("Failed to load expert up projection");
-            continue;
+            const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
+            if (!up_data) { SH_LOG_ERROR("Failed to load expert up"); continue; }
+            BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
+                                              lw->expert_map.up_rows, lw->expert_map.up_cols);
+            bn_quant_matvec(ms->expert_hb2, &wup, s->xb, s->x_q, m->pool);
         }
-        BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
-                                          lw->expert_map.up_rows, lw->expert_map.up_cols);
-        bn_quant_matvec(ms->expert_hb2, &wup, s->xb, s->x_q, NULL);
 
         // SwiGLU activation
         moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
@@ -217,7 +230,7 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
         }
         BnQWeight wdown = moe_make_qweight(down_data, lw->expert_map.down_type,
                                             lw->expert_map.down_rows, lw->expert_map.down_cols);
-        bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, NULL);
+        bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
 
         // Weighted accumulation
         for (int d = 0; d < dim; d++)
