@@ -7,6 +7,30 @@
 #include "threadpool.h"
 #include "sh_arena.h"
 
+// Forward declaration for MoE expert map (defined in moe.h)
+typedef struct {
+    size_t gate_offset, up_offset, down_offset;
+    size_t expert_gate_bytes, expert_up_bytes, expert_down_bytes;
+    int gate_type, up_type, down_type;
+    int gate_rows, gate_cols;
+    int up_rows, up_cols;
+    int down_rows, down_cols;
+} BnMoEExpertMap;
+
+// Forward declaration for MoE runtime state (defined in moe.h)
+typedef struct {
+    int fd;
+    const uint8_t *mmap_base; // mmap'd file base pointer (NULL if using pread)
+    float *router_logits;
+    float *expert_out;
+    float *expert_weights;
+    int   *expert_indices;
+    float *expert_hb;
+    float *expert_hb2;
+    uint8_t *expert_buf;
+    size_t expert_buf_size;
+} BnMoEState;
+
 #define BN_DEFAULT_ROPE_THETA  10000.0f
 #define BN_DEFAULT_NORM_EPS    1e-5f
 
@@ -16,6 +40,7 @@ typedef struct {
     float rope_theta, norm_eps;
     int head_size, kv_dim, kv_mul;  // derived
     int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU²
+    int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)
     int kv_f16;                     // store KV cache in FP16 (halves attention DRAM bandwidth)
     // Hybrid SSM + Attention (all zero = pure attention, backward compatible)
@@ -26,6 +51,12 @@ typedef struct {
     int ssm_inner_size;             // value_dim = num_v_heads * head_v_dim (4096)
     int ssm_time_step_rank;         // num_v_heads (32)
     int ssm_group_count;            // num_k_heads (16)
+    // MoE config (all zero = dense FFN, backward compatible)
+    int n_experts;              // total experts per layer (e.g. 256 for Qwen3.5-35B)
+    int n_experts_active;       // top-K active per token (e.g. 8)
+    int moe_intermediate_size;  // per-expert hidden dim
+    int has_shared_expert;      // 1 if shared expert exists
+    int shared_expert_intermediate_size; // shared expert hidden dim
 } BnConfig;
 
 typedef struct {
@@ -45,6 +76,11 @@ typedef struct {
     float *ssm_dt_bias;                     // [num_v_heads] F32
     float *ssm_norm;                        // [head_v_dim] F32
     BnQWeight ssm_out;                      // [value_dim, dim]
+    // MoE weights (NULL/zero for dense layers)
+    float *router_weight;                   // [n_experts * dim] F32 — routing gate (always resident)
+    BnMoEExpertMap expert_map;              // file offsets for gate/up/down expert tensors
+    // Shared expert (always resident, standard QWeight)
+    BnQWeight shared_gate, shared_up, shared_down;
 } BnLayerWeights;
 
 typedef struct {
@@ -79,6 +115,9 @@ typedef struct {
     BnMappedFile file;  // keeps mmap/buffer alive
     BnThreadPool *pool; // thread pool for parallel dispatch
     SHArena *arena;     // arena for all RunState buffers
+    // MoE state (NULL/zero for dense models)
+    BnMoEState *moe_state;  // runtime MoE buffers (arena-allocated)
+    int expert_fd;           // file descriptor for expert pread, -1 if unused
 } BnModel;
 
 int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16);

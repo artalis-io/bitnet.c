@@ -1,5 +1,6 @@
 #include "transformer_internal.h"
 #include "quant_internal.h"
+#include "moe.h"
 #include "sh_log.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -270,6 +271,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
     int head_size = c->head_size;
     int n_heads = c->n_heads;
     BnLayerWeights *lw = &w->layers[l];
+    int qk_stride = c->qk_norm_per_head ? head_size : 0; // per-head norm offset
 
     int is_attn = (c->full_attn_interval == 0) ||
                   ((l + 1) % c->full_attn_interval == 0);
@@ -310,11 +312,11 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_norm)
                     for (int h = 0; h < n_heads; h++)
                         rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm, head_size, c->norm_eps);
+                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->k_norm)
                     for (int h = 0; h < c->n_kv_heads; h++)
                         rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
-                                lw->k_norm, head_size, c->norm_eps);
+                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -358,12 +360,12 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_norm)
                     for (int h = 0; h < n_heads; h++)
                         rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm, head_size, c->norm_eps);
+                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->k_norm)
                     for (int h = 0; h < c->n_kv_heads; h++)
                         rmsnorm(key_cache_row + h*head_size,
                                 key_cache_row + h*head_size,
-                                lw->k_norm, head_size, c->norm_eps);
+                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -423,6 +425,15 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->k_bias[i];
                 if (lw->v_bias) for (int i = 0; i < kv_dim; i++) v_tmp[i] += lw->v_bias[i];
 
+                if (lw->q_norm)
+                    for (int h = 0; h < n_heads; h++)
+                        rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                                lw->q_norm + h*head_size, head_size, c->norm_eps);
+                if (lw->k_norm)
+                    for (int h = 0; h < c->n_kv_heads; h++)
+                        rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
+                                lw->k_norm + h*head_size, head_size, c->norm_eps);
+
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
                 apply_rope_heads(k_tmp, c->n_kv_heads, head_size,
@@ -461,6 +472,15 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
                 if (lw->k_bias) for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->k_bias[i];
                 if (lw->v_bias) for (int i = 0; i < kv_dim; i++) value_cache_row[i] += lw->v_bias[i];
+
+                if (lw->q_norm)
+                    for (int h = 0; h < n_heads; h++)
+                        rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                                lw->q_norm + h*head_size, head_size, c->norm_eps);
+                if (lw->k_norm)
+                    for (int h = 0; h < c->n_kv_heads; h++)
+                        rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
+                                lw->k_norm + h*head_size, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -502,7 +522,13 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
     }
 
     // ---- FFN block ---- (shared by both layer types)
-    forward_ffn_block(m, lw);
+    if (lw->router_weight) {
+        // MoE FFN — route, pread, compute, combine
+        bn_moe_forward(m, lw, l);
+    } else {
+        // Dense FFN
+        forward_ffn_block(m, lw);
+    }
 
     if (l == 0 && pos == 0) {
         char v0[16], v1[16], v2[16], v3[16];

@@ -15,6 +15,7 @@
 
 BnMappedFile bn_platform_load_file(const char *path) {
     BnMappedFile f = {0};
+    f.fd = -1;
 #ifdef __EMSCRIPTEN__
     FILE *fp = fopen(path, "rb");
     if (!fp) return f;
@@ -42,9 +43,9 @@ BnMappedFile bn_platform_load_file(const char *path) {
     // #27: Guard against mmap with size 0 (POSIX says behavior is unspecified)
     if (f.size == 0) { close(fd); return f; }
     f.data = (uint8_t *)mmap(NULL, f.size, PROT_READ, MAP_PRIVATE, fd, 0);
-    close(fd);
-    if (f.data == MAP_FAILED) { f.data = NULL; f.size = 0; return f; }
+    if (f.data == MAP_FAILED) { f.data = NULL; f.size = 0; close(fd); return f; }
     f.is_mmap = 1;
+    f.fd = fd;  // keep fd open for pread (MoE expert loading)
 #endif
     return f;
 }
@@ -57,6 +58,7 @@ BnMappedFile bn_platform_load_buffer(const uint8_t *buf, size_t size) {
     f.data = (uint8_t *)buf;  // intentional const-discard for zero-copy interface
     f.size = size;
     f.is_mmap = 2;  // 2 = externally owned, do not free
+    f.fd = -1;
     return f;
 }
 
@@ -73,6 +75,10 @@ void bn_platform_unload_file(BnMappedFile *f) {
         free(f->data);
     }
     // is_mmap == 2: externally owned, don't free
+    if (f->fd >= 0) {
+        close(f->fd);
+        f->fd = -1;
+    }
 #endif
     f->data = NULL;
     f->size = 0;

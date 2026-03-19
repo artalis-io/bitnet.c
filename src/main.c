@@ -247,6 +247,17 @@ int main(int argc, char **argv) {
     model.file = mf;  // keep mmap alive
     model.config.flash_attn = args.flash_attn;
 
+    // Set expert I/O for MoE: prefer mmap, fallback to pread
+    if (model.moe_state) {
+        if (mf.is_mmap == 1 && mf.data) {
+            model.moe_state->mmap_base = mf.data;
+        }
+        if (mf.fd >= 0) {
+            model.moe_state->fd = mf.fd;
+            model.expert_fd = mf.fd;
+        }
+    }
+
     // Create thread pool
     model.pool = bn_tp_create(n_workers);
     if (model.pool) {

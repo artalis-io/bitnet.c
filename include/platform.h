@@ -7,7 +7,8 @@
 typedef struct {
     uint8_t *data;
     size_t   size;
-    int      is_mmap;   // 1 if mmap'd, 0 if malloc'd
+    int      is_mmap;   // 1 if mmap'd, 0 if malloc'd, 2 if externally owned
+    int      fd;        // file descriptor (kept open for pread on mmap platforms, -1 otherwise)
 } BnMappedFile;
 
 BnMappedFile bn_platform_load_file(const char *path);
