@@ -15,5 +15,6 @@ BnMappedFile bn_platform_load_file(const char *path);
 BnMappedFile bn_platform_load_buffer(const uint8_t *buf, size_t size);
 void         bn_platform_unload_file(BnMappedFile *f);
 double       bn_platform_time_ms(void);
+size_t       bn_platform_rss_bytes(void);  // current resident set size, 0 if unavailable
 
 #endif // BN_PLATFORM_H

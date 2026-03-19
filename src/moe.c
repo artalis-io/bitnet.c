@@ -1,6 +1,8 @@
 #include "moe.h"
+#include "platform.h"
 #include "quant.h"
 #include "sh_log.h"
+#include <stdio.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -100,6 +102,17 @@ static const void *moe_load_expert_proj(BnMoEState *ms, const BnMoEExpertMap *ma
             return NULL;
     }
 
+    size_t proj_bytes;
+    switch (proj) {
+        case 0: proj_bytes = map->expert_gate_bytes; break;
+        case 1: proj_bytes = map->expert_up_bytes; break;
+        case 2: proj_bytes = map->expert_down_bytes; break;
+        default: return NULL;
+    }
+
+    ms->io_bytes += proj_bytes;
+    ms->io_count++;
+
     // Use mmap pointer if available (fast path, avoids pread copy)
     if (ms->mmap_base) {
         return ms->mmap_base + offset;
@@ -108,16 +121,11 @@ static const void *moe_load_expert_proj(BnMoEState *ms, const BnMoEExpertMap *ma
 #if !defined(__EMSCRIPTEN__)
     // Fallback: pread into scratch buffer
     if (ms->fd < 0) return NULL;
-    size_t size;
-    switch (proj) {
-        case 0: size = map->expert_gate_bytes; break;
-        case 1: size = map->expert_up_bytes; break;
-        case 2: size = map->expert_down_bytes; break;
-        default: return NULL;
-    }
-    if (size > ms->expert_buf_size) return NULL;
-    ssize_t n = pread(ms->fd, ms->expert_buf, size, (off_t)offset);
-    if (n != (ssize_t)size) return NULL;
+    if (proj_bytes > ms->expert_buf_size) return NULL;
+    double t0 = bn_platform_time_ms();
+    ssize_t n = pread(ms->fd, ms->expert_buf, proj_bytes, (off_t)offset);
+    ms->io_time_ms += bn_platform_time_ms() - t0;
+    if (n != (ssize_t)proj_bytes) return NULL;
     return ms->expert_buf;
 #else
     return NULL;
@@ -164,12 +172,15 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
     moe_rmsnorm(s->xb, s->x, lw->ffn_norm, dim, c->norm_eps);
 
     // 2. Route: select top-K experts
+    double t_route = bn_platform_time_ms();
     bn_moe_route(ms, s->xb, lw->router_weight, dim, c->n_experts, K);
+    ms->route_time_ms += bn_platform_time_ms() - t_route;
 
     // 3. Zero output accumulator
     memset(ms->expert_out, 0, dim * sizeof(float));
 
     // 4. For each selected expert: load projections, compute SwiGLU FFN
+    double t_compute = bn_platform_time_ms();
     for (int k = 0; k < K; k++) {
         int eidx = ms->expert_indices[k];
         float weight = ms->expert_weights[k];
@@ -233,10 +244,53 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
             ms->expert_out[d] += s->xb2[d];
     }
 
+    ms->compute_time_ms += bn_platform_time_ms() - t_compute;
+
     // 6. Copy result to xb for residual add by caller
     memcpy(s->xb, ms->expert_out, dim * sizeof(float));
 
     // 7. Residual add
     for (int d = 0; d < dim; d++)
         s->x[d] += s->xb[d];
+}
+
+void bn_moe_print_stats(const BnMoEState *ms, int n_tokens) {
+    if (!ms || n_tokens <= 0) return;
+
+    double io_gb = (double)ms->io_bytes / (1024.0 * 1024.0 * 1024.0);
+    double io_per_tok = (double)ms->io_bytes / (1024.0 * 1024.0) / n_tokens;
+
+    char io_s[32], iot_s[32], bw_s[32], rt_s[32], ct_s[32], rss_s[32];
+    snprintf(io_s, sizeof(io_s), "%.2f", io_gb);
+    snprintf(iot_s, sizeof(iot_s), "%.1f", io_per_tok);
+
+    // Streaming bandwidth: bytes loaded / io_time (pread only; mmap io_time is 0)
+    if (ms->io_time_ms > 0.1)
+        snprintf(bw_s, sizeof(bw_s), "%.0f",
+                 (double)ms->io_bytes / (1024.0 * 1024.0) / (ms->io_time_ms / 1000.0));
+    else
+        snprintf(bw_s, sizeof(bw_s), "mmap");
+
+    snprintf(rt_s, sizeof(rt_s), "%.1f", ms->route_time_ms);
+    snprintf(ct_s, sizeof(ct_s), "%.1f", ms->compute_time_ms);
+
+    size_t rss = bn_platform_rss_bytes();
+    snprintf(rss_s, sizeof(rss_s), "%.2f", (double)rss / (1024.0 * 1024.0 * 1024.0));
+
+    SH_LOG_INFO("MoE stats",
+                "expert_io_GB", io_s,
+                "MB/tok", iot_s,
+                "stream_MB/s", bw_s,
+                "route_ms", rt_s,
+                "compute_ms", ct_s,
+                "rss_GB", rss_s);
+}
+
+void bn_moe_reset_stats(BnMoEState *ms) {
+    if (!ms) return;
+    ms->io_bytes = 0;
+    ms->io_time_ms = 0;
+    ms->route_time_ms = 0;
+    ms->compute_time_ms = 0;
+    ms->io_count = 0;
 }

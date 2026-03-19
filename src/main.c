@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "moe.h"
 #include "transformer.h"
 #include "tokenizer.h"
 #include "sampler.h"
@@ -35,6 +36,7 @@ typedef struct {
     int repeat_set;     // whether user explicitly set --repeat-penalty
     int no_prefill;
     int kv_f16;
+    int force_pread;    // force pread for expert loading (bypass mmap)
 } CLIArgs;
 
 static void print_usage(const char *prog) {
@@ -51,6 +53,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.1)\n");
     fprintf(stderr, "  --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)\n");
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
+    fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
 }
 
 static int parse_int(const char *s, const char *name) {
@@ -114,6 +117,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.kv_f16 = 1;
         } else if (strcmp(argv[i], "--no-prefill") == 0) {
             args.no_prefill = 1;
+        } else if (strcmp(argv[i], "--pread") == 0) {
+            args.force_pread = 1;
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
             args.repeat_penalty = parse_float(argv[++i], "--repeat-penalty");
             args.repeat_set = 1;
@@ -249,13 +254,17 @@ int main(int argc, char **argv) {
 
     // Set expert I/O for MoE: prefer mmap, fallback to pread
     if (model.moe_state) {
-        if (mf.is_mmap == 1 && mf.data) {
+        if (!args.force_pread && mf.is_mmap == 1 && mf.data) {
             model.moe_state->mmap_base = mf.data;
         }
         if (mf.fd >= 0) {
             model.moe_state->fd = mf.fd;
             model.expert_fd = mf.fd;
         }
+        if (args.force_pread)
+            SH_LOG_INFO("Expert I/O mode", "mode", "pread (forced)");
+        else if (model.moe_state->mmap_base)
+            SH_LOG_INFO("Expert I/O mode", "mode", "mmap");
     }
 
     // Create thread pool
@@ -572,6 +581,10 @@ int main(int argc, char **argv) {
             snprintf(total, sizeof(total), "%.1f", total_time);
             SH_LOG_INFO("Generation complete", "tokens", ng, "tok/s", speed, "total_ms", total);
         }
+
+        // Print MoE stats if applicable
+        if (model.moe_state)
+            bn_moe_print_stats(model.moe_state, n_generated + n_prompt);
 
         free(prompt_tokens);
     }

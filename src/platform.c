@@ -11,6 +11,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
 #endif
 
 BnMappedFile bn_platform_load_file(const char *path) {
@@ -91,5 +94,25 @@ double bn_platform_time_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+#endif
+}
+
+size_t bn_platform_rss_bytes(void) {
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  (task_info_t)&info, &count) == KERN_SUCCESS)
+        return info.resident_size;
+    return 0;
+#elif defined(__linux__) && !defined(__EMSCRIPTEN__)
+    FILE *fp = fopen("/proc/self/statm", "r");
+    if (!fp) return 0;
+    long pages = 0;
+    if (fscanf(fp, "%*ld %ld", &pages) != 1) pages = 0;
+    fclose(fp);
+    return (size_t)pages * 4096;
+#else
+    return 0;
 #endif
 }

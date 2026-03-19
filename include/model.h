@@ -29,6 +29,12 @@ typedef struct {
     float *expert_hb2;
     uint8_t *expert_buf;
     size_t expert_buf_size;
+    // I/O stats (accumulated across all tokens)
+    size_t io_bytes;          // total bytes loaded from disk (pread) or touched (mmap)
+    double io_time_ms;        // total time spent in expert loading
+    double route_time_ms;     // total time in routing (router matvec + top-K)
+    double compute_time_ms;   // total time in expert FFN compute
+    int    io_count;          // number of expert projections loaded
 } BnMoEState;
 
 #define BN_DEFAULT_ROPE_THETA  10000.0f

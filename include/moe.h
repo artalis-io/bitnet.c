@@ -12,4 +12,10 @@ void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
 // Reads from s->x (after norm), writes result to s->xb for residual add.
 void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l);
 
+// Print accumulated MoE stats (I/O, routing, compute breakdown).
+void bn_moe_print_stats(const BnMoEState *ms, int n_tokens);
+
+// Reset accumulated stats (call between benchmark runs).
+void bn_moe_reset_stats(BnMoEState *ms);
+
 #endif // BN_MOE_H
