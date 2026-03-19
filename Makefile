@@ -51,11 +51,11 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
 else
   # x86: AVX2 + scalar
   QUANT_BACKEND = src/quant/x_quant_avx2.c \
-    src/quant/i2s_avx2.c src/quant/i2s_scalar.c \
+    src/quant/i2s_avx2.c src/quant/i2s_avx2_4row.c src/quant/i2s_scalar.c \
     src/quant/tq2_avx2.c src/quant/tq2_scalar.c \
     src/quant/tq1_avx2.c src/quant/tq1_scalar.c \
     src/quant/q8_avx2.c src/quant/q8_scalar.c \
-    src/quant/q4_avx2.c src/quant/q4_scalar.c \
+    src/quant/q4_avx2.c src/quant/q4_avx2_4row.c src/quant/q4_scalar.c \
     src/quant/q4_1_avx2.c src/quant/q4_1_scalar.c \
     src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_scalar.c \
@@ -116,7 +116,25 @@ BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
 bench_kernels: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz pgo avx2-check clean
+# Scalar benchmark (no -march=native, no SIMD)
+SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude
+ifeq ($(UNAME_S),Linux)
+SCALAR_CFLAGS += -D_GNU_SOURCE
+endif
+SCALAR_BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
+
+bench_scalar: $(SCALAR_BENCH_SRCS)
+	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
+
+bench_avx2: $(BENCH_SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Per-layer timing build (BN_BENCH_LAYERS)
+bench_layers: CFLAGS += -DBN_BENCH_LAYERS
+bench_layers: $(BENCH_SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz pgo avx2-check clean
 
 bench: bench_kernels
 
@@ -174,27 +192,43 @@ test_kv_f16: test/test_kv_f16.c src/platform.c src/gguf.c $(QUANT_SRCS) src/mode
 
 PGO_MODEL ?= models/bitnet-b1.58-2B-4T.gguf
 
+# Auto-detect compiler for PGO: clang uses -fprofile-instr-*, gcc uses -fprofile-*
+IS_GCC := $(shell $(CC) --version 2>&1 | grep -q 'gcc\|GCC' && echo 1 || echo 0)
+
 pgo:
-	@echo "=== PGO Step 1: Instrumented build ==="
+ifeq ($(IS_GCC),1)
+	@echo "=== PGO (GCC) Step 1: Instrumented build ==="
+	$(MAKE) clean
+	$(MAKE) bitnet CFLAGS="$(CFLAGS) -fprofile-generate" LDFLAGS="$(LDFLAGS) -fprofile-generate"
+	@echo "=== PGO (GCC) Step 2: Training run ==="
+	./bitnet $(PGO_MODEL) -p "The meaning of life is" -n 128
+	@echo "=== PGO (GCC) Step 3: Optimized rebuild ==="
+	rm -f bitnet src/*.o src/quant/*.o src/transformer/*.o
+	$(MAKE) bitnet CFLAGS="$(CFLAGS) -fprofile-use -fprofile-correction" LDFLAGS="$(LDFLAGS) -fprofile-use"
+	@rm -f src/*.gcda src/quant/*.gcda src/transformer/*.gcda
+	@echo "=== PGO build complete ==="
+else
+	@echo "=== PGO (Clang) Step 1: Instrumented build ==="
 	$(MAKE) clean
 	$(MAKE) bitnet CFLAGS="$(CFLAGS) -fprofile-instr-generate" LDFLAGS="$(LDFLAGS) -fprofile-instr-generate"
-	@echo "=== PGO Step 2: Training run ==="
+	@echo "=== PGO (Clang) Step 2: Training run ==="
 	LLVM_PROFILE_FILE=default.profraw ./bitnet $(PGO_MODEL) -p "The meaning of life is" -n 128
-	@echo "=== PGO Step 3: Merge profile ==="
+	@echo "=== PGO (Clang) Step 3: Merge profile ==="
 	xcrun llvm-profdata merge -output=default.profdata default.profraw
-	@echo "=== PGO Step 4: Optimized rebuild ==="
+	@echo "=== PGO (Clang) Step 4: Optimized rebuild ==="
 	rm -f bitnet src/*.o src/quant/*.o src/transformer/*.o
 	$(MAKE) bitnet CFLAGS="$(CFLAGS) -fprofile-instr-use=default.profdata"
 	@rm -f default.profraw default.profdata
 	@echo "=== PGO build complete ==="
+endif
 
 AVX2_QUANT_SRCS = $(QUANT_COMMON) \
     src/quant/x_quant_avx2.c \
-    src/quant/i2s_avx2.c src/quant/i2s_scalar.c \
+    src/quant/i2s_avx2.c src/quant/i2s_avx2_4row.c src/quant/i2s_scalar.c \
     src/quant/tq2_avx2.c src/quant/tq2_scalar.c \
     src/quant/tq1_avx2.c src/quant/tq1_scalar.c \
     src/quant/q8_avx2.c src/quant/q8_scalar.c \
-    src/quant/q4_avx2.c src/quant/q4_scalar.c \
+    src/quant/q4_avx2.c src/quant/q4_avx2_4row.c src/quant/q4_scalar.c \
     src/quant/q4_1_avx2.c src/quant/q4_1_scalar.c \
     src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_scalar.c \
@@ -233,4 +267,4 @@ else
 endif
 
 clean:
-	rm -f bitnet bench_kernels src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_e2e test_prefill test_kv_f16 default.profraw default.profdata
+	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda
