@@ -23,7 +23,8 @@ void bn_quant_i2s_avx2_range(void *ctx, int row_start, int row_end) {
         __m256i iaccD = _mm256_setzero_si256();
 
         while (done < cols) {
-            _mm_prefetch((const char *)(rd + 64), _MM_HINT_T0);
+            _mm_prefetch((const char *)(rd + 128), _MM_HINT_T0);
+            _mm_prefetch((const char *)(rd + 256), _MM_HINT_T1);
             __m256i raw = _mm256_loadu_si256((const __m256i *)rd);
 
             __m256i t0 = _mm256_sub_epi8(_mm256_and_si256(_mm256_srli_epi16(raw, 6), mask3), one);

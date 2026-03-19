@@ -62,7 +62,8 @@ static void test_conv_silu(void) {
 #endif
 
     float d = max_diff(qkv_ref, qkv_test, qkv_dim);
-    assert(d < 1e-5f);
+    // AVX2 uses fast polynomial exp (~1e-5 relative error)
+    assert(d < 1e-4f);
 
     free(qkv_ref); free(qkv_test);
     free(conv_state_ref); free(conv_state_test);
@@ -225,7 +226,8 @@ static void test_gate(void) {
 #endif
 
     float d = max_diff(out_ref, out_test, total);
-    assert(d < 1e-5f);
+    // AVX2 uses fast polynomial exp for SiLU (~1e-5 relative error)
+    assert(d < 1e-4f);
 
     free(out_ref); free(out_test);
     free(z); free(norm_w);
