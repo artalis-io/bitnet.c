@@ -33,6 +33,11 @@ typedef struct {
     size_t expert_buf_size;
     uint8_t *expert_buf2;      // second buffer for pread double-buffering
     size_t expert_buf2_size;
+    uint8_t *expert_buf3;      // prefetch gate buffer (pread pipeline)
+    size_t expert_buf3_size;
+    uint8_t *expert_buf4;      // prefetch up buffer (pread pipeline)
+    size_t expert_buf4_size;
+    void *prefetch;            // BnMoEPrefetch* (opaque, pread pipeline only)
     // Batch buffers for cross-expert dispatch (mmap path)
     float *expert_hb_batch[BN_MAX_MOE_K];   // K gate outputs [moe_hidden]
     float *expert_hb2_batch[BN_MAX_MOE_K];  // K up outputs [moe_hidden]
@@ -48,6 +53,7 @@ typedef struct {
     double accum_time_ms;     // weighted accumulation time
     double shared_time_ms;    // shared expert time
     double norm_time_ms;      // RMSNorm time
+    double prefetch_wait_ms;  // time main thread waited for I/O prefetch
     int    io_count;          // number of expert projections loaded
 } BnMoEState;
 

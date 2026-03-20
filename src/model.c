@@ -792,13 +792,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);      // expert_hb2
         moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf (pread)
         moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf2 (pread double-buffer)
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf3 (prefetch gate)
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf4 (prefetch up)
         // Batch buffers for cross-expert dispatch (mmap path)
         int moe_k = c->n_experts_active;
         if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
         moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float); // hb_batch
         moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float); // hb2_batch
         moe_arena_bytes += (size_t)moe_k * c->dim * sizeof(float);                   // down_batch
-        moe_arena_bytes += (10 + 3 * moe_k) * SH_ARENA_ALIGN;                       // alignment
+        moe_arena_bytes += (12 + 3 * moe_k) * SH_ARENA_ALIGN;                       // alignment
     }
 
     // Compute total arena capacity (all RunState buffers + INT8 embeddings + Q4 repacking)
@@ -881,10 +883,16 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         ms->expert_buf_size = moe_expert_buf_size;
         ms->expert_buf2     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
         ms->expert_buf2_size = moe_expert_buf_size;
+        ms->expert_buf3     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->expert_buf3_size = moe_expert_buf_size;
+        ms->expert_buf4     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->expert_buf4_size = moe_expert_buf_size;
+        ms->prefetch = NULL;
 
         if (!ms->router_logits || !ms->expert_out || !ms->expert_weights ||
             !ms->expert_indices || !ms->expert_hb || !ms->expert_hb2 ||
-            !ms->expert_buf || !ms->expert_buf2) {
+            !ms->expert_buf || !ms->expert_buf2 ||
+            !ms->expert_buf3 || !ms->expert_buf4) {
             SH_LOG_ERROR("Failed to allocate MoE buffers");
             goto fail_state;
         }
@@ -1003,6 +1011,7 @@ void bn_model_reset_state(BnModel *m) {
 
 void bn_model_free(BnModel *m) {
     if (!m) return;
+    if (m->moe_state) bn_moe_prefetch_destroy(m->moe_state);
     bn_tp_free(m->pool);
     free(m->weights.layers);
     sh_arena_free(m->arena);  // frees MoE state, INT8 embeddings too

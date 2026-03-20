@@ -18,4 +18,11 @@ void bn_moe_print_stats(const BnMoEState *ms, int n_tokens);
 // Reset accumulated stats (call between benchmark runs).
 void bn_moe_reset_stats(BnMoEState *ms);
 
+// Create I/O prefetch thread for pread pipeline (no-op on EMSCRIPTEN).
+// Call after ms->fd is set. Safe to call if mmap_base is set (returns immediately).
+void bn_moe_prefetch_create(BnMoEState *ms);
+
+// Destroy I/O prefetch thread. Safe to call if prefetch is NULL.
+void bn_moe_prefetch_destroy(BnMoEState *ms);
+
 #endif // BN_MOE_H

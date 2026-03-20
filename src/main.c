@@ -278,6 +278,9 @@ int main(int argc, char **argv) {
             SH_LOG_INFO("Expert I/O mode", "mode", "pread (forced)");
         else if (model.moe_state->mmap_base)
             SH_LOG_INFO("Expert I/O mode", "mode", "mmap");
+
+        // Create I/O prefetch thread for pread pipeline
+        bn_moe_prefetch_create(model.moe_state);
     }
 
     // Create thread pool
