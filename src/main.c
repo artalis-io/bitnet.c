@@ -59,7 +59,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)\n");
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
-    fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 2048, 0 to disable)\n");
+    fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
 }
 
@@ -92,7 +92,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.repeat_penalty = 1.1f;
     args.seed = 42;
     args.max_seq_len = 0;
-    args.cache_mb = 2048;
+    args.cache_mb = 4096;
 
     if (argc < 2) {
         print_usage(argv[0]);
