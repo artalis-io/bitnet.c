@@ -99,9 +99,7 @@ double bn_platform_time_ms(void) {
 
 size_t bn_platform_rss_bytes(void) {
 #if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
-    // cppcheck-suppress uninitvar
-    struct mach_task_basic_info info;
-    memset(&info, 0, sizeof(info));
+    struct mach_task_basic_info info = {0};
     mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
     if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
                   (task_info_t)&info, &count) == KERN_SUCCESS)
