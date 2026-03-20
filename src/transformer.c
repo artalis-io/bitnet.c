@@ -1,9 +1,52 @@
 #include "transformer_internal.h"
 #include "quant_internal.h"
 #include "moe.h"
+#include "platform.h"
 #include "sh_log.h"
 #include <stdio.h>
 #include <stdlib.h>
+
+// Per-layer timing instrumentation (compile with -DBN_BENCH_LAYERS)
+#ifdef BN_BENCH_LAYERS
+static double bl_rmsnorm_us, bl_matvec_qkv_us, bl_rope_us, bl_gqa_us;
+static double bl_logits_us, bl_residual_us, bl_ffn_us;
+static double bl_ssm_conv_us, bl_ssm_l2norm_us, bl_ssm_delta_us, bl_ssm_gate_us;
+static double bl_sigmoid_gate_us;
+static int bl_layer_count;
+
+#define BL_START() double _bl_t0 = bn_platform_time_ms()
+#define BL_ACC(var) do { (var) += (bn_platform_time_ms() - _bl_t0) * 1000.0; _bl_t0 = bn_platform_time_ms(); } while(0)
+
+static void bl_print_reset(void) {
+    if (bl_layer_count == 0) return;
+    double total = bl_rmsnorm_us + bl_matvec_qkv_us + bl_rope_us + bl_gqa_us +
+                   bl_logits_us + bl_residual_us + bl_ffn_us +
+                   bl_ssm_conv_us + bl_ssm_l2norm_us + bl_ssm_delta_us +
+                   bl_ssm_gate_us + bl_sigmoid_gate_us;
+    fprintf(stderr, "\n=== Per-layer timing (%d layers) ===\n", bl_layer_count);
+    fprintf(stderr, "  RMSNorm:       %8.0f us (%.1f%%)\n", bl_rmsnorm_us, 100*bl_rmsnorm_us/total);
+    fprintf(stderr, "  Matvec QKV:    %8.0f us (%.1f%%)\n", bl_matvec_qkv_us, 100*bl_matvec_qkv_us/total);
+    fprintf(stderr, "  RoPE:          %8.0f us (%.1f%%)\n", bl_rope_us, 100*bl_rope_us/total);
+    fprintf(stderr, "  GQA:           %8.0f us (%.1f%%)\n", bl_gqa_us, 100*bl_gqa_us/total);
+    fprintf(stderr, "  Sigmoid gate:  %8.0f us (%.1f%%)\n", bl_sigmoid_gate_us, 100*bl_sigmoid_gate_us/total);
+    fprintf(stderr, "  FFN:           %8.0f us (%.1f%%)\n", bl_ffn_us, 100*bl_ffn_us/total);
+    fprintf(stderr, "  Residual:      %8.0f us (%.1f%%)\n", bl_residual_us, 100*bl_residual_us/total);
+    fprintf(stderr, "  SSM conv:      %8.0f us (%.1f%%)\n", bl_ssm_conv_us, 100*bl_ssm_conv_us/total);
+    fprintf(stderr, "  SSM l2norm:    %8.0f us (%.1f%%)\n", bl_ssm_l2norm_us, 100*bl_ssm_l2norm_us/total);
+    fprintf(stderr, "  SSM delta:     %8.0f us (%.1f%%)\n", bl_ssm_delta_us, 100*bl_ssm_delta_us/total);
+    fprintf(stderr, "  SSM gate:      %8.0f us (%.1f%%)\n", bl_ssm_gate_us, 100*bl_ssm_gate_us/total);
+    fprintf(stderr, "  Logits:        %8.0f us (%.1f%%)\n", bl_logits_us, 100*bl_logits_us/total);
+    fprintf(stderr, "  TOTAL:         %8.0f us\n", total);
+    bl_rmsnorm_us = bl_matvec_qkv_us = bl_rope_us = bl_gqa_us = 0;
+    bl_logits_us = bl_residual_us = bl_ffn_us = 0;
+    bl_ssm_conv_us = bl_ssm_l2norm_us = bl_ssm_delta_us = bl_ssm_gate_us = 0;
+    bl_sigmoid_gate_us = 0;
+    bl_layer_count = 0;
+}
+#else
+#define BL_START() (void)0
+#define BL_ACC(var) (void)0
+#endif
 
 // Max elements for stack VLAs (head_size, dim). Prevents stack overflow
 // from malicious model configs. 8192 = 32KB of floats, well within stack.
@@ -42,6 +85,45 @@ static inline void residual_add(float *x, const float *r, int dim) {
 // rope_dims = number of dims per head to rotate (rest pass through).
 static inline void apply_rope_heads(float *buf, int n_heads, int head_size,
                                     int rope_dims, const float *rc, const float *rs) {
+#ifdef __AVX2__
+    // AVX2 path: process 4 rotation pairs (8 floats) at a time
+    // For each pair (v0,v1): out0 = v0*cos - v1*sin, out1 = v0*sin + v1*cos
+    // We need to interleave cos/sin values to match the pair layout
+    if (rope_dims >= 8) {
+        // Pre-expand cos/sin from half-rate to pair-rate for AVX2
+        // rc[i/2] → [rc0,rc0,rc1,rc1,rc2,rc2,rc3,rc3]
+        // Process in groups of 4 pairs = 8 floats
+        for (int h = 0; h < n_heads; h++) {
+            float *hd = buf + h * head_size;
+            int i = 0;
+            for (; i + 7 < rope_dims; i += 8) {
+                int fi = i / 2;
+                // Expand cos/sin: duplicate each value for its pair
+                __m256 cos_v = _mm256_set_ps(rc[fi+3], rc[fi+3], rc[fi+2], rc[fi+2],
+                                              rc[fi+1], rc[fi+1], rc[fi],   rc[fi]);
+                __m256 sin_v = _mm256_set_ps(rs[fi+3], rs[fi+3], rs[fi+2], rs[fi+2],
+                                              rs[fi+1], rs[fi+1], rs[fi],   rs[fi]);
+                __m256 v = _mm256_loadu_ps(hd + i);
+                // Rotate: create [v1,v0,v3,v2,v5,v4,v7,v6] and negate odds
+                __m256 v_swap = _mm256_shuffle_ps(v, v, _MM_SHUFFLE(2,3,0,1));
+                // sin_negate: [-sin,sin,-sin,sin,...] for the rotation formula
+                __m256 sign_mask = _mm256_set_ps(1.0f, -1.0f, 1.0f, -1.0f,
+                                                  1.0f, -1.0f, 1.0f, -1.0f);
+                __m256 sin_neg = _mm256_mul_ps(sin_v, sign_mask);
+                __m256 result = _mm256_fmadd_ps(v, cos_v, _mm256_mul_ps(v_swap, sin_neg));
+                _mm256_storeu_ps(hd + i, result);
+            }
+            // Scalar tail
+            for (; i < rope_dims; i += 2) {
+                int fi2 = i / 2;
+                float v0 = hd[i], v1 = hd[i + 1];
+                hd[i]     = v0 * rc[fi2] - v1 * rs[fi2];
+                hd[i + 1] = v0 * rs[fi2] + v1 * rc[fi2];
+            }
+        }
+        return;
+    }
+#endif
     for (int h = 0; h < n_heads; h++) {
         float *hd = buf + h * head_size;
         for (int i = 0; i < rope_dims; i += 2) {
@@ -97,8 +179,11 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
     size_t conv_per_layer = (size_t)(kern - 1) * qkv_dim;
     float *conv_state = s->ssm_conv_state + (size_t)ssm_idx * conv_per_layer;
 
+    BL_START();
+
     // 1. Norm input
     rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
+    BL_ACC(bl_rmsnorm_us);
 
     // 2. QKV + Z gate projections (both read from s->xb)
     float *qkv = s->hb;   // [hidden_dim] >= qkv_dim
@@ -110,6 +195,7 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         };
         bn_quant_matvec_batch(tasks, 2, s->xb, s->x_q, m->pool);
     }
+    BL_ACC(bl_matvec_qkv_us);
 
     // 3+4. Causal conv1d + SiLU (dispatched over channels)
     {
@@ -117,6 +203,7 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         BnTPTask conv_task = { ssm_conv_silu, &conv_ctx, qkv_dim };
         bn_tp_dispatch(m->pool, &conv_task, 1);
     }
+    BL_ACC(bl_ssm_conv_us);
 
     // 5. Split xBC: [Q(key_dim), K(key_dim), V(value_dim)]
     float *q_raw = qkv;
@@ -129,6 +216,7 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         BnTPTask norm_task = { ssm_l2norm, &norm_ctx, num_k_heads };
         bn_tp_dispatch(m->pool, &norm_task, 1);
     }
+    BL_ACC(bl_ssm_l2norm_us);
 
     // 7. Alpha (decay) and Beta (update rate) from normalized input
     if (num_v_heads > BN_MAX_VLA_ELEMS || head_v_dim > BN_MAX_VLA_ELEMS) {
@@ -149,6 +237,7 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         alpha_arr[h] = expf(dt_sp * lw->ssm_a[h]);
         beta_arr[h] = 1.0f / (1.0f + expf(-beta_arr[h]));
     }
+    BL_ACC(bl_matvec_qkv_us);
 
     // 8. Delta rule recurrence (dispatched over V-heads)
     float *out = s->xb2;
@@ -162,6 +251,7 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         BnTPTask delta_task = { ssm_delta, &delta_ctx, num_v_heads };
         bn_tp_dispatch(m->pool, &delta_task, 1);
     }
+    BL_ACC(bl_ssm_delta_us);
 
     // 9. Per-head RMSNorm + SiLU gate (dispatched over V-heads)
     {
@@ -169,12 +259,14 @@ static void forward_ssm_block(BnModel *m, BnLayerWeights *lw, int l) {
         BnTPTask gate_task = { ssm_gate, &gate_ctx, num_v_heads };
         bn_tp_dispatch(m->pool, &gate_task, 1);
     }
+    BL_ACC(bl_ssm_gate_us);
 
     // 10. Output projection: out[value_dim] → xb[dim]
     {
         BnMatvecTask proj[1] = {{ s->xb, &lw->ssm_out }};
         bn_quant_matvec_batch(proj, 1, out, s->x_q, m->pool);
     }
+    BL_ACC(bl_matvec_qkv_us);
 }
 
 // FFN block: shared by both attention and SSM layers.
@@ -222,10 +314,18 @@ static void forward_ffn_block(BnModel *m, BnLayerWeights *lw) {
             }
 #endif
         } else {
+#ifdef __AVX2__
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 g = _mm256_loadu_ps(s->hb + i);
+                __m256 u = _mm256_loadu_ps(s->hb2 + i);
+                _mm256_storeu_ps(s->hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+            }
+#else
             for (int i = 0; i < hidden_dim; i++) {
                 float g = s->hb[i];
                 s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
             }
+#endif
         }
     } else {
         {
@@ -239,10 +339,17 @@ static void forward_ffn_block(BnModel *m, BnLayerWeights *lw) {
                 s->hb[i] = v * v;
             }
         } else {
+#ifdef __AVX2__
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 v = _mm256_loadu_ps(s->hb + i);
+                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_silu_ps(v));
+            }
+#else
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i];
                 s->hb[i] = v / (1.0f + expf(-v));
             }
+#endif
         }
     }
 
@@ -276,6 +383,8 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
     int is_attn = (c->full_attn_interval == 0) ||
                   ((l + 1) % c->full_attn_interval == 0);
 
+    BL_START();
+
     if (is_attn) {
         // ---- Attention block ----
 
@@ -294,6 +403,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
         int q_wide  = !q_gated && lw->wq.data && (lw->wq.rows > dim);
 
         rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
+        BL_ACC(bl_rmsnorm_us);
 
         if (q_gated) {
             // --- Gated Q path (Qwen3.5 attention) ---
@@ -309,6 +419,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                     { v_tmp, &lw->wv },
                 };
                 bn_quant_matvec_batch(kv, 2, s->xb, s->x_q, m->pool);
+                BL_ACC(bl_matvec_qkv_us);
 
                 for (int h = 0; h < n_heads; h++)
                     memcpy(s->q + h * head_size,
@@ -328,6 +439,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                                  rope_dims, rope_cos, rope_sin);
                 apply_rope_heads(k_tmp, c->n_kv_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
+                BL_ACC(bl_rope_us);
 
                 uint16_t *kc = (uint16_t *)s->key_cache   + loff + (size_t)cache_pos * kv_dim;
                 uint16_t *vc = (uint16_t *)s->value_cache + loff + (size_t)cache_pos * kv_dim;
@@ -395,14 +507,24 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 BnTPTask gqa = { attn_fn, &gctx, n_heads };
                 bn_tp_dispatch(m->pool, &gqa, 1);
             }
+            BL_ACC(bl_gqa_us);
 
             // Sigmoid gate: xb *= sigmoid(gate)
             for (int h = 0; h < n_heads; h++) {
                 float *gate_h = q_full + h * 2 * head_size + head_size;
                 float *xb_h = s->xb + h * head_size;
+#ifdef __AVX2__
+                for (int d = 0; d < head_size; d += 8) {
+                    __m256 g = _mm256_loadu_ps(gate_h + d);
+                    __m256 xv = _mm256_loadu_ps(xb_h + d);
+                    _mm256_storeu_ps(xb_h + d, _mm256_mul_ps(xv, bn_avx2_fast_sigmoid_ps(g)));
+                }
+#else
                 for (int d = 0; d < head_size; d++)
                     xb_h[d] *= 1.0f / (1.0f + expf(-gate_h[d]));
+#endif
             }
+            BL_ACC(bl_sigmoid_gate_us);
 
             // wo projection + residual
             if (lw->attn_sub_norm)
@@ -411,7 +533,9 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->wo }};
                 bn_quant_matvec_batch(wo, 1, s->xb, s->x_q, m->pool);
             }
+            BL_ACC(bl_matvec_qkv_us);
             residual_add(s->x, s->xb2, dim);
+            BL_ACC(bl_residual_us);
 
         } else if (q_wide) {
             // --- Wide Q path (Qwen3 MoE: head_size > dim/n_heads, no gate) ---
@@ -489,6 +613,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                     { v_tmp, &lw->wv },
                 };
                 bn_quant_matvec_batch(qkv, 3, s->xb, s->x_q, m->pool);
+                BL_ACC(bl_matvec_qkv_us);
 
                 if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
                 if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->k_bias[i];
@@ -507,6 +632,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                                  rope_dims, rope_cos, rope_sin);
                 apply_rope_heads(k_tmp, c->n_kv_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
+                BL_ACC(bl_rope_us);
 
                 uint16_t *kc = (uint16_t *)s->key_cache   + loff + (size_t)cache_pos * kv_dim;
                 uint16_t *vc = (uint16_t *)s->value_cache + loff + (size_t)cache_pos * kv_dim;
@@ -537,6 +663,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                     { value_cache_row, &lw->wv },
                 };
                 bn_quant_matvec_batch(qkv, 3, s->xb, s->x_q, m->pool);
+                BL_ACC(bl_matvec_qkv_us);
 
                 if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
                 if (lw->k_bias) for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->k_bias[i];
@@ -555,6 +682,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                                  rope_dims, rope_cos, rope_sin);
                 apply_rope_heads(key_cache_row, c->n_kv_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
+                BL_ACC(bl_rope_us);
             }
 
             // GQA attention
@@ -573,6 +701,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 BnTPTask gqa = { attn_fn, &gctx, n_heads };
                 bn_tp_dispatch(m->pool, &gqa, 1);
             }
+            BL_ACC(bl_gqa_us);
 
             // Attention sub-norm + wo projection + residual
             if (lw->attn_sub_norm)
@@ -581,13 +710,16 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->wo }};
                 bn_quant_matvec_batch(wo, 1, s->xb, s->x_q, m->pool);
             }
+            BL_ACC(bl_matvec_qkv_us);
             residual_add(s->x, s->xb2, dim);
+            BL_ACC(bl_residual_us);
         }
 
     } else {
         // ---- SSM block ----
         forward_ssm_block(m, lw, l);
         residual_add(s->x, s->xb, dim);
+        BL_ACC(bl_residual_us);
     }
 
     // ---- FFN block ---- (shared by both layer types)
@@ -598,6 +730,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
         // Dense FFN
         forward_ffn_block(m, lw);
     }
+    BL_ACC(bl_ffn_us);
 
     if (l == 0 && pos == 0) {
         char v0[16], v1[16], v2[16], v3[16];
@@ -607,6 +740,10 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
         snprintf(v3, sizeof(v3), "%.6f", s->x[3]);
         SH_LOG_DEBUG("Layer 0 pos 0", "x0", v0, "x1", v1, "x2", v2, "x3", v3);
     }
+
+#ifdef BN_BENCH_LAYERS
+    bl_layer_count++;
+#endif
 
     return 0;
 }
@@ -672,6 +809,8 @@ static float *forward_logits(BnModel *m) {
         SH_LOG_ERROR("Model dim too large for stack VLAs");
         return NULL;
     }
+
+    BL_START();
 
     // Final RMSNorm
     rmsnorm(s->x, s->x, w->output_norm, dim, c->norm_eps);
@@ -792,6 +931,11 @@ static float *forward_logits(BnModel *m) {
         BnTPTask logits_task = { bn_transformer_logits_f32_range, &lctx, c->vocab_size };
         bn_tp_dispatch(m->pool, &logits_task, 1);
     }
+
+    BL_ACC(bl_logits_us);
+#ifdef BN_BENCH_LAYERS
+    bl_print_reset();
+#endif
 
     return s->logits;
 }

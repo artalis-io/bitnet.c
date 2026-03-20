@@ -27,7 +27,9 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
 #elif defined(__AVX2__)
         float x_scale = bn_quant_x_to_i8(x, x_q_buf, W->cols);
         BnI2SCtx ctx = { out, W, x_q_buf, W->scale * x_scale };
-        BnTPTask task = { bn_quant_i2s_avx2_range, &ctx, W->rows };
+        // Use 4-row kernel for better bandwidth utilization on DDR4
+        int n_groups = (W->rows + 3) / 4;
+        BnTPTask task = { bn_quant_i2s_avx2_4row_range, &ctx, n_groups };
         bn_tp_dispatch(pool, &task, 1);
 #elif defined(__wasm_relaxed_simd__)
         float x_scale = bn_quant_x_to_i8(x, x_q_buf, W->cols);
@@ -98,7 +100,8 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
         BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales };
-        BnTPTask task = { bn_quant_q4_avx2_range, &ctx, W->rows };
+        int n_groups = (W->rows + 3) / 4;
+        BnTPTask task = { bn_quant_q4_avx2_4row_range, &ctx, n_groups };
         bn_tp_dispatch(pool, &task, 1);
 #elif defined(__wasm_relaxed_simd__)
         int n_blocks = W->cols / 32;
@@ -701,7 +704,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnI2SCtx){ tasks[t].out, tasks[t].W, x_q_buf,
                                 tasks[t].W->scale * x_scale };
-            tp_tasks[t] = (BnTPTask){ bn_quant_i2s_avx2_range, &ctxs[t], tasks[t].W->rows };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_i2s_avx2_4row_range, &ctxs[t], n_groups };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -719,7 +723,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
-            tp_tasks[t] = (BnTPTask){ bn_quant_q4_avx2_range, &ctxs[t], tasks[t].W->rows };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_q4_avx2_4row_range, &ctxs[t], n_groups };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);

@@ -44,7 +44,8 @@ void bn_quant_tq1_avx2_range(void *ctx, int row_start, int row_end) {
 
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockTQ1 *blk = &blocks[row * n_blocks_per_row + b];
-            _mm_prefetch((const char *)(blk + 2), _MM_HINT_T0);
+            _mm_prefetch((const char *)(blk + 4), _MM_HINT_T0);
+            _mm_prefetch((const char *)(blk + 8), _MM_HINT_T1);
             float d = bn_fp16_to_fp32(blk->d);
             const int8_t *xb = x_q + b * BN_QK_K;
 
