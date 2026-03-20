@@ -775,57 +775,165 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
             pthread_mutex_unlock(&(pf)->mtx); \
         } while(0)
 
+        // --- Two-phase: separate cache hits from misses ---
+        int n_hits = 0, n_misses = 0;
+        int hit_indices[BN_MAX_MOE_K], miss_indices[BN_MAX_MOE_K];
+        float hit_weights[BN_MAX_MOE_K], miss_weights[BN_MAX_MOE_K];
+        const uint8_t *hit_ptrs[BN_MAX_MOE_K];  // cache slab pointers for hits
+
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
-            float weight = ms->expert_weights[k];
             if (eidx < 0) continue;
 
-            const uint8_t *gate_ptr, *up_ptr, *down_ptr;
-            int down_pending = 0;  // 1 = pf_dn has outstanding down read
-
-            // Cache lookup
             if (cache) {
                 const uint8_t *cached = moe_cache_lookup(cache, l, eidx);
                 if (cached) {
-                    gate_ptr = cached;
-                    up_ptr   = cached + cache->gate_bytes;
-                    down_ptr = cached + cache->gate_bytes + cache->up_bytes;
+                    hit_indices[n_hits] = eidx;
+                    hit_weights[n_hits] = ms->expert_weights[k];
+                    hit_ptrs[n_hits] = cached;
+                    n_hits++;
                     ms->cache_hits++;
-                    goto do_compute;
+                    continue;
                 }
                 ms->cache_misses++;
             }
+            miss_indices[n_misses] = eidx;
+            miss_weights[n_misses] = ms->expert_weights[k];
+            n_misses++;
+        }
 
-            // Cache miss (or no cache) — need I/O
-            {
-                size_t g_off, g_sz, u_off, u_sz, d_off, d_sz;
-                moe_proj_info(map, eidx, 0, &g_off, &g_sz);
-                moe_proj_info(map, eidx, 1, &u_off, &u_sz);
-                moe_proj_info(map, eidx, 2, &d_off, &d_sz);
+        // Start I/O for first miss while we batch-compute hits
+        int miss_io_started = 0;
+        uint8_t *miss_slot_ptr = NULL;
+        uint8_t *miss_g_dst, *miss_u_dst, *miss_d_dst;
+        size_t miss_g_off, miss_g_sz, miss_u_off, miss_u_sz, miss_d_off, miss_d_sz;
 
-                uint8_t *slot_ptr = cache ? moe_cache_insert(cache, l, eidx) : NULL;
-                uint8_t *g_dst = slot_ptr ? slot_ptr : ms->expert_buf;
-                uint8_t *u_dst = slot_ptr ? slot_ptr + cache->gate_bytes : ms->expert_buf2;
-                uint8_t *d_dst = slot_ptr ? slot_ptr + cache->gate_bytes + cache->up_bytes : ms->expert_buf5;
+        if (n_misses > 0) {
+            int meidx = miss_indices[0];
+            moe_proj_info(map, meidx, 0, &miss_g_off, &miss_g_sz);
+            moe_proj_info(map, meidx, 1, &miss_u_off, &miss_u_sz);
+            moe_proj_info(map, meidx, 2, &miss_d_off, &miss_d_sz);
 
-                // Start gate+up and down reads in parallel
-                if (pf_gu) {
-                    moe_prefetch_start2(pf_gu, g_dst, g_sz, (off_t)g_off,
-                                               u_dst, u_sz, (off_t)u_off);
-                }
-                if (pf_dn) {
-                    moe_prefetch_start1(pf_dn, d_dst, d_sz, (off_t)d_off);
-                    down_pending = 1;
-                }
+            miss_slot_ptr = cache ? moe_cache_insert(cache, l, meidx) : NULL;
+            miss_g_dst = miss_slot_ptr ? miss_slot_ptr : ms->expert_buf;
+            miss_u_dst = miss_slot_ptr ? miss_slot_ptr + cache->gate_bytes : ms->expert_buf2;
+            miss_d_dst = miss_slot_ptr ? miss_slot_ptr + cache->gate_bytes + cache->up_bytes : ms->expert_buf5;
 
-                // Wait for gate+up
+            if (pf_gu) {
+                moe_prefetch_start2(pf_gu, miss_g_dst, miss_g_sz, (off_t)miss_g_off,
+                                           miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+            }
+            if (pf_dn) {
+                moe_prefetch_start1(pf_dn, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
+            }
+            miss_io_started = 1;
+        }
+
+        // Phase 1: Batch gate+up for all cache hits
+        if (n_hits > 0) {
+            t0 = moe_time_ms();
+            BnQWeight wgates[BN_MAX_MOE_K], wups[BN_MAX_MOE_K];
+            BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K];
+            for (int h = 0; h < n_hits; h++) {
+                const uint8_t *cp = hit_ptrs[h];
+                wgates[h] = moe_make_qweight(cp, map->gate_type,
+                                              map->gate_rows, map->gate_cols);
+                wups[h]   = moe_make_qweight(cp + cache->gate_bytes, map->up_type,
+                                              map->up_rows, map->up_cols);
+                gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h] };
+                gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]   };
+            }
+            bn_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q, m->pool);
+            ms->gate_up_time_ms += moe_time_ms() - t0;
+
+            // Parallel SwiGLU for hits
+            t0 = moe_time_ms();
+            BnSwiGLUCtx swiglu_ctxs[BN_MAX_MOE_K];
+            BnTPTask swiglu_tasks[BN_MAX_MOE_K];
+            for (int h = 0; h < n_hits; h++) {
+                swiglu_ctxs[h] = (BnSwiGLUCtx){
+                    ms->expert_hb_batch[h],
+                    ms->expert_hb_batch[h],
+                    ms->expert_hb2_batch[h]
+                };
+                swiglu_tasks[h] = (BnTPTask){ moe_swiglu_range, &swiglu_ctxs[h], moe_hidden };
+            }
+            bn_tp_dispatch(m->pool, swiglu_tasks, n_hits);
+            ms->swiglu_time_ms += moe_time_ms() - t0;
+
+            // Down projections for hits (data already in cache)
+            t0 = moe_time_ms();
+            for (int h = 0; h < n_hits; h++) {
+                const uint8_t *dp = hit_ptrs[h] + cache->gate_bytes + cache->up_bytes;
+                BnQWeight wdown = moe_make_qweight(dp, map->down_type,
+                                                    map->down_rows, map->down_cols);
+                bn_quant_matvec(ms->expert_down_batch[h], &wdown,
+                                ms->expert_hb_batch[h], s->x_q, m->pool);
+            }
+            ms->down_time_ms += moe_time_ms() - t0;
+
+            // Weighted accumulation for hits
+            t0 = moe_time_ms();
+            for (int h = 0; h < n_hits; h++) {
+                float w = hit_weights[h];
+                for (int d = 0; d < dim; d++)
+                    ms->expert_out[d] += w * ms->expert_down_batch[h][d];
+            }
+            ms->accum_time_ms += moe_time_ms() - t0;
+        }
+
+        // Phase 2: Process cache misses with I/O overlap
+        for (int mi = 0; mi < n_misses; mi++) {
+            int eidx = miss_indices[mi];
+            float weight = miss_weights[mi];
+            const uint8_t *gate_ptr, *up_ptr, *down_ptr;
+
+            if (mi == 0 && miss_io_started) {
+                // First miss: I/O was started before phase 1
                 if (pf_gu) {
                     double tw = moe_time_ms();
                     int ok = moe_prefetch_wait(pf_gu);
                     ms->prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        SH_LOG_ERROR("Gate+up pread failed");
+                        pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off);
+                        pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+                    }
+                } else {
+                    pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off);
+                    pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+                    if (!pf_dn)
+                        pread(ms->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
+                }
+                gate_ptr = miss_g_dst;
+                up_ptr   = miss_u_dst;
+                down_ptr = miss_d_dst;
+            } else {
+                // Subsequent misses: load gate+up+down
+                size_t g_off, g_sz, u_off, u_sz, d_off, d_sz;
+                moe_proj_info(map, eidx, 0, &g_off, &g_sz);
+                moe_proj_info(map, eidx, 1, &u_off, &u_sz);
+                moe_proj_info(map, eidx, 2, &d_off, &d_sz);
+
+                uint8_t *slot = cache ? moe_cache_insert(cache, l, eidx) : NULL;
+                uint8_t *g_dst = slot ? slot : ms->expert_buf;
+                uint8_t *u_dst = slot ? slot + cache->gate_bytes : ms->expert_buf2;
+                uint8_t *d_dst = slot ? slot + cache->gate_bytes + cache->up_bytes : ms->expert_buf5;
+
+                if (pf_gu) {
+                    moe_prefetch_start2(pf_gu, g_dst, g_sz, (off_t)g_off,
+                                               u_dst, u_sz, (off_t)u_off);
+                }
+                if (pf_dn) {
+                    moe_prefetch_start1(pf_dn, d_dst, d_sz, (off_t)d_off);
+                }
+
+                if (pf_gu) {
+                    double tw = moe_time_ms();
+                    int ok = moe_prefetch_wait(pf_gu);
+                    ms->prefetch_wait_ms += moe_time_ms() - tw;
+                    COLLECT_PF_STATS(pf_gu);
+                    if (!ok) {
                         pread(ms->fd, g_dst, g_sz, (off_t)g_off);
                         pread(ms->fd, u_dst, u_sz, (off_t)u_off);
                     }
@@ -840,8 +948,7 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                 down_ptr = d_dst;
             }
 
-        do_compute:
-            // Gate+up matvec (down I/O may still be in flight for misses)
+            // Gate+up matvec (down I/O may still be in flight)
             t0 = moe_time_ms();
             {
                 BnQWeight wgate = moe_make_qweight(gate_ptr, map->gate_type,
@@ -856,27 +963,26 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
             }
             ms->gate_up_time_ms += moe_time_ms() - t0;
 
-            // SwiGLU activation
+            // SwiGLU
             t0 = moe_time_ms();
             moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
             ms->swiglu_time_ms += moe_time_ms() - t0;
 
-            // Wait for down I/O if it was started asynchronously
+            // Wait for down I/O
             t0 = moe_time_ms();
-            if (down_pending) {
+            if (pf_dn) {
                 double tw = moe_time_ms();
                 int ok = moe_prefetch_wait(pf_dn);
                 ms->prefetch_wait_ms += moe_time_ms() - tw;
                 COLLECT_PF_STATS(pf_dn);
                 if (!ok) {
-                    SH_LOG_ERROR("Down pread failed");
                     size_t d_off, d_sz;
                     moe_proj_info(map, eidx, 2, &d_off, &d_sz);
                     pread(ms->fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off);
                 }
             }
 
-            // Down projection matvec
+            // Down matvec
             {
                 BnQWeight wdown = moe_make_qweight(down_ptr, map->down_type,
                                                     map->down_rows, map->down_cols);

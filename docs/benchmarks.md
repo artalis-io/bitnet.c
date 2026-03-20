@@ -15,6 +15,18 @@ Single-core and multi-core performance on Apple M1 Max (32 GB), macOS.
 PGO build trained on respective model (128 tokens). Q4_0 uses weight repacking (split scales/qs) for NEON SDOT. WASM is single-threaded (no SharedArrayBuffer in Node.js RAWFS mode).
 Llama3 8B (3.3 GB) exceeds the WASM 4 GB address space with runtime allocations.
 
+## MoE Throughput (tok/s)
+
+Qwen3-30B-A3B-Q4_K_M (17.7 GB, 128 experts/layer, K=8), Apple M1 Max 8T, 128 tokens generated.
+
+| Mode | tok/s | MB/tok | pf_wait (ms) | RSS |
+|------|-------|--------|-------------|-----|
+| mmap | 14.13 | 1046 | 0 | 16.2 GB |
+| pread + 2 GB cache | 9.18 | 388 | 3666 | 10.2 GB |
+| pread (no cache) | 6.54 | 1046 | 8858 | 8.3 GB |
+
+The expert LRU cache (open-addressing hash + intrusive LRU list) stores full expert weights (gate+up+down) in a contiguous slab. 2 GB budget → 701 slots → 63% hit rate, cutting I/O from 1046 → 388 MB/tok. Cache hits are batched (cross-expert gate+up matvec dispatch like the mmap path). First miss I/O is overlapped with hit batch compute. `--cache-mb N` to configure (0 to disable, pread mode only).
+
 ## vs llama.cpp (b8320)
 
 Measured with `llama-bench`, same hardware (M1 Max, 8 threads). Both use `-p 0 -n 256` (pure generation, no prompt).
