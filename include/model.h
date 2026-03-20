@@ -31,15 +31,23 @@ typedef struct {
     float *expert_hb2;
     uint8_t *expert_buf;
     size_t expert_buf_size;
+    uint8_t *expert_buf2;      // second buffer for pread double-buffering
+    size_t expert_buf2_size;
     // Batch buffers for cross-expert dispatch (mmap path)
     float *expert_hb_batch[BN_MAX_MOE_K];   // K gate outputs [moe_hidden]
     float *expert_hb2_batch[BN_MAX_MOE_K];  // K up outputs [moe_hidden]
     float *expert_down_batch[BN_MAX_MOE_K]; // K down outputs [dim]
     // I/O stats (accumulated across all tokens)
     size_t io_bytes;          // total bytes loaded from disk (pread) or touched (mmap)
-    double io_time_ms;        // total time spent in expert loading
+    double io_time_ms;        // total time spent in expert loading (pread only)
     double route_time_ms;     // total time in routing (router matvec + top-K)
-    double compute_time_ms;   // total time in expert FFN compute
+    double compute_time_ms;   // total time in expert FFN compute (all phases)
+    double gate_up_time_ms;   // gate+up matvec time
+    double swiglu_time_ms;    // SwiGLU activation time
+    double down_time_ms;      // down projection matvec time
+    double accum_time_ms;     // weighted accumulation time
+    double shared_time_ms;    // shared expert time
+    double norm_time_ms;      // RMSNorm time
     int    io_count;          // number of expert projections loaded
 } BnMoEState;
 

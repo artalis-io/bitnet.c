@@ -111,6 +111,15 @@ typedef struct {
     const float *x;
 } BnQ4KCtx;
 
+// Q4_K SDOT context
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const int8_t *x_q;
+    const float *x_scales;
+    const float *x_sums;   // sum of x_q per 32-element block
+} BnQ4KSdotCtx;
+
 // Q5_K context
 typedef struct {
     float *out;
@@ -248,6 +257,7 @@ void bn_quant_q8k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q8k_scalar_range(void *ctx, int start, int end);
 
 // Q4_K kernels
+void bn_quant_q4k_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_neon_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4k_wasm_range(void *ctx, int start, int end);
