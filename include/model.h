@@ -37,7 +37,11 @@ typedef struct {
     size_t expert_buf3_size;
     uint8_t *expert_buf4;      // prefetch up buffer (pread pipeline)
     size_t expert_buf4_size;
-    void *prefetch;            // BnMoEPrefetch* (opaque, pread pipeline only)
+    uint8_t *expert_buf5;      // down buffer (pread pipeline)
+    size_t expert_buf5_size;
+    void *prefetch;            // BnMoEPrefetch* for gate+up (opaque, pread only)
+    void *prefetch_down;       // BnMoEPrefetch* for down proj (opaque, pread only)
+    void *cache;               // BnMoECache* for expert LRU cache (opaque, pread only)
     // Batch buffers for cross-expert dispatch (mmap path)
     float *expert_hb_batch[BN_MAX_MOE_K];   // K gate outputs [moe_hidden]
     float *expert_hb2_batch[BN_MAX_MOE_K];  // K up outputs [moe_hidden]
@@ -55,6 +59,8 @@ typedef struct {
     double norm_time_ms;      // RMSNorm time
     double prefetch_wait_ms;  // time main thread waited for I/O prefetch
     int    io_count;          // number of expert projections loaded
+    size_t cache_hits;        // expert cache hits (pread only)
+    size_t cache_misses;      // expert cache misses (pread only)
 } BnMoEState;
 
 #define BN_DEFAULT_ROPE_THETA  10000.0f

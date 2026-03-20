@@ -18,6 +18,261 @@
 #include <immintrin.h>
 #endif
 
+// --- Expert LRU Cache (pread pipeline) ---
+#if !defined(__EMSCRIPTEN__)
+
+typedef struct {
+    int layer;          // -1 = empty
+    int expert_idx;
+    int prev, next;     // intrusive LRU doubly-linked list (indices, -1 = sentinel)
+} BnMoECacheEntry;
+
+typedef struct {
+    uint8_t *slab;              // [n_slots * entry_bytes], 32-byte aligned
+    size_t entry_bytes;         // gate_bytes + up_bytes + down_bytes
+    size_t gate_bytes;          // size of gate projection
+    size_t up_bytes;            // size of up projection
+    int n_slots;
+
+    BnMoECacheEntry *entries;   // [n_slots] metadata
+    int *hash_table;            // [hash_size] open-addressing, slot index or -1
+    int hash_size;              // power of 2, >= 2 * n_slots
+
+    int lru_head, lru_tail;     // MRU / LRU ends
+    int free_head;              // free list head
+} BnMoECache;
+
+static uint32_t moe_cache_hash(int layer, int expert_idx) {
+    uint32_t key = ((uint32_t)layer << 16) | (uint32_t)(expert_idx & 0xFFFF);
+    // murmurhash3 finalizer
+    key ^= key >> 16;
+    key *= 0x85ebca6b;
+    key ^= key >> 13;
+    key *= 0xc2b2ae35;
+    key ^= key >> 16;
+    return key;
+}
+
+static int moe_cache_probe(const BnMoECache *c, int layer, int expert_idx) {
+    uint32_t h = moe_cache_hash(layer, expert_idx) & (uint32_t)(c->hash_size - 1);
+    for (int i = 0; i < c->hash_size; i++) {
+        int idx = (int)((h + (uint32_t)i) & (uint32_t)(c->hash_size - 1));
+        int slot = c->hash_table[idx];
+        if (slot < 0) return -1;  // empty = not found
+        if (c->entries[slot].layer == layer && c->entries[slot].expert_idx == expert_idx)
+            return idx;  // return hash table index
+    }
+    return -1;
+}
+
+static void moe_cache_lru_remove(BnMoECache *c, int slot) {
+    BnMoECacheEntry *e = &c->entries[slot];
+    if (e->prev >= 0) c->entries[e->prev].next = e->next;
+    else c->lru_head = e->next;
+    if (e->next >= 0) c->entries[e->next].prev = e->prev;
+    else c->lru_tail = e->prev;
+    e->prev = e->next = -1;
+}
+
+static void moe_cache_lru_push_front(BnMoECache *c, int slot) {
+    BnMoECacheEntry *e = &c->entries[slot];
+    e->prev = -1;
+    e->next = c->lru_head;
+    if (c->lru_head >= 0) c->entries[c->lru_head].prev = slot;
+    c->lru_head = slot;
+    if (c->lru_tail < 0) c->lru_tail = slot;
+}
+
+// Hash table removal with backshift deletion
+static void moe_cache_hash_remove(BnMoECache *c, int layer, int expert_idx) {
+    uint32_t mask = (uint32_t)(c->hash_size - 1);
+    uint32_t h = moe_cache_hash(layer, expert_idx) & mask;
+    int idx = -1;
+    for (int i = 0; i < c->hash_size; i++) {
+        int probe = (int)((h + (uint32_t)i) & mask);
+        int slot = c->hash_table[probe];
+        if (slot < 0) return;  // not found
+        if (c->entries[slot].layer == layer && c->entries[slot].expert_idx == expert_idx) {
+            idx = probe;
+            break;
+        }
+    }
+    if (idx < 0) return;
+
+    // Backshift deletion
+    c->hash_table[idx] = -1;
+    for (int i = 1; i < c->hash_size; i++) {
+        int next = (int)(((uint32_t)idx + (uint32_t)i) & mask);
+        int slot = c->hash_table[next];
+        if (slot < 0) break;  // chain ended
+        uint32_t natural = moe_cache_hash(c->entries[slot].layer,
+                                            c->entries[slot].expert_idx) & mask;
+        // Check if this element's natural position is at or before the gap
+        int gap = idx;
+        // Element belongs before the gap if moving it wouldn't break its probe chain
+        int should_move;
+        if (next >= gap)
+            should_move = (int)natural <= gap || (int)natural > next;
+        else
+            should_move = (int)natural <= gap && (int)natural > next;
+        if (should_move) {
+            c->hash_table[gap] = slot;
+            c->hash_table[next] = -1;
+            idx = next;  // new gap
+        }
+    }
+}
+
+static const uint8_t *moe_cache_lookup(BnMoECache *c, int layer, int expert_idx) {
+    int hi = moe_cache_probe(c, layer, expert_idx);
+    if (hi < 0) return NULL;
+    int slot = c->hash_table[hi];
+    // Promote to MRU
+    moe_cache_lru_remove(c, slot);
+    moe_cache_lru_push_front(c, slot);
+    return c->slab + (size_t)slot * c->entry_bytes;
+}
+
+static int moe_cache_evict(BnMoECache *c) {
+    int slot = c->lru_tail;
+    if (slot < 0) return -1;
+    // Remove from LRU
+    moe_cache_lru_remove(c, slot);
+    // Remove from hash table
+    moe_cache_hash_remove(c, c->entries[slot].layer, c->entries[slot].expert_idx);
+    c->entries[slot].layer = -1;
+    return slot;
+}
+
+static uint8_t *moe_cache_insert(BnMoECache *c, int layer, int expert_idx) {
+    int slot;
+
+    // Try free list first
+    if (c->free_head >= 0) {
+        slot = c->free_head;
+        c->free_head = c->entries[slot].next;
+    } else {
+        // Evict LRU tail
+        slot = moe_cache_evict(c);
+        if (slot < 0) return NULL;
+    }
+
+    // Set entry metadata
+    c->entries[slot].layer = layer;
+    c->entries[slot].expert_idx = expert_idx;
+
+    // Insert into hash table
+    uint32_t mask = (uint32_t)(c->hash_size - 1);
+    uint32_t h = moe_cache_hash(layer, expert_idx) & mask;
+    for (int i = 0; i < c->hash_size; i++) {
+        int idx = (int)((h + (uint32_t)i) & mask);
+        if (c->hash_table[idx] < 0) {
+            c->hash_table[idx] = slot;
+            break;
+        }
+    }
+
+    // Push to MRU
+    moe_cache_lru_push_front(c, slot);
+
+    return c->slab + (size_t)slot * c->entry_bytes;
+}
+
+#endif // !__EMSCRIPTEN__
+
+void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
+                            size_t up_bytes, size_t down_bytes) {
+#if !defined(__EMSCRIPTEN__)
+    if (budget_bytes == 0) return NULL;
+    size_t entry_bytes = gate_bytes + up_bytes + down_bytes;
+    if (entry_bytes == 0) return NULL;
+
+    int n_slots = (int)(budget_bytes / entry_bytes);
+    if (n_slots < 1) return NULL;
+
+    BnMoECache *c = (BnMoECache *)calloc(1, sizeof(BnMoECache));
+    if (!c) return NULL;
+
+    c->entry_bytes = entry_bytes;
+    c->gate_bytes = gate_bytes;
+    c->up_bytes = up_bytes;
+    c->n_slots = n_slots;
+
+    // Hash table: next power of 2 >= 2 * n_slots
+    int hs = 1;
+    while (hs < 2 * n_slots) hs *= 2;
+    c->hash_size = hs;
+
+    // Allocate slab (32-byte aligned)
+    size_t slab_size = (size_t)n_slots * entry_bytes;
+#if defined(__APPLE__) || defined(__linux__)
+    if (posix_memalign((void **)&c->slab, 32, slab_size) != 0) {
+        free(c);
+        return NULL;
+    }
+#else
+    c->slab = (uint8_t *)malloc(slab_size);
+    if (!c->slab) { free(c); return NULL; }
+#endif
+
+    c->entries = (BnMoECacheEntry *)calloc((size_t)n_slots, sizeof(BnMoECacheEntry));
+    c->hash_table = (int *)malloc((size_t)hs * sizeof(int));
+    if (!c->entries || !c->hash_table) {
+        free(c->slab); free(c->entries); free(c->hash_table); free(c);
+        return NULL;
+    }
+
+    // Initialize
+    memset(c->hash_table, 0xFF, (size_t)hs * sizeof(int));  // -1
+    c->lru_head = c->lru_tail = -1;
+
+    // Build free list (singly-linked via .next)
+    for (int i = 0; i < n_slots; i++) {
+        c->entries[i].layer = -1;
+        c->entries[i].expert_idx = -1;
+        c->entries[i].prev = -1;
+        c->entries[i].next = (i + 1 < n_slots) ? i + 1 : -1;
+    }
+    c->free_head = 0;
+
+    {
+        char slots_s[16], mb_s[16];
+        snprintf(slots_s, sizeof(slots_s), "%d", n_slots);
+        snprintf(mb_s, sizeof(mb_s), "%.0f", (double)slab_size / (1024.0 * 1024.0));
+        SH_LOG_INFO("MoE expert cache", "slots", slots_s, "slab_MB", mb_s);
+    }
+
+    return c;
+#else
+    (void)budget_bytes; (void)gate_bytes; (void)up_bytes; (void)down_bytes;
+    return NULL;
+#endif
+}
+
+void bn_moe_cache_free(void *cache) {
+#if !defined(__EMSCRIPTEN__)
+    if (!cache) return;
+    BnMoECache *c = (BnMoECache *)cache;
+    free(c->slab);
+    free(c->entries);
+    free(c->hash_table);
+    free(c);
+#else
+    (void)cache;
+#endif
+}
+
+void bn_moe_cache_print_stats(const BnMoEState *ms) {
+    if (!ms) return;
+    size_t total = ms->cache_hits + ms->cache_misses;
+    if (total == 0) return;
+    char hits_s[16], misses_s[16], rate_s[16];
+    snprintf(hits_s, sizeof(hits_s), "%zu", ms->cache_hits);
+    snprintf(misses_s, sizeof(misses_s), "%zu", ms->cache_misses);
+    snprintf(rate_s, sizeof(rate_s), "%.1f%%", 100.0 * (double)ms->cache_hits / (double)total);
+    SH_LOG_INFO("MoE cache", "hits", hits_s, "misses", misses_s, "hit_rate", rate_s);
+}
+
 // --- I/O Prefetch Thread (pread pipeline) ---
 #if !defined(__EMSCRIPTEN__)
 
@@ -32,8 +287,8 @@ typedef struct {
     int success;                // result of last I/O
     double io_time_ms;          // accumulated pread time
     size_t io_bytes;            // accumulated bytes read
-    // Request: up to 2 preads per submission
-    struct { uint8_t *buf; size_t size; off_t offset; } reqs[2];
+    // Request: up to 3 preads per submission (gate, up, down)
+    struct { uint8_t *buf; size_t size; off_t offset; } reqs[3];
     int n_reqs;
 } BnMoEPrefetch;
 
@@ -47,7 +302,7 @@ static void *moe_prefetch_worker(void *arg) {
 
         // Copy request params under lock
         int n = pf->n_reqs;
-        uint8_t *bufs[2]; size_t sizes[2]; off_t offsets[2];
+        uint8_t *bufs[3]; size_t sizes[3]; off_t offsets[3];
         for (int i = 0; i < n; i++) {
             bufs[i] = pf->reqs[i].buf;
             sizes[i] = pf->reqs[i].size;
@@ -107,14 +362,25 @@ static void moe_prefetch_free(BnMoEPrefetch *pf) {
     free(pf);
 }
 
-// Post a prefetch request (1 or 2 preads). Non-blocking.
-static void moe_prefetch_start(BnMoEPrefetch *pf,
-                               uint8_t *buf1, size_t size1, off_t off1,
-                               uint8_t *buf2, size_t size2, off_t off2) {
+// Post a 2-read prefetch request (gate+up). Non-blocking.
+static void moe_prefetch_start2(BnMoEPrefetch *pf,
+                                uint8_t *buf1, size_t size1, off_t off1,
+                                uint8_t *buf2, size_t size2, off_t off2) {
     pthread_mutex_lock(&pf->mtx);
     pf->reqs[0].buf = buf1; pf->reqs[0].size = size1; pf->reqs[0].offset = off1;
     pf->reqs[1].buf = buf2; pf->reqs[1].size = size2; pf->reqs[1].offset = off2;
     pf->n_reqs = 2;
+    pf->active = 1;
+    pthread_cond_signal(&pf->req_cv);
+    pthread_mutex_unlock(&pf->mtx);
+}
+
+// Post a 1-read prefetch request (down). Non-blocking.
+static void moe_prefetch_start1(BnMoEPrefetch *pf,
+                                uint8_t *buf1, size_t size1, off_t off1) {
+    pthread_mutex_lock(&pf->mtx);
+    pf->reqs[0].buf = buf1; pf->reqs[0].size = size1; pf->reqs[0].offset = off1;
+    pf->n_reqs = 1;
     pf->active = 1;
     pthread_cond_signal(&pf->req_cv);
     pthread_mutex_unlock(&pf->mtx);
@@ -362,7 +628,9 @@ static inline double moe_time_ms(void) {
 
 // Full MoE FFN block
 void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
+#if defined(__EMSCRIPTEN__)
     (void)l;
+#endif
     BnConfig *c = &m->config;
     BnRunState *s = &m->state;
     BnMoEState *ms = m->moe_state;
@@ -475,61 +743,117 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
     }
 #if !defined(__EMSCRIPTEN__)
     else if (ms->fd >= 0 && !ms->mmap_base) {
-        // --- Pipelined pread path: overlap I/O with compute ---
-        BnMoEPrefetch *pf = (BnMoEPrefetch *)ms->prefetch;
-        uint8_t *cur_gate = ms->expert_buf, *cur_up = ms->expert_buf2;
-        uint8_t *nxt_gate = ms->expert_buf3, *nxt_up = ms->expert_buf4;
+        // --- Pipelined pread path with LRU cache ---
+        BnMoEPrefetch *pf_gu = (BnMoEPrefetch *)ms->prefetch;
+        BnMoEPrefetch *pf_dn = (BnMoEPrefetch *)ms->prefetch_down;
+        BnMoECache *cache = (BnMoECache *)ms->cache;
         const BnMoEExpertMap *map = &lw->expert_map;
 
-        // Bootstrap: load first expert's gate+up synchronously
-        int first_k = -1;
-        for (int k = 0; k < K; k++) {
-            if (ms->expert_indices[k] >= 0) { first_k = k; break; }
-        }
-        if (first_k >= 0) {
-            int first_eidx = ms->expert_indices[first_k];
-            const void *g = moe_load_expert_proj_into(ms, map, first_eidx, 0,
-                                                       cur_gate, ms->expert_buf_size);
-            const void *u = moe_load_expert_proj_into(ms, map, first_eidx, 1,
-                                                       cur_up, ms->expert_buf2_size);
-            if (!g || !u) {
-                SH_LOG_ERROR("Failed to bootstrap expert gate/up");
-                first_k = -1;
+        // Sort expert indices ascending (insertion sort, K is small)
+        // to enable read coalescing on cache misses
+        for (int i = 1; i < K; i++) {
+            int idx = ms->expert_indices[i];
+            float w = ms->expert_weights[i];
+            int j = i - 1;
+            while (j >= 0 && ms->expert_indices[j] > idx) {
+                ms->expert_indices[j + 1] = ms->expert_indices[j];
+                ms->expert_weights[j + 1] = ms->expert_weights[j];
+                j--;
             }
+            ms->expert_indices[j + 1] = idx;
+            ms->expert_weights[j + 1] = w;
         }
 
-        for (int k = first_k; k < K && k >= 0; k++) {
+        // Helper: collect prefetch stats from a thread
+        #define COLLECT_PF_STATS(pf) do { \
+            pthread_mutex_lock(&(pf)->mtx); \
+            ms->io_time_ms += (pf)->io_time_ms; \
+            ms->io_bytes += (pf)->io_bytes; \
+            ms->io_count += (pf)->n_reqs; \
+            (pf)->io_time_ms = 0; \
+            (pf)->io_bytes = 0; \
+            pthread_mutex_unlock(&(pf)->mtx); \
+        } while(0)
+
+        for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
             float weight = ms->expert_weights[k];
             if (eidx < 0) continue;
 
-            // Start prefetch for next valid expert
-            int next_k = -1;
-            if (pf) {
-                for (int j = k + 1; j < K; j++) {
-                    if (ms->expert_indices[j] >= 0) { next_k = j; break; }
+            const uint8_t *gate_ptr, *up_ptr, *down_ptr;
+            int down_pending = 0;  // 1 = pf_dn has outstanding down read
+
+            // Cache lookup
+            if (cache) {
+                const uint8_t *cached = moe_cache_lookup(cache, l, eidx);
+                if (cached) {
+                    gate_ptr = cached;
+                    up_ptr   = cached + cache->gate_bytes;
+                    down_ptr = cached + cache->gate_bytes + cache->up_bytes;
+                    ms->cache_hits++;
+                    goto do_compute;
                 }
-                if (next_k >= 0) {
-                    int next_eidx = ms->expert_indices[next_k];
-                    size_t g_off, g_sz, u_off, u_sz;
-                    moe_proj_info(map, next_eidx, 0, &g_off, &g_sz);
-                    moe_proj_info(map, next_eidx, 1, &u_off, &u_sz);
-                    moe_prefetch_start(pf, nxt_gate, g_sz, (off_t)g_off,
-                                           nxt_up, u_sz, (off_t)u_off);
-                }
+                ms->cache_misses++;
             }
 
-            // Gate+up matvec
+            // Cache miss (or no cache) — need I/O
+            {
+                size_t g_off, g_sz, u_off, u_sz, d_off, d_sz;
+                moe_proj_info(map, eidx, 0, &g_off, &g_sz);
+                moe_proj_info(map, eidx, 1, &u_off, &u_sz);
+                moe_proj_info(map, eidx, 2, &d_off, &d_sz);
+
+                uint8_t *slot_ptr = cache ? moe_cache_insert(cache, l, eidx) : NULL;
+                uint8_t *g_dst = slot_ptr ? slot_ptr : ms->expert_buf;
+                uint8_t *u_dst = slot_ptr ? slot_ptr + cache->gate_bytes : ms->expert_buf2;
+                uint8_t *d_dst = slot_ptr ? slot_ptr + cache->gate_bytes + cache->up_bytes : ms->expert_buf5;
+
+                // Start gate+up and down reads in parallel
+                if (pf_gu) {
+                    moe_prefetch_start2(pf_gu, g_dst, g_sz, (off_t)g_off,
+                                               u_dst, u_sz, (off_t)u_off);
+                }
+                if (pf_dn) {
+                    moe_prefetch_start1(pf_dn, d_dst, d_sz, (off_t)d_off);
+                    down_pending = 1;
+                }
+
+                // Wait for gate+up
+                if (pf_gu) {
+                    double tw = moe_time_ms();
+                    int ok = moe_prefetch_wait(pf_gu);
+                    ms->prefetch_wait_ms += moe_time_ms() - tw;
+                    COLLECT_PF_STATS(pf_gu);
+                    if (!ok) {
+                        SH_LOG_ERROR("Gate+up pread failed");
+                        pread(ms->fd, g_dst, g_sz, (off_t)g_off);
+                        pread(ms->fd, u_dst, u_sz, (off_t)u_off);
+                    }
+                } else {
+                    pread(ms->fd, g_dst, g_sz, (off_t)g_off);
+                    pread(ms->fd, u_dst, u_sz, (off_t)u_off);
+                    pread(ms->fd, d_dst, d_sz, (off_t)d_off);
+                }
+
+                gate_ptr = g_dst;
+                up_ptr   = u_dst;
+                down_ptr = d_dst;
+            }
+
+        do_compute:
+            // Gate+up matvec (down I/O may still be in flight for misses)
             t0 = moe_time_ms();
-            BnQWeight wgate = moe_make_qweight(cur_gate, map->gate_type,
-                                                map->gate_rows, map->gate_cols);
-            BnQWeight wup = moe_make_qweight(cur_up, map->up_type,
-                                              map->up_rows, map->up_cols);
-            BnMatvecTask gu[2] = {
-                { ms->expert_hb,  &wgate },
-                { ms->expert_hb2, &wup   },
-            };
-            bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
+            {
+                BnQWeight wgate = moe_make_qweight(gate_ptr, map->gate_type,
+                                                    map->gate_rows, map->gate_cols);
+                BnQWeight wup = moe_make_qweight(up_ptr, map->up_type,
+                                                  map->up_rows, map->up_cols);
+                BnMatvecTask gu[2] = {
+                    { ms->expert_hb,  &wgate },
+                    { ms->expert_hb2, &wup   },
+                };
+                bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
+            }
             ms->gate_up_time_ms += moe_time_ms() - t0;
 
             // SwiGLU activation
@@ -537,26 +861,27 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
             moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
             ms->swiglu_time_ms += moe_time_ms() - t0;
 
-            // Down projection: reuse cur_gate buffer (free after gate+up matvec)
+            // Wait for down I/O if it was started asynchronously
             t0 = moe_time_ms();
-            const void *down_data = moe_load_expert_proj_into(ms, map, eidx, 2,
-                                                               cur_gate, ms->expert_buf_size);
-            if (!down_data) {
-                SH_LOG_ERROR("Failed to load expert down projection");
-                // Still need to wait for prefetch before continuing
-                if (pf && next_k >= 0) {
-                    double tw = moe_time_ms();
-                    moe_prefetch_wait(pf);
-                    ms->prefetch_wait_ms += moe_time_ms() - tw;
-                    uint8_t *tmp;
-                    tmp = cur_gate; cur_gate = nxt_gate; nxt_gate = tmp;
-                    tmp = cur_up; cur_up = nxt_up; nxt_up = tmp;
+            if (down_pending) {
+                double tw = moe_time_ms();
+                int ok = moe_prefetch_wait(pf_dn);
+                ms->prefetch_wait_ms += moe_time_ms() - tw;
+                COLLECT_PF_STATS(pf_dn);
+                if (!ok) {
+                    SH_LOG_ERROR("Down pread failed");
+                    size_t d_off, d_sz;
+                    moe_proj_info(map, eidx, 2, &d_off, &d_sz);
+                    pread(ms->fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off);
                 }
-                continue;
             }
-            BnQWeight wdown = moe_make_qweight(down_data, map->down_type,
-                                                map->down_rows, map->down_cols);
-            bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
+
+            // Down projection matvec
+            {
+                BnQWeight wdown = moe_make_qweight(down_ptr, map->down_type,
+                                                    map->down_rows, map->down_cols);
+                bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
+            }
             ms->down_time_ms += moe_time_ms() - t0;
 
             // Weighted accumulation
@@ -564,30 +889,9 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
             for (int d = 0; d < dim; d++)
                 ms->expert_out[d] += weight * s->xb2[d];
             ms->accum_time_ms += moe_time_ms() - t0;
-
-            // Wait for prefetch and swap buffers
-            if (pf && next_k >= 0) {
-                double tw = moe_time_ms();
-                int ok = moe_prefetch_wait(pf);
-                ms->prefetch_wait_ms += moe_time_ms() - tw;
-                if (ok) {
-                    // Track prefetched I/O in stats
-                    pthread_mutex_lock(&pf->mtx);
-                    ms->io_time_ms += pf->io_time_ms;
-                    ms->io_bytes += pf->io_bytes;
-                    ms->io_count += pf->n_reqs;
-                    pf->io_time_ms = 0;
-                    pf->io_bytes = 0;
-                    pthread_mutex_unlock(&pf->mtx);
-                }
-                uint8_t *tmp;
-                tmp = cur_gate; cur_gate = nxt_gate; nxt_gate = tmp;
-                tmp = cur_up; cur_up = nxt_up; nxt_up = tmp;
-                if (!ok) {
-                    SH_LOG_ERROR("Prefetch failed for next expert");
-                }
-            }
         }
+
+        #undef COLLECT_PF_STATS
     }
 #endif
     else {
@@ -710,6 +1014,8 @@ void bn_moe_print_stats(const BnMoEState *ms, int n_tokens) {
                 "shared", sh_s,
                 "pf_wait", pw_s,
                 "total", ct_s);
+
+    bn_moe_cache_print_stats(ms);
 }
 
 void bn_moe_reset_stats(BnMoEState *ms) {
@@ -726,6 +1032,8 @@ void bn_moe_reset_stats(BnMoEState *ms) {
     ms->norm_time_ms = 0;
     ms->io_count = 0;
     ms->prefetch_wait_ms = 0;
+    ms->cache_hits = 0;
+    ms->cache_misses = 0;
 }
 
 void bn_moe_prefetch_create(BnMoEState *ms) {
@@ -733,16 +1041,25 @@ void bn_moe_prefetch_create(BnMoEState *ms) {
 #if !defined(__EMSCRIPTEN__)
     if (ms->fd >= 0 && !ms->mmap_base) {
         ms->prefetch = moe_prefetch_init(ms->fd);
-        if (ms->prefetch)
-            SH_LOG_INFO("MoE I/O prefetch thread", "status", "created");
+        ms->prefetch_down = moe_prefetch_init(ms->fd);
+        if (ms->prefetch && ms->prefetch_down)
+            SH_LOG_INFO("MoE I/O prefetch threads", "status", "2 created (gate+up, down)");
+        else
+            SH_LOG_INFO("MoE I/O prefetch threads", "status", "partial");
     }
 #endif
 }
 
 void bn_moe_prefetch_destroy(BnMoEState *ms) {
-    if (!ms || !ms->prefetch) return;
+    if (!ms) return;
 #if !defined(__EMSCRIPTEN__)
-    moe_prefetch_free((BnMoEPrefetch *)ms->prefetch);
-    ms->prefetch = NULL;
+    if (ms->prefetch) {
+        moe_prefetch_free((BnMoEPrefetch *)ms->prefetch);
+        ms->prefetch = NULL;
+    }
+    if (ms->prefetch_down) {
+        moe_prefetch_free((BnMoEPrefetch *)ms->prefetch_down);
+        ms->prefetch_down = NULL;
+    }
 #endif
 }

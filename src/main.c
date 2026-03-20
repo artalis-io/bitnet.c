@@ -39,6 +39,8 @@ typedef struct {
     int no_prefill;
     int kv_f16;
     int force_pread;    // force pread for expert loading (bypass mmap)
+    int cache_mb;       // expert cache budget in MB (default 2048, 0 to disable)
+    int cache_mb_set;   // whether user explicitly set --cache-mb
     int threads;        // 0 = auto-detect
 } CLIArgs;
 
@@ -57,6 +59,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)\n");
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
+    fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 2048, 0 to disable)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
 }
 
@@ -89,6 +92,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.repeat_penalty = 1.1f;
     args.seed = 42;
     args.max_seq_len = 0;
+    args.cache_mb = 2048;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -123,6 +127,9 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.no_prefill = 1;
         } else if (strcmp(argv[i], "--pread") == 0) {
             args.force_pread = 1;
+        } else if (strcmp(argv[i], "--cache-mb") == 0 && i + 1 < argc) {
+            args.cache_mb = parse_int(argv[++i], "--cache-mb");
+            args.cache_mb_set = 1;
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             args.threads = parse_int(argv[++i], "-t");
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
@@ -281,6 +288,14 @@ int main(int argc, char **argv) {
 
         // Create I/O prefetch thread for pread pipeline
         bn_moe_prefetch_create(model.moe_state);
+
+        // Create expert LRU cache (pread only)
+        if (args.cache_mb > 0 && !model.moe_state->mmap_base && model.moe_state->fd >= 0) {
+            BnMoEExpertMap *em = &model.weights.layers[0].expert_map;
+            model.moe_state->cache = bn_moe_cache_create(
+                (size_t)args.cache_mb * 1024 * 1024,
+                em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes);
+        }
     }
 
     // Create thread pool
@@ -606,6 +621,10 @@ int main(int argc, char **argv) {
     }
 
     // Cleanup
+    if (model.moe_state && model.moe_state->cache) {
+        bn_moe_cache_free(model.moe_state->cache);
+        model.moe_state->cache = NULL;
+    }
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tokenizer);
     bn_model_free(&model);  // also unloads mmap'd file

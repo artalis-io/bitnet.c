@@ -18,6 +18,18 @@ void bn_moe_print_stats(const BnMoEState *ms, int n_tokens);
 // Reset accumulated stats (call between benchmark runs).
 void bn_moe_reset_stats(BnMoEState *ms);
 
+// Create expert LRU cache for pread pipeline (no-op on EMSCRIPTEN or mmap).
+// budget_bytes: total cache memory budget (0 to disable).
+// gate/up/down_bytes: per-expert projection sizes from expert_map.
+void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
+                           size_t up_bytes, size_t down_bytes);
+
+// Free expert cache. Safe to call with NULL.
+void bn_moe_cache_free(void *cache);
+
+// Print cache hit/miss stats.
+void bn_moe_cache_print_stats(const BnMoEState *ms);
+
 // Create I/O prefetch thread for pread pipeline (no-op on EMSCRIPTEN).
 // Call after ms->fd is set. Safe to call if mmap_base is set (returns immediately).
 void bn_moe_prefetch_create(BnMoEState *ms);
