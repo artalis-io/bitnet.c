@@ -212,6 +212,10 @@ typedef struct {
 void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                            const float *x, int8_t *x_q_buf, BnThreadPool *pool);
 
+// Get platform-optimal kernel for float-x quant types (K-quants, BF16, IQ*, Q4_1, Q8_K).
+// Returns NULL if the type requires int8 quantized x (I2_S, Q4_0, Q8_0, TQ1, TQ2).
+bn_tp_fn bn_quant_get_float_kernel(int type);
+
 // Quantize float vector to int8, returns scale = amax/127.
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n);

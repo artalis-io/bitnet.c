@@ -11,6 +11,12 @@
 #include <unistd.h>
 #endif
 
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#elif defined(__AVX2__)
+#include <immintrin.h>
+#endif
+
 // Backend-selected rmsnorm (same selection as transformer.c)
 #ifdef __ARM_NEON
 extern void bn_transformer_rmsnorm_neon(float *out, const float *x, const float *w, int size, float eps);
@@ -26,18 +32,68 @@ extern void bn_transformer_rmsnorm_scalar(float *out, const float *x, const floa
 #define moe_rmsnorm bn_transformer_rmsnorm_scalar
 #endif
 
-// Router: matvec -> softmax -> top-K selection
-void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
-                  int dim, int n_experts, int k) {
-    // Router matvec: router_logits = router_weight @ x
-    // router_weight is [n_experts, dim] stored row-major
-    for (int e = 0; e < n_experts; e++) {
+// --- Phase 4: Vectorized router ---
+
+typedef struct {
+    float *logits;
+    const float *router_w;
+    const float *x;
+    int dim;
+} BnRouterCtx;
+
+static void moe_router_range(void *ctx, int start, int end) {
+    BnRouterCtx *c = (BnRouterCtx *)ctx;
+    for (int e = start; e < end; e++) {
+        const float *row = c->router_w + (size_t)e * c->dim;
         float sum = 0.0f;
-        const float *row = router_w + (size_t)e * dim;
-        for (int d = 0; d < dim; d++)
-            sum += row[d] * x[d];
-        ms->router_logits[e] = sum;
+#ifdef __ARM_NEON
+        float32x4_t acc0 = vdupq_n_f32(0.0f);
+        float32x4_t acc1 = vdupq_n_f32(0.0f);
+        float32x4_t acc2 = vdupq_n_f32(0.0f);
+        float32x4_t acc3 = vdupq_n_f32(0.0f);
+        int d = 0;
+        for (; d + 15 < c->dim; d += 16) {
+            acc0 = vfmaq_f32(acc0, vld1q_f32(row + d),      vld1q_f32(c->x + d));
+            acc1 = vfmaq_f32(acc1, vld1q_f32(row + d + 4),  vld1q_f32(c->x + d + 4));
+            acc2 = vfmaq_f32(acc2, vld1q_f32(row + d + 8),  vld1q_f32(c->x + d + 8));
+            acc3 = vfmaq_f32(acc3, vld1q_f32(row + d + 12), vld1q_f32(c->x + d + 12));
+        }
+        acc0 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+        sum = vaddvq_f32(acc0);
+        for (; d < c->dim; d++)
+            sum += row[d] * c->x[d];
+#elif defined(__AVX2__)
+        __m256 a0 = _mm256_setzero_ps();
+        __m256 a1 = _mm256_setzero_ps();
+        int d = 0;
+        for (; d + 15 < c->dim; d += 16) {
+            a0 = _mm256_fmadd_ps(_mm256_loadu_ps(row + d),     _mm256_loadu_ps(c->x + d),     a0);
+            a1 = _mm256_fmadd_ps(_mm256_loadu_ps(row + d + 8), _mm256_loadu_ps(c->x + d + 8), a1);
+        }
+        a0 = _mm256_add_ps(a0, a1);
+        __m128 hi = _mm256_extractf128_ps(a0, 1);
+        __m128 lo = _mm256_castps256_ps128(a0);
+        lo = _mm_add_ps(lo, hi);
+        lo = _mm_hadd_ps(lo, lo);
+        lo = _mm_hadd_ps(lo, lo);
+        sum = _mm_cvtss_f32(lo);
+        for (; d < c->dim; d++)
+            sum += row[d] * c->x[d];
+#else
+        for (int d = 0; d < c->dim; d++)
+            sum += row[d] * c->x[d];
+#endif
+        c->logits[e] = sum;
     }
+}
+
+// Router: SIMD matvec -> softmax -> top-K selection
+void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
+                  int dim, int n_experts, int k, BnThreadPool *pool) {
+    // Router matvec: vectorized + thread-dispatched
+    BnRouterCtx rctx = { ms->router_logits, router_w, x, dim };
+    BnTPTask rtask = { moe_router_range, &rctx, n_experts };
+    bn_tp_dispatch(pool, &rtask, 1);
 
     // Softmax over all experts
     float max_val = ms->router_logits[0];
@@ -150,13 +206,37 @@ static BnQWeight moe_make_qweight(const void *data, int type, int rows, int cols
     return w;
 }
 
-// SwiGLU activation: hb = SiLU(gate) * up
+// --- Phase 3: SwiGLU range function for parallel dispatch ---
+
+typedef struct {
+    float *hb;
+    const float *gate;
+    const float *up;
+} BnSwiGLUCtx;
+
+static void moe_swiglu_range(void *ctx, int start, int end) {
+    BnSwiGLUCtx *c = (BnSwiGLUCtx *)ctx;
+    for (int i = start; i < end; i++) {
+        float g = c->gate[i];
+        c->hb[i] = (g / (1.0f + expf(-g))) * c->up[i];
+    }
+}
+
+// Scalar SwiGLU for pread path (single expert, no dispatch overhead)
 static void moe_swiglu(float *hb, const float *gate, const float *up, int n) {
     for (int i = 0; i < n; i++) {
         float g = gate[i];
         hb[i] = (g / (1.0f + expf(-g))) * up[i];
     }
 }
+
+// --- Phase 2: Cross-expert batched dispatch context ---
+// Layout-compatible with all float-x quant ctx types { out, W, x }
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+} BnFloatCtx;
 
 // Full MoE FFN block
 void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
@@ -171,70 +251,169 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
     // 1. RMSNorm input
     moe_rmsnorm(s->xb, s->x, lw->ffn_norm, dim, c->norm_eps);
 
-    // 2. Route: select top-K experts
+    // 2. Route: select top-K experts (SIMD + threaded)
     double t_route = bn_platform_time_ms();
-    bn_moe_route(ms, s->xb, lw->router_weight, dim, c->n_experts, K);
+    bn_moe_route(ms, s->xb, lw->router_weight, dim, c->n_experts, K, m->pool);
     ms->route_time_ms += bn_platform_time_ms() - t_route;
 
     // 3. Zero output accumulator
     memset(ms->expert_out, 0, dim * sizeof(float));
 
-    // 4. For each selected expert: load projections, compute SwiGLU FFN
+    // 4. Expert FFN compute
     double t_compute = bn_platform_time_ms();
-    for (int k = 0; k < K; k++) {
-        int eidx = ms->expert_indices[k];
-        float weight = ms->expert_weights[k];
-        if (eidx < 0) continue;
 
-        // Load gate + up projections and compute gate/up @ xb
-        if (ms->mmap_base) {
-            // mmap: both pointers valid simultaneously — batch dispatch
+    if (ms->mmap_base && K <= BN_MAX_MOE_K) {
+        // --- Cross-expert batched dispatch (mmap path) ---
+        // Collect all K gate+up projections, dispatch as 2K batch
+        int valid_k = 0;
+        int valid_indices[BN_MAX_MOE_K];
+        float valid_weights[BN_MAX_MOE_K];
+        BnQWeight wgates[BN_MAX_MOE_K], wups[BN_MAX_MOE_K];
+
+        for (int k = 0; k < K; k++) {
+            int eidx = ms->expert_indices[k];
+            if (eidx < 0) continue;
             const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
-            const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
+            const void *up_data   = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
             if (!gate_data || !up_data) {
                 SH_LOG_ERROR("Failed to load expert gate/up projection");
                 continue;
             }
-            BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
+            wgates[valid_k] = moe_make_qweight(gate_data, lw->expert_map.gate_type,
                                                 lw->expert_map.gate_rows, lw->expert_map.gate_cols);
-            BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
-                                              lw->expert_map.up_rows, lw->expert_map.up_cols);
-            BnMatvecTask gu[2] = {
-                { ms->expert_hb,  &wgate },
-                { ms->expert_hb2, &wup   },
-            };
-            bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
-        } else {
-            // pread: single buffer — load and compute sequentially
-            const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
-            if (!gate_data) { SH_LOG_ERROR("Failed to load expert gate"); continue; }
-            BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
-                                                lw->expert_map.gate_rows, lw->expert_map.gate_cols);
-            bn_quant_matvec(ms->expert_hb, &wgate, s->xb, s->x_q, m->pool);
-
-            const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
-            if (!up_data) { SH_LOG_ERROR("Failed to load expert up"); continue; }
-            BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
-                                              lw->expert_map.up_rows, lw->expert_map.up_cols);
-            bn_quant_matvec(ms->expert_hb2, &wup, s->xb, s->x_q, m->pool);
+            wups[valid_k]   = moe_make_qweight(up_data, lw->expert_map.up_type,
+                                                lw->expert_map.up_rows, lw->expert_map.up_cols);
+            valid_indices[valid_k] = eidx;
+            valid_weights[valid_k] = ms->expert_weights[k];
+            valid_k++;
         }
 
-        // SwiGLU activation
-        moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
+        if (valid_k > 0) {
+            // Dispatch all 2K gate+up matvecs in one batch
+            BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K];
+            for (int k = 0; k < valid_k; k++) {
+                gu_tasks[2*k]     = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k] };
+                gu_tasks[2*k + 1] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]   };
+            }
+            bn_quant_matvec_batch(gu_tasks, 2 * valid_k, s->xb, s->x_q, m->pool);
 
-        // Load down projection and compute down_proj @ hb -> xb2
-        const void *down_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 2);
-        if (!down_data) {
-            SH_LOG_ERROR("Failed to load expert down projection");
-            continue;
+            // Parallel SwiGLU across K experts
+            BnSwiGLUCtx swiglu_ctxs[BN_MAX_MOE_K];
+            BnTPTask swiglu_tasks[BN_MAX_MOE_K];
+            for (int k = 0; k < valid_k; k++) {
+                swiglu_ctxs[k] = (BnSwiGLUCtx){
+                    ms->expert_hb_batch[k],
+                    ms->expert_hb_batch[k],
+                    ms->expert_hb2_batch[k]
+                };
+                swiglu_tasks[k] = (BnTPTask){ moe_swiglu_range, &swiglu_ctxs[k], moe_hidden };
+            }
+            bn_tp_dispatch(m->pool, swiglu_tasks, valid_k);
+
+            // Down projections: each expert has different x, dispatch directly
+            BnQWeight wdowns[BN_MAX_MOE_K];
+            for (int k = 0; k < valid_k; k++) {
+                const void *down_data = moe_load_expert_proj(ms, &lw->expert_map, valid_indices[k], 2);
+                if (!down_data) {
+                    SH_LOG_ERROR("Failed to load expert down projection");
+                    valid_weights[k] = 0.0f;
+                    continue;
+                }
+                wdowns[k] = moe_make_qweight(down_data, lw->expert_map.down_type,
+                                              lw->expert_map.down_rows, lw->expert_map.down_cols);
+            }
+
+            // Try batched dispatch for down projections using per-expert ctx
+            bn_tp_fn down_kernel = bn_quant_get_float_kernel(lw->expert_map.down_type);
+            if (down_kernel) {
+                BnFloatCtx down_ctxs[BN_MAX_MOE_K];
+                BnTPTask down_tasks[BN_MAX_MOE_K];
+                int n_down = 0;
+                for (int k = 0; k < valid_k; k++) {
+                    if (valid_weights[k] == 0.0f) continue;
+                    down_ctxs[n_down] = (BnFloatCtx){
+                        ms->expert_down_batch[k],
+                        &wdowns[k],
+                        ms->expert_hb_batch[k]
+                    };
+                    down_tasks[n_down] = (BnTPTask){ down_kernel, &down_ctxs[n_down], wdowns[k].rows };
+                    n_down++;
+                }
+                if (n_down > 0)
+                    bn_tp_dispatch(m->pool, down_tasks, n_down);
+            } else {
+                // Fallback for int8-quantized down projections
+                for (int k = 0; k < valid_k; k++) {
+                    if (valid_weights[k] == 0.0f) continue;
+                    bn_quant_matvec(ms->expert_down_batch[k], &wdowns[k],
+                                    ms->expert_hb_batch[k], s->x_q, m->pool);
+                }
+            }
+
+            // Weighted accumulation
+            for (int k = 0; k < valid_k; k++) {
+                float w = valid_weights[k];
+                if (w == 0.0f) continue;
+                for (int d = 0; d < dim; d++)
+                    ms->expert_out[d] += w * ms->expert_down_batch[k][d];
+            }
         }
-        BnQWeight wdown = moe_make_qweight(down_data, lw->expert_map.down_type,
-                                            lw->expert_map.down_rows, lw->expert_map.down_cols);
-        bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
+    } else {
+        // --- Serial path (pread or K > BN_MAX_MOE_K fallback) ---
+        for (int k = 0; k < K; k++) {
+            int eidx = ms->expert_indices[k];
+            float weight = ms->expert_weights[k];
+            if (eidx < 0) continue;
 
-        // Weighted accumulation
-        for (int d = 0; d < dim; d++)
-            ms->expert_out[d] += weight * s->xb2[d];
+            if (ms->mmap_base) {
+                // mmap but K > BN_MAX_MOE_K: per-expert batch dispatch
+                const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
+                const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
+                if (!gate_data || !up_data) {
+                    SH_LOG_ERROR("Failed to load expert gate/up projection");
+                    continue;
+                }
+                BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
+                                                    lw->expert_map.gate_rows, lw->expert_map.gate_cols);
+                BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
+                                                  lw->expert_map.up_rows, lw->expert_map.up_cols);
+                BnMatvecTask gu[2] = {
+                    { ms->expert_hb,  &wgate },
+                    { ms->expert_hb2, &wup   },
+                };
+                bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
+            } else {
+                // pread: single buffer — load and compute sequentially
+                const void *gate_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 0);
+                if (!gate_data) { SH_LOG_ERROR("Failed to load expert gate"); continue; }
+                BnQWeight wgate = moe_make_qweight(gate_data, lw->expert_map.gate_type,
+                                                    lw->expert_map.gate_rows, lw->expert_map.gate_cols);
+                bn_quant_matvec(ms->expert_hb, &wgate, s->xb, s->x_q, m->pool);
+
+                const void *up_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 1);
+                if (!up_data) { SH_LOG_ERROR("Failed to load expert up"); continue; }
+                BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
+                                                  lw->expert_map.up_rows, lw->expert_map.up_cols);
+                bn_quant_matvec(ms->expert_hb2, &wup, s->xb, s->x_q, m->pool);
+            }
+
+            // SwiGLU activation
+            moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
+
+            // Load down projection and compute down_proj @ hb -> xb2
+            const void *down_data = moe_load_expert_proj(ms, &lw->expert_map, eidx, 2);
+            if (!down_data) {
+                SH_LOG_ERROR("Failed to load expert down projection");
+                continue;
+            }
+            BnQWeight wdown = moe_make_qweight(down_data, lw->expert_map.down_type,
+                                                lw->expert_map.down_rows, lw->expert_map.down_cols);
+            bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
+
+            // Weighted accumulation
+            for (int d = 0; d < dim; d++)
+                ms->expert_out[d] += weight * s->xb2[d];
+        }
     }
 
     // 5. Shared expert (if present, always resident)

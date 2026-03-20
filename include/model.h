@@ -17,6 +17,8 @@ typedef struct {
     int down_rows, down_cols;
 } BnMoEExpertMap;
 
+#define BN_MAX_MOE_K 16
+
 // Forward declaration for MoE runtime state (defined in moe.h)
 typedef struct {
     int fd;
@@ -29,6 +31,10 @@ typedef struct {
     float *expert_hb2;
     uint8_t *expert_buf;
     size_t expert_buf_size;
+    // Batch buffers for cross-expert dispatch (mmap path)
+    float *expert_hb_batch[BN_MAX_MOE_K];   // K gate outputs [moe_hidden]
+    float *expert_hb2_batch[BN_MAX_MOE_K];  // K up outputs [moe_hidden]
+    float *expert_down_batch[BN_MAX_MOE_K]; // K down outputs [dim]
     // I/O stats (accumulated across all tokens)
     size_t io_bytes;          // total bytes loaded from disk (pread) or touched (mmap)
     double io_time_ms;        // total time spent in expert loading

@@ -35,7 +35,7 @@ static void test_moe_route(void) {
     for (int e = 0; e < n_experts; e++)
         router_w[e * dim + 0] = (float)e;
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, NULL);
 
     // Top-3 should be experts 7, 6, 5 (highest logits)
     assert(ms.expert_indices[0] == 7);
@@ -143,7 +143,7 @@ static void test_route_uniform(void) {
     float x[2] = {1.0f, 0.0f};
     float router_w[8] = {1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f};
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, NULL);
 
     // All logits equal → after softmax all 0.25
     // Top-2 picks should still have normalized weights summing to 1.0

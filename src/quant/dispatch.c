@@ -4,6 +4,9 @@
 // Max VLA elements for stack-allocated scale arrays
 #define BN_MAX_SCALE_BLOCKS 8192
 
+// Max tasks in a single batch dispatch (supports MoE K=8 gate+up = 16)
+#define BN_MAX_BATCH 16
+
 // --- Quantized matrix-vector multiply ---
 // out[rows] = W[rows x cols] @ x[cols]
 
@@ -420,6 +423,80 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
     }
 }
 
+// --- Float-x kernel selection ---
+// Returns platform-optimal kernel for types that use float x (no int8 quantization).
+
+bn_tp_fn bn_quant_get_float_kernel(int type) {
+    switch (type) {
+#ifdef __ARM_NEON
+    case BN_GGUF_TENSOR_Q4_K:    return bn_quant_q4k_neon_range;
+    case BN_GGUF_TENSOR_Q5_K:    return bn_quant_q5k_neon_range;
+    case BN_GGUF_TENSOR_Q6_K:    return bn_quant_q6k_neon_range;
+    case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_neon_range;
+    case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_neon_range;
+    case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_neon_range;
+    case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_neon_range;
+    case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_neon_range;
+    case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_neon_range;
+    case BN_GGUF_TENSOR_IQ4_XS:  return bn_quant_iq4xs_neon_range;
+    case BN_GGUF_TENSOR_IQ3_XXS: return bn_quant_iq3xxs_neon_range;
+    case BN_GGUF_TENSOR_IQ3_S:   return bn_quant_iq3s_neon_range;
+    case BN_GGUF_TENSOR_IQ2_XXS: return bn_quant_iq2xxs_neon_range;
+    case BN_GGUF_TENSOR_IQ2_XS:  return bn_quant_iq2xs_neon_range;
+    case BN_GGUF_TENSOR_IQ2_S:   return bn_quant_iq2s_neon_range;
+#elif defined(__AVX2__)
+    case BN_GGUF_TENSOR_Q4_K:    return bn_quant_q4k_avx2_range;
+    case BN_GGUF_TENSOR_Q5_K:    return bn_quant_q5k_avx2_range;
+    case BN_GGUF_TENSOR_Q6_K:    return bn_quant_q6k_avx2_range;
+    case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_avx2_range;
+    case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_avx2_range;
+    case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_avx2_range;
+    case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_avx2_range;
+    case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_avx2_range;
+    case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_avx2_range;
+    case BN_GGUF_TENSOR_IQ4_XS:  return bn_quant_iq4xs_avx2_range;
+    case BN_GGUF_TENSOR_IQ3_XXS: return bn_quant_iq3xxs_avx2_range;
+    case BN_GGUF_TENSOR_IQ3_S:   return bn_quant_iq3s_avx2_range;
+    case BN_GGUF_TENSOR_IQ2_XXS: return bn_quant_iq2xxs_avx2_range;
+    case BN_GGUF_TENSOR_IQ2_XS:  return bn_quant_iq2xs_avx2_range;
+    case BN_GGUF_TENSOR_IQ2_S:   return bn_quant_iq2s_avx2_range;
+#elif defined(__wasm_simd128__)
+    case BN_GGUF_TENSOR_Q4_K:    return bn_quant_q4k_wasm_range;
+    case BN_GGUF_TENSOR_Q5_K:    return bn_quant_q5k_wasm_range;
+    case BN_GGUF_TENSOR_Q6_K:    return bn_quant_q6k_wasm_range;
+    case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_wasm_range;
+    case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_wasm_range;
+    case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_wasm_range;
+    case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_wasm_range;
+    case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_wasm_range;
+    case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_wasm_range;
+    case BN_GGUF_TENSOR_IQ4_XS:  return bn_quant_iq4xs_wasm_range;
+    case BN_GGUF_TENSOR_IQ3_XXS: return bn_quant_iq3xxs_wasm_range;
+    case BN_GGUF_TENSOR_IQ3_S:   return bn_quant_iq3s_wasm_range;
+    case BN_GGUF_TENSOR_IQ2_XXS: return bn_quant_iq2xxs_wasm_range;
+    case BN_GGUF_TENSOR_IQ2_XS:  return bn_quant_iq2xs_wasm_range;
+    case BN_GGUF_TENSOR_IQ2_S:   return bn_quant_iq2s_wasm_range;
+#else
+    case BN_GGUF_TENSOR_Q4_K:    return bn_quant_q4k_scalar_range;
+    case BN_GGUF_TENSOR_Q5_K:    return bn_quant_q5k_scalar_range;
+    case BN_GGUF_TENSOR_Q6_K:    return bn_quant_q6k_scalar_range;
+    case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_scalar_range;
+    case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_scalar_range;
+    case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_scalar_range;
+    case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_scalar_range;
+    case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_scalar_range;
+    case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_scalar_range;
+    case BN_GGUF_TENSOR_IQ4_XS:  return bn_quant_iq4xs_scalar_range;
+    case BN_GGUF_TENSOR_IQ3_XXS: return bn_quant_iq3xxs_scalar_range;
+    case BN_GGUF_TENSOR_IQ3_S:   return bn_quant_iq3s_scalar_range;
+    case BN_GGUF_TENSOR_IQ2_XXS: return bn_quant_iq2xxs_scalar_range;
+    case BN_GGUF_TENSOR_IQ2_XS:  return bn_quant_iq2xs_scalar_range;
+    case BN_GGUF_TENSOR_IQ2_S:   return bn_quant_iq2s_scalar_range;
+#endif
+    default: return NULL;
+    }
+}
+
 // --- Batch matvec ---
 // Runs multiple independent matvecs with a single dispatch.
 
@@ -658,6 +735,30 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     (void)x_q_buf;
     (void)cols;
 #endif
+
+    // Generic batch for float-x types (K-quants, BF16, IQ*, Q4_1, Q8_K).
+    // All share identical ctx layout { out, W, x } — no int8 quantization.
+    if (n_tasks <= BN_MAX_BATCH) {
+        int batch_type = tasks[0].W->type;
+        int all_same = 1;
+        for (int t = 1; t < n_tasks; t++) {
+            if (tasks[t].W->type != batch_type) { all_same = 0; break; }
+        }
+        if (all_same) {
+            bn_tp_fn kernel = bn_quant_get_float_kernel(batch_type);
+            if (kernel) {
+                // All float-x ctx types share { out, W, x } layout
+                BnQ4KCtx ctxs[BN_MAX_BATCH];
+                BnTPTask tp_tasks[BN_MAX_BATCH];
+                for (int t = 0; t < n_tasks; t++) {
+                    ctxs[t] = (BnQ4KCtx){ tasks[t].out, tasks[t].W, x };
+                    tp_tasks[t] = (BnTPTask){ kernel, &ctxs[t], tasks[t].W->rows };
+                }
+                bn_tp_dispatch(pool, tp_tasks, n_tasks);
+                return;
+            }
+        }
+    }
 
     // Fallback: use existing per-task matvec
     for (int t = 0; t < n_tasks; t++) {

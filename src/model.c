@@ -791,7 +791,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);      // expert_hb
         moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);      // expert_hb2
         moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf (pread)
-        moe_arena_bytes += 10 * SH_ARENA_ALIGN;                                   // alignment
+        // Batch buffers for cross-expert dispatch (mmap path)
+        int moe_k = c->n_experts_active;
+        if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
+        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float); // hb_batch
+        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float); // hb2_batch
+        moe_arena_bytes += (size_t)moe_k * c->dim * sizeof(float);                   // down_batch
+        moe_arena_bytes += (10 + 3 * moe_k) * SH_ARENA_ALIGN;                       // alignment
     }
 
     // Compute total arena capacity (all RunState buffers + INT8 embeddings + Q4 repacking)
@@ -878,6 +884,20 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
             SH_LOG_ERROR("Failed to allocate MoE buffers");
             goto fail_state;
         }
+
+        // Batch buffers for cross-expert dispatch
+        int moe_k = c->n_experts_active;
+        if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
+        for (int k = 0; k < moe_k; k++) {
+            ms->expert_hb_batch[k]   = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
+            ms->expert_hb2_batch[k]  = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
+            ms->expert_down_batch[k] = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+            if (!ms->expert_hb_batch[k] || !ms->expert_hb2_batch[k] || !ms->expert_down_batch[k]) {
+                SH_LOG_ERROR("Failed to allocate MoE batch buffers");
+                goto fail_state;
+            }
+        }
+
         m->moe_state = ms;
 
         {
