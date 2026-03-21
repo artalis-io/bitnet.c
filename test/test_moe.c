@@ -156,6 +156,13 @@ static void test_route_uniform(void) {
     printf("PASSED\n");
 }
 
+static void test_moe_cache(void) {
+    printf("test_moe_cache... ");
+    int result = bn_moe_cache_test();
+    assert(result == 0);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== MoE Unit Tests ===\n");
     test_moe_route();
@@ -163,6 +170,7 @@ int main(void) {
     test_moe_config_compat();
     test_swiglu();
     test_route_uniform();
+    test_moe_cache();
     printf("All MoE tests passed!\n");
     return 0;
 }

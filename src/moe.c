@@ -1255,3 +1255,72 @@ void bn_moe_prefetch_destroy(BnMoEState *ms) {
     }
 #endif
 }
+
+// --- Unit test for LRU cache internals ---
+int bn_moe_cache_test(void) {
+#if !defined(__EMSCRIPTEN__)
+    // Create a small cache: 4 slots, entry_bytes = 64
+    BnMoECache *c = (BnMoECache *)bn_moe_cache_create(4 * 64, 32, 16, 16);
+    if (!c) return -1;
+
+    // T1: Insert 4 entries (fills free list)
+    uint8_t *s0 = moe_cache_insert(c, 0, 10);
+    uint8_t *s1 = moe_cache_insert(c, 0, 20);
+    uint8_t *s2 = moe_cache_insert(c, 1, 10);
+    uint8_t *s3 = moe_cache_insert(c, 1, 20);
+    if (!s0 || !s1 || !s2 || !s3) { bn_moe_cache_free(c); return -1; }
+    // All 4 unique slab pointers
+    if (s0 == s1 || s0 == s2 || s0 == s3 || s1 == s2 || s1 == s3 || s2 == s3)
+        { bn_moe_cache_free(c); return -1; }
+
+    // T2: Lookup all 4 — should hit
+    if (!moe_cache_lookup(c, 0, 10)) { bn_moe_cache_free(c); return -1; }
+    if (!moe_cache_lookup(c, 0, 20)) { bn_moe_cache_free(c); return -1; }
+    if (!moe_cache_lookup(c, 1, 10)) { bn_moe_cache_free(c); return -1; }
+    if (!moe_cache_lookup(c, 1, 20)) { bn_moe_cache_free(c); return -1; }
+
+    // T3: Lookup non-existent — should miss
+    if (moe_cache_lookup(c, 2, 10)) { bn_moe_cache_free(c); return -1; }
+    if (moe_cache_lookup(c, 0, 30)) { bn_moe_cache_free(c); return -1; }
+
+    // T4: Insert 5th entry — should evict LRU tail
+    // LRU order after T2 lookups: MRU → (1,20) → (1,10) → (0,20) → (0,10) ← LRU
+    // So (0,10) should be evicted
+    moe_cache_insert(c, 2, 50);
+    if (moe_cache_lookup(c, 0, 10)) { bn_moe_cache_free(c); return -1; }  // evicted
+    if (!moe_cache_lookup(c, 2, 50)) { bn_moe_cache_free(c); return -1; } // present
+    if (!moe_cache_lookup(c, 0, 20)) { bn_moe_cache_free(c); return -1; } // still present
+
+    // T5: Promote (0,20) to MRU by looking it up, then insert 2 more to evict others
+    moe_cache_lookup(c, 0, 20);  // promote to MRU
+    moe_cache_insert(c, 3, 1);   // evicts LRU
+    moe_cache_insert(c, 3, 2);   // evicts next LRU
+    // (0,20) should survive (it was promoted to MRU)
+    if (!moe_cache_lookup(c, 0, 20)) { bn_moe_cache_free(c); return -1; }
+
+    // T6: Hash collision test — insert many entries with same layer
+    // (forces hash collisions and tests backshift deletion)
+    bn_moe_cache_free(c);
+    c = (BnMoECache *)bn_moe_cache_create(8 * 64, 32, 16, 16);
+    if (!c) return -1;
+    for (int i = 0; i < 8; i++)
+        moe_cache_insert(c, 0, i);
+    // All 8 should be present
+    for (int i = 0; i < 8; i++) {
+        if (!moe_cache_lookup(c, 0, i)) { bn_moe_cache_free(c); return -1; }
+    }
+    // Insert 9th — evicts LRU (expert 0, since lookups promoted 1-7)
+    moe_cache_insert(c, 1, 0);
+    if (moe_cache_lookup(c, 0, 0)) { bn_moe_cache_free(c); return -1; }   // evicted
+    if (!moe_cache_lookup(c, 1, 0)) { bn_moe_cache_free(c); return -1; }  // present
+    // Remaining 1-7 still present
+    for (int i = 1; i < 8; i++) {
+        if (!moe_cache_lookup(c, 0, i)) { bn_moe_cache_free(c); return -1; }
+    }
+
+    bn_moe_cache_free(c);
+    return 0;
+#else
+    return 0;  // no cache on EMSCRIPTEN
+#endif
+}

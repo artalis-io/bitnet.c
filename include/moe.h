@@ -37,4 +37,7 @@ void bn_moe_prefetch_create(BnMoEState *ms);
 // Destroy I/O prefetch thread. Safe to call if prefetch is NULL.
 void bn_moe_prefetch_destroy(BnMoEState *ms);
 
+// Unit test for LRU cache internals. Returns 0 on success, -1 on failure.
+int bn_moe_cache_test(void);
+
 #endif // BN_MOE_H
