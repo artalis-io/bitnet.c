@@ -16,7 +16,8 @@ Zero dependencies beyond libc and libm, four SIMD backends, compiles to WASM, an
 - **Flash GQA attention** — online softmax with KV-head grouping, single-pass over KV cache
 - **Optional F16 KV cache** — `--kv16` halves attention DRAM bandwidth with minimal precision loss
 - **4 SIMD backends** — ARM NEON/SDOT, AVX2, WASM SIMD128, scalar fallback (auto-selected at compile time)
-- **Pthread thread pool** — persistent workers with condvar dispatch (~2us)
+- **Mixture of Experts (MoE)** — sparse MoE with top-K routing, batched expert dispatch, 3 I/O modes (mmap, pread+LRU cache, madvise)
+- **Pthread thread pool** — persistent workers with atomic work-stealing dispatch
 - **BPE tokenizer** — loaded directly from GGUF metadata
 - **Sampling** — greedy (argmax), multinomial, and nucleus (top-p)
 - **Native mmap** — zero-copy model loading on macOS/Linux
@@ -111,6 +112,10 @@ Usage: ./bitnet <model.gguf> [options]
   --repeat-penalty <float>  Repetition penalty (default: 1.0, chat: 1.1)
   --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)
   --no-prefill    Disable batch prompt prefill (compute logits for every token)
+  --pread         Force pread for MoE expert loading (lower RSS than mmap)
+  --cache-mb <N>  Expert LRU cache budget in MB (default: 4096, 0 to disable)
+  --madvise       madvise-guided mmap for MoE (experimental)
+  -t <int>        Number of threads (default: auto-detect)
 ```
 
 ### Chat Mode
@@ -118,6 +123,25 @@ Usage: ./bitnet <model.gguf> [options]
 `--chat` enters an interactive REPL with multi-turn conversation support. KV cache is reused across turns so context accumulates naturally. Type `/quit` or Ctrl-D to exit.
 
 Chat mode defaults to `--temp 0.5 --topp 0.9 --repeat-penalty 1.1` for more natural conversation. Override with explicit flags.
+
+### MoE Expert I/O Modes
+
+For Mixture of Experts models (Qwen3-MoE, OLMoE, Mixtral), expert weights can be loaded in three modes:
+
+- **mmap** (default): Direct memory-mapped access. Full model in RAM. Fastest throughput with cross-expert batched dispatch.
+- **pread** (`--pread`): SSD streaming via pread syscalls with 2 prefetch threads and an LRU expert cache. Uses `--cache-mb` to control cache budget (default 4096 MB). Lower RSS at the cost of I/O latency.
+- **madvise** (`--madvise`): Mmap with `MADV_WILLNEED` prefetch hints per expert. Experimental — syscall overhead currently negates the benefit.
+
+```bash
+# Default: mmap (all experts in RAM)
+./bitnet models/Qwen3-30B-A3B-Q4_K_M.gguf -p "Hello" -n 64
+
+# Pread with 4GB expert cache (lower RSS)
+./bitnet models/Qwen3-30B-A3B-Q4_K_M.gguf -p "Hello" -n 64 --pread
+
+# Pread with custom cache size
+./bitnet models/Qwen3-30B-A3B-Q4_K_M.gguf -p "Hello" -n 64 --pread --cache-mb 2048
+```
 
 ## Getting a Model
 
