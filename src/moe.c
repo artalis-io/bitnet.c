@@ -899,16 +899,19 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                     ms->prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        if (pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) < 0)
+                        if (pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
                             SH_LOG_ERROR("Fallback gate pread failed");
-                        if (pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) < 0)
+                        if (pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
                             SH_LOG_ERROR("Fallback up pread failed");
                     }
                 } else {
-                    (void)pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off);
-                    (void)pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+                    if (pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
+                        SH_LOG_ERROR("Sync gate pread failed");
+                    if (pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
+                        SH_LOG_ERROR("Sync up pread failed");
                     if (!pf_dn)
-                        (void)pread(ms->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
+                        if (pread(ms->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off) != (ssize_t)miss_d_sz)
+                            SH_LOG_ERROR("Sync down pread failed");
                 }
                 gate_ptr = miss_g_dst;
                 up_ptr   = miss_u_dst;
@@ -939,15 +942,18 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                     ms->prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        if (pread(ms->fd, g_dst, g_sz, (off_t)g_off) < 0)
+                        if (pread(ms->fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
                             SH_LOG_ERROR("Fallback gate pread failed");
-                        if (pread(ms->fd, u_dst, u_sz, (off_t)u_off) < 0)
+                        if (pread(ms->fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
                             SH_LOG_ERROR("Fallback up pread failed");
                     }
                 } else {
-                    (void)pread(ms->fd, g_dst, g_sz, (off_t)g_off);
-                    (void)pread(ms->fd, u_dst, u_sz, (off_t)u_off);
-                    (void)pread(ms->fd, d_dst, d_sz, (off_t)d_off);
+                    if (pread(ms->fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
+                        SH_LOG_ERROR("Sync gate pread failed");
+                    if (pread(ms->fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
+                        SH_LOG_ERROR("Sync up pread failed");
+                    if (pread(ms->fd, d_dst, d_sz, (off_t)d_off) != (ssize_t)d_sz)
+                        SH_LOG_ERROR("Sync down pread failed");
                 }
 
                 gate_ptr = g_dst;
@@ -985,7 +991,8 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                 if (!ok) {
                     size_t d_off, d_sz;
                     moe_proj_info(map, eidx, 2, &d_off, &d_sz);
-                    pread(ms->fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off);
+                    if (pread(ms->fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off) != (ssize_t)d_sz)
+                        SH_LOG_ERROR("Fallback down pread failed");
                 }
             }
 

@@ -186,8 +186,8 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     pool->dispatching = 1;
 
     // Initialize atomic cursors (pool-internal storage)
-    int capped_tasks = n_tasks <= TP_MAX_TASKS ? n_tasks : TP_MAX_TASKS;
-    for (int t = 0; t < capped_tasks; t++)
+    assert(n_tasks <= TP_MAX_TASKS && "too many tasks for pool cursor array");
+    for (int t = 0; t < n_tasks; t++)
         atomic_store_explicit(&pool->cursors[t], 0, memory_order_relaxed);
 
     // Set up work and wake workers
