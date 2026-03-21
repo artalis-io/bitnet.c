@@ -1,6 +1,7 @@
 #include "moe.h"
 #include "platform.h"
 #include "quant.h"
+#include "simd_helpers.h"
 #include "sh_log.h"
 #include <stdio.h>
 #include <math.h>
@@ -606,15 +607,33 @@ typedef struct {
 
 static void moe_swiglu_range(void *ctx, int start, int end) {
     BnSwiGLUCtx *c = (BnSwiGLUCtx *)ctx;
-    for (int i = start; i < end; i++) {
+    int i = start;
+#ifdef __AVX2__
+    for (; i + 7 < end; i += 8) {
+        __m256 g = _mm256_loadu_ps(c->gate + i);
+        __m256 u = _mm256_loadu_ps(c->up + i);
+        _mm256_storeu_ps(c->hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+    }
+#endif
+    for (; i < end; i++) {
         float g = c->gate[i];
         c->hb[i] = (g / (1.0f + expf(-g))) * c->up[i];
     }
 }
 
-// Scalar SwiGLU for pread path (single expert, no dispatch overhead)
+// Vectorized SwiGLU for pread path (single expert, no dispatch overhead)
 static void moe_swiglu(float *hb, const float *gate, const float *up, int n) {
-    for (int i = 0; i < n; i++) {
+    int i = 0;
+#ifdef __AVX2__
+    for (; i + 7 < n; i += 8) {
+        __m256 g = _mm256_loadu_ps(gate + i);
+        __m256 u = _mm256_loadu_ps(up + i);
+        _mm256_storeu_ps(hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+    }
+#elif defined(__ARM_NEON)
+    // No fast_silu for NEON — use scalar (expf is the bottleneck either way)
+#endif
+    for (; i < n; i++) {
         float g = gate[i];
         hb[i] = (g / (1.0f + expf(-g))) * up[i];
     }

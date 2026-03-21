@@ -139,9 +139,13 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         BnQ6KCtx ctx = { out, W, x };
         BnTPTask task = { bn_quant_q6k_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
-        (void)x_q_buf;
-        BnQ6KCtx ctx = { out, W, x };
-        BnTPTask task = { bn_quant_q6k_avx2_range, &ctx, W->rows };
+        int n_sb_q6k = W->cols / BN_QK_K;
+        if (n_sb_q6k < 1 || n_sb_q6k > BN_MAX_SCALE_BLOCKS / 8) return;
+        float q6k_d[n_sb_q6k];
+        int16_t q6k_bsums[n_sb_q6k * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q6k_d, q6k_bsums, W->cols);
+        BnKQuantSdotCtx ctx = { out, W, x_q_buf, q6k_d, q6k_bsums };
+        BnTPTask task = { bn_quant_q6k_avx2_sdot_range, &ctx, W->rows };
 #elif defined(__wasm_simd128__)
         (void)x_q_buf;
         BnQ6KCtx ctx = { out, W, x };

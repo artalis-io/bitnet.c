@@ -184,6 +184,7 @@ void bn_quant_q8k_scalar_range(void *ctx, int start, int end);
 // Q4_K kernels
 void bn_quant_q4k_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_sdot_range(void *ctx, int start, int end);
+void bn_quant_q6k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_neon_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4k_wasm_range(void *ctx, int start, int end);
