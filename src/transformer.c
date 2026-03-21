@@ -951,16 +951,8 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
 
     BnConfig *c = &m->config;
 
-    // MoE models: batch MoE prefill has correctness issues (WIP).
-    // Fall back to sequential until batch MoE is debugged.
-    if (c->n_experts > 0) {
-        float *logits = NULL;
-        for (int i = 0; i < n_tokens; i++) {
-            logits = bn_transformer_forward(m, tokens[i], pos0 + i);
-            if (!logits) return NULL;
-        }
-        return logits;
-    }
+    // MoE models use batch MoE prefill (token-expert grouping + per-expert matmul)
+    // Falls through to the batched layer loop which calls bn_moe_forward_batch
     BnRunState *s = &m->state;
     int dim = c->dim;
     int head_size = c->head_size;
@@ -1144,14 +1136,20 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
                 }
 
                 // Store attention output for batch Wo
-                memcpy(Xb + (size_t)t * dim, s->xb, dim * sizeof(float));
+                // For wide-Q: GQA outputs q_dim elements; for classic: dim elements
+                int wo_cols = lw->wo.cols;
+                memcpy(Q_buf + (size_t)t * wo_cols, s->xb, wo_cols * sizeof(float));
             }
 
-            // Batch sub-norm + Wo matmul
-            if (lw->attn_sub_norm)
-                for (int t = 0; t < n_tokens; t++)
-                    rmsnorm(Xb + t * dim, Xb + t * dim, lw->attn_sub_norm, dim, c->norm_eps);
-            bn_quant_matmul(Xb2, &lw->wo, Xb, n_tokens, s->x_q, m->pool);
+            // Batch sub-norm + Wo matmul (use Q_buf as Wo input, correctly strided)
+            {
+                int wo_cols = lw->wo.cols;
+                if (lw->attn_sub_norm)
+                    for (int t = 0; t < n_tokens; t++)
+                        rmsnorm(Q_buf + (size_t)t * wo_cols, Q_buf + (size_t)t * wo_cols,
+                                lw->attn_sub_norm, wo_cols, c->norm_eps);
+                bn_quant_matmul(Xb2, &lw->wo, Q_buf, n_tokens, s->x_q, m->pool);
+            }
 
             // Batch residual add
             for (int t = 0; t < n_tokens; t++)
