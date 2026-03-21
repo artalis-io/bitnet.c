@@ -127,11 +127,11 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
 
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-        int n_blocks = W->cols / 32;
-        if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
-        float x_scales[n_blocks];
-        bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ6KSdotCtx ctx = { out, W, x_q_buf, x_scales };
+        int n_sb = W->cols / BN_QK_K;
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, W->cols);
+        BnQ6KSdotCtx ctx = { out, W, x_q_buf, q8k_d, q8k_bsums };
         BnTPTask task = { bn_quant_q6k_neon_sdot_range, &ctx, W->rows };
 #elif defined(__ARM_NEON)
         (void)x_q_buf;
@@ -631,16 +631,16 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     }
 
     if (all_q6k && n_tasks <= BN_MAX_BATCH) {
-        int n_blocks = cols / 32;
-        if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
-        float x_scales[n_blocks];
-        bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, cols);
+        int n_sb = cols / BN_QK_K;
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
 
         BnQ6KSdotCtx ctxs[BN_MAX_BATCH];
         BnTPTask tp_tasks[BN_MAX_BATCH];
 
         for (int t = 0; t < n_tasks; t++) {
-            ctxs[t] = (BnQ6KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            ctxs[t] = (BnQ6KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, q8k_d, q8k_bsums };
             tp_tasks[t] = (BnTPTask){ bn_quant_q6k_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
         }
 
