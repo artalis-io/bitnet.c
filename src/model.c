@@ -872,27 +872,27 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
             SH_LOG_ERROR("Failed to allocate MoE state");
             goto fail_state;
         }
-        ms->fd = -1;  // will be set from BnMappedFile.fd after model.file is assigned
+        ms->io.fd = -1;  // will be set from BnMappedFile.fd after model.file is assigned
         ms->router_logits  = (float *)sh_arena_calloc(m->arena, c->n_experts, sizeof(float));
         ms->expert_out     = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
         ms->expert_weights = (float *)sh_arena_calloc(m->arena, c->n_experts_active, sizeof(float));
         ms->expert_indices = (int *)sh_arena_calloc(m->arena, c->n_experts_active, sizeof(int));
         ms->expert_hb      = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
         ms->expert_hb2     = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
-        ms->expert_buf     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
-        ms->expert_buf_size = moe_expert_buf_size;
-        ms->expert_buf2     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
-        ms->expert_buf2_size = moe_expert_buf_size;
-        ms->expert_buf3     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
-        ms->expert_buf3_size = moe_expert_buf_size;
-        ms->expert_buf4     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
-        ms->expert_buf4_size = moe_expert_buf_size;
-        ms->prefetch = NULL;
+        ms->io.buf      = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf_size  = moe_expert_buf_size;
+        ms->io.buf2     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf2_size = moe_expert_buf_size;
+        ms->io.buf3     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf3_size = moe_expert_buf_size;
+        ms->io.buf4     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf4_size = moe_expert_buf_size;
+        ms->io.prefetch = NULL;
 
         if (!ms->router_logits || !ms->expert_out || !ms->expert_weights ||
             !ms->expert_indices || !ms->expert_hb || !ms->expert_hb2 ||
-            !ms->expert_buf || !ms->expert_buf2 ||
-            !ms->expert_buf3 || !ms->expert_buf4) {
+            !ms->io.buf || !ms->io.buf2 ||
+            !ms->io.buf3 || !ms->io.buf4) {
             SH_LOG_ERROR("Failed to allocate MoE buffers");
             goto fail_state;
         }

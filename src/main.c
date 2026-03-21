@@ -283,36 +283,40 @@ int main(int argc, char **argv) {
     // Set expert I/O for MoE: prefer mmap, fallback to pread
     if (model.moe_state) {
         if (!args.force_pread && mf.is_mmap == 1 && mf.data) {
-            model.moe_state->mmap_base = mf.data;
+            model.moe_state->io.mmap_base = mf.data;
         }
         if (mf.fd >= 0) {
-            model.moe_state->fd = mf.fd;
+            model.moe_state->io.fd = mf.fd;
             model.expert_fd = mf.fd;
         }
 
-        // madvise-guided mmap: suppress readahead, use WILLNEED/DONTNEED
-        if (args.force_madvise && model.moe_state->mmap_base) {
+        // madvise-guided mmap: use WILLNEED prefetch hints
+        if (args.force_madvise && args.force_pread) {
+            SH_LOG_WARN("--madvise and --pread are mutually exclusive, ignoring --madvise");
+        } else if (args.force_madvise && !model.moe_state->io.mmap_base) {
+            SH_LOG_WARN("--madvise requires mmap (file not mmap'd), falling back to pread");
+        } else if (args.force_madvise && model.moe_state->io.mmap_base) {
 #if !defined(__EMSCRIPTEN__)
             // Only suppress readahead — don't evict. Let page cache manage eviction.
-            model.moe_state->madvise_mode = 1;
+            model.moe_state->io.madvise_mode = 1;
             SH_LOG_INFO("Expert I/O mode", "mode", "madvise");
 #endif
         } else if (args.force_pread) {
             SH_LOG_INFO("Expert I/O mode", "mode", "pread (forced)");
-        } else if (model.moe_state->mmap_base) {
+        } else if (model.moe_state->io.mmap_base) {
             SH_LOG_INFO("Expert I/O mode", "mode", "mmap");
         }
 
         // Create I/O prefetch thread for pread pipeline (not needed for madvise)
-        if (!model.moe_state->madvise_mode)
+        if (!model.moe_state->io.madvise_mode)
             bn_moe_prefetch_create(model.moe_state);
 
         // Create expert LRU cache (pread only, not needed for madvise)
-        if (!model.moe_state->madvise_mode &&
-            args.cache_mb > 0 && !model.moe_state->mmap_base && model.moe_state->fd >= 0
+        if (!model.moe_state->io.madvise_mode &&
+            args.cache_mb > 0 && !model.moe_state->io.mmap_base && model.moe_state->io.fd >= 0
             && model.config.n_layers > 0) {
             BnMoEExpertMap *em = &model.weights.layers[0].expert_map;
-            model.moe_state->cache = bn_moe_cache_create(
+            model.moe_state->io.cache = bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,
                 em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes);
         }
@@ -641,9 +645,9 @@ int main(int argc, char **argv) {
     }
 
     // Cleanup
-    if (model.moe_state && model.moe_state->cache) {
-        bn_moe_cache_free(model.moe_state->cache);
-        model.moe_state->cache = NULL;
+    if (model.moe_state && model.moe_state->io.cache) {
+        bn_moe_cache_free(model.moe_state->io.cache);
+        model.moe_state->io.cache = NULL;
     }
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tokenizer);

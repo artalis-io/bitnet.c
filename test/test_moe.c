@@ -17,7 +17,7 @@ static void test_moe_route(void) {
 
     // Allocate MoE state manually
     BnMoEState ms = {0};
-    ms.fd = -1;
+    ms.io.fd = -1;
     float router_logits[8];
     float expert_weights[3];
     int expert_indices[3];
@@ -131,7 +131,7 @@ static void test_route_uniform(void) {
     int dim = 2;
 
     BnMoEState ms = {0};
-    ms.fd = -1;
+    ms.io.fd = -1;
     float router_logits[4];
     float expert_weights[2];
     int expert_indices[2];

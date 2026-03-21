@@ -20,34 +20,29 @@ typedef struct {
 #define BN_MAX_MOE_K 16
 
 // Forward declaration for MoE runtime state (defined in moe.h)
+// Expert I/O control plane (mmap, pread+LRU, or madvise)
 typedef struct {
     int fd;
     const uint8_t *mmap_base; // mmap'd file base pointer (NULL if using pread)
     int madvise_mode;         // 1 = madvise-guided mmap (WILLNEED/DONTNEED)
-    float *router_logits;
-    float *expert_out;
-    float *expert_weights;
-    int   *expert_indices;
-    float *expert_hb;
-    float *expert_hb2;
-    uint8_t *expert_buf;
-    size_t expert_buf_size;
-    uint8_t *expert_buf2;      // second buffer for pread double-buffering
-    size_t expert_buf2_size;
-    uint8_t *expert_buf3;      // prefetch gate buffer (pread pipeline)
-    size_t expert_buf3_size;
-    uint8_t *expert_buf4;      // prefetch up buffer (pread pipeline)
-    size_t expert_buf4_size;
-    uint8_t *expert_buf5;      // down buffer (pread pipeline)
-    size_t expert_buf5_size;
-    void *prefetch;            // BnMoEPrefetch* for gate+up (opaque, pread only)
-    void *prefetch_down;       // BnMoEPrefetch* for down proj (opaque, pread only)
-    void *cache;               // BnMoECache* for expert LRU cache (opaque, pread only)
-    // Batch buffers for cross-expert dispatch (mmap path)
-    float *expert_hb_batch[BN_MAX_MOE_K];   // K gate outputs [moe_hidden]
-    float *expert_hb2_batch[BN_MAX_MOE_K];  // K up outputs [moe_hidden]
-    float *expert_down_batch[BN_MAX_MOE_K]; // K down outputs [dim]
-    // I/O stats (accumulated across all tokens)
+    void *prefetch;           // BnMoEPrefetch* for gate+up (opaque, pread only)
+    void *prefetch_down;      // BnMoEPrefetch* for down proj (opaque, pread only)
+    void *cache;              // BnMoECache* for expert LRU cache (opaque, pread only)
+    // Pread staging buffers (arena-allocated)
+    uint8_t *buf;             // gate buffer
+    size_t buf_size;
+    uint8_t *buf2;            // up buffer / double-buffer
+    size_t buf2_size;
+    uint8_t *buf3;            // prefetch gate buffer
+    size_t buf3_size;
+    uint8_t *buf4;            // prefetch up buffer
+    size_t buf4_size;
+    uint8_t *buf5;            // down buffer
+    size_t buf5_size;
+} BnMoEIO;
+
+// Accumulated MoE timing and I/O stats
+typedef struct {
     size_t io_bytes;          // total bytes loaded from disk (pread) or touched (mmap)
     double io_time_ms;        // total time spent in expert loading (pread only)
     double route_time_ms;     // total time in routing (router matvec + top-K)
@@ -63,6 +58,23 @@ typedef struct {
     int    io_count;          // number of expert projections loaded
     size_t cache_hits;        // expert cache hits (pread only)
     size_t cache_misses;      // expert cache misses (pread only)
+} BnMoEStats;
+
+// MoE runtime state (compute buffers + I/O + stats)
+typedef struct {
+    BnMoEIO io;               // I/O control plane
+    BnMoEStats stats;         // accumulated timing stats
+    // Compute buffers (arena-allocated)
+    float *router_logits;
+    float *expert_out;
+    float *expert_weights;
+    int   *expert_indices;
+    float *expert_hb;
+    float *expert_hb2;
+    // Batch buffers for cross-expert dispatch (mmap path)
+    float *expert_hb_batch[BN_MAX_MOE_K];   // K gate outputs [moe_hidden]
+    float *expert_hb2_batch[BN_MAX_MOE_K];  // K up outputs [moe_hidden]
+    float *expert_down_batch[BN_MAX_MOE_K]; // K down outputs [dim]
 } BnMoEState;
 
 #define BN_DEFAULT_ROPE_THETA  10000.0f
