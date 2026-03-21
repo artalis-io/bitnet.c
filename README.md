@@ -115,6 +115,8 @@ Usage: ./bitnet <model.gguf> [options]
   --pread         Force pread for MoE expert loading (lower RSS than mmap)
   --cache-mb <N>  Expert LRU cache budget in MB (default: 4096, 0 to disable)
   --madvise       madvise-guided mmap for MoE (experimental)
+  --draft <path>  Draft model for speculative decoding (greedy, same tokenizer required)
+  --draft-k <int> Draft tokens per iteration (default: 5)
   -t <int>        Number of threads (default: auto-detect)
 ```
 

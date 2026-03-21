@@ -99,6 +99,10 @@ Q8_K x quantization (256-element super-blocks with bsums) enables integer accumu
 
 Persistent pthread pool with atomic work-stealing dispatch (`include/threadpool.h`). Adaptive chunk size (`n / (4 * n_threads)`, min 16) for load balancing. ~2us condvar dispatch latency.
 
+### Speculative Decoding
+
+Optional `--draft <model.gguf>` flag loads a small draft model to generate K candidate tokens (default K=5 via `--draft-k`), then verifies with the target model. Greedy only (temp=0). Draft and target must share the same tokenizer (same vocab_size). Two `BnModel` instances coexist with shared thread pool, separate arenas/KV caches. No KV cache rollback needed (attention window bounded by pos). Best with dense targets + same-family small draft; MoE targets verify sequentially (no batch speedup yet).
+
 ## Testing
 
 Tests use assert-based checks with synthetic data — no real model files needed for unit tests. Each test file is self-contained and can be compiled independently with its module dependencies.

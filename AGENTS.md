@@ -16,7 +16,7 @@ docs/      — documentation and roadmap
 
 Modules have strict, one-directional dependencies. When modifying a module, only its own files and downstream consumers should be affected. Never introduce circular dependencies.
 
-**Dependency order**: platform → gguf → quant → model → tokenizer → transformer → sampler → main
+**Dependency order**: platform → gguf → quant → model → tokenizer → moe → transformer → sampler → threadpool → main
 
 ## Agent Workflow
 
@@ -63,10 +63,24 @@ Modules have strict, one-directional dependencies. When modifying a module, only
 
 ## Performance Considerations
 
-- Current implementation is Phase 1 (naive, correct). Optimization comes later.
-- `ternary_matvec` is the hot path — dequantizes then dots. Future: fused SIMD kernels.
-- Embedding logits use tied weights — recomputed each forward pass from F16 embedding table.
-- KV cache is pre-allocated for max sequence length.
+- 4 SIMD backends: NEON SDOT, AVX2, WASM SIMD128, scalar fallback (auto-selected at compile time)
+- Q8_K x quantization for Q4_K/Q6_K: integer accumulation, unsigned nibbles, bsums correction
+- MoE expert LRU cache with open-addressing hash + intrusive LRU list (pread mode)
+- Atomic work-stealing thread dispatch for load balancing
+- Batch prefill with fused Q4_K matmul kernel (dense models)
+- KV cache pre-allocated for max sequence length
+
+## CLI Flags (key ones for agents)
+
+- `--pread` — force pread for MoE expert loading (lower RSS)
+- `--cache-mb N` — expert LRU cache budget in MB (default 4096, pread only)
+- `--madvise` — madvise-guided mmap (experimental)
+- `--draft <path>` — draft model for speculative decoding (greedy, same tokenizer)
+- `--draft-k N` — draft tokens per iteration (default 5)
+- `--flash` — flash attention (online softmax)
+- `--kv16` — FP16 KV cache
+- `--no-prefill` — disable batch prefill
+- `-t N` — thread count
 
 ## WASM Specifics
 
