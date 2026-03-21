@@ -103,6 +103,17 @@ typedef BnKQuantSdotCtx BnQ6KSdotCtx;  // backward compat
 
 typedef BnKQuantSdotCtx BnQ4KSdotCtx;  // backward compat
 
+// K-quant matmul context (fused: weight loaded once for all tokens)
+typedef struct {
+    float *out;                // [n_tokens * W->rows]
+    const BnQWeight *W;
+    const int8_t *x_q;        // [n_tokens * cols]
+    const float *x_d;         // [n_tokens * n_bpr] (one per token per super-block)
+    const int16_t *x_bsums;   // [n_tokens * n_bpr * 16]
+    int n_tokens;
+    int cols;                  // cached W->cols for stride computation
+} BnKQuantMatmulCtx;
+
 // Generic float-x context: { out, W, x } — shared by all float-input kernels.
 // All K-quant, IQ, BF16, and Q4_1 float-x kernels use this identical layout.
 typedef struct {
@@ -183,6 +194,7 @@ void bn_quant_q8k_scalar_range(void *ctx, int start, int end);
 
 // Q4_K kernels
 void bn_quant_q4k_neon_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end);
 void bn_quant_q4k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_neon_range(void *ctx, int start, int end);
