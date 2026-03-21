@@ -222,6 +222,8 @@ float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n);
 
 // Quantize float vector to per-block Q8_0: 32-element blocks with per-block scales.
 void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n);
+void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
+                         int16_t *x_bsums, int n);
 
 #if !defined(__wasm_relaxed_simd__)
 // Quantize F16 rows to INT8 + per-row scales for INT8 logits kernel.

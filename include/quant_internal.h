@@ -111,13 +111,13 @@ typedef struct {
     const float *x;
 } BnQ4KCtx;
 
-// Q4_K SDOT context
+// Q4_K SDOT context (Q8_K x quantization: 256-element super-blocks)
 typedef struct {
     float *out;
     const BnQWeight *W;
     const int8_t *x_q;
-    const float *x_scales;
-    const float *x_sums;   // sum of x_q per 32-element block
+    const float *x_d;          // one scale per 256-element super-block
+    const int16_t *x_bsums;   // sum per 16-element group (16 per super-block)
 } BnQ4KSdotCtx;
 
 // Q5_K context
