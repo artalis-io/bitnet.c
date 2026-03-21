@@ -60,7 +60,7 @@ else
     src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_scalar.c \
     src/quant/q8k_avx2.c src/quant/q8k_scalar.c \
-    src/quant/q4k_avx2.c src/quant/q4k_scalar.c \
+    src/quant/q4k_avx2.c src/quant/q4k_avx2_sdot.c src/quant/q4k_scalar.c \
     src/quant/q5k_avx2.c src/quant/q5k_scalar.c \
     src/quant/q3k_avx2.c src/quant/q3k_scalar.c \
     src/quant/q2k_avx2.c src/quant/q2k_scalar.c \
@@ -238,7 +238,7 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
     src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_scalar.c \
     src/quant/q8k_avx2.c src/quant/q8k_scalar.c \
-    src/quant/q4k_avx2.c src/quant/q4k_scalar.c \
+    src/quant/q4k_avx2.c src/quant/q4k_avx2_sdot.c src/quant/q4k_scalar.c \
     src/quant/q5k_avx2.c src/quant/q5k_scalar.c \
     src/quant/q3k_avx2.c src/quant/q3k_scalar.c \
     src/quant/q2k_avx2.c src/quant/q2k_scalar.c \

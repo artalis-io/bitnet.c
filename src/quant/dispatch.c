@@ -185,9 +185,13 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         BnQ4KCtx ctx = { out, W, x };
         BnTPTask task = { bn_quant_q4k_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
-        (void)x_q_buf;
-        BnQ4KCtx ctx = { out, W, x };
-        BnTPTask task = { bn_quant_q4k_avx2_range, &ctx, W->rows };
+        int n_sb_q4k = W->cols / BN_QK_K;
+        if (n_sb_q4k < 1 || n_sb_q4k > BN_MAX_SCALE_BLOCKS / 8) return;
+        float q4k_d[n_sb_q4k];
+        int16_t q4k_bsums[n_sb_q4k * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q4k_d, q4k_bsums, W->cols);
+        BnKQuantSdotCtx ctx = { out, W, x_q_buf, q4k_d, q4k_bsums };
+        BnTPTask task = { bn_quant_q4k_avx2_sdot_range, &ctx, W->rows };
 #elif defined(__wasm_simd128__)
         (void)x_q_buf;
         BnQ4KCtx ctx = { out, W, x };
@@ -406,6 +410,10 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         (void)x_q_buf;
         BnTQ2Ctx ctx = { out, W, x };
         BnTPTask task = { bn_quant_tq2_neon_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        (void)x_q_buf;
+        BnTQ2Ctx ctx = { out, W, x };
+        BnTPTask task = { bn_quant_tq2_wasm_range, &ctx, W->rows };
 #else
         (void)x_q_buf;
         BnTQ2Ctx ctx = { out, W, x };
@@ -431,6 +439,11 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         float x_scale = bn_quant_x_to_i8(x, x_q_buf, W->cols);
         BnTQ1SdotCtx ctx = { out, W, x_q_buf, W->scale * x_scale };
         BnTPTask task = { bn_quant_tq1_avx2_range, &ctx, W->rows };
+        bn_tp_dispatch(pool, &task, 1);
+#elif defined(__wasm_simd128__)
+        (void)x_q_buf;
+        BnTQ1Ctx ctx = { out, W, x };
+        BnTPTask task = { bn_quant_tq1_wasm_range, &ctx, W->rows };
         bn_tp_dispatch(pool, &task, 1);
 #else
         (void)x_q_buf;

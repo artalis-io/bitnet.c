@@ -39,8 +39,3 @@ void bn_quant_q8_wasm_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum;
     }
 }
-
-// Stub for WASM SDOT (declared but Q8 doesn't use separate SDOT dispatch)
-void bn_quant_q8_wasm_sdot_range(void *ctx, int row_start, int row_end) {
-    (void)ctx; (void)row_start; (void)row_end;
-}

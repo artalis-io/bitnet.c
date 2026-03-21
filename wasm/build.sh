@@ -14,7 +14,9 @@ emcc \
     "$PROJECT_DIR/src/quant/x_quant_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_scalar.c" \
+    "$PROJECT_DIR/src/quant/tq2_wasm.c" \
     "$PROJECT_DIR/src/quant/tq2_scalar.c" \
+    "$PROJECT_DIR/src/quant/tq1_wasm.c" \
     "$PROJECT_DIR/src/quant/tq1_scalar.c" \
     "$PROJECT_DIR/src/quant/q8_wasm.c" \
     "$PROJECT_DIR/src/quant/q8_scalar.c" \
