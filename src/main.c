@@ -46,6 +46,8 @@ typedef struct {
     int cache_mb;       // expert cache budget in MB (default 2048, 0 to disable)
     int cache_mb_set;   // whether user explicitly set --cache-mb
     int force_madvise;  // madvise-guided mmap for low-RSS expert streaming
+    const char *draft_path; // --draft <model.gguf> for speculative decoding
+    int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
 } CLIArgs;
 
@@ -66,6 +68,8 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
     fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
+    fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
+    fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
 }
 
@@ -99,6 +103,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.seed = 42;
     args.max_seq_len = 0;
     args.cache_mb = 4096;
+    args.draft_k = 5;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -135,6 +140,10 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.force_pread = 1;
         } else if (strcmp(argv[i], "--madvise") == 0) {
             args.force_madvise = 1;
+        } else if (strcmp(argv[i], "--draft") == 0 && i + 1 < argc) {
+            args.draft_path = argv[++i];
+        } else if (strcmp(argv[i], "--draft-k") == 0 && i + 1 < argc) {
+            args.draft_k = parse_int(argv[++i], "--draft-k");
         } else if (strcmp(argv[i], "--cache-mb") == 0 && i + 1 < argc) {
             args.cache_mb = parse_int(argv[++i], "--cache-mb");
             args.cache_mb_set = 1;
@@ -204,6 +213,137 @@ static int generate_response(BnModel *model, BnTokenizer *tok, BnSampler *sample
         if (!logits) return -2;
     }
 
+    return gen_count;
+}
+
+// Speculative decoding: draft K tokens with small model, verify with target.
+// Greedy only (temperature=0). Returns n_generated, -1 on loop, -2 on error.
+static int generate_response_speculative(
+    BnModel *target, BnModel *draft, int draft_k,
+    BnTokenizer *tok, BnSampler *sampler,
+    int max_tokens, int *pos,
+    bn_token_callback cb, void *user_data)
+{
+    int gen_count = 0;
+    int draft_tokens[20];  // max draft_k = 20
+    if (draft_k > 20) draft_k = 20;
+    int n_accepted_total = 0, n_drafted_total = 0;
+
+    // Both models should have logits ready from the last prompt token
+    float *target_logits = target->state.logits;
+    float *draft_logits = draft->state.logits;
+    if (!target_logits || !draft_logits) return -2;
+
+    while (gen_count < max_tokens) {
+        // --- Draft phase: generate K tokens with draft model ---
+        int k_actual = 0;
+        for (int i = 0; i < draft_k && gen_count + i < max_tokens; i++) {
+            int d = bn_sampler_sample(sampler, draft_logits);  // greedy argmax
+            if (d == tok->eot_id || d == tok->eos_id || d == tok->im_end_id)
+                break;
+            draft_tokens[k_actual++] = d;
+            draft_logits = bn_transformer_forward(draft, d, *pos + k_actual - 1);
+            if (!draft_logits) return -2;
+        }
+
+        if (k_actual == 0) {
+            // Draft immediately hit EOS — sample from target instead
+            int t = bn_sampler_sample(sampler, target_logits);
+            if (t == tok->eot_id || t == tok->eos_id || t == tok->im_end_id)
+                break;
+            bn_sampler_accept(sampler, t);
+            const char *piece = bn_tokenizer_decode(tok, t);
+            if (piece && cb && cb(piece, t, user_data)) break;
+            target_logits = bn_transformer_forward(target, t, *pos);
+            draft_logits = bn_transformer_forward(draft, t, *pos);
+            (*pos)++;
+            gen_count++;
+            if (!target_logits || !draft_logits) return -2;
+            continue;
+        }
+
+        n_drafted_total += k_actual;
+
+        // --- Verify phase: run draft tokens through target one at a time ---
+        // (Sequential verify — each forward fills KV cache at the right position)
+        int n_accepted = 0;
+        int corrected = -1;
+        for (int i = 0; i < k_actual; i++) {
+            int t_i = bn_sampler_sample(sampler, target_logits);  // target's greedy choice
+            if (t_i == draft_tokens[i]) {
+                // Match — accept
+                n_accepted++;
+                target_logits = bn_transformer_forward(target, draft_tokens[i], *pos + i);
+                if (!target_logits) return -2;
+            } else {
+                // Mismatch — use target's token as correction
+                corrected = t_i;
+                // Run corrected token through target to advance its KV cache
+                target_logits = bn_transformer_forward(target, t_i, *pos + i);
+                if (!target_logits) return -2;
+                break;
+            }
+        }
+
+        // Stream accepted draft tokens
+        for (int i = 0; i < n_accepted; i++) {
+            bn_sampler_accept(sampler, draft_tokens[i]);
+            const char *piece = bn_tokenizer_decode(tok, draft_tokens[i]);
+            if (piece && cb && cb(piece, draft_tokens[i], user_data)) goto done;
+            gen_count++;
+        }
+
+        if (corrected >= 0) {
+            // Stream the corrected token
+            if (corrected != tok->eot_id && corrected != tok->eos_id &&
+                corrected != tok->im_end_id) {
+                bn_sampler_accept(sampler, corrected);
+                const char *piece = bn_tokenizer_decode(tok, corrected);
+                if (piece && cb && cb(piece, corrected, user_data)) goto done;
+                gen_count++;
+            } else {
+                // Target says stop
+                *pos += n_accepted;
+                break;
+            }
+            *pos += n_accepted + 1;
+
+            // Re-sync draft model: run accepted tokens + corrected through draft
+            // Draft KV cache is stale beyond the draft point. Re-run from where we diverged.
+            // The draft ran draft_tokens[0..k_actual-1]. We accepted [0..n_accepted-1] and
+            // replaced [n_accepted] with corrected. Feed corrected through draft.
+            draft_logits = bn_transformer_forward(draft, corrected, *pos - 1);
+            if (!draft_logits) return -2;
+        } else {
+            // All K accepted — bonus token from target's last logits
+            *pos += n_accepted;
+            int bonus = bn_sampler_sample(sampler, target_logits);
+            if (bonus != tok->eot_id && bonus != tok->eos_id &&
+                bonus != tok->im_end_id) {
+                bn_sampler_accept(sampler, bonus);
+                const char *piece = bn_tokenizer_decode(tok, bonus);
+                if (piece && cb && cb(piece, bonus, user_data)) goto done;
+                gen_count++;
+                target_logits = bn_transformer_forward(target, bonus, *pos);
+                draft_logits = bn_transformer_forward(draft, bonus, *pos);
+                (*pos)++;
+                if (!target_logits || !draft_logits) return -2;
+            } else {
+                break;  // target says stop
+            }
+        }
+
+        n_accepted_total += n_accepted + (corrected >= 0 ? 1 : 1); // +1 for corrected or bonus
+    }
+
+done:
+    if (n_drafted_total > 0) {
+        char acc_s[32], rate_s[32];
+        snprintf(acc_s, sizeof(acc_s), "%d/%d", n_accepted_total, n_drafted_total);
+        snprintf(rate_s, sizeof(rate_s), "%.1f%%",
+                 100.0 * n_accepted_total / n_drafted_total);
+        SH_LOG_INFO("Speculative decoding", "accepted", acc_s, "rate", rate_s);
+    }
     return gen_count;
 }
 
@@ -374,6 +514,70 @@ int main(int argc, char **argv) {
     }
     if (args.repeat_penalty > 1.0f)
         bn_sampler_set_repeat_penalty(&sampler, args.repeat_penalty, 64);
+
+    // Load draft model for speculative decoding
+    BnModel draft_model = {0};
+    BnGGUFFile *draft_gf = NULL;
+    BnMappedFile draft_mf = {0};
+    int has_draft = 0;
+    if (args.draft_path) {
+        SH_LOG_INFO("Loading draft model", "path", args.draft_path);
+        draft_mf = bn_platform_load_file(args.draft_path);
+        if (!draft_mf.data) {
+            SH_LOG_ERROR("Failed to load draft model file");
+            bn_sampler_free(&sampler);
+            bn_tokenizer_free(&tokenizer);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        draft_gf = bn_gguf_open(draft_mf.data, draft_mf.size);
+        if (!draft_gf) {
+            SH_LOG_ERROR("Failed to parse draft GGUF");
+            bn_platform_unload_file(&draft_mf);
+            bn_sampler_free(&sampler);
+            bn_tokenizer_free(&tokenizer);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        if (bn_model_load(&draft_model, draft_gf, args.max_seq_len, args.kv_f16) != 0) {
+            SH_LOG_ERROR("Failed to load draft model");
+            bn_gguf_free(draft_gf);
+            bn_platform_unload_file(&draft_mf);
+            bn_sampler_free(&sampler);
+            bn_tokenizer_free(&tokenizer);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        draft_model.file = draft_mf;
+        draft_model.config.flash_attn = args.flash_attn;
+        // Share thread pool (never run concurrently)
+        draft_model.pool = model.pool;
+
+        // Validate vocab compatibility
+        if (draft_model.config.vocab_size != cfg->vocab_size) {
+            SH_LOG_ERROR("Draft model vocab size mismatch");
+            draft_model.pool = NULL;  // don't double-free pool
+            bn_model_free(&draft_model);
+            bn_gguf_free(draft_gf);
+            bn_sampler_free(&sampler);
+            bn_tokenizer_free(&tokenizer);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+
+        has_draft = 1;
+        {
+            char dd[16], dl[16];
+            snprintf(dd, sizeof(dd), "%d", draft_model.config.dim);
+            snprintf(dl, sizeof(dl), "%d", draft_model.config.n_layers);
+            SH_LOG_INFO("Draft model loaded", "dim", dd, "layers", dl,
+                         "draft_k", args.draft_k > 9 ? "10+" : "5");
+        }
+    }
 
     if (args.chat) {
         // --- Chat REPL mode ---
@@ -553,6 +757,15 @@ int main(int argc, char **argv) {
             }
             pos = n_prompt;
         }
+        // Also prefill draft model if speculative decoding
+        if (has_draft && logits) {
+            if (!args.no_prefill && n_prompt > 1) {
+                bn_transformer_prefill(&draft_model, prompt_tokens, n_prompt, 0);
+            } else {
+                for (int i = 0; i < n_prompt; i++)
+                    bn_transformer_forward(&draft_model, prompt_tokens[i], i);
+            }
+        }
 
         if (!logits) {
             SH_LOG_ERROR("Forward pass returned NULL during prompt");
@@ -576,7 +789,15 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "  token %6d: %.4f\n", top[k], logits[top[k]]);
             }
 #endif
-            // Generate tokens
+            // Generate tokens — speculative or standard
+            if (has_draft) {
+                n_generated = generate_response_speculative(
+                    &model, &draft_model, args.draft_k,
+                    &tokenizer, &sampler, args.n_tokens, &pos,
+                    print_token, NULL);
+                if (n_generated < 0)
+                    SH_LOG_ERROR("Speculative generation failed");
+            } else
             for (int i = 0; i < args.n_tokens; i++) {
                 int next = bn_sampler_sample(&sampler, logits);
                 n_generated++;
@@ -645,6 +866,11 @@ int main(int argc, char **argv) {
     }
 
     // Cleanup
+    if (has_draft) {
+        draft_model.pool = NULL;  // shared, don't double-free
+        bn_model_free(&draft_model);
+        bn_gguf_free(draft_gf);
+    }
     if (model.moe_state && model.moe_state->io.cache) {
         bn_moe_cache_free(model.moe_state->io.cache);
         model.moe_state->io.cache = NULL;
