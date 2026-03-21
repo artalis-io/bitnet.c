@@ -212,6 +212,12 @@ typedef struct {
 void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                            const float *x, int8_t *x_q_buf, BnThreadPool *pool);
 
+// Matrix-matrix multiply: Out[n_tokens][rows] = W[rows][cols] @ X[n_tokens][cols]^T
+// Processes n_tokens input vectors against the same weight matrix.
+// out must be [n_tokens * W->rows] floats, X is [n_tokens * W->cols] floats.
+void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
+                     int n_tokens, int8_t *x_q_buf, BnThreadPool *pool);
+
 // Get platform-optimal kernel for float-x quant types (K-quants, BF16, IQ*, Q4_1, Q8_K).
 // Returns NULL if the type requires int8 quantized x (I2_S, Q4_0, Q8_0, TQ1, TQ2).
 bn_tp_fn bn_quant_get_float_kernel(int type);

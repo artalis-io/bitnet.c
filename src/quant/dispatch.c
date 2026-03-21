@@ -1,5 +1,7 @@
 #include "quant_internal.h"
 #include "threadpool.h"
+#include <stdlib.h>
+#include <string.h>
 
 // Max VLA elements for stack-allocated scale arrays
 #define BN_MAX_SCALE_BLOCKS 8192
@@ -842,5 +844,57 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     // Fallback: use existing per-task matvec
     for (int t = 0; t < n_tasks; t++) {
         bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
+    }
+}
+
+// Matrix-matrix multiply: process n_tokens input vectors against same weight matrix.
+// Uses fused kernel for Q4_K (loads weights once, dots all tokens).
+// Falls back to loop-over-matvec for other types.
+void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
+                     int n_tokens, int8_t *x_q_buf, BnThreadPool *pool) {
+    int rows = W->rows;
+    int cols = W->cols;
+
+    if (n_tokens <= 1) {
+        bn_quant_matvec(out, W, X, x_q_buf, pool);
+        return;
+    }
+
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    if (W->type == BN_GGUF_TENSOR_Q4_K) {
+        int n_bpr = cols / BN_QK_K;
+        if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;
+        // Quantize all tokens to Q8_K
+        size_t xq_size = (size_t)n_tokens * cols;
+        int8_t *xq_all = (int8_t *)malloc(xq_size);
+        float *xd_all = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+        int16_t *xbs_all = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+        if (!xq_all || !xd_all || !xbs_all) {
+            free(xq_all); free(xd_all); free(xbs_all);
+            goto fallback_loop;
+        }
+        for (int t = 0; t < n_tokens; t++)
+            bn_quant_x_to_q8k(X + (size_t)t * cols,
+                               xq_all + (size_t)t * cols,
+                               xd_all + (size_t)t * n_bpr,
+                               xbs_all + (size_t)t * n_bpr * 16, cols);
+
+        // Zero output (kernel uses +=)
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+
+        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnTPTask task = { bn_quant_q4k_neon_sdot_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+
+        free(xq_all); free(xd_all); free(xbs_all);
+        return;
+    }
+#endif
+
+fallback_loop:
+    // Generic fallback: loop over tokens
+    for (int t = 0; t < n_tokens; t++) {
+        bn_quant_matvec(out + (size_t)t * rows, W, X + (size_t)t * cols,
+                        x_q_buf, pool);
     }
 }

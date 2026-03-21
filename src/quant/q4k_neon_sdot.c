@@ -93,3 +93,84 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum;
     }
 }
+
+// Fused Q4_K matmul: load weight block once, dot against all n_tokens x vectors.
+// out[t * rows + row] = sum(W[row] * X[t])
+void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
+    BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
+    int cols = c->cols;
+    int rows = c->W->rows;
+    int n_bpr = cols / BN_QK_K;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ4K *blocks = (const BnBlockQ4K *)c->W->data;
+
+    const uint8x16_t mask_lo = vdupq_n_u8(0xF);
+    const int32x4_t zero = vdupq_n_s32(0);
+
+    const uint32_t kmask1 = 0x3f3f3f3f;
+    const uint32_t kmask2 = 0x0f0f0f0f;
+    const uint32_t kmask3 = 0x03030303;
+
+    for (int row = row_start; row < row_end; row++) {
+        for (int b = 0; b < n_bpr; b++) {
+            // Load weight block ONCE for all tokens
+            const BnBlockQ4K *blk = &blocks[(size_t)row * n_bpr + b];
+            __builtin_prefetch(blk + 1, 0, 0);
+            float d    = bn_fp16_to_fp32(blk->d);
+            float dmin = bn_fp16_to_fp32(blk->dmin);
+            const uint8_t *qs = blk->qs;
+
+            // Decode scales and mins once
+            uint32_t utmp[3];
+            memcpy(utmp, blk->scales, 12);
+            uint32_t m_lo_w = utmp[1] & kmask1;
+            uint32_t m_hi_w = ((utmp[2] >> 4) & kmask2) | (((utmp[1] >> 6) & kmask3) << 4);
+            utmp[1] = (utmp[2] & kmask2) | (((utmp[0] >> 6) & kmask3) << 4);
+            utmp[0] &= kmask1;
+            const uint8_t *sc = (const uint8_t *)utmp;
+            uint8_t mins[8];
+            memcpy(mins, &m_lo_w, 4);
+            memcpy(mins + 4, &m_hi_w, 4);
+
+            // Pre-load and unpack weight nibbles (stays in L1 across tokens)
+            int8x16_t w_lo0[4], w_lo1[4], w_hi0[4], w_hi1[4];
+            {
+                const uint8_t *qp = qs;
+                for (int p = 0; p < 4; p++) {
+                    uint8x16_t raw0 = vld1q_u8(qp);
+                    uint8x16_t raw1 = vld1q_u8(qp + 16);
+                    w_lo0[p] = vreinterpretq_s8_u8(vandq_u8(raw0, mask_lo));
+                    w_lo1[p] = vreinterpretq_s8_u8(vandq_u8(raw1, mask_lo));
+                    w_hi0[p] = vreinterpretq_s8_u8(vshrq_n_u8(raw0, 4));
+                    w_hi1[p] = vreinterpretq_s8_u8(vshrq_n_u8(raw1, 4));
+                    qp += 32;
+                }
+            }
+
+            // Iterate tokens: same weights, different x
+            for (int t = 0; t < n_tokens; t++) {
+                const int8_t *xb = c->x_q + (size_t)t * cols + b * BN_QK_K;
+                float dx = c->x_d[(size_t)t * n_bpr + b];
+                const int16_t *bsums = c->x_bsums + ((size_t)t * n_bpr + b) * 16;
+
+                int32_t bsum_corr = 0;
+                for (int j = 0; j < 8; j++)
+                    bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
+
+                int32_t sumi = 0;
+                for (int p = 0; p < 4; p++) {
+                    int sub = p * 2;
+                    int32x4_t p0 = vdotq_s32(zero, w_lo0[p], vld1q_s8(xb + p * 64));
+                    int32x4_t p1 = vdotq_s32(zero, w_lo1[p], vld1q_s8(xb + p * 64 + 16));
+                    sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub];
+
+                    p0 = vdotq_s32(zero, w_hi0[p], vld1q_s8(xb + p * 64 + 32));
+                    p1 = vdotq_s32(zero, w_hi1[p], vld1q_s8(xb + p * 64 + 48));
+                    sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub + 1];
+                }
+
+                c->out[(size_t)t * rows + row] += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+            }
+        }
+    }
+}
