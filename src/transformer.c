@@ -992,33 +992,251 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
         return NULL;
     }
 
-    // Layer-by-layer, token-inner-loop
+    // Allocate batch scratch buffers
+    int kv_dim = c->kv_dim;
+    int hidden_dim = c->hidden_dim;
+    int q_dim = c->n_heads * head_size;
+    size_t nt = (size_t)n_tokens;
+
+    // Batch buffers: Xb[nt*dim], Q[nt*q_dim], Hb/Hb2[nt*hidden_dim]
+    size_t batch_size = nt * dim          // xb (normed)
+                      + nt * (size_t)(q_dim > dim ? q_dim * 2 : dim)  // q (may be wide/gated)
+                      + nt * kv_dim * 2   // k_new, v_new
+                      + nt * dim          // xb2 (wo output)
+                      + nt * hidden_dim   // hb (gate)
+                      + nt * hidden_dim;  // hb2 (up)
+    float *batch_buf = (float *)malloc(batch_size * sizeof(float));
+    if (!batch_buf) { free(act); return NULL; }
+
+    // Carve out pointers
+    float *Xb   = batch_buf;
+    float *Q_buf = Xb + nt * dim;
+    int q_buf_stride = (q_dim > dim ? q_dim * 2 : dim);
+    float *K_new = Q_buf + nt * q_buf_stride;
+    float *V_new = K_new + nt * kv_dim;
+    float *Xb2  = V_new + nt * kv_dim;
+    float *Hb   = Xb2 + nt * dim;
+    float *Hb2  = Hb + nt * hidden_dim;
+
+    BnWeights *w = &m->weights;
+
+    // Layer-by-layer, batched projections, per-token attention
     for (int l = 0; l < c->n_layers; l++) {
-        for (int t = 0; t < n_tokens; t++) {
-            int pos = pos0 + t;
-            memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
+        BnLayerWeights *lw = &w->layers[l];
+        int is_attn = (c->full_attn_interval == 0) ||
+                      ((l + 1) % c->full_attn_interval == 0);
 
-            // Compute RoPE for this position
-            float rope_cos[half_rope], rope_sin[half_rope];
-            for (int i = 0; i < half_rope; i++) {
-                float angle = pos * s->rope_freq[i];
-                rope_cos[i] = cosf(angle);
-                rope_sin[i] = sinf(angle);
+        // --- Attention block (batched projections, per-token GQA) ---
+        if (is_attn && lw->wq.data) {
+            // Batch RMSNorm
+            for (int t = 0; t < n_tokens; t++)
+                rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->attn_norm, dim, c->norm_eps);
+
+            // Batch QKV matmul
+            bn_quant_matmul(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool);
+            bn_quant_matmul(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool);
+            bn_quant_matmul(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool);
+
+            // Per-token: RoPE, KV cache write, GQA attention
+            int attn_idx = (c->full_attn_interval > 0)
+                ? (l + 1) / c->full_attn_interval - 1 : l;
+            size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
+            int kv_mul = c->kv_mul;
+            int q_gated = lw->wq.rows > q_dim;
+
+            for (int t = 0; t < n_tokens; t++) {
+                int pos = pos0 + t;
+                int cache_pos = pos % c->seq_len;
+
+                float *q_t = Q_buf + (size_t)t * lw->wq.rows;
+                float *k_t = K_new + (size_t)t * kv_dim;
+                float *v_t = V_new + (size_t)t * kv_dim;
+
+                // Extract Q for this token (handle gated/wide/classic)
+                if (q_gated) {
+                    for (int h = 0; h < c->n_heads; h++)
+                        memcpy(s->q + h * head_size, q_t + h * 2 * head_size,
+                               head_size * sizeof(float));
+                } else {
+                    memcpy(s->q, q_t, q_dim * sizeof(float));
+                }
+
+                // Q/K norms
+                if (lw->q_norm) {
+                    int qk_stride = c->qk_norm_per_head ? head_size : 0;
+                    for (int h = 0; h < c->n_heads; h++)
+                        rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
+                }
+                if (lw->k_norm) {
+                    int qk_stride = c->qk_norm_per_head ? head_size : 0;
+                    for (int h = 0; h < c->n_kv_heads; h++)
+                        rmsnorm(k_t + h*head_size, k_t + h*head_size,
+                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+                }
+
+                // Biases
+                if (lw->q_bias) for (int i = 0; i < q_dim; i++) s->q[i] += lw->q_bias[i];
+                if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_t[i] += lw->k_bias[i];
+                if (lw->v_bias) for (int i = 0; i < kv_dim; i++) v_t[i] += lw->v_bias[i];
+
+                // RoPE
+                float rope_cos_t[half_rope], rope_sin_t[half_rope];
+                for (int i = 0; i < half_rope; i++) {
+                    float angle = pos * s->rope_freq[i];
+                    rope_cos_t[i] = cosf(angle);
+                    rope_sin_t[i] = sinf(angle);
+                }
+                apply_rope_heads(s->q, c->n_heads, head_size,
+                                 rope_dims, rope_cos_t, rope_sin_t);
+                apply_rope_heads(k_t, c->n_kv_heads, head_size,
+                                 rope_dims, rope_cos_t, rope_sin_t);
+
+                // Write KV cache
+                if (c->kv_f16) {
+                    uint16_t *kc = (uint16_t *)s->key_cache + loff + (size_t)cache_pos * kv_dim;
+                    uint16_t *vc = (uint16_t *)s->value_cache + loff + (size_t)cache_pos * kv_dim;
+                    for (int i = 0; i < kv_dim; i++) {
+                        kc[i] = bn_fp32_to_fp16(k_t[i]);
+                        vc[i] = bn_fp32_to_fp16(v_t[i]);
+                    }
+                } else {
+                    float *kc = s->key_cache + loff + (size_t)cache_pos * kv_dim;
+                    float *vc = s->value_cache + loff + (size_t)cache_pos * kv_dim;
+                    memcpy(kc, k_t, kv_dim * sizeof(float));
+                    memcpy(vc, v_t, kv_dim * sizeof(float));
+                }
+
+                // GQA attention (same as single-token path)
+                int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
+#ifdef __ARM_NEON
+                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
+#elif defined(__AVX2__)
+                bn_tp_fn attn_fn = bn_transformer_gqa_avx2_range;
+#elif defined(__wasm_simd128__)
+                bn_tp_fn attn_fn = bn_transformer_gqa_wasm_range;
+#else
+                bn_tp_fn attn_fn = bn_transformer_gqa_scalar_range;
+#endif
+                BnTPTask gqa = { attn_fn, &gctx, c->n_heads };
+                bn_tp_dispatch(m->pool, &gqa, 1);
+
+                // Sigmoid gate (gated Q only)
+                if (q_gated) {
+                    for (int h = 0; h < c->n_heads; h++) {
+                        float *gate_h = q_t + h * 2 * head_size + head_size;
+                        float *xb_h = s->xb + h * head_size;
+                        for (int d = 0; d < head_size; d++)
+                            xb_h[d] *= 1.0f / (1.0f + expf(-gate_h[d]));
+                    }
+                }
+
+                // Store attention output for batch Wo
+                memcpy(Xb + (size_t)t * dim, s->xb, dim * sizeof(float));
             }
 
-            int cache_pos = pos % c->seq_len;
-            if (forward_single_layer(m, l, pos, cache_pos, rope_dims,
-                                     rope_cos, rope_sin) != 0) {
-                free(act);
-                return NULL;
+            // Batch sub-norm + Wo matmul
+            if (lw->attn_sub_norm)
+                for (int t = 0; t < n_tokens; t++)
+                    rmsnorm(Xb + t * dim, Xb + t * dim, lw->attn_sub_norm, dim, c->norm_eps);
+            bn_quant_matmul(Xb2, &lw->wo, Xb, n_tokens, s->x_q, m->pool);
+
+            // Batch residual add
+            for (int t = 0; t < n_tokens; t++)
+                for (int d = 0; d < dim; d++)
+                    act[(size_t)t * dim + d] += Xb2[(size_t)t * dim + d];
+
+        } else if (!is_attn) {
+            // --- SSM block: must process sequentially ---
+            for (int t = 0; t < n_tokens; t++) {
+                memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
+                float rope_cos_t[half_rope], rope_sin_t[half_rope];
+                int pos = pos0 + t;
+                for (int i = 0; i < half_rope; i++) {
+                    float angle = pos * s->rope_freq[i];
+                    rope_cos_t[i] = cosf(angle);
+                    rope_sin_t[i] = sinf(angle);
+                }
+                int cache_pos = pos % c->seq_len;
+                if (forward_single_layer(m, l, pos, cache_pos, rope_dims,
+                                         rope_cos_t, rope_sin_t) != 0) {
+                    free(batch_buf); free(act); return NULL;
+                }
+                memcpy(act + (size_t)t * dim, s->x, dim * sizeof(float));
+            }
+            continue;  // SSM already did FFN
+        }
+
+        // --- FFN block ---
+        if (lw->router_weight) {
+            // MoE: process per-token (Phase 1 — batch MoE is Phase 3)
+            for (int t = 0; t < n_tokens; t++) {
+                memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
+                bn_moe_forward(m, lw, l);
+                memcpy(act + (size_t)t * dim, s->x, dim * sizeof(float));
+            }
+        } else if (lw->ffn_up.data) {
+            // Dense FFN: batched matmul
+            // Batch RMSNorm
+            for (int t = 0; t < n_tokens; t++)
+                rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->ffn_norm, dim, c->norm_eps);
+
+            if (c->has_ffn_gate) {
+                bn_quant_matmul(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool);
+                bn_quant_matmul(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool);
+
+                // Batch activation
+                for (int t = 0; t < n_tokens; t++) {
+                    float *hb_t = Hb + (size_t)t * hidden_dim;
+                    float *hb2_t = Hb2 + (size_t)t * hidden_dim;
+                    if (c->act_type == 1) {
+                        for (int i = 0; i < hidden_dim; i++) {
+                            float g = hb_t[i] > 0 ? hb_t[i] : 0;
+                            hb_t[i] = g * g * hb2_t[i];
+                        }
+                    } else {
+                        for (int i = 0; i < hidden_dim; i++) {
+                            float g = hb_t[i];
+                            hb_t[i] = (g / (1.0f + expf(-g))) * hb2_t[i];
+                        }
+                    }
+                }
+            } else {
+                bn_quant_matmul(Hb, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool);
+                for (int t = 0; t < n_tokens; t++) {
+                    float *hb_t = Hb + (size_t)t * hidden_dim;
+                    if (c->act_type == 1) {
+                        for (int i = 0; i < hidden_dim; i++) {
+                            float v = hb_t[i] > 0 ? hb_t[i] : 0;
+                            hb_t[i] = v * v;
+                        }
+                    } else {
+                        for (int i = 0; i < hidden_dim; i++) {
+                            float v = hb_t[i];
+                            hb_t[i] = v / (1.0f + expf(-v));
+                        }
+                    }
+                }
             }
 
-            memcpy(act + (size_t)t * dim, s->x, dim * sizeof(float));
+            if (lw->ffn_sub_norm)
+                for (int t = 0; t < n_tokens; t++)
+                    rmsnorm(Hb + (size_t)t * hidden_dim, Hb + (size_t)t * hidden_dim,
+                            lw->ffn_sub_norm, hidden_dim, c->norm_eps);
+
+            bn_quant_matmul(Xb, &lw->ffn_down, Hb, n_tokens, s->x_q, m->pool);
+
+            // Batch residual add
+            for (int t = 0; t < n_tokens; t++)
+                for (int d = 0; d < dim; d++)
+                    act[(size_t)t * dim + d] += Xb[(size_t)t * dim + d];
         }
     }
 
     // Final token's activation → logits
     memcpy(s->x, act + (size_t)(n_tokens - 1) * dim, dim * sizeof(float));
+    free(batch_buf);
     free(act);
     return forward_logits(m);
 }

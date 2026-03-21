@@ -844,3 +844,16 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
     }
 }
+
+// Matrix-matrix multiply: process n_tokens input vectors against same weight matrix.
+// Initial implementation: loop over tokens calling matvec.
+// Future: fused kernel that loads weights once for all tokens.
+void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
+                     int n_tokens, int8_t *x_q_buf, BnThreadPool *pool) {
+    int rows = W->rows;
+    int cols = W->cols;
+    for (int t = 0; t < n_tokens; t++) {
+        bn_quant_matvec(out + (size_t)t * rows, W, X + (size_t)t * cols,
+                        x_q_buf, pool);
+    }
+}
