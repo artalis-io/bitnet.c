@@ -945,7 +945,9 @@ float *bn_transformer_forward(BnModel *m, int token, int pos) {
     return forward_logits(m);
 }
 
-float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int pos0) {
+// Internal prefill: if all_logits is non-NULL, compute logits at every position.
+static float *prefill_internal(BnModel *m, const int *tokens, int n_tokens,
+                                int pos0, float *all_logits) {
     if (n_tokens <= 0) return NULL;
     if (n_tokens == 1) return bn_transformer_forward(m, tokens[0], pos0);
 
@@ -1241,9 +1243,40 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
         }
     }
 
-    // Final token's activation → logits
-    memcpy(s->x, act + (size_t)(n_tokens - 1) * dim, dim * sizeof(float));
+    // Compute logits for all positions (if requested) or just the last
+    if (all_logits) {
+        int vocab_size = c->vocab_size;
+        for (int t = 0; t < n_tokens; t++) {
+            memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
+            float *lg = forward_logits(m);
+            if (!lg) { free(batch_buf); free(act); return NULL; }
+            memcpy(all_logits + (size_t)t * vocab_size, lg, vocab_size * sizeof(float));
+        }
+    } else {
+        memcpy(s->x, act + (size_t)(n_tokens - 1) * dim, dim * sizeof(float));
+    }
+
     free(batch_buf);
     free(act);
     return forward_logits(m);
+}
+
+float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int pos0) {
+    return prefill_internal(m, tokens, n_tokens, pos0, NULL);
+}
+
+int bn_transformer_prefill_all(BnModel *m, const int *tokens, int n_tokens,
+                                int pos0, float *all_logits) {
+    if (!all_logits || n_tokens <= 0) return -1;
+
+    // Single token: just forward
+    if (n_tokens == 1) {
+        float *logits = bn_transformer_forward(m, tokens[0], pos0);
+        if (!logits) return -1;
+        memcpy(all_logits, logits, m->config.vocab_size * sizeof(float));
+        return 0;
+    }
+
+    float *result = prefill_internal(m, tokens, n_tokens, pos0, all_logits);
+    return result ? 0 : -1;
 }

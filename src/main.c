@@ -264,26 +264,41 @@ static int generate_response_speculative(
 
         n_drafted_total += k_actual;
 
-        // --- Verify phase: run draft tokens through target one at a time ---
-        // (Sequential verify — each forward fills KV cache at the right position)
+        // --- Verify phase: batch prefill all draft tokens through target ---
+        // prefill_all runs all k_actual tokens in one pass, returns logits at every position.
+        // Logits at position i tell us the target's prediction AFTER seeing draft_tokens[0..i-1].
+        // We compare argmax(logits[i]) with draft_tokens[i].
+        int vocab_size = target->config.vocab_size;
+        float *verify_logits = (float *)malloc((size_t)(k_actual + 1) * vocab_size * sizeof(float));
+        if (!verify_logits) return -2;
+
+        // First position: we already have target_logits from the previous iteration
+        memcpy(verify_logits, target_logits, vocab_size * sizeof(float));
+
+        // Batch the k_actual draft tokens through target (fills KV cache for all positions)
+        if (bn_transformer_prefill_all(target, draft_tokens, k_actual, *pos,
+                                        verify_logits + vocab_size) != 0) {
+            free(verify_logits);
+            return -2;
+        }
+        // Now verify_logits[0] = logits before draft_tokens[0] (= previous target_logits)
+        // verify_logits[(i+1)*vocab] = logits after processing draft_tokens[0..i]
+
         int n_accepted = 0;
         int corrected = -1;
         for (int i = 0; i < k_actual; i++) {
-            int t_i = bn_sampler_sample(sampler, target_logits);  // target's greedy choice
+            float *lg = verify_logits + (size_t)i * vocab_size;
+            int t_i = bn_sampler_sample(sampler, lg);  // target's greedy choice at position i
             if (t_i == draft_tokens[i]) {
-                // Match — accept
                 n_accepted++;
-                target_logits = bn_transformer_forward(target, draft_tokens[i], *pos + i);
-                if (!target_logits) return -2;
             } else {
-                // Mismatch — use target's token as correction
                 corrected = t_i;
-                // Run corrected token through target to advance its KV cache
-                target_logits = bn_transformer_forward(target, t_i, *pos + i);
-                if (!target_logits) return -2;
                 break;
             }
         }
+        // target_logits now points to logits after last accepted token
+        target_logits = target->state.logits;  // prefill_all left last logits here
+        free(verify_logits);
 
         // Stream accepted draft tokens
         for (int i = 0; i < n_accepted; i++) {
@@ -308,10 +323,12 @@ static int generate_response_speculative(
             }
             *pos += n_accepted + 1;
 
-            // Re-sync draft model: run accepted tokens + corrected through draft
-            // Draft KV cache is stale beyond the draft point. Re-run from where we diverged.
-            // The draft ran draft_tokens[0..k_actual-1]. We accepted [0..n_accepted-1] and
-            // replaced [n_accepted] with corrected. Feed corrected through draft.
+            // Re-sync target: prefill filled KV with wrong token at rejection pos.
+            // Overwrite by running corrected token through target at that position.
+            target_logits = bn_transformer_forward(target, corrected, *pos - 1);
+            if (!target_logits) return -2;
+
+            // Re-sync draft model
             draft_logits = bn_transformer_forward(draft, corrected, *pos - 1);
             if (!draft_logits) return -2;
         } else {
