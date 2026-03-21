@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdatomic.h>
+#include <limits.h>
 #include <assert.h>
 
 #if defined(__APPLE__)
@@ -19,32 +20,36 @@ typedef struct {
     int tid;
 } WorkerArg;
 
+#define TP_MAX_TASKS 32  // max concurrent tasks per dispatch
+
 struct BnThreadPool {
     pthread_t    *threads;
     int           n_workers;   // background threads
     int           n_threads;   // n_workers + 1 (main)
     BnTPTask     *tasks;
     int           n_tasks;
+    _Atomic int   cursors[TP_MAX_TASKS];  // atomic work-stealing cursors
     pthread_mutex_t mtx;
     pthread_cond_t  work_cond;
     pthread_cond_t  done_cond;
     int64_t       generation;
     int           n_done;
     int           shutdown;
-    int           dispatching; // reentrancy guard
+    _Atomic int   dispatching; // reentrancy guard (main-thread-only, atomic for safety)
 };
 
 // Execute all tasks via atomic work-stealing with adaptive chunk size.
 // Chunk = n / (4 * n_threads) — mostly static, stealing for tail imbalance.
-static void tp_execute(const BnThreadPool *pool) {
+static void tp_execute(BnThreadPool *pool) {
     int nt = pool->n_threads;
     for (int t = 0; t < pool->n_tasks; t++) {
         BnTPTask *task = &pool->tasks[t];
         int n = task->n;
-        int chunk = n / (nt * 4);
+        int nt4 = nt <= INT_MAX / 4 ? nt * 4 : nt;  // avoid overflow
+        int chunk = n / nt4;
         if (chunk < TP_CHUNK_MIN) chunk = TP_CHUNK_MIN;
         for (;;) {
-            int start = atomic_fetch_add_explicit(&task->cursor, chunk,
+            int start = atomic_fetch_add_explicit(&pool->cursors[t], chunk,
                                                    memory_order_relaxed);
             if (start >= n) break;
             int end = start + chunk;
@@ -180,9 +185,10 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     assert(!pool->dispatching && "bn_tp_dispatch is not reentrant");
     pool->dispatching = 1;
 
-    // Initialize atomic cursors
-    for (int t = 0; t < n_tasks; t++)
-        atomic_store_explicit(&tasks[t].cursor, 0, memory_order_relaxed);
+    // Initialize atomic cursors (pool-internal storage)
+    int capped_tasks = n_tasks <= TP_MAX_TASKS ? n_tasks : TP_MAX_TASKS;
+    for (int t = 0; t < capped_tasks; t++)
+        atomic_store_explicit(&pool->cursors[t], 0, memory_order_relaxed);
 
     // Set up work and wake workers
     pthread_mutex_lock(&pool->mtx);

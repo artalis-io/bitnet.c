@@ -4,19 +4,12 @@
 // Persistent pthread thread pool with atomic work-stealing dispatch.
 // Threads grab chunks of rows via atomic_fetch_add for load balancing.
 
-#ifndef __EMSCRIPTEN__
-#include <stdatomic.h>
-#endif
-
 typedef void (*bn_tp_fn)(void *ctx, int start, int end);
 
 typedef struct {
     bn_tp_fn fn;    // range function: called with [start, end)
     void *ctx;      // opaque context pointer
     int   n;        // iteration count
-#ifndef __EMSCRIPTEN__
-    _Atomic int cursor;  // atomic work-stealing cursor (initialized by dispatch)
-#endif
 } BnTPTask;
 
 typedef struct BnThreadPool BnThreadPool;

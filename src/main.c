@@ -290,7 +290,8 @@ int main(int argc, char **argv) {
         bn_moe_prefetch_create(model.moe_state);
 
         // Create expert LRU cache (pread only)
-        if (args.cache_mb > 0 && !model.moe_state->mmap_base && model.moe_state->fd >= 0) {
+        if (args.cache_mb > 0 && !model.moe_state->mmap_base && model.moe_state->fd >= 0
+            && model.config.n_layers > 0) {
             BnMoEExpertMap *em = &model.weights.layers[0].expert_map;
             model.moe_state->cache = bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,

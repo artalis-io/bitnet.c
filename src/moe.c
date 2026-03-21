@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #ifndef __EMSCRIPTEN__
 #include <unistd.h>
@@ -43,7 +44,7 @@ typedef struct {
 } BnMoECache;
 
 static uint32_t moe_cache_hash(int layer, int expert_idx) {
-    uint32_t key = ((uint32_t)layer << 16) | (uint32_t)(expert_idx & 0xFFFF);
+    uint32_t key = (uint32_t)layer * 65537u + (uint32_t)expert_idx;
     // murmurhash3 finalizer
     key ^= key >> 16;
     key *= 0x85ebca6b;
@@ -187,8 +188,10 @@ void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
     size_t entry_bytes = gate_bytes + up_bytes + down_bytes;
     if (entry_bytes == 0) return NULL;
 
-    int n_slots = (int)(budget_bytes / entry_bytes);
-    if (n_slots < 1) return NULL;
+    size_t raw_slots = budget_bytes / entry_bytes;
+    if (raw_slots < 1) return NULL;
+    if (raw_slots > (size_t)INT_MAX / 2) raw_slots = (size_t)INT_MAX / 2;  // cap to avoid overflow
+    int n_slots = (int)raw_slots;
 
     BnMoECache *c = (BnMoECache *)calloc(1, sizeof(BnMoECache));
     if (!c) return NULL;
@@ -198,10 +201,10 @@ void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
     c->up_bytes = up_bytes;
     c->n_slots = n_slots;
 
-    // Hash table: next power of 2 >= 2 * n_slots
-    int hs = 1;
-    while (hs < 2 * n_slots) hs *= 2;
-    c->hash_size = hs;
+    // Hash table: next power of 2 >= 2 * n_slots (unsigned to avoid overflow)
+    unsigned hs = 1;
+    while (hs < (unsigned)n_slots * 2) hs *= 2;
+    c->hash_size = (int)hs;
 
     // Allocate slab (32-byte aligned)
     size_t slab_size = (size_t)n_slots * entry_bytes;
@@ -222,8 +225,8 @@ void *bn_moe_cache_create(size_t budget_bytes, size_t gate_bytes,
         return NULL;
     }
 
-    // Initialize
-    memset(c->hash_table, 0xFF, (size_t)hs * sizeof(int));  // -1
+    // Initialize hash table to -1 (empty)
+    for (int i = 0; i < (int)hs; i++) c->hash_table[i] = -1;
     c->lru_head = c->lru_tail = -1;
 
     // Build free list (singly-linked via .next)
@@ -896,14 +899,16 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                     ms->prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off);
-                        pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+                        if (pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) < 0)
+                            SH_LOG_ERROR("Fallback gate pread failed");
+                        if (pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) < 0)
+                            SH_LOG_ERROR("Fallback up pread failed");
                     }
                 } else {
-                    pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off);
-                    pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
+                    (void)pread(ms->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off);
+                    (void)pread(ms->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off);
                     if (!pf_dn)
-                        pread(ms->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
+                        (void)pread(ms->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off);
                 }
                 gate_ptr = miss_g_dst;
                 up_ptr   = miss_u_dst;
@@ -934,13 +939,15 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                     ms->prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        pread(ms->fd, g_dst, g_sz, (off_t)g_off);
-                        pread(ms->fd, u_dst, u_sz, (off_t)u_off);
+                        if (pread(ms->fd, g_dst, g_sz, (off_t)g_off) < 0)
+                            SH_LOG_ERROR("Fallback gate pread failed");
+                        if (pread(ms->fd, u_dst, u_sz, (off_t)u_off) < 0)
+                            SH_LOG_ERROR("Fallback up pread failed");
                     }
                 } else {
-                    pread(ms->fd, g_dst, g_sz, (off_t)g_off);
-                    pread(ms->fd, u_dst, u_sz, (off_t)u_off);
-                    pread(ms->fd, d_dst, d_sz, (off_t)d_off);
+                    (void)pread(ms->fd, g_dst, g_sz, (off_t)g_off);
+                    (void)pread(ms->fd, u_dst, u_sz, (off_t)u_off);
+                    (void)pread(ms->fd, d_dst, d_sz, (off_t)d_off);
                 }
 
                 gate_ptr = g_dst;
@@ -1148,10 +1155,14 @@ void bn_moe_prefetch_create(BnMoEState *ms) {
     if (ms->fd >= 0 && !ms->mmap_base) {
         ms->prefetch = moe_prefetch_init(ms->fd);
         ms->prefetch_down = moe_prefetch_init(ms->fd);
-        if (ms->prefetch && ms->prefetch_down)
+        if (ms->prefetch && ms->prefetch_down) {
             SH_LOG_INFO("MoE I/O prefetch threads", "status", "2 created (gate+up, down)");
-        else
-            SH_LOG_INFO("MoE I/O prefetch threads", "status", "partial");
+        } else {
+            // Clean up partial init — free whichever succeeded
+            if (ms->prefetch) { moe_prefetch_free((BnMoEPrefetch *)ms->prefetch); ms->prefetch = NULL; }
+            if (ms->prefetch_down) { moe_prefetch_free((BnMoEPrefetch *)ms->prefetch_down); ms->prefetch_down = NULL; }
+            SH_LOG_WARN("MoE I/O prefetch threads failed to create");
+        }
     }
 #endif
 }

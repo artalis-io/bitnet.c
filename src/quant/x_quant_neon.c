@@ -1,5 +1,6 @@
 #include "quant_internal.h"
 #include <arm_neon.h>
+#include <assert.h>
 #include <math.h>
 
 // Quantize float vector x[n] to int8, returning scale = amax/127.
@@ -113,11 +114,14 @@ void bn_quant_f16_rows_to_i8(const uint16_t *f16, int8_t *i8_out,
     }
 }
 
+_Static_assert(BN_QK_K % 16 == 0, "BN_QK_K must be a multiple of 16 for NEON");
+
 // Q8_K quantization: 256-element super-blocks with bsums for Q4_K SDOT.
 // x_d[n/256]: one float scale per super-block
 // x_bsums[n/256 * 16]: int16 sum per 16-element group (for min correction)
 void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
                          int16_t *x_bsums, int n) {
+    assert(n % BN_QK_K == 0 && "bn_quant_x_to_q8k: n must be multiple of BN_QK_K");
     int n_sb = n / BN_QK_K;
     for (int sb = 0; sb < n_sb; sb++) {
         const float *xb = x + sb * BN_QK_K;
@@ -170,6 +174,7 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
 // Per-block Q8_0 quantization for Q4_0 integer dot product path.
 // Quantizes each 32-element block independently with its own scale.
 void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n) {
+    assert(n % 32 == 0 && "bn_quant_x_to_q8_blocks: n must be multiple of 32");
     int n_blocks = n / 32;
     for (int b = 0; b < n_blocks; b++) {
         const float *xb = x + b * 32;
