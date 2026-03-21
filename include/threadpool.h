@@ -1,15 +1,22 @@
 #ifndef BN_THREADPOOL_H
 #define BN_THREADPOOL_H
 
-// Persistent pthread thread pool for parallel dispatch.
-// Replaces OpenMP fork/join with ~2us condvar dispatch.
+// Persistent pthread thread pool with atomic work-stealing dispatch.
+// Threads grab chunks of rows via atomic_fetch_add for load balancing.
+
+#ifndef __EMSCRIPTEN__
+#include <stdatomic.h>
+#endif
 
 typedef void (*bn_tp_fn)(void *ctx, int start, int end);
 
 typedef struct {
     bn_tp_fn fn;    // range function: called with [start, end)
-    void *ctx;   // opaque context pointer
-    int   n;     // iteration count
+    void *ctx;      // opaque context pointer
+    int   n;        // iteration count
+#ifndef __EMSCRIPTEN__
+    _Atomic int cursor;  // atomic work-stealing cursor (initialized by dispatch)
+#endif
 } BnTPTask;
 
 typedef struct BnThreadPool BnThreadPool;
@@ -23,8 +30,8 @@ void bn_tp_free(BnThreadPool *pool);
 
 // Dispatch tasks to the pool. Blocks until all tasks complete.
 // If pool is NULL, runs serially on the calling thread.
-// Multi-task dispatch (2-3 tasks) uses a single wake/wait cycle.
-void bn_tp_dispatch(BnThreadPool *pool, const BnTPTask *tasks, int n_tasks);
+// Threads steal work in chunks via atomic counters for load balancing.
+void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks);
 
 // Returns total thread count (n_workers + 1 for main thread).
 int bn_tp_num_threads(const BnThreadPool *pool);
