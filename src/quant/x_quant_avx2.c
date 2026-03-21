@@ -1,6 +1,7 @@
 #include "quant_internal.h"
 #include "simd_helpers.h"
 #include <immintrin.h>
+#include <assert.h>
 #include <math.h>
 
 float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n) {
@@ -113,6 +114,89 @@ void bn_quant_f16_rows_to_i8(const uint16_t *f16, int8_t *i8_out,
 }
 
 // Per-block Q8_0 quantization (AVX2 version)
+// Q8_K quantization: 256-element super-blocks with bsums for Q4_K SDOT.
+void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
+                         int16_t *x_bsums, int n) {
+    assert(n % BN_QK_K == 0 && "bn_quant_x_to_q8k: n must be multiple of BN_QK_K");
+    __m256 sign_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
+    __m256i perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
+    int n_sb = n / BN_QK_K;
+
+    for (int sb = 0; sb < n_sb; sb++) {
+        const float *xb = x + sb * BN_QK_K;
+        int8_t *qb = x_q + sb * BN_QK_K;
+
+        // Find amax over 256 elements
+        __m256 vmax = _mm256_setzero_ps();
+        for (int i = 0; i < BN_QK_K; i += 32) {
+            __m256 v0 = _mm256_and_ps(_mm256_loadu_ps(xb + i), sign_mask);
+            __m256 v1 = _mm256_and_ps(_mm256_loadu_ps(xb + i + 8), sign_mask);
+            __m256 v2 = _mm256_and_ps(_mm256_loadu_ps(xb + i + 16), sign_mask);
+            __m256 v3 = _mm256_and_ps(_mm256_loadu_ps(xb + i + 24), sign_mask);
+            vmax = _mm256_max_ps(vmax, _mm256_max_ps(_mm256_max_ps(v0, v1), _mm256_max_ps(v2, v3)));
+        }
+        float amax = bn_avx2_hmax_ps(vmax);
+
+        if (amax == 0.0f) {
+            _mm256_storeu_si256((__m256i *)qb, _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 32), _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 64), _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 96), _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 128), _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 160), _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 192), _mm256_setzero_si256());
+            _mm256_storeu_si256((__m256i *)(qb + 224), _mm256_setzero_si256());
+            x_d[sb] = 0.0f;
+            for (int g = 0; g < 16; g++) x_bsums[sb * 16 + g] = 0;
+            continue;
+        }
+
+        float inv_scale = 127.0f / amax;
+        x_d[sb] = amax / 127.0f;
+        __m256 vinv = _mm256_set1_ps(inv_scale);
+
+        // Quantize 256 elements in 32-element chunks
+        int16_t *bsums = x_bsums + sb * 16;
+        for (int g = 0; g < 8; g++) {
+            const float *gx = xb + g * 32;
+            int8_t *gq = qb + g * 32;
+
+            __m256i i0 = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(gx), vinv));
+            __m256i i1 = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(gx + 8), vinv));
+            __m256i i2 = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(gx + 16), vinv));
+            __m256i i3 = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(gx + 24), vinv));
+            __m256i s01 = _mm256_packs_epi32(i0, i1);
+            __m256i s23 = _mm256_packs_epi32(i2, i3);
+            __m256i packed = _mm256_packs_epi16(s01, s23);
+            packed = _mm256_permutevar8x32_epi32(packed, perm);
+            _mm256_storeu_si256((__m256i *)gq, packed);
+
+            // Compute bsums: sum of 16-element halves
+            // Sum first 16 bytes
+            __m128i lo = _mm256_castsi256_si128(packed);
+            __m128i hi = _mm256_extracti128_si256(packed, 1);
+            // Widen to i16 and sum pairs
+            __m128i lo16_0 = _mm_cvtepi8_epi16(lo);
+            __m128i lo16_1 = _mm_cvtepi8_epi16(_mm_srli_si128(lo, 8));
+            __m128i sum16_0 = _mm_add_epi16(lo16_0, lo16_1);
+            __m128i sum32_0 = _mm_add_epi32(_mm_cvtepi16_epi32(sum16_0),
+                                             _mm_cvtepi16_epi32(_mm_srli_si128(sum16_0, 8)));
+            int32_t bsum0 = _mm_extract_epi32(sum32_0, 0) + _mm_extract_epi32(sum32_0, 1)
+                          + _mm_extract_epi32(sum32_0, 2) + _mm_extract_epi32(sum32_0, 3);
+            bsums[g * 2] = (int16_t)bsum0;
+
+            __m128i hi16_0 = _mm_cvtepi8_epi16(hi);
+            __m128i hi16_1 = _mm_cvtepi8_epi16(_mm_srli_si128(hi, 8));
+            __m128i sum16_1 = _mm_add_epi16(hi16_0, hi16_1);
+            __m128i sum32_1 = _mm_add_epi32(_mm_cvtepi16_epi32(sum16_1),
+                                             _mm_cvtepi16_epi32(_mm_srli_si128(sum16_1, 8)));
+            int32_t bsum1 = _mm_extract_epi32(sum32_1, 0) + _mm_extract_epi32(sum32_1, 1)
+                          + _mm_extract_epi32(sum32_1, 2) + _mm_extract_epi32(sum32_1, 3);
+            bsums[g * 2 + 1] = (int16_t)bsum1;
+        }
+    }
+}
+
 void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n) {
     __m256 sign_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
     __m256i perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);

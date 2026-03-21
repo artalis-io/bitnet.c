@@ -1,5 +1,6 @@
 #include "transformer_internal.h"
 #include "quant_internal.h"
+#include "moe.h"
 #include "platform.h"
 #include "sh_log.h"
 #include <stdio.h>
@@ -377,6 +378,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
     int head_size = c->head_size;
     int n_heads = c->n_heads;
     BnLayerWeights *lw = &w->layers[l];
+    int qk_stride = c->qk_norm_per_head ? head_size : 0; // per-head norm offset
 
     int is_attn = (c->full_attn_interval == 0) ||
                   ((l + 1) % c->full_attn_interval == 0);
@@ -391,8 +393,14 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
             ? (l + 1) / c->full_attn_interval - 1 : l;
         size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
 
-        // Gated Q: Q weight produces 2x dim (interleaved [Q,gate] per head)
-        int q_gated = lw->wq.data && (lw->wq.rows > dim);
+        // Q projection width detection:
+        // q_dim = n_heads * head_size (total Q output elements)
+        // Gated Q (Qwen3.5): wq.rows = 2 * q_dim (interleaved [Q, gate] per head)
+        // Wide Q (Qwen3 MoE): wq.rows = q_dim > dim (head_size > dim/n_heads)
+        // Classic: wq.rows = dim = q_dim
+        int q_dim = n_heads * head_size;
+        int q_gated = lw->wq.data && (lw->wq.rows > q_dim);
+        int q_wide  = !q_gated && lw->wq.data && (lw->wq.rows > dim);
 
         rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
         BL_ACC(bl_rmsnorm_us);
@@ -421,11 +429,11 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_norm)
                     for (int h = 0; h < n_heads; h++)
                         rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm, head_size, c->norm_eps);
+                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->k_norm)
                     for (int h = 0; h < c->n_kv_heads; h++)
                         rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
-                                lw->k_norm, head_size, c->norm_eps);
+                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -470,12 +478,12 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_norm)
                     for (int h = 0; h < n_heads; h++)
                         rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm, head_size, c->norm_eps);
+                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->k_norm)
                     for (int h = 0; h < c->n_kv_heads; h++)
                         rmsnorm(key_cache_row + h*head_size,
                                 key_cache_row + h*head_size,
-                                lw->k_norm, head_size, c->norm_eps);
+                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -529,6 +537,69 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
             residual_add(s->x, s->xb2, dim);
             BL_ACC(bl_residual_us);
 
+        } else if (q_wide) {
+            // --- Wide Q path (Qwen3 MoE: head_size > dim/n_heads, no gate) ---
+            // Q projection: dim → q_dim (larger than dim)
+            // K/V: dim → kv_dim (uses head_size from attention.key_length)
+            float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_dim;
+            float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_dim;
+
+            // Q matvec: xb[dim] → q[q_dim]
+            {
+                BnMatvecTask q_task[1] = {{ s->q, &lw->wq }};
+                bn_quant_matvec_batch(q_task, 1, s->xb, s->x_q, m->pool);
+            }
+            // K/V matvec: xb[dim] → kv_dim
+            {
+                BnMatvecTask kv[2] = {
+                    { key_cache_row,   &lw->wk },
+                    { value_cache_row, &lw->wv },
+                };
+                bn_quant_matvec_batch(kv, 2, s->xb, s->x_q, m->pool);
+            }
+
+            if (lw->q_norm)
+                for (int h = 0; h < n_heads; h++)
+                    rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                            lw->q_norm + h*qk_stride, head_size, c->norm_eps);
+            if (lw->k_norm)
+                for (int h = 0; h < c->n_kv_heads; h++)
+                    rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
+                            lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+
+            apply_rope_heads(s->q, n_heads, head_size,
+                             rope_dims, rope_cos, rope_sin);
+            apply_rope_heads(key_cache_row, c->n_kv_heads, head_size,
+                             rope_dims, rope_cos, rope_sin);
+
+            // GQA attention
+            {
+                int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
+#ifdef __ARM_NEON
+                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
+#elif defined(__AVX2__)
+                bn_tp_fn attn_fn = bn_transformer_gqa_avx2_range;
+#elif defined(__wasm_simd128__)
+                bn_tp_fn attn_fn = bn_transformer_gqa_wasm_range;
+#else
+                bn_tp_fn attn_fn = bn_transformer_gqa_scalar_range;
+#endif
+                BnTPTask gqa = { attn_fn, &gctx, n_heads };
+                bn_tp_dispatch(m->pool, &gqa, 1);
+            }
+
+            // No sigmoid gate (unlike gated-Q path)
+
+            // wo projection (q_dim → dim) + residual
+            if (lw->attn_sub_norm)
+                rmsnorm(s->xb, s->xb, lw->attn_sub_norm, q_dim, c->norm_eps);
+            {
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->wo }};
+                bn_quant_matvec_batch(wo, 1, s->xb, s->x_q, m->pool);
+            }
+            residual_add(s->x, s->xb2, dim);
+
         } else {
             // --- Classic attention path (existing) ---
             float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_dim;
@@ -547,6 +618,15 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
                 if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->k_bias[i];
                 if (lw->v_bias) for (int i = 0; i < kv_dim; i++) v_tmp[i] += lw->v_bias[i];
+
+                if (lw->q_norm)
+                    for (int h = 0; h < n_heads; h++)
+                        rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                                lw->q_norm + h*head_size, head_size, c->norm_eps);
+                if (lw->k_norm)
+                    for (int h = 0; h < c->n_kv_heads; h++)
+                        rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
+                                lw->k_norm + h*head_size, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -588,6 +668,15 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
                 if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
                 if (lw->k_bias) for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->k_bias[i];
                 if (lw->v_bias) for (int i = 0; i < kv_dim; i++) value_cache_row[i] += lw->v_bias[i];
+
+                if (lw->q_norm)
+                    for (int h = 0; h < n_heads; h++)
+                        rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                                lw->q_norm + h*head_size, head_size, c->norm_eps);
+                if (lw->k_norm)
+                    for (int h = 0; h < c->n_kv_heads; h++)
+                        rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
+                                lw->k_norm + h*head_size, head_size, c->norm_eps);
 
                 apply_rope_heads(s->q, n_heads, head_size,
                                  rope_dims, rope_cos, rope_sin);
@@ -634,7 +723,13 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
     }
 
     // ---- FFN block ---- (shared by both layer types)
-    forward_ffn_block(m, lw);
+    if (lw->router_weight) {
+        // MoE FFN — route, pread, compute, combine
+        bn_moe_forward(m, lw, l);
+    } else {
+        // Dense FFN
+        forward_ffn_block(m, lw);
+    }
     BL_ACC(bl_ffn_us);
 
     if (l == 0 && pos == 0) {

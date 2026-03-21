@@ -2,41 +2,59 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdatomic.h>
+#include <limits.h>
 #include <assert.h>
 
 #if defined(__APPLE__)
 #include <pthread/qos.h>
 #endif
 
+// Chunk size for atomic work-stealing.
+// Large chunks preserve memory locality (contiguous row access per thread).
+// Stealing only kicks in for the last chunk when threads finish at different times.
+#define TP_CHUNK_MIN 16
+
 typedef struct {
     BnThreadPool *pool;
     int tid;
 } WorkerArg;
 
+#define TP_MAX_TASKS 32  // max concurrent tasks per dispatch
+
 struct BnThreadPool {
     pthread_t    *threads;
     int           n_workers;   // background threads
     int           n_threads;   // n_workers + 1 (main)
-    const BnTPTask *tasks;
+    BnTPTask     *tasks;
     int           n_tasks;
+    _Atomic int   cursors[TP_MAX_TASKS];  // atomic work-stealing cursors
     pthread_mutex_t mtx;
     pthread_cond_t  work_cond;
     pthread_cond_t  done_cond;
     int64_t       generation;
     int           n_done;
     int           shutdown;
-    int           dispatching; // reentrancy guard
+    _Atomic int   dispatching; // reentrancy guard (main-thread-only, atomic for safety)
 };
 
-// Execute all tasks for a given thread id
-static void tp_execute(const BnThreadPool *pool, int tid) {
+// Execute all tasks via atomic work-stealing with adaptive chunk size.
+// Chunk = n / (4 * n_threads) — mostly static, stealing for tail imbalance.
+static void tp_execute(BnThreadPool *pool) {
     int nt = pool->n_threads;
     for (int t = 0; t < pool->n_tasks; t++) {
-        int n = pool->tasks[t].n;
-        int start = tid * n / nt;
-        int end   = (tid + 1) * n / nt;
-        if (start < end) {
-            pool->tasks[t].fn(pool->tasks[t].ctx, start, end);
+        BnTPTask *task = &pool->tasks[t];
+        int n = task->n;
+        int nt4 = nt <= INT_MAX / 4 ? nt * 4 : nt;  // avoid overflow
+        int chunk = n / nt4;
+        if (chunk < TP_CHUNK_MIN) chunk = TP_CHUNK_MIN;
+        for (;;) {
+            int start = atomic_fetch_add_explicit(&pool->cursors[t], chunk,
+                                                   memory_order_relaxed);
+            if (start >= n) break;
+            int end = start + chunk;
+            if (end > n) end = n;
+            task->fn(task->ctx, start, end);
         }
     }
 }
@@ -44,7 +62,7 @@ static void tp_execute(const BnThreadPool *pool, int tid) {
 static void *worker_loop(void *arg) {
     WorkerArg *wa = (WorkerArg *)arg;
     BnThreadPool *pool = wa->pool;
-    int tid = wa->tid;
+    (void)wa->tid;
     free(wa);
 
 #if defined(__APPLE__)
@@ -66,7 +84,7 @@ static void *worker_loop(void *arg) {
         pthread_mutex_unlock(&pool->mtx);
 
         // Do work
-        tp_execute(pool, tid);
+        tp_execute(pool);
 
         // Signal completion
         pthread_mutex_lock(&pool->mtx);
@@ -151,7 +169,7 @@ void bn_tp_free(BnThreadPool *pool) {
     free(pool);
 }
 
-void bn_tp_dispatch(BnThreadPool *pool, const BnTPTask *tasks, int n_tasks) {
+void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     if (n_tasks <= 0) return;
 
     // Serial fallback when no pool
@@ -167,6 +185,11 @@ void bn_tp_dispatch(BnThreadPool *pool, const BnTPTask *tasks, int n_tasks) {
     assert(!pool->dispatching && "bn_tp_dispatch is not reentrant");
     pool->dispatching = 1;
 
+    // Initialize atomic cursors (pool-internal storage)
+    assert(n_tasks <= TP_MAX_TASKS && "too many tasks for pool cursor array");
+    for (int t = 0; t < n_tasks; t++)
+        atomic_store_explicit(&pool->cursors[t], 0, memory_order_relaxed);
+
     // Set up work and wake workers
     pthread_mutex_lock(&pool->mtx);
     pool->tasks = tasks;
@@ -176,8 +199,8 @@ void bn_tp_dispatch(BnThreadPool *pool, const BnTPTask *tasks, int n_tasks) {
     pthread_cond_broadcast(&pool->work_cond);
     pthread_mutex_unlock(&pool->mtx);
 
-    // Main thread does its share (tid 0)
-    tp_execute(pool, 0);
+    // Main thread does its share
+    tp_execute(pool);
 
     // Wait for workers to finish
     pthread_mutex_lock(&pool->mtx);

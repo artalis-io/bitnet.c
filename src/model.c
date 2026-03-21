@@ -1,4 +1,5 @@
 #include "model.h"
+#include "moe.h"
 #include "sh_arena.h"
 #include "sh_log.h"
 #include <stdio.h>
@@ -144,6 +145,80 @@ static float *load_f32_tensor(BnGGUFFile *f, const char *name) {
     return (float *)bn_gguf_tensor_data(f, ti);
 }
 
+// --- Helper: compute byte size for quantized tensor type ---
+
+static size_t bn_tensor_type_size(int type, size_t nelements) {
+    switch (type) {
+        case BN_GGUF_TENSOR_F32:      return nelements * 4;
+        case BN_GGUF_TENSOR_F16:      return nelements * 2;
+        case BN_GGUF_TENSOR_BF16:     return nelements * 2;
+        case BN_GGUF_TENSOR_Q4_0:     return (nelements / 32) * 18;
+        case BN_GGUF_TENSOR_Q4_1:     return (nelements / 32) * 20;
+        case BN_GGUF_TENSOR_Q8_0:     return (nelements / 32) * 34;
+        case BN_GGUF_TENSOR_I2_S:     return (nelements / 4) + 4;
+        case BN_GGUF_TENSOR_TQ1_0:    return (nelements / 256) * 54;
+        case BN_GGUF_TENSOR_TQ2_0:    return (nelements / 256) * 66;
+        case BN_GGUF_TENSOR_Q2_K:     return (nelements / 256) * 84;
+        case BN_GGUF_TENSOR_Q3_K:     return (nelements / 256) * 110;
+        case BN_GGUF_TENSOR_Q4_K:     return (nelements / 256) * 144;
+        case BN_GGUF_TENSOR_Q5_K:     return (nelements / 256) * 176;
+        case BN_GGUF_TENSOR_Q6_K:     return (nelements / 256) * 210;
+        case BN_GGUF_TENSOR_Q8_K:     return (nelements / 256) * 292;
+        case BN_GGUF_TENSOR_IQ4_NL:   return (nelements / 32) * 18;
+        case BN_GGUF_TENSOR_IQ4_XS:   return (nelements / 256) * 136;
+        case BN_GGUF_TENSOR_IQ3_XXS:  return (nelements / 256) * 98;
+        case BN_GGUF_TENSOR_IQ3_S:    return (nelements / 256) * 114;
+        case BN_GGUF_TENSOR_IQ2_XXS:  return (nelements / 256) * 66;
+        case BN_GGUF_TENSOR_IQ2_XS:   return (nelements / 256) * 74;
+        case BN_GGUF_TENSOR_IQ2_S:    return (nelements / 256) * 82;
+        default: return 0;
+    }
+}
+
+// --- Helper: compute expert map for one fused 3D tensor ---
+// Tensor shape: [n_experts, rows_per_expert, cols_per_expert]
+// Returns file offset of first expert's data and bytes per expert slice.
+static int load_expert_map_proj(BnGGUFFile *f, const char *name,
+                                int n_experts, int *type_out,
+                                int *rows_out, int *cols_out,
+                                size_t *base_offset_out, size_t *expert_bytes_out) {
+    int ti = bn_gguf_find_tensor(f, name);
+    if (ti < 0) return -1;
+
+    BnGGUFTensorInfo *info = &f->tensors[ti];
+    if (info->n_dims < 3) {
+        SH_LOG_ERROR("Expert tensor must be 3D", "name", name);
+        return -1;
+    }
+
+    // GGUF dims: [cols, rows, n_experts] (column-major convention)
+    int cols = (int)info->dims[0];
+    int rows = (int)info->dims[1];
+    int n_exp = (int)info->dims[2];
+    if (n_exp != n_experts) {
+        SH_LOG_ERROR("Expert count mismatch in tensor", "name", name);
+        return -1;
+    }
+
+    *type_out = (int)info->type;
+    *rows_out = rows;
+    *cols_out = cols;
+
+    // Compute file offset of tensor data
+    size_t tensor_offset = f->data_offset + info->offset;
+    *base_offset_out = tensor_offset;
+
+    // Bytes per single expert slice
+    size_t expert_elements = (size_t)rows * cols;
+    *expert_bytes_out = bn_tensor_type_size((int)info->type, expert_elements);
+    if (*expert_bytes_out == 0) {
+        SH_LOG_ERROR("Unsupported expert tensor type", "name", name);
+        return -1;
+    }
+
+    return 0;
+}
+
 // --- Model loading ---
 
 int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
@@ -201,12 +276,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     }
 
     // Derived dimensions (safe now — denominators validated above)
-    c->head_size = c->dim / c->n_heads;
+    // Check for explicit head size (Qwen3 has key_length != dim/n_heads)
+    snprintf(key, sizeof(key), "%s.attention.key_length", prefix);
+    int explicit_head_size = (int)bn_gguf_get_u32(f, key);
+    c->head_size = (explicit_head_size > 0) ? explicit_head_size : (c->dim / c->n_heads);
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
 
     // Validate alignment for SIMD vectorized paths
-    if (c->dim % c->n_heads != 0) {
+    if (explicit_head_size == 0 && c->dim % c->n_heads != 0) {
         SH_LOG_ERROR("dim not divisible by n_heads");
         return -1;
     }
@@ -258,6 +336,51 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         if (c->ssm_state_size <= 0 || c->ssm_group_count <= 0) {
             SH_LOG_ERROR("ssm_state_size and ssm_group_count must be > 0");
             return -1;
+        }
+    }
+
+    // MoE config
+    snprintf(key, sizeof(key), "%s.expert_count", prefix);
+    c->n_experts = (int)bn_gguf_get_u32(f, key);
+    snprintf(key, sizeof(key), "%s.expert_used_count", prefix);
+    c->n_experts_active = (int)bn_gguf_get_u32(f, key);
+
+    if (c->n_experts > 0) {
+        // Per-expert intermediate size (from expert FFN tensors)
+        snprintf(key, sizeof(key), "%s.expert_feed_forward_length", prefix);
+        c->moe_intermediate_size = (int)bn_gguf_get_u32(f, key);
+        if (c->moe_intermediate_size == 0) {
+            // Fallback: infer from tensor dims
+            int ti = bn_gguf_find_tensor(f, "blk.0.ffn_gate_exps.weight");
+            if (ti >= 0 && f->tensors[ti].n_dims >= 3) {
+                c->moe_intermediate_size = (int)f->tensors[ti].dims[1];
+            }
+        }
+
+        // Shared expert
+        c->has_shared_expert = (bn_gguf_find_tensor(f, "blk.0.ffn_gate_shexp.weight") >= 0) ? 1 : 0;
+        if (c->has_shared_expert) {
+            snprintf(key, sizeof(key), "%s.expert_shared_feed_forward_length", prefix);
+            c->shared_expert_intermediate_size = (int)bn_gguf_get_u32(f, key);
+            if (c->shared_expert_intermediate_size == 0) {
+                // Fallback: infer from tensor dims
+                int ti = bn_gguf_find_tensor(f, "blk.0.ffn_gate_shexp.weight");
+                if (ti >= 0 && f->tensors[ti].n_dims >= 2)
+                    c->shared_expert_intermediate_size = (int)f->tensors[ti].dims[1];
+            }
+        }
+
+        if (c->n_experts_active <= 0 || c->moe_intermediate_size <= 0) {
+            SH_LOG_ERROR("Invalid MoE config: n_experts_active and moe_intermediate_size must be > 0");
+            return -1;
+        }
+
+        {
+            char ne_s[16], ka_s[16], mi_s[16];
+            snprintf(ne_s, sizeof(ne_s), "%d", c->n_experts);
+            snprintf(ka_s, sizeof(ka_s), "%d", c->n_experts_active);
+            snprintf(mi_s, sizeof(mi_s), "%d", c->moe_intermediate_size);
+            SH_LOG_INFO("MoE config", "experts", ne_s, "active", ka_s, "expert_hidden", mi_s);
         }
     }
 
@@ -451,11 +574,19 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
             snprintf(wname, sizeof(wname), "blk.%d.attn_v.bias", i);
             lw->v_bias = load_f32_tensor(f, wname);
 
-            // Q/K norms (Qwen3.5 attention)
+            // Q/K norms (Qwen3.5 / OLMoE attention)
             snprintf(wname, sizeof(wname), "blk.%d.attn_q_norm.weight", i);
             lw->q_norm = load_f32_tensor(f, wname);
             snprintf(wname, sizeof(wname), "blk.%d.attn_k_norm.weight", i);
             lw->k_norm = load_f32_tensor(f, wname);
+
+            // Detect per-head vs shared norms (layer 0 only)
+            if (i == 0 && lw->q_norm) {
+                snprintf(wname, sizeof(wname), "blk.0.attn_q_norm.weight");
+                int qi = bn_gguf_find_tensor(f, wname);
+                if (qi >= 0 && f->tensors[qi].dims[0] == (uint64_t)c->dim)
+                    c->qk_norm_per_head = 1;
+            }
         }
 
         // #25: FFN norms — must exist
@@ -474,20 +605,66 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         snprintf(wname, sizeof(wname), "blk.%d.ffn_sub_norm.weight", i);
         lw->ffn_sub_norm = load_f32_tensor(f, wname);  // optional
 
-        // FFN gate/up/down weights
-        if (c->has_ffn_gate) {
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_gate.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.ffn_gate.scale", i);
-            if (load_qweight(&lw->ffn_gate, f, wname, sname) != 0) goto fail_layers;
+        // FFN weights: MoE or dense
+        if (c->n_experts > 0) {
+            // --- MoE layer: router + expert offsets + shared expert ---
+
+            // Router weight: [n_experts, dim] F32 — always resident
+            snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_inp.weight", i);
+            lw->router_weight = (float *)load_f32_tensor(f, wname);
+            if (!lw->router_weight) {
+                SH_LOG_ERROR("Router weight not found", "name", wname);
+                goto fail_layers;
+            }
+
+            // Expert tensor offsets (NOT loaded into memory)
+            BnMoEExpertMap *em = &lw->expert_map;
+
+            snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_exps.weight", i);
+            if (load_expert_map_proj(f, wname, c->n_experts,
+                    &em->gate_type, &em->gate_rows, &em->gate_cols,
+                    &em->gate_offset, &em->expert_gate_bytes) != 0) goto fail_layers;
+
+            snprintf(wname, sizeof(wname), "blk.%d.ffn_up_exps.weight", i);
+            if (load_expert_map_proj(f, wname, c->n_experts,
+                    &em->up_type, &em->up_rows, &em->up_cols,
+                    &em->up_offset, &em->expert_up_bytes) != 0) goto fail_layers;
+
+            snprintf(wname, sizeof(wname), "blk.%d.ffn_down_exps.weight", i);
+            if (load_expert_map_proj(f, wname, c->n_experts,
+                    &em->down_type, &em->down_rows, &em->down_cols,
+                    &em->down_offset, &em->expert_down_bytes) != 0) goto fail_layers;
+
+            // Shared expert (optional, always resident)
+            if (c->has_shared_expert) {
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_shexp.weight", i);
+                snprintf(sname, sizeof(sname), "blk.%d.ffn_gate_shexp.scale", i);
+                if (load_qweight(&lw->shared_gate, f, wname, sname) != 0) goto fail_layers;
+
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_up_shexp.weight", i);
+                snprintf(sname, sizeof(sname), "blk.%d.ffn_up_shexp.scale", i);
+                if (load_qweight(&lw->shared_up, f, wname, sname) != 0) goto fail_layers;
+
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_down_shexp.weight", i);
+                snprintf(sname, sizeof(sname), "blk.%d.ffn_down_shexp.scale", i);
+                if (load_qweight(&lw->shared_down, f, wname, sname) != 0) goto fail_layers;
+            }
+        } else {
+            // --- Dense FFN ---
+            if (c->has_ffn_gate) {
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate.weight", i);
+                snprintf(sname, sizeof(sname), "blk.%d.ffn_gate.scale", i);
+                if (load_qweight(&lw->ffn_gate, f, wname, sname) != 0) goto fail_layers;
+            }
+
+            snprintf(wname, sizeof(wname), "blk.%d.ffn_up.weight", i);
+            snprintf(sname, sizeof(sname), "blk.%d.ffn_up.scale", i);
+            if (load_qweight(&lw->ffn_up, f, wname, sname) != 0) goto fail_layers;
+
+            snprintf(wname, sizeof(wname), "blk.%d.ffn_down.weight", i);
+            snprintf(sname, sizeof(sname), "blk.%d.ffn_down.scale", i);
+            if (load_qweight(&lw->ffn_down, f, wname, sname) != 0) goto fail_layers;
         }
-
-        snprintf(wname, sizeof(wname), "blk.%d.ffn_up.weight", i);
-        snprintf(sname, sizeof(sname), "blk.%d.ffn_up.scale", i);
-        if (load_qweight(&lw->ffn_up, f, wname, sname) != 0) goto fail_layers;
-
-        snprintf(wname, sizeof(wname), "blk.%d.ffn_down.weight", i);
-        snprintf(sname, sizeof(sname), "blk.%d.ffn_down.scale", i);
-        if (load_qweight(&lw->ffn_down, f, wname, sname) != 0) goto fail_layers;
     }
 
     // --- Allocate BnRunState via arena ---
@@ -513,7 +690,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         goto fail_state;
     }
 
+    // q_dim = n_heads * head_size (may differ from dim when attention.key_length is set)
+    int q_dim = c->n_heads * c->head_size;
+    int xb_size = q_dim > c->dim ? q_dim : c->dim;  // xb must hold attention output
+    int q_size = xb_size;  // q must match xb for attention head access pattern
+
     int x_q_size = c->dim > c->hidden_dim ? c->dim : c->hidden_dim;
+    if (q_dim > x_q_size) x_q_size = q_dim;
     int half_head = c->head_size / 2;
 
     // Scratch buffer sizes — enlarged for hybrid SSM + gated-Q attention
@@ -528,9 +711,17 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         if (c->ssm_inner_size > xb2_size) xb2_size = c->ssm_inner_size;
         if (c->ssm_inner_size > x_q_size) x_q_size = c->ssm_inner_size;
         // Gated Q attention: q_full (Q + gate) → hb
-        int gq = 2 * c->dim;
+        int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
+    // MoE shared expert may need larger hb/hb2 buffers
+    if (c->has_shared_expert && c->shared_expert_intermediate_size > hb_size)
+        hb_size = c->shared_expert_intermediate_size;
+    if (c->has_shared_expert && c->shared_expert_intermediate_size > hb2_size)
+        hb2_size = c->shared_expert_intermediate_size;
+    // MoE expert intermediate for x_q scratch
+    if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
+        x_q_size = c->moe_intermediate_size;
 
     // INT8 embedding size (DOTPROD + F16 only)
     size_t emb_i8_bytes = 0;
@@ -580,9 +771,41 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
                                 (c->ssm_conv_kernel - 1) * conv_dim;
     }
 
+    // MoE buffer sizing
+    size_t moe_arena_bytes = 0;
+    size_t moe_expert_buf_size = 0;
+    if (c->n_experts > 0) {
+        // Determine max expert projection size from layer 0
+        BnMoEExpertMap *em0 = &w->layers[0].expert_map;
+        moe_expert_buf_size = em0->expert_gate_bytes;
+        if (em0->expert_up_bytes > moe_expert_buf_size)
+            moe_expert_buf_size = em0->expert_up_bytes;
+        if (em0->expert_down_bytes > moe_expert_buf_size)
+            moe_expert_buf_size = em0->expert_down_bytes;
+
+        moe_arena_bytes += sizeof(BnMoEState);                                    // state struct
+        moe_arena_bytes += (size_t)c->n_experts * sizeof(float);                  // router_logits
+        moe_arena_bytes += (size_t)c->dim * sizeof(float);                        // expert_out
+        moe_arena_bytes += (size_t)c->n_experts_active * sizeof(float);           // expert_weights
+        moe_arena_bytes += (size_t)c->n_experts_active * sizeof(int);             // expert_indices
+        moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);      // expert_hb
+        moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);      // expert_hb2
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf (pread)
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf2 (pread double-buffer)
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf3 (prefetch gate)
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf4 (prefetch up)
+        // Batch buffers for cross-expert dispatch (mmap path)
+        int moe_k = c->n_experts_active;
+        if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
+        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float); // hb_batch
+        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float); // hb2_batch
+        moe_arena_bytes += (size_t)moe_k * c->dim * sizeof(float);                   // down_batch
+        moe_arena_bytes += (12 + 3 * moe_k) * SH_ARENA_ALIGN;                       // alignment
+    }
+
     // Compute total arena capacity (all RunState buffers + INT8 embeddings + Q4 repacking)
     size_t arena_size = 0;
-    arena_size += (3 * (size_t)c->dim + (size_t)xb2_size) * sizeof(float); // x, xb, xb2, q  (xb2 may be > dim for SSM)
+    arena_size += ((size_t)c->dim + (size_t)xb_size + (size_t)xb2_size + (size_t)q_size) * sizeof(float); // x, xb, xb2, q
     arena_size += ((size_t)hb_size + (size_t)hb2_size) * sizeof(float);    // hb, hb2
     arena_size += att_size * sizeof(float);                     // att
     arena_size += (size_t)c->vocab_size * sizeof(float);       // logits
@@ -593,6 +816,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     arena_size += (ssm_state_size_total + ssm_conv_state_total) * sizeof(float); // SSM state
     arena_size += emb_i8_bytes + emb_i8_scales_bytes;          // INT8 embeddings
     arena_size += q4_repack_total;                              // Q4_0 repacked weights
+    arena_size += moe_arena_bytes;                              // MoE buffers
     arena_size += 16 * SH_ARENA_ALIGN;                         // alignment padding
 
     if (arena_size > SIZE_MAX / 2) {
@@ -607,9 +831,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     }
 
     s->x           = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
-    s->xb          = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+    s->xb          = (float *)sh_arena_calloc(m->arena, xb_size, sizeof(float));
     s->xb2         = (float *)sh_arena_calloc(m->arena, xb2_size, sizeof(float));
-    s->q           = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+    s->q           = (float *)sh_arena_calloc(m->arena, q_size, sizeof(float));
     s->hb          = (float *)sh_arena_calloc(m->arena, hb_size, sizeof(float));
     s->hb2         = (float *)sh_arena_calloc(m->arena, hb2_size, sizeof(float));
     s->att         = (float *)sh_arena_calloc(m->arena, att_size, sizeof(float));
@@ -637,6 +861,62 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     if (ssm_state_size_total > 0 && (!s->ssm_state || !s->ssm_conv_state)) {
         SH_LOG_ERROR("Failed to allocate SSM state buffers");
         goto fail_state;
+    }
+
+    // MoE state buffers
+    m->moe_state = NULL;
+    m->expert_fd = -1;
+    if (c->n_experts > 0) {
+        BnMoEState *ms = (BnMoEState *)sh_arena_calloc(m->arena, 1, sizeof(BnMoEState));
+        if (!ms) {
+            SH_LOG_ERROR("Failed to allocate MoE state");
+            goto fail_state;
+        }
+        ms->io.fd = -1;  // will be set from BnMappedFile.fd after model.file is assigned
+        ms->router_logits  = (float *)sh_arena_calloc(m->arena, c->n_experts, sizeof(float));
+        ms->expert_out     = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+        ms->expert_weights = (float *)sh_arena_calloc(m->arena, c->n_experts_active, sizeof(float));
+        ms->expert_indices = (int *)sh_arena_calloc(m->arena, c->n_experts_active, sizeof(int));
+        ms->expert_hb      = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
+        ms->expert_hb2     = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
+        ms->io.buf      = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf_size  = moe_expert_buf_size;
+        ms->io.buf2     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf2_size = moe_expert_buf_size;
+        ms->io.buf3     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf3_size = moe_expert_buf_size;
+        ms->io.buf4     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf4_size = moe_expert_buf_size;
+        ms->io.prefetch = NULL;
+
+        if (!ms->router_logits || !ms->expert_out || !ms->expert_weights ||
+            !ms->expert_indices || !ms->expert_hb || !ms->expert_hb2 ||
+            !ms->io.buf || !ms->io.buf2 ||
+            !ms->io.buf3 || !ms->io.buf4) {
+            SH_LOG_ERROR("Failed to allocate MoE buffers");
+            goto fail_state;
+        }
+
+        // Batch buffers for cross-expert dispatch
+        int moe_k = c->n_experts_active;
+        if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
+        for (int k = 0; k < moe_k; k++) {
+            ms->expert_hb_batch[k]   = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
+            ms->expert_hb2_batch[k]  = (float *)sh_arena_calloc(m->arena, c->moe_intermediate_size, sizeof(float));
+            ms->expert_down_batch[k] = (float *)sh_arena_calloc(m->arena, c->dim, sizeof(float));
+            if (!ms->expert_hb_batch[k] || !ms->expert_hb2_batch[k] || !ms->expert_down_batch[k]) {
+                SH_LOG_ERROR("Failed to allocate MoE batch buffers");
+                goto fail_state;
+            }
+        }
+
+        m->moe_state = ms;
+
+        {
+            char buf_s[16];
+            snprintf(buf_s, sizeof(buf_s), "%.1f", (double)moe_expert_buf_size / (1024 * 1024));
+            SH_LOG_INFO("MoE state allocated", "expert_buf_MB", buf_s);
+        }
     }
 
     // Precompute RoPE frequencies: freq[i] = 1/theta^(2i/rope_dims)
@@ -731,10 +1011,11 @@ void bn_model_reset_state(BnModel *m) {
 
 void bn_model_free(BnModel *m) {
     if (!m) return;
+    if (m->moe_state) bn_moe_prefetch_destroy(m->moe_state);
     bn_tp_free(m->pool);
     free(m->weights.layers);
-    sh_arena_free(m->arena);  // frees INT8 embeddings too
-    bn_platform_unload_file(&m->file);  // safe even if file.data is NULL
+    sh_arena_free(m->arena);  // frees MoE state, INT8 embeddings too
+    bn_platform_unload_file(&m->file);  // safe even if file.data is NULL, also closes fd
     memset(m, 0, sizeof(BnModel));
 }
 

@@ -15,6 +15,24 @@ Single-core and multi-core performance on Apple M1 Max (32 GB), macOS.
 PGO build trained on respective model (128 tokens). Q4_0 uses weight repacking (split scales/qs) for NEON SDOT. WASM is single-threaded (no SharedArrayBuffer in Node.js RAWFS mode).
 Llama3 8B (3.3 GB) exceeds the WASM 4 GB address space with runtime allocations.
 
+## MoE Throughput (tok/s)
+
+Qwen3-30B-A3B-Q4_K_M (17.7 GB, 128 experts/layer, K=8), Apple M1 Max 8T, 128 tokens generated.
+
+| Mode | tok/s | Hit rate | MB/tok | pf_wait (ms) | RSS |
+|------|-------|----------|--------|-------------|-----|
+| mmap | 14.13 | — | 1046 | 0 | 16.2 GB |
+| pread + 4 GB cache | 11.88 | 86% | 144 | 1148 | 10.3 GB |
+| pread + 2 GB cache | 9.18 | 63% | 388 | 3666 | 10.2 GB |
+| pread (no cache) | 6.54 | — | 1046 | 8858 | 8.3 GB |
+
+The expert LRU cache (open-addressing hash + intrusive LRU list) stores full expert weights (gate+up+down) in a contiguous slab. Default 4 GB budget → 1402 slots → 86% hit rate, cutting I/O from 1046 → 144 MB/tok. Cache hits are batched (cross-expert gate+up matvec dispatch like the mmap path). First miss I/O is overlapped with hit batch compute. `--cache-mb N` to configure (0 to disable, pread mode only).
+
+**When to use which mode:**
+- **mmap** (default): Use when the model fits comfortably in RAM. Best throughput, simplest.
+- **pread + cache**: Use when the model exceeds available RAM, or you want to limit RSS. The 4 GB default cache gives 86% hit rate on Qwen3-30B with 10 GB RSS vs 16 GB for mmap.
+- **madvise**: Experimental. Currently slower than both mmap and pread due to syscall overhead (1152 madvise calls/token). Not recommended for production use.
+
 ## vs llama.cpp (b8320)
 
 Measured with `llama-bench`, same hardware (M1 Max, 8 threads). Both use `-p 0 -n 256` (pure generation, no prompt).

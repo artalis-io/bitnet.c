@@ -1,5 +1,6 @@
 #include "quant_internal.h"
 #include <arm_neon.h>
+#include <assert.h>
 #include <math.h>
 
 // Quantize float vector x[n] to int8, returning scale = amax/127.
@@ -113,9 +114,67 @@ void bn_quant_f16_rows_to_i8(const uint16_t *f16, int8_t *i8_out,
     }
 }
 
+_Static_assert(BN_QK_K % 16 == 0, "BN_QK_K must be a multiple of 16 for NEON");
+
+// Q8_K quantization: 256-element super-blocks with bsums for Q4_K SDOT.
+// x_d[n/256]: one float scale per super-block
+// x_bsums[n/256 * 16]: int16 sum per 16-element group (for min correction)
+void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
+                         int16_t *x_bsums, int n) {
+    assert(n % BN_QK_K == 0 && "bn_quant_x_to_q8k: n must be multiple of BN_QK_K");
+    int n_sb = n / BN_QK_K;
+    for (int sb = 0; sb < n_sb; sb++) {
+        const float *xb = x + sb * BN_QK_K;
+        int8_t *qb = x_q + sb * BN_QK_K;
+
+        // Find amax over 256 elements
+        float32x4_t vmax = vdupq_n_f32(0);
+        for (int i = 0; i < BN_QK_K; i += 16) {
+            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i)));
+            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i + 4)));
+            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i + 8)));
+            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i + 12)));
+        }
+        float amax = vmaxvq_f32(vmax);
+
+        if (amax == 0.0f) {
+            memset(qb, 0, BN_QK_K);
+            x_d[sb] = 0.0f;
+            memset(x_bsums + sb * 16, 0, 16 * sizeof(int16_t));
+            continue;
+        }
+
+        float inv_scale = 127.0f / amax;
+        x_d[sb] = amax / 127.0f;
+        float32x4_t vinv = vdupq_n_f32(inv_scale);
+
+        // Quantize 256 elements and compute bsums in one pass
+        int16_t *bsums = x_bsums + sb * 16;
+        for (int g = 0; g < 16; g++) {
+            const float *gx = xb + g * 16;
+            int8_t *gq = qb + g * 16;
+
+            int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx),      vinv));
+            int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx + 4),  vinv));
+            int32x4_t i2 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx + 8),  vinv));
+            int32x4_t i3 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx + 12), vinv));
+
+            int8x8_t r0 = vqmovn_s16(vcombine_s16(vqmovn_s32(i0), vqmovn_s32(i1)));
+            int8x8_t r1 = vqmovn_s16(vcombine_s16(vqmovn_s32(i2), vqmovn_s32(i3)));
+            vst1_s8(gq, r0);
+            vst1_s8(gq + 8, r1);
+
+            // bsum: sum of 16 int8 values
+            int8x16_t qv = vld1q_s8(gq);
+            bsums[g] = (int16_t)vaddlvq_s8(qv);
+        }
+    }
+}
+
 // Per-block Q8_0 quantization for Q4_0 integer dot product path.
 // Quantizes each 32-element block independently with its own scale.
 void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n) {
+    assert(n % 32 == 0 && "bn_quant_x_to_q8_blocks: n must be multiple of 32");
     int n_blocks = n / 32;
     for (int b = 0; b < n_blocks; b++) {
         const float *xb = x + b * 32;

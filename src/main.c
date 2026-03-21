@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "moe.h"
 #include "transformer.h"
 #include "tokenizer.h"
 #include "sampler.h"
@@ -22,6 +23,10 @@ typedef int (*bn_token_callback)(const char *piece, int token_id, void *user_dat
 #include <unistd.h>
 #endif
 
+#if !defined(__EMSCRIPTEN__)
+#include <sys/mman.h>
+#endif
+
 typedef struct {
     const char *model_path;
     const char *prompt;
@@ -37,6 +42,10 @@ typedef struct {
     int repeat_set;     // whether user explicitly set --repeat-penalty
     int no_prefill;
     int kv_f16;
+    int force_pread;    // force pread for expert loading (bypass mmap)
+    int cache_mb;       // expert cache budget in MB (default 2048, 0 to disable)
+    int cache_mb_set;   // whether user explicitly set --cache-mb
+    int force_madvise;  // madvise-guided mmap for low-RSS expert streaming
     int threads;        // 0 = auto-detect
 } CLIArgs;
 
@@ -54,6 +63,9 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.1)\n");
     fprintf(stderr, "  --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)\n");
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
+    fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
+    fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
+    fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
 }
 
@@ -86,6 +98,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.repeat_penalty = 1.1f;
     args.seed = 42;
     args.max_seq_len = 0;
+    args.cache_mb = 4096;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -118,6 +131,13 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.kv_f16 = 1;
         } else if (strcmp(argv[i], "--no-prefill") == 0) {
             args.no_prefill = 1;
+        } else if (strcmp(argv[i], "--pread") == 0) {
+            args.force_pread = 1;
+        } else if (strcmp(argv[i], "--madvise") == 0) {
+            args.force_madvise = 1;
+        } else if (strcmp(argv[i], "--cache-mb") == 0 && i + 1 < argc) {
+            args.cache_mb = parse_int(argv[++i], "--cache-mb");
+            args.cache_mb_set = 1;
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             args.threads = parse_int(argv[++i], "-t");
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
@@ -259,6 +279,48 @@ int main(int argc, char **argv) {
     }
     model.file = mf;  // keep mmap alive
     model.config.flash_attn = args.flash_attn;
+
+    // Set expert I/O for MoE: prefer mmap, fallback to pread
+    if (model.moe_state) {
+        if (!args.force_pread && mf.is_mmap == 1 && mf.data) {
+            model.moe_state->io.mmap_base = mf.data;
+        }
+        if (mf.fd >= 0) {
+            model.moe_state->io.fd = mf.fd;
+            model.expert_fd = mf.fd;
+        }
+
+        // madvise-guided mmap: use WILLNEED prefetch hints
+        if (args.force_madvise && args.force_pread) {
+            SH_LOG_WARN("--madvise and --pread are mutually exclusive, ignoring --madvise");
+        } else if (args.force_madvise && !model.moe_state->io.mmap_base) {
+            SH_LOG_WARN("--madvise requires mmap (file not mmap'd), falling back to pread");
+        } else if (args.force_madvise && model.moe_state->io.mmap_base) {
+#if !defined(__EMSCRIPTEN__)
+            // Only suppress readahead — don't evict. Let page cache manage eviction.
+            model.moe_state->io.madvise_mode = 1;
+            SH_LOG_INFO("Expert I/O mode", "mode", "madvise");
+#endif
+        } else if (args.force_pread) {
+            SH_LOG_INFO("Expert I/O mode", "mode", "pread (forced)");
+        } else if (model.moe_state->io.mmap_base) {
+            SH_LOG_INFO("Expert I/O mode", "mode", "mmap");
+        }
+
+        // Create I/O prefetch thread for pread pipeline (not needed for madvise)
+        if (!model.moe_state->io.madvise_mode)
+            bn_moe_prefetch_create(model.moe_state);
+
+        // Create expert LRU cache (pread only, not needed for madvise)
+        if (!model.moe_state->io.madvise_mode &&
+            args.cache_mb > 0 && !model.moe_state->io.mmap_base && model.moe_state->io.fd >= 0
+            && model.config.n_layers > 0) {
+            BnMoEExpertMap *em = &model.weights.layers[0].expert_map;
+            model.moe_state->io.cache = bn_moe_cache_create(
+                (size_t)args.cache_mb * 1024 * 1024,
+                em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes);
+        }
+    }
 
     // Create thread pool
     model.pool = bn_tp_create(n_workers);
@@ -575,10 +637,18 @@ int main(int argc, char **argv) {
             SH_LOG_INFO("Generation complete", "tokens", ng, "tok/s", speed, "total_ms", total);
         }
 
+        // Print MoE stats if applicable
+        if (model.moe_state)
+            bn_moe_print_stats(model.moe_state, n_generated + n_prompt);
+
         free(prompt_tokens);
     }
 
     // Cleanup
+    if (model.moe_state && model.moe_state->io.cache) {
+        bn_moe_cache_free(model.moe_state->io.cache);
+        model.moe_state->io.cache = NULL;
+    }
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tokenizer);
     bn_model_free(&model);  // also unloads mmap'd file

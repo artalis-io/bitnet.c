@@ -11,10 +11,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
 #endif
 
 BnMappedFile bn_platform_load_file(const char *path) {
     BnMappedFile f = {0};
+    f.fd = -1;
 #ifdef __EMSCRIPTEN__
     FILE *fp = fopen(path, "rb");
     if (!fp) return f;
@@ -42,9 +46,9 @@ BnMappedFile bn_platform_load_file(const char *path) {
     // #27: Guard against mmap with size 0 (POSIX says behavior is unspecified)
     if (f.size == 0) { close(fd); return f; }
     f.data = (uint8_t *)mmap(NULL, f.size, PROT_READ, MAP_PRIVATE, fd, 0);
-    close(fd);
-    if (f.data == MAP_FAILED) { f.data = NULL; f.size = 0; return f; }
+    if (f.data == MAP_FAILED) { f.data = NULL; f.size = 0; close(fd); return f; }
     f.is_mmap = 1;
+    f.fd = fd;  // keep fd open for pread (MoE expert loading)
 #endif
     return f;
 }
@@ -57,6 +61,7 @@ BnMappedFile bn_platform_load_buffer(const uint8_t *buf, size_t size) {
     f.data = (uint8_t *)buf;  // intentional const-discard for zero-copy interface
     f.size = size;
     f.is_mmap = 2;  // 2 = externally owned, do not free
+    f.fd = -1;
     return f;
 }
 
@@ -73,6 +78,10 @@ void bn_platform_unload_file(BnMappedFile *f) {
         free(f->data);
     }
     // is_mmap == 2: externally owned, don't free
+    if (f->fd >= 0) {
+        close(f->fd);
+        f->fd = -1;
+    }
 #endif
     f->data = NULL;
     f->size = 0;
@@ -85,5 +94,25 @@ double bn_platform_time_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+#endif
+}
+
+size_t bn_platform_rss_bytes(void) {
+#if defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    struct mach_task_basic_info info = {0};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  (task_info_t)&info, &count) == KERN_SUCCESS)
+        return info.resident_size;
+    return 0;
+#elif defined(__linux__) && !defined(__EMSCRIPTEN__)
+    FILE *fp = fopen("/proc/self/statm", "r");
+    if (!fp) return 0;
+    long pages = 0;
+    if (fscanf(fp, "%*ld %ld", &pages) != 1) pages = 0;
+    fclose(fp);
+    return (size_t)pages * 4096;
+#else
+    return 0;
 #endif
 }

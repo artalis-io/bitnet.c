@@ -89,111 +89,42 @@ typedef struct {
     const float *x;
 } BnQ6KCtx;
 
-// Q6_K SDOT context
+// K-quant SDOT context (Q8_K x quantization: 256-element super-blocks)
+// Shared by Q4_K and Q6_K SDOT kernels.
 typedef struct {
     float *out;
     const BnQWeight *W;
     const int8_t *x_q;
-    const float *x_scales;
-} BnQ6KSdotCtx;
+    const float *x_d;          // one scale per 256-element super-block
+    const int16_t *x_bsums;   // sum per 16-element group (16 per super-block)
+} BnKQuantSdotCtx;
 
-// Q8_K context
+typedef BnKQuantSdotCtx BnQ6KSdotCtx;  // backward compat
+
+typedef BnKQuantSdotCtx BnQ4KSdotCtx;  // backward compat
+
+// Generic float-x context: { out, W, x } — shared by all float-input kernels.
+// All K-quant, IQ, BF16, and Q4_1 float-x kernels use this identical layout.
 typedef struct {
     float *out;
     const BnQWeight *W;
     const float *x;
-} BnQ8KCtx;
+} BnFloatXCtx;
 
-// Q4_K context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnQ4KCtx;
-
-// Q5_K context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnQ5KCtx;
-
-// Q4_1 context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnQ4_1Ctx;
-
-// BF16 weight context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnBF16Ctx;
-
-// IQ4_NL context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ4NLCtx;
-
-// IQ4_XS context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ4XSCtx;
-
-// IQ3_XXS context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ3XXSCtx;
-
-// IQ3_S context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ3SCtx;
-
-// IQ2_XXS context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ2XXSCtx;
-
-// IQ2_XS context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ2XSCtx;
-
-// IQ2_S context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnIQ2SCtx;
-
-// Q2_K context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnQ2KCtx;
-
-// Q3_K context
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const float *x;
-} BnQ3KCtx;
+typedef BnFloatXCtx BnQ8KCtx;
+typedef BnFloatXCtx BnQ4KCtx;
+typedef BnFloatXCtx BnQ5KCtx;
+typedef BnFloatXCtx BnQ4_1Ctx;
+typedef BnFloatXCtx BnBF16Ctx;
+typedef BnFloatXCtx BnIQ4NLCtx;
+typedef BnFloatXCtx BnIQ4XSCtx;
+typedef BnFloatXCtx BnIQ3XXSCtx;
+typedef BnFloatXCtx BnIQ3SCtx;
+typedef BnFloatXCtx BnIQ2XXSCtx;
+typedef BnFloatXCtx BnIQ2XSCtx;
+typedef BnFloatXCtx BnIQ2SCtx;
+typedef BnFloatXCtx BnQ2KCtx;
+typedef BnFloatXCtx BnQ3KCtx;
 
 // --- Range function declarations ---
 
@@ -210,12 +141,14 @@ void bn_quant_i2s_scalar_range(void *ctx, int start, int end);
 void bn_quant_tq2_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_tq2_neon_range(void *ctx, int start, int end);
 void bn_quant_tq2_avx2_range(void *ctx, int start, int end);
+void bn_quant_tq2_wasm_range(void *ctx, int start, int end);
 void bn_quant_tq2_scalar_range(void *ctx, int start, int end);
 
 // TQ1_0 kernels
 void bn_quant_tq1_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_tq1_neon_range(void *ctx, int start, int end);
 void bn_quant_tq1_avx2_range(void *ctx, int start, int end);
+void bn_quant_tq1_wasm_range(void *ctx, int start, int end);
 void bn_quant_tq1_scalar_range(void *ctx, int start, int end);
 
 // Q8_0 kernels
@@ -223,7 +156,6 @@ void bn_quant_q8_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_neon_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_range(void *ctx, int start, int end);
 void bn_quant_q8_wasm_range(void *ctx, int start, int end);
-void bn_quant_q8_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_scalar_range(void *ctx, int start, int end);
 
 // Q4_0 kernels
@@ -250,6 +182,9 @@ void bn_quant_q8k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q8k_scalar_range(void *ctx, int start, int end);
 
 // Q4_K kernels
+void bn_quant_q4k_neon_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4k_avx2_sdot_range(void *ctx, int start, int end);
+void bn_quant_q6k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_neon_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4k_wasm_range(void *ctx, int start, int end);
