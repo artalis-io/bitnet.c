@@ -12,6 +12,7 @@
 #ifndef __EMSCRIPTEN__
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/mman.h>
 #endif
 
 #ifdef __ARM_NEON
@@ -545,6 +546,30 @@ static int moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
     }
 }
 
+// madvise helper: issue WILLNEED or DONTNEED for expert projections.
+// proj_mask: bitmask (1=gate, 2=up, 4=down), advice: MADV_WILLNEED or MADV_DONTNEED.
+#if !defined(__EMSCRIPTEN__)
+static void moe_madvise_experts(const BnMoEState *ms, const BnMoEExpertMap *map,
+                                 const int *indices, int n, int advice, int proj_mask) {
+    if (!ms->mmap_base) return;
+    long page_size = sysconf(_SC_PAGESIZE);
+    for (int k = 0; k < n; k++) {
+        int eidx = indices[k];
+        if (eidx < 0) continue;
+        for (int proj = 0; proj < 3; proj++) {
+            if (!((proj_mask >> proj) & 1)) continue;
+            size_t offset, proj_bytes;
+            moe_proj_info(map, eidx, proj, &offset, &proj_bytes);
+            // Page-align: round down start, round up end
+            uintptr_t addr = (uintptr_t)ms->mmap_base + offset;
+            uintptr_t aligned_start = addr & ~((uintptr_t)page_size - 1);
+            size_t aligned_len = (addr + proj_bytes - aligned_start + page_size - 1) & ~((size_t)page_size - 1);
+            madvise((void *)aligned_start, aligned_len, advice);
+        }
+    }
+}
+#endif
+
 // Load one expert projection into a specific buffer.
 // Returns pointer to data (mmap pointer or buf), or NULL on error.
 static const void *moe_load_expert_proj_into(BnMoEState *ms, const BnMoEExpertMap *map,
@@ -684,6 +709,16 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
         float valid_weights[BN_MAX_MOE_K];
         BnQWeight wgates[BN_MAX_MOE_K], wups[BN_MAX_MOE_K];
 
+        // Prefetch gate+up pages for all K experts (madvise mode)
+#if !defined(__EMSCRIPTEN__)
+        if (ms->madvise_mode) {
+            double ta = moe_time_ms();
+            moe_madvise_experts(ms, &lw->expert_map, ms->expert_indices, K,
+                                MADV_WILLNEED, 0x3 /* gate+up */);
+            ms->madvise_time_ms += moe_time_ms() - ta;
+        }
+#endif
+
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
             if (eidx < 0) continue;
@@ -728,6 +763,16 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
             bn_tp_dispatch(m->pool, swiglu_tasks, valid_k);
             ms->swiglu_time_ms += moe_time_ms() - t0;
 
+            // Prefetch down projection pages (madvise mode)
+#if !defined(__EMSCRIPTEN__)
+            if (ms->madvise_mode) {
+                double ta = moe_time_ms();
+                moe_madvise_experts(ms, &lw->expert_map, valid_indices, valid_k,
+                                    MADV_WILLNEED, 0x4 /* down */);
+                ms->madvise_time_ms += moe_time_ms() - ta;
+            }
+#endif
+
             // Down projections
             t0 = moe_time_ms();
             BnQWeight wdowns[BN_MAX_MOE_K];
@@ -761,6 +806,7 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
                     ms->expert_out[d] += w * ms->expert_down_batch[k][d];
             }
             ms->accum_time_ms += moe_time_ms() - t0;
+
         }
     }
 #if !defined(__EMSCRIPTEN__)
@@ -1133,8 +1179,9 @@ void bn_moe_print_stats(const BnMoEState *ms, int n_tokens) {
     snprintf(sh_s, sizeof(sh_s), "%.1f", ms->shared_time_ms);
     snprintf(ct_s, sizeof(ct_s), "%.1f", ms->compute_time_ms);
 
-    char pw_s[32];
+    char pw_s[32], ma_s[32];
     snprintf(pw_s, sizeof(pw_s), "%.1f", ms->prefetch_wait_ms);
+    snprintf(ma_s, sizeof(ma_s), "%.1f", ms->madvise_time_ms);
 
     size_t rss = bn_platform_rss_bytes();
     snprintf(rss_s, sizeof(rss_s), "%.2f", (double)rss / (1024.0 * 1024.0 * 1024.0));
@@ -1152,6 +1199,7 @@ void bn_moe_print_stats(const BnMoEState *ms, int n_tokens) {
                 "accum", ac_s,
                 "shared", sh_s,
                 "pf_wait", pw_s,
+                "madvise", ma_s,
                 "total", ct_s);
 
     bn_moe_cache_print_stats(ms);
@@ -1171,6 +1219,7 @@ void bn_moe_reset_stats(BnMoEState *ms) {
     ms->norm_time_ms = 0;
     ms->io_count = 0;
     ms->prefetch_wait_ms = 0;
+    ms->madvise_time_ms = 0;
     ms->cache_hits = 0;
     ms->cache_misses = 0;
 }

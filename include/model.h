@@ -23,6 +23,7 @@ typedef struct {
 typedef struct {
     int fd;
     const uint8_t *mmap_base; // mmap'd file base pointer (NULL if using pread)
+    int madvise_mode;         // 1 = madvise-guided mmap (WILLNEED/DONTNEED)
     float *router_logits;
     float *expert_out;
     float *expert_weights;
@@ -58,6 +59,7 @@ typedef struct {
     double shared_time_ms;    // shared expert time
     double norm_time_ms;      // RMSNorm time
     double prefetch_wait_ms;  // time main thread waited for I/O prefetch
+    double madvise_time_ms;   // time spent in madvise calls
     int    io_count;          // number of expert projections loaded
     size_t cache_hits;        // expert cache hits (pread only)
     size_t cache_misses;      // expert cache misses (pread only)
