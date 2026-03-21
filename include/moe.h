@@ -37,6 +37,13 @@ void bn_moe_prefetch_create(BnMoEState *ms);
 // Destroy I/O prefetch thread. Safe to call if prefetch is NULL.
 void bn_moe_prefetch_destroy(BnMoEState *ms);
 
+// Batch MoE FFN for prefill: route all n_tokens, group by expert, batch matmul.
+// act[n_tokens * dim]: input/output activations (residual add applied in-place).
+// xb_scratch[n_tokens * dim]: scratch for RMSNorm'd values.
+// Returns 0 on success, -1 on error.
+int bn_moe_forward_batch(BnModel *m, BnLayerWeights *lw, int l,
+                          float *act, float *xb_scratch, int n_tokens);
+
 // Unit test for LRU cache internals. Returns 0 on success, -1 on failure.
 int bn_moe_cache_test(void);
 

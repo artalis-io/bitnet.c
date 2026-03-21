@@ -951,7 +951,8 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
 
     BnConfig *c = &m->config;
 
-    // MoE models: fall back to sequential (batch MoE is Phase 3)
+    // MoE models: batch MoE prefill has correctness issues (WIP).
+    // Fall back to sequential until batch MoE is debugged.
     if (c->n_experts > 0) {
         float *logits = NULL;
         for (int i = 0; i < n_tokens; i++) {
@@ -1180,11 +1181,9 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
 
         // --- FFN block ---
         if (lw->router_weight) {
-            // MoE: process per-token (Phase 1 — batch MoE is Phase 3)
-            for (int t = 0; t < n_tokens; t++) {
-                memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
-                bn_moe_forward(m, lw, l);
-                memcpy(act + (size_t)t * dim, s->x, dim * sizeof(float));
+            // Batch MoE: route all tokens, group by expert, batch matmul
+            if (bn_moe_forward_batch(m, lw, l, act, Xb, n_tokens) != 0) {
+                free(batch_buf); free(act); return NULL;
             }
         } else if (lw->ffn_up.data) {
             // Dense FFN: batched matmul
