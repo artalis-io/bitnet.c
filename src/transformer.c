@@ -950,6 +950,16 @@ float *bn_transformer_prefill(BnModel *m, const int *tokens, int n_tokens, int p
     if (n_tokens == 1) return bn_transformer_forward(m, tokens[0], pos0);
 
     BnConfig *c = &m->config;
+
+    // MoE models: fall back to sequential (batch MoE is Phase 3)
+    if (c->n_experts > 0) {
+        float *logits = NULL;
+        for (int i = 0; i < n_tokens; i++) {
+            logits = bn_transformer_forward(m, tokens[i], pos0 + i);
+            if (!logits) return NULL;
+        }
+        return logits;
+    }
     BnRunState *s = &m->state;
     int dim = c->dim;
     int head_size = c->head_size;
