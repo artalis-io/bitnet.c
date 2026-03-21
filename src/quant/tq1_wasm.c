@@ -42,7 +42,10 @@ void bn_quant_tq1_wasm_range(void *ctx, int row_start, int row_end) {
                 v128_t pow3_vec = wasm_u8x16_splat(pow3[n]);
                 for (int i = 0; i < 2; i++) {
                     v128_t raw = wasm_v128_load(blk->qs + i * 16);
-                    v128_t q = wasm_i8x16_mul(raw, pow3_vec);
+                    // WASM has no i8x16.mul — emulate via widening multiply + narrow
+                    v128_t q = wasm_u8x16_narrow_i16x8(
+                        wasm_i16x8_mul(wasm_u16x8_extend_low_u8x16(raw), wasm_u16x8_extend_low_u8x16(pow3_vec)),
+                        wasm_i16x8_mul(wasm_u16x8_extend_high_u8x16(raw), wasm_u16x8_extend_high_u8x16(pow3_vec)));
                     // xi = (q * 3) >> 8 via widening multiply
                     v128_t prod_lo = wasm_u16x8_extmul_low_u8x16(q, three_u8);
                     v128_t prod_hi = wasm_u16x8_extmul_high_u8x16(q, three_u8);
@@ -56,7 +59,10 @@ void bn_quant_tq1_wasm_range(void *ctx, int row_start, int row_end) {
             // Next 80 elements: 5 layers × 16 elements from qs[32..47]
             for (int n = 0; n < 5; n++) {
                 v128_t raw = wasm_v128_load(blk->qs + 32);
-                v128_t q = wasm_i8x16_mul(raw, wasm_u8x16_splat(pow3[n]));
+                v128_t pow3n = wasm_u8x16_splat(pow3[n]);
+                v128_t q = wasm_u8x16_narrow_i16x8(
+                    wasm_i16x8_mul(wasm_u16x8_extend_low_u8x16(raw), wasm_u16x8_extend_low_u8x16(pow3n)),
+                    wasm_i16x8_mul(wasm_u16x8_extend_high_u8x16(raw), wasm_u16x8_extend_high_u8x16(pow3n)));
                 v128_t prod_lo = wasm_u16x8_extmul_low_u8x16(q, three_u8);
                 v128_t prod_hi = wasm_u16x8_extmul_high_u8x16(q, three_u8);
                 v128_t xi = wasm_u8x16_narrow_i16x8(
