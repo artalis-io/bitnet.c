@@ -54,9 +54,19 @@ Measured with `llama-bench`, same hardware (M1 Max, 8 threads), warm page cache 
 | Qwen3-30B-A3B MoE | Q4_K_M | 8–10 | 10–12 | ~80% | llama.cpp uses Metal GPU for MoE |
 | Qwen3.5-35B-A3B MoE | Q4_K_M | 5–7 | 6–8 | ~80% | llama.cpp uses Metal GPU for MoE |
 
-**Important:** llama.cpp with `-ngl 0` on Apple Silicon still routes MoE expert dispatch (`MUL_MAT_ID`) to Metal GPU when batch_size >= 32 (always true for 128+ experts). The "CPU" comparison for MoE models is actually CPU vs CPU+GPU. The CPU Q4_K kernel is equivalent between both engines — the ~20% gap is entirely from Metal GPU providing higher memory bandwidth for scattered expert weight reads.
+### MoE performance by page cache state (Qwen3-30B, M1 Max 32 GB)
 
-Dense models: llama.cpp leads due to multi-row interleaved Q4_K/Q4_0 kernels that amortize activation loads across rows.
+| Condition | bitnet.c | llama.cpp | Gap |
+|-----------|----------|-----------|-----|
+| Cold (SSD thrashing) | 5–7 tok/s | 7–8 tok/s | ~30% |
+| Warm page cache | 8–10 tok/s | 10–12 tok/s | ~20% |
+| Warm + bitnet.c runs first | 19–20 tok/s | 10–12 tok/s | bitnet 2x faster |
+
+**Why llama.cpp leads on MoE:** llama.cpp with `-ngl 0` on Apple Silicon still routes MoE expert dispatch (`MUL_MAT_ID`) to Metal GPU when batch_size >= 32 (always true for 128+ experts). The "CPU" comparison for MoE models is actually pure CPU vs CPU+GPU. The ~20% warm-cache gap is entirely from Metal GPU providing higher sustained memory bandwidth for scattered expert weight reads (thousands of GPU threads hide memory latency vs 8 CPU threads that stall on cache misses).
+
+The CPU Q4_K dot product kernel is equivalent between both engines — there is no kernel optimization that will close this gap. It requires either a Metal backend (against project identity) or reducing total expert weight reads (already optimized with batched dispatch, Q8_K integer accumulation, etc.).
+
+**Dense models:** llama.cpp leads due to multi-row interleaved Q4_K/Q4_0 kernels that amortize activation loads across rows.
 
 ## Per-Kernel Bandwidth (GB/s)
 
