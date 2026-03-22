@@ -1139,8 +1139,19 @@ void bn_moe_forward(BnModel *m, BnLayerWeights *lw, int l) {
         moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden);
         bn_quant_matvec(s->xb2, &lw->shared_down, s->hb, s->x_q, m->pool);
 
-        for (int d = 0; d < dim; d++)
-            ms->expert_out[d] += s->xb2[d];
+        // Apply shared expert sigmoid gate if present (Qwen3.5 MoE):
+        // gate = sigmoid(dot(input, gate_weight)) — scalar per token
+        if (lw->shared_expert_gate) {
+            float gate_dot = 0.0f;
+            for (int d = 0; d < dim; d++)
+                gate_dot += s->xb[d] * lw->shared_expert_gate[d];
+            float gate = 1.0f / (1.0f + expf(-gate_dot));
+            for (int d = 0; d < dim; d++)
+                ms->expert_out[d] += gate * s->xb2[d];
+        } else {
+            for (int d = 0; d < dim; d++)
+                ms->expert_out[d] += s->xb2[d];
+        }
     }
     ms->stats.shared_time_ms += moe_time_ms() - t0;
 

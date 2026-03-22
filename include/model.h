@@ -128,6 +128,7 @@ typedef struct {
     BnMoEExpertMap expert_map;              // file offsets for gate/up/down expert tensors
     // Shared expert (always resident, standard QWeight)
     BnQWeight shared_gate, shared_up, shared_down;
+    float *shared_expert_gate;   // [dim] sigmoid gate for shared expert output (NULL if absent)
 } BnLayerWeights;
 
 typedef struct {

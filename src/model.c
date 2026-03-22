@@ -666,6 +666,10 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
                 snprintf(wname, sizeof(wname), "blk.%d.ffn_down_shexp.weight", i);
                 snprintf(sname, sizeof(sname), "blk.%d.ffn_down_shexp.scale", i);
                 if (load_qweight(&lw->shared_down, f, wname, sname) != 0) goto fail_layers;
+
+                // Shared expert sigmoid gate (optional, Qwen3.5 MoE)
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_inp_shexp.weight", i);
+                lw->shared_expert_gate = load_f32_tensor(f, wname);
             }
         } else {
             // --- Dense FFN ---
