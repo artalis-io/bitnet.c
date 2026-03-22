@@ -816,6 +816,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf2 (pread double-buffer)
         moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf3 (prefetch gate)
         moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf4 (prefetch up)
+        moe_arena_bytes += moe_expert_buf_size;                                    // expert_buf5 (down)
         // Batch buffers for cross-expert dispatch (mmap path)
         int moe_k = c->n_experts_active;
         if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
@@ -909,12 +910,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
         ms->io.buf3_size = moe_expert_buf_size;
         ms->io.buf4     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
         ms->io.buf4_size = moe_expert_buf_size;
+        ms->io.buf5     = (uint8_t *)sh_arena_alloc(m->arena, moe_expert_buf_size);
+        ms->io.buf5_size = moe_expert_buf_size;
         ms->io.prefetch = NULL;
 
         if (!ms->router_logits || !ms->expert_out || !ms->expert_weights ||
             !ms->expert_indices || !ms->expert_hb || !ms->expert_hb2 ||
             !ms->io.buf || !ms->io.buf2 ||
-            !ms->io.buf3 || !ms->io.buf4) {
+            !ms->io.buf3 || !ms->io.buf4 || !ms->io.buf5) {
             SH_LOG_ERROR("Failed to allocate MoE buffers");
             goto fail_state;
         }
