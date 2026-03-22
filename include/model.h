@@ -91,6 +91,7 @@ typedef struct {
     int kv_f16;                     // store KV cache in FP16 (halves attention DRAM bandwidth)
     // Hybrid SSM + Attention (all zero = pure attention, backward compatible)
     int rope_dim_count;             // partial RoPE dim count (0 = full head_size)
+    int rope_text_dims;             // MROPE: dims for text section only (0 = use rope_dim_count)
     int full_attn_interval;         // 0 = all attention, N = every Nth layer is attention
     int ssm_state_size;             // head_k_dim (128)
     int ssm_conv_kernel;            // conv kernel size (4)

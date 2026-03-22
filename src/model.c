@@ -310,6 +310,19 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     snprintf(key, sizeof(key), "%s.rope.dimension_count", prefix);
     c->rope_dim_count = (int)bn_gguf_get_u32(f, key);
 
+    // MROPE: dimension_sections[0] = text-only RoPE pairs (sections 1,2 are vision)
+    // For text-only inference, only apply RoPE to the first section's dimensions.
+    snprintf(key, sizeof(key), "%s.rope.dimension_sections", prefix);
+    {
+        uint64_t nsect = bn_gguf_get_arr_n(f, key);
+        if (nsect > 0) {
+            const int32_t *sections = (const int32_t *)bn_gguf_get_arr_data(f, key);
+            if (sections && sections[0] > 0 && c->rope_dim_count > 0) {
+                c->rope_text_dims = sections[0] * 2;  // pairs → dims
+            }
+        }
+    }
+
     snprintf(key, sizeof(key), "%s.full_attention_interval", prefix);
     c->full_attn_interval = (int)bn_gguf_get_u32(f, key);
 
@@ -929,6 +942,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     int half_rope = rope_dims / 2;
     for (int i = 0; i < half_rope; i++) {
         s->rope_freq[i] = 1.0f / powf(c->rope_theta, (float)(2 * i) / (float)rope_dims);
+    }
+    // MROPE text-only: zero out non-text section frequencies.
+    // Sections 1,2 (vision height/width) get position=0 for text tokens → no rotation.
+    if (c->rope_text_dims > 0) {
+        int text_pairs = c->rope_text_dims / 2;
+        for (int i = text_pairs; i < half_rope; i++)
+            s->rope_freq[i] = 0.0f;
     }
 
     // Quantize F16 embeddings to INT8 for fast SDOT logits kernel
