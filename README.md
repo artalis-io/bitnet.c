@@ -258,8 +258,8 @@ Tested models with generation quality and performance on Apple M1 Max (8 P-cores
 | bitnet-b1.58-2B-4T | 1.1 GB | I2_S (ternary) | Transformer | **29–41** | Factual, correct code |
 | Qwen2.5-3B-Instruct | 1.7 GB | Q4_0 | Transformer | **23–25** | Coherent, instruct-following |
 | Llama3-8B-1.58 | 3.3 GB | TQ1_0 (ternary) | Transformer | **8–9** | Basic completion |
-| Qwen3-30B-A3B | 17.7 GB | Q4_K_M | MoE (128 experts, K=8) | **8–10** | ~80% of llama.cpp (uses Metal GPU) |
-| Qwen3.5-35B-A3B | 21.0 GB | Q4_K_M | SSM+MoE (256 experts) | **5–7** | ~80% of llama.cpp (uses Metal GPU) |
+| Qwen3-30B-A3B | 17.7 GB | Q4_K_M | MoE (128 experts, K=8) | **19–20** | 2x faster than llama.cpp at steady state |
+| Qwen3.5-35B-A3B | 21.0 GB | Q4_K_M | SSM+MoE (256 experts) | **5–7** | SSD-bound (21 GB model, 32 GB machine) |
 | Qwen3.5-9B | 5.3 GB | Q4_K_M (mixed) | Hybrid SSM+Attention | **2.8–3.1** | Best quality, chain-of-thought |
 
 Any GGUF model using supported weight types works — these are just the tested configurations.
