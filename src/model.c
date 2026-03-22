@@ -267,10 +267,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16) {
     // Vocab size from tokenizer metadata
     c->vocab_size = (int)bn_gguf_get_arr_n(f, "tokenizer.ggml.tokens");
 
+    // Early MoE expert count read (needed for validation — hidden_dim can be 0 for MoE-only FFN)
+    snprintf(key, sizeof(key), "%s.expert_count", prefix);
+    int early_n_experts = (int)bn_gguf_get_u32(f, key);
+
     // #15, #38: Validate BEFORE computing derived dimensions to avoid division by zero
+    // hidden_dim may be 0 for pure MoE models (all FFN is expert-based)
     if (c->dim <= 0 || c->n_layers <= 0 || c->n_heads <= 0 ||
-        c->vocab_size <= 0 || c->n_kv_heads <= 0 || c->hidden_dim <= 0 ||
-        c->seq_len <= 0) {
+        c->vocab_size <= 0 || c->n_kv_heads <= 0 || c->seq_len <= 0 ||
+        (c->hidden_dim <= 0 && early_n_experts <= 0)) {
         SH_LOG_ERROR("Invalid model config");
         return -1;
     }
