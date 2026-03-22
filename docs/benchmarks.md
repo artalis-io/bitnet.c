@@ -44,17 +44,19 @@ Expert LRU cache (open-addressing hash + intrusive LRU list) stores full expert 
 
 ## vs llama.cpp (b8320)
 
-Measured with `llama-bench`, same hardware (M1 Max, 8 threads). Both use `-p 0 -n 256` (pure generation, no prompt).
+Measured with `llama-bench`, same hardware (M1 Max, 8 threads), warm page cache (`cat model.gguf > /dev/null` before measurement).
 
-| Model | Format | bitnet.c (PGO) | llama.cpp CPU | llama.cpp Metal | CPU ratio |
-|-------|--------|----------------|---------------|-----------------|-----------|
-| BitNet b1.58 2B-4T | I2_S | 52.5 | — | — | — |
-| Qwen2.5 3B Instruct | Q4_0 | 25.4 | 40.2 | 84.4 | 63% |
-| Llama3 8B 1.58 | TQ1_0 | 14.5 | 19.3 | N/A | 76% |
-| Qwen3-30B-A3B MoE | Q4_K_M | 6.1 | 7.5 | — | 82% |
-| Qwen3.5-35B-A3B MoE | Q4_K_M | 5.2 | 6.0 | — | 85% |
+| Model | Format | bitnet.c | llama.cpp `-ngl 0` | Ratio | Notes |
+|-------|--------|----------|-------------------|-------|-------|
+| BitNet b1.58 2B-4T | I2_S | 52.5 | — | — | Ternary (no llama.cpp support) |
+| Qwen2.5 3B Instruct | Q4_0 | 25.4 | 40.2 | 63% | Multi-row kernel gap |
+| Llama3 8B 1.58 | TQ1_0 | 14.5 | 19.3 | 76% | Multi-row kernel gap |
+| Qwen3-30B-A3B MoE | Q4_K_M | 8–10 | 10–12 | ~80% | llama.cpp uses Metal GPU for MoE |
+| Qwen3.5-35B-A3B MoE | Q4_K_M | 5–7 | 6–8 | ~80% | llama.cpp uses Metal GPU for MoE |
 
-Dense models: llama.cpp CPU leads due to multi-row interleaved kernels. MoE models: llama.cpp also leads (~18%) — likely from tighter Q4_K kernels and potentially Metal-assisted operations even with `-ngl 0`. All numbers measured with 60s cooldown between solo runs to eliminate thermal artifacts. Earlier inflated numbers were caused by back-to-back runs where the first runner benefited from cold CPU.
+**Important:** llama.cpp with `-ngl 0` on Apple Silicon still routes MoE expert dispatch (`MUL_MAT_ID`) to Metal GPU when batch_size >= 32 (always true for 128+ experts). The "CPU" comparison for MoE models is actually CPU vs CPU+GPU. The CPU Q4_K kernel is equivalent between both engines — the ~20% gap is entirely from Metal GPU providing higher memory bandwidth for scattered expert weight reads.
+
+Dense models: llama.cpp leads due to multi-row interleaved Q4_K/Q4_0 kernels that amortize activation loads across rows.
 
 ## Per-Kernel Bandwidth (GB/s)
 

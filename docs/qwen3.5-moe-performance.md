@@ -6,11 +6,11 @@ Apple M1 Max (32 GB), 8 threads, 64 tokens generated. Hybrid SSM + MoE architect
 
 | Mode | tok/s | RSS | MB/tok | Cache hit | pf_wait (ms) |
 |------|-------|-----|--------|-----------|-------------|
-| mmap | **5.16** | 20.1 GB | 580 | — | 0 |
+| mmap (warm cache) | **5–7** | 20.1 GB | 580 | — | 0 |
 | pread + 4 GB cache | ~4.5 | 11.3 GB | 157 | 72.9% | — |
 | pread (no cache) | ~2.5 | 11.0 GB | 580 | — | — |
 
-vs llama.cpp CPU-only (`-ngl 0`, same hardware): **6.04 tok/s** → bitnet.c is **85%** of llama.cpp (18% slower). All numbers measured with 60s cooldown, solo runs, 64 tokens to eliminate thermal variance.
+vs llama.cpp `-ngl 0` (same hardware): **6–8 tok/s** → bitnet.c is **~80%** of llama.cpp. Note: llama.cpp routes MoE expert dispatch (`MUL_MAT_ID`) to Metal GPU even with `-ngl 0` when batch_size >= 32 (always true for 256 experts). The comparison is pure CPU vs CPU+GPU. MoE numbers vary significantly with page cache state (21 GB model on 32 GB machine).
 
 ## Time Breakdown (mmap, per token ≈ 85ms)
 
