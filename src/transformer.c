@@ -732,14 +732,7 @@ static int forward_single_layer(BnModel *m, int l, int pos, int cache_pos,
     }
     BL_ACC(bl_ffn_us);
 
-    if (l == 0 && pos == 0) {
-        char v0[16], v1[16], v2[16], v3[16];
-        snprintf(v0, sizeof(v0), "%.6f", s->x[0]);
-        snprintf(v1, sizeof(v1), "%.6f", s->x[1]);
-        snprintf(v2, sizeof(v2), "%.6f", s->x[2]);
-        snprintf(v3, sizeof(v3), "%.6f", s->x[3]);
-        SH_LOG_DEBUG("Layer 0 pos 0", "x0", v0, "x1", v1, "x2", v2, "x3", v3);
-    }
+    (void)is_attn; // used only in debug builds
 
 #ifdef BN_BENCH_LAYERS
     bl_layer_count++;
