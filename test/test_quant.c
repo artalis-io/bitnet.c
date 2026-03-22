@@ -151,11 +151,61 @@ static void test_matvec_threaded(void) {
     printf("PASSED\n");
 }
 
+// --- Integration test: matmul vs N individual matvecs ---
+// Verifies that bn_quant_matmul produces identical results to calling
+// bn_quant_matvec N times with different x vectors.
+static void test_matmul_correctness(void) {
+    printf("test_matmul_correctness... ");
+
+    int rows = 4, cols = 256, n_tokens = 3;
+    int row_bytes = cols / 4;
+    size_t data_size = (size_t)rows * row_bytes + sizeof(float);
+    uint8_t *data = (uint8_t *)calloc(data_size, 1);
+
+    // Fill with deterministic ternary pattern
+    for (int r = 0; r < rows; r++)
+        for (int b = 0; b < row_bytes; b++)
+            data[r * row_bytes + b] = (uint8_t)((r * 17 + b * 31) & 0xFF);
+
+    float tensor_scale = 0.25f;
+    memcpy(data + (size_t)rows * row_bytes, &tensor_scale, sizeof(float));
+    BnQWeight W = { data, BN_GGUF_TENSOR_I2_S, rows, cols, tensor_scale };
+
+    // Create N different x vectors
+    float *X = (float *)malloc((size_t)n_tokens * cols * sizeof(float));
+    for (int t = 0; t < n_tokens; t++)
+        for (int i = 0; i < cols; i++)
+            X[t * cols + i] = 0.1f * ((t * 7 + i * 3) % 19) - 0.9f;
+
+    // Reference: N individual matvec calls
+    float *ref = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    int8_t x_q[256];
+    for (int t = 0; t < n_tokens; t++)
+        bn_quant_matvec(ref + t * rows, &W, X + t * cols, x_q, NULL);
+
+    // Matmul: single call for all N tokens
+    float *out = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    bn_quant_matmul(out, &W, X, n_tokens, x_q, NULL);
+
+    // Compare
+    for (int t = 0; t < n_tokens; t++) {
+        for (int r = 0; r < rows; r++) {
+            float diff = fabsf(out[t * rows + r] - ref[t * rows + r]);
+            float mag = fabsf(ref[t * rows + r]) + 1e-6f;
+            assert(diff / mag < 0.01f);
+        }
+    }
+
+    free(data); free(X); free(ref); free(out);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_dispatch_routing();
     test_matvec_batch();
     test_matvec_threaded();
+    test_matmul_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }
