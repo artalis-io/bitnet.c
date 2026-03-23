@@ -161,6 +161,7 @@ void bn_quant_tq1_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_tq1_neon_range(void *ctx, int start, int end);
 void bn_quant_tq1_avx2_range(void *ctx, int start, int end);
 void bn_quant_tq1_wasm_range(void *ctx, int start, int end);
+void bn_quant_tq1_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_tq1_scalar_range(void *ctx, int start, int end);
 
 // Q8_0 kernels
@@ -186,6 +187,7 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_neon_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q6k_wasm_range(void *ctx, int start, int end);
+void bn_quant_q6k_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_range(void *ctx, int start, int end);
 
 // Q8_K kernels
@@ -199,10 +201,13 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end);
 void bn_quant_q6k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end);
 void bn_quant_q4k_avx2_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end);
 void bn_quant_q6k_avx2_sdot_range(void *ctx, int start, int end);
+void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end);
 void bn_quant_q4k_neon_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4k_wasm_range(void *ctx, int start, int end);
+void bn_quant_q4k_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_scalar_range(void *ctx, int start, int end);
 
 // Q5_K kernels

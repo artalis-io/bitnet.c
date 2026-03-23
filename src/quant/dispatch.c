@@ -154,6 +154,14 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         bn_quant_x_to_q8k(x, x_q_buf, q6k_d, q6k_bsums, W->cols);
         BnKQuantSdotCtx ctx = { out, W, x_q_buf, q6k_d, q6k_bsums };
         BnTPTask task = { bn_quant_q6k_avx2_sdot_range, &ctx, W->rows };
+#elif defined(__wasm_relaxed_simd__)
+        int n_sb_q6k_w = W->cols / BN_QK_K;
+        if (n_sb_q6k_w < 1 || n_sb_q6k_w > BN_MAX_SCALE_BLOCKS / 8) return;
+        float q6k_d_w[n_sb_q6k_w];
+        int16_t q6k_bsums_w[n_sb_q6k_w * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q6k_d_w, q6k_bsums_w, W->cols);
+        BnKQuantSdotCtx ctx = { out, W, x_q_buf, q6k_d_w, q6k_bsums_w };
+        BnTPTask task = { bn_quant_q6k_wasm_sdot_range, &ctx, W->rows };
 #elif defined(__wasm_simd128__)
         (void)x_q_buf;
         BnQ6KCtx ctx = { out, W, x };
@@ -204,6 +212,14 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         bn_quant_x_to_q8k(x, x_q_buf, q4k_d, q4k_bsums, W->cols);
         BnKQuantSdotCtx ctx = { out, W, x_q_buf, q4k_d, q4k_bsums };
         BnTPTask task = { bn_quant_q4k_avx2_sdot_range, &ctx, W->rows };
+#elif defined(__wasm_relaxed_simd__)
+        int n_sb_q4k_w = W->cols / BN_QK_K;
+        if (n_sb_q4k_w < 1 || n_sb_q4k_w > BN_MAX_SCALE_BLOCKS / 8) return;
+        float q4k_d_w[n_sb_q4k_w];
+        int16_t q4k_bsums_w[n_sb_q4k_w * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q4k_d_w, q4k_bsums_w, W->cols);
+        BnKQuantSdotCtx ctx = { out, W, x_q_buf, q4k_d_w, q4k_bsums_w };
+        BnTPTask task = { bn_quant_q4k_wasm_sdot_range, &ctx, W->rows };
 #elif defined(__wasm_simd128__)
         (void)x_q_buf;
         BnQ4KCtx ctx = { out, W, x };
@@ -455,6 +471,11 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         float x_scale = bn_quant_x_to_i8(x, x_q_buf, W->cols);
         BnTQ1SdotCtx ctx = { out, W, x_q_buf, W->scale * x_scale };
         BnTPTask task = { bn_quant_tq1_avx2_range, &ctx, W->rows };
+        bn_tp_dispatch(pool, &task, 1);
+#elif defined(__wasm_relaxed_simd__)
+        float x_scale = bn_quant_x_to_i8(x, x_q_buf, W->cols);
+        BnTQ1SdotCtx ctx = { out, W, x_q_buf, W->scale * x_scale };
+        BnTPTask task = { bn_quant_tq1_wasm_sdot_range, &ctx, W->rows };
         bn_tp_dispatch(pool, &task, 1);
 #elif defined(__wasm_simd128__)
         (void)x_q_buf;
@@ -782,11 +803,17 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         return;
     }
 #elif defined(__wasm_relaxed_simd__)
-    int all_i2s = 1, all_q4 = 1;
+    int all_i2s = 1, all_q4 = 1, all_tq1 = 1, all_tq2 = 1;
+    int all_q4k = 1, all_q6k = 1;
     for (int t = 0; t < n_tasks; t++) {
         if (tasks[t].W->type != BN_GGUF_TENSOR_I2_S) all_i2s = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_0) all_q4 = 0;
-        if (!all_i2s && !all_q4) break;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_TQ1_0) all_tq1 = 0;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_TQ2_0) all_tq2 = 0;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_K) all_q4k = 0;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_Q6_K) all_q6k = 0;
+        if (!all_i2s && !all_q4 && !all_tq1 && !all_tq2 &&
+            !all_q4k && !all_q6k) break;
     }
 
     if (all_i2s && n_tasks <= 4) {
@@ -817,6 +844,76 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
             tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_tq1 && n_tasks <= 4) {
+        float x_scale = bn_quant_x_to_i8(x, x_q_buf, cols);
+
+        BnTQ1SdotCtx ctxs[4];
+        BnTPTask tp_tasks[4];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnTQ1SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
+                                     tasks[t].W->scale * x_scale };
+            tp_tasks[t] = (BnTPTask){ bn_quant_tq1_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_tq2 && n_tasks <= 4) {
+        float x_scale = bn_quant_x_to_i8(x, x_q_buf, cols);
+
+        BnTQ2SdotCtx ctxs[4];
+        BnTPTask tp_tasks[4];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnTQ2SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf,
+                                     tasks[t].W->scale * x_scale };
+            tp_tasks[t] = (BnTPTask){ bn_quant_tq2_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_q6k && n_tasks <= BN_MAX_BATCH) {
+        int n_sb = cols / BN_QK_K;
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
+
+        BnQ6KSdotCtx ctxs[BN_MAX_BATCH];
+        BnTPTask tp_tasks[BN_MAX_BATCH];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnQ6KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, q8k_d, q8k_bsums };
+            tp_tasks[t] = (BnTPTask){ bn_quant_q6k_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_q4k && n_tasks <= BN_MAX_BATCH) {
+        int n_sb = cols / BN_QK_K;
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
+
+        BnQ4KSdotCtx ctxs[BN_MAX_BATCH];
+        BnTPTask tp_tasks[BN_MAX_BATCH];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnQ4KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, q8k_d, q8k_bsums };
+            tp_tasks[t] = (BnTPTask){ bn_quant_q4k_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -903,7 +1000,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
     }
 
     // K-quant SDOT: quantize to Q8_K per task
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     if (all_same_type && (type0 == BN_GGUF_TENSOR_Q4_K || type0 == BN_GGUF_TENSOR_Q6_K)
         && n_tasks <= BN_MAX_BATCH) {
         int n_bpr = cols / BN_QK_K;
@@ -924,8 +1021,16 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     q8k_d + t * n_bpr,
                     q8k_bsums + t * n_bpr * 16
                 };
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
                 void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
                     ? bn_quant_q4k_neon_sdot_range : bn_quant_q6k_neon_sdot_range;
+#elif defined(__AVX2__)
+                void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
+                    ? bn_quant_q4k_avx2_sdot_range : bn_quant_q6k_avx2_sdot_range;
+#else
+                void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
+                    ? bn_quant_q4k_wasm_sdot_range : bn_quant_q6k_wasm_sdot_range;
+#endif
                 tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
             }
             bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -998,9 +1103,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 }
 
 // Matrix-matrix multiply: process n_tokens input vectors against same weight matrix.
-// Fused kernel (loads weights once, dots all tokens): Q4_K NEON SDOT only.
-// All other types (Q6_K, Q5_K, AVX2, WASM, scalar) fall back to loop-over-matvec.
-// TODO: add fused Q6_K NEON and AVX2 Q4_K/Q6_K matmul kernels.
+// Fused kernel (loads weights once, dots all tokens): Q4_K/Q6_K on NEON SDOT and AVX2.
+// All other types (Q5_K, WASM, scalar) fall back to loop-over-matvec.
 void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
                      int n_tokens, int8_t *x_q_buf, BnThreadPool *pool) {
     int rows = W->rows;
@@ -1011,7 +1115,7 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
         return;
     }
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__)
     if (W->type == BN_GGUF_TENSOR_Q4_K) {
         int n_bpr = cols / BN_QK_K;
         if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;
@@ -1035,7 +1139,11 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
 
         BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
         BnTPTask task = { bn_quant_q4k_neon_sdot_matmul_range, &ctx, rows };
+#else
+        BnTPTask task = { bn_quant_q4k_avx2_sdot_matmul_range, &ctx, rows };
+#endif
         bn_tp_dispatch(pool, &task, 1);
 
         free(xq_all); free(xd_all); free(xbs_all);
@@ -1059,14 +1167,15 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
                                xbs_all + (size_t)t * n_bpr * 16, cols);
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
         BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
         BnTPTask task = { bn_quant_q6k_neon_sdot_matmul_range, &ctx, rows };
+#else
+        BnTPTask task = { bn_quant_q6k_avx2_sdot_matmul_range, &ctx, rows };
+#endif
         bn_tp_dispatch(pool, &task, 1);
         free(xq_all); free(xd_all); free(xbs_all);
         return;
     }
-#endif
-
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
 fallback_loop:
 #endif
     // Generic fallback: loop over tokens

@@ -8,6 +8,7 @@
 #include "sampler.h"
 #include "threadpool.h"
 #include "session.h"
+#include "prompt_cache.h"
 #include "sh_log.h"
 
 #include <stdio.h>
@@ -428,6 +429,9 @@ int main(int argc, char **argv) {
             return 1;
         }
 
+        // Prompt cache: saves BOS state for fast /reset
+        BnPromptCache *prompt_cache = bn_prompt_cache_create(0, NULL);
+
         int pos = 0;
         int seq_len = cfg->seq_len;
 
@@ -435,6 +439,11 @@ int main(int argc, char **argv) {
         if (tokenizer.add_bos) {
             bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
             pos++;
+            // Cache the BOS state for fast reset
+            if (prompt_cache) {
+                int bos_tok = tokenizer.bos_id;
+                bn_prompt_cache_store(prompt_cache, &model, session, &bos_tok, 1);
+            }
         }
 
         char line[4096];
@@ -451,10 +460,19 @@ int main(int argc, char **argv) {
             if (len == 0) continue;
             if (strcmp(line, "/quit") == 0) break;
             if (strcmp(line, "/reset") == 0) {
-                pos = 0;
-                if (tokenizer.add_bos) {
-                    bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
-                    pos++;
+                // Try to restore BOS state from cache (avoids re-prefilling)
+                int bos_tok = tokenizer.bos_id;
+                int restored = prompt_cache ?
+                    bn_prompt_cache_restore(prompt_cache, &model, session, &bos_tok, 1) : 0;
+                if (restored > 0) {
+                    pos = restored;
+                } else {
+                    bn_session_reset(session, &model);
+                    pos = 0;
+                    if (tokenizer.add_bos) {
+                        bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
+                        pos++;
+                    }
                 }
                 bn_sampler_reset_recent(&sampler);
                 printf("[conversation reset]\n");
@@ -514,6 +532,7 @@ int main(int argc, char **argv) {
         }
 
         free(tokens);
+        bn_prompt_cache_free(prompt_cache);
     } else {
         // --- Single-shot generation ---
         int max_prompt_tokens = (int)strlen(args.prompt) + 3;

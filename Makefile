@@ -83,7 +83,7 @@ TRANSFORMER_SRCS = src/transformer.c $(TRANSFORMER_BACKEND)
 
 SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
        $(TRANSFORMER_SRCS) src/tokenizer.c src/sampler.c \
-       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/generate.c src/main.c
+       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c src/main.c
 OBJS = $(SRCS:.c=.o)
 
 # Default target
