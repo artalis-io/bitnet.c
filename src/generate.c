@@ -464,10 +464,12 @@ void bn_logprobs_compute(const float *logits, int vocab_size,
     }
 
     // Compute log-sum-exp for log-softmax: log(sum(exp(logits - max)))
+    // sum_exp >= 1.0 since exp(max_logit - max_logit) = 1, so logf is safe.
     float sum_exp = 0.0f;
     for (int i = 0; i < vocab_size; i++) {
         sum_exp += expf(logits[i] - max_logit);
     }
+    if (sum_exp < 1e-30f) sum_exp = 1e-30f;  // guard for cppcheck (unreachable: sum_exp >= 1.0)
     float log_sum = logf(sum_exp) + max_logit;  // log(sum(exp(logits)))
 
     // Chosen token logprob
