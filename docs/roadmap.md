@@ -129,11 +129,42 @@ Only **reducing data volume** helps at this point:
 2. **KV cache quantization to INT8** — further reduces attention data at long positions.
 3. **Weight clustering / pruning** — reduce I2_S weight data below 497 MB.
 
+## Phase 9: Concurrent Sessions & Prompt Cache — Done
+
+- [x] BnModel/BnSession split (shared model + per-request mutable state)
+- [x] `bn_session_create/free/reset` API
+- [x] BnPromptCache (shared KV prefix with longest-prefix matching, FIFO eviction)
+- [x] Thread-safe prompt cache with configurable byte budget
+- [x] Prompt cache integrated in chat mode CLI
+
+## Phase 10: SIMD Backend Parity — Done
+
+- [x] AVX2 flash GQA (online softmax attention)
+- [x] WASM flash GQA + scalar flash GQA
+- [x] WASM I8 SDOT logits + `bn_quant_f16_rows_to_i8` for WASM
+- [x] WASM SDOT for TQ1_0, TQ2_0, Q8_0, Q4_K, Q6_K
+- [x] WASM `bn_quant_x_to_q8k` (Q8_K super-block quantization)
+- [x] AVX2 Q4_K/Q6_K fused matmul (batch prefill)
+- [x] VLA guards + SIMD alignment guards in all GQA backends
+
 ## Future Work
 
+### GPU Compute Backend
+- [ ] `BnGPUBackend` vtable (matvec, matmul, buffer upload/download)
+- [ ] GPU dispatch integration in `quant/dispatch.c`
+- [ ] WGSL compute shaders for I2_S, Q4_0, Q4_K, Q6_K matvec
+- [ ] `bn_model_upload_weights` for GPU buffer management
+- See [docs/hull-integration.md](hull-integration.md) for the full design
+
+### Library API
+- [ ] SSE chunk formatter (`bn_format_sse_chunk` for OpenAI-compatible streaming)
+- [ ] Hull WASM AoT adapter (`hull_process` entry point)
+- [x] Logprobs API (`bn_logprobs_compute`)
+- [x] Multi-turn chat formatting (`bn_chat_format_messages`)
+- [x] Stop strings (`BnStopStrings`)
+- [x] Allocator vtable (`BnAllocator`, compatible with Keel's `KlAllocator`)
+
 ### Extended Model Support
-- [ ] Multiple architecture support beyond BitNet (detect from GGUF metadata)
-- [ ] Chat template support (system/user/assistant formatting)
 - [ ] LoRA adapter loading
 
 ### Developer Experience
@@ -141,7 +172,6 @@ Only **reducing data volume** helps at this point:
 - [ ] Token probability output mode (for debugging/research)
 - [ ] JSON output mode (structured generation metadata)
 - [ ] Model info dump command (`--info` to print config without inference)
-- [ ] Completion callback API (for embedding in other C programs)
 
 ### SIMD Backends
 - [ ] AVX-512 VNNI — native `vpdpbusd`, 512-bit vectors (Ice Lake+, Zen 4+)
@@ -151,7 +181,6 @@ Only **reducing data volume** helps at this point:
 - [ ] iOS/Android builds (static library)
 - [ ] Python bindings (ctypes or cffi wrapper)
 - [ ] Node.js native addon
-- [ ] WebGPU compute shader backend for browser
 
 ## Non-Goals
 
@@ -159,3 +188,4 @@ Only **reducing data volume** helps at this point:
 - Training or fine-tuning
 - Multi-GPU / distributed inference
 - Replacing llama.cpp for general LLM inference
+- HTTP server (that's Hull's job)
