@@ -69,6 +69,8 @@ emcc \
     "$PROJECT_DIR/src/threadpool.c" \
     "$PROJECT_DIR/src/sh_arena.c" \
     "$PROJECT_DIR/src/sh_log.c" \
+    "$PROJECT_DIR/src/bn_alloc.c" \
+    "$PROJECT_DIR/src/session.c" \
     "$PROJECT_DIR/wasm/api.c" \
     -I"$PROJECT_DIR/include" \
     -std=c11 -D_GNU_SOURCE -Wall -Wextra \
