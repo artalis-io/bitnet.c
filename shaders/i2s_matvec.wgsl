@@ -2,7 +2,7 @@
 // 128-element chunks, 32 bytes per chunk
 // Per-tensor scale stored at end of weight data
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -23,7 +23,6 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
 
-var<workgroup> x_cache: array<f32, 128>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 @compute @workgroup_size(256)
@@ -51,16 +50,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var c = 0u; c < chunks_per_row; c++) {
-        // First 128 threads load x_cache
-        if (tid < CHUNK_SIZE) {
-            let col = c * CHUNK_SIZE + tid;
-            x_cache[tid] = select(0.0, x[x_base + col], col < cols);
-        }
-        workgroupBarrier();
-
-        if (global_row < uniforms.rows) {
+    if (global_row < uniforms.rows) {
+        for (var c = 0u; c < chunks_per_row; c++) {
             let chunk_u32_offset = row_offset_u32 + c * u32s_per_chunk;
+            let elem_base = c * CHUNK_SIZE;
 
             // Each thread handles 16 elements (128 / 8)
             let my_start = local_elem * ELEMS_PER_THREAD;
@@ -78,10 +71,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
                 // Map: 0→-1, 1→0, 2→+1, 3→0
                 let dv = select(f32(i32(v) - 1), 0.0, v == 3u);
-                acc += dv * x_cache[elem];
+                acc += dv * x[x_base + elem_base + elem];
             }
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

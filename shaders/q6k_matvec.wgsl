@@ -1,7 +1,7 @@
 // Q6_K TILED matvec — 6-bit k-quant, 256 elements per block, 210 bytes/block
 // Layout: ql[128] (bytes 0-127), qh[64] (bytes 128-191), scales[16] (bytes 192-207), d FP16 (bytes 208-209)
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -18,7 +18,6 @@ struct Uniforms { rows: u32, cols: u32, n_tokens: u32, extra: u32 }
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> u: Uniforms;
 
-var<workgroup> x_cache: array<f32, 256>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn fp16_to_f32(bits: u32) -> f32 {
@@ -65,16 +64,14 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var bi = 0u; bi < n_blocks; bi++) {
-        x_cache[tid] = x[x_base + bi * QK_K + tid];
-        workgroupBarrier();
-
-        if (global_row < u.rows) {
+    if (global_row < u.rows) {
+        for (var bi = 0u; bi < n_blocks; bi++) {
             let base = row_byte + bi * BLOCK_BYTES;
             let ql_base = base;
             let qh_base = base + 128u;
             let sc_base = base + 192u;
             let d = fp16_to_f32(read_u16(base + 208u));
+            let elem_base = bi * QK_K;
 
             let my_start = local_elem * ELEMS_PER_THREAD;
 
@@ -119,10 +116,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                 }
 
                 let sc = f32(read_i8(sc_off + s_idx));
-                acc += d * sc * f32(q6) * x_cache[elem];
+                acc += d * sc * f32(q6) * x[x_base + elem_base + elem];
             }
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

@@ -1,7 +1,7 @@
 // Q8_K TILED matvec — 8-bit quantization with 256-element super-blocks
 // 292 bytes per block: 4-byte F32 scale + 256 int8 values + 32 bytes bsums (unused here)
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -22,7 +22,6 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
 
-var<workgroup> x_cache: array<f32, 256>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn sign_extend_i8(val: u32) -> i32 {
@@ -53,12 +52,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var b = 0u; b < blocks_per_row; b++) {
-        x_cache[tid] = x[x_base + b * QK_K + tid];
-        workgroupBarrier();
-
-        if (global_row < uniforms.rows) {
+    if (global_row < uniforms.rows) {
+        for (var b = 0u; b < blocks_per_row; b++) {
             let block_byte = row_byte_offset + b * 292u;
+            let elem_base = b * QK_K;
 
             // Read F32 scale from first 4 bytes (handle unaligned)
             let scale_u32_idx = block_byte / 4u;
@@ -80,10 +77,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                 let elem = my_start + i;
                 let byte_val = read_byte(qs_byte_start + elem);
                 let ival = sign_extend_i8(byte_val);
-                acc += scale * f32(ival) * x_cache[elem];
+                acc += scale * f32(ival) * x[x_base + elem_base + elem];
             }
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

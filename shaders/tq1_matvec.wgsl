@@ -5,7 +5,7 @@
 // qh[0..3]:   4 trits per byte x 4 bytes  = 16 values
 // Total: 160 + 80 + 16 = 256 values
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -26,7 +26,6 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
 
-var<workgroup> x_cache: array<f32, 256>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn fp16_to_f32(bits: u32) -> f32 {
@@ -82,14 +81,11 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var b = 0u; b < blocks_per_row; b++) {
-        // All 256 threads load x_cache
-        x_cache[tid] = x[x_base + b * BLOCK_SIZE + tid];
-        workgroupBarrier();
-
-        if (global_row < uniforms.rows) {
+    if (global_row < uniforms.rows) {
+        for (var b = 0u; b < blocks_per_row; b++) {
             let block_byte = row_byte_offset + b * block_bytes;
             let d = fp16_to_f32(read_u16(block_byte, 52u));
+            let elem_base = b * BLOCK_SIZE;
 
             // Each thread handles 32 elements (256 / 8)
             // Elements are mapped across 3 sections:
@@ -125,11 +121,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                     w = decode_trit(byte_val, pow3[n]);
                 }
 
-                block_sum += f32(w) * x_cache[elem];
+                block_sum += f32(w) * x[x_base + elem_base + elem];
             }
             acc += block_sum * d;
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

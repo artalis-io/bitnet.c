@@ -1,7 +1,7 @@
 // IQ4_NL TILED matvec — 4-bit non-linear quantization with codebook lookup
 // 32-element blocks, 18 bytes each: d(FP16) + qs[16] packed 4-bit codebook indices
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -21,7 +21,6 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
 
-var<workgroup> x_cache: array<f32, 32>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn fp16_to_f32(bits: u32) -> f32 {
@@ -68,16 +67,11 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var b = 0u; b < blocks_per_row; b++) {
-        if (tid < 32u) {
-            let col = b * 32u + tid;
-            x_cache[tid] = select(0.0, x[x_base + col], col < cols);
-        }
-        workgroupBarrier();
-
-        if (global_row < uniforms.rows) {
+    if (global_row < uniforms.rows) {
+        for (var b = 0u; b < blocks_per_row; b++) {
             let block_byte = row_byte_base + b * 18u;
             let d = fp16_to_f32(read_u16_at(block_byte));
+            let elem_base = b * 32u;
 
             let my_start = local_elem * ELEMS_PER_THREAD;
             var block_sum: f32 = 0.0;
@@ -91,11 +85,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                     let byte_val = read_byte(block_byte + 2u + elem - 16u);
                     val = IQ4NL_VALS[(byte_val >> 4u) & 0xFu];
                 }
-                block_sum += f32(val) * x_cache[elem];
+                block_sum += f32(val) * x[x_base + elem_base + elem];
             }
             acc += block_sum * d;
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

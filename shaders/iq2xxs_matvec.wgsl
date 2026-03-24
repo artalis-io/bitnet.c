@@ -1,7 +1,7 @@
 // IQ2_XXS TILED matvec — 2-bit codebook quantization
 // 256-element blocks, 66 bytes each
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -22,7 +22,6 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
 
-var<workgroup> x_cache: array<f32, 256>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn fp16_to_f32(bits: u32) -> f32 {
@@ -162,14 +161,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var b = 0u; b < blocks_per_row; b++) {
-        x_cache[tid] = x[x_base + b * BLOCK_SIZE + tid];
-        workgroupBarrier();
-
-        if (global_row < uniforms.rows) {
+    if (global_row < uniforms.rows) {
+        for (var b = 0u; b < blocks_per_row; b++) {
             let block_byte = row_byte_offset + b * block_bytes;
             let d = fp16_to_f32(read_u16(block_byte, 0u));
             let qs_base = block_byte + 2u;
+            let elem_base = b * BLOCK_SIZE;
 
             let my_start = local_elem * ELEMS_PER_THREAD;
 
@@ -219,7 +216,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                     let jj = j % 4u;
                     let w = grid_byte(g, jj);
                     let s = f32(1 - 2 * i32((signs >> j) & 1u));
-                    acc += db * w * s * x_cache[elem];
+                    acc += db * w * s * x[x_base + elem_base + elem];
                 } else {
                     // grid2 without sign
                     let j2 = j - 8u;
@@ -230,11 +227,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                         g = IQ2XXS_GRID[grid_idx2 * 2u + 1u];
                     }
                     let jj = j2 % 4u;
-                    acc += db * grid_byte(g, jj) * x_cache[elem];
+                    acc += db * grid_byte(g, jj) * x[x_base + elem_base + elem];
                 }
             }
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

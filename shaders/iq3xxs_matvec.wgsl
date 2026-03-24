@@ -1,7 +1,7 @@
 // IQ3_XXS TILED matvec — 3-bit codebook quantization
 // 256-element blocks, 98 bytes each
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -22,7 +22,6 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> uniforms: Uniforms;
 
-var<workgroup> x_cache: array<f32, 256>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn fp16_to_f32(bits: u32) -> f32 {
@@ -126,15 +125,13 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var b = 0u; b < blocks_per_row; b++) {
-        x_cache[tid] = x[x_base + b * BLOCK_SIZE + tid];
-        workgroupBarrier();
-
-        if (global_row < uniforms.rows) {
+    if (global_row < uniforms.rows) {
+        for (var b = 0u; b < blocks_per_row; b++) {
             let block_byte = row_byte_offset + b * block_bytes;
             let d = fp16_to_f32(read_u16(block_byte, 0u));
             let qs_base = block_byte + 2u;
             let sas_base = block_byte + 66u;
+            let elem_base = b * BLOCK_SIZE;
 
             // Each thread handles 32 elements (256 / 8)
             let my_start = local_elem * ELEMS_PER_THREAD;
@@ -167,10 +164,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                     if ((signs & (1u << j)) != 0u) { w = -w; }
                 }
 
-                acc += db * w * x_cache[elem];
+                acc += db * w * x[x_base + elem_base + elem];
             }
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;

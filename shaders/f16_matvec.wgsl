@@ -1,7 +1,7 @@
 // F16 TILED matvec — float16 (no block structure)
-// Process in tiles of 256 elements. x_cache is 256 floats.
+// Process in tiles of 256 elements.
 //
-// Tiled: TILE_ROWS=32, 8 threads per row, synchronous block iteration with shared x_cache.
+// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
 // Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
 
 const TILE_ROWS: u32 = 32u;
@@ -17,7 +17,6 @@ struct Uniforms { rows: u32, cols: u32, n_tokens: u32, extra: u32 }
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> u: Uniforms;
 
-var<workgroup> x_cache: array<f32, 256>;
 var<workgroup> reduce_buf: array<f32, 256>;
 
 fn fp16_to_f32(bits: u32) -> f32 {
@@ -50,11 +49,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     var acc: f32 = 0.0;
 
-    for (var b = 0u; b < blocks_per_row; b++) {
-        x_cache[tid] = x[x_base + b * BLOCK_SIZE + tid];
-        workgroupBarrier();
-
-        if (global_row < u.rows) {
+    if (global_row < u.rows) {
+        for (var b = 0u; b < blocks_per_row; b++) {
+            let elem_base = b * BLOCK_SIZE;
             let my_start = local_elem * ELEMS_PER_THREAD;
             for (var i = 0u; i < ELEMS_PER_THREAD; i += 2u) {
                 let elem = my_start + i;
@@ -62,10 +59,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
                 let word = weights[w_base + word_idx];
                 let w0 = fp16_to_f32(word & 0xFFFFu);
                 let w1 = fp16_to_f32(word >> 16u);
-                acc += w0 * x_cache[elem] + w1 * x_cache[elem + 1u];
+                acc += w0 * x[x_base + elem_base + elem] + w1 * x[x_base + elem_base + elem + 1u];
             }
         }
-        workgroupBarrier();
     }
 
     reduce_buf[tid] = acc;
