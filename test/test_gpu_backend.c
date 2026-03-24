@@ -141,16 +141,13 @@ static void test_gpu_matvec(void) {
 
     // CPU path
     float out_cpu = 0;
+    void *saved_buf = W.gpu_buf;
     W.gpu_buf = NULL;  // force CPU
     bn_quant_matvec_gpu(&out_cpu, &W, x, scratch, NULL, &mock_gpu);
 
-    // Restore gpu_buf for cleanup
-    W.gpu_buf = mock_gpu.buffer_create(mock_gpu.ctx, W.data, sz,
-                                        W.type, W.rows, W.cols);
-
     assert(fabsf(out_gpu - out_cpu) < 1e-3f);
 
-    mock_gpu.buffer_destroy(mock_gpu.ctx, W.gpu_buf);
+    mock_gpu.buffer_destroy(mock_gpu.ctx, saved_buf);
     free(data);
 
     printf("PASSED\n");
