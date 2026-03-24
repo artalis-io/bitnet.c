@@ -46,15 +46,17 @@ Add OpenAI-compatible SSE chunk formatting to the library API. No HTTP dependenc
 - `include/generate.h` — declare `bn_format_sse_chunk`
 - `src/generate.c` — implement
 
-**API:**
+**API (implemented):**
 ```c
 // Format a token piece into an OpenAI-compatible SSE data line.
-// Writes to buf, returns bytes written. buf must be at least piece_len + 128.
-// id: request ID string (may be NULL). model: model name (may be NULL).
-// finish_reason: NULL for normal chunks, "stop"/"length" for final chunk.
+// Returns bytes written (excluding NUL), or -1 on insufficient buffer.
 int bn_format_sse_chunk(char *buf, int buf_size,
                         const char *piece, const char *id,
-                        const char *model, const char *finish_reason);
+                        const char *model, const char *finish_reason,
+                        long long created);
+
+// Format the SSE stream terminator: "data: [DONE]\n\n"
+int bn_format_sse_done(char *buf, int buf_size);
 ```
 
 Output format:
@@ -67,76 +69,68 @@ data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","model":"bitnet-2b",
 
 **Test:** `test/test_generate.c` — verify output matches OpenAI spec for normal chunks, empty content, and finish chunks.
 
-### Phase 2: Hull WASM AoT Adapter (bitnet.c)
+### Phase 2: Hull WASM AoT Adapter (Hull repo — NOT bitnet.c)
 
-Add a WASM entry point that follows Hull's `hull_process` ABI convention. This enables bitnet.c to run as a Hull compute module when native linking or GPU isn't available.
+The WASM adapter implements Hull's `hull_process(in_ptr, in_len, out_ptr, out_max)` ABI and uses Hull-specific conventions: shared data segments for zero-copy model loading (`host_call(OP_DATA_INFO, ...)`), streaming via `host_call(OP_CALLBACK, ...)`, and Hull's binary op protocol.
 
-**Files:**
-- `wasm/hull_adapter.c` — `hull_process` entry point
-- Update `wasm/build.sh` — optional `--hull` flag to build the adapter
+**This adapter lives in Hull, not bitnet.c.** It is 100% Hull's ABI — it knows Hull's entry point signature, Hull's host_call opcodes, Hull's shared heap mechanism. Nothing in it is reusable by other WASM hosts. bitnet.c's library API is the integration surface; the adapter is Hull's glue code that calls it.
 
-**ABI:**
-```c
-// Hull calls this with a binary request, gets a binary response.
-// Input:  [4-byte op] [payload]
-// Ops:    0x01 = load (path), 0x02 = generate (tokens + params), 0x03 = tokenize
-// Output: [4-byte status] [payload]
-int hull_process(const uint8_t *in, int in_len, uint8_t *out, int out_max);
+**Files (in Hull):**
+```
+hull/
+├── src/hull/cap/llm_bitnet_wasm.c   # hull_process adapter (compiled to WASM)
+└── build/                            # wamrc AOT compilation of the above
 ```
 
-Binary protocol (not JSON) because this is a hot path — no parsing overhead. Hull's `llm_bitnet.c` adapter handles JSON↔binary translation on the Lua side.
+**Protocol:** Binary, little-endian (native WASM byte order). First byte is op code.
 
-**Streaming via host_call:** For token-by-token streaming, the WASM module calls `host_call(OP_CALLBACK, chunk_id, data, len)` for each token. Hull's Lua handler receives these as callback events and streams them via SSE.
+| Op | Name | Input payload | Output payload | Streaming |
+|----|------|---------------|----------------|-----------|
+| `0x01` | INIT | `{u32 max_seq_len, u32 kv_f16, f32 temp, f32 topp, u64 seed}` | `{u32 status, u32 vocab_size, u32 seq_len}` | No |
+| `0x02` | GENERATE | `{u32 n_tokens, u32 max_gen, f32 temp, f32 topp, u32 n_stop, i32 tokens[], ...stop strings}` | `{u32 n_generated}` | Yes — SSE chunks via host_call |
+| `0x03` | TOKENIZE | `{u32 text_len, u8 text[]}` | `{u32 n_tokens, i32 tokens[]}` | No |
+| `0x04` | RESET | (empty) | `{u32 status}` | No |
 
-**Why in bitnet.c:** The adapter is bitnet.c-specific (it calls bitnet.c's API). It ships with bitnet.c but is only compiled when targeting WASM. No Hull headers needed — just the ABI convention (a function signature).
+**Model loading:** Via Hull's shared data segments (zero-copy). Hull Lua does `compute.data("bitnet", "model", fs.mmap("model.gguf"))`, then the INIT handler queries the segment address via `host_call(OP_DATA_INFO, 0, 0)` and calls `bn_gguf_open()` on the pointer.
+
+**Streaming:** During GENERATE, the adapter formats each token as an SSE chunk using `bn_format_sse_chunk()` (from bitnet.c's library API), then calls `host_call(OP_CALLBACK, sse_ptr, sse_len)`. Hull's Lua handler writes chunks verbatim to the HTTP response.
+
+**Why in Hull:** The adapter is tightly coupled to Hull's ABI conventions. A different WASM host (Wasmer, Wasmtime, Node WASI) would need a completely different adapter. bitnet.c's responsibility ends at the library API.
 
 ### Phase 3: GPU Backend Vtable (bitnet.c)
 
 Define a GPU compute abstraction that any host can fill in. bitnet.c calls it for matvec; the host implements it with whatever GPU API it has.
 
-**Files:**
+**Files (implemented):**
 - `include/gpu_backend.h` — vtable definition
-- `src/gpu_dispatch.c` — dispatch logic (GPU if available, else CPU SIMD)
+- `include/quant.h` — `void *gpu_buf` on `BnQWeight`, `bn_quant_matvec_gpu`, `bn_quant_matvec_batch_gpu`
+- `include/model.h` — `BnGPUBackend *gpu` on `BnModel`, `bn_model_upload_weights`, `bn_model_release_gpu`
+- `src/quant/dispatch.c` — GPU-aware dispatch functions
+- `src/transformer.c` — all 19 matvec call sites wired to GPU-aware variants
 
-**Vtable:**
+**Vtable (implemented):**
 ```c
 typedef struct {
-    // Upload weight tensor to GPU. Returns opaque buffer handle.
-    void *(*buffer_create)(void *ctx, const void *data, size_t size);
+    void *(*buffer_create)(void *ctx, const void *data, size_t size,
+                           int type, int rows, int cols);
     void  (*buffer_destroy)(void *ctx, void *buffer);
-
-    // Quantized matvec: out[rows] = W[rows, cols] @ x[cols]
-    // W is a GPU buffer handle (from buffer_create).
-    // x and out are host pointers (copied to/from GPU internally).
-    // type: BN_GGUF_TENSOR_* constant for the weight format.
     int (*matvec)(void *ctx, float *out, void *W_buf, const float *x,
                   int rows, int cols, int type);
-
-    // Batch matvec for prefill: out[n_tokens, rows] = W @ X[n_tokens, cols]
     int (*matmul)(void *ctx, float *out, void *W_buf, const float *X,
-                  int rows, int cols, int n_tokens, int type);
-
-    void *ctx;  // opaque backend context (e.g., Hull's HlGpuCtx)
+                  int rows, int cols, int n_tokens, int type);  // optional (NULL ok)
+    void *ctx;
 } BnGPUBackend;
 ```
 
-**Integration in forward pass:**
+**Dispatch (implemented):**
 ```c
-// In bn_quant_matvec (dispatch.c):
-if (W->gpu_buf && gpu_backend) {
-    gpu_backend->matvec(gpu_backend->ctx, out, W->gpu_buf, x, W->rows, W->cols, W->type);
-    return;
-}
-// ... existing CPU SIMD dispatch
-```
+// GPU-aware matvec: tries GPU first, falls back to CPU SIMD
+bn_quant_matvec_gpu(out, &W, x, x_q, pool, model->gpu);
+bn_quant_matvec_batch_gpu(tasks, n, x, x_q, pool, model->gpu);
 
-**Weight upload:**
-```c
-// New function: upload model weights to GPU
-int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu);
-
-// Sets W->gpu_buf for each weight tensor. CPU SIMD remains the fallback
-// if any weight fails to upload or gpu is NULL.
+// Weight lifecycle
+bn_model_upload_weights(model, gpu);  // uploads all BnQWeight tensors
+bn_model_release_gpu(model);          // destroys all GPU buffers
 ```
 
 **Why in bitnet.c:** The vtable is bitnet.c's contract. It says "if you give me a GPU that can do matvec, I'll use it." bitnet.c doesn't know it's wgpu, Metal, Vulkan, or a mock. The vtable lives next to the existing SIMD dispatch — it's just another backend tier.
@@ -269,25 +263,27 @@ end)
 
 ### In bitnet.c (this repo)
 
-| # | Phase | Effort | Depends on |
-|---|-------|--------|------------|
-| 1 | SSE chunk formatter | Small | Nothing |
-| 2 | Hull WASM AoT adapter | Small | Nothing |
-| 3 | GPU backend vtable | Medium | Nothing |
-| 4 | WGSL compute shaders | Large | Phase 3 |
+| # | Phase | Effort | Depends on | Status |
+|---|-------|--------|------------|--------|
+| 1 | SSE chunk formatter | Small | Nothing | **Done** |
+| 3 | GPU backend vtable | Medium | Nothing | **Done** |
+| 4 | WGSL compute shaders | Large | Phase 3 | Not started |
 
 ### In Hull
 
-| # | Phase | Effort | Depends on |
-|---|-------|--------|------------|
-| 5 | `HlLlmBackend` vtable + `llm.c` | Medium | Nothing (can start in parallel) |
-| 6 | `llm_bitnet.c` adapter | Small | Phase 5 + bitnet.c Phase 1 |
-| 7 | `llm_gpu.c` (BnGPUBackend → HlGpuCtx) | Medium | Phase 5 + bitnet.c Phase 3-4 |
-| 8 | WASM AoT fallback path | Small | Phase 5 + bitnet.c Phase 2 |
+| # | Phase | Effort | Depends on | Status |
+|---|-------|--------|------------|--------|
+| 2 | WASM AoT adapter | Small | bitnet.c library API | Not started |
+| 5 | `HlLlmBackend` vtable + `llm.c` | Medium | Nothing (can start in parallel) | Not started |
+| 6 | `llm_bitnet.c` native adapter | Small | Phase 5 + bitnet.c Phase 1 | Not started |
+| 7 | `llm_gpu.c` (BnGPUBackend → HlGpuCtx) | Medium | Phase 5 + bitnet.c Phase 3-4 | Not started |
+| 8 | WASM AoT fallback path | Small | Phase 2 + Phase 5 | Not started |
 
-Phases 1-4 (bitnet.c) and Phase 5 (Hull) can proceed in parallel. The adapter (Phase 6) is the integration point.
+Phases 1, 3-4 (bitnet.c) and Phases 2, 5 (Hull) can proceed in parallel. The native adapter (Phase 6) is the integration point.
 
 ## What Exists Today
+
+### bitnet.c (library API — integration surface)
 
 | Component | Status |
 |-----------|--------|
@@ -295,9 +291,21 @@ Phases 1-4 (bitnet.c) and Phase 5 (Hull) can proceed in parallel. The adapter (P
 | `BnPromptCache` (shared KV prefix) | Done |
 | `BnAllocator` (compatible with `KlAllocator`) | Done |
 | `bn_token_callback` (streaming) | Done |
-| `bn_format_sse_chunk` | Not started |
-| WASM build (`wasm/api.c`) | Done (not Hull ABI) |
-| `BnGPUBackend` vtable | Not started |
-| WGSL shaders | Not started |
-| Hull `HlLlmBackend` vtable | Not started |
-| Hull `llm_bitnet.c` adapter | Not started |
+| `bn_format_sse_chunk` (OpenAI SSE) | Done |
+| `BnGPUBackend` vtable + dispatch | Done |
+| `bn_model_upload_weights` / `bn_model_release_gpu` | Done |
+| `bn_logprobs_compute` (logprobs API) | Done |
+| `bn_chat_format_messages` (multi-turn) | Done |
+| `BnStopStrings` (stop string matching) | Done |
+| WASM build (`wasm/api.c`) | Done (browser demo) |
+| WGSL compute shaders | Not started |
+
+### Hull (server + adapter — not started)
+
+| Component | Status |
+|-----------|--------|
+| `HlLlmBackend` vtable | Not started |
+| `llm.c` (session pool, SSE streaming) | Not started |
+| `llm_bitnet.c` (native C adapter) | Not started |
+| `llm_bitnet_wasm.c` (WASM AoT adapter) | Not started |
+| `llm_gpu.c` (BnGPUBackend → HlGpuCtx) | Not started |
