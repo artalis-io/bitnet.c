@@ -29,18 +29,21 @@ fn workgroup_reduce(lid: u32, val: f32) -> f32 {
 }
 
 @compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>,
+fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let row = gid.x;
-    let token = gid.y;
+    let row = wid.x;
+    let token = wid.y;
     let tid = lid.x;
 
     if (row >= uniforms.rows) {
         return;
     }
 
-    let scale = bitcast<f32>(uniforms.extra);
     let cols = uniforms.cols;
+    // I2_S: per-tensor FP32 scale stored at end of weight data (offset = rows * cols / 4 bytes = rows * cols / 16 u32s)
+    let scale_offset = uniforms.rows * cols / 16u;
+    let scale = bitcast<f32>(weights[scale_offset]);
+
 
     // I2_S: 128 elements per chunk, 32 bytes per chunk
     let chunks_per_row = cols / 128u;

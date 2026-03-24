@@ -158,7 +158,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu test_gpu_validate pgo avx2-check fetch-wgpu clean
 
 bench: bench_kernels
 
@@ -367,5 +367,17 @@ endif
 test_gpu_wgpu: $(GPU_TEST_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
+# GPU validation benchmark (all 22 quant types, requires BN_ENABLE_GPU=1)
+GPU_VALIDATE_SRCS = test/test_gpu_validate.c $(QUANT_SRCS) src/model.c src/moe.c \
+                    src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
+                    src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
+                    src/session.c src/bn_alloc.c
+ifdef BN_ENABLE_GPU
+GPU_VALIDATE_SRCS += src/gpu_wgpu.c
+endif
+
+test_gpu_validate: $(GPU_VALIDATE_SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
 clean:
-	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda
+	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu test_gpu_validate test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda

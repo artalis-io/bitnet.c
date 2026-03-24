@@ -89,10 +89,10 @@ fn unpack_q3k_scale(scales_base: u32, idx: u32) -> u32 {
 }
 
 @compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>,
+fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let row = gid.x;
-    let token = gid.y;
+    let row = wid.x;
+    let token = wid.y;
     let tid = lid.x;
 
     if (row >= u.rows) { return; }

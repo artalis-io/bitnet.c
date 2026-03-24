@@ -54,10 +54,10 @@ fn read_fp16(byte_addr: u32) -> f32 {
 }
 
 @compute @workgroup_size(256)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>,
+fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let row = gid.x;
-    let token = gid.y;
+    let row = wid.x;
+    let token = wid.y;
     let tid = lid.x;
 
     if (row >= uniforms.rows) {
@@ -76,11 +76,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>,
     while (block_idx < blocks_per_row) {
         let block_byte = row_byte_offset + block_idx * 66u;
 
-        // Read FP16 scale from first 2 bytes
-        let scale = read_fp16(block_byte);
-
-        // Ternary data starts at block_byte + 2, 64 bytes total
-        let qs_byte_start = block_byte + 2u;
+        // TQ2 layout: qs[64] then d(FP16) — scale is at END of block
+        let qs_byte_start = block_byte;
+        let scale = read_fp16(block_byte + 64u);
         let elem_offset = block_idx * 256u;
 
         // Process 64 bytes → 256 elements (4 values per byte)
