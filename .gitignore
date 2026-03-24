@@ -41,3 +41,4 @@ Thumbs.db
 *.gguf
 model/
 models/
+vendor/

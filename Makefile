@@ -81,9 +81,33 @@ endif
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
 TRANSFORMER_SRCS = src/transformer.c $(TRANSFORMER_BACKEND)
 
+# --- GPU (optional: BN_ENABLE_GPU=1) ---
+ifdef BN_ENABLE_GPU
+  ifndef WGPU_LIB_DIR
+    WGPU_LIB_DIR := vendor/wgpu
+  endif
+  WGPU_LIB := $(WGPU_LIB_DIR)/libwgpu_native.a
+  GPU_CFLAGS := -DBN_ENABLE_GPU -I$(WGPU_LIB_DIR)
+  ifeq ($(UNAME_S),Darwin)
+    WGPU_FRAMEWORKS := -framework Metal -framework QuartzCore -framework CoreGraphics -framework Foundation
+  else
+    WGPU_FRAMEWORKS := -lvulkan
+  endif
+  GPU_SRCS := src/gpu_wgpu.c
+  GPU_OBJS := src/gpu_wgpu.o
+else
+  WGPU_LIB :=
+  GPU_CFLAGS :=
+  WGPU_FRAMEWORKS :=
+  GPU_SRCS :=
+  GPU_OBJS :=
+endif
+
 SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
        $(TRANSFORMER_SRCS) src/tokenizer.c src/sampler.c \
-       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c src/main.c
+       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(GPU_SRCS) src/main.c
+CFLAGS += $(GPU_CFLAGS)
+LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS)
 OBJS = $(SRCS:.c=.o)
 
 # Default target
@@ -134,7 +158,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend pgo avx2-check clean
+.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu pgo avx2-check fetch-wgpu clean
 
 bench: bench_kernels
 
@@ -292,5 +316,56 @@ else
 	$(CC) -target x86_64-apple-darwin $(AVX2_CHECK_FLAGS) $(AVX2_SRCS)
 endif
 
+# --- wgpu-native vendoring ---
+WGPU_VERSION := v27.0.4.0
+WGPU_SHA256_macos_aarch64 := 15367c26fdbe6892db35007d39f3883593384e777360b70e6bd704cb5dedde53
+WGPU_SHA256_macos_x86_64  := 660fe9be59b555ec1d7c839e5cf8b6c71762938af61ab444a7a58dd87970dba2
+WGPU_SHA256_linux_x86_64  := 271481ef76fbf3ea09631a6079e9493636ecf813cd9c92306c44a1a452991ba1
+WGPU_SHA256_linux_aarch64  := a2f22248200997b69373273b10d50a58164f6ed840877289f3e46bff317b134e
+
+WGPU_OS := $(shell uname -s | tr A-Z a-z | sed 's/darwin/macos/')
+WGPU_ARCH := $(shell uname -m | sed 's/arm64/aarch64/')
+WGPU_PLATFORM := $(WGPU_OS)-$(WGPU_ARCH)
+WGPU_ZIP := wgpu-$(WGPU_PLATFORM)-release.zip
+WGPU_URL := https://github.com/gfx-rs/wgpu-native/releases/download/$(WGPU_VERSION)/$(WGPU_ZIP)
+WGPU_EXPECTED_SHA := $(WGPU_SHA256_$(subst -,_,$(WGPU_PLATFORM)))
+
+ifndef WGPU_LIB_DIR
+  WGPU_LIB_DIR := vendor/wgpu
+endif
+
+.PHONY: fetch-wgpu
+
+fetch-wgpu:
+	@if [ -f $(WGPU_LIB_DIR)/libwgpu_native.a ]; then \
+		echo "wgpu-native already present"; \
+	else \
+		echo "=== Fetching wgpu-native $(WGPU_VERSION) ==="; \
+		curl -sL -o /tmp/$(WGPU_ZIP) "$(WGPU_URL)"; \
+		ACTUAL=$$(shasum -a 256 /tmp/$(WGPU_ZIP) | cut -d' ' -f1); \
+		if [ "$$ACTUAL" != "$(WGPU_EXPECTED_SHA)" ]; then \
+			echo "SHA-256 mismatch: expected $(WGPU_EXPECTED_SHA), got $$ACTUAL"; \
+			rm -f /tmp/$(WGPU_ZIP); exit 1; \
+		fi; \
+		mkdir -p $(WGPU_LIB_DIR); \
+		unzip -o -j /tmp/$(WGPU_ZIP) "lib/libwgpu_native.a" -d $(WGPU_LIB_DIR)/; \
+		unzip -o -j /tmp/$(WGPU_ZIP) "include/webgpu/webgpu.h" -d $(WGPU_LIB_DIR)/; \
+		unzip -o -j /tmp/$(WGPU_ZIP) "include/webgpu/wgpu.h" -d $(WGPU_LIB_DIR)/; \
+		rm -f /tmp/$(WGPU_ZIP); \
+		echo "=== wgpu-native installed to $(WGPU_LIB_DIR) ==="; \
+	fi
+
+# GPU test (requires BN_ENABLE_GPU=1 and fetch-wgpu)
+GPU_TEST_SRCS = test/test_gpu_wgpu.c $(QUANT_SRCS) src/model.c src/moe.c \
+                src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
+                src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
+                src/session.c src/bn_alloc.c
+ifdef BN_ENABLE_GPU
+GPU_TEST_SRCS += src/gpu_wgpu.c
+endif
+
+test_gpu_wgpu: $(GPU_TEST_SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
 clean:
-	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda
+	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda
