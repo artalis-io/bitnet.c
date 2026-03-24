@@ -136,6 +136,10 @@ typedef struct {
     // GPU handles for F32 norm weights (NULL = not uploaded)
     void *attn_norm_gpu;
     void *ffn_norm_gpu;
+    // GPU handles for attention biases (NULL = not uploaded or no biases)
+    void *q_bias_gpu;
+    void *k_bias_gpu;
+    void *v_bias_gpu;
 } BnLayerWeights;
 
 typedef struct {
@@ -146,6 +150,7 @@ typedef struct {
     BnQWeight output_weight;      // untied output projection (data=NULL if tied)
     float *output_norm;           // [dim]
     void *output_norm_gpu;        // GPU handle for output_norm (NULL = not uploaded)
+    void *emb_gpu_buf;            // GPU handle for tied embedding (NULL if untied or not uploaded)
     BnLayerWeights *layers;         // [n_layers]
 } BnWeights;
 

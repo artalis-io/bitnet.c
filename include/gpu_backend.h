@@ -17,7 +17,8 @@
 #define BN_GPU_SHADER_RELU2_GATE   7
 #define BN_GPU_SHADER_RESIDUAL_ADD 8
 #define BN_GPU_SHADER_COPY         9  // pseudo-op: buffer-to-buffer copy (no shader)
-#define BN_GPU_SHADER_COUNT        10
+#define BN_GPU_SHADER_BIAS_ADD     10 // x[i] += bias[i], bias from W_buf
+#define BN_GPU_SHADER_COUNT        11
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0
@@ -102,6 +103,12 @@ typedef struct {
     // Returns 0 on success, -1 on error.  Optional (NULL = not supported).
     int (*write_activation)(void *ctx, int buf_idx, const void *data,
                             size_t size, size_t offset);
+
+    // Read GPU-resident activation buffer to host.
+    // buf_idx: BN_GPU_BUF_* index.  out: host buffer, size in bytes.
+    // Returns 0 on success, -1 on error.  Optional (NULL = not supported).
+    int (*read_activation)(void *ctx, int buf_idx, void *out,
+                           size_t size, size_t offset);
 
     void *ctx;  // opaque backend context
 } BnGPUBackend;

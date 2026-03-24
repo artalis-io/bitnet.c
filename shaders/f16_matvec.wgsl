@@ -33,8 +33,8 @@ fn workgroup_reduce(lid: u32, val: f32) -> f32 {
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let row = wid.x;
-    let token = wid.y;
+    let row = select(wid.x, wid.x + wid.y * u.extra, u.extra > 0u);
+    let token = select(wid.y, 0u, u.extra > 0u);
     if (row >= u.rows) { return; }
 
     let cols = u.cols;

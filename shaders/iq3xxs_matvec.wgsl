@@ -121,8 +121,8 @@ const IQ3XXS_GRID: array<u32, 256> = array<u32, 256>(
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let row = wid.x;
-    let token = wid.y;
+    let row = select(wid.x, wid.x + wid.y * uniforms.extra, uniforms.extra > 0u);
+    let token = select(wid.y, 0u, uniforms.extra > 0u);
     let tid = lid.x;
 
     if (row >= uniforms.rows) {

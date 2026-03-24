@@ -953,7 +953,8 @@ static float *forward_logits(BnModel *m, BnSession *sess) {
 
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
-// no Q/K norms, no biases, no sub-norms, no FP16 KV cache).
+// no Q/K norms, no sub-norms, no FP16 KV cache).
+// Supports attention biases (Qwen2.5) and tied embeddings (BitNet).
 // Returns s->logits on success, NULL to fall back to CPU.
 static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     BnConfig *c = &m->config;
@@ -990,8 +991,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     // The ROPE shader takes pos as a uniform and computes cos/sin internally.
     // We just need to pass pos in the uniform params.
 
-    // Max ops: ~19 per layer + 2 for final norm+logits
-    int max_ops = 20 * c->n_layers + 4;
+    // Max ops: ~19 per layer + 3 bias_add + 2 for final norm+logits
+    int max_ops = 23 * c->n_layers + 4;
     BnGPUOp *ops = (BnGPUOp *)malloc((size_t)max_ops * sizeof(BnGPUOp));
     if (!ops) return NULL;
     int n = 0;
@@ -1011,7 +1012,6 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         int q_gated = (lw->wq.rows > q_dim);
         int q_wide  = (!q_gated && lw->wq.rows > dim);
         if (q_gated || q_wide) { free(ops); return NULL; }
-        if (lw->q_bias || lw->k_bias || lw->v_bias) { free(ops); return NULL; }
         if (lw->q_norm || lw->k_norm) { free(ops); return NULL; }
         if (lw->attn_sub_norm || lw->ffn_sub_norm) { free(ops); return NULL; }
 
@@ -1057,6 +1057,20 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols, 1, 0, 0, 0, 0, 0 }
         };
 
+        // ---- 2b. Q bias (if present) ----
+        if (lw->q_bias_gpu) {
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_BIAS_ADD,
+                .type = -1,
+                .W_buf = lw->q_bias_gpu,
+                .buf_in = BN_GPU_BUF_Q,
+                .buf_out = -1,
+                .buf_aux = -1,
+                .rows = 0, .cols = 0,
+                .p = { (uint32_t)dim, 0, 0, 0, 0, 0, 0, 0 }
+            };
+        }
+
         // ---- 3. K matvec: xb -> scratch ----
         ops[n++] = (BnGPUOp){
             .shader = BN_GPU_SHADER_MATVEC,
@@ -1068,6 +1082,20 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             .rows = lw->wk.rows, .cols = lw->wk.cols,
             .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols, 1, 0, 0, 0, 0, 0 }
         };
+
+        // ---- 3b. K bias (if present) ----
+        if (lw->k_bias_gpu) {
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_BIAS_ADD,
+                .type = -1,
+                .W_buf = lw->k_bias_gpu,
+                .buf_in = BN_GPU_BUF_SCRATCH,
+                .buf_out = -1,
+                .buf_aux = -1,
+                .rows = 0, .cols = 0,
+                .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 }
+            };
+        }
 
         // ---- 4. RoPE on scratch (K) ----
         // ROPE shader params: p[0]=n_heads, p[1]=head_size, p[2]=pos, p[3]=rope_dims
@@ -1107,6 +1135,20 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             .rows = lw->wv.rows, .cols = lw->wv.cols,
             .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols, 1, 0, 0, 0, 0, 0 }
         };
+
+        // ---- 6b. V bias (if present) ----
+        if (lw->v_bias_gpu) {
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_BIAS_ADD,
+                .type = -1,
+                .W_buf = lw->v_bias_gpu,
+                .buf_in = BN_GPU_BUF_SCRATCH,
+                .buf_out = -1,
+                .buf_aux = -1,
+                .rows = 0, .cols = 0,
+                .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 }
+            };
+        }
 
         // ---- 7. COPY scratch -> value_cache[loff + cache_pos * kv_dim] ----
         ops[n++] = (BnGPUOp){
@@ -1315,7 +1357,9 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         };
     }
 
-    // ---- Final RMSNorm: x -> x ----
+    // ---- Final RMSNorm: x -> xb ----
+    // Note: can't normalize in-place (X -> X) because WebGPU forbids binding the
+    // same buffer as both read (binding 0) and read_write (binding 2) in one dispatch.
     if (!w->output_norm_gpu) { free(ops); return NULL; }
     {
         uint32_t u_eps;
@@ -1326,14 +1370,14 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             .type = -1,
             .W_buf = w->output_norm_gpu,
             .buf_in = BN_GPU_BUF_X,
-            .buf_out = BN_GPU_BUF_X,
+            .buf_out = BN_GPU_BUF_XB,
             .buf_aux = -1,
             .rows = 0, .cols = 0,
             .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 }
         };
     }
 
-    // ---- Logits matvec: x -> logits ----
+    // ---- Logits matvec: xb -> logits ----
     // Use output_weight if untied, else tied embedding (must have gpu_buf).
     {
         BnQWeight *ow = &w->output_weight;
@@ -1342,19 +1386,27 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         int logit_rows = ow->data ? ow->rows : c->vocab_size;
         int logit_cols = ow->data ? ow->cols : dim;
 
-        // For tied embeddings, we'd need the embedding table uploaded as a GPU
-        // buffer. That's not currently done. Fall back to CPU for tied embeddings.
+        // For tied embeddings, use the uploaded embedding table
+        if (!logit_gpu_buf && w->emb_gpu_buf) {
+            logit_gpu_buf = w->emb_gpu_buf;
+            logit_type = w->emb_type;
+            logit_rows = c->vocab_size;
+            logit_cols = dim;
+        }
         if (!logit_gpu_buf) { free(ops); return NULL; }
 
+        // When rows exceed 65535 (WebGPU workgroup limit), enable row tiling:
+        // p[3] = wg_x per Y-slice, shader computes row = wid.y * extra + wid.x.
+        uint32_t tile_x = (logit_rows > 65535) ? 65535u : 0u;
         ops[n++] = (BnGPUOp){
             .shader = BN_GPU_SHADER_MATVEC,
             .type = logit_type,
             .W_buf = logit_gpu_buf,
-            .buf_in = BN_GPU_BUF_X,
+            .buf_in = BN_GPU_BUF_XB,
             .buf_out = BN_GPU_BUF_LOGITS,
             .buf_aux = -1,
             .rows = logit_rows, .cols = logit_cols,
-            .p = { (uint32_t)logit_rows, (uint32_t)logit_cols, 1, 0, 0, 0, 0, 0 }
+            .p = { (uint32_t)logit_rows, (uint32_t)logit_cols, 1, tile_x, 0, 0, 0, 0 }
         };
     }
 

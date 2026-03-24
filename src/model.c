@@ -1101,6 +1101,16 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         return -1;
     }
 
+    // If no untied output weight, upload tied embedding for GPU logits
+    if (!w->output_weight.data && w->token_embedding) {
+        size_t nelements = (size_t)c->vocab_size * c->dim;
+        size_t emb_size = bn_tensor_type_size(w->emb_type, nelements);
+        if (emb_size > 0) {
+            w->emb_gpu_buf = gpu->buffer_create(gpu->ctx, w->token_embedding,
+                emb_size, w->emb_type, c->vocab_size, c->dim);
+        }
+    }
+
     // Upload output norm (F32)
     w->output_norm_gpu = upload_f32_buf(gpu, w->output_norm, c->dim);
 
@@ -1125,6 +1135,14 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         // Upload per-layer F32 norm weights
         lw->attn_norm_gpu = upload_f32_buf(gpu, lw->attn_norm, c->dim);
         lw->ffn_norm_gpu  = upload_f32_buf(gpu, lw->ffn_norm, c->dim);
+
+        // Upload attention biases (if present)
+        if (lw->q_bias)
+            lw->q_bias_gpu = upload_f32_buf(gpu, lw->q_bias, c->dim);
+        if (lw->k_bias)
+            lw->k_bias_gpu = upload_f32_buf(gpu, lw->k_bias, c->kv_dim);
+        if (lw->v_bias)
+            lw->v_bias_gpu = upload_f32_buf(gpu, lw->v_bias, c->kv_dim);
     }
 
     return 0;
@@ -1146,6 +1164,10 @@ void bn_model_release_gpu(BnModel *model) {
 
     release_qweight(gpu, &w->output_weight);
     release_f32_buf(gpu, &w->output_norm_gpu);
+    if (w->emb_gpu_buf) {
+        gpu->buffer_destroy(gpu->ctx, w->emb_gpu_buf);
+        w->emb_gpu_buf = NULL;
+    }
 
     if (w->layers) {
         for (int l = 0; l < n_layers; l++) {
@@ -1162,6 +1184,9 @@ void bn_model_release_gpu(BnModel *model) {
                 release_qweight(gpu, weights[i]);
             release_f32_buf(gpu, &lw->attn_norm_gpu);
             release_f32_buf(gpu, &lw->ffn_norm_gpu);
+            release_f32_buf(gpu, &lw->q_bias_gpu);
+            release_f32_buf(gpu, &lw->k_bias_gpu);
+            release_f32_buf(gpu, &lw->v_bias_gpu);
         }
     }
 

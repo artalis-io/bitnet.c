@@ -998,7 +998,7 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
 
     /* Create uniform ring buffer (~500 dispatches x 32 bytes) */
     {
-        size_t ring_size = 1024 * 32;  /* ~1024 dispatches for GPU-resident forward */
+        size_t ring_size = 1024 * 256;  /* ~1024 dispatches, 256B-aligned slots */
         WGPUBufferDescriptor desc = {
             .label = sv("bn_uniform_ring"),
             .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
@@ -1019,6 +1019,7 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_SILU_GATE,    "silu_gate"    },
         { BN_GPU_SHADER_RELU2_GATE,   "relu2_gate"   },
         { BN_GPU_SHADER_RESIDUAL_ADD, "residual_add" },
+        { BN_GPU_SHADER_BIAS_ADD,     "bias_add"     },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -1084,6 +1085,52 @@ static int wgpu_write_activation(void *vctx, int buf_idx, const void *data,
     return 0;
 }
 
+/* ── Vtable: read_activation ───────────────────────────────────────── */
+
+static int wgpu_read_activation(void *vctx, int buf_idx, void *out,
+                                 size_t size, size_t offset)
+{
+    BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+    if (!ctx || !out || buf_idx < 0 || buf_idx >= BN_GPU_BUF_COUNT) return -1;
+    if (!ctx->act_bufs[buf_idx]) return -1;
+    if (offset + size > ctx->act_sizes[buf_idx]) return -1;
+
+    /* Ensure staging buffer is large enough */
+    size_t aligned = (size + 3) & ~(size_t)3;
+    if (!ctx->fwd_staging || ctx->fwd_staging_size < aligned) return -1;
+
+    /* Copy from activation buffer to staging */
+    WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_read_enc") };
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
+    if (!encoder) return -1;
+    wgpuCommandEncoderCopyBufferToBuffer(encoder,
+        ctx->act_bufs[buf_idx], offset,
+        ctx->fwd_staging, 0, aligned);
+    WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_read_cmd") };
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
+    wgpuCommandEncoderRelease(encoder);
+    if (!cmd) return -1;
+    wgpuQueueSubmit(ctx->queue, 1, &cmd);
+    wgpuDevicePoll(ctx->device, 1, NULL);
+    wgpuCommandBufferRelease(cmd);
+
+    /* Map and read */
+    MapReq map_req = {0};
+    WGPUBufferMapCallbackInfo map_cb = {
+        .mode = WGPUCallbackMode_AllowSpontaneous,
+        .callback = on_buffer_map,
+        .userdata1 = &map_req,
+    };
+    wgpuBufferMapAsync(ctx->fwd_staging, WGPUMapMode_Read, 0, aligned, map_cb);
+    wgpuDevicePoll(ctx->device, 1, NULL);
+    if (!map_req.done || map_req.status != WGPUMapAsyncStatus_Success) return -1;
+    const void *mapped = wgpuBufferGetConstMappedRange(ctx->fwd_staging, 0, aligned);
+    if (!mapped) { wgpuBufferUnmap(ctx->fwd_staging); return -1; }
+    memcpy(out, mapped, size);
+    wgpuBufferUnmap(ctx->fwd_staging);
+    return 0;
+}
+
 /* ── Vtable: execute ───────────────────────────────────────────────── */
 
 static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
@@ -1092,14 +1139,16 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
     if (!ctx || !ops || n_ops <= 0) return -1;
 
-    /* 1. Upload all per-dispatch uniforms to the ring buffer */
-    size_t needed = (size_t)n_ops * 32;
+    /* 1. Upload all per-dispatch uniforms to the ring buffer.
+     * Each slot is 256-byte aligned (min_uniform_buffer_offset_alignment). */
+    size_t uni_stride = 256;
+    size_t needed = (size_t)n_ops * uni_stride;
     if (needed > ctx->uniform_ring_size) return -1;
 
-    uint8_t *uni_data = malloc(needed);
+    uint8_t *uni_data = calloc(1, needed);
     if (!uni_data) return -1;
     for (int i = 0; i < n_ops; i++) {
-        memcpy(uni_data + (size_t)i * 32, ops[i].p, 32);
+        memcpy(uni_data + (size_t)i * uni_stride, ops[i].p, 32);
     }
     wgpuQueueWriteBuffer(ctx->queue, ctx->uniform_ring, 0, uni_data, needed);
     free(uni_data);
@@ -1112,6 +1161,22 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     /* 3. For each op: create bind group, encode compute pass */
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
+
+        /* Handle COPY pseudo-op before pipeline lookup (no shader needed) */
+        if (op->shader == BN_GPU_SHADER_COPY) {
+            int src = op->buf_in, dst = op->buf_out;
+            if (src < 0 || src >= BN_GPU_BUF_COUNT || !ctx->act_bufs[src]) continue;
+            if (dst < 0 || dst >= BN_GPU_BUF_COUNT || !ctx->act_bufs[dst]) continue;
+            size_t src_off = (size_t)op->p[0] * sizeof(float);
+            size_t dst_off = (size_t)op->p[1] * sizeof(float);
+            size_t copy_sz = (size_t)op->p[2] * sizeof(float);
+            if (copy_sz == 0) continue;
+            wgpuCommandEncoderCopyBufferToBuffer(encoder,
+                ctx->act_bufs[src], src_off,
+                ctx->act_bufs[dst], dst_off,
+                copy_sz);
+            continue;
+        }
 
         /* Determine pipeline and layout */
         WGPUComputePipeline pipeline = NULL;
@@ -1130,7 +1195,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         /* Build bind group entries per shader type */
         WGPUBindGroupEntry entries[4];
         int n_entries = 0;
-        size_t uni_offset = (size_t)i * 32;
+        size_t uni_offset = (size_t)i * uni_stride;
 
         switch (op->shader) {
         case BN_GPU_SHADER_MATVEC: {
@@ -1252,22 +1317,22 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             n_entries = 3;
             break;
         }
-        case BN_GPU_SHADER_COPY: {
-            /* Pseudo-op: buffer-to-buffer copy (no compute dispatch).
-             * p[0] = src offset (floats), p[1] = dst offset (floats), p[2] = size (floats). */
-            int src = op->buf_in, dst = op->buf_out;
-            if (src < 0 || src >= BN_GPU_BUF_COUNT || !ctx->act_bufs[src]) continue;
-            if (dst < 0 || dst >= BN_GPU_BUF_COUNT || !ctx->act_bufs[dst]) continue;
-            size_t src_off = (size_t)op->p[0] * sizeof(float);
-            size_t dst_off = (size_t)op->p[1] * sizeof(float);
-            size_t copy_sz = (size_t)op->p[2] * sizeof(float);
-            if (copy_sz == 0) continue;
-            wgpuCommandEncoderCopyBufferToBuffer(encoder,
-                ctx->act_bufs[src], src_off,
-                ctx->act_bufs[dst], dst_off,
-                copy_sz);
-            continue;  /* skip bind group + compute pass below */
+        case BN_GPU_SHADER_BIAS_ADD: {
+            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+            if (!wbuf) continue;
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = wbuf->buf,
+                .offset = 0, .size = wbuf->size};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
         }
+        /* COPY is handled above, before pipeline lookup */
         default: continue;
         }
 
@@ -1285,9 +1350,15 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         uint32_t wg_x = 1, wg_y = 1;
         switch (op->shader) {
         case BN_GPU_SHADER_MATVEC:
-            wg_x = (uint32_t)op->rows;
-            wg_y = op->p[2];  /* n_tokens */
-            if (wg_y == 0) wg_y = 1;
+            if (op->p[3] > 0) {
+                /* Row tiling: extra = wg_x per slice, rows split across Y */
+                wg_x = op->p[3];
+                wg_y = ((uint32_t)op->rows + op->p[3] - 1) / op->p[3];
+            } else {
+                wg_x = (uint32_t)op->rows;
+                wg_y = op->p[2];  /* n_tokens */
+                if (wg_y == 0) wg_y = 1;
+            }
             break;
         case BN_GPU_SHADER_RMSNORM:
             wg_x = 1;  /* single workgroup */
@@ -1301,6 +1372,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         case BN_GPU_SHADER_SILU_GATE:
         case BN_GPU_SHADER_RELU2_GATE:
         case BN_GPU_SHADER_RESIDUAL_ADD:
+        case BN_GPU_SHADER_BIAS_ADD:
             wg_x = (op->p[0] + 255) / 256;  /* ceil(dim / 256) */
             break;
         }
@@ -1480,6 +1552,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->init_activations  = wgpu_init_activations;
     gpu->free_activations  = wgpu_free_activations;
     gpu->write_activation  = wgpu_write_activation;
+    gpu->read_activation   = wgpu_read_activation;
     gpu->ctx               = ctx;
 
     return gpu;
