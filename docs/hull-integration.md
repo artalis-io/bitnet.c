@@ -168,6 +168,101 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 **Why in bitnet.c:** The shaders are tied to bitnet.c's weight formats (I2_S block layout, Q4_K scale encoding, etc.). They're not Hull-specific — any WebGPU host can compile them. Keeping them in bitnet.c means they're versioned with the quant format definitions they depend on.
 
+**Status (implemented):** 22 WGSL shaders covering all quant types (I2_S, TQ1, TQ2, Q4_0, Q4_1, Q8_0, BF16, F16, F32, Q2_K-Q8_K, IQ2-IQ4). wgpu-native runtime (`src/gpu_wgpu.c`). Validation benchmark confirms GPU == CPU for all 22 types. Vendoring via `make fetch-wgpu` with SHA-256 verification.
+
+### Phase 4b: GPU Dispatch Optimization (bitnet.c)
+
+The initial GPU implementation dispatches one matvec at a time with full buffer create/destroy/readback per call — **33x slower than CPU NEON**. The shaders are correct but the dispatch overhead (~170μs × 150 dispatches per token) dominates.
+
+Four optimization levels, each compatible with Hull's `gpu.pipeline()` multi-stage dispatch:
+
+#### 4b.1: Persistent Buffers (LOW EFFORT)
+
+Reuse x/out/uniform/staging buffers across dispatches. Lazy reallocation only when sizes grow. Eliminates ~70μs/dispatch in buffer create/destroy.
+
+```c
+// BnWgpuCtx gains persistent scratch buffers
+WGPUBuffer x_buf, out_buf, uniform_buf, staging_buf;
+// ensure_buffers() reallocates only when current size is insufficient
+```
+
+**Hull mapping:** Internal optimization — no vtable changes. Hull's adapter sees the same `BnGPUBackend` interface, just faster.
+
+**Expected impact:** ~40% overhead reduction (25ms → 15ms per token).
+
+| Status | Not started |
+
+#### 4b.2: Batched Command Encoding (MEDIUM EFFORT)
+
+Encode multiple matvecs into one command buffer, one submit, one readback. Maps directly to Hull's `hl_cap_gpu_pipeline()`.
+
+```c
+// New vtable function
+typedef struct {
+    float *out;
+    void  *W_buf;
+    const float *x;
+    int rows, cols, type;
+} BnGPUMatvecOp;
+
+int (*matvec_batch)(void *ctx, const BnGPUMatvecOp *ops, int n_ops);
+```
+
+**Hull mapping:** `matvec_batch` → `hl_cap_gpu_pipeline(stages, ...)` with shared buffers across stages. Each `BnGPUMatvecOp` becomes an `HlGpuPipelineStage`. Shared `x` buffer maps to Hull's named cross-stage buffer.
+
+**Expected impact:** Reduces 150 submits to ~50 (one per batch group: QKV, gate+up, down). Combined with 4b.1: overhead drops to ~6-9ms.
+
+| Status | Not started |
+
+#### 4b.3: GPU-Resident Forward Pass (HIGH EFFORT, TRANSFORMATIVE)
+
+Keep all activations on GPU. RMSNorm, RoPE, attention, activations, residuals all run as GPU compute. Only read back logits at the end. One GPU submission per token.
+
+```c
+// GPU operation descriptor
+typedef struct {
+    int shader;          // BN_GPU_SHADER_MATVEC, _RMSNORM, _ROPE, etc.
+    int type;            // quant type (matvec only)
+    void *W_buf;         // weight buffer (matvec only)
+    int buf_in, buf_out; // indices into GPU buffer table
+    int buf_aux;         // second input (residual, up for gate*up)
+    int rows, cols;
+    uint32_t extra[4];   // shader-specific params (pos, n_heads, eps, etc.)
+} BnGPUOp;
+
+// Execute full forward pass as single GPU submission
+int (*execute)(void *ctx, const BnGPUOp *ops, int n_ops,
+               int readback_buf, float *out_host, int out_len);
+```
+
+**New WGSL shaders needed:**
+```
+shaders/
+├── rmsnorm.wgsl         # RMS normalization
+├── rope.wgsl            # Rotary position encoding
+├── gqa_attention.wgsl   # Grouped-query attention + softmax
+├── silu_gate.wgsl       # SiLU activation × gate
+├── relu2_gate.wgsl      # ReLU² activation × gate
+├── residual_add.wgsl    # x += residual
+├── kv_cache_store.wgsl  # Write K/V to cache
+└── softmax.wgsl         # Two-pass softmax (max + exp+sum)
+```
+
+**Hull mapping:** `execute()` → `hl_cap_gpu_pipeline()` with the full op list as pipeline stages. Each `BnGPUOp` maps to an `HlGpuPipelineStage`. Buffer indices (`buf_in`, `buf_out`) map to Hull's named cross-stage buffer sharing. Hull's pipeline API already supports this pattern — it chains shader dispatches with shared buffers in a single GPU submission.
+
+**Expected impact:** Eliminates ALL per-layer sync. Overhead: ~80μs/token (one submit + one readback). GPU compute becomes the bottleneck — the correct regime. Especially impactful for:
+- Browser/WASM: WebGPU is the only way to get GPU compute
+- Large models: GPU memory bandwidth > CPU memory bandwidth on dedicated GPUs
+- Prefill: massive parallelism across tokens
+
+| Status | Not started |
+
+#### 4b.4: Prefill Batch
+
+Already handled by persistent buffers (4b.1). The `execute()` API from 4b.3 naturally handles prefill with `n_tokens > 1` uniforms and `dispatch(rows, n_tokens, 1)`.
+
+| Status | Included in 4b.1 |
+
 ### Phase 5: Hull LLM Capability (Hull repo)
 
 Hull's side: a vendor-independent LLM capability module.
@@ -267,7 +362,10 @@ end)
 |---|-------|--------|------------|--------|
 | 1 | SSE chunk formatter | Small | Nothing | **Done** |
 | 3 | GPU backend vtable | Medium | Nothing | **Done** |
-| 4 | WGSL compute shaders | Large | Phase 3 | Not started |
+| 4a | WGSL compute shaders + wgpu runtime | Large | Phase 3 | **Done** (22 shaders, all validated) |
+| 4b.1 | Persistent GPU buffers | Small | Phase 4a | Not started |
+| 4b.2 | Batched command encoding | Medium | Phase 4b.1 | Not started |
+| 4b.3 | GPU-resident forward pass | Large | Phase 4b.2 | Not started |
 
 ### In Hull
 
@@ -276,10 +374,22 @@ end)
 | 2 | WASM AoT adapter | Small | bitnet.c library API | Not started |
 | 5 | `HlLlmBackend` vtable + `llm.c` | Medium | Nothing (can start in parallel) | Not started |
 | 6 | `llm_bitnet.c` native adapter | Small | Phase 5 + bitnet.c Phase 1 | Not started |
-| 7 | `llm_gpu.c` (BnGPUBackend → HlGpuCtx) | Medium | Phase 5 + bitnet.c Phase 3-4 | Not started |
+| 7 | `llm_gpu.c` (BnGPUBackend → HlGpuCtx) | Medium | Phase 5 + bitnet.c Phase 4a | Not started |
 | 8 | WASM AoT fallback path | Small | Phase 2 + Phase 5 | Not started |
 
-Phases 1, 3-4 (bitnet.c) and Phases 2, 5 (Hull) can proceed in parallel. The native adapter (Phase 6) is the integration point.
+Phases 1, 3, 4a (bitnet.c) are done. Phases 4b.1-4b.2 can proceed now. Phases 2, 5 (Hull) can start in parallel.
+
+## GPU Performance Benchmark
+
+Measured on Apple M1 Max, bitnet-b1.58-2B-4T (I2_S, 1.1GB):
+
+| Backend | tok/s | Notes |
+|---------|-------|-------|
+| CPU ARM NEON | **50.6** | 8 P-cores, SDOT int8 accumulation |
+| GPU WebGPU (current) | **1.55** | Per-matvec dispatch, 33x overhead |
+| GPU + persistent bufs (est.) | ~3-4 | Phase 4b.1 |
+| GPU + batched encoding (est.) | ~8-15 | Phase 4b.2 |
+| GPU-resident forward (est.) | ~50-100+ | Phase 4b.3, especially on dedicated GPUs |
 
 ## What Exists Today
 
@@ -298,7 +408,13 @@ Phases 1, 3-4 (bitnet.c) and Phases 2, 5 (Hull) can proceed in parallel. The nat
 | `bn_chat_format_messages` (multi-turn) | Done |
 | `BnStopStrings` (stop string matching) | Done |
 | WASM build (`wasm/api.c`) | Done (browser demo) |
-| WGSL compute shaders | Not started |
+| WGSL compute shaders (22 types) | Done |
+| wgpu-native runtime (`gpu_wgpu.c`) | Done |
+| GPU validation benchmark | Done (20/20 matvec, 3/3 matmul pass) |
+| `--gpu` CLI flag | Done |
+| Persistent GPU buffers (4b.1) | Not started |
+| Batched command encoding (4b.2) | Not started |
+| GPU-resident forward pass (4b.3) | Not started |
 
 ### Hull (server + adapter — not started)
 
