@@ -133,6 +133,9 @@ typedef struct {
     // Shared expert (always resident, standard QWeight)
     BnQWeight shared_gate, shared_up, shared_down;
     float *shared_expert_gate;   // [dim] sigmoid gate for shared expert output (NULL if absent)
+    // GPU handles for F32 norm weights (NULL = not uploaded)
+    void *attn_norm_gpu;
+    void *ffn_norm_gpu;
 } BnLayerWeights;
 
 typedef struct {
@@ -142,6 +145,7 @@ typedef struct {
     float  *emb_out_scales;      // [vocab_size] per-row scales (NULL if unused)
     BnQWeight output_weight;      // untied output projection (data=NULL if tied)
     float *output_norm;           // [dim]
+    void *output_norm_gpu;        // GPU handle for output_norm (NULL = not uploaded)
     BnLayerWeights *layers;         // [n_layers]
 } BnWeights;
 

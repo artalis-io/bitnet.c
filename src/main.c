@@ -303,6 +303,12 @@ int main(int argc, char **argv) {
                 char ms[16];
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
                 SH_LOG_INFO("GPU weights uploaded", "ms", ms);
+                // Initialize GPU-resident activation buffers for forward pass
+                if (gpu->init_activations) {
+                    if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
+                        SH_LOG_INFO("GPU forward pass ready");
+                    }
+                }
             } else {
                 SH_LOG_WARN("GPU weight upload failed, falling back to CPU");
                 bn_gpu_wgpu_destroy(gpu);

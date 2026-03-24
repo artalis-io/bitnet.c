@@ -10,6 +10,7 @@
 
 #include "gpu_wgpu.h"
 #include "gpu_backend.h"
+#include "model.h"
 #include "quant.h"
 #include "gguf.h"
 #include "webgpu.h"
@@ -48,6 +49,25 @@ typedef struct {
     WGPUBuffer uniform_buf;     /* 16-byte uniforms (always the same size) */
     WGPUBuffer staging_buf;     /* readback staging (MAP_READ | COPY_DST) */
     size_t     staging_buf_size;
+
+    /* Forward-pass shader pipelines (indexed by BN_GPU_SHADER_*) */
+    WGPUComputePipeline fwd_pipelines[BN_GPU_SHADER_COUNT];
+    WGPUBindGroupLayout fwd_layouts[BN_GPU_SHADER_COUNT];
+
+    /* GPU-resident activation buffers (indexed by BN_GPU_BUF_*) */
+    WGPUBuffer act_bufs[BN_GPU_BUF_COUNT];
+    size_t     act_sizes[BN_GPU_BUF_COUNT];
+
+    /* Forward-pass staging buffer for logits readback */
+    WGPUBuffer fwd_staging;
+    size_t     fwd_staging_size;
+
+    /* Uniform ring buffer for per-dispatch parameters */
+    WGPUBuffer uniform_ring;
+    size_t     uniform_ring_size;
+
+    /* Shader directory path (stored from create) */
+    char shader_dir[256];
 } BnWgpuCtx;
 
 /* ── GPU buffer handle ─────────────────────────────────────────────── */
@@ -284,6 +304,29 @@ static char *load_shader_file(const char *shader_dir, const char *type_name)
     return buf;
 }
 
+static char *load_shader_generic(const char *shader_dir, const char *name)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s.wgsl", shader_dir, name);
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    if (len <= 0) { fclose(f); return NULL; }
+    fseek(f, 0, SEEK_SET);
+
+    char *buf = malloc((size_t)len + 1);
+    if (!buf) { fclose(f); return NULL; }
+
+    size_t read = fread(buf, 1, (size_t)len, f);
+    fclose(f);
+    if ((long)read != len) { free(buf); return NULL; }
+    buf[len] = '\0';
+    return buf;
+}
+
 /* ── Pipeline compilation ──────────────────────────────────────────── */
 
 static int compile_pipeline(BnWgpuCtx *ctx, int type, const char *shader_dir)
@@ -353,6 +396,69 @@ static int compile_pipeline(BnWgpuCtx *ctx, int type, const char *shader_dir)
 
     ctx->pipelines[type] = pipeline;
     ctx->layouts[type] = layout;
+    return 0;
+}
+
+/* ── Forward-pass pipeline compilation ─────────────────────────────── */
+
+static int compile_fwd_pipeline(BnWgpuCtx *ctx, int shader_id, const char *name)
+{
+    if (shader_id < 0 || shader_id >= BN_GPU_SHADER_COUNT) return -1;
+    if (!ctx->shader_dir[0]) return -1;
+
+    char *wgsl = load_shader_generic(ctx->shader_dir, name);
+    if (!wgsl) {
+        fprintf(stderr, "[bn:gpu:wgpu] failed to load shader: %s\n", name);
+        return -1;
+    }
+
+    wgpu_last_error = 0;
+
+    WGPUShaderSourceWGSL wgsl_desc = {
+        .chain = { .sType = WGPUSType_ShaderSourceWGSL },
+        .code = { .data = wgsl, .length = strlen(wgsl) },
+    };
+    WGPUShaderModuleDescriptor sm_desc = {
+        .nextInChain = &wgsl_desc.chain,
+        .label = sv("bn_fwd_shader"),
+    };
+
+    WGPUShaderModule shader = wgpuDeviceCreateShaderModule(ctx->device, &sm_desc);
+    free(wgsl);
+
+    if (!shader || wgpu_last_error) {
+        if (shader) wgpuShaderModuleRelease(shader);
+        fprintf(stderr, "[bn:gpu:wgpu] fwd shader compilation failed: %s\n", name);
+        return -1;
+    }
+
+    WGPUComputePipelineDescriptor pipe_desc = {
+        .label = sv("bn_fwd_pipeline"),
+        .layout = NULL,
+        .compute = {
+            .module = shader,
+            .entryPoint = sv("main"),
+        },
+    };
+
+    WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(
+        ctx->device, &pipe_desc);
+    wgpuShaderModuleRelease(shader);
+
+    if (!pipeline || wgpu_last_error) {
+        if (pipeline) wgpuComputePipelineRelease(pipeline);
+        fprintf(stderr, "[bn:gpu:wgpu] fwd pipeline creation failed: %s\n", name);
+        return -1;
+    }
+
+    WGPUBindGroupLayout layout = wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
+    if (!layout) {
+        wgpuComputePipelineRelease(pipeline);
+        return -1;
+    }
+
+    ctx->fwd_pipelines[shader_id] = pipeline;
+    ctx->fwd_layouts[shader_id] = layout;
     return 0;
 }
 
@@ -816,6 +922,446 @@ cleanup:
     return rc;
 }
 
+/* ── Vtable: init_activations ──────────────────────────────────────── */
+
+static int wgpu_init_activations(void *vctx, const void *config_ptr)
+{
+    BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+    const BnConfig *c = (const BnConfig *)config_ptr;
+    if (!ctx || !c) return -1;
+
+    /* Compute buffer sizes */
+    int n_attn = (c->full_attn_interval > 0)
+                     ? c->n_layers / c->full_attn_interval
+                     : c->n_layers;
+    int q_dim = c->n_heads * c->head_size;
+    int xb_size = q_dim > c->dim ? q_dim : c->dim;
+
+    size_t sizes[BN_GPU_BUF_COUNT] = {0};
+    sizes[BN_GPU_BUF_X]           = (size_t)c->dim * sizeof(float);
+    sizes[BN_GPU_BUF_XB]          = (size_t)xb_size * sizeof(float);
+    sizes[BN_GPU_BUF_XB2]         = (size_t)c->dim * sizeof(float);
+    sizes[BN_GPU_BUF_Q]           = (size_t)q_dim * sizeof(float);
+    sizes[BN_GPU_BUF_HB]          = (size_t)c->hidden_dim * sizeof(float);
+    sizes[BN_GPU_BUF_HB2]         = (size_t)c->hidden_dim * sizeof(float);
+    sizes[BN_GPU_BUF_KEY_CACHE]   = (size_t)n_attn * c->seq_len * c->kv_dim * sizeof(float);
+    sizes[BN_GPU_BUF_VALUE_CACHE] = (size_t)n_attn * c->seq_len * c->kv_dim * sizeof(float);
+    sizes[BN_GPU_BUF_ATT]         = (size_t)c->n_heads * c->seq_len * sizeof(float);
+    sizes[BN_GPU_BUF_LOGITS]      = (size_t)c->vocab_size * sizeof(float);
+    sizes[BN_GPU_BUF_ROPE_FREQ]   = (size_t)(c->head_size / 2) * sizeof(float);
+    sizes[BN_GPU_BUF_SCRATCH]     = (size_t)xb_size * sizeof(float);
+
+    /* Create each activation buffer (Storage | CopySrc | CopyDst) */
+    for (int i = 0; i < BN_GPU_BUF_COUNT; i++) {
+        if (sizes[i] == 0) continue;
+        size_t aligned = (sizes[i] + 3) & ~(size_t)3;
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_act"),
+            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc
+                     | WGPUBufferUsage_CopyDst,
+            .size = aligned,
+        };
+        ctx->act_bufs[i] = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->act_bufs[i]) return -1;
+        ctx->act_sizes[i] = aligned;
+    }
+
+    /* Upload precomputed RoPE frequencies */
+    {
+        int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : c->head_size;
+        int half = rope_dims / 2;
+        float *freq = malloc((size_t)half * sizeof(float));
+        if (!freq) return -1;
+        for (int i = 0; i < half; i++)
+            freq[i] = 1.0f / powf(c->rope_theta, (float)(2 * i) / (float)rope_dims);
+        wgpuQueueWriteBuffer(ctx->queue, ctx->act_bufs[BN_GPU_BUF_ROPE_FREQ],
+                              0, freq, (size_t)half * sizeof(float));
+        free(freq);
+    }
+
+    /* Create staging buffer for logits readback */
+    {
+        size_t logits_size = (size_t)c->vocab_size * sizeof(float);
+        size_t aligned = (logits_size + 3) & ~(size_t)3;
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_fwd_staging"),
+            .usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst,
+            .size = aligned,
+        };
+        ctx->fwd_staging = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->fwd_staging) return -1;
+        ctx->fwd_staging_size = aligned;
+    }
+
+    /* Create uniform ring buffer (~500 dispatches x 32 bytes) */
+    {
+        size_t ring_size = 1024 * 32;  /* ~1024 dispatches for GPU-resident forward */
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_uniform_ring"),
+            .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+            .size = ring_size,
+        };
+        ctx->uniform_ring = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->uniform_ring) return -1;
+        ctx->uniform_ring_size = ring_size;
+    }
+
+    /* Compile forward-pass shaders */
+    static const struct { int id; const char *name; } fwd_shaders[] = {
+        { BN_GPU_SHADER_RMSNORM,      "rmsnorm"      },
+        { BN_GPU_SHADER_ROPE,         "rope"         },
+        { BN_GPU_SHADER_GQA_SCORES,   "gqa_scores"   },
+        { BN_GPU_SHADER_SOFTMAX,      "softmax"      },
+        { BN_GPU_SHADER_GQA_COMBINE,  "gqa_combine"  },
+        { BN_GPU_SHADER_SILU_GATE,    "silu_gate"    },
+        { BN_GPU_SHADER_RELU2_GATE,   "relu2_gate"   },
+        { BN_GPU_SHADER_RESIDUAL_ADD, "residual_add" },
+    };
+    int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
+    int compiled = 0;
+    for (int i = 0; i < n_fwd; i++) {
+        if (compile_fwd_pipeline(ctx, fwd_shaders[i].id, fwd_shaders[i].name) == 0)
+            compiled++;
+    }
+    fprintf(stderr, "[bn:gpu:wgpu] compiled %d/%d forward-pass shaders\n",
+            compiled, n_fwd);
+
+    return 0;
+}
+
+/* ── Vtable: free_activations ──────────────────────────────────────── */
+
+static void wgpu_free_activations(void *vctx)
+{
+    BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+    if (!ctx) return;
+
+    for (int i = 0; i < BN_GPU_BUF_COUNT; i++) {
+        if (ctx->act_bufs[i]) {
+            wgpuBufferDestroy(ctx->act_bufs[i]);
+            wgpuBufferRelease(ctx->act_bufs[i]);
+            ctx->act_bufs[i] = NULL;
+            ctx->act_sizes[i] = 0;
+        }
+    }
+    if (ctx->fwd_staging) {
+        wgpuBufferDestroy(ctx->fwd_staging);
+        wgpuBufferRelease(ctx->fwd_staging);
+        ctx->fwd_staging = NULL;
+        ctx->fwd_staging_size = 0;
+    }
+    if (ctx->uniform_ring) {
+        wgpuBufferDestroy(ctx->uniform_ring);
+        wgpuBufferRelease(ctx->uniform_ring);
+        ctx->uniform_ring = NULL;
+        ctx->uniform_ring_size = 0;
+    }
+    for (int i = 0; i < BN_GPU_SHADER_COUNT; i++) {
+        if (ctx->fwd_layouts[i]) {
+            wgpuBindGroupLayoutRelease(ctx->fwd_layouts[i]);
+            ctx->fwd_layouts[i] = NULL;
+        }
+        if (ctx->fwd_pipelines[i]) {
+            wgpuComputePipelineRelease(ctx->fwd_pipelines[i]);
+            ctx->fwd_pipelines[i] = NULL;
+        }
+    }
+}
+
+/* ── Vtable: write_activation ──────────────────────────────────────── */
+
+static int wgpu_write_activation(void *vctx, int buf_idx, const void *data,
+                                  size_t size, size_t offset)
+{
+    BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+    if (!ctx || !data || buf_idx < 0 || buf_idx >= BN_GPU_BUF_COUNT) return -1;
+    if (!ctx->act_bufs[buf_idx]) return -1;
+    if (offset + size > ctx->act_sizes[buf_idx]) return -1;
+    wgpuQueueWriteBuffer(ctx->queue, ctx->act_bufs[buf_idx], offset, data, size);
+    return 0;
+}
+
+/* ── Vtable: execute ───────────────────────────────────────────────── */
+
+static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
+                         int readback_buf, float *out_host, int out_len)
+{
+    BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+    if (!ctx || !ops || n_ops <= 0) return -1;
+
+    /* 1. Upload all per-dispatch uniforms to the ring buffer */
+    size_t needed = (size_t)n_ops * 32;
+    if (needed > ctx->uniform_ring_size) return -1;
+
+    uint8_t *uni_data = malloc(needed);
+    if (!uni_data) return -1;
+    for (int i = 0; i < n_ops; i++) {
+        memcpy(uni_data + (size_t)i * 32, ops[i].p, 32);
+    }
+    wgpuQueueWriteBuffer(ctx->queue, ctx->uniform_ring, 0, uni_data, needed);
+    free(uni_data);
+
+    /* 2. Create command encoder */
+    WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_fwd_enc") };
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
+    if (!encoder) return -1;
+
+    /* 3. For each op: create bind group, encode compute pass */
+    for (int i = 0; i < n_ops; i++) {
+        const BnGPUOp *op = &ops[i];
+
+        /* Determine pipeline and layout */
+        WGPUComputePipeline pipeline = NULL;
+        WGPUBindGroupLayout layout = NULL;
+        if (op->shader == BN_GPU_SHADER_MATVEC) {
+            if (op->type >= 0 && op->type < BN_WGPU_MAX_TYPES) {
+                pipeline = ctx->pipelines[op->type];
+                layout = ctx->layouts[op->type];
+            }
+        } else if (op->shader > 0 && op->shader < BN_GPU_SHADER_COUNT) {
+            pipeline = ctx->fwd_pipelines[op->shader];
+            layout = ctx->fwd_layouts[op->shader];
+        }
+        if (!pipeline || !layout) continue;
+
+        /* Build bind group entries per shader type */
+        WGPUBindGroupEntry entries[4];
+        int n_entries = 0;
+        size_t uni_offset = (size_t)i * 32;
+
+        switch (op->shader) {
+        case BN_GPU_SHADER_MATVEC: {
+            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+            if (!wbuf) continue;
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = wbuf->buf,
+                .offset = 0, .size = wbuf->size};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[op->buf_out],
+                .offset = 0, .size = ctx->act_sizes[op->buf_out]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 4;
+            break;
+        }
+        case BN_GPU_SHADER_RMSNORM: {
+            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1,
+                .buffer = wbuf ? wbuf->buf : ctx->act_bufs[op->buf_in],
+                .offset = 0,
+                .size = wbuf ? wbuf->size : ctx->act_sizes[op->buf_in]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[op->buf_out],
+                .offset = 0, .size = ctx->act_sizes[op->buf_out]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 4;
+            break;
+        }
+        case BN_GPU_SHADER_ROPE: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[BN_GPU_BUF_ROPE_FREQ],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_ROPE_FREQ]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_GQA_SCORES: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[BN_GPU_BUF_KEY_CACHE],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_KEY_CACHE]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[BN_GPU_BUF_ATT],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_ATT]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 4;
+            break;
+        }
+        case BN_GPU_SHADER_SOFTMAX: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[BN_GPU_BUF_ATT],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_ATT]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 2;
+            break;
+        }
+        case BN_GPU_SHADER_GQA_COMBINE: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[BN_GPU_BUF_ATT],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_ATT]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[BN_GPU_BUF_VALUE_CACHE],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_VALUE_CACHE]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[op->buf_out],
+                .offset = 0, .size = ctx->act_sizes[op->buf_out]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 4;
+            break;
+        }
+        case BN_GPU_SHADER_SILU_GATE:
+        case BN_GPU_SHADER_RELU2_GATE: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_aux],
+                .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_RESIDUAL_ADD: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_aux],
+                .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_COPY: {
+            /* Pseudo-op: buffer-to-buffer copy (no compute dispatch).
+             * p[0] = src offset (floats), p[1] = dst offset (floats), p[2] = size (floats). */
+            int src = op->buf_in, dst = op->buf_out;
+            if (src < 0 || src >= BN_GPU_BUF_COUNT || !ctx->act_bufs[src]) continue;
+            if (dst < 0 || dst >= BN_GPU_BUF_COUNT || !ctx->act_bufs[dst]) continue;
+            size_t src_off = (size_t)op->p[0] * sizeof(float);
+            size_t dst_off = (size_t)op->p[1] * sizeof(float);
+            size_t copy_sz = (size_t)op->p[2] * sizeof(float);
+            if (copy_sz == 0) continue;
+            wgpuCommandEncoderCopyBufferToBuffer(encoder,
+                ctx->act_bufs[src], src_off,
+                ctx->act_bufs[dst], dst_off,
+                copy_sz);
+            continue;  /* skip bind group + compute pass below */
+        }
+        default: continue;
+        }
+
+        /* Create bind group */
+        WGPUBindGroupDescriptor bg_desc = {
+            .label = sv("bn_fwd_bg"),
+            .layout = layout,
+            .entryCount = (size_t)n_entries,
+            .entries = entries,
+        };
+        WGPUBindGroup bg = wgpuDeviceCreateBindGroup(ctx->device, &bg_desc);
+        if (!bg) continue;
+
+        /* Compute workgroup count */
+        uint32_t wg_x = 1, wg_y = 1;
+        switch (op->shader) {
+        case BN_GPU_SHADER_MATVEC:
+            wg_x = (uint32_t)op->rows;
+            wg_y = op->p[2];  /* n_tokens */
+            if (wg_y == 0) wg_y = 1;
+            break;
+        case BN_GPU_SHADER_RMSNORM:
+            wg_x = 1;  /* single workgroup */
+            break;
+        case BN_GPU_SHADER_ROPE:
+        case BN_GPU_SHADER_GQA_SCORES:
+        case BN_GPU_SHADER_SOFTMAX:
+        case BN_GPU_SHADER_GQA_COMBINE:
+            wg_x = op->p[0];  /* n_heads */
+            break;
+        case BN_GPU_SHADER_SILU_GATE:
+        case BN_GPU_SHADER_RELU2_GATE:
+        case BN_GPU_SHADER_RESIDUAL_ADD:
+            wg_x = (op->p[0] + 255) / 256;  /* ceil(dim / 256) */
+            break;
+        }
+
+        /* Encode compute pass */
+        WGPUComputePassDescriptor pass_desc = { .label = sv("bn_fwd_pass") };
+        WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(
+            encoder, &pass_desc);
+        wgpuComputePassEncoderSetPipeline(pass, pipeline);
+        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, NULL);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, wg_x, wg_y, 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
+        wgpuBindGroupRelease(bg);
+    }
+
+    /* 4. Copy readback buffer to staging */
+    size_t readback_size = (size_t)out_len * sizeof(float);
+    if (readback_buf >= 0 && readback_buf < BN_GPU_BUF_COUNT
+        && ctx->act_bufs[readback_buf] && out_host && out_len > 0) {
+        wgpuCommandEncoderCopyBufferToBuffer(encoder,
+            ctx->act_bufs[readback_buf], 0,
+            ctx->fwd_staging, 0,
+            readback_size);
+    }
+
+    /* 5. Finish, submit, poll */
+    WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_fwd_cmd") };
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
+    wgpuCommandEncoderRelease(encoder);
+    if (!cmd) return -1;
+
+    wgpuQueueSubmit(ctx->queue, 1, &cmd);
+    wgpuDevicePoll(ctx->device, 1, NULL);
+    wgpuCommandBufferRelease(cmd);
+
+    /* 6. Map staging, read back results */
+    if (out_host && out_len > 0 && readback_buf >= 0) {
+        MapReq map_req = {0};
+        WGPUBufferMapCallbackInfo map_cb = {
+            .mode = WGPUCallbackMode_AllowSpontaneous,
+            .callback = on_buffer_map,
+            .userdata1 = &map_req,
+        };
+        wgpuBufferMapAsync(ctx->fwd_staging, WGPUMapMode_Read,
+                            0, readback_size, map_cb);
+        wgpuDevicePoll(ctx->device, 1, NULL);
+
+        if (!map_req.done || map_req.status != WGPUMapAsyncStatus_Success)
+            return -1;
+
+        const void *mapped = wgpuBufferGetConstMappedRange(
+            ctx->fwd_staging, 0, readback_size);
+        if (!mapped) {
+            wgpuBufferUnmap(ctx->fwd_staging);
+            return -1;
+        }
+        memcpy(out_host, mapped, readback_size);
+        wgpuBufferUnmap(ctx->fwd_staging);
+    }
+
+    return 0;
+}
+
 /* ── Public API: create ────────────────────────────────────────────── */
 
 BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
@@ -899,6 +1445,11 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
         return NULL;
     }
 
+    /* Store shader directory for forward-pass shader compilation */
+    if (shader_dir) {
+        snprintf(ctx->shader_dir, sizeof(ctx->shader_dir), "%s", shader_dir);
+    }
+
     /* Compile pipelines for all supported quant types */
     int compiled = 0;
     for (int i = 0; i < N_SUPPORTED_TYPES; i++) {
@@ -917,12 +1468,16 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
         bn_gpu_wgpu_destroy(NULL);  /* ctx leaked — but OOM anyway */
         return NULL;
     }
-    gpu->buffer_create  = wgpu_buffer_create;
-    gpu->buffer_destroy = wgpu_buffer_destroy;
-    gpu->matvec         = wgpu_matvec;
-    gpu->matmul         = wgpu_matmul;
-    gpu->matvec_batch   = wgpu_matvec_batch;
-    gpu->ctx            = ctx;
+    gpu->buffer_create     = wgpu_buffer_create;
+    gpu->buffer_destroy    = wgpu_buffer_destroy;
+    gpu->matvec            = wgpu_matvec;
+    gpu->matmul            = wgpu_matmul;
+    gpu->matvec_batch      = wgpu_matvec_batch;
+    gpu->execute           = wgpu_execute;
+    gpu->init_activations  = wgpu_init_activations;
+    gpu->free_activations  = wgpu_free_activations;
+    gpu->write_activation  = wgpu_write_activation;
+    gpu->ctx               = ctx;
 
     return gpu;
 }
@@ -935,6 +1490,9 @@ void bn_gpu_wgpu_destroy(BnGPUBackend *gpu)
 
     BnWgpuCtx *ctx = (BnWgpuCtx *)gpu->ctx;
     if (ctx) {
+        /* Release forward-pass activation buffers, staging, and shaders */
+        wgpu_free_activations(ctx);
+
         /* Release persistent scratch buffers */
         if (ctx->x_buf) {
             wgpuBufferDestroy(ctx->x_buf);

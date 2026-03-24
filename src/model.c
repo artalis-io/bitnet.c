@@ -1079,18 +1079,30 @@ static void release_qweight(BnGPUBackend *gpu, BnQWeight *w) {
     }
 }
 
+// Helper: upload an F32 array as a GPU storage buffer.
+// Uses type=-1 (not a quant type). Returns handle, or NULL on failure/skip.
+static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
+    if (!data || n_elems <= 0) return NULL;
+    return gpu->buffer_create(gpu->ctx, data, (size_t)n_elems * sizeof(float),
+                              -1, n_elems, 1);
+}
+
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     if (!model || !gpu || !gpu->buffer_create) return -1;
     model->gpu = gpu;
 
     BnWeights *w = &model->weights;
-    int n_layers = model->config.n_layers;
+    BnConfig *c = &model->config;
+    int n_layers = c->n_layers;
 
     // Upload output weight
     if (upload_qweight(gpu, &w->output_weight) != 0) {
         bn_model_release_gpu(model);
         return -1;
     }
+
+    // Upload output norm (F32)
+    w->output_norm_gpu = upload_f32_buf(gpu, w->output_norm, c->dim);
 
     // Upload per-layer weights
     for (int l = 0; l < n_layers; l++) {
@@ -1109,9 +1121,21 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
         }
+
+        // Upload per-layer F32 norm weights
+        lw->attn_norm_gpu = upload_f32_buf(gpu, lw->attn_norm, c->dim);
+        lw->ffn_norm_gpu  = upload_f32_buf(gpu, lw->ffn_norm, c->dim);
     }
 
     return 0;
+}
+
+// Helper: release a GPU F32 buffer handle.
+static void release_f32_buf(BnGPUBackend *gpu, void **handle) {
+    if (*handle) {
+        gpu->buffer_destroy(gpu->ctx, *handle);
+        *handle = NULL;
+    }
 }
 
 void bn_model_release_gpu(BnModel *model) {
@@ -1121,6 +1145,7 @@ void bn_model_release_gpu(BnModel *model) {
     int n_layers = model->config.n_layers;
 
     release_qweight(gpu, &w->output_weight);
+    release_f32_buf(gpu, &w->output_norm_gpu);
 
     if (w->layers) {
         for (int l = 0; l < n_layers; l++) {
@@ -1135,6 +1160,8 @@ void bn_model_release_gpu(BnModel *model) {
             int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
             for (int i = 0; i < n_weights; i++)
                 release_qweight(gpu, weights[i]);
+            release_f32_buf(gpu, &lw->attn_norm_gpu);
+            release_f32_buf(gpu, &lw->ffn_norm_gpu);
         }
     }
 
