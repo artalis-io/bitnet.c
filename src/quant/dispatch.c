@@ -1237,22 +1237,42 @@ void bn_quant_matvec_batch_gpu(const BnMatvecTask *tasks, int n_tasks,
                                 const float *x, int8_t *x_q_buf,
                                 BnThreadPool *pool, BnGPUBackend *gpu) {
     if (gpu) {
-        // Try GPU for each task individually
+        // Check all tasks have gpu_buf
         int all_gpu = 1;
         for (int t = 0; t < n_tasks; t++) {
             if (!tasks[t].W->gpu_buf) { all_gpu = 0; break; }
         }
-        if (all_gpu && gpu->matvec) {
-            for (int t = 0; t < n_tasks; t++) {
-                const BnQWeight *W = tasks[t].W;
-                if (gpu->matvec(gpu->ctx, tasks[t].out, W->gpu_buf, x,
-                                W->rows, W->cols, W->type) != 0) {
-                    // GPU failed on one task, fall back to CPU for all
-                    bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, pool);
-                    return;
+        if (all_gpu) {
+            // Prefer batched submission if available
+            if (gpu->matvec_batch && n_tasks <= 16) {
+                BnGPUMatvecOp ops[16];
+                for (int t = 0; t < n_tasks; t++) {
+                    ops[t] = (BnGPUMatvecOp){
+                        .out   = tasks[t].out,
+                        .W_buf = tasks[t].W->gpu_buf,
+                        .rows  = tasks[t].W->rows,
+                        .cols  = tasks[t].W->cols,
+                        .type  = tasks[t].W->type,
+                    };
                 }
+                if (gpu->matvec_batch(gpu->ctx, ops, n_tasks, x,
+                                       tasks[0].W->cols) == 0)
+                    return;
+                // Fall through to individual or CPU on failure
             }
-            return;
+            // Fall back to individual GPU matvec calls
+            if (gpu->matvec) {
+                for (int t = 0; t < n_tasks; t++) {
+                    const BnQWeight *W = tasks[t].W;
+                    if (gpu->matvec(gpu->ctx, tasks[t].out, W->gpu_buf, x,
+                                    W->rows, W->cols, W->type) != 0) {
+                        // GPU failed, fall back to CPU for all
+                        bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, pool);
+                        return;
+                    }
+                }
+                return;
+            }
         }
     }
     bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, pool);

@@ -39,6 +39,15 @@ typedef struct {
     WGPUQueue           queue;
     WGPUComputePipeline pipelines[BN_WGPU_MAX_TYPES];
     WGPUBindGroupLayout layouts[BN_WGPU_MAX_TYPES];
+
+    /* Persistent scratch buffers (reused across dispatches) */
+    WGPUBuffer x_buf;           /* input vector/matrix */
+    size_t     x_buf_size;      /* current allocation size */
+    WGPUBuffer out_buf;         /* output vector/matrix */
+    size_t     out_buf_size;
+    WGPUBuffer uniform_buf;     /* 16-byte uniforms (always the same size) */
+    WGPUBuffer staging_buf;     /* readback staging (MAP_READ | COPY_DST) */
+    size_t     staging_buf_size;
 } BnWgpuCtx;
 
 /* ── GPU buffer handle ─────────────────────────────────────────────── */
@@ -59,6 +68,80 @@ typedef struct {
     uint32_t n_tokens;
     uint32_t extra;  /* reserved / padding */
 } BnWgpuUniforms;
+
+/* ── Persistent buffer helper ──────────────────────────────────────── */
+
+static int ensure_scratch(BnWgpuCtx *ctx, size_t x_need, size_t out_need,
+                           size_t staging_need)
+{
+    /* Align all sizes to 4 bytes (WebGPU requirement) */
+    x_need = (x_need + 3) & ~(size_t)3;
+    out_need = (out_need + 3) & ~(size_t)3;
+    staging_need = (staging_need + 3) & ~(size_t)3;
+
+    /* x_buf: Storage | CopyDst */
+    if (!ctx->x_buf || ctx->x_buf_size < x_need) {
+        if (ctx->x_buf) {
+            wgpuBufferDestroy(ctx->x_buf);
+            wgpuBufferRelease(ctx->x_buf);
+        }
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_x_persist"),
+            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
+            .size  = x_need,
+        };
+        ctx->x_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->x_buf) return -1;
+        ctx->x_buf_size = x_need;
+    }
+
+    /* out_buf: Storage | CopySrc | CopyDst */
+    if (!ctx->out_buf || ctx->out_buf_size < out_need) {
+        if (ctx->out_buf) {
+            wgpuBufferDestroy(ctx->out_buf);
+            wgpuBufferRelease(ctx->out_buf);
+        }
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_out_persist"),
+            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc
+                     | WGPUBufferUsage_CopyDst,
+            .size  = out_need,
+        };
+        ctx->out_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->out_buf) return -1;
+        ctx->out_buf_size = out_need;
+    }
+
+    /* uniform_buf: 16 bytes, create once */
+    if (!ctx->uniform_buf) {
+        size_t uni_size = (sizeof(BnWgpuUniforms) + 15) & ~(size_t)15;
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_uni_persist"),
+            .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
+            .size  = uni_size,
+        };
+        ctx->uniform_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->uniform_buf) return -1;
+    }
+
+    /* staging_buf: MapRead | CopyDst */
+    if (!ctx->staging_buf || ctx->staging_buf_size < staging_need) {
+        if (ctx->staging_buf) {
+            wgpuBufferDestroy(ctx->staging_buf);
+            wgpuBufferRelease(ctx->staging_buf);
+        }
+        WGPUBufferDescriptor desc = {
+            .label = sv("bn_staging_persist"),
+            .usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst,
+            .size  = staging_need,
+        };
+        ctx->staging_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
+        if (!ctx->staging_buf) return -1;
+        ctx->staging_buf_size = staging_need;
+    }
+
+    return 0;
+}
 
 /* ── Error tracking ────────────────────────────────────────────────── */
 
@@ -273,76 +356,6 @@ static int compile_pipeline(BnWgpuCtx *ctx, int type, const char *shader_dir)
     return 0;
 }
 
-/* ── Staging buffer readback ───────────────────────────────────────── */
-
-static int readback_buffer(BnWgpuCtx *ctx, WGPUBuffer src,
-                            size_t size, void *out_host)
-{
-    /* Create staging buffer (MAP_READ | COPY_DST) */
-    WGPUBufferDescriptor staging_desc = {
-        .label = sv("bn_staging"),
-        .usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst,
-        .size  = size,
-    };
-    WGPUBuffer staging = wgpuDeviceCreateBuffer(ctx->device, &staging_desc);
-    if (!staging) return -1;
-
-    /* Encode copy command */
-    WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_readback_enc") };
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
-    if (!encoder) {
-        wgpuBufferDestroy(staging);
-        wgpuBufferRelease(staging);
-        return -1;
-    }
-    wgpuCommandEncoderCopyBufferToBuffer(encoder, src, 0, staging, 0, size);
-
-    WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_readback_cmd") };
-    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
-    wgpuCommandEncoderRelease(encoder);
-    if (!cmd) {
-        wgpuBufferDestroy(staging);
-        wgpuBufferRelease(staging);
-        return -1;
-    }
-
-    /* Submit and poll */
-    wgpuQueueSubmit(ctx->queue, 1, &cmd);
-    wgpuDevicePoll(ctx->device, 1, NULL);
-    wgpuCommandBufferRelease(cmd);
-
-    /* Map staging buffer */
-    MapReq map_req = {0};
-    WGPUBufferMapCallbackInfo map_cb = {
-        .mode = WGPUCallbackMode_AllowSpontaneous,
-        .callback = on_buffer_map,
-        .userdata1 = &map_req,
-    };
-    wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, size, map_cb);
-    wgpuDevicePoll(ctx->device, 1, NULL);
-
-    if (!map_req.done || map_req.status != WGPUMapAsyncStatus_Success) {
-        wgpuBufferDestroy(staging);
-        wgpuBufferRelease(staging);
-        return -1;
-    }
-
-    const void *mapped = wgpuBufferGetConstMappedRange(staging, 0, size);
-    if (!mapped) {
-        wgpuBufferUnmap(staging);
-        wgpuBufferDestroy(staging);
-        wgpuBufferRelease(staging);
-        return -1;
-    }
-
-    memcpy(out_host, mapped, size);
-
-    wgpuBufferUnmap(staging);
-    wgpuBufferDestroy(staging);
-    wgpuBufferRelease(staging);
-    return 0;
-}
-
 /* ── Vtable: buffer_create ─────────────────────────────────────────── */
 
 static void *wgpu_buffer_create(void *vctx, const void *data, size_t size,
@@ -407,7 +420,6 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
     if (!ctx->pipelines[type]) return -1;  /* no pipeline -> CPU fallback */
 
     int rc = -1;
-    WGPUBuffer x_buf = NULL, out_buf = NULL, uniform_buf = NULL;
     WGPUBindGroup bind_group = NULL;
     WGPUCommandEncoder encoder = NULL;
     WGPUComputePassEncoder pass = NULL;
@@ -418,31 +430,12 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t out_size = (size_t)rows * sizeof(float);
     size_t out_aligned = (out_size + 3) & ~(size_t)3;
 
-    /* Create x buffer (input) */
-    {
-        WGPUBufferDescriptor desc = {
-            .label = sv("bn_x"),
-            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
-            .size  = x_aligned,
-        };
-        x_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
-        if (!x_buf) goto cleanup;
-        wgpuQueueWriteBuffer(ctx->queue, x_buf, 0, x, x_size);
-    }
+    /* Ensure persistent scratch buffers are large enough */
+    if (ensure_scratch(ctx, x_aligned, out_aligned, out_aligned) != 0)
+        return -1;
 
-    /* Create output buffer */
-    {
-        WGPUBufferDescriptor desc = {
-            .label = sv("bn_out"),
-            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc
-                     | WGPUBufferUsage_CopyDst,
-            .size  = out_aligned,
-        };
-        out_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
-        if (!out_buf) goto cleanup;
-    }
-
-    /* Create uniform buffer */
+    /* Upload x and uniforms to persistent buffers */
+    wgpuQueueWriteBuffer(ctx->queue, ctx->x_buf, 0, x, x_size);
     {
         BnWgpuUniforms uniforms = {
             .rows = (uint32_t)rows,
@@ -450,25 +443,17 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
             .n_tokens = 1,
             .extra = 0,
         };
-        size_t uni_size = (sizeof(uniforms) + 15) & ~(size_t)15;
-        WGPUBufferDescriptor desc = {
-            .label = sv("bn_uniforms"),
-            .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-            .size  = uni_size,
-        };
-        uniform_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
-        if (!uniform_buf) goto cleanup;
-        wgpuQueueWriteBuffer(ctx->queue, uniform_buf, 0,
+        wgpuQueueWriteBuffer(ctx->queue, ctx->uniform_buf, 0,
                               &uniforms, sizeof(uniforms));
     }
 
     /* Create bind group: 0=W, 1=x, 2=out, 3=uniforms */
     {
         WGPUBindGroupEntry entries[4] = {
-            { .binding = 0, .buffer = wbuf->buf, .offset = 0, .size = wbuf->size },
-            { .binding = 1, .buffer = x_buf,     .offset = 0, .size = x_aligned },
-            { .binding = 2, .buffer = out_buf,   .offset = 0, .size = out_aligned },
-            { .binding = 3, .buffer = uniform_buf, .offset = 0,
+            { .binding = 0, .buffer = wbuf->buf,       .offset = 0, .size = wbuf->size },
+            { .binding = 1, .buffer = ctx->x_buf,      .offset = 0, .size = x_aligned },
+            { .binding = 2, .buffer = ctx->out_buf,    .offset = 0, .size = out_aligned },
+            { .binding = 3, .buffer = ctx->uniform_buf, .offset = 0,
               .size = (sizeof(BnWgpuUniforms) + 15) & ~(size_t)15 },
         };
         WGPUBindGroupDescriptor bg_desc = {
@@ -481,7 +466,7 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
         if (!bind_group) goto cleanup;
     }
 
-    /* Encode compute pass */
+    /* Encode compute pass + staging copy in ONE command buffer */
     {
         WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_matvec_enc") };
         encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
@@ -493,32 +478,52 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
 
         wgpuComputePassEncoderSetPipeline(pass, ctx->pipelines[type]);
         wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, NULL);
-
-        /* One workgroup per row */
-        uint32_t wg_x = (uint32_t)rows;
-        wgpuComputePassEncoderDispatchWorkgroups(pass, wg_x, 1, 1);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, (uint32_t)rows, 1, 1);
         wgpuComputePassEncoderEnd(pass);
+
+        /* Copy out_buf → staging_buf in the same command buffer */
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder, ctx->out_buf, 0, ctx->staging_buf, 0, out_size);
 
         WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_matvec_cmd") };
         cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
         if (!cmd) goto cleanup;
     }
 
-    /* Submit and poll */
+    /* Single submit + poll (no separate readback submit) */
     wgpuQueueSubmit(ctx->queue, 1, &cmd);
     wgpuDevicePoll(ctx->device, 1, NULL);
 
-    /* Readback output */
-    rc = readback_buffer(ctx, out_buf, out_size, out);
+    /* Map staging buffer and read back */
+    {
+        MapReq map_req = {0};
+        WGPUBufferMapCallbackInfo map_cb = {
+            .mode = WGPUCallbackMode_AllowSpontaneous,
+            .callback = on_buffer_map,
+            .userdata1 = &map_req,
+        };
+        wgpuBufferMapAsync(ctx->staging_buf, WGPUMapMode_Read, 0, out_size, map_cb);
+        wgpuDevicePoll(ctx->device, 1, NULL);
+
+        if (!map_req.done || map_req.status != WGPUMapAsyncStatus_Success)
+            goto cleanup;
+
+        const void *mapped = wgpuBufferGetConstMappedRange(ctx->staging_buf, 0, out_size);
+        if (!mapped) {
+            wgpuBufferUnmap(ctx->staging_buf);
+            goto cleanup;
+        }
+        memcpy(out, mapped, out_size);
+        wgpuBufferUnmap(ctx->staging_buf);
+    }
+
+    rc = 0;
 
 cleanup:
     if (cmd) wgpuCommandBufferRelease(cmd);
     if (pass) wgpuComputePassEncoderRelease(pass);
     if (encoder) wgpuCommandEncoderRelease(encoder);
     if (bind_group) wgpuBindGroupRelease(bind_group);
-    if (uniform_buf) { wgpuBufferDestroy(uniform_buf); wgpuBufferRelease(uniform_buf); }
-    if (out_buf) { wgpuBufferDestroy(out_buf); wgpuBufferRelease(out_buf); }
-    if (x_buf) { wgpuBufferDestroy(x_buf); wgpuBufferRelease(x_buf); }
     return rc;
 }
 
@@ -534,7 +539,6 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
     if (!ctx->pipelines[type]) return -1;
 
     int rc = -1;
-    WGPUBuffer x_buf = NULL, out_buf = NULL, uniform_buf = NULL;
     WGPUBindGroup bind_group = NULL;
     WGPUCommandEncoder encoder = NULL;
     WGPUComputePassEncoder pass = NULL;
@@ -545,31 +549,12 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
     size_t out_size = (size_t)n_tokens * (size_t)rows * sizeof(float);
     size_t out_aligned = (out_size + 3) & ~(size_t)3;
 
-    /* Create x buffer */
-    {
-        WGPUBufferDescriptor desc = {
-            .label = sv("bn_x_batch"),
-            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
-            .size  = x_aligned,
-        };
-        x_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
-        if (!x_buf) goto cleanup;
-        wgpuQueueWriteBuffer(ctx->queue, x_buf, 0, X, x_size);
-    }
+    /* Ensure persistent scratch buffers are large enough */
+    if (ensure_scratch(ctx, x_aligned, out_aligned, out_aligned) != 0)
+        return -1;
 
-    /* Create output buffer */
-    {
-        WGPUBufferDescriptor desc = {
-            .label = sv("bn_out_batch"),
-            .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc
-                     | WGPUBufferUsage_CopyDst,
-            .size  = out_aligned,
-        };
-        out_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
-        if (!out_buf) goto cleanup;
-    }
-
-    /* Create uniform buffer */
+    /* Upload x and uniforms to persistent buffers */
+    wgpuQueueWriteBuffer(ctx->queue, ctx->x_buf, 0, X, x_size);
     {
         BnWgpuUniforms uniforms = {
             .rows = (uint32_t)rows,
@@ -577,25 +562,17 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
             .n_tokens = (uint32_t)n_tokens,
             .extra = 0,
         };
-        size_t uni_size = (sizeof(uniforms) + 15) & ~(size_t)15;
-        WGPUBufferDescriptor desc = {
-            .label = sv("bn_uniforms_batch"),
-            .usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst,
-            .size  = uni_size,
-        };
-        uniform_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
-        if (!uniform_buf) goto cleanup;
-        wgpuQueueWriteBuffer(ctx->queue, uniform_buf, 0,
+        wgpuQueueWriteBuffer(ctx->queue, ctx->uniform_buf, 0,
                               &uniforms, sizeof(uniforms));
     }
 
     /* Create bind group */
     {
         WGPUBindGroupEntry entries[4] = {
-            { .binding = 0, .buffer = wbuf->buf, .offset = 0, .size = wbuf->size },
-            { .binding = 1, .buffer = x_buf,     .offset = 0, .size = x_aligned },
-            { .binding = 2, .buffer = out_buf,   .offset = 0, .size = out_aligned },
-            { .binding = 3, .buffer = uniform_buf, .offset = 0,
+            { .binding = 0, .buffer = wbuf->buf,       .offset = 0, .size = wbuf->size },
+            { .binding = 1, .buffer = ctx->x_buf,      .offset = 0, .size = x_aligned },
+            { .binding = 2, .buffer = ctx->out_buf,    .offset = 0, .size = out_aligned },
+            { .binding = 3, .buffer = ctx->uniform_buf, .offset = 0,
               .size = (sizeof(BnWgpuUniforms) + 15) & ~(size_t)15 },
         };
         WGPUBindGroupDescriptor bg_desc = {
@@ -608,7 +585,7 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
         if (!bind_group) goto cleanup;
     }
 
-    /* Encode compute pass: dispatch(rows, n_tokens, 1) */
+    /* Encode compute pass + staging copy in ONE command buffer */
     {
         WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_matmul_enc") };
         encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
@@ -624,26 +601,218 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
             pass, (uint32_t)rows, (uint32_t)n_tokens, 1);
         wgpuComputePassEncoderEnd(pass);
 
+        /* Copy out_buf → staging_buf in the same command buffer */
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder, ctx->out_buf, 0, ctx->staging_buf, 0, out_size);
+
         WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_matmul_cmd") };
         cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
         if (!cmd) goto cleanup;
     }
 
-    /* Submit and poll */
+    /* Single submit + poll */
     wgpuQueueSubmit(ctx->queue, 1, &cmd);
     wgpuDevicePoll(ctx->device, 1, NULL);
 
-    /* Readback output */
-    rc = readback_buffer(ctx, out_buf, out_size, out);
+    /* Map staging buffer and read back */
+    {
+        MapReq map_req = {0};
+        WGPUBufferMapCallbackInfo map_cb = {
+            .mode = WGPUCallbackMode_AllowSpontaneous,
+            .callback = on_buffer_map,
+            .userdata1 = &map_req,
+        };
+        wgpuBufferMapAsync(ctx->staging_buf, WGPUMapMode_Read, 0, out_size, map_cb);
+        wgpuDevicePoll(ctx->device, 1, NULL);
+
+        if (!map_req.done || map_req.status != WGPUMapAsyncStatus_Success)
+            goto cleanup;
+
+        const void *mapped = wgpuBufferGetConstMappedRange(ctx->staging_buf, 0, out_size);
+        if (!mapped) {
+            wgpuBufferUnmap(ctx->staging_buf);
+            goto cleanup;
+        }
+        memcpy(out, mapped, out_size);
+        wgpuBufferUnmap(ctx->staging_buf);
+    }
+
+    rc = 0;
 
 cleanup:
     if (cmd) wgpuCommandBufferRelease(cmd);
     if (pass) wgpuComputePassEncoderRelease(pass);
     if (encoder) wgpuCommandEncoderRelease(encoder);
     if (bind_group) wgpuBindGroupRelease(bind_group);
-    if (uniform_buf) { wgpuBufferDestroy(uniform_buf); wgpuBufferRelease(uniform_buf); }
-    if (out_buf) { wgpuBufferDestroy(out_buf); wgpuBufferRelease(out_buf); }
-    if (x_buf) { wgpuBufferDestroy(x_buf); wgpuBufferRelease(x_buf); }
+    return rc;
+}
+
+/* ── Vtable: matvec_batch ──────────────────────────────────────────── */
+
+/* Max ops per batch (stack-allocated bind groups array) */
+#define BN_WGPU_MAX_BATCH_OPS 16
+
+static int wgpu_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
+                              const float *x, int x_cols)
+{
+    BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+    if (!ctx || !ops || n_ops <= 0 || !x) return -1;
+    if (n_ops > BN_WGPU_MAX_BATCH_OPS) return -1;
+
+    /* Validate all ops have pipelines and compute total staging size */
+    size_t total_staging = 0;
+    size_t max_out = 0;
+    for (int i = 0; i < n_ops; i++) {
+        int t = ops[i].type;
+        if (t < 0 || t >= BN_WGPU_MAX_TYPES || !ctx->pipelines[t])
+            return -1;
+        if (!ops[i].W_buf || !ops[i].out) return -1;
+        size_t op_out = (size_t)ops[i].rows * sizeof(float);
+        /* Align each op's output region to 4 bytes for copyBufferToBuffer */
+        op_out = (op_out + 3) & ~(size_t)3;
+        total_staging += op_out;
+        if (op_out > max_out) max_out = op_out;
+    }
+
+    size_t x_size = (size_t)x_cols * sizeof(float);
+    size_t x_aligned = (x_size + 3) & ~(size_t)3;
+
+    /* Ensure persistent buffers: out_buf needs max single-op size,
+       staging needs total accumulated size */
+    if (ensure_scratch(ctx, x_aligned, max_out, total_staging) != 0)
+        return -1;
+
+    /* Upload x once */
+    wgpuQueueWriteBuffer(ctx->queue, ctx->x_buf, 0, x, x_size);
+
+    int rc = -1;
+    WGPUCommandEncoder encoder = NULL;
+    WGPUCommandBuffer cmd = NULL;
+    WGPUBindGroup bind_groups[BN_WGPU_MAX_BATCH_OPS] = {0};
+    WGPUComputePassEncoder passes[BN_WGPU_MAX_BATCH_OPS] = {0};
+    int n_bind_groups = 0;
+    int n_passes = 0;
+
+    /* Create command encoder */
+    {
+        WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_batch_enc") };
+        encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
+        if (!encoder) goto cleanup;
+    }
+
+    /* Encode each op: uniforms → bind group → compute pass → copy to staging */
+    size_t staging_offset = 0;
+    /* Track staging offsets and sizes for readback */
+    size_t op_offsets[BN_WGPU_MAX_BATCH_OPS];
+    size_t op_sizes[BN_WGPU_MAX_BATCH_OPS];
+
+    for (int i = 0; i < n_ops; i++) {
+        const BnGPUMatvecOp *op = &ops[i];
+        BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+        size_t out_size = (size_t)op->rows * sizeof(float);
+        size_t out_aligned = (out_size + 3) & ~(size_t)3;
+
+        op_offsets[i] = staging_offset;
+        op_sizes[i] = out_size;
+
+        /* Write uniforms for this op */
+        BnWgpuUniforms uniforms = {
+            .rows = (uint32_t)op->rows,
+            .cols = (uint32_t)op->cols,
+            .n_tokens = 1,
+            .extra = 0,
+        };
+        wgpuQueueWriteBuffer(ctx->queue, ctx->uniform_buf, 0,
+                              &uniforms, sizeof(uniforms));
+
+        /* Create bind group: W varies per op, x/out/uniform are persistent */
+        WGPUBindGroupEntry entries[4] = {
+            { .binding = 0, .buffer = wbuf->buf,       .offset = 0, .size = wbuf->size },
+            { .binding = 1, .buffer = ctx->x_buf,      .offset = 0, .size = x_aligned },
+            { .binding = 2, .buffer = ctx->out_buf,    .offset = 0, .size = out_aligned },
+            { .binding = 3, .buffer = ctx->uniform_buf, .offset = 0,
+              .size = (sizeof(BnWgpuUniforms) + 15) & ~(size_t)15 },
+        };
+        WGPUBindGroupDescriptor bg_desc = {
+            .label = sv("bn_batch_bg"),
+            .layout = ctx->layouts[op->type],
+            .entryCount = 4,
+            .entries = entries,
+        };
+        bind_groups[i] = wgpuDeviceCreateBindGroup(ctx->device, &bg_desc);
+        if (!bind_groups[i]) goto cleanup;
+        n_bind_groups = i + 1;
+
+        /* Compute pass: dispatch → end */
+        WGPUComputePassDescriptor pass_desc = { .label = sv("bn_batch_pass") };
+        WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(
+            encoder, &pass_desc);
+        if (!pass) goto cleanup;
+        passes[i] = pass;
+        n_passes = i + 1;
+
+        wgpuComputePassEncoderSetPipeline(pass, ctx->pipelines[op->type]);
+        wgpuComputePassEncoderSetBindGroup(pass, 0, bind_groups[i], 0, NULL);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, (uint32_t)op->rows, 1, 1);
+        wgpuComputePassEncoderEnd(pass);
+
+        /* Copy out_buf[0..out_size] → staging[staging_offset..] */
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder, ctx->out_buf, 0, ctx->staging_buf, staging_offset, out_aligned);
+
+        staging_offset += out_aligned;
+    }
+
+    /* Finish and submit ONE command buffer */
+    {
+        WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_batch_cmd") };
+        cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
+        if (!cmd) goto cleanup;
+    }
+
+    wgpuQueueSubmit(ctx->queue, 1, &cmd);
+    wgpuDevicePoll(ctx->device, 1, NULL);
+
+    /* Map staging and copy each op's output to its host pointer */
+    {
+        MapReq map_req = {0};
+        WGPUBufferMapCallbackInfo map_cb = {
+            .mode = WGPUCallbackMode_AllowSpontaneous,
+            .callback = on_buffer_map,
+            .userdata1 = &map_req,
+        };
+        wgpuBufferMapAsync(ctx->staging_buf, WGPUMapMode_Read,
+                            0, total_staging, map_cb);
+        wgpuDevicePoll(ctx->device, 1, NULL);
+
+        if (!map_req.done || map_req.status != WGPUMapAsyncStatus_Success)
+            goto cleanup;
+
+        const char *mapped = (const char *)wgpuBufferGetConstMappedRange(
+            ctx->staging_buf, 0, total_staging);
+        if (!mapped) {
+            wgpuBufferUnmap(ctx->staging_buf);
+            goto cleanup;
+        }
+
+        for (int i = 0; i < n_ops; i++) {
+            memcpy(ops[i].out, mapped + op_offsets[i], op_sizes[i]);
+        }
+
+        wgpuBufferUnmap(ctx->staging_buf);
+    }
+
+    rc = 0;
+
+cleanup:
+    if (cmd) wgpuCommandBufferRelease(cmd);
+    for (int i = 0; i < n_passes; i++) {
+        if (passes[i]) wgpuComputePassEncoderRelease(passes[i]);
+    }
+    if (encoder) wgpuCommandEncoderRelease(encoder);
+    for (int i = 0; i < n_bind_groups; i++) {
+        if (bind_groups[i]) wgpuBindGroupRelease(bind_groups[i]);
+    }
     return rc;
 }
 
@@ -752,6 +921,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->buffer_destroy = wgpu_buffer_destroy;
     gpu->matvec         = wgpu_matvec;
     gpu->matmul         = wgpu_matmul;
+    gpu->matvec_batch   = wgpu_matvec_batch;
     gpu->ctx            = ctx;
 
     return gpu;
@@ -765,6 +935,24 @@ void bn_gpu_wgpu_destroy(BnGPUBackend *gpu)
 
     BnWgpuCtx *ctx = (BnWgpuCtx *)gpu->ctx;
     if (ctx) {
+        /* Release persistent scratch buffers */
+        if (ctx->x_buf) {
+            wgpuBufferDestroy(ctx->x_buf);
+            wgpuBufferRelease(ctx->x_buf);
+        }
+        if (ctx->out_buf) {
+            wgpuBufferDestroy(ctx->out_buf);
+            wgpuBufferRelease(ctx->out_buf);
+        }
+        if (ctx->uniform_buf) {
+            wgpuBufferDestroy(ctx->uniform_buf);
+            wgpuBufferRelease(ctx->uniform_buf);
+        }
+        if (ctx->staging_buf) {
+            wgpuBufferDestroy(ctx->staging_buf);
+            wgpuBufferRelease(ctx->staging_buf);
+        }
+
         /* Release pipelines and layouts */
         for (int i = 0; i < BN_WGPU_MAX_TYPES; i++) {
             if (ctx->layouts[i])
