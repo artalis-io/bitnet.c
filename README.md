@@ -104,6 +104,10 @@ make BN_ENABLE_GPU=1
 
 # Run tests
 make test
+
+# Cross-backend coherence test (GPU vs CPU, SIMD vs scalar)
+make BN_ENABLE_GPU=1 test_coherence
+./test_coherence model.gguf --gpu
 ```
 
 ### Options

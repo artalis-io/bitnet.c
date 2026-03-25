@@ -23,6 +23,13 @@ Individual test targets: `make test_gguf`, `make test_quant`, `make test_tokeniz
 
 GPU-specific test targets (require `BN_ENABLE_GPU=1`): `make test_gpu_wgpu`, `make test_gpu_validate`, `make test_gpu_backend`.
 
+Coherence test (requires a real GGUF model file):
+```bash
+make BN_ENABLE_GPU=1 test_coherence
+./test_coherence models/bitnet-b1.58-2B-4T.gguf --gpu   # GPU vs CPU forward pass + matvec
+./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf   # CPU-only: SIMD vs scalar matvec
+```
+
 ## Architecture
 
 Modules are organized in strict dependency order — each depends only on those above it:

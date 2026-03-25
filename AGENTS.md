@@ -50,6 +50,11 @@ Modules have strict, one-directional dependencies. When modifying a module, only
 - Each test builds only its module + dependencies (not the whole project)
 - Tests use `assert()` — they crash on failure, print "PASSED" on success
 - The e2e test (`test/test_e2e.c`) requires a real GGUF model file
+- The coherence test (`test/test_coherence.c`) requires a real GGUF model file:
+  - Phase 1: GPU vs CPU forward pass — 5 greedy tokens, first 3 must match
+  - Phase 2: SIMD vs scalar matvec — all layer 0 weights, max_diff < 1.0
+  - Phase 3: GPU standalone matvec vs CPU scalar — layer 0 wq, max_diff < 1.0
+  - Run: `make BN_ENABLE_GPU=1 test_coherence && ./test_coherence model.gguf --gpu`
 
 ## Code Conventions
 
