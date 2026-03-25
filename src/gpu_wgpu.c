@@ -1494,8 +1494,12 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
         limits.maxStorageBufferBindingSize = (uint64_t)2u * 1024 * 1024 * 1024;
     if (limits.maxBufferSize < (uint64_t)2u * 1024 * 1024 * 1024)
         limits.maxBufferSize = (uint64_t)2u * 1024 * 1024 * 1024;
+    /* Request ShaderF16 feature for f16 WGSL shaders */
+    WGPUFeatureName required_features[] = { WGPUFeatureName_ShaderF16 };
     WGPUDeviceDescriptor dev_desc = {
         .label = sv("bn_device"),
+        .requiredFeatures = required_features,
+        .requiredFeatureCount = 1,
         .requiredLimits = &limits,
         .uncapturedErrorCallbackInfo = { .callback = on_uncaptured_error },
         .deviceLostCallbackInfo = { .callback = on_device_lost },
