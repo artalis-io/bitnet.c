@@ -1187,6 +1187,20 @@ fallback_loop:
     }
 }
 
+// GPU-accelerated matmul with CPU fallback
+void bn_quant_matmul_gpu(float *out, const BnQWeight *W, const float *X,
+                          int n_tokens, int8_t *x_q_buf, BnThreadPool *pool,
+                          BnGPUBackend *gpu) {
+    // GPU fast path: use GPU matmul if weight has a GPU buffer
+    if (gpu && gpu->matmul && W->gpu_buf && n_tokens > 1) {
+        if (gpu->matmul(gpu->ctx, out, W->gpu_buf, X,
+                         W->rows, W->cols, n_tokens, W->type) == 0)
+            return;
+        // GPU failed, fall through to CPU
+    }
+    bn_quant_matmul(out, W, X, n_tokens, x_q_buf, pool);
+}
+
 // --- Data size computation ---
 
 size_t bn_qweight_data_size(const BnQWeight *w) {

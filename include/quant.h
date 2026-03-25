@@ -262,5 +262,8 @@ void bn_quant_matvec_gpu(float *out, const BnQWeight *W, const float *x,
 void bn_quant_matvec_batch_gpu(const BnMatvecTask *tasks, int n_tasks,
                                 const float *x, int8_t *x_q_buf,
                                 BnThreadPool *pool, BnGPUBackend *gpu);
+void bn_quant_matmul_gpu(float *out, const BnQWeight *W, const float *X,
+                          int n_tokens, int8_t *x_q_buf, BnThreadPool *pool,
+                          BnGPUBackend *gpu);
 
 #endif // BN_QUANT_H

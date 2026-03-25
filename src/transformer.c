@@ -1520,9 +1520,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->attn_norm, dim, c->norm_eps);
 
             // Batch QKV matmul
-            bn_quant_matmul(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool);
-            bn_quant_matmul(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool);
-            bn_quant_matmul(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool);
+            bn_quant_matmul_gpu(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+            bn_quant_matmul_gpu(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+            bn_quant_matmul_gpu(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool, m->gpu);
 
             // Per-token: RoPE, KV cache write, GQA attention
             int attn_idx = (c->full_attn_interval > 0)
@@ -1632,7 +1632,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                     for (int t = 0; t < n_tokens; t++)
                         rmsnorm(Q_buf + (size_t)t * wo_cols, Q_buf + (size_t)t * wo_cols,
                                 lw->attn_sub_norm, wo_cols, c->norm_eps);
-                bn_quant_matmul(Xb2, &lw->wo, Q_buf, n_tokens, s->x_q, m->pool);
+                bn_quant_matmul_gpu(Xb2, &lw->wo, Q_buf, n_tokens, s->x_q, m->pool, m->gpu);
             }
 
             // Batch residual add
@@ -1674,8 +1674,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->ffn_norm, dim, c->norm_eps);
 
             if (c->has_ffn_gate) {
-                bn_quant_matmul(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool);
-                bn_quant_matmul(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool);
+                bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
 
                 // Batch activation
                 for (int t = 0; t < n_tokens; t++) {
@@ -1694,7 +1694,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                     }
                 }
             } else {
-                bn_quant_matmul(Hb, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool);
+                bn_quant_matmul_gpu(Hb, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
                 for (int t = 0; t < n_tokens; t++) {
                     float *hb_t = Hb + (size_t)t * hidden_dim;
                     if (c->act_type == 1) {
@@ -1716,7 +1716,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                     rmsnorm(Hb + (size_t)t * hidden_dim, Hb + (size_t)t * hidden_dim,
                             lw->ffn_sub_norm, hidden_dim, c->norm_eps);
 
-            bn_quant_matmul(Xb, &lw->ffn_down, Hb, n_tokens, s->x_q, m->pool);
+            bn_quant_matmul_gpu(Xb, &lw->ffn_down, Hb, n_tokens, s->x_q, m->pool, m->gpu);
 
             // Batch residual add
             for (int t = 0; t < n_tokens; t++)
