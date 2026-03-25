@@ -16,6 +16,8 @@
 #include "webgpu.h"
 #include "wgpu.h"
 
+#include "platform.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -465,12 +467,105 @@ static int compile_fwd_pipeline(BnWgpuCtx *ctx, int shader_id, const char *name)
 
 /* ── Vtable: buffer_create ─────────────────────────────────────────── */
 
+/* ── Q4_0 weight repacking for GPU ─────────────────────────────────
+ *
+ * GGUF Q4_0: 18 bytes/block = [f16 scale][16 nibble bytes]
+ *   nibble byte[i]: lo nibble = elem i, hi nibble = elem i+16
+ *
+ * Repacked GPU layout (all blocks for entire weight matrix):
+ *   [f32 scales: n_blocks × 4 bytes][nibbles: n_blocks × 4 u32s]
+ *   nibble u32[j]: 8 elements packed, elem e = (word[e/8] >> (e%8)*4) & 0xF
+ *   Elements stored in sequential order (0..31) for clean GPU access.
+ */
+static void *repack_q4_0_for_gpu(BnWgpuCtx *ctx, const void *data, size_t size,
+                                   int rows, int cols, size_t *out_size)
+{
+    (void)size;
+    int n_blocks = rows * (cols / 32);
+    size_t repacked_size = (size_t)n_blocks * 4  /* f32 scales */
+                         + (size_t)n_blocks * 16; /* nibble data (4 u32s per block) */
+    repacked_size = (repacked_size + 3) & ~(size_t)3;
+
+    uint8_t *repacked = calloc(1, repacked_size);
+    if (!repacked) return NULL;
+
+    float *scales = (float *)repacked;
+    uint8_t *nibbles = repacked + (size_t)n_blocks * 4;
+    const uint8_t *src = (const uint8_t *)data;
+
+    for (int b = 0; b < n_blocks; b++) {
+        const uint8_t *block = src + b * 18;
+
+        /* Extract FP16 scale → f32 */
+        uint16_t d_bits = (uint16_t)(block[0] | (block[1] << 8));
+        scales[b] = bn_fp16_to_fp32(d_bits);
+
+        /* Reorder nibbles: GGUF has lo=elem[0..15], hi=elem[16..31] in same byte.
+         * Repack to sequential element order in u32 words. */
+        uint8_t *dst_nib = nibbles + (size_t)b * 16;  /* 16 bytes = 4 u32s for 32 elements */
+        const uint8_t *qs = block + 2;
+
+        /* Elements 0-7 → dst_nib[0..3] (u32 word 0) */
+        dst_nib[0] = (qs[0] & 0x0F) | ((qs[1] & 0x0F) << 4);
+        dst_nib[1] = (qs[2] & 0x0F) | ((qs[3] & 0x0F) << 4);
+        dst_nib[2] = (qs[4] & 0x0F) | ((qs[5] & 0x0F) << 4);
+        dst_nib[3] = (qs[6] & 0x0F) | ((qs[7] & 0x0F) << 4);
+        /* Elements 8-15 → dst_nib[4..7] (u32 word 1) */
+        dst_nib[4] = (qs[8] & 0x0F) | ((qs[9] & 0x0F) << 4);
+        dst_nib[5] = (qs[10] & 0x0F) | ((qs[11] & 0x0F) << 4);
+        dst_nib[6] = (qs[12] & 0x0F) | ((qs[13] & 0x0F) << 4);
+        dst_nib[7] = (qs[14] & 0x0F) | ((qs[15] & 0x0F) << 4);
+        /* Elements 16-23 → dst_nib[8..11] (u32 word 2) */
+        dst_nib[8]  = (qs[0] >> 4) | ((qs[1] >> 4) << 4);
+        dst_nib[9]  = (qs[2] >> 4) | ((qs[3] >> 4) << 4);
+        dst_nib[10] = (qs[4] >> 4) | ((qs[5] >> 4) << 4);
+        dst_nib[11] = (qs[6] >> 4) | ((qs[7] >> 4) << 4);
+        /* Elements 24-31 → dst_nib[12..15] (u32 word 3) */
+        dst_nib[12] = (qs[8] >> 4) | ((qs[9] >> 4) << 4);
+        dst_nib[13] = (qs[10] >> 4) | ((qs[11] >> 4) << 4);
+        dst_nib[14] = (qs[12] >> 4) | ((qs[13] >> 4) << 4);
+        dst_nib[15] = (qs[14] >> 4) | ((qs[15] >> 4) << 4);
+    }
+
+    /* Create GPU buffer and upload */
+    WGPUBufferDescriptor desc = {
+        .label = sv("bn_weight_q4_repacked"),
+        .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
+        .size  = repacked_size,
+    };
+    WGPUBuffer buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
+    if (!buf) { free(repacked); return NULL; }
+
+    wgpuQueueWriteBuffer(ctx->queue, buf, 0, repacked, repacked_size);
+    free(repacked);
+
+    BnWgpuBuf *handle = malloc(sizeof(BnWgpuBuf));
+    if (!handle) {
+        wgpuBufferDestroy(buf);
+        wgpuBufferRelease(buf);
+        return NULL;
+    }
+    handle->buf = buf;
+    handle->size = repacked_size;
+    handle->type = BN_GGUF_TENSOR_Q4_0;
+    handle->rows = rows;
+    handle->cols = cols;
+    *out_size = repacked_size;
+    return handle;
+}
+
 static void *wgpu_buffer_create(void *vctx, const void *data, size_t size,
                                  int type, int rows, int cols)
 {
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
     if (!ctx || !ctx->device || !data || size == 0)
         return NULL;
+
+    /* Q4_0: repack weights for optimized GPU access */
+    if (type == BN_GGUF_TENSOR_Q4_0) {
+        size_t repacked_size;
+        return repack_q4_0_for_gpu(ctx, data, size, rows, cols, &repacked_size);
+    }
 
     /* Align size to 4 bytes (WebGPU requirement) */
     size_t aligned = (size + 3) & ~(size_t)3;
@@ -1139,6 +1234,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
     if (!ctx || !ops || n_ops <= 0) return -1;
 
+    double t0_all = bn_platform_time_ms();
+
     /* 1. Upload all per-dispatch uniforms to the ring buffer.
      * Each slot is 256-byte aligned (min_uniform_buffer_offset_alignment). */
     size_t uni_stride = 256;
@@ -1152,18 +1249,39 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     }
     wgpuQueueWriteBuffer(ctx->queue, ctx->uniform_ring, 0, uni_data, needed);
     free(uni_data);
+    double t1_uniforms = bn_platform_time_ms();
 
     /* 2. Create command encoder */
     WGPUCommandEncoderDescriptor enc_desc = { .label = sv("bn_fwd_enc") };
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(ctx->device, &enc_desc);
     if (!encoder) return -1;
 
-    /* 3. For each op: create bind group, encode compute pass */
+    /* 3. Encode compute passes with dependency-based merging.
+     * Track which activation buffers are read/written in the current pass.
+     * Only start a new pass when a dispatch has a RAW, WAR, or WAW conflict
+     * with an earlier dispatch in the current pass. */
+
+    /* Helper: get read/write buffer masks for an op.
+     * Bit i set = buffer BN_GPU_BUF_i is accessed. */
+    #define BUF_BIT(idx) ((uint16_t)(1u << (idx)))
+
+    WGPUComputePassEncoder cur_pass = NULL;
+    uint16_t pass_reads = 0, pass_writes = 0;
+    int n_passes = 0;
+
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
 
-        /* Handle COPY pseudo-op before pipeline lookup (no shader needed) */
+        /* Handle COPY pseudo-op: forces pass boundary + buffer copy */
         if (op->shader == BN_GPU_SHADER_COPY) {
+            /* End current pass if open */
+            if (cur_pass) {
+                wgpuComputePassEncoderEnd(cur_pass);
+                wgpuComputePassEncoderRelease(cur_pass);
+                cur_pass = NULL;
+                pass_reads = pass_writes = 0;
+                n_passes++;
+            }
             int src = op->buf_in, dst = op->buf_out;
             if (src < 0 || src >= BN_GPU_BUF_COUNT || !ctx->act_bufs[src]) continue;
             if (dst < 0 || dst >= BN_GPU_BUF_COUNT || !ctx->act_bufs[dst]) continue;
@@ -1191,6 +1309,70 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             layout = ctx->fwd_layouts[op->shader];
         }
         if (!pipeline || !layout) continue;
+
+        /* Compute this op's read/write buffer masks */
+        uint16_t op_reads = 0, op_writes = 0;
+        switch (op->shader) {
+        case BN_GPU_SHADER_MATVEC:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_out);
+            break;
+        case BN_GPU_SHADER_RMSNORM:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_out);
+            break;
+        case BN_GPU_SHADER_ROPE:
+            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_ROPE_FREQ);
+            op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        case BN_GPU_SHADER_GQA_SCORES:
+            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_KEY_CACHE);
+            op_writes = BUF_BIT(BN_GPU_BUF_ATT);
+            break;
+        case BN_GPU_SHADER_SOFTMAX:
+            op_reads = BUF_BIT(BN_GPU_BUF_ATT);
+            op_writes = BUF_BIT(BN_GPU_BUF_ATT);  /* in-place */
+            break;
+        case BN_GPU_SHADER_GQA_COMBINE:
+            op_reads = BUF_BIT(BN_GPU_BUF_ATT) | BUF_BIT(BN_GPU_BUF_VALUE_CACHE);
+            op_writes = BUF_BIT(op->buf_out);
+            break;
+        case BN_GPU_SHADER_SILU_GATE:
+        case BN_GPU_SHADER_RELU2_GATE:
+            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
+            op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        case BN_GPU_SHADER_RESIDUAL_ADD:
+            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
+            op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        case BN_GPU_SHADER_BIAS_ADD:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        default: continue;
+        }
+
+        /* Check for conflicts with current pass */
+        int conflict = (op_reads & pass_writes) || (op_writes & pass_reads)
+                     || (op_writes & pass_writes);
+
+        if (conflict && cur_pass) {
+            wgpuComputePassEncoderEnd(cur_pass);
+            wgpuComputePassEncoderRelease(cur_pass);
+            cur_pass = NULL;
+            pass_reads = pass_writes = 0;
+            n_passes++;
+        }
+
+        /* Start new pass if needed */
+        if (!cur_pass) {
+            WGPUComputePassDescriptor pass_desc = { .label = sv("bn_fwd_pass") };
+            cur_pass = wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+        }
+
+        pass_reads |= op_reads;
+        pass_writes |= op_writes;
 
         /* Build bind group entries per shader type */
         WGPUBindGroupEntry entries[4];
@@ -1332,7 +1514,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             n_entries = 3;
             break;
         }
-        /* COPY is handled above, before pipeline lookup */
         default: continue;
         }
 
@@ -1350,8 +1531,9 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         uint32_t wg_x = 1, wg_y = 1;
         switch (op->shader) {
         case BN_GPU_SHADER_MATVEC: {
-            /* Tiled dispatch: TILE_ROWS=32 rows per workgroup */
-            uint32_t tile_rows = 32;
+            /* Tiled dispatch: Q4_0 uses TILE_ROWS=8 (simdgroup-coalesced),
+             * others use TILE_ROWS=32 */
+            uint32_t tile_rows = (op->type == BN_GGUF_TENSOR_Q4_0) ? 8 : 32;
             if (op->p[3] > 0) {
                 /* Large-vocab tiling: extra = wg_x per slice, rows split across Y */
                 uint32_t tiled_rows = ((uint32_t)op->rows + tile_rows - 1) / tile_rows;
@@ -1381,17 +1563,21 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             break;
         }
 
-        /* Encode compute pass */
-        WGPUComputePassDescriptor pass_desc = { .label = sv("bn_fwd_pass") };
-        WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(
-            encoder, &pass_desc);
-        wgpuComputePassEncoderSetPipeline(pass, pipeline);
-        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, NULL);
-        wgpuComputePassEncoderDispatchWorkgroups(pass, wg_x, wg_y, 1);
-        wgpuComputePassEncoderEnd(pass);
-        wgpuComputePassEncoderRelease(pass);
+        /* Dispatch within current pass */
+        wgpuComputePassEncoderSetPipeline(cur_pass, pipeline);
+        wgpuComputePassEncoderSetBindGroup(cur_pass, 0, bg, 0, NULL);
+        wgpuComputePassEncoderDispatchWorkgroups(cur_pass, wg_x, wg_y, 1);
         wgpuBindGroupRelease(bg);
     }
+
+    /* Close final pass */
+    if (cur_pass) {
+        wgpuComputePassEncoderEnd(cur_pass);
+        wgpuComputePassEncoderRelease(cur_pass);
+        n_passes++;
+    }
+
+    #undef BUF_BIT
 
     /* 4. Copy readback buffer to staging */
     size_t readback_size = (size_t)out_len * sizeof(float);
@@ -1403,6 +1589,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             readback_size);
     }
 
+    double t2_encode = bn_platform_time_ms();
+
     /* 5. Finish, submit, poll */
     WGPUCommandBufferDescriptor cmd_desc = { .label = sv("bn_fwd_cmd") };
     WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
@@ -1412,6 +1600,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     wgpuQueueSubmit(ctx->queue, 1, &cmd);
     wgpuDevicePoll(ctx->device, 1, NULL);
     wgpuCommandBufferRelease(cmd);
+    double t3_gpu = bn_platform_time_ms();
 
     /* 6. Map staging, read back results */
     if (out_host && out_len > 0 && readback_buf >= 0) {
@@ -1437,6 +1626,28 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         memcpy(out_host, mapped, readback_size);
         wgpuBufferUnmap(ctx->fwd_staging);
     }
+
+    (void)n_passes;
+    double t4_readback = bn_platform_time_ms();
+
+    /* GPU profiling: set BN_GPU_PROFILE=1 to see per-frame timing */
+    static int gpu_frame = 0;
+    static int gpu_profile = -1;
+    if (gpu_profile < 0) {
+        const char *env = getenv("BN_GPU_PROFILE");
+        gpu_profile = (env && env[0] == '1') ? 1 : 0;
+    }
+    if (gpu_profile && (gpu_frame < 5 || (gpu_frame % 50 == 0))) {
+        fprintf(stderr, "[gpu:profile] frame=%d ops=%d passes=%d | "
+                "uniforms=%.1fms encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
+                gpu_frame, n_ops, n_passes,
+                t1_uniforms - t0_all,
+                t2_encode - t1_uniforms,
+                t3_gpu - t2_encode,
+                t4_readback - t3_gpu,
+                t4_readback - t0_all);
+    }
+    gpu_frame++;
 
     return 0;
 }
