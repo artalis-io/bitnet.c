@@ -19,6 +19,7 @@
 #include "tokenizer.h"
 #include "sampler.h"
 #include "quant.h"
+#include "quant_internal.h"
 #include "gpu_backend.h"
 #ifdef BN_ENABLE_GPU
 #include "gpu_wgpu.h"
@@ -31,7 +32,7 @@
 
 #define N_DECODE_STEPS 5
 #define N_MATCH_REQUIRED 3
-#define MATVEC_TOL 1.0f
+#define MATVEC_TOL 2.0f  /* I2_S SDOT vs scalar can differ ~1.3 for large cols */
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -73,10 +74,61 @@ static float rand_float(uint64_t *state) {
 
 /* ── Phase 2: compare SIMD vs scalar matvec for a single weight ──── */
 
+/* Get the explicit scalar range function for a given type.
+ * All scalar contexts share the same {out, W, x} layout. */
+typedef void (*scalar_fn)(void *ctx, int start, int end);
+static scalar_fn get_scalar_fn(int type) {
+    switch (type) {
+    case BN_GGUF_TENSOR_I2_S:    return bn_quant_i2s_scalar_range;
+    case BN_GGUF_TENSOR_TQ1_0:   return bn_quant_tq1_scalar_range;
+    case BN_GGUF_TENSOR_TQ2_0:   return bn_quant_tq2_scalar_range;
+    case BN_GGUF_TENSOR_Q4_0:    return bn_quant_q4_scalar_range;
+    case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_scalar_range;
+    case BN_GGUF_TENSOR_Q8_0:    return bn_quant_q8_scalar_range;
+    case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_scalar_range;
+    case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_scalar_range;
+    case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_scalar_range;
+    case BN_GGUF_TENSOR_Q4_K:    return bn_quant_q4k_scalar_range;
+    case BN_GGUF_TENSOR_Q5_K:    return bn_quant_q5k_scalar_range;
+    case BN_GGUF_TENSOR_Q6_K:    return bn_quant_q6k_scalar_range;
+    case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_scalar_range;
+    case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_scalar_range;
+    case BN_GGUF_TENSOR_IQ4_XS:  return bn_quant_iq4xs_scalar_range;
+    case BN_GGUF_TENSOR_IQ3_XXS: return bn_quant_iq3xxs_scalar_range;
+    case BN_GGUF_TENSOR_IQ3_S:   return bn_quant_iq3s_scalar_range;
+    case BN_GGUF_TENSOR_IQ2_XXS: return bn_quant_iq2xxs_scalar_range;
+    case BN_GGUF_TENSOR_IQ2_XS:  return bn_quant_iq2xs_scalar_range;
+    case BN_GGUF_TENSOR_IQ2_S:   return bn_quant_iq2s_scalar_range;
+    default: return NULL;
+    }
+}
+
+static const char *simd_backend_name(void) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    return "NEON SDOT";
+#elif defined(__ARM_NEON)
+    return "NEON";
+#elif defined(__AVX2__)
+    return "AVX2";
+#elif defined(__wasm_relaxed_simd__)
+    return "WASM relaxed";
+#elif defined(__wasm_simd128__)
+    return "WASM SIMD128";
+#else
+    return "scalar";
+#endif
+}
+
 static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool *pool) {
     if (!W->data || W->rows == 0 || W->cols == 0) {
         printf("  %-12s SKIP (no data)\n", name);
         return 0; /* not a failure */
+    }
+
+    scalar_fn sfn = get_scalar_fn(W->type);
+    if (!sfn) {
+        printf("  %-12s SKIP (no scalar kernel for type %d)\n", name, W->type);
+        return 0;
     }
 
     int rows = W->rows;
@@ -87,12 +139,10 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
     float *out_scalar = calloc((size_t)rows, sizeof(float));
     float *out_simd = calloc((size_t)rows, sizeof(float));
     int max_dim = cols > rows ? cols : rows;
-    int8_t *x_q_scalar = calloc((size_t)max_dim, 1);
-    int8_t *x_q_simd = calloc((size_t)max_dim, 1);
-    if (!x || !out_scalar || !out_simd || !x_q_scalar || !x_q_simd) {
+    int8_t *x_q = calloc((size_t)max_dim, 1);
+    if (!x || !out_scalar || !out_simd || !x_q) {
         printf("  %-12s SKIP (alloc failed)\n", name);
-        free(x); free(out_scalar); free(out_simd);
-        free(x_q_scalar); free(x_q_simd);
+        free(x); free(out_scalar); free(out_simd); free(x_q);
         return 0;
     }
 
@@ -101,11 +151,12 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
     for (int i = 0; i < cols; i++)
         x[i] = rand_float(&rng);
 
-    /* Scalar: no thread pool */
-    bn_quant_matvec(out_scalar, W, x, x_q_scalar, NULL);
+    /* Explicit scalar kernel (all scalar contexts share {out, W, x} layout) */
+    BnFloatXCtx sctx = { out_scalar, W, x };
+    sfn(&sctx, 0, rows);
 
-    /* SIMD: with thread pool (engages compile-time SIMD backend) */
-    bn_quant_matvec(out_simd, W, x, x_q_simd, pool);
+    /* Compile-time best SIMD backend via bn_quant_matvec */
+    bn_quant_matvec(out_simd, W, x, x_q, pool);
 
     /* Compare */
     float max_diff = 0.0f;
@@ -115,12 +166,11 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
     }
 
     int pass = max_diff < MATVEC_TOL;
-    printf("  %-12s %-6s type=%-8s rows=%-5d cols=%-5d max_diff=%.4f\n",
+    printf("  %-12s %-6s type=%-8s rows=%-5d cols=%-5d max_diff=%.4f (scalar vs %s)\n",
            name, pass ? "PASS" : "FAIL", type_name(W->type),
-           rows, cols, max_diff);
+           rows, cols, max_diff, simd_backend_name());
 
     if (!pass) {
-        /* Print first few mismatches */
         for (int i = 0; i < rows && i < 8; i++) {
             float diff = fabsf(out_simd[i] - out_scalar[i]);
             if (diff > MATVEC_TOL * 0.1f)
@@ -129,8 +179,7 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
         }
     }
 
-    free(x); free(out_scalar); free(out_simd);
-    free(x_q_scalar); free(x_q_simd);
+    free(x); free(out_scalar); free(out_simd); free(x_q);
     return pass ? 1 : -1;
 }
 
