@@ -37,6 +37,9 @@
 #define BN_GPU_BUF_QKV         12  // stacked QKV matvec output [q_dim + 2*kv_dim]
 #define BN_GPU_BUF_COUNT       13
 
+// Shader uniform parameter count (32 bytes = 8 × u32, matches WGSL Uniforms structs)
+#define BN_GPU_OP_PARAMS 8
+
 // A single GPU operation in the forward pass
 typedef struct {
     int shader;          // BN_GPU_SHADER_* constant
@@ -46,7 +49,7 @@ typedef struct {
     int buf_out;         // activation buffer index for output
     int buf_aux;         // secondary input buffer (-1 if unused)
     int rows, cols;      // dimensions (matvec: weight dims; others: element count in p0)
-    uint32_t p[8];       // shader-specific parameters (32 bytes)
+    uint32_t p[BN_GPU_OP_PARAMS]; // shader-specific parameters (32 bytes)
 } BnGPUOp;
 
 // Descriptor for one operation in a batched matvec submission.

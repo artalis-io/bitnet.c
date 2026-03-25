@@ -37,7 +37,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     // Each thread handles a subset of dimensions
     var d = tid;
     while (d < head_size) {
-        var acc = 0.0f;
+        var acc = 0.0;
         for (var i = 0u; i < n_kv; i++) {
             let t = i;  // linear index into cache slots
             let v_base = loff + t * kv_dim + kv_h * head_size;

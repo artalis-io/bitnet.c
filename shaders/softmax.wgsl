@@ -48,7 +48,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     workgroupBarrier();
 
     // Phase 2: exp(x - max) and sum
-    var local_sum = 0.0f;
+    var local_sum = 0.0;
     i = tid;
     while (i < n_kv) {
         let e = exp(att[base + i] - max_val);

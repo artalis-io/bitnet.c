@@ -22,7 +22,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let eps = bitcast<f32>(u.p1);
 
     // Phase 1: partial sum of x[i]²
-    var sum_sq = 0.0f;
+    var sum_sq = 0.0;
     var i = tid;
     while (i < dim) {
         let v = x[i];

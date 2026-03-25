@@ -70,6 +70,10 @@ typedef struct {
 
     /* Shader directory path (stored from create) */
     char shader_dir[256];
+
+    /* Profiling state */
+    int gpu_frame;
+    int gpu_profile;  /* -1 = uninitialized, 0 = off, 1 = on */
 } BnWgpuCtx;
 
 /* ── GPU buffer handle ─────────────────────────────────────────────── */
@@ -171,7 +175,8 @@ static int ensure_scratch(BnWgpuCtx *ctx, size_t x_need, size_t out_need,
 
 /* ── Error tracking ────────────────────────────────────────────────── */
 
-static _Thread_local int wgpu_last_error;
+#include <stdatomic.h>
+static atomic_int wgpu_last_error;
 
 static void on_uncaptured_error(WGPUDevice const *device,
                                  WGPUErrorType type,
@@ -1292,7 +1297,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     uint8_t *uni_data = calloc(1, needed);
     if (!uni_data) return -1;
     for (int i = 0; i < n_ops; i++) {
-        memcpy(uni_data + (size_t)i * uni_stride, ops[i].p, 32);
+        memcpy(uni_data + (size_t)i * uni_stride, ops[i].p,
+               sizeof(uint32_t) * BN_GPU_OP_PARAMS);
         /* Fused bias: inject bias_offset from weight buffer metadata */
         if (ops[i].shader == BN_GPU_SHADER_MATVEC && ops[i].W_buf) {
             BnWgpuBuf *wbuf = (BnWgpuBuf *)ops[i].W_buf;
@@ -1715,23 +1721,21 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     double t4_readback = bn_platform_time_ms();
 
     /* GPU profiling: set BN_GPU_PROFILE=1 to see per-frame timing */
-    static int gpu_frame = 0;
-    static int gpu_profile = -1;
-    if (gpu_profile < 0) {
+    if (ctx->gpu_profile < 0) {
         const char *env = getenv("BN_GPU_PROFILE");
-        gpu_profile = (env && env[0] == '1') ? 1 : 0;
+        ctx->gpu_profile = (env && env[0] == '1') ? 1 : 0;
     }
-    if (gpu_profile && (gpu_frame < 5 || (gpu_frame % 50 == 0))) {
+    if (ctx->gpu_profile && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
         fprintf(stderr, "[gpu:profile] frame=%d ops=%d passes=%d | "
                 "uniforms=%.1fms encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
-                gpu_frame, n_ops, n_passes,
+                ctx->gpu_frame, n_ops, n_passes,
                 t1_uniforms - t0_all,
                 t2_encode - t1_uniforms,
                 t3_gpu - t2_encode,
                 t4_readback - t3_gpu,
                 t4_readback - t0_all);
     }
-    gpu_frame++;
+    ctx->gpu_frame++;
 
     return 0;
 }
@@ -1742,6 +1746,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
 {
     BnWgpuCtx *ctx = calloc(1, sizeof(BnWgpuCtx));
     if (!ctx) return NULL;
+    ctx->gpu_profile = -1;  /* uninitialized, checked on first execute */
 
     /* Create instance with primary backends */
     WGPUInstanceExtras extras = {
@@ -1843,7 +1848,13 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     /* Build vtable */
     BnGPUBackend *gpu = calloc(1, sizeof(BnGPUBackend));
     if (!gpu) {
-        bn_gpu_wgpu_destroy(NULL);  /* ctx leaked — but OOM anyway */
+        /* Clean up ctx directly since bn_gpu_wgpu_destroy expects a vtable */
+        wgpu_free_activations(ctx);
+        if (ctx->queue) wgpuQueueRelease(ctx->queue);
+        if (ctx->device) wgpuDeviceRelease(ctx->device);
+        if (ctx->adapter) wgpuAdapterRelease(ctx->adapter);
+        if (ctx->instance) wgpuInstanceRelease(ctx->instance);
+        free(ctx);
         return NULL;
     }
     gpu->buffer_create         = wgpu_buffer_create;
