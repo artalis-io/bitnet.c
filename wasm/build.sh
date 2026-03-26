@@ -52,13 +52,16 @@ emcc \
     "$PROJECT_DIR/src/quant/iq2xs_scalar.c" \
     "$PROJECT_DIR/src/quant/iq2s_wasm.c" \
     "$PROJECT_DIR/src/quant/iq2s_scalar.c" \
+    "$PROJECT_DIR/src/turboquant.c" \
     "$PROJECT_DIR/src/model.c" \
     "$PROJECT_DIR/src/moe.c" \
+    "$PROJECT_DIR/src/gpu_moe_cache.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_scalar.c" \
     "$PROJECT_DIR/src/transformer/gqa_wasm.c" \
     "$PROJECT_DIR/src/transformer/gqa_scalar.c" \
+    "$PROJECT_DIR/src/transformer/gqa_tq_scalar.c" \
     "$PROJECT_DIR/src/transformer/logits_wasm.c" \
     "$PROJECT_DIR/src/transformer/logits_scalar.c" \
     "$PROJECT_DIR/src/transformer/ssm_wasm.c" \
