@@ -188,6 +188,8 @@ int bn_gpu_moe_cache_insert(BnGPUMoECache *c, int layer, int expert_idx,
 
     hash_insert(c, layer, expert_idx, slot);
     lru_push_front(c, slot);
+
+    (void)0; // insert complete
     return 0;
 }
 

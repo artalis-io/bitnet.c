@@ -1180,7 +1180,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
         // ---- SSM layer: GPU-native if weights uploaded, else CPU fallback ----
         if (!is_attn) {
-            if (!lw->ssm_conv1d_gpu || !lw->ssm_dt_bias_a_gpu || !lw->ssm_norm_gpu ||
+            if (!lw->ssm_conv1d_gpu || !lw->ssm_dt_bias_gpu || !lw->ssm_a_log_gpu || !lw->ssm_norm_gpu ||
                 !lw->wqkv.gpu_buf || !lw->wz.gpu_buf ||
                 !lw->ssm_alpha.gpu_buf || !lw->ssm_beta.gpu_buf ||
                 !lw->ssm_out.gpu_buf) {
@@ -1262,10 +1262,14 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                 .buf_aux = -1, .rows = lw->ssm_beta.rows, .cols = lw->ssm_beta.cols,
                 .p = { (uint32_t)lw->ssm_beta.rows, (uint32_t)lw->ssm_beta.cols, 1, 0, 0, 0, 0, 0 } };
             // 11. Alpha/Beta activation (softplus+exp, sigmoid)
-            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_ALPHA_BETA, .type = -1,
-                .W_buf = lw->ssm_dt_bias_a_gpu, .buf_in = BN_GPU_BUF_SSM_ALPHA,
-                .buf_out = -1, .buf_aux = BN_GPU_BUF_SSM_BETA,
-                .p = { (uint32_t)num_v_heads, 0, 0, 0, 0, 0, 0, 0 } };
+            {
+                uintptr_t a_ptr = (uintptr_t)lw->ssm_a_log_gpu;
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_ALPHA_BETA, .type = -1,
+                    .W_buf = lw->ssm_dt_bias_gpu, .buf_in = BN_GPU_BUF_SSM_ALPHA,
+                    .buf_out = -1, .buf_aux = BN_GPU_BUF_SSM_BETA,
+                    .p = { (uint32_t)num_v_heads, 0, 0, 0, 0, 0,
+                           (uint32_t)(a_ptr & 0xFFFFFFFF), (uint32_t)(a_ptr >> 32) } };
+            }
             // 12. Delta rule recurrence
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_DELTA, .type = -1, .W_buf = NULL,
                 .buf_in = BN_GPU_BUF_Q, .buf_out = BN_GPU_BUF_XB2, .buf_aux = BN_GPU_BUF_SCRATCH,

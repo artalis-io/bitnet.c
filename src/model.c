@@ -1303,17 +1303,10 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             int kern        = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
             lw->ssm_conv1d_gpu = upload_f32_buf(gpu, lw->ssm_conv1d, kern * qkv_dim);
 
-            if (lw->ssm_dt_bias && lw->ssm_a && num_v_heads > 0) {
-                int nv = num_v_heads;
-                float *packed = (float *)malloc((size_t)nv * 2 * sizeof(float));
-                if (packed) {
-                    memcpy(packed, lw->ssm_dt_bias, (size_t)nv * sizeof(float));
-                    memcpy(packed + nv, lw->ssm_a, (size_t)nv * sizeof(float));
-                    lw->ssm_dt_bias_a_gpu = gpu->buffer_create(gpu->ctx, packed,
-                        (size_t)nv * 2 * sizeof(float), -1, nv * 2, 1);
-                    free(packed);
-                }
-            }
+            if (lw->ssm_dt_bias && num_v_heads > 0)
+                lw->ssm_dt_bias_gpu = upload_f32_buf(gpu, lw->ssm_dt_bias, num_v_heads);
+            if (lw->ssm_a && num_v_heads > 0)
+                lw->ssm_a_log_gpu = upload_f32_buf(gpu, lw->ssm_a, num_v_heads);
 
             if (lw->ssm_norm) {
                 int head_v_dim = num_v_heads > 0
@@ -1371,10 +1364,8 @@ void bn_model_release_gpu(BnModel *model) {
             release_f32_buf(gpu, &lw->ffn_sub_norm_gpu);
             release_f32_buf(gpu, &lw->ssm_conv1d_gpu);
             release_f32_buf(gpu, &lw->ssm_norm_gpu);
-            if (lw->ssm_dt_bias_a_gpu) {
-                gpu->buffer_destroy(gpu->ctx, lw->ssm_dt_bias_a_gpu);
-                lw->ssm_dt_bias_a_gpu = NULL;
-            }
+            release_f32_buf(gpu, &lw->ssm_dt_bias_gpu);
+            release_f32_buf(gpu, &lw->ssm_a_log_gpu);
             if (lw->qkv_stacked_gpu) {
                 gpu->buffer_destroy(gpu->ctx, lw->qkv_stacked_gpu);
                 lw->qkv_stacked_gpu = NULL;

@@ -153,7 +153,8 @@ typedef struct {
     void *ffn_sub_norm_gpu;
     // GPU handles for SSM weights (NULL = not uploaded or not SSM layer)
     void *ssm_conv1d_gpu;       // [kern * qkv_dim] F32
-    void *ssm_dt_bias_a_gpu;    // packed [dt_bias[nv], a_log[nv]] F32
+    void *ssm_dt_bias_gpu;      // [nv] F32
+    void *ssm_a_log_gpu;        // [nv] F32
     void *ssm_norm_gpu;         // [head_v_dim] F32
 } BnLayerWeights;
 

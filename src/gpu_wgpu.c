@@ -1096,8 +1096,13 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
     sizes[BN_GPU_BUF_XB]          = (size_t)xb_size * sizeof(float);
     sizes[BN_GPU_BUF_XB2]         = (size_t)c->dim * sizeof(float);
     sizes[BN_GPU_BUF_Q]           = (size_t)q_dim * sizeof(float);
-    sizes[BN_GPU_BUF_HB]          = (size_t)c->hidden_dim * sizeof(float);
-    sizes[BN_GPU_BUF_HB2]         = (size_t)c->hidden_dim * sizeof(float);
+    {
+        // HB/HB2 must accommodate both dense FFN (hidden_dim) and shared MoE expert (moe_intermediate_size)
+        int hb_dim = c->hidden_dim;
+        if (c->moe_intermediate_size > hb_dim) hb_dim = c->moe_intermediate_size;
+        sizes[BN_GPU_BUF_HB]  = (size_t)hb_dim * sizeof(float);
+        sizes[BN_GPU_BUF_HB2] = (size_t)hb_dim * sizeof(float);
+    }
     sizes[BN_GPU_BUF_KEY_CACHE]   = (size_t)n_attn * c->seq_len * c->kv_dim * sizeof(float);
     sizes[BN_GPU_BUF_VALUE_CACHE] = (size_t)n_attn * c->seq_len * c->kv_dim * sizeof(float);
     sizes[BN_GPU_BUF_ATT]         = (size_t)c->n_heads * c->seq_len * sizeof(float);
@@ -1747,22 +1752,27 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             break;
         }
         case BN_GPU_SHADER_SSM_ALPHA_BETA: {
-            /* alpha(rw)=SSM_ALPHA, beta(rw)=SSM_BETA, dt_bias(ro), a_log(ro), uniforms */
-            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;  /* packed dt_bias + a_log */
-            if (!wbuf) continue;
+            /* alpha(rw)=SSM_ALPHA, beta(rw)=SSM_BETA, dt_bias(ro)=W_buf, a_log(ro)=p[6:7], uniforms */
+            BnWgpuBuf *dt_buf = (BnWgpuBuf *)op->W_buf;
+            if (!dt_buf) continue;
             entries[0] = (WGPUBindGroupEntry){
                 .binding = 0, .buffer = ctx->act_bufs[BN_GPU_BUF_SSM_ALPHA],
                 .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_ALPHA]};
             entries[1] = (WGPUBindGroupEntry){
                 .binding = 1, .buffer = ctx->act_bufs[BN_GPU_BUF_SSM_BETA],
                 .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_BETA]};
-            /* dt_bias and a_log packed in W_buf: [dt_bias[nv], a_log[nv]] */
             entries[2] = (WGPUBindGroupEntry){
-                .binding = 2, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size / 2};
-            entries[3] = (WGPUBindGroupEntry){
-                .binding = 3, .buffer = wbuf->buf,
-                .offset = wbuf->size / 2, .size = wbuf->size / 2};
+                .binding = 2, .buffer = dt_buf->buf,
+                .offset = 0, .size = dt_buf->size};
+            /* a_log handle stored in buf_aux as a void* cast — resolve it */
+            {
+                void *a_ptr = (void *)(uintptr_t)((uint64_t)op->p[6] | ((uint64_t)op->p[7] << 32));
+                BnWgpuBuf *a_wbuf = (BnWgpuBuf *)a_ptr;
+                if (!a_wbuf) continue;
+                entries[3] = (WGPUBindGroupEntry){
+                    .binding = 3, .buffer = a_wbuf->buf,
+                    .offset = 0, .size = a_wbuf->size};
+            }
             entries[4] = (WGPUBindGroupEntry){
                 .binding = 4, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
@@ -1871,6 +1881,14 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             .entryCount = (size_t)n_entries,
             .entries = entries,
         };
+        /* Skip ops with NULL activation buffers (buffer not allocated for this model) */
+        {
+            int valid = 1;
+            for (int e = 0; e < n_entries; e++)
+                if (!entries[e].buffer) { valid = 0; break; }
+            if (!valid) continue;
+        }
+
         WGPUBindGroup bg = wgpuDeviceCreateBindGroup(ctx->device, &bg_desc);
         if (!bg) continue;
 

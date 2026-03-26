@@ -8,6 +8,7 @@
 #include "turboquant.h"
 #include "simd_helpers.h"
 #include "quant.h"
+#include "turboquant.h"
 #include <math.h>
 #include <string.h>
 
@@ -96,6 +97,26 @@ void bn_transformer_rmsnorm_avx2(float *out, const float *x, const float *w, int
 void bn_transformer_rmsnorm_wasm(float *out, const float *x, const float *w, int size, float eps);
 void bn_transformer_rmsnorm_scalar(float *out, const float *x, const float *w, int size, float eps);
 
+// --- TurboQuant GQA context ---
+
+typedef struct {
+    const BnConfig *c;
+    BnRunState *s;
+    const BnTQState *tq;
+    const uint8_t *tq_keys;    // layer's packed keys base
+    const uint8_t *tq_values;  // layer's packed values base
+    int key_stride;             // bytes per position (n_kv_heads * key_bytes)
+    int val_stride;             // bytes per position (n_kv_heads * val_bytes)
+    int key_bytes;              // bytes per single head's key
+    int val_bytes;              // bytes per single head's value
+    int pos;
+    int n_kv;
+    int kv_mul;
+    int head_size;
+    int seq_len;
+    int n_kv_heads;
+} BnGQATQCtx;
+
 // --- GQA range function declarations ---
 
 void bn_transformer_gqa_neon_range(void *ctx, int start, int end);
@@ -108,6 +129,11 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int start, int end);
 void bn_transformer_flash_gqa_avx2_range(void *ctx, int start, int end);
 void bn_transformer_flash_gqa_wasm_range(void *ctx, int start, int end);
 void bn_transformer_flash_gqa_scalar_range(void *ctx, int start, int end);
+
+// --- TurboQuant GQA range function declarations ---
+
+void bn_transformer_gqa_tq_scalar_range(void *ctx, int start, int end);
+void bn_transformer_gqa_tq_neon_range(void *ctx, int start, int end);
 
 // --- Logits range function declarations ---
 
