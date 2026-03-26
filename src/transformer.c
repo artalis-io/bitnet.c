@@ -1932,10 +1932,36 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
             for (int t = 0; t < n_tokens; t++)
                 rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->attn_norm, dim, c->norm_eps);
 
-            // Batch QKV matmul
-            bn_quant_matmul_gpu(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-            bn_quant_matmul_gpu(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-            bn_quant_matmul_gpu(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+            // Batch QKV matmul — quantize Xb to Q8K once, reuse for Q, K, V
+#ifdef __AVX2__
+            if (!m->gpu && dim % BN_QK_K == 0 &&
+                (lw->wq.type == BN_GGUF_TENSOR_Q4_K || lw->wq.type == BN_GGUF_TENSOR_Q6_K)) {
+                int n_bpr = dim / BN_QK_K;
+                size_t xq_sz = (size_t)n_tokens * dim;
+                int8_t *xq = (int8_t *)malloc(xq_sz);
+                float *xd = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+                int16_t *xbs = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+                if (xq && xd && xbs) {
+                    for (int t = 0; t < n_tokens; t++)
+                        bn_quant_x_to_q8k(Xb + (size_t)t * dim, xq + (size_t)t * dim,
+                                           xd + (size_t)t * n_bpr,
+                                           xbs + (size_t)t * n_bpr * 16, dim);
+                    bn_quant_matmul_preq8k(Q_buf, &lw->wq, n_tokens, xq, xd, xbs, Xb, m->pool);
+                    bn_quant_matmul_preq8k(K_new, &lw->wk, n_tokens, xq, xd, xbs, Xb, m->pool);
+                    bn_quant_matmul_preq8k(V_new, &lw->wv, n_tokens, xq, xd, xbs, Xb, m->pool);
+                } else {
+                    bn_quant_matmul_gpu(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                    bn_quant_matmul_gpu(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                    bn_quant_matmul_gpu(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                }
+                free(xq); free(xd); free(xbs);
+            } else
+#endif
+            {
+                bn_quant_matmul_gpu(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                bn_quant_matmul_gpu(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                bn_quant_matmul_gpu(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+            }
 
             // Per-token: RoPE, KV cache write, GQA attention
             int attn_idx = (c->full_attn_interval > 0)
@@ -2087,8 +2113,32 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->ffn_norm, dim, c->norm_eps);
 
             if (c->has_ffn_gate) {
-                bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-                bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+#ifdef __AVX2__
+                if (!m->gpu && dim % BN_QK_K == 0 &&
+                    (lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_K || lw->ffn_gate.type == BN_GGUF_TENSOR_Q6_K)) {
+                    int n_bpr = dim / BN_QK_K;
+                    size_t xq_sz = (size_t)n_tokens * dim;
+                    int8_t *xq = (int8_t *)malloc(xq_sz);
+                    float *xd = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+                    int16_t *xbs = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+                    if (xq && xd && xbs) {
+                        for (int t = 0; t < n_tokens; t++)
+                            bn_quant_x_to_q8k(Xb + (size_t)t * dim, xq + (size_t)t * dim,
+                                               xd + (size_t)t * n_bpr,
+                                               xbs + (size_t)t * n_bpr * 16, dim);
+                        bn_quant_matmul_preq8k(Hb, &lw->ffn_gate, n_tokens, xq, xd, xbs, Xb, m->pool);
+                        bn_quant_matmul_preq8k(Hb2, &lw->ffn_up, n_tokens, xq, xd, xbs, Xb, m->pool);
+                    } else {
+                        bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                        bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                    }
+                    free(xq); free(xd); free(xbs);
+                } else
+#endif
+                {
+                    bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                    bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
+                }
 
                 // Batch activation
                 for (int t = 0; t < n_tokens; t++) {

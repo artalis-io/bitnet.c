@@ -242,6 +242,14 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
                      int n_tokens, int8_t *x_q_buf, BnThreadPool *pool);
 
+// Matmul with pre-quantized Q8_K input (avoids redundant re-quantization).
+// x_q/x_d/x_bsums must be [n_tokens * cols] / [n_tokens * n_bpr] / [n_tokens * n_bpr * 16].
+// x_float is the original float input for fallback (non-k-quant types).
+void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
+                              const int8_t *x_q, const float *x_d,
+                              const int16_t *x_bsums, const float *x_float,
+                              BnThreadPool *pool);
+
 // Get platform-optimal kernel for float-x quant types (K-quants, BF16, IQ*, Q4_1, Q8_K).
 // Returns NULL if the type requires int8 quantized x (I2_S, Q4_0, Q8_0, TQ1, TQ2).
 bn_tp_fn bn_quant_get_float_kernel(int type);

@@ -1266,6 +1266,41 @@ fallback_loop:
     }
 }
 
+// Matmul with pre-quantized Q8_K input. Skips the malloc+quantize phase.
+void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
+                              const int8_t *x_q, const float *x_d,
+                              const int16_t *x_bsums, const float *x_float,
+                              BnThreadPool *pool) {
+    int rows = W->rows;
+    int cols = W->cols;
+
+    if (n_tokens <= 1) {
+        /* Single token: use pre-quantized matvec */
+        BnMatvecTask task = { out, W };
+        bn_quant_matvec_batch_preq8k(&task, 1, x_q, x_d, x_bsums, x_float, pool);
+        return;
+    }
+
+#ifdef __AVX2__
+    if (W->type == BN_GGUF_TENSOR_Q4_K || W->type == BN_GGUF_TENSOR_Q6_K) {
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnKQuantMatmulCtx ctx = { out, W, (int8_t *)x_q, (float *)x_d,
+                                   (int16_t *)x_bsums, n_tokens, cols };
+        bn_tp_fn fn = (W->type == BN_GGUF_TENSOR_Q4_K)
+            ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_range
+            : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
+        BnTPTask task = { fn, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+#endif
+
+    /* Fallback: per-token matvec using float path */
+    for (int t = 0; t < n_tokens; t++)
+        bn_quant_matvec(out + (size_t)t * rows, W, x_float + (size_t)t * cols,
+                        (int8_t *)x_q, pool);
+}
+
 // GPU-accelerated matmul with CPU fallback
 void bn_quant_matmul_gpu(float *out, const BnQWeight *W, const float *X,
                           int n_tokens, int8_t *x_q_buf, BnThreadPool *pool,
