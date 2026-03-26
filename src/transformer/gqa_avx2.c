@@ -24,39 +24,43 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
-            float k_buf[head_size];
-            const float *k_t;
-            if (kv_f16) {
-                const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                // Prefetch next KV entry
-                if (i + 1 < n_kv) {
-                    int t_next = (start + i + 1) % seq_len;
+            // Prefetch next KV entry
+            if (i + 1 < n_kv) {
+                int t_next = (start + i + 1) % seq_len;
+                if (kv_f16)
                     _mm_prefetch((const char *)((const uint16_t *)s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
-                }
-                for (int d = 0; d < head_size; d += 8)
-                    _mm256_storeu_ps(k_buf + d, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d))));
-                k_t = k_buf;
-            } else {
-                k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                // Prefetch next KV entry
-                if (i + 1 < n_kv) {
-                    int t_next = (start + i + 1) % seq_len;
+                else
                     _mm_prefetch((const char *)(s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
-                }
             }
-            // 4-way unrolled dot product (32 floats per iteration)
+            // Dot product with inline F16→F32 conversion (no intermediate buffer)
             __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps();
             __m256 a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
-            int d = 0;
-            for (; d + 31 < head_size; d += 32) {
-                a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),      _mm256_loadu_ps(k_t + d), a0);
-                a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8),  _mm256_loadu_ps(k_t + d + 8), a1);
-                a2 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 16), _mm256_loadu_ps(k_t + d + 16), a2);
-                a3 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 24), _mm256_loadu_ps(k_t + d + 24), a3);
-            }
-            for (; d + 15 < head_size; d += 16) {
-                a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),     _mm256_loadu_ps(k_t + d), a0);
-                a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_loadu_ps(k_t + d + 8), a1);
+            if (kv_f16) {
+                const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                int d = 0;
+                for (; d + 31 < head_size; d += 32) {
+                    a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),      _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d))), a0);
+                    a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8),  _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 8))), a1);
+                    a2 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 16), _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 16))), a2);
+                    a3 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 24), _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 24))), a3);
+                }
+                for (; d + 15 < head_size; d += 16) {
+                    a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),     _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d))), a0);
+                    a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 8))), a1);
+                }
+            } else {
+                const float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                int d = 0;
+                for (; d + 31 < head_size; d += 32) {
+                    a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),      _mm256_loadu_ps(k_t + d), a0);
+                    a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8),  _mm256_loadu_ps(k_t + d + 8), a1);
+                    a2 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 16), _mm256_loadu_ps(k_t + d + 16), a2);
+                    a3 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 24), _mm256_loadu_ps(k_t + d + 24), a3);
+                }
+                for (; d + 15 < head_size; d += 16) {
+                    a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),     _mm256_loadu_ps(k_t + d), a0);
+                    a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_loadu_ps(k_t + d + 8), a1);
+                }
             }
             att[i] = bn_avx2_hsum_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))) * inv_sqrt_hs;
         }
@@ -67,30 +71,24 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
         memset(xb_h, 0, head_size * sizeof(float));
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
-            float v_buf[head_size];
-            const float *v_t;
-            if (kv_f16) {
-                const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                // Prefetch next value entry
-                if (i + 1 < n_kv) {
-                    int t_next = (start + i + 1) % seq_len;
+            // Prefetch next value entry
+            if (i + 1 < n_kv) {
+                int t_next = (start + i + 1) % seq_len;
+                if (kv_f16)
                     _mm_prefetch((const char *)((const uint16_t *)s->value_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
-                }
-                for (int d = 0; d < head_size; d += 8)
-                    _mm256_storeu_ps(v_buf + d, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(v_f16 + d))));
-                v_t = v_buf;
-            } else {
-                v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                if (i + 1 < n_kv) {
-                    int t_next = (start + i + 1) % seq_len;
+                else
                     _mm_prefetch((const char *)(s->value_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
-                }
             }
             float a = att[i];
             __m256 av = _mm256_set1_ps(a);
-            for (int d = 0; d < head_size; d += 8) {
-                __m256 cur = _mm256_loadu_ps(xb_h + d);
-                _mm256_storeu_ps(xb_h + d, _mm256_fmadd_ps(av, _mm256_loadu_ps(v_t + d), cur));
+            if (kv_f16) {
+                const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                for (int d = 0; d < head_size; d += 8)
+                    _mm256_storeu_ps(xb_h + d, _mm256_fmadd_ps(av, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(v_f16 + d))), _mm256_loadu_ps(xb_h + d)));
+            } else {
+                const float *v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                for (int d = 0; d < head_size; d += 8)
+                    _mm256_storeu_ps(xb_h + d, _mm256_fmadd_ps(av, _mm256_loadu_ps(v_t + d), _mm256_loadu_ps(xb_h + d)));
             }
         }
     }
@@ -132,16 +130,6 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
 
             for (int ti = ti_start; ti < ti_end; ti++) {
                 int t = (start + ti) % seq_len;
-                float k_buf[head_size];
-                const float *k_t;
-                if (kv_f16) {
-                    const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                    for (int d = 0; d < head_size; d += 8)
-                        _mm256_storeu_ps(k_buf + d, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d))));
-                    k_t = k_buf;
-                } else {
-                    k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                }
 
                 // Prefetch next K entry
                 if (ti + 1 < ti_end) {
@@ -152,34 +140,37 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                         _mm_prefetch((const char *)(s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                 }
 
-                // Score: dot(Q, K) * scale — 4-way unrolled (32 floats per iteration)
+                // Score: dot(Q, K) * scale — inline F16 conversion, no temp buffer
                 __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps();
                 __m256 a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
-                int d = 0;
-                for (; d + 31 < head_size; d += 32) {
-                    a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),      _mm256_loadu_ps(k_t + d), a0);
-                    a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8),  _mm256_loadu_ps(k_t + d + 8), a1);
-                    a2 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 16), _mm256_loadu_ps(k_t + d + 16), a2);
-                    a3 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 24), _mm256_loadu_ps(k_t + d + 24), a3);
-                }
-                for (; d + 15 < head_size; d += 16) {
-                    a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),     _mm256_loadu_ps(k_t + d), a0);
-                    a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_loadu_ps(k_t + d + 8), a1);
+                if (kv_f16) {
+                    const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                    int d = 0;
+                    for (; d + 31 < head_size; d += 32) {
+                        a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),      _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d))), a0);
+                        a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8),  _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 8))), a1);
+                        a2 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 16), _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 16))), a2);
+                        a3 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 24), _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 24))), a3);
+                    }
+                    for (; d + 15 < head_size; d += 16) {
+                        a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),     _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d))), a0);
+                        a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(k_f16 + d + 8))), a1);
+                    }
+                } else {
+                    const float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                    int d = 0;
+                    for (; d + 31 < head_size; d += 32) {
+                        a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),      _mm256_loadu_ps(k_t + d), a0);
+                        a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8),  _mm256_loadu_ps(k_t + d + 8), a1);
+                        a2 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 16), _mm256_loadu_ps(k_t + d + 16), a2);
+                        a3 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 24), _mm256_loadu_ps(k_t + d + 24), a3);
+                    }
+                    for (; d + 15 < head_size; d += 16) {
+                        a0 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d),     _mm256_loadu_ps(k_t + d), a0);
+                        a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_loadu_ps(k_t + d + 8), a1);
+                    }
                 }
                 float score = bn_avx2_hsum_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))) * inv_sqrt_hs;
-
-                // Load V vector
-                float v_buf[head_size];
-                const float *v_t;
-                if (kv_f16) {
-                    const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                    for (int vd = 0; vd < head_size; vd += 8)
-                        _mm256_storeu_ps(v_buf + vd, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(v_f16 + vd))));
-                    v_t = v_buf;
-                } else {
-                    v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                }
-                _mm_prefetch((const char *)v_t, _MM_HINT_T0);
 
                 // Online softmax update
                 float old_max = running_max;
@@ -195,16 +186,23 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                 float w = expf(score - running_max);
                 running_sum += w;
                 __m256 wv = _mm256_set1_ps(w);
-                // 4-way unrolled V accumulation (32 floats per iteration)
-                d = 0;
-                for (; d + 31 < head_size; d += 32) {
-                    _mm256_storeu_ps(out_buf + d,      _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + d),      _mm256_loadu_ps(out_buf + d)));
-                    _mm256_storeu_ps(out_buf + d + 8,  _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + d + 8),  _mm256_loadu_ps(out_buf + d + 8)));
-                    _mm256_storeu_ps(out_buf + d + 16, _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + d + 16), _mm256_loadu_ps(out_buf + d + 16)));
-                    _mm256_storeu_ps(out_buf + d + 24, _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + d + 24), _mm256_loadu_ps(out_buf + d + 24)));
+                // V accumulation with inline F16 conversion (no temp buffer)
+                if (kv_f16) {
+                    const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                    for (int vd = 0; vd < head_size; vd += 8)
+                        _mm256_storeu_ps(out_buf + vd, _mm256_fmadd_ps(wv, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(v_f16 + vd))), _mm256_loadu_ps(out_buf + vd)));
+                } else {
+                    const float *v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                    int vd = 0;
+                    for (; vd + 31 < head_size; vd += 32) {
+                        _mm256_storeu_ps(out_buf + vd,      _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + vd),      _mm256_loadu_ps(out_buf + vd)));
+                        _mm256_storeu_ps(out_buf + vd + 8,  _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + vd + 8),  _mm256_loadu_ps(out_buf + vd + 8)));
+                        _mm256_storeu_ps(out_buf + vd + 16, _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + vd + 16), _mm256_loadu_ps(out_buf + vd + 16)));
+                        _mm256_storeu_ps(out_buf + vd + 24, _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + vd + 24), _mm256_loadu_ps(out_buf + vd + 24)));
+                    }
+                    for (; vd < head_size; vd += 8)
+                        _mm256_storeu_ps(out_buf + vd, _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + vd), _mm256_loadu_ps(out_buf + vd)));
                 }
-                for (; d < head_size; d += 8)
-                    _mm256_storeu_ps(out_buf + d, _mm256_fmadd_ps(wv, _mm256_loadu_ps(v_t + d), _mm256_loadu_ps(out_buf + d)));
             }
         }
 
