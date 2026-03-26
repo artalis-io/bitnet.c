@@ -364,6 +364,9 @@ int main(int argc, char **argv) {
                 if (gpu->init_activations) {
                     if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
                         SH_LOG_INFO("GPU forward pass ready");
+                        // Initialize GPU slab allocator for MoE weight suballocation
+                        if (model.config.n_experts > 0)
+                            bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         // Create GPU expert buffer cache for MoE
                         if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
                             model.config.n_layers > 0) {

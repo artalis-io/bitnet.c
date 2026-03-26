@@ -78,6 +78,13 @@ typedef struct {
     /* Profiling state */
     int gpu_frame;
     int gpu_profile;  /* -1 = uninitialized, 0 = off, 1 = on */
+
+    /* Slab allocator for weight buffers (eliminates per-buffer driver alloc) */
+    WGPUBuffer slab_buf;
+    size_t     slab_size;
+    struct { size_t offset, size; } *slab_free;
+    int        slab_free_count;
+    int        slab_free_cap;
 } BnWgpuCtx;
 
 /* ── GPU buffer handle ─────────────────────────────────────────────── */
@@ -85,10 +92,12 @@ typedef struct {
 typedef struct {
     WGPUBuffer buf;
     size_t     size;
+    size_t     offset;       /* byte offset into slab (0 for standalone buffers) */
     int        type;
     int        rows;
     int        cols;
     uint32_t   bias_offset;  /* u32 offset into buffer for fused bias, 0 = none */
+    int        is_slab;      /* 1 = suballocated from slab, 0 = standalone */
 } BnWgpuBuf;
 
 /* ── Uniform block for compute shaders ─────────────────────────────── */
@@ -477,6 +486,102 @@ static int compile_fwd_pipeline(BnWgpuCtx *ctx, int shader_id, const char *name)
     return 0;
 }
 
+/* ── Slab allocator (eliminates per-buffer wgpuDeviceCreateBuffer) ── */
+
+static int slab_init(BnWgpuCtx *ctx, size_t size_bytes) {
+    if (ctx->slab_buf) return 0;  /* already initialized */
+    /* Clamp to device limit */
+    if (size_bytes > ctx->max_buffer_size)
+        size_bytes = (size_t)ctx->max_buffer_size;
+    /* Align to 256 */
+    size_bytes &= ~(size_t)255;
+    if (size_bytes == 0) return -1;
+
+    WGPUBufferDescriptor desc = {
+        .label = sv("bn_slab"),
+        .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
+        .size = size_bytes,
+    };
+    ctx->slab_buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
+    if (!ctx->slab_buf) return -1;
+    ctx->slab_size = size_bytes;
+
+    /* Initialize free list with one block spanning the whole slab */
+    ctx->slab_free_cap = 256;
+    ctx->slab_free = calloc((size_t)ctx->slab_free_cap, sizeof(ctx->slab_free[0]));
+    if (!ctx->slab_free) { wgpuBufferDestroy(ctx->slab_buf); ctx->slab_buf = NULL; return -1; }
+    ctx->slab_free[0].offset = 0;
+    ctx->slab_free[0].size = size_bytes;
+    ctx->slab_free_count = 1;
+
+    fprintf(stderr, "[bn:gpu:wgpu] slab allocator: %zu MB\n", size_bytes / (1024 * 1024));
+    return 0;
+}
+
+/* First-fit allocation from slab, 256-byte aligned. Returns offset or (size_t)-1. */
+static size_t slab_alloc(BnWgpuCtx *ctx, size_t size) {
+    size = (size + 255) & ~(size_t)255;
+    for (int i = 0; i < ctx->slab_free_count; i++) {
+        if (ctx->slab_free[i].size >= size) {
+            size_t off = ctx->slab_free[i].offset;
+            if (ctx->slab_free[i].size == size) {
+                /* Remove block entirely */
+                memmove(&ctx->slab_free[i], &ctx->slab_free[i + 1],
+                        (size_t)(ctx->slab_free_count - i - 1) * sizeof(ctx->slab_free[0]));
+                ctx->slab_free_count--;
+            } else {
+                /* Shrink block */
+                ctx->slab_free[i].offset += size;
+                ctx->slab_free[i].size -= size;
+            }
+            return off;
+        }
+    }
+    return (size_t)-1;
+}
+
+/* Free a slab region, coalesce with neighbors. */
+static void slab_free_region(BnWgpuCtx *ctx, size_t offset, size_t size) {
+    /* Find insertion point (sorted by offset) */
+    int pos = 0;
+    while (pos < ctx->slab_free_count && ctx->slab_free[pos].offset < offset) pos++;
+
+    /* Check coalescing with left neighbor */
+    int merged = 0;
+    if (pos > 0 && ctx->slab_free[pos - 1].offset + ctx->slab_free[pos - 1].size == offset) {
+        ctx->slab_free[pos - 1].size += size;
+        merged = 1;
+        /* Check coalescing with right neighbor too */
+        if (pos < ctx->slab_free_count &&
+            ctx->slab_free[pos - 1].offset + ctx->slab_free[pos - 1].size == ctx->slab_free[pos].offset) {
+            ctx->slab_free[pos - 1].size += ctx->slab_free[pos].size;
+            memmove(&ctx->slab_free[pos], &ctx->slab_free[pos + 1],
+                    (size_t)(ctx->slab_free_count - pos - 1) * sizeof(ctx->slab_free[0]));
+            ctx->slab_free_count--;
+        }
+    }
+    /* Check coalescing with right neighbor only */
+    if (!merged && pos < ctx->slab_free_count &&
+        offset + size == ctx->slab_free[pos].offset) {
+        ctx->slab_free[pos].offset = offset;
+        ctx->slab_free[pos].size += size;
+        merged = 1;
+    }
+    /* No coalescing — insert new block */
+    if (!merged) {
+        if (ctx->slab_free_count >= ctx->slab_free_cap) {
+            ctx->slab_free_cap *= 2;
+            ctx->slab_free = realloc(ctx->slab_free,
+                                      (size_t)ctx->slab_free_cap * sizeof(ctx->slab_free[0]));
+        }
+        memmove(&ctx->slab_free[pos + 1], &ctx->slab_free[pos],
+                (size_t)(ctx->slab_free_count - pos) * sizeof(ctx->slab_free[0]));
+        ctx->slab_free[pos].offset = offset;
+        ctx->slab_free[pos].size = size;
+        ctx->slab_free_count++;
+    }
+}
+
 /* ── Vtable: buffer_create ─────────────────────────────────────────── */
 
 /* ── Q4_0 weight repacking for GPU ─────────────────────────────────
@@ -591,33 +696,49 @@ static void *wgpu_buffer_create(void *vctx, const void *data, size_t size,
                                     NULL, 0);
     }
 
-    /* Align size to 4 bytes (WebGPU requirement) */
-    size_t aligned = (size + 3) & ~(size_t)3;
+    /* Align size to 256 bytes (slab alignment) or 4 bytes (standalone) */
+    size_t aligned = (size + 255) & ~(size_t)255;
 
+    /* Try slab allocation first (avoids wgpuDeviceCreateBuffer overhead) */
+    if (ctx->slab_buf) {
+        size_t off = slab_alloc(ctx, aligned);
+        if (off != (size_t)-1) {
+            wgpuQueueWriteBuffer(ctx->queue, ctx->slab_buf, off, data, size);
+            BnWgpuBuf *handle = malloc(sizeof(BnWgpuBuf));
+            if (!handle) { slab_free_region(ctx, off, aligned); return NULL; }
+            handle->buf = ctx->slab_buf;
+            handle->size = aligned;
+            handle->offset = off;
+            handle->type = type;
+            handle->rows = rows;
+            handle->cols = cols;
+            handle->bias_offset = 0;
+            handle->is_slab = 1;
+            return handle;
+        }
+    }
+
+    /* Fallback: standalone buffer */
+    size_t standalone_aligned = (size + 3) & ~(size_t)3;
     WGPUBufferDescriptor desc = {
         .label = sv("bn_weight"),
         .usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst,
-        .size  = aligned,
+        .size  = standalone_aligned,
     };
     WGPUBuffer buf = wgpuDeviceCreateBuffer(ctx->device, &desc);
     if (!buf) return NULL;
-
-    /* Upload weight data */
     wgpuQueueWriteBuffer(ctx->queue, buf, 0, data, size);
 
-    /* Wrap in handle struct */
     BnWgpuBuf *handle = malloc(sizeof(BnWgpuBuf));
-    if (!handle) {
-        wgpuBufferDestroy(buf);
-        wgpuBufferRelease(buf);
-        return NULL;
-    }
+    if (!handle) { wgpuBufferDestroy(buf); wgpuBufferRelease(buf); return NULL; }
     handle->buf = buf;
-    handle->size = aligned;
+    handle->size = standalone_aligned;
+    handle->offset = 0;
     handle->type = type;
     handle->rows = rows;
     handle->cols = cols;
     handle->bias_offset = 0;
+    handle->is_slab = 0;
     return handle;
 }
 
@@ -643,10 +764,13 @@ static void *wgpu_buffer_create_biased(void *vctx, const void *data, size_t size
 
 static void wgpu_buffer_destroy(void *vctx, void *buffer)
 {
-    (void)vctx;
     if (!buffer) return;
     BnWgpuBuf *h = (BnWgpuBuf *)buffer;
-    if (h->buf) {
+    if (h->is_slab) {
+        /* Return region to slab free list (no GPU driver call) */
+        BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
+        if (ctx) slab_free_region(ctx, h->offset, h->size);
+    } else if (h->buf) {
         wgpuBufferDestroy(h->buf);
         wgpuBufferRelease(h->buf);
     }
@@ -695,7 +819,7 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
     /* Create bind group: 0=W, 1=x, 2=out, 3=uniforms */
     {
         WGPUBindGroupEntry entries[4] = {
-            { .binding = 0, .buffer = wbuf->buf,       .offset = 0, .size = wbuf->size },
+            { .binding = 0, .buffer = wbuf->buf, .offset = wbuf->offset, .size = wbuf->size },
             { .binding = 1, .buffer = ctx->x_buf,      .offset = 0, .size = x_aligned },
             { .binding = 2, .buffer = ctx->out_buf,    .offset = 0, .size = out_aligned },
             { .binding = 3, .buffer = ctx->uniform_buf, .offset = 0,
@@ -818,7 +942,7 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
     /* Create bind group */
     {
         WGPUBindGroupEntry entries[4] = {
-            { .binding = 0, .buffer = wbuf->buf,       .offset = 0, .size = wbuf->size },
+            { .binding = 0, .buffer = wbuf->buf, .offset = wbuf->offset, .size = wbuf->size },
             { .binding = 1, .buffer = ctx->x_buf,      .offset = 0, .size = x_aligned },
             { .binding = 2, .buffer = ctx->out_buf,    .offset = 0, .size = out_aligned },
             { .binding = 3, .buffer = ctx->uniform_buf, .offset = 0,
@@ -981,7 +1105,7 @@ static int wgpu_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         /* Create bind group: W varies per op, x/out/uniform are persistent.
          * Each op reads from its own uniform slot at uni_offset. */
         WGPUBindGroupEntry entries[4] = {
-            { .binding = 0, .buffer = wbuf->buf,       .offset = 0, .size = wbuf->size },
+            { .binding = 0, .buffer = wbuf->buf, .offset = wbuf->offset, .size = wbuf->size },
             { .binding = 1, .buffer = ctx->x_buf,      .offset = 0, .size = x_aligned },
             { .binding = 2, .buffer = ctx->out_buf,    .offset = 0, .size = out_aligned },
             { .binding = 3, .buffer = ctx->uniform_buf, .offset = uni_offset,
@@ -1553,7 +1677,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             if (!wbuf) continue;
             entries[0] = (WGPUBindGroupEntry){
                 .binding = 0, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size};
+                .offset = wbuf->offset, .size = wbuf->size};
             entries[1] = (WGPUBindGroupEntry){
                 .binding = 1, .buffer = ctx->act_bufs[op->buf_in],
                 .offset = 0, .size = ctx->act_sizes[op->buf_in]};
@@ -1574,7 +1698,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             entries[1] = (WGPUBindGroupEntry){
                 .binding = 1,
                 .buffer = wbuf ? wbuf->buf : ctx->act_bufs[op->buf_in],
-                .offset = 0,
+                .offset = wbuf ? wbuf->offset : 0,
                 .size = wbuf ? wbuf->size : ctx->act_sizes[op->buf_in]};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = ctx->act_bufs[op->buf_out],
@@ -1675,7 +1799,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .offset = 0, .size = ctx->act_sizes[op->buf_in]};
             entries[1] = (WGPUBindGroupEntry){
                 .binding = 1, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size};
+                .offset = wbuf->offset, .size = wbuf->size};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
@@ -1694,7 +1818,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size};
+                .offset = wbuf->offset, .size = wbuf->size};
             entries[3] = (WGPUBindGroupEntry){
                 .binding = 3, .buffer = ctx->act_bufs[op->buf_out],
                 .offset = 0, .size = ctx->act_sizes[op->buf_out]};
@@ -1730,7 +1854,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_CONV_STATE]};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size};
+                .offset = wbuf->offset, .size = wbuf->size};
             entries[3] = (WGPUBindGroupEntry){
                 .binding = 3, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
@@ -1763,7 +1887,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_BETA]};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = dt_buf->buf,
-                .offset = 0, .size = dt_buf->size};
+                .offset = dt_buf->offset, .size = dt_buf->size};
             /* a_log handle stored in buf_aux as a void* cast — resolve it */
             {
                 void *a_ptr = (void *)(uintptr_t)((uint64_t)op->p[6] | ((uint64_t)op->p[7] << 32));
@@ -1771,7 +1895,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 if (!a_wbuf) continue;
                 entries[3] = (WGPUBindGroupEntry){
                     .binding = 3, .buffer = a_wbuf->buf,
-                    .offset = 0, .size = a_wbuf->size};
+                    .offset = a_wbuf->offset, .size = a_wbuf->size};
             }
             entries[4] = (WGPUBindGroupEntry){
                 .binding = 4, .buffer = ctx->uniform_ring,
@@ -1820,7 +1944,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size};
+                .offset = wbuf->offset, .size = wbuf->size};
             entries[3] = (WGPUBindGroupEntry){
                 .binding = 3, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
@@ -1836,7 +1960,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .offset = 0, .size = ctx->act_sizes[op->buf_in]};
             entries[1] = (WGPUBindGroupEntry){
                 .binding = 1, .buffer = wbuf->buf,
-                .offset = 0, .size = wbuf->size};
+                .offset = wbuf->offset, .size = wbuf->size};
             entries[2] = (WGPUBindGroupEntry){
                 .binding = 2, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
@@ -2190,6 +2314,12 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
 
 /* ── Public API: destroy ───────────────────────────────────────────── */
 
+int bn_gpu_wgpu_init_slab(BnGPUBackend *gpu, size_t size_mb)
+{
+    if (!gpu || !gpu->ctx || size_mb == 0) return -1;
+    return slab_init((BnWgpuCtx *)gpu->ctx, size_mb * 1024 * 1024);
+}
+
 void bn_gpu_wgpu_destroy(BnGPUBackend *gpu)
 {
     if (!gpu) return;
@@ -2216,6 +2346,13 @@ void bn_gpu_wgpu_destroy(BnGPUBackend *gpu)
             wgpuBufferDestroy(ctx->staging_buf);
             wgpuBufferRelease(ctx->staging_buf);
         }
+
+        /* Release slab allocator */
+        if (ctx->slab_buf) {
+            wgpuBufferDestroy(ctx->slab_buf);
+            wgpuBufferRelease(ctx->slab_buf);
+        }
+        free(ctx->slab_free);
 
         /* Release pipelines and layouts */
         for (int i = 0; i < BN_WGPU_MAX_TYPES; i++) {
