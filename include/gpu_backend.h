@@ -24,8 +24,11 @@
 #define BN_GPU_SHADER_SSM_L2NORM     14 // Per-head L2 normalization of Q/K
 #define BN_GPU_SHADER_SSM_ALPHA_BETA 15 // Softplus + exp/sigmoid for decay/update
 #define BN_GPU_SHADER_SSM_DELTA      16 // Delta rule recurrence
-#define BN_GPU_SHADER_SSM_GATE       17 // Per-head RMSNorm + SiLU gate
-#define BN_GPU_SHADER_COUNT          18
+#define BN_GPU_SHADER_SSM_GATE           17 // Per-head RMSNorm + SiLU gate
+#define BN_GPU_SHADER_PER_HEAD_RMSNORM  18 // Per-head RMSNorm (Q/K norms)
+#define BN_GPU_SHADER_DEINTERLEAVE_Q    19 // Extract Q from interleaved [Q,Gate] layout
+#define BN_GPU_SHADER_SIGMOID_GATE      20 // out *= sigmoid(gate) for gated Q
+#define BN_GPU_SHADER_COUNT             21
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0

@@ -146,6 +146,11 @@ typedef struct {
     void *v_bias_gpu;
     // Stacked QKV weight buffer for GPU (NULL = use individual Q/K/V)
     void *qkv_stacked_gpu;
+    // GPU handles for Q/K norms and sub-norms (NULL = not present)
+    void *q_norm_gpu;
+    void *k_norm_gpu;
+    void *attn_sub_norm_gpu;
+    void *ffn_sub_norm_gpu;
     // GPU handles for SSM weights (NULL = not uploaded or not SSM layer)
     void *ssm_conv1d_gpu;       // [kern * qkv_dim] F32
     void *ssm_dt_bias_a_gpu;    // packed [dt_bias[nv], a_log[nv]] F32

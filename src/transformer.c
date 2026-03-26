@@ -1095,13 +1095,13 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         int is_attn = (c->full_attn_interval == 0) ||
                       ((l + 1) % c->full_attn_interval == 0);
         if (!is_attn) { has_ssm = 1; continue; }           // SSM: skip GPU validation
-        if (lw->router_weight) { has_moe = 1; }            // MoE: FFN on CPU, attn on GPU
+        if (lw->router_weight) { has_moe = 1; }
         if (!lw->wq.data) return NULL;
-        int q_gated = (lw->wq.rows > q_dim);
-        int q_wide  = (!q_gated && lw->wq.rows > dim);
-        if (q_gated || q_wide) return NULL;
-        if (lw->q_norm || lw->k_norm) return NULL;
-        if (lw->attn_sub_norm || lw->ffn_sub_norm) return NULL;
+        // Q/K norms: require GPU handles if present
+        if (lw->q_norm && !lw->q_norm_gpu) return NULL;
+        if (lw->k_norm && !lw->k_norm_gpu) return NULL;
+        if (lw->attn_sub_norm && !lw->attn_sub_norm_gpu) return NULL;
+        if (lw->ffn_sub_norm && !lw->ffn_sub_norm_gpu) return NULL;
         if (!lw->attn_norm_gpu || !lw->ffn_norm_gpu) return NULL;
     }
     // Models with SSM or MoE need per-layer CPU-GPU sync via read/write_activation
@@ -1127,7 +1127,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     { float eps = c->norm_eps; memcpy(&u_eps, &eps, 4); }
 
     // Max ops per batch. MoE/SSM flush between layers, so single-layer max suffices.
-    int max_ops = has_moe || has_ssm ? 30 + 4 : 26 * c->n_layers + 4;
+    // Max ops: ~32 per layer (26 base + 2 Q/K norms + 2 sub-norms + 2 Q-gated)
+    int max_ops = has_moe || has_ssm ? 36 + 4 : 34 * c->n_layers + 4;
     BnGPUOp *ops = (BnGPUOp *)malloc((size_t)max_ops * sizeof(BnGPUOp));
     if (!ops) return NULL;
     int n = 0;
@@ -1294,6 +1295,13 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                 .rows = 0, .cols = 0,
                 .p = { 0, 0, (uint32_t)q_dim, 0, 0, 0, 0, 0 }
             };
+            // Q norm (per-head RMSNorm on Q buffer)
+            if (lw->q_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->q_norm_gpu, .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = -1,
+                    .rows = n_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
+            }
             // Copy K from QKV -> scratch
             ops[n++] =(BnGPUOp){
                 .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
@@ -1301,6 +1309,13 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                 .rows = 0, .cols = 0,
                 .p = { (uint32_t)q_dim, 0, (uint32_t)kv_dim, 0, 0, 0, 0, 0 }
             };
+            // K norm (per-head RMSNorm on SCRATCH)
+            if (lw->k_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
+                    .rows = c->n_kv_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
+            }
             // RoPE K
             ops[n++] =(BnGPUOp){
                 .shader = BN_GPU_SHADER_ROPE, .type = -1, .W_buf = NULL,
@@ -1334,21 +1349,44 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             };
         } else {
             // Separate Q/K/V matvecs
-            ops[n++] =(BnGPUOp){
-                .shader = BN_GPU_SHADER_MATVEC, .type = lw->wq.type,
-                .W_buf = lw->wq.gpu_buf,
-                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
-                .rows = lw->wq.rows, .cols = lw->wq.cols,
-                .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols, 1, 0, 0, 0, 0, 0 }
-            };
+            int q_gated = (lw->wq.rows > q_dim);
+            if (q_gated) {
+                // Q-gated: matvec to QKV (2*q_dim), then deinterleave Q
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_MATVEC, .type = lw->wq.type,
+                    .W_buf = lw->wq.gpu_buf,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_QKV, .buf_aux = -1,
+                    .rows = lw->wq.rows, .cols = lw->wq.cols,
+                    .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols, 1, 0, 0, 0, 0, 0 } };
+                // Deinterleave: QKV[h*2*hs+d] → Q[h*hs+d]
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_DEINTERLEAVE_Q, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_QKV, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
+                    .p = { (uint32_t)q_dim, (uint32_t)head_size, 0, 0, 0, 0, 0, 0 } };
+            } else {
+                // Standard Q matvec to Q buffer
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_MATVEC, .type = lw->wq.type,
+                    .W_buf = lw->wq.gpu_buf,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
+                    .rows = lw->wq.rows, .cols = lw->wq.cols,
+                    .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols, 1, 0, 0, 0, 0, 0 } };
+            }
             if (lw->q_bias_gpu) {
                 ops[n++] =(BnGPUOp){
                     .shader = BN_GPU_SHADER_BIAS_ADD, .type = -1,
                     .W_buf = lw->q_bias_gpu,
                     .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = -1,
                     .rows = 0, .cols = 0,
-                    .p = { (uint32_t)dim, 0, 0, 0, 0, 0, 0, 0 }
+                    .p = { (uint32_t)q_dim, 0, 0, 0, 0, 0, 0, 0 }
                 };
+            }
+            // Q norm
+            if (lw->q_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->q_norm_gpu, .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = -1,
+                    .rows = n_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
             }
 
             ops[n++] =(BnGPUOp){
@@ -1366,6 +1404,14 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     .rows = 0, .cols = 0,
                     .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 }
                 };
+            }
+
+            // K norm
+            if (lw->k_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
+                    .rows = c->n_kv_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
             }
 
             // RoPE K, K -> key_cache
@@ -1450,6 +1496,24 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                    (uint32_t)c->kv_mul, (uint32_t)kv_dim, (uint32_t)c->seq_len,
                    (uint32_t)loff, 0 }
         };
+
+        // ---- Sigmoid gate (Q-gated only): xb *= sigmoid(gate) ----
+        {
+            int q_gated_l = (lw->wq.rows > q_dim);
+            if (q_gated_l) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SIGMOID_GATE, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = -1, .buf_aux = BN_GPU_BUF_QKV,
+                    .p = { (uint32_t)q_dim, (uint32_t)head_size, 0, 0, 0, 0, 0, 0 } };
+            }
+        }
+
+        // ---- Attention sub-norm (before Wo) ----
+        if (lw->attn_sub_norm_gpu) {
+            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
+                .W_buf = lw->attn_sub_norm_gpu,
+                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_XB, .buf_aux = -1,
+                .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 } };
+        }
 
         // ---- Wo matvec: xb -> xb2 ----
         ops[n++] =(BnGPUOp){
@@ -1645,6 +1709,14 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                 .rows = 0, .cols = 0,
                 .p = { (uint32_t)hidden_dim, 0, 0, 0, 0, 0, 0, 0 }
             };
+        }
+
+        // ---- FFN sub-norm (before down projection) ----
+        if (lw->ffn_sub_norm_gpu) {
+            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
+                .W_buf = lw->ffn_sub_norm_gpu,
+                .buf_in = BN_GPU_BUF_HB, .buf_out = BN_GPU_BUF_HB, .buf_aux = -1,
+                .p = { (uint32_t)hidden_dim, u_eps, 0, 0, 0, 0, 0, 0 } };
         }
 
         // ---- Down matvec: hb -> xb2 ----

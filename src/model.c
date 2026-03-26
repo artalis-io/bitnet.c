@@ -1280,6 +1280,20 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
+        // Upload Q/K norm and sub-norm weights
+        if (lw->q_norm) {
+            int q_norm_size = c->qk_norm_per_head ? (c->n_heads * c->head_size) : c->head_size;
+            lw->q_norm_gpu = upload_f32_buf(gpu, lw->q_norm, q_norm_size);
+        }
+        if (lw->k_norm) {
+            int k_norm_size = c->qk_norm_per_head ? c->kv_dim : c->head_size;
+            lw->k_norm_gpu = upload_f32_buf(gpu, lw->k_norm, k_norm_size);
+        }
+        if (lw->attn_sub_norm)
+            lw->attn_sub_norm_gpu = upload_f32_buf(gpu, lw->attn_sub_norm, c->dim);
+        if (lw->ffn_sub_norm)
+            lw->ffn_sub_norm_gpu = upload_f32_buf(gpu, lw->ffn_sub_norm, c->hidden_dim);
+
         // Upload SSM F32 weights (for hybrid SSM+Attention models)
         if (lw->ssm_conv1d) {
             int num_v_heads = c->ssm_time_step_rank;
@@ -1351,6 +1365,10 @@ void bn_model_release_gpu(BnModel *model) {
             release_f32_buf(gpu, &lw->q_bias_gpu);
             release_f32_buf(gpu, &lw->k_bias_gpu);
             release_f32_buf(gpu, &lw->v_bias_gpu);
+            release_f32_buf(gpu, &lw->q_norm_gpu);
+            release_f32_buf(gpu, &lw->k_norm_gpu);
+            release_f32_buf(gpu, &lw->attn_sub_norm_gpu);
+            release_f32_buf(gpu, &lw->ffn_sub_norm_gpu);
             release_f32_buf(gpu, &lw->ssm_conv1d_gpu);
             release_f32_buf(gpu, &lw->ssm_norm_gpu);
             if (lw->ssm_dt_bias_a_gpu) {

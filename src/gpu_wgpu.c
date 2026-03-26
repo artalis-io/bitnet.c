@@ -1104,7 +1104,11 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
     sizes[BN_GPU_BUF_LOGITS]      = (size_t)c->vocab_size * sizeof(float);
     sizes[BN_GPU_BUF_ROPE_FREQ]   = (size_t)(c->head_size / 2) * sizeof(float);
     sizes[BN_GPU_BUF_SCRATCH]     = (size_t)xb_size * sizeof(float);
-    sizes[BN_GPU_BUF_QKV]         = (size_t)(q_dim + 2 * c->kv_dim) * sizeof(float);
+    {
+        size_t qkv_size = (size_t)(q_dim + 2 * c->kv_dim) * sizeof(float);
+        size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);
+        sizes[BN_GPU_BUF_QKV] = qkv_size > gated_q_size ? qkv_size : gated_q_size;
+    }
 
     /* MoE activation buffers (if model has MoE layers) */
     if (c->moe_intermediate_size > 0) {
@@ -1219,6 +1223,9 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_SSM_ALPHA_BETA,   "ssm_alpha_beta"   },
         { BN_GPU_SHADER_SSM_DELTA,        "ssm_delta"        },
         { BN_GPU_SHADER_SSM_GATE,         "ssm_gate"         },
+        { BN_GPU_SHADER_PER_HEAD_RMSNORM, "per_head_rmsnorm" },
+        { BN_GPU_SHADER_DEINTERLEAVE_Q,   "deinterleave_q"   },
+        { BN_GPU_SHADER_SIGMOID_GATE,     "sigmoid_gate"     },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -1378,7 +1385,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
     /* Helper: get read/write buffer masks for an op.
      * Bit i set = buffer BN_GPU_BUF_i is accessed. */
-    #define BUF_BIT(idx) ((uint16_t)(1u << (idx)))
+    #define BUF_BIT(idx) (1u << (idx))
 
     WGPUComputePassEncoder cur_pass = NULL;
     uint32_t pass_reads = 0, pass_writes = 0;
@@ -1491,6 +1498,18 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             op_writes = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_out);
             break;
         case BN_GPU_SHADER_SSM_GATE:
+            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
+            op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        case BN_GPU_SHADER_PER_HEAD_RMSNORM:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        case BN_GPU_SHADER_DEINTERLEAVE_Q:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_out);
+            break;
+        case BN_GPU_SHADER_SIGMOID_GATE:
             op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
             op_writes = BUF_BIT(op->buf_in);  /* in-place */
             break;
@@ -1798,6 +1817,50 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             n_entries = 4;
             break;
         }
+        case BN_GPU_SHADER_PER_HEAD_RMSNORM: {
+            /* x(rw), weight(ro), uniforms */
+            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+            if (!wbuf) continue;
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = wbuf->buf,
+                .offset = 0, .size = wbuf->size};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_DEINTERLEAVE_Q: {
+            /* src(ro), dst(rw), uniforms */
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_out],
+                .offset = 0, .size = ctx->act_sizes[op->buf_out]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_SIGMOID_GATE: {
+            /* out(rw), gate(ro), uniforms */
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_aux],
+                .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 3;
+            break;
+        }
         default: continue;
         }
 
@@ -1866,6 +1929,13 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             break;
         case BN_GPU_SHADER_SSM_GATE:
             wg_x = op->rows;  /* num_v_heads */
+            break;
+        case BN_GPU_SHADER_PER_HEAD_RMSNORM:
+            wg_x = (uint32_t)op->rows;  /* n_heads */
+            break;
+        case BN_GPU_SHADER_DEINTERLEAVE_Q:
+        case BN_GPU_SHADER_SIGMOID_GATE:
+            wg_x = (op->p[0] + 255) / 256;  /* ceil(q_dim / 256) */
             break;
         }
 
