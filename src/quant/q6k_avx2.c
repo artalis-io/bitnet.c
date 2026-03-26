@@ -10,7 +10,7 @@ void bn_quant_q6k_avx2_range(void *ctx, int row_start, int row_end) {
     const float *x = c->x;
 
     const __m128i mask_lo4 = _mm_set1_epi8(0xF);
-    const __m128i mask_2 = _mm_set1_epi8(3);
+    const __m128i mask_hi2 = _mm_set1_epi8(0x30);  /* bits [5:4] after shift */
     const __m128i bias32 = _mm_set1_epi8(32);
 
     for (int row = row_start; row < row_end; row++) {
@@ -32,14 +32,16 @@ void bn_quant_q6k_avx2_range(void *ctx, int row_start, int row_end) {
                 __m128i qh0 = _mm_loadu_si128((const __m128i *)(qh));
                 __m128i qh1 = _mm_loadu_si128((const __m128i *)(qh + 16));
 
-                __m128i w0a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql0, mask_lo4), _mm_slli_epi16(_mm_and_si128(qh0, mask_2), 4)), bias32);
-                __m128i w0b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql1, mask_lo4), _mm_slli_epi16(_mm_and_si128(qh1, mask_2), 4)), bias32);
-                __m128i w1a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql2, mask_lo4), _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh0, 2), mask_2), 4)), bias32);
-                __m128i w1b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql3, mask_lo4), _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh1, 2), mask_2), 4)), bias32);
-                __m128i w2a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql0, 4), mask_lo4), _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh0, 4), mask_2), 4)), bias32);
-                __m128i w2b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql1, 4), mask_lo4), _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(qh1, 4), mask_2), 4)), bias32);
-                __m128i w3a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql2, 4), mask_lo4), _mm_slli_epi16(_mm_srli_epi16(qh0, 6), 4)), bias32);
-                __m128i w3b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql3, 4), mask_lo4), _mm_slli_epi16(_mm_srli_epi16(qh1, 6), 4)), bias32);
+                /* Combine low 4 bits from ql with high 2 bits from qh, subtract bias.
+                 * Use mask_hi2 after _mm_slli_epi16 to prevent 16-bit cross-byte bleed. */
+                __m128i w0a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql0, mask_lo4), _mm_and_si128(_mm_slli_epi16(qh0, 4), mask_hi2)), bias32);
+                __m128i w0b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql1, mask_lo4), _mm_and_si128(_mm_slli_epi16(qh1, 4), mask_hi2)), bias32);
+                __m128i w1a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql2, mask_lo4), _mm_and_si128(_mm_slli_epi16(_mm_srli_epi16(qh0, 2), 4), mask_hi2)), bias32);
+                __m128i w1b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(ql3, mask_lo4), _mm_and_si128(_mm_slli_epi16(_mm_srli_epi16(qh1, 2), 4), mask_hi2)), bias32);
+                __m128i w2a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql0, 4), mask_lo4), _mm_and_si128(_mm_slli_epi16(_mm_srli_epi16(qh0, 4), 4), mask_hi2)), bias32);
+                __m128i w2b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql1, 4), mask_lo4), _mm_and_si128(_mm_slli_epi16(_mm_srli_epi16(qh1, 4), 4), mask_hi2)), bias32);
+                __m128i w3a = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql2, 4), mask_lo4), _mm_and_si128(_mm_slli_epi16(_mm_srli_epi16(qh0, 6), 4), mask_hi2)), bias32);
+                __m128i w3b = _mm_sub_epi8(_mm_or_si128(_mm_and_si128(_mm_srli_epi16(ql3, 4), mask_lo4), _mm_and_si128(_mm_slli_epi16(_mm_srli_epi16(qh1, 6), 4), mask_hi2)), bias32);
 
                 __m256 acc = _mm256_setzero_ps();
 

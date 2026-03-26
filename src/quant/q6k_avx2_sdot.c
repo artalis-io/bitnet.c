@@ -56,42 +56,38 @@ void bn_quant_q6k_avx2_sdot_range(void *ctx, int row_start, int row_end) {
                 // w3: high nibble of ql[32..63] | (qh >> 6) << 4
                 __m256i w3 = _mm256_or_si256(
                     _mm256_and_si256(_mm256_srli_epi16(ql1, 4), mask_lo4),
-                    _mm256_slli_epi16(_mm256_srli_epi16(qh0, 6), 4));
+                    _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh0, 6), mask_2), 4));
 
                 // SDOT for 4 pairs (8 sub-blocks of 16 elements each = 128 elements)
                 // w0 covers sub-blocks 0,1 (32 elements: low 16 + high 16 in 256-bit)
+                /* Horizontal sum of a 128-bit lane (4 x int32 → scalar) */
+                #define HSUM128(v128) ({ \
+                    __m128i _h1 = _mm_hadd_epi32(v128, v128); \
+                    __m128i _h2 = _mm_hadd_epi32(_h1, _h1); \
+                    _mm_cvtsi128_si32(_h2); \
+                })
+
                 __m256i xv0 = _mm256_loadu_si256((const __m256i *)(xb));
                 __m256i dot0 = bn_avx2_dpbusd(zero, w0, xv0);
-                // Split dot0 into sub-block halves (lanes 0-3 = sub0, lanes 4-7 = sub1)
-                int32_t sum0_lo = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_castsi256_si128(dot0), _mm256_castsi256_si128(dot0)));
-                int32_t sum0_hi = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_extracti128_si256(dot0, 1), _mm256_extracti128_si256(dot0, 1)));
-                sumi += sum0_lo * (int32_t)sc[0] + sum0_hi * (int32_t)sc[1];
+                sumi += HSUM128(_mm256_castsi256_si128(dot0)) * (int32_t)sc[0]
+                      + HSUM128(_mm256_extracti128_si256(dot0, 1)) * (int32_t)sc[1];
 
                 __m256i xv1 = _mm256_loadu_si256((const __m256i *)(xb + 32));
                 __m256i dot1 = bn_avx2_dpbusd(zero, w1, xv1);
-                int32_t sum1_lo = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_castsi256_si128(dot1), _mm256_castsi256_si128(dot1)));
-                int32_t sum1_hi = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_extracti128_si256(dot1, 1), _mm256_extracti128_si256(dot1, 1)));
-                sumi += sum1_lo * (int32_t)sc[2] + sum1_hi * (int32_t)sc[3];
+                sumi += HSUM128(_mm256_castsi256_si128(dot1)) * (int32_t)sc[2]
+                      + HSUM128(_mm256_extracti128_si256(dot1, 1)) * (int32_t)sc[3];
 
                 __m256i xv2 = _mm256_loadu_si256((const __m256i *)(xb + 64));
                 __m256i dot2 = bn_avx2_dpbusd(zero, w2, xv2);
-                int32_t sum2_lo = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_castsi256_si128(dot2), _mm256_castsi256_si128(dot2)));
-                int32_t sum2_hi = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_extracti128_si256(dot2, 1), _mm256_extracti128_si256(dot2, 1)));
-                sumi += sum2_lo * (int32_t)sc[4] + sum2_hi * (int32_t)sc[5];
+                sumi += HSUM128(_mm256_castsi256_si128(dot2)) * (int32_t)sc[4]
+                      + HSUM128(_mm256_extracti128_si256(dot2, 1)) * (int32_t)sc[5];
 
                 __m256i xv3 = _mm256_loadu_si256((const __m256i *)(xb + 96));
                 __m256i dot3 = bn_avx2_dpbusd(zero, w3, xv3);
-                int32_t sum3_lo = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_castsi256_si128(dot3), _mm256_castsi256_si128(dot3)));
-                int32_t sum3_hi = _mm_cvtsi128_si32(_mm_hadd_epi32(
-                    _mm256_extracti128_si256(dot3, 1), _mm256_extracti128_si256(dot3, 1)));
-                sumi += sum3_lo * (int32_t)sc[6] + sum3_hi * (int32_t)sc[7];
+                sumi += HSUM128(_mm256_castsi256_si128(dot3)) * (int32_t)sc[6]
+                      + HSUM128(_mm256_extracti128_si256(dot3, 1)) * (int32_t)sc[7];
+
+                #undef HSUM128
 
                 // Bias correction
                 for (int g = 0; g < 8; g++)
@@ -109,16 +105,19 @@ void bn_quant_q6k_avx2_sdot_range(void *ctx, int row_start, int row_end) {
     }
 }
 
-// Helper: sum low 128-bit lane of __m256i (4 x int32 → scalar)
+// Helper: full horizontal sum of a 128-bit lane (4 x int32 → scalar)
 static inline int32_t hsum_lane_lo(__m256i v) {
-    return _mm_cvtsi128_si32(_mm_hadd_epi32(
-        _mm256_castsi256_si128(v), _mm256_castsi256_si128(v)));
+    __m128i lo = _mm256_castsi256_si128(v);
+    __m128i h1 = _mm_hadd_epi32(lo, lo);
+    __m128i h2 = _mm_hadd_epi32(h1, h1);
+    return _mm_cvtsi128_si32(h2);
 }
 
-// Helper: sum high 128-bit lane of __m256i (4 x int32 → scalar)
 static inline int32_t hsum_lane_hi(__m256i v) {
-    return _mm_cvtsi128_si32(_mm_hadd_epi32(
-        _mm256_extracti128_si256(v, 1), _mm256_extracti128_si256(v, 1)));
+    __m128i hi = _mm256_extracti128_si256(v, 1);
+    __m128i h1 = _mm_hadd_epi32(hi, hi);
+    __m128i h2 = _mm_hadd_epi32(h1, h1);
+    return _mm_cvtsi128_si32(h2);
 }
 
 // Fused Q6_K AVX2 matmul: load weight block once, dot against all n_tokens x vectors.
@@ -162,7 +161,7 @@ void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) 
                         _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh0, 4), mask_2), 4));
                     W_all[base+3] = _mm256_or_si256(
                         _mm256_and_si256(_mm256_srli_epi16(ql1, 4), mask_lo4),
-                        _mm256_slli_epi16(_mm256_srli_epi16(qh0, 6), 4));
+                        _mm256_slli_epi16(_mm256_and_si256(_mm256_srli_epi16(qh0, 6), mask_2), 4));
 
                     ql += 64; qh += 32;
                 }

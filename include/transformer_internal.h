@@ -5,6 +5,7 @@
 // Not part of the public API.
 
 #include "transformer.h"
+#include "turboquant.h"
 #include "simd_helpers.h"
 #include "quant.h"
 #include <math.h>
@@ -23,6 +24,24 @@ typedef struct {
     int kv_dim;
     int seq_len;    // cache size for modular indexing
 } BnGQACtx;
+
+typedef struct {
+    const BnConfig *c;
+    BnRunState *s;
+    const BnTQState *tq;
+    const uint8_t *tq_keys;
+    const uint8_t *tq_values;
+    int key_stride;
+    int val_stride;
+    int key_bytes;
+    int val_bytes;
+    int pos;
+    int n_kv;
+    int kv_mul;
+    int head_size;
+    int seq_len;
+    int n_kv_heads;
+} BnGQATQCtx;
 
 typedef struct {
     float *logits;
@@ -83,6 +102,8 @@ void bn_transformer_gqa_neon_range(void *ctx, int start, int end);
 void bn_transformer_gqa_avx2_range(void *ctx, int start, int end);
 void bn_transformer_gqa_wasm_range(void *ctx, int start, int end);
 void bn_transformer_gqa_scalar_range(void *ctx, int start, int end);
+void bn_transformer_gqa_tq_neon_range(void *ctx, int start, int end);
+void bn_transformer_gqa_tq_scalar_range(void *ctx, int start, int end);
 void bn_transformer_flash_gqa_neon_range(void *ctx, int start, int end);
 void bn_transformer_flash_gqa_avx2_range(void *ctx, int start, int end);
 void bn_transformer_flash_gqa_wasm_range(void *ctx, int start, int end);
