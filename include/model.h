@@ -33,6 +33,7 @@ typedef struct {
     void *prefetch;           // BnMoEPrefetch* for gate+up (opaque, pread only)
     void *prefetch_down;      // BnMoEPrefetch* for down proj (opaque, pread only)
     void *cache;              // BnMoECache* for expert LRU cache (opaque, pread only)
+    void *gpu_moe_cache;      // BnGPUMoECache* for GPU expert buffer cache (opaque)
 } BnMoEIO;
 
 // Accumulated MoE timing and I/O stats

@@ -46,6 +46,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_neon.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_neon.c src/transformer/gqa_scalar.c \
+    src/transformer/gqa_tq_scalar.c src/transformer/gqa_tq_neon.c \
     src/transformer/logits_neon.c src/transformer/logits_scalar.c \
     src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
@@ -74,12 +75,13 @@ else
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
+    src/transformer/gqa_tq_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 endif
 
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
-TRANSFORMER_SRCS = src/transformer.c $(TRANSFORMER_BACKEND)
+TRANSFORMER_SRCS = src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND)
 
 # --- GPU (optional: BN_ENABLE_GPU=1) ---
 ifdef BN_ENABLE_GPU
@@ -103,7 +105,7 @@ else
   GPU_OBJS :=
 endif
 
-SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
+SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
        $(TRANSFORMER_SRCS) src/tokenizer.c src/sampler.c \
        src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(GPU_SRCS) src/main.c
 CFLAGS += $(GPU_CFLAGS)
@@ -158,11 +160,11 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
 
 bench: bench_kernels
 
-test: test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend
+test: test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend
 
 test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
@@ -173,7 +175,7 @@ test_quant: test/test_quant.c $(QUANT_SRCS) src/threadpool.c
 test_tokenizer: test/test_tokenizer.c src/tokenizer.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_transformer: test/test_transformer.c src/transformer.c $(TRANSFORMER_BACKEND) src/model.c src/moe.c \
+test_transformer: test/test_transformer.c $(TRANSFORMER_SRCS) src/turboquant.c src/model.c src/moe.c \
                   src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
                   src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
@@ -181,8 +183,8 @@ test_transformer: test/test_transformer.c src/transformer.c $(TRANSFORMER_BACKEN
 test_threadpool: test/test_threadpool.c src/threadpool.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_safety: test/test_safety.c src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
-             src/transformer.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+test_safety: test/test_safety.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+             src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
              src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
@@ -196,47 +198,50 @@ test_ssm: test/test_ssm.c src/transformer/ssm_scalar.c $(SSM_BACKEND)
 test_gguf_fuzz: test/test_gguf_fuzz.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_moe: test/test_moe.c src/moe.c src/model.c src/transformer.c $(TRANSFORMER_BACKEND) \
+test_moe: test/test_moe.c src/moe.c src/turboquant.c src/model.c src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) \
           src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
           src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_generate: test/test_generate.c src/generate.c src/bn_alloc.c src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
-               src/transformer.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+test_generate: test/test_generate.c src/generate.c src/bn_alloc.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+               src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
                src/sh_arena.c src/sh_log.c src/session.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_q2k: test/test_q2k.c $(QUANT_SRCS) src/threadpool.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_session: test/test_session.c src/session.c src/bn_alloc.c src/model.c src/moe.c \
+test_session: test/test_session.c src/session.c src/bn_alloc.c src/turboquant.c src/model.c src/moe.c \
               src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
-              src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c
+              src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_prompt_cache: test/test_prompt_cache.c src/prompt_cache.c src/session.c src/bn_alloc.c src/model.c src/moe.c \
+test_prompt_cache: test/test_prompt_cache.c src/prompt_cache.c src/session.c src/bn_alloc.c src/turboquant.c src/model.c src/moe.c \
                    src/gguf.c $(QUANT_SRCS) src/platform.c src/tokenizer.c src/threadpool.c \
-                   src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c
+                   src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_gpu_backend: test/test_gpu_backend.c $(QUANT_SRCS) src/model.c src/moe.c \
+test_turboquant: test/test_turboquant.c src/turboquant.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+test_gpu_backend: test/test_gpu_backend.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                   src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
-                  src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
+                  src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                   src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_e2e: test/test_e2e.c src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
-          src/transformer.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+test_e2e: test/test_e2e.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+          src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
           src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_prefill: test/test_prefill.c src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
-              src/transformer.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
+test_prefill: test/test_prefill.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+              src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
               src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test_kv_f16: test/test_kv_f16.c src/platform.c src/gguf.c $(QUANT_SRCS) src/model.c src/moe.c \
-             src/transformer.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+test_kv_f16: test/test_kv_f16.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+             src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
              src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -297,11 +302,12 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
 
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
+    src/transformer/gqa_tq_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 
-AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/model.c src/moe.c \
-            src/transformer.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
+AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+            src/transformer.c src/gpu_moe_cache.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
             src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/generate.c
 
 AVX2_CHECK_FLAGS = -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -fsyntax-only
@@ -356,9 +362,9 @@ fetch-wgpu:
 	fi
 
 # GPU test (requires BN_ENABLE_GPU=1 and fetch-wgpu)
-GPU_TEST_SRCS = test/test_gpu_wgpu.c $(QUANT_SRCS) src/model.c src/moe.c \
+GPU_TEST_SRCS = test/test_gpu_wgpu.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                 src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
-                src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
+                src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                 src/session.c src/bn_alloc.c
 ifdef BN_ENABLE_GPU
 GPU_TEST_SRCS += src/gpu_wgpu.c
@@ -368,9 +374,9 @@ test_gpu_wgpu: $(GPU_TEST_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 # GPU validation benchmark (all 22 quant types, requires BN_ENABLE_GPU=1)
-GPU_VALIDATE_SRCS = test/test_gpu_validate.c $(QUANT_SRCS) src/model.c src/moe.c \
+GPU_VALIDATE_SRCS = test/test_gpu_validate.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                     src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
-                    src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
+                    src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                     src/session.c src/bn_alloc.c
 ifdef BN_ENABLE_GPU
 GPU_VALIDATE_SRCS += src/gpu_wgpu.c
@@ -380,9 +386,9 @@ test_gpu_validate: $(GPU_VALIDATE_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 # Coherence test (GPU vs CPU forward pass, SIMD vs scalar matvec, requires model file)
-COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/model.c src/moe.c \
+COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                  src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
-                 src/transformer.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
+                 src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                  src/session.c src/bn_alloc.c src/prompt_cache.c src/generate.c src/sampler.c
 ifdef BN_ENABLE_GPU
 COHERENCE_SRCS += src/gpu_wgpu.c
@@ -392,4 +398,4 @@ test_coherence: $(COHERENCE_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda
+	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda

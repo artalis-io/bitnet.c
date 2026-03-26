@@ -2,6 +2,7 @@
 #include "turboquant.h"
 #include "quant_internal.h"
 #include "gpu_backend.h"
+#include "gpu_moe_cache.h"
 #include "moe.h"
 #include "session.h"
 #include "platform.h"
@@ -1494,64 +1495,72 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     { free(ops); return NULL; }
             }
 
-            // GPU expert dispatch: per-expert gate+up+silu+down+weighted_add
+            // GPU expert dispatch with LRU cache for GPU buffer reuse
             int moe_hidden = c->moe_intermediate_size;
             const BnMoEExpertMap *em = &lw->expert_map;
+            BnGPUMoECache *gpu_cache = (BnGPUMoECache *)m->moe_io.gpu_moe_cache;
+
             for (int k = 0; k < K; k++) {
                 int eidx = ms->expert_indices[k];
                 if (eidx < 0) continue;
                 float ew = ms->expert_weights[k];
                 uint32_t u_ew; memcpy(&u_ew, &ew, 4);
 
-                // Load expert data from host (mmap/pread/cache)
-                const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 0);
-                const void *up_data   = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 1);
-                const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 2);
-                if (!gate_data || !up_data || !down_data) continue;
+                void *gate_gpu, *up_gpu, *down_gpu;
+                int cached = bn_gpu_moe_cache_lookup(gpu_cache, l, eidx,
+                                                      &gate_gpu, &up_gpu, &down_gpu);
+                if (!cached) {
+                    // Cache miss: load from host + upload to GPU
+                    const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 0);
+                    const void *up_data   = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 1);
+                    const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 2);
+                    if (!gate_data || !up_data || !down_data) continue;
 
-                // Upload expert weights to GPU (temporary per-token)
-                void *gate_gpu = gpu->buffer_create(gpu->ctx, gate_data, em->expert_gate_bytes,
-                    em->gate_type, em->gate_rows, em->gate_cols);
-                void *up_gpu = gpu->buffer_create(gpu->ctx, up_data, em->expert_up_bytes,
-                    em->up_type, em->up_rows, em->up_cols);
-                void *down_gpu = gpu->buffer_create(gpu->ctx, down_data, em->expert_down_bytes,
-                    em->down_type, em->down_rows, em->down_cols);
-                if (!gate_gpu || !up_gpu || !down_gpu) {
-                    if (gate_gpu) gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                    if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
-                    if (down_gpu) gpu->buffer_destroy(gpu->ctx, down_gpu);
-                    continue;
+                    gate_gpu = gpu->buffer_create(gpu->ctx, gate_data, em->expert_gate_bytes,
+                        em->gate_type, em->gate_rows, em->gate_cols);
+                    up_gpu = gpu->buffer_create(gpu->ctx, up_data, em->expert_up_bytes,
+                        em->up_type, em->up_rows, em->up_cols);
+                    down_gpu = gpu->buffer_create(gpu->ctx, down_data, em->expert_down_bytes,
+                        em->down_type, em->down_rows, em->down_cols);
+                    if (!gate_gpu || !up_gpu || !down_gpu) {
+                        if (gate_gpu) gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                        if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
+                        if (down_gpu) gpu->buffer_destroy(gpu->ctx, down_gpu);
+                        continue;
+                    }
+
+                    if (gpu_cache) {
+                        bn_gpu_moe_cache_insert(gpu_cache, l, eidx, gate_gpu, up_gpu, down_gpu);
+                    }
                 }
 
-                // Gate matvec: XB -> MOE_HB
+                // 5 GPU ops: gate, up, silu_gate, down, weighted_add
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->gate_type,
                     .W_buf = gate_gpu, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB,
                     .buf_aux = -1, .rows = em->gate_rows, .cols = em->gate_cols,
                     .p = { (uint32_t)em->gate_rows, (uint32_t)em->gate_cols, 1, 0, 0, 0, 0, 0 } };
-                // Up matvec: XB -> MOE_HB2
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->up_type,
                     .W_buf = up_gpu, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB2,
                     .buf_aux = -1, .rows = em->up_rows, .cols = em->up_cols,
                     .p = { (uint32_t)em->up_rows, (uint32_t)em->up_cols, 1, 0, 0, 0, 0, 0 } };
-                // SiLU gate: MOE_HB = silu(MOE_HB) * MOE_HB2
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SILU_GATE, .type = -1, .W_buf = NULL,
                     .buf_in = BN_GPU_BUF_MOE_HB, .buf_out = -1, .buf_aux = BN_GPU_BUF_MOE_HB2,
                     .p = { (uint32_t)moe_hidden, 0, 0, 0, 0, 0, 0, 0 } };
-                // Down matvec: MOE_HB -> XB2
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->down_type,
                     .W_buf = down_gpu, .buf_in = BN_GPU_BUF_MOE_HB, .buf_out = BN_GPU_BUF_XB2,
                     .buf_aux = -1, .rows = em->down_rows, .cols = em->down_cols,
                     .p = { (uint32_t)em->down_rows, (uint32_t)em->down_cols, 1, 0, 0, 0, 0, 0 } };
-                // Weighted add: MOE_OUT += weight * XB2
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_WEIGHTED_ADD, .type = -1, .W_buf = NULL,
                     .buf_in = BN_GPU_BUF_MOE_OUT, .buf_out = -1, .buf_aux = BN_GPU_BUF_XB2,
                     .p = { (uint32_t)dim, u_ew, 0, 0, 0, 0, 0, 0 } };
 
-                // Flush this expert's ops, then destroy temporary GPU buffers
                 GPU_FLUSH();
-                gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                gpu->buffer_destroy(gpu->ctx, up_gpu);
-                gpu->buffer_destroy(gpu->ctx, down_gpu);
+                // No buffer_destroy — cache owns the handles (or they leak if no cache)
+                if (!gpu_cache) {
+                    gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                    gpu->buffer_destroy(gpu->ctx, up_gpu);
+                    gpu->buffer_destroy(gpu->ctx, down_gpu);
+                }
             }
 
             // Shared expert (if present, weights pre-uploaded at init)

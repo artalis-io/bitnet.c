@@ -12,6 +12,7 @@
 #include "sh_log.h"
 #ifdef BN_ENABLE_GPU
 #include "gpu_wgpu.h"
+#include "gpu_moe_cache.h"
 #endif
 
 #include <stdio.h>
@@ -50,6 +51,8 @@ typedef struct {
     int threads;        // 0 = auto-detect
     int gpu;            // use GPU backend for matvec (requires BN_ENABLE_GPU)
     const char *shader_dir; // --shader-dir for GPU WGSL shaders
+    int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
+    int gpu_cache_mb;   // GPU expert buffer cache in MB (default 512, 0 to disable)
 } CLIArgs;
 
 static void print_usage(const char *prog) {
@@ -65,9 +68,11 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --chat          Interactive chat REPL mode\n");
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.1)\n");
     fprintf(stderr, "  --kv16          Store KV cache in FP16 (halves attention DRAM bandwidth)\n");
+    fprintf(stderr, "  --kv-tq <bits>  TurboQuant KV compression (2, 3, or 4 bits)\n");
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
     fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
+    fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 512, 0 to disable)\n");
     fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
     fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
@@ -104,6 +109,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.seed = 42;
     args.max_seq_len = 0;
     args.cache_mb = 4096;
+    args.gpu_cache_mb = 512;
     args.draft_k = 5;
 
     if (argc < 2) {
@@ -148,11 +154,15 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--cache-mb") == 0 && i + 1 < argc) {
             args.cache_mb = parse_int(argv[++i], "--cache-mb");
             args.cache_mb_set = 1;
+        } else if (strcmp(argv[i], "--gpu-cache-mb") == 0 && i + 1 < argc) {
+            args.gpu_cache_mb = parse_int(argv[++i], "--gpu-cache-mb");
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             args.threads = parse_int(argv[++i], "-t");
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
             args.repeat_penalty = parse_float(argv[++i], "--repeat-penalty");
             args.repeat_set = 1;
+        } else if (strcmp(argv[i], "--kv-tq") == 0 && i + 1 < argc) {
+            args.kv_tq_bits = parse_int(argv[++i], "--kv-tq");
         } else if (strcmp(argv[i], "--gpu") == 0) {
             args.gpu = 1;
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
@@ -178,6 +188,22 @@ static int print_token(const char *piece, int token_id, void *user_data) {
 int main(int argc, char **argv) {
     sh_log_init(NULL);
     CLIArgs args = parse_args(argc, argv);
+
+    // Validate --kv-tq
+    if (args.kv_tq_bits > 0) {
+        if (args.kv_tq_bits < 2 || args.kv_tq_bits > 4) {
+            fprintf(stderr, "--kv-tq must be 2, 3, or 4\n");
+            return 1;
+        }
+        if (args.kv_f16) {
+            fprintf(stderr, "--kv-tq and --kv16 are mutually exclusive\n");
+            return 1;
+        }
+        if (args.gpu) {
+            fprintf(stderr, "--kv-tq and --gpu are mutually exclusive (GPU TQ not yet supported)\n");
+            return 1;
+        }
+    }
 
     // Determine thread count: -t flag > Apple P-core detect > sysconf > 1
     int n_workers = 0;
@@ -231,7 +257,7 @@ int main(int argc, char **argv) {
 
     // Load model
     BnModel model;
-    if (bn_model_load(&model, gf, args.max_seq_len, args.kv_f16) != 0) {
+    if (bn_model_load(&model, gf, args.max_seq_len, args.kv_f16, args.kv_tq_bits) != 0) {
         SH_LOG_ERROR("Failed to load model");
         bn_gguf_free(gf);
         bn_platform_unload_file(&mf);
@@ -307,6 +333,17 @@ int main(int argc, char **argv) {
                 if (gpu->init_activations) {
                     if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
                         SH_LOG_INFO("GPU forward pass ready");
+                        // Create GPU expert buffer cache for MoE
+                        if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
+                            model.config.n_layers > 0) {
+                            BnMoEExpertMap *em0 = &model.weights.layers[0].expert_map;
+                            size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
+                                               + em0->expert_down_bytes;
+                            if (entry_bytes > 0) {
+                                model.moe_io.gpu_moe_cache = bn_gpu_moe_cache_create(
+                                    (size_t)args.gpu_cache_mb * 1024 * 1024, entry_bytes, gpu);
+                            }
+                        }
                     }
                 }
             } else {
@@ -401,7 +438,7 @@ int main(int argc, char **argv) {
             bn_gguf_free(gf);
             return 1;
         }
-        if (bn_model_load(&draft_model, draft_gf, args.max_seq_len, args.kv_f16) != 0) {
+        if (bn_model_load(&draft_model, draft_gf, args.max_seq_len, args.kv_f16, 0) != 0) {
             SH_LOG_ERROR("Failed to load draft model");
             bn_gguf_free(draft_gf);
             bn_platform_unload_file(&draft_mf);
@@ -686,6 +723,11 @@ int main(int argc, char **argv) {
     if (model.moe_io.cache) {
         bn_moe_cache_free(model.moe_io.cache);
         model.moe_io.cache = NULL;
+    }
+    if (model.moe_io.gpu_moe_cache) {
+        bn_gpu_moe_cache_print_stats(model.moe_io.gpu_moe_cache);
+        bn_gpu_moe_cache_free(model.moe_io.gpu_moe_cache);
+        model.moe_io.gpu_moe_cache = NULL;
     }
     bn_session_free(session, NULL);
     bn_sampler_free(&sampler);
