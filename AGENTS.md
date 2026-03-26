@@ -87,7 +87,7 @@ Modules have strict, one-directional dependencies. When modifying a module, only
 - `--draft-k N` — draft tokens per iteration (default 5)
 - `--flash` — flash attention (online softmax)
 - `--kv16` — FP16 KV cache
-- `--kv-tq <bits>` — TurboQuant KV cache compression (2, 3, or 4 bits; recommended: 3). 8.9x compression at 3-bit. Combine with `--pread --cache-mb 2048` for minimal memory: 35B MoE model + 64K context in 8.4 GB RAM.
+- `--kv-tq <bits>` — TurboQuant KV cache compression (2, 3, or 4 bits; recommended: 3). 8.9x per-session KV compression — the key benefit is multi-user serving: ~9x more concurrent sessions in the same RAM. Combine with `--pread --cache-mb 2048` for minimal footprint: 35B MoE + 64K context = 8.4 GB/session (vs 26 GB with FP32 KV).
 - `--no-prefill` — disable batch prefill
 - `--gpu` — enable GPU inference (requires `BN_ENABLE_GPU=1` build)
 - `-t N` — thread count

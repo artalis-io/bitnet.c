@@ -14,7 +14,7 @@ Zero dependencies beyond libc and libm, four SIMD backends, compiles to WASM, an
 - **Full transformer forward pass** — RoPE, GQA, RMSNorm, sub-norms, tied/untied embeddings
 - **Hybrid SSM + Attention** — Gated DeltaNet SSM layers (conv1d, SiLU, delta rule recurrence) alongside standard GQA attention layers
 - **Flash GQA attention** — online softmax with KV-head grouping, single-pass over KV cache
-- **TurboQuant KV cache compression** — `--kv-tq 3` compresses KV cache to 3-bit (8.9x smaller) via Randomized Hadamard Transform + Lloyd-Max quantization + QJL residual correction. NEON SIMD vectorized. Enables 256K context in 15 GB RAM for 35B MoE models.
+- **TurboQuant KV cache compression** — `--kv-tq 3` compresses KV cache to 3-bit (8.9x smaller than FP32) via Randomized Hadamard Transform + Lloyd-Max quantization + QJL residual correction. NEON SIMD vectorized. Dramatically reduces per-session memory: serve ~9x more concurrent users, or fit 256K context in 15 GB for a 35B MoE model.
 - **Optional F16 KV cache** — `--kv16` halves attention DRAM bandwidth with minimal precision loss
 - **5 SIMD backends** — ARM NEON/SDOT, AVX2, WASM SIMD128, scalar fallback (auto-selected at compile time), plus optional WebGPU
 - **Mixture of Experts (MoE)** — sparse MoE with top-K routing, batched expert dispatch, 3 I/O modes (mmap, pread+LRU cache, madvise)
@@ -163,38 +163,55 @@ For Mixture of Experts models (Qwen3-MoE, OLMoE, Mixtral), expert weights can be
 
 ### TurboQuant KV Cache Compression
 
-`--kv-tq 3` compresses the KV cache from FP32 (32 bits per element) to 3-bit quantized representation — an **8.9x compression ratio**. Based on the TurboQuant paper (arXiv 2504.19874), using Randomized Hadamard Transform for O(d log d) rotation, Lloyd-Max scalar quantization, and QJL residual correction for keys. NEON SIMD vectorized on ARM.
+`--kv-tq 3` compresses the KV cache from FP32 to 3-bit — an **8.9x reduction in per-session memory**. The KV cache is the dominant memory cost in multi-user serving: each concurrent session needs its own KV cache, so compressing it means proportionally more users in the same RAM.
+
+Based on the TurboQuant paper (arXiv 2504.19874), using Randomized Hadamard Transform for O(d log d) rotation, Lloyd-Max scalar quantization, and QJL residual correction for keys. NEON SIMD vectorized on ARM with scalar fallback.
 
 ```bash
 # Enable 3-bit TQ KV compression
 ./bitnet model.gguf -p "Hello" -n 256 --kv-tq 3
 
-# Combine with pread for minimal memory footprint
+# Minimal memory: pread + small expert cache + TQ-3
 ./bitnet models/Qwen3.5-35B-A3B-Q4_K_M.gguf --pread --cache-mb 2048 --kv-tq 3 -p "Hello" -n 256
 ```
 
-**Memory savings — Qwen3.5-35B-A3B (pread + 2 GB expert cache):**
+**Per-session KV cache size (Qwen3.5-35B-A3B, 40 layers, 4 KV heads):**
 
-| Context | FP32 KV | TQ-3 KV | Total RSS | vs FP32 RSS |
-|---------|---------|---------|-----------|-------------|
-| 4K tokens | 1.2 GB | 0.1 GB | **6.3 GB** | 7.4 GB |
-| 16K tokens | 5.0 GB | 0.6 GB | **6.7 GB** | 11.1 GB |
-| 64K tokens | 20.0 GB | 2.2 GB | **8.4 GB** | 26.1 GB |
-| 128K tokens | 40.0 GB | 4.5 GB | **10.6 GB** | 46.1 GB |
-| 256K tokens | 80.0 GB | 9.0 GB | **15.1 GB** | 86.1 GB |
+| Context | FP32 KV/session | TQ-3 KV/session | Compression |
+|---------|-----------------|-----------------|-------------|
+| 4K tokens | 1.2 GB | 0.14 GB | 8.9x |
+| 16K tokens | 5.0 GB | 0.56 GB | 8.9x |
+| 64K tokens | 20.0 GB | 2.25 GB | 8.9x |
 
-At 64K context, a 35B MoE model runs in **8.4 GB** — fits on a 16 GB Mac with room for the OS. Without TQ, FP32 KV alone is 20 GB at 64K.
+**Concurrent sessions on a 32 GB machine** (pread + 2 GB expert cache, 4.1 GB non-expert weights = 6.1 GB base):
 
-**Performance overhead vs context length (Qwen3.5-35B-A3B):**
+| Context | FP32 sessions | TQ-3 sessions | Multiplier |
+|---------|---------------|---------------|------------|
+| 4K tokens | 21 | 184 | **8.8x** |
+| 16K tokens | 5 | 46 | **9.2x** |
+| 64K tokens | 1 | 11 | **11x** |
 
-| Context | TQ-3 tok/s | Baseline tok/s | Overhead |
-|---------|-----------|---------------|----------|
-| 30 tokens | 3.5 | 7.2 | 2.1x |
-| 141 tokens | 3.1 | 3.6 | 1.2x |
-| 561 tokens | 1.1 | 1.2 | 1.06x |
-| 1401 tokens | 0.45 | 0.47 | 1.04x |
+At 64K context with FP32, you can barely fit **1 session** (20 GB KV + 6.1 GB base = 26.1 GB). With TQ-3, you fit **11 sessions** in the same RAM.
 
-TQ overhead vanishes at longer context — at 500+ tokens it's within 5% of baseline. The per-token write cost (rotation + quantization) is amortized by the bandwidth savings when reading compressed keys/values.
+**Total RSS for a single session (pread + 2 GB expert cache):**
+
+| Context | FP32 RSS | TQ-3 RSS |
+|---------|----------|----------|
+| 4K tokens | 7.4 GB | **6.3 GB** |
+| 16K tokens | 11.1 GB | **6.7 GB** |
+| 64K tokens | 26.1 GB | **8.4 GB** |
+| 256K tokens | 86.1 GB | **15.1 GB** |
+
+**Performance overhead** (Qwen3.5-35B-A3B):
+
+| Context | TQ-3 | Baseline | Overhead |
+|---------|------|----------|----------|
+| 30 tokens | 3.5 tok/s | 7.2 tok/s | 2.1x |
+| 141 tokens | 3.1 tok/s | 3.6 tok/s | 1.2x |
+| 561 tokens | 1.1 tok/s | 1.2 tok/s | 1.06x |
+| 1401 tokens | 0.45 tok/s | 0.47 tok/s | 1.04x |
+
+TQ overhead vanishes at longer context — at 500+ tokens it's within 5% of baseline. The per-token write cost amortizes as context grows and KV read bandwidth savings dominate.
 
 ## Getting a Model
 

@@ -153,12 +153,15 @@ Optional `--draft <model.gguf>` flag loads a small draft model to generate K can
 
 **Packed format per head** (d=128, 3-bit): key=68B, value=50B. For d=256: key=132B, value=98B.
 
-**Memory profile with `--pread --cache-mb 2048 --kv-tq 3` (Qwen3.5-35B-A3B)**:
-- Non-expert weights: ~4.1 GB (always resident)
-- Expert LRU cache: 2 GB (configurable via `--cache-mb`)
-- KV cache: 8.9x smaller than FP32 — 64K context in 2.2 GB instead of 20 GB
-- **Total 64K context: 8.4 GB** (fits 16 GB Mac). Without TQ: 26.1 GB.
-- **Total 256K context: 15.1 GB**. Without TQ: 86.1 GB (impossible on 32 GB).
+**Per-session KV memory** (the main benefit — enables multi-user serving):
+- 8.9x compression: 64K context goes from 20 GB/session (FP32) to 2.2 GB/session (TQ-3)
+- On a 32 GB machine (pread + 2 GB cache): 1 FP32 session at 64K vs **11 TQ-3 sessions**
+- 256K context: 80 GB/session (FP32, impossible) vs 9 GB/session (TQ-3, fits easily)
+
+**Total RSS with `--pread --cache-mb 2048 --kv-tq 3`** (Qwen3.5-35B-A3B, single session):
+- Base (non-expert weights + expert cache): ~6.1 GB
+- 64K context: **8.4 GB** total (vs 26.1 GB with FP32)
+- 256K context: **15.1 GB** total (vs 86.1 GB with FP32)
 
 **Performance overhead**: ~2x at 30 tokens, ~1.2x at 140 tokens, <5% at 500+ tokens. The per-token write cost amortizes as context grows.
 
