@@ -7,6 +7,7 @@
 #include "session.h"
 #include "platform.h"
 #include "sh_log.h"
+#include "sh_arena.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -1877,36 +1878,62 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
         SH_LOG_ERROR("Prefill activation buffer size overflow");
         return NULL;
     }
-    float *act = (float *)malloc(act_elems * sizeof(float));
-    if (!act) return NULL;
-
-    // Embed all tokens
-    for (int t = 0; t < n_tokens; t++)
-        bn_model_embed_token(m, act + (size_t)t * dim, tokens[t]);
 
     int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
     int half_rope = rope_dims / 2;
     if (half_rope > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("RoPE dimensions too large for stack VLAs");
-        free(act);
         return NULL;
     }
 
-    // Allocate batch scratch buffers
     int kv_dim = c->kv_dim;
     int hidden_dim = c->hidden_dim;
     int q_dim = c->n_heads * head_size;
     size_t nt = (size_t)n_tokens;
 
-    // Batch buffers: Xb[nt*dim], Q[nt*q_dim], Hb/Hb2[nt*hidden_dim]
-    size_t batch_size = nt * dim          // xb (normed)
-                      + nt * (size_t)(q_dim > dim ? q_dim * 2 : dim)  // q (may be wide/gated)
-                      + nt * kv_dim * 2   // k_new, v_new
-                      + nt * dim          // xb2 (wo output)
-                      + nt * hidden_dim   // hb (gate)
-                      + nt * hidden_dim;  // hb2 (up)
-    float *batch_buf = (float *)malloc(batch_size * sizeof(float));
-    if (!batch_buf) { free(act); return NULL; }
+    /* Arena for all prefill scratch: single allocation, 32-byte aligned,
+     * contiguous layout. Replaces 5 separate mallocs and simplifies cleanup. */
+    size_t batch_floats = nt * dim                                            // xb
+                        + nt * (size_t)(q_dim > dim ? q_dim * 2 : dim)       // q_buf
+                        + nt * kv_dim * 2                                     // k_new, v_new
+                        + nt * dim                                            // xb2
+                        + nt * hidden_dim * 2;                                // hb, hb2
+    size_t arena_size = act_elems * sizeof(float)                             // act
+                      + batch_floats * sizeof(float);                         // batch
+#ifdef __AVX2__
+    int n_bpr_pf = (dim % BN_QK_K == 0) ? dim / BN_QK_K : 0;
+    if (n_bpr_pf > 0)
+        arena_size += nt * dim                                                // pf_xq (int8)
+                    + nt * n_bpr_pf * sizeof(float)                           // pf_xd
+                    + nt * n_bpr_pf * 16 * sizeof(int16_t);                   // pf_xbs
+#endif
+
+    SHArena *pf_arena = sh_arena_create(arena_size);
+    if (!pf_arena) return NULL;
+
+    float *act = (float *)sh_arena_alloc(pf_arena, act_elems * sizeof(float));
+    if (!act) { sh_arena_free(pf_arena); return NULL; }
+
+    // Embed all tokens
+    for (int t = 0; t < n_tokens; t++)
+        bn_model_embed_token(m, act + (size_t)t * dim, tokens[t]);
+
+    float *batch_buf = (float *)sh_arena_alloc(pf_arena, batch_floats * sizeof(float));
+    if (!batch_buf) { sh_arena_free(pf_arena); return NULL; }
+
+    /* Q8K scratch from same arena (NULL if non-k-quant or non-AVX2) */
+    int8_t *pf_xq = NULL;
+    float *pf_xd = NULL;
+    int16_t *pf_xbs = NULL;
+#ifdef __AVX2__
+    if (n_bpr_pf > 0) {
+        pf_xq = (int8_t *)sh_arena_alloc(pf_arena, nt * dim);
+        pf_xd = (float *)sh_arena_alloc(pf_arena, nt * n_bpr_pf * sizeof(float));
+        pf_xbs = (int16_t *)sh_arena_alloc(pf_arena, nt * n_bpr_pf * 16 * sizeof(int16_t));
+        if (!pf_xq || !pf_xd || !pf_xbs)
+            pf_xq = NULL;  /* fall back to per-matmul quantization */
+    }
+#endif
 
     // Carve out pointers
     float *Xb   = batch_buf;
@@ -1934,27 +1961,16 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
 
             // Batch QKV matmul — quantize Xb to Q8K once, reuse for Q, K, V
 #ifdef __AVX2__
-            if (!m->gpu && dim % BN_QK_K == 0 &&
+            if (pf_xq && !m->gpu &&
                 (lw->wq.type == BN_GGUF_TENSOR_Q4_K || lw->wq.type == BN_GGUF_TENSOR_Q6_K)) {
                 int n_bpr = dim / BN_QK_K;
-                size_t xq_sz = (size_t)n_tokens * dim;
-                int8_t *xq = (int8_t *)malloc(xq_sz);
-                float *xd = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
-                int16_t *xbs = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
-                if (xq && xd && xbs) {
-                    for (int t = 0; t < n_tokens; t++)
-                        bn_quant_x_to_q8k(Xb + (size_t)t * dim, xq + (size_t)t * dim,
-                                           xd + (size_t)t * n_bpr,
-                                           xbs + (size_t)t * n_bpr * 16, dim);
-                    bn_quant_matmul_preq8k(Q_buf, &lw->wq, n_tokens, xq, xd, xbs, Xb, m->pool);
-                    bn_quant_matmul_preq8k(K_new, &lw->wk, n_tokens, xq, xd, xbs, Xb, m->pool);
-                    bn_quant_matmul_preq8k(V_new, &lw->wv, n_tokens, xq, xd, xbs, Xb, m->pool);
-                } else {
-                    bn_quant_matmul_gpu(Q_buf, &lw->wq, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-                    bn_quant_matmul_gpu(K_new, &lw->wk, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-                    bn_quant_matmul_gpu(V_new, &lw->wv, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-                }
-                free(xq); free(xd); free(xbs);
+                for (int t = 0; t < n_tokens; t++)
+                    bn_quant_x_to_q8k(Xb + (size_t)t * dim, pf_xq + (size_t)t * dim,
+                                       pf_xd + (size_t)t * n_bpr,
+                                       pf_xbs + (size_t)t * n_bpr * 16, dim);
+                bn_quant_matmul_preq8k(Q_buf, &lw->wq, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                bn_quant_matmul_preq8k(K_new, &lw->wk, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                bn_quant_matmul_preq8k(V_new, &lw->wv, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
             } else
 #endif
             {
@@ -2093,7 +2109,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 int cache_pos = pos % c->seq_len;
                 if (forward_single_layer(m, sess, l, pos, cache_pos, rope_dims,
                                          rope_cos_t, rope_sin_t) != 0) {
-                    free(batch_buf); free(act); return NULL;
+                    sh_arena_free(pf_arena); return NULL;
                 }
                 memcpy(act + (size_t)t * dim, s->x, dim * sizeof(float));
             }
@@ -2104,7 +2120,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
         if (lw->router_weight) {
             // Batch MoE: route all tokens, group by expert, batch matmul
             if (bn_moe_forward_batch(m, sess, lw, l, act, Xb, n_tokens) != 0) {
-                free(batch_buf); free(act); return NULL;
+                sh_arena_free(pf_arena); return NULL;
             }
         } else if (lw->ffn_up.data) {
             // Dense FFN: batched matmul
@@ -2113,29 +2129,16 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->ffn_norm, dim, c->norm_eps);
 
             if (c->has_ffn_gate) {
-#ifdef __AVX2__
-                if (!m->gpu && dim % BN_QK_K == 0 &&
+                if (pf_xq && !m->gpu &&
                     (lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_K || lw->ffn_gate.type == BN_GGUF_TENSOR_Q6_K)) {
                     int n_bpr = dim / BN_QK_K;
-                    size_t xq_sz = (size_t)n_tokens * dim;
-                    int8_t *xq = (int8_t *)malloc(xq_sz);
-                    float *xd = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
-                    int16_t *xbs = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
-                    if (xq && xd && xbs) {
-                        for (int t = 0; t < n_tokens; t++)
-                            bn_quant_x_to_q8k(Xb + (size_t)t * dim, xq + (size_t)t * dim,
-                                               xd + (size_t)t * n_bpr,
-                                               xbs + (size_t)t * n_bpr * 16, dim);
-                        bn_quant_matmul_preq8k(Hb, &lw->ffn_gate, n_tokens, xq, xd, xbs, Xb, m->pool);
-                        bn_quant_matmul_preq8k(Hb2, &lw->ffn_up, n_tokens, xq, xd, xbs, Xb, m->pool);
-                    } else {
-                        bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-                        bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
-                    }
-                    free(xq); free(xd); free(xbs);
-                } else
-#endif
-                {
+                    for (int t = 0; t < n_tokens; t++)
+                        bn_quant_x_to_q8k(Xb + (size_t)t * dim, pf_xq + (size_t)t * dim,
+                                           pf_xd + (size_t)t * n_bpr,
+                                           pf_xbs + (size_t)t * n_bpr * 16, dim);
+                    bn_quant_matmul_preq8k(Hb, &lw->ffn_gate, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                    bn_quant_matmul_preq8k(Hb2, &lw->ffn_up, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                } else {
                     bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
                     bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
                 }
@@ -2194,18 +2197,16 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
         for (int t = 0; t < n_tokens; t++) {
             memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
             float *lg = forward_logits(m, sess);
-            if (!lg) { free(batch_buf); free(act); return NULL; }
+            if (!lg) { sh_arena_free(pf_arena); return NULL; }
             memcpy(all_logits + (size_t)t * vocab_size, lg, vocab_size * sizeof(float));
         }
         // Last token's logits already computed and in s->logits
-        free(batch_buf);
-        free(act);
+        sh_arena_free(pf_arena);
         return s->logits;
     }
 
     memcpy(s->x, act + (size_t)(n_tokens - 1) * dim, dim * sizeof(float));
-    free(batch_buf);
-    free(act);
+    sh_arena_free(pf_arena);
     return forward_logits(m, sess);
 }
 

@@ -1234,6 +1234,7 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
         int n_bpr = cols / BN_QK_K;
         if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;
         size_t xq_size = (size_t)n_tokens * cols;
+        if (n_tokens > 0 && xq_size / n_tokens != (size_t)cols) goto fallback_loop;
         int8_t *xq_all = (int8_t *)malloc(xq_size);
         float *xd_all = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
         int16_t *xbs_all = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
