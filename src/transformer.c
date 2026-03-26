@@ -1156,6 +1156,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         if (!is_attn) { has_ssm = 1; continue; }           // SSM: skip GPU validation
         if (lw->router_weight) { has_moe = 1; }
         if (!lw->wq.data) return NULL;
+        // Q-gated: fall back to CPU until deinterleave shader is verified
+        if (lw->wq.rows > q_dim) return NULL;
         // Q/K norms: require GPU handles if present
         if (lw->q_norm && !lw->q_norm_gpu) return NULL;
         if (lw->k_norm && !lw->k_norm_gpu) return NULL;
