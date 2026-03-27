@@ -508,6 +508,8 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
         }
         BL_ACC(bl_rmsnorm_us);
 
+        (void)0;
+
         if (q_gated) {
             // --- Gated Q path (Qwen3.5 attention) ---
             float *q_full = s->hb;  // [2*dim]
@@ -883,6 +885,7 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
     }
 
     // ---- FFN block ---- (shared by both layer types)
+    (void)0;
     if (lw->router_weight) {
         // MoE FFN — route, pread, compute, combine
         bn_moe_forward(m, sess, lw, l);
@@ -1146,6 +1149,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                               (size_t)dim * sizeof(float), 0) != 0)
         return NULL;
 
+    (void)0;
+
     // Validation: check for unsupported layer configurations
     // MoE and SSM layers are allowed but handled via CPU fallback per-layer.
     if (!w->output_norm_gpu) return NULL;
@@ -1157,7 +1162,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         if (!is_attn) { has_ssm = 1; continue; }
         if (lw->router_weight) { has_moe = 1; }
         if (!lw->wq.data) return NULL;
-        // Q-gated: fall back to CPU (deinterleave + stacked QKV interaction needs debugging)
+        // Q-gated: reject on GPU — deinterleave shader produces incorrect output
+        // (verified: disabling norms + sigmoid_gate doesn't fix it, issue is in Q extraction)
         if (lw->wq.rows > q_dim) return NULL;
         if (lw->q_norm && !lw->q_norm_gpu) return NULL;
         if (lw->k_norm && !lw->k_norm_gpu) return NULL;
@@ -1211,6 +1217,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         .rows = 0, .cols = 0,
         .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 }
     };
+
+    (void)0;
 
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
@@ -1430,7 +1438,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     .shader = BN_GPU_SHADER_DEINTERLEAVE_Q, .type = -1, .W_buf = NULL,
                     .buf_in = BN_GPU_BUF_QKV, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
                     .p = { (uint32_t)q_dim, (uint32_t)head_size, 0, 0, 0, 0, 0, 0 } };
-                (void)0; // debug removed
+                (void)0;
             } else {
                 // Standard Q matvec to Q buffer
                 ops[n++] = (BnGPUOp){
@@ -1613,6 +1621,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                                       (size_t)dim * sizeof(float), 0) != 0)
                 { free(ops); return NULL; }
 
+            (void)0;
             // CPU routing: select top-K experts
             BnMoEState *ms = sess->moe_state;
             int K = c->n_experts_active;
@@ -1834,7 +1843,10 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
     // Try GPU-resident forward pass first
     float *gpu_logits = forward_gpu(m, s, token, pos);
-    if (gpu_logits) return gpu_logits;
+    if (gpu_logits) {
+        (void)0;
+        return gpu_logits;
+    }
 
     // Fall back to CPU forward pass
     if (forward_layers(m, s, token, pos) != 0) return NULL;
