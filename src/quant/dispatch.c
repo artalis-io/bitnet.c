@@ -1196,6 +1196,31 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
         return;
     }
 
+#ifdef __AVX2__
+    if (W->type == BN_GGUF_TENSOR_Q4_0) {
+        int n_blocks = cols / 32;
+        if (n_blocks < 1 || n_blocks > BN_MAX_SCALE_BLOCKS) goto fallback_loop;
+        size_t xq_size = (size_t)n_tokens * cols;
+        if (n_tokens > 0 && xq_size / n_tokens != (size_t)cols) goto fallback_loop;
+        int8_t *xq_all = (int8_t *)malloc(xq_size);
+        float *xs_all = (float *)malloc((size_t)n_tokens * n_blocks * sizeof(float));
+        if (!xq_all || !xs_all) { free(xq_all); free(xs_all); goto fallback_loop; }
+        for (int t = 0; t < n_tokens; t++)
+            bn_quant_x_to_q8_blocks(X + (size_t)t * cols,
+                                      xq_all + (size_t)t * cols,
+                                      xs_all + (size_t)t * n_blocks, cols);
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        /* Use BnQ4MatmulCtx defined in q4_avx2_matmul.c (same layout) */
+        struct { float *out; const BnQWeight *W; const int8_t *x_q;
+                 const float *x_scales; int n_tokens; int cols; } ctx =
+            { out, W, xq_all, xs_all, n_tokens, cols };
+        BnTPTask task = { bn_quant_q4_avx2_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+        free(xq_all); free(xs_all);
+        return;
+    }
+#endif
+
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__)
     if (W->type == BN_GGUF_TENSOR_Q4_K) {
         int n_bpr = cols / BN_QK_K;
