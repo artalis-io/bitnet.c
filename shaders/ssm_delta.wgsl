@@ -23,8 +23,9 @@ struct Uniforms {
 // p0 = head_k_dim, p1 = head_v_dim, p2 = num_k_heads,
 // p3 = q_scale (bitcast to f32), p4 = state_offset (bytes), p5 = state_layer_size (bytes)
 
-// Shared memory for sk (head_v_dim elements, max 256 for typical models)
-var<workgroup> sk: array<f32, 256>;
+// Shared memory for sk. Must be >= head_v_dim. 512 covers all known models
+// (typical: 128, Qwen3.5: 128, max practical: ~256).
+var<workgroup> sk: array<f32, 512>;
 
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,

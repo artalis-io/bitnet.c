@@ -124,7 +124,8 @@ static inline void tq_gqa_dispatch(BnModel *m, BnRunState *s,
     bn_tp_dispatch(m->pool, &gqa, 1);
 }
 
-// Inline helper: add residual xb (or xb2) into x
+// Inline helper: add residual xb (or xb2) into x.
+// Invariant: dim % 8 == 0 (guaranteed by model load validation).
 static inline void residual_add(float *x, const float *r, int dim) {
 #ifdef __ARM_NEON
     for (int i = 0; i < dim; i += 4)
@@ -508,7 +509,7 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
         }
         BL_ACC(bl_rmsnorm_us);
 
-        (void)0;
+        /* no-op */
 
         if (q_gated) {
             // --- Gated Q path (Qwen3.5 attention) ---
@@ -885,7 +886,7 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
     }
 
     // ---- FFN block ---- (shared by both layer types)
-    (void)0;
+    /* no-op */
     if (lw->router_weight) {
         // MoE FFN — route, pread, compute, combine
         bn_moe_forward(m, sess, lw, l);
@@ -1118,7 +1119,7 @@ static float *forward_logits(BnModel *m, BnSession *sess) {
 // Supports attention biases (Qwen2.5) and tied embeddings (BitNet).
 // Returns s->logits on success, NULL to fall back to CPU.
 static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
-    (void)0;
+    /* no-op */
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
@@ -1149,7 +1150,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                               (size_t)dim * sizeof(float), 0) != 0)
         return NULL;
 
-    (void)0;
+    /* no-op */
 
     // Validation: check for unsupported layer configurations
     // MoE and SSM layers are allowed but handled via CPU fallback per-layer.
@@ -1194,9 +1195,12 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     { float eps = c->norm_eps; memcpy(&u_eps, &eps, 4); }
 
     // Max ops per batch. MoE/SSM flush between layers, so single-layer max suffices.
-    // Max ops: ~32 per layer (26 base + 2 Q/K norms + 2 sub-norms + 2 Q-gated)
-    // MoE: 8 experts × 5 ops + shared (5) + residual + rmsnorm + attention (~20) = ~70
-    int max_ops = has_moe || has_ssm ? 80 : 34 * c->n_layers + 4;
+    // Max ops per flush batch:
+    // Attention: ~20 (QKV + norms + RoPE + GQA + sigmoid + Wo + resid)
+    // SSM: ~16 (QKV + Z + conv + splits + L2norm + alpha/beta + delta + gate + out + resid)
+    // MoE: K*5 + shared(5) + residual + rmsnorm = up to BN_MAX_MOE_K*5 + 7
+    // Total worst case: 20 + BN_MAX_MOE_K*5 + 7 = 107 for K=16
+    int max_ops = has_moe || has_ssm ? (5 * BN_MAX_MOE_K + 40) : 34 * c->n_layers + 4;
     BnGPUOp *ops = (BnGPUOp *)malloc((size_t)max_ops * sizeof(BnGPUOp));
     if (!ops) return NULL;
     int n = 0;
@@ -1218,7 +1222,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 }
     };
 
-    (void)0;
+    /* no-op */
 
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
@@ -1309,7 +1313,10 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                 .buf_aux = -1, .rows = lw->ssm_beta.rows, .cols = lw->ssm_beta.cols,
                 .p = { (uint32_t)lw->ssm_beta.rows, (uint32_t)lw->ssm_beta.cols, 1, 0, 0, 0, 0, 0 } };
             // 11. Alpha/Beta activation (softplus+exp, sigmoid)
+            // NOTE: a_log GPU handle packed into p[6:7] as split pointer.
+            // This is safe on all 64-bit targets (sizeof(void*) == 8).
             {
+                _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
                 uintptr_t a_ptr = (uintptr_t)lw->ssm_a_log_gpu;
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_ALPHA_BETA, .type = -1,
                     .W_buf = lw->ssm_dt_bias_gpu, .buf_in = BN_GPU_BUF_SSM_ALPHA,
@@ -1619,7 +1626,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                                       (size_t)dim * sizeof(float), 0) != 0)
                 { free(ops); return NULL; }
 
-            (void)0;
+            /* no-op */
             // CPU routing: select top-K experts
             BnMoEState *ms = sess->moe_state;
             int K = c->n_experts_active;
@@ -1638,17 +1645,20 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             int moe_hidden = c->moe_intermediate_size;
             const BnMoEExpertMap *em = &lw->expert_map;
             BnGPUMoECache *gpu_cache = (BnGPUMoECache *)m->moe_io.gpu_moe_cache;
+            // Track uncached expert buffers for cleanup after flush
+            void *uncached_bufs[BN_MAX_MOE_K * 3];
+            int n_uncached = 0;
 
             for (int k = 0; k < K; k++) {
                 int eidx = ms->expert_indices[k];
-                if (eidx < 0) continue;
+                if (eidx < 0 || eidx >= c->n_experts) continue;
                 float ew = ms->expert_weights[k];
                 uint32_t u_ew; memcpy(&u_ew, &ew, 4);
 
                 void *gate_gpu, *up_gpu, *down_gpu;
                 int cached = bn_gpu_moe_cache_lookup(gpu_cache, l, eidx,
                                                       &gate_gpu, &up_gpu, &down_gpu);
-                (void)0;
+                /* no-op */
                 if (!cached) {
                     // Cache miss: load from host + upload to GPU
                     const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 0);
@@ -1671,6 +1681,11 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
                     if (gpu_cache) {
                         bn_gpu_moe_cache_insert(gpu_cache, l, eidx, gate_gpu, up_gpu, down_gpu);
+                    } else {
+                        // Track for cleanup after GPU_FLUSH
+                        uncached_bufs[n_uncached++] = gate_gpu;
+                        uncached_bufs[n_uncached++] = up_gpu;
+                        uncached_bufs[n_uncached++] = down_gpu;
                     }
                 }
 
@@ -1732,8 +1747,11 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
                 .W_buf = next_norm, .buf_in = BN_GPU_BUF_X, .buf_out = BN_GPU_BUF_XB, .buf_aux = -1,
                 .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 } };
-            // Flush all expert ops as ONE GPU submission (instead of per-expert)
+            // Flush all expert ops as ONE GPU submission
             GPU_FLUSH();
+            // Destroy uncached expert buffers (after flush ensures GPU is done with them)
+            for (int ub = 0; ub < n_uncached; ub++)
+                gpu->buffer_destroy(gpu->ctx, uncached_bufs[ub]);
             continue;  // skip dense FFN below
         }
         if (c->has_ffn_gate && lw->ffn_gate.data) {
@@ -1842,7 +1860,7 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
     // Try GPU-resident forward pass first
     float *gpu_logits = forward_gpu(m, s, token, pos);
     if (gpu_logits) {
-        (void)0;
+        /* no-op */
         return gpu_logits;
     }
 
@@ -2130,7 +2148,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
             // 2. Batch matmul: wqkv and wz (the two big projections)
             // QKV_all[n_tokens * qkv_dim_ssm], Z_all[n_tokens * value_dim]
             // Reuse Q_buf and K_new/V_new scratch from batch_buf
-            float *QKV_all = Q_buf;   // large enough: q_buf_stride >= qkv_dim_ssm for this model
+            if (q_buf_stride < qkv_dim_ssm) { free(batch_buf); free(act); return NULL; }
+            float *QKV_all = Q_buf;   // verified: q_buf_stride >= qkv_dim_ssm
             float *Z_all   = Xb2;     // [nt * dim] >= [nt * value_dim]
             float *Out_all = Hb;      // [nt * hidden_dim] >= [nt * value_dim]
 
@@ -2164,6 +2183,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 }
 
                 // Alpha + Beta (small matvecs: xb_t → num_v_heads)
+                if (num_v_heads > BN_MAX_VLA_ELEMS) continue;
                 float alpha_arr[num_v_heads > 0 ? num_v_heads : 1];
                 float beta_arr[num_v_heads > 0 ? num_v_heads : 1];
                 {

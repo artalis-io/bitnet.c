@@ -15,7 +15,7 @@ static uint32_t cache_hash(int layer, int expert_idx) {
 static int cache_probe(const BnGPUMoECache *c, int layer, int expert_idx) {
     uint32_t mask = (uint32_t)(c->hash_size - 1);
     uint32_t h = cache_hash(layer, expert_idx) & mask;
-    for (int i = 0; i < c->hash_size; i++) {
+    for (unsigned i = 0; i < c->hash_size; i++) {
         int slot = c->hash_table[h];
         if (slot < 0) return -1;
         if (c->entries[slot].layer == layer && c->entries[slot].expert_idx == expert_idx)
@@ -114,8 +114,8 @@ BnGPUMoECache *bn_gpu_moe_cache_create(size_t budget_bytes, size_t entry_bytes,
     int n_slots = (int)(budget_bytes / entry_bytes);
     if (n_slots < 1) return NULL;
 
-    int hash_size = 1;
-    while (hash_size < n_slots * 2) hash_size <<= 1;
+    unsigned hash_size = 1;
+    while (hash_size < (unsigned)n_slots * 2) hash_size <<= 1;
 
     BnGPUMoECache *c = (BnGPUMoECache *)calloc(1, sizeof(BnGPUMoECache));
     if (!c) return NULL;
@@ -189,7 +189,7 @@ int bn_gpu_moe_cache_insert(BnGPUMoECache *c, int layer, int expert_idx,
     hash_insert(c, layer, expert_idx, slot);
     lru_push_front(c, slot);
 
-    (void)0; // insert complete
+    /* insert complete */
     return 0;
 }
 

@@ -16,7 +16,7 @@ struct Uniforms {
 
 // p0 = num_v_heads
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(256)
 fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let h = lid.x;
     let n = u.p0;

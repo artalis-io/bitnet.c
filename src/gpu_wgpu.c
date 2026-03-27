@@ -570,9 +570,11 @@ static void slab_free_region(BnWgpuCtx *ctx, size_t offset, size_t size) {
     /* No coalescing — insert new block */
     if (!merged) {
         if (ctx->slab_free_count >= ctx->slab_free_cap) {
-            ctx->slab_free_cap *= 2;
-            ctx->slab_free = realloc(ctx->slab_free,
-                                      (size_t)ctx->slab_free_cap * sizeof(ctx->slab_free[0]));
+            int new_cap = ctx->slab_free_cap * 2;
+            void *tmp = realloc(ctx->slab_free, (size_t)new_cap * sizeof(ctx->slab_free[0]));
+            if (!tmp) return;  /* drop the free — leaks slab region but doesn't crash */
+            ctx->slab_free = tmp;
+            ctx->slab_free_cap = new_cap;
         }
         memmove(&ctx->slab_free[pos + 1], &ctx->slab_free[pos],
                 (size_t)(ctx->slab_free_count - pos) * sizeof(ctx->slab_free[0]));

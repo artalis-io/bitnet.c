@@ -503,12 +503,12 @@ void bn_tq_attention_scores(const BnTQState *st, const float *rotated_q,
     qjl_project_signs(st, rotated_q, q_signs, d);
 
     float qjl_scale = sqrtf(3.14159265f / 2.0f) / (float)d;
+    int indices[d];  // moved outside loop
 
     for (int k = 0; k < n_keys; k++) {
         const uint8_t *pk = packed_keys + (size_t)k * key_stride;
 
         // Unpack indices
-        int indices[d];
         unpack_indices(pk, d, st->bits, indices);
 
         // Read norms
@@ -590,13 +590,13 @@ void bn_tq_attention_combine(const BnTQState *st, const uint8_t *packed_values,
     memset(out, 0, d * sizeof(float));
 
     float rotated[d], dequant[d];
+    int indices[d];  // moved outside loop to avoid per-iteration VLA allocation
     for (int k = 0; k < n_keys; k++) {
         const uint8_t *pv = packed_values + (size_t)k * val_stride;
         float w = weights[k];
         if (w == 0.0f) continue;
 
         // Unpack indices
-        int indices[d];
         unpack_indices(pv, d, st->bits, indices);
 
         // Read vec_norm

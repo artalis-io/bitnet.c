@@ -16,7 +16,7 @@ typedef struct {
 typedef struct {
     BnGPUMoECacheEntry *entries;  // [n_slots]
     int *hash_table;              // [hash_size] open-addressing, slot index or -1
-    int hash_size;                // power of 2, >= 2 * n_slots
+    unsigned hash_size;           // power of 2, >= 2 * n_slots
     int n_slots;
 
     int lru_head, lru_tail;       // MRU / LRU ends
