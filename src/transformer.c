@@ -1162,8 +1162,10 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         if (!is_attn) { has_ssm = 1; continue; }
         if (lw->router_weight) { has_moe = 1; }
         if (!lw->wq.data) return NULL;
-        // Q-gated: reject on GPU — deinterleave shader produces incorrect output
-        // (verified: disabling norms + sigmoid_gate doesn't fix it, issue is in Q extraction)
+        // Q-gated: reject entire GPU forward pass — attention on CPU, MoE on CPU
+        // The Q-gated attention with head_size=256 on hybrid SSM+attention models
+        // produces incorrect GPU output. Root cause unidentified after extensive
+        // debugging (deinterleave, norms, sigmoid_gate all verified on CPU side).
         if (lw->wq.rows > q_dim) return NULL;
         if (lw->q_norm && !lw->q_norm_gpu) return NULL;
         if (lw->k_norm && !lw->k_norm_gpu) return NULL;
@@ -1433,12 +1435,10 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_QKV, .buf_aux = -1,
                     .rows = lw->wq.rows, .cols = lw->wq.cols,
                     .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols, 1, 0, 0, 0, 0, 0 } };
-                // Deinterleave: QKV[h*2*hs+d] → Q[h*hs+d]
                 ops[n++] = (BnGPUOp){
                     .shader = BN_GPU_SHADER_DEINTERLEAVE_Q, .type = -1, .W_buf = NULL,
                     .buf_in = BN_GPU_BUF_QKV, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
                     .p = { (uint32_t)q_dim, (uint32_t)head_size, 0, 0, 0, 0, 0, 0 } };
-                (void)0;
             } else {
                 // Standard Q matvec to Q buffer
                 ops[n++] = (BnGPUOp){
