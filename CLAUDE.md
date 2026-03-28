@@ -112,7 +112,7 @@ Expert I/O is **fully orthogonal** to SIMD dispatch — kernels don't know where
 | AVX2 | x86-64 | `bn_avx2_dpbusd` + Q8_K x quantization for Q4_K/Q6_K |
 | WASM SIMD128 | Browser/Node.js | Relaxed SIMD SDOT for all types |
 | Scalar | Fallback | Pure C, no SIMD |
-| WebGPU | GPU (wgpu-native) | 31 WGSL shaders (23 matvec + 8 forward-pass), optional `BN_ENABLE_GPU=1` |
+| WebGPU | GPU (wgpu-native) | 41 WGSL shaders (23 matvec + 10 forward-pass + 3 MoE + 5 SSM), optional `BN_ENABLE_GPU=1` |
 
 Q8_K x quantization (256-element super-blocks with bsums) enables integer accumulation in Q4_K/Q6_K kernels. Unsigned nibbles, no bias subtract, float conversion once per super-block.
 
@@ -216,7 +216,7 @@ WASM build requires Emscripten. Run `./wasm/build.sh`. The API wrapper in `wasm/
 
 Optional GPU inference via wgpu-native. Build with `make BN_ENABLE_GPU=1 WGPU_LIB_DIR=vendor/wgpu` (run `make fetch-wgpu` first to download wgpu-native v27).
 
-- 31 WGSL shaders in `shaders/` (23 matvec + 8 forward-pass: rmsnorm, rope, gqa_scores, gqa_combine, silu_gate, relu2_gate, residual_add, softmax, bias_add)
+- 41 WGSL shaders in `shaders/` (23 matvec + 10 forward-pass + 3 MoE + 5 SSM)
 - `BnGPUBackend` vtable in `include/gpu_backend.h` — buffer_create/destroy, matvec, matmul, matvec_batch, execute, init_activations
 - wgpu-native runtime in `src/gpu_wgpu.c`
 - `--gpu` CLI flag enables GPU inference

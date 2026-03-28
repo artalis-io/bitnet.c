@@ -32,8 +32,8 @@ bitnet.c takes the opposite approach:
 - **BPE tokenizer** — loaded directly from GGUF metadata
 - **Sampling** — greedy (argmax), multinomial, and nucleus (top-p)
 - **Native mmap** — zero-copy model loading on macOS/Linux
-- **Optional GPU backend** — WebGPU via wgpu-native, 31 WGSL shaders, single-submit forward pass
-- **Prompt caching** — shared KV prefix cache with longest-prefix matching and FIFO eviction
+- **Optional GPU backend** — WebGPU via wgpu-native, 41 WGSL shaders, single-submit forward pass
+- **Prompt caching** — shared KV prefix cache with longest-prefix matching, FIFO eviction, TQ-aware (8.7x smaller entries with `--kv-tq`)
 - **SSE streaming** — OpenAI-compatible server-sent events formatter
 - **Logprobs API** — top-K log probabilities from logits
 - **WASM build** — runs in the browser via Emscripten with Web Worker streaming
@@ -90,7 +90,7 @@ bitnet.c takes the opposite approach:
 | AVX2 | x86-64 (Haswell+) | DPBUSD int8 matvec, F16C conversion |
 | WASM SIMD128 | Browser (Emscripten) | Relaxed SIMD SDOT for all types |
 | Scalar | Any C11 compiler | Portable fallback |
-| WebGPU | GPU (wgpu-native) | 31 WGSL shaders, optional `BN_ENABLE_GPU=1` |
+| WebGPU | GPU (wgpu-native) | 41 WGSL shaders, optional `BN_ENABLE_GPU=1` |
 
 CPU backends auto-selected at compile time based on target architecture. GPU backend is opt-in.
 
@@ -140,7 +140,7 @@ Usage: ./bitnet <model.gguf> [options]
   --pread         Force pread for MoE expert loading (lower RSS than mmap)
   --cache-mb <N>  Expert LRU cache budget in MB (default: 4096, 0 to disable)
   --madvise       madvise-guided mmap for MoE (experimental)
-  --draft <path>  Draft model for speculative decoding (greedy, same tokenizer required)
+  --draft <path>  Draft model for speculative decoding (greedy, same tokenizer required, inherits --kv-tq)
   --draft-k <int> Draft tokens per iteration (default: 5)
   --gpu           Enable GPU inference (requires BN_ENABLE_GPU=1 build)
   -t <int>        Number of threads (default: auto-detect)
@@ -148,9 +148,11 @@ Usage: ./bitnet <model.gguf> [options]
 
 ### Chat Mode
 
-`--chat` enters an interactive REPL with multi-turn conversation support. KV cache is reused across turns so context accumulates naturally. Type `/quit` or Ctrl-D to exit.
+`--chat` enters an interactive REPL with multi-turn conversation support. KV cache is reused across turns so context accumulates naturally. Type `/quit` or Ctrl-D to exit. Type `/reset` to clear context (restores cached KV prefix if available).
 
 Chat mode defaults to `--temp 0.5 --topp 0.9 --repeat-penalty 1.1` for more natural conversation. Override with explicit flags.
+
+**Prompt caching**: Chat mode tracks full token history and caches KV state after each complete turn. On `/reset`, the longest matching prefix is restored from cache, skipping re-prefill. On context overflow, the session resets cleanly. With `--kv-tq 3`, cached entries are 8.7x smaller and restore ~10x faster.
 
 ### MoE Expert I/O Modes
 
@@ -314,7 +316,16 @@ bitnet.c/
 │   ├── relu2_gate.wgsl
 │   ├── residual_add.wgsl
 │   ├── softmax.wgsl
-│   └── bias_add.wgsl
+│   ├── bias_add.wgsl
+│   ├── weighted_add.wgsl       # MoE expert accumulation
+│   ├── sigmoid_gate.wgsl       # MoE shared expert gate
+│   ├── per_head_rmsnorm.wgsl   # Q/K per-head norms
+│   ├── deinterleave_q.wgsl     # Q-gated attention deinterleave
+│   ├── ssm_conv_silu.wgsl      # SSM: conv1d + SiLU activation
+│   ├── ssm_l2norm.wgsl         # SSM: L2-norm Q/K
+│   ├── ssm_alpha_beta.wgsl     # SSM: decay/update rates
+│   ├── ssm_delta.wgsl          # SSM: delta rule recurrence
+│   └── ssm_gate.wgsl           # SSM: SiLU gate + output
 ├── test/                       # Assert-based unit tests (synthetic data, no model needed)
 ├── wasm/                       # Emscripten WASM build + browser demo
 ├── docs/
@@ -396,7 +407,16 @@ Sessions are not thread-safe individually, but different sessions can be used fr
 
 ### Prompt Caching
 
-`BnPromptCache` stores KV prefixes with longest-prefix matching and FIFO eviction, enabling fast warm-start for repeated prompt prefixes across sessions.
+`BnPromptCache` stores KV prefix snapshots with longest-prefix matching and FIFO eviction. When `--kv-tq` is enabled, entries store TQ-compressed packed bytes instead of FP32 — 8.7x smaller entries, ~10x faster store/restore.
+
+```c
+BnPromptCache *pc = bn_prompt_cache_create(max_bytes, NULL);
+bn_prompt_cache_store(pc, &model, session, tokens, n_tokens);     // snapshot KV state
+int restored = bn_prompt_cache_restore(pc, &model, session, tokens, n);  // longest prefix match
+bn_prompt_cache_free(pc);
+```
+
+Format validation prevents mismatches — a TQ-3 cached entry won't match a FP32 restore request, and vice versa.
 
 ### SSE Streaming & Logprobs
 
@@ -422,7 +442,7 @@ make BN_ENABLE_GPU=1                     # build with GPU support
 ./bitnet model.gguf -p "Hello" --gpu     # run on GPU
 ```
 
-The GPU backend uses 31 WGSL shaders (23 matvec covering all quantization formats + 8 forward-pass operations) with a single-submit forward pass — one command buffer per token. The `BnGPUBackend` vtable in `include/gpu_backend.h` abstracts GPU compute, with the wgpu-native implementation in `src/gpu_wgpu.c`.
+The GPU backend uses 41 WGSL shaders (23 matvec covering all quantization formats + 10 forward-pass + 3 MoE + 5 SSM operations) with a single-submit forward pass — one command buffer per token. The `BnGPUBackend` vtable in `include/gpu_backend.h` abstracts GPU compute, with the wgpu-native implementation in `src/gpu_wgpu.c`.
 
 For Hull integration, set `WGPU_LIB_DIR` to avoid double-vendoring the wgpu-native library.
 
