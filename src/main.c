@@ -177,9 +177,19 @@ static CLIArgs parse_args(int argc, char **argv) {
     return args;
 }
 
+// Chat history tracker for prompt caching
+typedef struct {
+    int *history;
+    int history_len;
+    int history_cap;
+} BnChatHistory;
+
 static int print_token(const char *piece, int token_id, void *user_data) {
-    (void)token_id;
-    (void)user_data;
+    // Track generated tokens in history for prompt cache
+    BnChatHistory *h = (BnChatHistory *)user_data;
+    if (h && h->history && h->history_len < h->history_cap) {
+        h->history[h->history_len++] = token_id;
+    }
     printf("%s", piece);
     fflush(stdout);
     return 0;
@@ -540,17 +550,22 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        // Prompt cache: saves BOS state for fast /reset
+        // Prompt cache: saves KV prefix for fast /reset and context overflow recovery
         BnPromptCache *prompt_cache = bn_prompt_cache_create(0, NULL);
 
         int pos = 0;
         int seq_len = cfg->seq_len;
 
+        // Token history for prompt cache keying
+        int *history = (int *)malloc((size_t)seq_len * sizeof(int));
+        int history_len = 0;
+
         // Feed BOS at pos=0 (skip if model says not to)
         if (tokenizer.add_bos) {
             bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
             pos++;
-            // Cache the BOS state for fast reset
+            // Track in history and cache
+            if (history) { history[0] = tokenizer.bos_id; history_len = 1; }
             if (prompt_cache) {
                 int bos_tok = tokenizer.bos_id;
                 bn_prompt_cache_store(prompt_cache, &model, session, &bos_tok, 1);
@@ -572,17 +587,22 @@ int main(int argc, char **argv) {
             if (strcmp(line, "/quit") == 0) break;
             if (strcmp(line, "/reset") == 0) {
                 // Try to restore BOS state from cache (avoids re-prefilling)
-                int bos_tok = tokenizer.bos_id;
-                int restored = prompt_cache ?
-                    bn_prompt_cache_restore(prompt_cache, &model, session, &bos_tok, 1) : 0;
+                int restored = 0;
+                if (prompt_cache && history && history_len > 0) {
+                    restored = bn_prompt_cache_restore(prompt_cache, &model, session,
+                                                        history, history_len);
+                }
                 if (restored > 0) {
                     pos = restored;
+                    history_len = restored;
                 } else {
                     bn_session_reset(session, &model);
                     pos = 0;
+                    history_len = 0;
                     if (tokenizer.add_bos) {
                         bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
                         pos++;
+                        if (history) { history[0] = tokenizer.bos_id; history_len = 1; }
                     }
                 }
                 bn_sampler_reset_recent(&sampler);
@@ -593,20 +613,29 @@ int main(int argc, char **argv) {
             // Format user message into chat turn tokens
             int n = bn_chat_format_turn(&tokenizer, BN_CHAT_AUTO, line, tokens, max_tokens, NULL);
 
-            // Context overflow: reset if prompt won't fit
+            // Context overflow: reset and try restoring cached prefix
             if (pos + n > seq_len) {
                 printf("[context full — resetting]\n");
+                bn_session_reset(session, &model);
                 pos = 0;
+                history_len = 0;
                 if (tokenizer.add_bos) {
                     bn_transformer_forward(&model, session, tokenizer.bos_id, pos);
                     pos++;
+                    if (history) { history[0] = tokenizer.bos_id; history_len = 1; }
                 }
                 bn_sampler_reset_recent(&sampler);
+            }
+
+            // Append turn tokens to history
+            if (history && history_len + n <= seq_len) {
+                memcpy(history + history_len, tokens, (size_t)n * sizeof(int));
             }
 
             // Feed prompt tokens through forward pass
             float *logits = bn_prefill(&model, session, tokens, n, pos, args.no_prefill);
             pos += n;
+            if (history && history_len + n <= seq_len) history_len += n;
 
             if (!logits) {
                 SH_LOG_ERROR("Forward pass returned NULL during prompt");
@@ -619,15 +648,23 @@ int main(int argc, char **argv) {
             if (remaining < max_gen) max_gen = remaining;
             if (max_gen < 1) max_gen = 1;
 
+            BnChatHistory hist_ctx = { history, history_len, seq_len };
             int gen_count = bn_generate(&model, session, &tokenizer, &sampler,
                                          max_gen, &pos,
-                                         print_token, NULL, NULL, NULL);
+                                         print_token, &hist_ctx, NULL, NULL);
+            history_len = hist_ctx.history_len;
 
             // Feed end-of-turn token into KV cache to close the assistant turn
             int turn_end_id = bn_chat_turn_end_id(&tokenizer, BN_CHAT_AUTO);
             if (turn_end_id >= 0 && pos < seq_len) {
                 bn_transformer_forward(&model, session, turn_end_id, pos);
                 pos++;
+                if (history && history_len < seq_len) history[history_len++] = turn_end_id;
+            }
+
+            // Cache KV state after this complete turn for prefix reuse
+            if (prompt_cache && history && history_len > 1) {
+                bn_prompt_cache_store(prompt_cache, &model, session, history, history_len);
             }
 
             printf("\n");
@@ -643,6 +680,7 @@ int main(int argc, char **argv) {
         }
 
         free(tokens);
+        free(history);
         bn_prompt_cache_free(prompt_cache);
     } else {
         // --- Single-shot generation ---

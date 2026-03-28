@@ -1,5 +1,6 @@
 #include "session.h"
 #include "model.h"
+#include "turboquant.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -185,12 +186,58 @@ static void test_multiple_sessions(void) {
     printf("PASSED\n");
 }
 
+// Test: session reset clears TQ caches
+static void test_session_reset_tq(void) {
+    printf("test_session_reset_tq... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+    model.config.kv_tq_bits = 3;
+
+    BnTQState tq;
+    assert(bn_tq_init(&tq, model.config.head_size, 3, 0x5451303042ULL) == 0);
+    model.tq_state = &tq;
+
+    BnSession *s = bn_session_create(&model, NULL);
+    assert(s);
+    assert(s->state.key_cache_tq != NULL);
+    assert(s->state.value_cache_tq != NULL);
+
+    // Write non-zero data into TQ caches
+    int kb = bn_tq_key_bytes(&tq);
+    int vb = bn_tq_value_bytes(&tq);
+    int n_attn = model.config.n_layers;
+    size_t tq_key_total = (size_t)n_attn * (size_t)model.config.seq_len *
+                          (size_t)model.config.n_kv_heads * (size_t)kb;
+    size_t tq_val_total = (size_t)n_attn * (size_t)model.config.seq_len *
+                          (size_t)model.config.n_kv_heads * (size_t)vb;
+    memset(s->state.key_cache_tq, 0xAA, tq_key_total);
+    memset(s->state.value_cache_tq, 0xBB, tq_val_total);
+    s->pos = 10;
+
+    // Reset
+    bn_session_reset(s, &model);
+
+    // Verify zeroed
+    assert(s->pos == 0);
+    for (size_t i = 0; i < tq_key_total; i++)
+        assert(s->state.key_cache_tq[i] == 0);
+    for (size_t i = 0; i < tq_val_total; i++)
+        assert(s->state.value_cache_tq[i] == 0);
+
+    bn_session_free(s, NULL);
+    bn_tq_free(&tq);
+    printf("PASSED\n");
+}
+
 int main(void) {
     test_session_create_free();
     test_session_kv_isolation();
     test_session_reset();
     test_session_pos_tracking();
     test_multiple_sessions();
+    test_session_reset_tq();
     printf("\nAll session tests passed!\n");
     return 0;
 }

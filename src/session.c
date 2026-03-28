@@ -1,4 +1,5 @@
 #include "session.h"
+#include "turboquant.h"
 #include "sh_log.h"
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +70,16 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
     size_t kv_elem = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     memset(rs->key_cache, 0, kv_size * kv_elem);
     memset(rs->value_cache, 0, kv_size * kv_elem);
+
+    // TQ compressed KV cache
+    if (rs->key_cache_tq && rs->value_cache_tq && c->kv_tq_bits > 0 && model->tq_state) {
+        int kb = bn_tq_key_bytes(model->tq_state);
+        int vb = bn_tq_value_bytes(model->tq_state);
+        size_t tq_key_total = (size_t)n_attn * (size_t)c->seq_len * (size_t)c->n_kv_heads * (size_t)kb;
+        size_t tq_val_total = (size_t)n_attn * (size_t)c->seq_len * (size_t)c->n_kv_heads * (size_t)vb;
+        memset(rs->key_cache_tq, 0, tq_key_total);
+        memset(rs->value_cache_tq, 0, tq_val_total);
+    }
 
     // SSM state
     if (rs->ssm_state && c->ssm_time_step_rank > 0) {
