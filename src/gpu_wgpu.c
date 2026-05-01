@@ -1534,7 +1534,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
 
-        /* COPY is now a compute shader — no pass boundary needed */
+        /* COPY handled as compute shader — stays in same compute pass */
 
         /* Determine pipeline and layout */
         WGPUComputePipeline pipeline = NULL;
@@ -1989,7 +1989,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             break;
         }
         case BN_GPU_SHADER_COPY: {
-            /* src(ro), dst(rw), uniforms */
             entries[0] = (WGPUBindGroupEntry){
                 .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
                 .offset = 0, .size = ctx->act_sizes[op->buf_in]};
@@ -2085,7 +2084,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             wg_x = (op->p[0] + 255) / 256;  /* ceil(q_dim / 256) */
             break;
         case BN_GPU_SHADER_COPY:
-            wg_x = (op->p[2] + 255) / 256;  /* ceil(count / 256) */
+            wg_x = (op->p[2] + 255) / 256;
             break;
         }
 

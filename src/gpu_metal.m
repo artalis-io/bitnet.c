@@ -820,7 +820,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         for (int i = 0; i < n_ops; i++) {
             const BnGPUOp *op = &ops[i];
 
-            /* COPY is now a compute shader — no blit encoder transition */
+            /* COPY as compute shader — stays in compute encoder, no blit transitions */
 
             /* Determine pipeline */
             id<MTLComputePipelineState> pipeline = nil;
@@ -1127,7 +1127,6 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 break;
             }
             case BN_GPU_SHADER_COPY: {
-                /* Compute-shader copy: stays in compute encoder */
                 [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:0];
                 [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:1];
                 [enc setBytes:params length:sizeof(params) atIndex:2];
@@ -1188,7 +1187,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 wg_x = (op->p[0] + 7) / 8;  /* 8 heads per threadgroup */
                 break;
             case BN_GPU_SHADER_COPY:
-                wg_x = (op->p[2] + 255) / 256;  /* ceil(count/256) */
+                wg_x = (op->p[2] + 255) / 256;
                 break;
             }
 
