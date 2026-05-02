@@ -322,7 +322,7 @@ static void *metal_buffer_create(void *vctx, const void *data, size_t size,
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !data || size == 0) return NULL;
 
-    /* Q4_0: skip repack — use native GGUF format with q4_native_matvec */
+    /* Q4_0: skip repack — use native GGUF format (18 bytes/block) */
 
     BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
     if (!buf) return NULL;
@@ -397,9 +397,8 @@ static void *metal_buffer_create_biased(void *vctx, const void *data, size_t siz
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !data || size == 0 || !bias || bias_size == 0) return NULL;
 
-    /* Q4_0: repack with fused bias */
-    if (type == BN_GGUF_TENSOR_Q4_0)
-        return repack_q4_0(ctx, data, size, rows, cols, bias, bias_size);
+    /* Q4_0: skip biased repack (native format, bias not supported yet) */
+    if (type == BN_GGUF_TENSOR_Q4_0) return NULL;  /* fall back to separate bias upload */
 
     /* Other types: combine weight data + bias into one buffer */
     size_t total = size + bias_size;
