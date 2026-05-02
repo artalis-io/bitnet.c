@@ -198,9 +198,8 @@ Current: 290 ops, 289 barriers, ~22.7ms/token on M1 Max (Qwen 2.5 3B Q4_0). llam
 - [x] Fused RoPE Q+K: single dispatch for Q and K rotation (-36 ops)
 - [x] Fused gate+up+SiLU: stacked weight buffer, single Q4_0 kernel (-72 ops, -36 barriers)
 - [x] Fix logits tiling: dispatch (4748,1,1) not (65535,1,1) for vocab=151936
-- [ ] **Q4_0 matvec kernel rewrite** (THE bottleneck): current DQ4 macro does 4 shifts + 4 masks + 4 subtracts + 4 int-to-float + 1 float4 mul per 4 elements = ~17 ops. Need simdgroup_matrix or packed int8 dot product to reduce ALU pressure. Study llama.cpp's `kernel_mul_mv_q4_0_f32` approach.
-- [ ] Interleaved Q4_0 repack: store [scale, nib0..3] per block contiguously instead of split sections. Improves spatial locality but doesn't help if compute-bound.
-- [ ] MATVEC_SPLIT for all quant types: extend beyond Q4_0
+- [ ] **Q4_0 native-format kernel** (THE bottleneck): our repacked format splits scales and nibbles into separate memory regions (~2.8MB apart for gate weights). llama.cpp reads ORIGINAL GGUF format (18 bytes/block, contiguous) with a pre-scaling trick: mask uint16 with 0x000F/0x00F0/0x0F00/0xF000, pre-divide input by 1/16/256/4096 to absorb bit positions. Zero shift instructions. Sequential weight reads. Enables zero-copy from mmap. Implementation started but has correctness issues in the pre-scaling math — needs careful nibble layout verification against GGUF Q4_0 spec (qs[j] = elem[j] | (elem[j+16] << 4)).
+- [ ] MATVEC_SPLIT + fused_gateup_silu for native Q4_0 format (currently disabled, use repacked)
 - [ ] Half-precision intermediates where precision allows
 
 ### SIMD Backends
