@@ -322,8 +322,7 @@ static void *metal_buffer_create(void *vctx, const void *data, size_t size,
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !data || size == 0) return NULL;
 
-    /* Q4_0: use native GGUF format (18 bytes/block, no repack).
-     * The q4_native_matvec shader reads this directly — sequential memory access. */
+    /* Q4_0: skip repack — use native GGUF format with q4_native_matvec */
 
     BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
     if (!buf) return NULL;
@@ -640,8 +639,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     uint32_t params[8] = { (uint32_t)rows, (uint32_t)cols, 1, 0, 0, 0, 0, 0 };
     if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
 
-    int is_q4 = (type == BN_GGUF_TENSOR_Q4_0);
-    uint32_t tile_rows = is_q4 ? 8 : 32;
+    uint32_t tile_rows = 32;
     uint32_t wg_x = ((uint32_t)rows + tile_rows - 1) / tile_rows;
 
     @autoreleasepool {
@@ -654,7 +652,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
         [enc setBuffer:ctx->out_buf offset:0 atIndex:2];
         [enc setBytes:params length:sizeof(params) atIndex:3];
 
-        MTLSize tpg = MTLSizeMake(is_q4 ? 64 : 256, 1, 1);
+        MTLSize tpg = MTLSizeMake(256, 1, 1);
         MTLSize grid = MTLSizeMake(wg_x, 1, 1);
         [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
         [enc endEncoding];
@@ -683,8 +681,7 @@ static int metal_matmul(void *vctx, float *out, void *W_buf, const float *X,
 
     uint32_t params[8] = { (uint32_t)rows, (uint32_t)cols, (uint32_t)n_tokens, 0, 0, 0, 0, 0 };
 
-    int is_q4_mm = (type == BN_GGUF_TENSOR_Q4_0);
-    uint32_t tile_rows = is_q4_mm ? 8 : 32;
+    uint32_t tile_rows = 32;
     uint32_t wg_x = ((uint32_t)rows + tile_rows - 1) / tile_rows;
 
     @autoreleasepool {
@@ -697,7 +694,7 @@ static int metal_matmul(void *vctx, float *out, void *W_buf, const float *X,
         [enc setBuffer:ctx->out_buf offset:0 atIndex:2];
         [enc setBytes:params length:sizeof(params) atIndex:3];
 
-        MTLSize tpg = MTLSizeMake(is_q4_mm ? 64 : 256, 1, 1);
+        MTLSize tpg = MTLSizeMake(256, 1, 1);
         MTLSize grid = MTLSizeMake(wg_x, n_tokens, 1);
         [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
         [enc endEncoding];
@@ -1194,13 +1191,12 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             uint32_t wg_x = 1, wg_y = 1;
             switch (op->shader) {
             case BN_GPU_SHADER_MATVEC: {
-                uint32_t tr = 32;
                 if (op->p[3] > 0) {
-                    uint32_t tiled_rows = ((uint32_t)op->rows + tr - 1) / tr;
+                    uint32_t tiled_rows = ((uint32_t)op->rows + 31) / 32;
                     wg_x = op->p[3];
                     wg_y = (tiled_rows + op->p[3] - 1) / op->p[3];
                 } else {
-                    wg_x = ((uint32_t)op->rows + tr - 1) / tr;
+                    wg_x = ((uint32_t)op->rows + 31) / 32;
                     wg_y = op->p[2];
                     if (wg_y == 0) wg_y = 1;
                 }
@@ -1257,8 +1253,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             }
 
             if (wg_x == 0) wg_x = 1;
-            uint32_t tpg_n = 256;
-            MTLSize tpg = MTLSizeMake(tpg_n, 1, 1);
+            MTLSize tpg = MTLSizeMake(256, 1, 1);
             MTLSize grid = MTLSizeMake(wg_x, wg_y, 1);
             [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
         }
@@ -1339,7 +1334,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
                 compiled, N_SUPPORTED_TYPES);
 
-        /* Override Q4_0 with native-format kernel (reads GGUF directly, no repack) */
+        /* Override Q4_0 with native-format kernel */
         {
             id<MTLComputePipelineState> pso = compile_shader(ctx, dir,
                 "q4_native_matvec.metal", "q4_native_matvec");
