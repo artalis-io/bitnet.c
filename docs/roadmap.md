@@ -188,15 +188,20 @@ Only **reducing data volume** helps at this point:
 
 ### GPU Performance (Metal/WebGPU)
 
-Current: 398 ops, 325 barriers, ~23ms/token on M1 Max (Qwen 2.5 3B Q4_0). ~70 GB/s effective bandwidth (17.5% of 400 GB/s theoretical). llama.cpp: ~9ms (~183 GB/s).
+Current: 290 ops, 289 barriers, ~22.7ms/token on M1 Max (Qwen 2.5 3B Q4_0). llama.cpp: ~9ms.
+
+**Key finding**: Barriers cost zero (22.7ms with 0 barriers vs 22.8ms with 289). The bottleneck is **Q4_0 matvec kernel execution** — the DQ4 dequantization + float4 dot product inner loop. Reducing ops/barriers further has no impact. The path to parity requires a fundamentally faster matvec kernel.
 
 - [x] Eliminate COPY ops: direct-to-destination QKV writes via shader offsets (-108 ops, -108 barriers)
 - [x] Batched QKV matvec: single-dispatch split shader for Q4_0 (-72 ops)
-- [ ] Batched gate+up matvec: stacked FFN weight buffer + MATVEC_SPLIT for gate+up (-36 ops). Requires creating stacked gate+up buffer in model.c, plus split shader variants for other quant types.
-- [ ] MATVEC_SPLIT for all quant types: extend split shader beyond Q4_0 (Q8_0, Q4_K, Q6_K, I2_S, TQ1, TQ2, etc.)
-- [ ] Indirect Command Buffers (ICBs): pre-encode the entire command buffer once at init, commit per token. Eliminates CPU-side encode overhead (~0.2ms/token) and GPU command processing.
-- [ ] Fused residual+RMSNorm+matvec kernel: combine residual_rmsnorm → matvec into single dispatch (-1 barrier/layer). Input vector read once from memory instead of written then re-read.
-- [ ] Half-precision accumulation for small matvecs: K/V (256 rows) could use `half` accumulation + `simd_sum`. Doubles ALU throughput, reduces register pressure.
+- [x] PSO caching: skip redundant setComputePipelineState calls
+- [x] Fused RoPE Q+K: single dispatch for Q and K rotation (-36 ops)
+- [x] Fused gate+up+SiLU: stacked weight buffer, single Q4_0 kernel (-72 ops, -36 barriers)
+- [x] Fix logits tiling: dispatch (4748,1,1) not (65535,1,1) for vocab=151936
+- [ ] **Q4_0 matvec kernel rewrite** (THE bottleneck): current DQ4 macro does 4 shifts + 4 masks + 4 subtracts + 4 int-to-float + 1 float4 mul per 4 elements = ~17 ops. Need simdgroup_matrix or packed int8 dot product to reduce ALU pressure. Study llama.cpp's `kernel_mul_mv_q4_0_f32` approach.
+- [ ] Interleaved Q4_0 repack: store [scale, nib0..3] per block contiguously instead of split sections. Improves spatial locality but doesn't help if compute-bound.
+- [ ] MATVEC_SPLIT for all quant types: extend beyond Q4_0
+- [ ] Half-precision intermediates where precision allows
 
 ### SIMD Backends
 - [ ] AVX-512 VNNI — native `vpdpbusd`, 512-bit vectors (Ice Lake+, Zen 4+)

@@ -1845,7 +1845,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
     {
-        uint32_t tile_x = (logit_rows > 65535) ? 65535u : 0u;
+        uint32_t logit_tgs = ((uint32_t)logit_rows + 31) / 32;
+        uint32_t tile_x = (logit_tgs > 65535) ? 65535u : 0u;
         ops[n++] =(BnGPUOp){
             .shader = BN_GPU_SHADER_MATVEC,
             .type = logit_type,
