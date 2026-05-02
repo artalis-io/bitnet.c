@@ -29,7 +29,8 @@
 #define BN_GPU_SHADER_DEINTERLEAVE_Q    19 // Extract Q from interleaved [Q,Gate] layout
 #define BN_GPU_SHADER_SIGMOID_GATE      20 // out *= sigmoid(gate) for gated Q
 #define BN_GPU_SHADER_FLASH_ATTN       21 // Fused Q·K softmax att·V (online softmax)
-#define BN_GPU_SHADER_COUNT             22
+#define BN_GPU_SHADER_MATVEC_SPLIT     22 // Multi-output matvec (QKV batched, gate+up batched)
+#define BN_GPU_SHADER_COUNT             23
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0

@@ -1370,10 +1370,51 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
         // ---- QKV matvecs (direct-to-destination, no COPY ops) ----
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
+        int q_gated = (lw->wq.rows > q_dim);
 
-        // Q matvec
-        {
-            int q_gated = (lw->wq.rows > q_dim);
+        // Batched QKV: single dispatch writes Q→Q buf, K→KEY_CACHE, V→VALUE_CACHE
+        // Requires: stacked QKV buffer, not Q-gated, no unfused bias, Q4_0 repacked
+        int use_split = lw->qkv_stacked_gpu && !q_gated &&
+                        !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
+                        lw->wq.type == BN_GGUF_TENSOR_Q4_0;
+        if (use_split) {
+            int total_rows = lw->wq.rows + lw->wk.rows + lw->wv.rows;
+            // MATVEC_SPLIT: buf_out=Q(out0), buf_aux=KEY_CACHE(out1), rows=VALUE_CACHE(out2)
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_MATVEC_SPLIT, .type = lw->wq.type,
+                .W_buf = lw->qkv_stacked_gpu,
+                .buf_in = BN_GPU_BUF_XB,
+                .buf_out = BN_GPU_BUF_Q,
+                .buf_aux = BN_GPU_BUF_KEY_CACHE,
+                .rows = BN_GPU_BUF_VALUE_CACHE, .cols = lw->wq.cols,
+                .p = { (uint32_t)total_rows, (uint32_t)lw->wq.cols,
+                       (uint32_t)q_dim, (uint32_t)(q_dim + kv_dim),
+                       0, 0, kv_cache_off, kv_cache_off }
+            };
+            // Q norm (if needed)
+            if (lw->q_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->q_norm_gpu, .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = -1,
+                    .rows = n_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
+            }
+            // K norm at offset (if needed)
+            if (lw->k_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
+                    .rows = c->n_kv_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, kv_cache_off, 0, 0, 0, 0 } };
+            }
+            // RoPE K in-place on KEY_CACHE at offset
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_ROPE, .type = -1, .W_buf = NULL,
+                .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
+                .p = { (uint32_t)c->n_kv_heads, (uint32_t)head_size,
+                       (uint32_t)pos, (uint32_t)rope_dims, kv_cache_off, 0, 0, 0 } };
+        } else {
+            // Separate Q/K/V matvecs (fallback for non-Q4_0, Q-gated, or unfused bias)
+
+            // Q matvec
             if (q_gated) {
                 ops[n++] = (BnGPUOp){
                     .shader = BN_GPU_SHADER_MATVEC, .type = lw->wq.type,
@@ -1406,85 +1447,80 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     .rows = n_heads,
                     .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
             }
-        }
 
-        // K matvec: direct to KEY_CACHE when possible, SCRATCH fallback for unfused bias
-        if (lw->k_bias_gpu) {
-            // Unfused bias: K -> SCRATCH, bias, [norm], rope, copy to cache
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_MATVEC, .type = lw->wk.type,
-                .W_buf = lw->wk.gpu_buf,
-                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SCRATCH, .buf_aux = -1,
-                .rows = lw->wk.rows, .cols = lw->wk.cols,
-                .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols, 1, 0, 0, 0, 0, 0 } };
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_BIAS_ADD, .type = -1,
-                .W_buf = lw->k_bias_gpu,
-                .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
-                .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 } };
-            if (lw->k_norm_gpu) {
-                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
-                    .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
-                    .rows = c->n_kv_heads,
-                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
+            // K matvec: direct to KEY_CACHE when possible, SCRATCH fallback for unfused bias
+            if (lw->k_bias_gpu) {
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_MATVEC, .type = lw->wk.type,
+                    .W_buf = lw->wk.gpu_buf,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SCRATCH, .buf_aux = -1,
+                    .rows = lw->wk.rows, .cols = lw->wk.cols,
+                    .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols, 1, 0, 0, 0, 0, 0 } };
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_BIAS_ADD, .type = -1,
+                    .W_buf = lw->k_bias_gpu,
+                    .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
+                    .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 } };
+                if (lw->k_norm_gpu) {
+                    ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                        .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
+                        .rows = c->n_kv_heads,
+                        .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
+                }
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_ROPE, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
+                    .p = { (uint32_t)c->n_kv_heads, (uint32_t)head_size,
+                           (uint32_t)pos, (uint32_t)rope_dims, 0, 0, 0, 0 } };
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = BN_GPU_BUF_KEY_CACHE, .buf_aux = -1,
+                    .p = { 0, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 } };
+            } else {
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_MATVEC, .type = lw->wk.type,
+                    .W_buf = lw->wk.gpu_buf,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_KEY_CACHE, .buf_aux = -1,
+                    .rows = lw->wk.rows, .cols = lw->wk.cols,
+                    .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols, 1, 0, 0, kv_cache_off, 0, 0 } };
+                if (lw->k_norm_gpu) {
+                    ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                        .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
+                        .rows = c->n_kv_heads,
+                        .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, kv_cache_off, 0, 0, 0, 0 } };
+                }
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_ROPE, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
+                    .p = { (uint32_t)c->n_kv_heads, (uint32_t)head_size,
+                           (uint32_t)pos, (uint32_t)rope_dims, kv_cache_off, 0, 0, 0 } };
             }
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_ROPE, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
-                .p = { (uint32_t)c->n_kv_heads, (uint32_t)head_size,
-                       (uint32_t)pos, (uint32_t)rope_dims, 0, 0, 0, 0 } };
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = BN_GPU_BUF_KEY_CACHE, .buf_aux = -1,
-                .p = { 0, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 } };
-        } else {
-            // No unfused bias: K direct to KEY_CACHE via out_offset
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_MATVEC, .type = lw->wk.type,
-                .W_buf = lw->wk.gpu_buf,
-                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_KEY_CACHE, .buf_aux = -1,
-                .rows = lw->wk.rows, .cols = lw->wk.cols,
-                .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols, 1, 0, 0, kv_cache_off, 0, 0 } };
-            if (lw->k_norm_gpu) {
-                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
-                    .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
-                    .rows = c->n_kv_heads,
-                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, kv_cache_off, 0, 0, 0, 0 } };
-            }
-            // RoPE K in-place on KEY_CACHE at offset
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_ROPE, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
-                .p = { (uint32_t)c->n_kv_heads, (uint32_t)head_size,
-                       (uint32_t)pos, (uint32_t)rope_dims, kv_cache_off, 0, 0, 0 } };
-        }
 
-        // V matvec: direct to VALUE_CACHE when possible
-        if (lw->v_bias_gpu) {
-            // Unfused bias: V -> SCRATCH, bias, copy to cache
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_MATVEC, .type = lw->wv.type,
-                .W_buf = lw->wv.gpu_buf,
-                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SCRATCH, .buf_aux = -1,
-                .rows = lw->wv.rows, .cols = lw->wv.cols,
-                .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols, 1, 0, 0, 0, 0, 0 } };
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_BIAS_ADD, .type = -1,
-                .W_buf = lw->v_bias_gpu,
-                .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
-                .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 } };
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = BN_GPU_BUF_VALUE_CACHE, .buf_aux = -1,
-                .p = { 0, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 } };
-        } else {
-            // No unfused bias: V direct to VALUE_CACHE via out_offset
-            ops[n++] = (BnGPUOp){
-                .shader = BN_GPU_SHADER_MATVEC, .type = lw->wv.type,
-                .W_buf = lw->wv.gpu_buf,
-                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_VALUE_CACHE, .buf_aux = -1,
-                .rows = lw->wv.rows, .cols = lw->wv.cols,
-                .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols, 1, 0, 0, kv_cache_off, 0, 0 } };
+            // V matvec: direct to VALUE_CACHE when possible
+            if (lw->v_bias_gpu) {
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_MATVEC, .type = lw->wv.type,
+                    .W_buf = lw->wv.gpu_buf,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SCRATCH, .buf_aux = -1,
+                    .rows = lw->wv.rows, .cols = lw->wv.cols,
+                    .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols, 1, 0, 0, 0, 0, 0 } };
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_BIAS_ADD, .type = -1,
+                    .W_buf = lw->v_bias_gpu,
+                    .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = -1, .buf_aux = -1,
+                    .p = { (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0 } };
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_SCRATCH, .buf_out = BN_GPU_BUF_VALUE_CACHE, .buf_aux = -1,
+                    .p = { 0, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 } };
+            } else {
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_MATVEC, .type = lw->wv.type,
+                    .W_buf = lw->wv.gpu_buf,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_VALUE_CACHE, .buf_aux = -1,
+                    .rows = lw->wv.rows, .cols = lw->wv.cols,
+                    .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols, 1, 0, 0, kv_cache_off, 0, 0 } };
+            }
         }
 
         // ---- RoPE Q ----

@@ -547,6 +547,7 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_SIGMOID_GATE,     "sigmoid_gate.metal",     "sigmoid_gate"     },
         { BN_GPU_SHADER_FLASH_ATTN,       "flash_attn.metal",       "flash_attn"       },
         { BN_GPU_SHADER_COPY,             "buf_copy.metal",         "buf_copy"         },
+        { BN_GPU_SHADER_MATVEC_SPLIT,     "q4_matvec_split.metal",  "q4_matvec_split"  },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -921,6 +922,12 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 op_reads = BUF_BIT(op->buf_in);
                 op_writes = BUF_BIT(op->buf_out);
                 break;
+            case BN_GPU_SHADER_MATVEC_SPLIT:
+                op_reads = BUF_BIT(op->buf_in);
+                op_writes = BUF_BIT(op->buf_out);
+                if (op->buf_aux >= 0) op_writes |= BUF_BIT(op->buf_aux);
+                if (op->rows >= 0) op_writes |= BUF_BIT(op->rows);  // 3rd output buf in rows field
+                break;
             default: continue;
             }
 
@@ -1132,6 +1139,18 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 [enc setBytes:params length:sizeof(params) atIndex:2];
                 break;
             }
+            case BN_GPU_SHADER_MATVEC_SPLIT: {
+                BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
+                if (!wbuf) continue;
+                if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
+                [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
+                [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];  // out0
+                [enc setBuffer:ctx->act_bufs[op->buf_aux] offset:0 atIndex:3];  // out1
+                [enc setBuffer:ctx->act_bufs[op->rows] offset:0 atIndex:4];     // out2
+                [enc setBytes:params length:sizeof(params) atIndex:5];
+                break;
+            }
             default: continue;
             }
 
@@ -1188,6 +1207,9 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 break;
             case BN_GPU_SHADER_COPY:
                 wg_x = (op->p[2] + 255) / 256;
+                break;
+            case BN_GPU_SHADER_MATVEC_SPLIT:
+                wg_x = (op->p[0] + 31) / 32;  // total_rows / 32
                 break;
             }
 

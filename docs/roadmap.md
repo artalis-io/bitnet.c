@@ -186,6 +186,18 @@ Only **reducing data volume** helps at this point:
 - [ ] JSON output mode (structured generation metadata)
 - [ ] Model info dump command (`--info` to print config without inference)
 
+### GPU Performance (Metal/WebGPU)
+
+Current: 398 ops, 325 barriers, ~23ms/token on M1 Max (Qwen 2.5 3B Q4_0). ~70 GB/s effective bandwidth (17.5% of 400 GB/s theoretical). llama.cpp: ~9ms (~183 GB/s).
+
+- [x] Eliminate COPY ops: direct-to-destination QKV writes via shader offsets (-108 ops, -108 barriers)
+- [x] Batched QKV matvec: single-dispatch split shader for Q4_0 (-72 ops)
+- [ ] Batched gate+up matvec: stacked FFN weight buffer + MATVEC_SPLIT for gate+up (-36 ops). Requires creating stacked gate+up buffer in model.c, plus split shader variants for other quant types.
+- [ ] MATVEC_SPLIT for all quant types: extend split shader beyond Q4_0 (Q8_0, Q4_K, Q6_K, I2_S, TQ1, TQ2, etc.)
+- [ ] Indirect Command Buffers (ICBs): pre-encode the entire command buffer once at init, commit per token. Eliminates CPU-side encode overhead (~0.2ms/token) and GPU command processing.
+- [ ] Fused residual+RMSNorm+matvec kernel: combine residual_rmsnorm → matvec into single dispatch (-1 barrier/layer). Input vector read once from memory instead of written then re-read.
+- [ ] Half-precision accumulation for small matvecs: K/V (256 rows) could use `half` accumulation + `simd_sum`. Doubles ALU throughput, reduces register pressure.
+
 ### SIMD Backends
 - [ ] AVX-512 VNNI — native `vpdpbusd`, 512-bit vectors (Ice Lake+, Zen 4+)
 
