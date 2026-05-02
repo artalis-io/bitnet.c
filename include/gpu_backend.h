@@ -30,7 +30,9 @@
 #define BN_GPU_SHADER_SIGMOID_GATE      20 // out *= sigmoid(gate) for gated Q
 #define BN_GPU_SHADER_FLASH_ATTN       21 // Fused Q·K softmax att·V (online softmax)
 #define BN_GPU_SHADER_MATVEC_SPLIT     22 // Multi-output matvec (QKV batched, gate+up batched)
-#define BN_GPU_SHADER_COUNT             23
+#define BN_GPU_SHADER_ROPE_QK          23 // Fused RoPE for Q and K in single dispatch
+#define BN_GPU_SHADER_FUSED_GATEUP_SILU 24 // Fused gate+up matvec + SiLU activation (Q4_0)
+#define BN_GPU_SHADER_COUNT             25
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0

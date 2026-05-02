@@ -146,6 +146,8 @@ typedef struct {
     void *v_bias_gpu;
     // Stacked QKV weight buffer for GPU (NULL = use individual Q/K/V)
     void *qkv_stacked_gpu;
+    // Stacked gate+up weight buffer for GPU (NULL = use individual gate/up)
+    void *gateup_stacked_gpu;
     // GPU handles for Q/K norms and sub-norms (NULL = not present)
     void *q_norm_gpu;
     void *k_norm_gpu;

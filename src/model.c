@@ -1288,6 +1288,31 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
+        // Stacked gate+up weight buffer for improved GPU occupancy.
+        // Only created when gate/up are same type and same cols.
+        // I2_S excluded: per-tensor scale at end of data breaks concatenation.
+        if (lw->ffn_gate.data && lw->ffn_up.data &&
+            lw->ffn_gate.type != BN_GGUF_TENSOR_I2_S &&
+            lw->ffn_gate.type == lw->ffn_up.type &&
+            lw->ffn_gate.cols == lw->ffn_up.cols) {
+
+            int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
+            size_t gate_sz = bn_qweight_data_size(&lw->ffn_gate);
+            size_t up_sz = bn_qweight_data_size(&lw->ffn_up);
+            size_t combined_sz = gate_sz + up_sz;
+
+            uint8_t *combined = (uint8_t *)malloc(combined_sz);
+            if (combined) {
+                memcpy(combined, lw->ffn_gate.data, gate_sz);
+                memcpy(combined + gate_sz, lw->ffn_up.data, up_sz);
+
+                lw->gateup_stacked_gpu = gpu->buffer_create(
+                    gpu->ctx, combined, combined_sz,
+                    lw->ffn_gate.type, total_rows, lw->ffn_gate.cols);
+                free(combined);
+            }
+        }
+
         // Upload Q/K norm and sub-norm weights
         if (lw->q_norm) {
             int q_norm_size = c->qk_norm_per_head ? (c->n_heads * c->head_size) : c->head_size;
@@ -1377,6 +1402,10 @@ void bn_model_release_gpu(BnModel *model) {
             if (lw->qkv_stacked_gpu) {
                 gpu->buffer_destroy(gpu->ctx, lw->qkv_stacked_gpu);
                 lw->qkv_stacked_gpu = NULL;
+            }
+            if (lw->gateup_stacked_gpu) {
+                gpu->buffer_destroy(gpu->ctx, lw->gateup_stacked_gpu);
+                lw->gateup_stacked_gpu = NULL;
             }
         }
     }

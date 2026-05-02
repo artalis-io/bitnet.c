@@ -548,6 +548,8 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_FLASH_ATTN,       "flash_attn.metal",       "flash_attn"       },
         { BN_GPU_SHADER_COPY,             "buf_copy.metal",         "buf_copy"         },
         { BN_GPU_SHADER_MATVEC_SPLIT,     "q4_matvec_split.metal",  "q4_matvec_split"  },
+        { BN_GPU_SHADER_ROPE_QK,          "rope_qk.metal",          "rope_qk"          },
+        { BN_GPU_SHADER_FUSED_GATEUP_SILU,"q4_fused_gateup_silu.metal","q4_fused_gateup_silu"},
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -817,6 +819,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
          * Same logic as wgpu execute — track read/write buffer masks since last barrier. */
         #define BUF_BIT(idx) (1u << (idx))
         uint32_t since_barrier_reads = 0, since_barrier_writes = 0;
+        id<MTLComputePipelineState> current_pso = nil;
 
         for (int i = 0; i < n_ops; i++) {
             const BnGPUOp *op = &ops[i];
@@ -928,6 +931,14 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 if (op->buf_aux >= 0) op_writes |= BUF_BIT(op->buf_aux);
                 if (op->rows >= 0) op_writes |= BUF_BIT(op->rows);  // 3rd output buf in rows field
                 break;
+            case BN_GPU_SHADER_ROPE_QK:
+                op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux) | BUF_BIT(BN_GPU_BUF_ROPE_FREQ);
+                op_writes = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
+                break;
+            case BN_GPU_SHADER_FUSED_GATEUP_SILU:
+                op_reads = BUF_BIT(op->buf_in);
+                op_writes = BUF_BIT(op->buf_out);
+                break;
             default: continue;
             }
 
@@ -960,8 +971,15 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             since_barrier_writes |= op_writes;
 
             /* Start compute encoder if needed */
-            if (!enc) enc = [cmd computeCommandEncoder];
-            [enc setComputePipelineState:pipeline];
+            if (!enc) {
+                enc = [cmd computeCommandEncoder];
+                current_pso = nil;
+            }
+            /* Skip redundant PSO switch — avoids GPU instruction cache flush */
+            if (pipeline != current_pso) {
+                [enc setComputePipelineState:pipeline];
+                current_pso = pipeline;
+            }
 
             /* Set buffers per shader type + setBytes for uniforms */
             uint32_t params[BN_GPU_OP_PARAMS];
@@ -1151,6 +1169,23 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 [enc setBytes:params length:sizeof(params) atIndex:5];
                 break;
             }
+            case BN_GPU_SHADER_ROPE_QK: {
+                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:0];   // Q
+                [enc setBuffer:ctx->act_bufs[op->buf_aux] offset:0 atIndex:1];  // K (KEY_CACHE)
+                [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_ROPE_FREQ] offset:0 atIndex:2];
+                [enc setBytes:params length:sizeof(params) atIndex:3];
+                break;
+            }
+            case BN_GPU_SHADER_FUSED_GATEUP_SILU: {
+                BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
+                if (!wbuf) continue;
+                if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
+                [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
+                [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
+                [enc setBytes:params length:sizeof(params) atIndex:3];
+                break;
+            }
             default: continue;
             }
 
@@ -1210,6 +1245,12 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 break;
             case BN_GPU_SHADER_MATVEC_SPLIT:
                 wg_x = (op->p[0] + 31) / 32;  // total_rows / 32
+                break;
+            case BN_GPU_SHADER_ROPE_QK:
+                wg_x = op->p[0] + op->p[4];   // n_q_heads + n_kv_heads
+                break;
+            case BN_GPU_SHADER_FUSED_GATEUP_SILU:
+                wg_x = (op->p[2] + 31) / 32;  // gate_rows / 32
                 break;
             }
 
