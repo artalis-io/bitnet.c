@@ -397,8 +397,28 @@ static void *metal_buffer_create_biased(void *vctx, const void *data, size_t siz
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !data || size == 0 || !bias || bias_size == 0) return NULL;
 
-    /* Q4_0: skip biased repack (native format, bias not supported yet) */
-    if (type == BN_GGUF_TENSOR_Q4_0) return NULL;  /* fall back to separate bias upload */
+    /* Q4_0 native: append FP32 bias after raw GGUF weight data.
+     * Shader reads bias at u32 offset = weight_bytes / 4. */
+    if (type == BN_GGUF_TENSOR_Q4_0) {
+        size_t weight_bytes = (size + 3) & ~(size_t)3;  /* align to 4 bytes */
+        size_t total = weight_bytes + bias_size;
+        uint8_t *combined = (uint8_t *)calloc(1, total);
+        if (!combined) return NULL;
+        memcpy(combined, data, size);
+        memcpy(combined + weight_bytes, bias, bias_size);
+        BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
+        if (!buf) { free(combined); return NULL; }
+        buf->buf = [ctx->device newBufferWithBytes:combined length:total
+                                           options:MTLResourceStorageModeShared];
+        free(combined);
+        if (!buf->buf) { free(buf); return NULL; }
+        buf->size = total;
+        buf->type = type;
+        buf->rows = rows;
+        buf->cols = cols;
+        buf->bias_offset = (uint32_t)(weight_bytes / sizeof(uint32_t));
+        return buf;
+    }
 
     /* Other types: combine weight data + bias into one buffer */
     size_t total = size + bias_size;

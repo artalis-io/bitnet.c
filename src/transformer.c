@@ -1373,10 +1373,9 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         int q_gated = (lw->wq.rows > q_dim);
 
         // Batched QKV: single dispatch writes Q→Q buf, K→KEY_CACHE, V→VALUE_CACHE
-        // Q4_0 excluded: split/fused shaders use repacked format, native kernel doesn't
         int use_split = lw->qkv_stacked_gpu && !q_gated &&
                         !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
-                        lw->wq.type != BN_GGUF_TENSOR_Q4_0;
+                        lw->wq.type == BN_GGUF_TENSOR_Q4_0;
         if (use_split) {
             int total_rows = lw->wq.rows + lw->wk.rows + lw->wv.rows;
             // MATVEC_SPLIT: buf_out=Q(out0), buf_aux=KEY_CACHE(out1), rows=VALUE_CACHE(out2)
@@ -1752,10 +1751,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             continue;  // skip dense FFN below
         }
         if (c->has_ffn_gate && lw->ffn_gate.data) {
-            // Fused gate+up+SiLU: single dispatch when Q4_0 + stacked buffer + SiLU
-            // Q4_0 excluded: fused shader uses repacked format
             int use_fused_gateup = lw->gateup_stacked_gpu &&
-                                   lw->ffn_gate.type != BN_GGUF_TENSOR_Q4_0 &&
+                                   lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
                                    c->act_type != 1;
             if (use_fused_gateup) {
                 int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;

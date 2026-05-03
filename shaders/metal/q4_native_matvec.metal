@@ -99,6 +99,12 @@ kernel void q4_native_matvec(
     acc += simd_shuffle_xor(acc, 2);
     acc += simd_shuffle_xor(acc, 4);
 
-    if (row_lane == 0 && global_row < rows)
+    if (row_lane == 0 && global_row < rows) {
+        uint bias_offset = p[4];
+        if (bias_offset > 0) {
+            // Fused FP32 bias stored after weight data at u32 offset bias_offset
+            acc += as_type<float>(((device const uint *)weights)[bias_offset + global_row]);
+        }
         out[out_offset + token * rows + global_row] = acc;
+    }
 }

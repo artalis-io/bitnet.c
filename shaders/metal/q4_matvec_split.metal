@@ -64,6 +64,9 @@ kernel void q4_matvec_split(device const char  *weights [[buffer(0)]],
     acc += simd_shuffle_xor(acc, 4);
 
     if (row_lane == 0 && global_row < rows) {
+        uint bias_offset = p[4];
+        if (bias_offset > 0)
+            acc += as_type<float>(((device const uint *)weights)[bias_offset + global_row]);
         if (split1 > 0 && global_row >= split1) {
             if (split2 > 0 && global_row >= split2)
                 out2[off2 + global_row - split2] = acc;
