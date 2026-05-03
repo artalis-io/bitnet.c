@@ -1,125 +1,78 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 REPACKED fused gate-up SiLU — float4 vectorized, 32 rows/tile, 8 threads/row
-//
-// Computes: out[i] = silu(gate[i] . x) * up[i] . x
-// where silu(g) = g / (1 + exp(-g))
-//
-// Gate and up weights are stacked in a single Q4_0 repacked buffer:
-//   rows 0..gate_rows-1           = gate weights
-//   rows gate_rows..total_rows-1  = up weights
-//
-// GPU buffer layout: [f32 scales: n_blocks][nibble u32s: n_blocks * 4]
-// where n_blocks = total_rows * blocks_per_row
-//
-// 8 threads per row, each processes blocks_per_row/8 blocks.
-// Each block: 8 dot(float4) operations.
-// float4 loads for x vector (coalesced 16-byte reads).
-// Reduction: simd_shuffle_xor (0 barriers).
-//
+// Q4_0 NATIVE fused gate-up SiLU — reads GGUF format (18B/block)
+// out[i] = silu(gate[i]·x) * up[i]·x
+// Gate rows 0..gate_rows-1, up rows gate_rows..total_rows-1 in stacked buffer.
+// Pre-scaling trick. 32 rows/tile, 8 threads/row.
 // Dispatch: (ceil(gate_rows/32), 1, 1)
 
-// Dequantize 4 consecutive nibbles from a u32 word at bit offset sh
-#define DQ4(w, sh, s) (s * float4( \
-    float(int(((w) >> (sh))       & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 12))& 0xF) - 8)))
-
-kernel void q4_fused_gateup_silu(device const uint  *weights [[buffer(0)]],
+kernel void q4_fused_gateup_silu(device const char  *weights [[buffer(0)]],
                                   device const float *x       [[buffer(1)]],
                                   device float       *out     [[buffer(2)]],
                                   constant uint      *p       [[buffer(3)]],
                                   uint3 wid [[threadgroup_position_in_grid]],
                                   uint3 lid [[thread_position_in_threadgroup]]) {
     uint total_rows = p[0], cols = p[1], gate_rows = p[2];
-    uint bias_offset = p[4];
     uint tile_start = wid.x * 32;
-
     uint row_lane = lid.x & 7;
     uint local_row = lid.x >> 3;
     uint global_row = tile_start + local_row;
 
-    uint blocks_per_row = cols >> 5;
-    uint total_blocks = total_rows * blocks_per_row;
-
-    float gate_acc = 0.0f;
-    float up_acc = 0.0f;
+    uint nb = cols >> 5;
+    float gate_acc = 0.0f, up_acc = 0.0f;
 
     if (global_row < gate_rows) {
-        // Gate weight: row = global_row
-        uint gate_block_base = global_row * blocks_per_row;
-        // Up weight: row = global_row + gate_rows
-        uint up_block_base = (global_row + gate_rows) * blocks_per_row;
+        device const char *gate_data = weights + (size_t)global_row * nb * 18;
+        device const char *up_data   = weights + (size_t)(global_row + gate_rows) * nb * 18;
 
-        for (uint b = row_lane; b < blocks_per_row; b += 8) {
-            // --- Gate block ---
-            uint g_idx = gate_block_base + b;
-            float gs = as_type<float>(weights[g_idx]);
+        for (uint b = row_lane; b < nb; b += 8) {
+            device const char *gblk = gate_data + (size_t)b * 18;
+            device const char *ublk = up_data   + (size_t)b * 18;
+            float gd = float(*(device const half *)gblk);
+            float ud = float(*(device const half *)ublk);
 
-            uint g_nib = total_blocks + g_idx * 4;
-            uint gw0 = weights[g_nib];
-            uint gw1 = weights[g_nib + 1];
-            uint gw2 = weights[g_nib + 2];
-            uint gw3 = weights[g_nib + 3];
+            device const ushort *gqs0 = (device const ushort *)(gblk + 2);
+            device const ushort *gqs1 = (device const ushort *)(gblk + 10);
+            device const ushort *uqs0 = (device const ushort *)(ublk + 2);
+            device const ushort *uqs1 = (device const ushort *)(ublk + 10);
+            uint eb = b * 32;
 
-            // --- Up block ---
-            uint u_idx = up_block_base + b;
-            float us = as_type<float>(weights[u_idx]);
+            float gsumy = 0.f, ga[8] = {0,0,0,0,0,0,0,0};
+            float usumy = 0.f, ua[8] = {0,0,0,0,0,0,0,0};
 
-            uint u_nib = total_blocks + u_idx * 4;
-            uint uw0 = weights[u_nib];
-            uint uw1 = weights[u_nib + 1];
-            uint uw2 = weights[u_nib + 2];
-            uint uw3 = weights[u_nib + 3];
+            for (ushort i = 0; i < 8; i += 2) {
+                float y0=x[eb+i], y1=x[eb+i+1], y16=x[eb+i+16], y17=x[eb+i+17];
+                float y8=x[eb+8+i], y9=x[eb+8+i+1], y24=x[eb+24+i], y25=x[eb+24+i+1];
+                float sy = y0+y1+y16+y17+y8+y9+y24+y25;
+                gsumy += sy; usumy += sy;
 
-            // float4 loads — coalesced 16-byte reads (shared between gate and up)
-            device const float4 *xp = (device const float4 *)(x + b * 32);
+                ushort gw0=gqs0[i/2], gw1=gqs1[i/2];
+                ga[0] += y0        *float(gw0&0x000Fu); ga[1] += (y1/256)  *float(gw0&0x0F00u);
+                ga[2] += (y16/16)  *float(gw0&0x00F0u); ga[3] += (y17/4096)*float(gw0&0xF000u);
+                ga[4] += y8        *float(gw1&0x000Fu); ga[5] += (y9/256)  *float(gw1&0x0F00u);
+                ga[6] += (y24/16)  *float(gw1&0x00F0u); ga[7] += (y25/4096)*float(gw1&0xF000u);
 
-            // Gate: 8 vectorized dot products
-            gate_acc += dot(DQ4(gw0,  0, gs), xp[0]);
-            gate_acc += dot(DQ4(gw0, 16, gs), xp[1]);
-            gate_acc += dot(DQ4(gw1,  0, gs), xp[2]);
-            gate_acc += dot(DQ4(gw1, 16, gs), xp[3]);
-            gate_acc += dot(DQ4(gw2,  0, gs), xp[4]);
-            gate_acc += dot(DQ4(gw2, 16, gs), xp[5]);
-            gate_acc += dot(DQ4(gw3,  0, gs), xp[6]);
-            gate_acc += dot(DQ4(gw3, 16, gs), xp[7]);
-
-            // Up: 8 vectorized dot products
-            up_acc += dot(DQ4(uw0,  0, us), xp[0]);
-            up_acc += dot(DQ4(uw0, 16, us), xp[1]);
-            up_acc += dot(DQ4(uw1,  0, us), xp[2]);
-            up_acc += dot(DQ4(uw1, 16, us), xp[3]);
-            up_acc += dot(DQ4(uw2,  0, us), xp[4]);
-            up_acc += dot(DQ4(uw2, 16, us), xp[5]);
-            up_acc += dot(DQ4(uw3,  0, us), xp[6]);
-            up_acc += dot(DQ4(uw3, 16, us), xp[7]);
+                ushort uw0=uqs0[i/2], uw1=uqs1[i/2];
+                ua[0] += y0        *float(uw0&0x000Fu); ua[1] += (y1/256)  *float(uw0&0x0F00u);
+                ua[2] += (y16/16)  *float(uw0&0x00F0u); ua[3] += (y17/4096)*float(uw0&0xF000u);
+                ua[4] += y8        *float(uw1&0x000Fu); ua[5] += (y9/256)  *float(uw1&0x0F00u);
+                ua[6] += (y24/16)  *float(uw1&0x00F0u); ua[7] += (y25/4096)*float(uw1&0xF000u);
+            }
+            gate_acc += gd * (gsumy*(-8.f) + ga[0]+ga[1]+ga[2]+ga[3]+ga[4]+ga[5]+ga[6]+ga[7]);
+            up_acc   += ud * (usumy*(-8.f) + ua[0]+ua[1]+ua[2]+ua[3]+ua[4]+ua[5]+ua[6]+ua[7]);
         }
     }
 
-    // Reduce gate accumulator across 8 threads in the row
     gate_acc += simd_shuffle_xor(gate_acc, 1);
     gate_acc += simd_shuffle_xor(gate_acc, 2);
     gate_acc += simd_shuffle_xor(gate_acc, 4);
-
-    // Reduce up accumulator across 8 threads in the row
     up_acc += simd_shuffle_xor(up_acc, 1);
     up_acc += simd_shuffle_xor(up_acc, 2);
     up_acc += simd_shuffle_xor(up_acc, 4);
 
     if (row_lane == 0 && global_row < gate_rows) {
         float g = gate_acc;
-        float u = up_acc;
-        if (bias_offset > 0) {
-            g += as_type<float>(weights[bias_offset + global_row]);
-            u += as_type<float>(weights[bias_offset + global_row + gate_rows]);
-        }
-        // SiLU(gate) * up
-        float silu_g = g / (1.0f + exp(-g));
-        out[global_row] = silu_g * u;
+        out[global_row] = (g / (1.0f + exp(-g))) * up_acc;
     }
 }
-
-#undef DQ4

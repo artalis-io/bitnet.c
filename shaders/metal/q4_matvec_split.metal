@@ -1,27 +1,12 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 REPACKED split matvec — multi-output variant of q4_matvec
-//
-// Routes output rows to up to 3 different buffers based on split points:
-//   row < split1  → out0[off0 + row]
-//   row < split2  → out1[off1 + (row - split1)]
-//   row >= split2 → out2[off2 + (row - split2)]
-//
-// Use cases:
-//   QKV batched:   split1=q_dim, split2=q_dim+kv_dim (Q→out0, K→out1, V→out2)
-//   gate+up batch: split1=gate_rows, split2=0         (gate→out0, up→out1)
-//   normal:        split1=0, split2=0                  (all→out0)
-//
+// Q4_0 NATIVE split matvec — multi-output, reads GGUF format (18B/block)
+// Routes output rows to up to 3 buffers based on split points.
+// Pre-scaling trick for zero-shift nibble extraction.
 // Dispatch: (ceil(total_rows/32), 1, 1)
 
-#define DQ4(w, sh, s) (s * float4( \
-    float(int(((w) >> (sh))       & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 12))& 0xF) - 8)))
-
-kernel void q4_matvec_split(device const uint  *weights [[buffer(0)]],
+kernel void q4_matvec_split(device const char  *weights [[buffer(0)]],
                              device const float *x       [[buffer(1)]],
                              device float       *out0    [[buffer(2)]],
                              device float       *out1    [[buffer(3)]],
@@ -31,7 +16,6 @@ kernel void q4_matvec_split(device const uint  *weights [[buffer(0)]],
                              uint3 lid [[thread_position_in_threadgroup]]) {
     uint rows = p[0], cols = p[1];
     uint split1 = p[2], split2 = p[3];
-    uint bias_offset = p[4];
     uint off0 = p[5], off1 = p[6], off2 = p[7];
 
     uint tile_start = wid.x * 32;
@@ -39,34 +23,39 @@ kernel void q4_matvec_split(device const uint  *weights [[buffer(0)]],
     uint local_row = lid.x >> 3;
     uint global_row = tile_start + local_row;
 
-    uint blocks_per_row = cols >> 5;
-    uint total_blocks = rows * blocks_per_row;
-
+    uint nb = cols >> 5;
     float acc = 0.0f;
 
     if (global_row < rows) {
-        uint row_block_base = global_row * blocks_per_row;
+        device const char *row_data = weights + (size_t)global_row * nb * 18;
 
-        for (uint b = row_lane; b < blocks_per_row; b += 8) {
-            uint block_idx = row_block_base + b;
-            float s = as_type<float>(weights[block_idx]);
+        for (uint b = row_lane; b < nb; b += 8) {
+            device const char *block = row_data + (size_t)b * 18;
+            float d = float(*(device const half *)block);
+            device const ushort *qs0 = (device const ushort *)(block + 2);
+            device const ushort *qs1 = (device const ushort *)(block + 2 + 8);
+            uint eb = b * 32;
 
-            uint nib_base = total_blocks + block_idx * 4;
-            uint w0 = weights[nib_base];
-            uint w1 = weights[nib_base + 1];
-            uint w2 = weights[nib_base + 2];
-            uint w3 = weights[nib_base + 3];
+            float sumy = 0.f;
+            float a[8] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+            for (ushort i = 0; i < 8; i += 2) {
+                float y0=x[eb+i], y1=x[eb+i+1], y16=x[eb+i+16], y17=x[eb+i+17];
+                sumy += y0 + y1 + y16 + y17;
+                ushort w = qs0[i/2];
+                a[0] += y0         * float(w & 0x000Fu);
+                a[1] += (y1/256)   * float(w & 0x0F00u);
+                a[2] += (y16/16)   * float(w & 0x00F0u);
+                a[3] += (y17/4096) * float(w & 0xF000u);
 
-            device const float4 *xp = (device const float4 *)(x + b * 32);
-
-            acc += dot(DQ4(w0,  0, s), xp[0]);
-            acc += dot(DQ4(w0, 16, s), xp[1]);
-            acc += dot(DQ4(w1,  0, s), xp[2]);
-            acc += dot(DQ4(w1, 16, s), xp[3]);
-            acc += dot(DQ4(w2,  0, s), xp[4]);
-            acc += dot(DQ4(w2, 16, s), xp[5]);
-            acc += dot(DQ4(w3,  0, s), xp[6]);
-            acc += dot(DQ4(w3, 16, s), xp[7]);
+                float y8=x[eb+8+i], y9=x[eb+8+i+1], y24=x[eb+24+i], y25=x[eb+24+i+1];
+                sumy += y8 + y9 + y24 + y25;
+                ushort w2 = qs1[i/2];
+                a[4] += y8         * float(w2 & 0x000Fu);
+                a[5] += (y9/256)   * float(w2 & 0x0F00u);
+                a[6] += (y24/16)   * float(w2 & 0x00F0u);
+                a[7] += (y25/4096) * float(w2 & 0xF000u);
+            }
+            acc += d * (sumy*(-8.f) + a[0]+a[1]+a[2]+a[3]+a[4]+a[5]+a[6]+a[7]);
         }
     }
 
@@ -75,19 +64,13 @@ kernel void q4_matvec_split(device const uint  *weights [[buffer(0)]],
     acc += simd_shuffle_xor(acc, 4);
 
     if (row_lane == 0 && global_row < rows) {
-        float result = acc;
-        if (bias_offset > 0)
-            result += as_type<float>(weights[bias_offset + global_row]);
-
         if (split1 > 0 && global_row >= split1) {
             if (split2 > 0 && global_row >= split2)
-                out2[off2 + global_row - split2] = result;
+                out2[off2 + global_row - split2] = acc;
             else
-                out1[off1 + global_row - split1] = result;
+                out1[off1 + global_row - split1] = acc;
         } else {
-            out0[off0 + global_row] = result;
+            out0[off0 + global_row] = acc;
         }
     }
 }
-
-#undef DQ4
