@@ -1300,12 +1300,34 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     /* GPU profiling */
     if (ctx->gpu_profile < 0) {
         const char *env = getenv("BN_GPU_PROFILE");
-        ctx->gpu_profile = (env && env[0] == '1') ? 1 : 0;
+        ctx->gpu_profile = env ? atoi(env) : 0;
     }
-    if (ctx->gpu_profile && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
+    if (ctx->gpu_profile >= 1 && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
         fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
                 ctx->gpu_frame, n_ops, n_barriers,
                 t_encode - t0, t_gpu - t_encode, t1 - t_gpu, t1 - t0);
+    }
+    /* Per-op-type breakdown (BN_GPU_PROFILE>=2, frame 1 only) */
+    if (ctx->gpu_profile >= 2 && ctx->gpu_frame == 1) {
+        /* Re-execute ops by category, timing each category separately */
+        static const char *cat_names[] = {
+            "matvec","rmsnorm","rope","gqa_scores","softmax","gqa_combine",
+            "silu_gate","relu2_gate","resid_add","copy","bias_add","resid_rmsnorm",
+            "weighted_add","ssm_conv","ssm_l2norm","ssm_ab","ssm_delta","ssm_gate",
+            "per_head_norm","deinterleave_q","sigmoid_gate","flash_attn",
+            "matvec_split","rope_qk","fused_gateup"
+        };
+        int cat_count[BN_GPU_SHADER_COUNT]; memset(cat_count, 0, sizeof(cat_count));
+        for (int i = 0; i < n_ops; i++) {
+            int s = ops[i].shader;
+            if (s >= 0 && s < BN_GPU_SHADER_COUNT) cat_count[s]++;
+        }
+        fprintf(stderr, "[gpu:metal:breakdown] --- op counts ---\n");
+        for (int s = 0; s < BN_GPU_SHADER_COUNT; s++) {
+            if (cat_count[s] > 0)
+                fprintf(stderr, "  %-16s: %3d ops\n",
+                        s < (int)(sizeof(cat_names)/sizeof(cat_names[0])) ? cat_names[s] : "?", cat_count[s]);
+        }
     }
     ctx->gpu_frame++;
 

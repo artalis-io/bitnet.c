@@ -3,21 +3,10 @@ using namespace metal;
 
 // Q4_0 NATIVE matvec — reads original GGUF format (18 bytes/block)
 // 32 rows/tile, 8 threads/row, simd_shuffle_xor reduction.
+// Pre-scaling trick with float4 vectorized x loads.
 //
 // GGUF Q4_0 block: [FP16 scale (2B)][16 packed nibble bytes]
 // qs[j] = (elem[j] & 0xF) | (elem[j+16] << 4)
-//
-// Pre-scaling trick (from llama.cpp): read nibbles as uint16, mask with
-// 0x000F/0x00F0/0x0F00/0xF000 to extract 4 nibbles without shifting.
-// Pre-divide input vector by 1/16/256/4096 to compensate for bit positions.
-// Bias correction: d * (sumy * -8 + acc) per block.
-//
-// Each thread processes 4 uint16 words = 8 nibble bytes = 16 elements per block
-// (first half + second half interleaved in the same bytes).
-// 2 "halves" per block: bytes 0-7 cover elements {0-7, 16-23},
-// bytes 8-15 cover elements {8-15, 24-31}.
-// Each thread handles ONE half (8 bytes) and processes 16 of 32 elements.
-// With 8 threads per row at stride 8 blocks, this covers all blocks.
 //
 // Dispatch: (ceil(rows/32), n_tokens, 1)
 
@@ -37,7 +26,7 @@ kernel void q4_native_matvec(
     uint local_row = lid.x >> 3;
     uint global_row = tile_start + local_row;
 
-    uint nb = cols >> 5;  // blocks per row
+    uint nb = cols >> 5;
     uint x_base = token * cols;
 
     float acc = 0.0f;
@@ -49,49 +38,74 @@ kernel void q4_native_matvec(
             device const char *block = row_data + (size_t)b * 18;
             float d = float(*(device const half *)block);
 
-            // Read packed nibbles as uint16 (4 words = 8 bytes = 16 elements)
-            // First half: bytes 0-7 → elements {0-7} (lower nibbles) + {16-23} (upper nibbles)
-            device const ushort *qs0 = (device const ushort *)(block + 2);
-            // Second half: bytes 8-15 → elements {8-15} + {24-31}
-            device const ushort *qs1 = (device const ushort *)(block + 2 + 8);
+            // float4 vectorized x loads (8 loads = 32 elements)
+            device const float4 *xp = (device const float4 *)(x + x_base + b * 32);
+            float4 x0 = xp[0], x1 = xp[1], x2 = xp[2], x3 = xp[3];
+            float4 x4 = xp[4], x5 = xp[5], x6 = xp[6], x7 = xp[7];
 
-            uint eb = x_base + b * 32;
+            // Compute sum of all 32 x values for bias correction
+            float sumy = (x0.x+x0.y+x0.z+x0.w) + (x1.x+x1.y+x1.z+x1.w)
+                       + (x2.x+x2.y+x2.z+x2.w) + (x3.x+x3.y+x3.z+x3.w)
+                       + (x4.x+x4.y+x4.z+x4.w) + (x5.x+x5.y+x5.z+x5.w)
+                       + (x6.x+x6.y+x6.z+x6.w) + (x7.x+x7.y+x7.z+x7.w);
 
-            // First half: elements {0-7, 16-23}
-            float sumy0 = 0.0f;
-            float a0[4] = {0.f, 0.f, 0.f, 0.f};
-            for (ushort i = 0; i < 8; i += 2) {
-                float y0 = x[eb + i];
-                float y1 = x[eb + i + 1];
-                float y16 = x[eb + i + 16];
-                float y17 = x[eb + i + 17];
-                sumy0 += y0 + y1 + y16 + y17;
-                ushort w = qs0[i / 2];
-                a0[0] += y0          * float(w & 0x000Fu);
-                a0[1] += (y1 / 256)  * float(w & 0x0F00u);
-                a0[2] += (y16 / 16)  * float(w & 0x00F0u);
-                a0[3] += (y17 / 4096)* float(w & 0xF000u);
-            }
+            // Pre-scaling: read uint16 words, mask nibbles, multiply by pre-scaled x
+            // Layout: qs[j] = elem[j](lower) | elem[j+16](upper)
+            // uint16 at byte 2k: bits 0-3=elem[2k], 4-7=elem[2k+16], 8-11=elem[2k+1], 12-15=elem[2k+1+16]
+            device const ushort *qs = (device const ushort *)(block + 2);
 
-            // Second half: elements {8-15, 24-31}
-            float sumy1 = 0.0f;
-            float a1[4] = {0.f, 0.f, 0.f, 0.f};
-            for (ushort i = 0; i < 8; i += 2) {
-                float y8 = x[eb + 8 + i];
-                float y9 = x[eb + 8 + i + 1];
-                float y24 = x[eb + 24 + i];
-                float y25 = x[eb + 24 + i + 1];
-                sumy1 += y8 + y9 + y24 + y25;
-                ushort w = qs1[i / 2];
-                a1[0] += y8          * float(w & 0x000Fu);
-                a1[1] += (y9 / 256)  * float(w & 0x0F00u);
-                a1[2] += (y24 / 16)  * float(w & 0x00F0u);
-                a1[3] += (y25 / 4096)* float(w & 0xF000u);
-            }
+            float sum = 0.0f;
 
-            acc += d * ((sumy0 + sumy1) * (-8.f)
-                        + a0[0] + a0[1] + a0[2] + a0[3]
-                        + a1[0] + a1[1] + a1[2] + a1[3]);
+            // Process 8 uint16 words = 16 nibble bytes = 32 elements
+            // Word 0: elements {0, 16, 1, 17} via masks 0x000F, 0x00F0, 0x0F00, 0xF000
+            sum += x0.x          * float(qs[0] & 0x000Fu);
+            sum += (x0.y / 256)  * float(qs[0] & 0x0F00u);
+            sum += (x4.x / 16)   * float(qs[0] & 0x00F0u);
+            sum += (x4.y / 4096) * float(qs[0] & 0xF000u);
+
+            // Word 1: elements {2, 18, 3, 19}
+            sum += x0.z          * float(qs[1] & 0x000Fu);
+            sum += (x0.w / 256)  * float(qs[1] & 0x0F00u);
+            sum += (x4.z / 16)   * float(qs[1] & 0x00F0u);
+            sum += (x4.w / 4096) * float(qs[1] & 0xF000u);
+
+            // Word 2: elements {4, 20, 5, 21}
+            sum += x1.x          * float(qs[2] & 0x000Fu);
+            sum += (x1.y / 256)  * float(qs[2] & 0x0F00u);
+            sum += (x5.x / 16)   * float(qs[2] & 0x00F0u);
+            sum += (x5.y / 4096) * float(qs[2] & 0xF000u);
+
+            // Word 3: elements {6, 22, 7, 23}
+            sum += x1.z          * float(qs[3] & 0x000Fu);
+            sum += (x1.w / 256)  * float(qs[3] & 0x0F00u);
+            sum += (x5.z / 16)   * float(qs[3] & 0x00F0u);
+            sum += (x5.w / 4096) * float(qs[3] & 0xF000u);
+
+            // Word 4: elements {8, 24, 9, 25}
+            sum += x2.x          * float(qs[4] & 0x000Fu);
+            sum += (x2.y / 256)  * float(qs[4] & 0x0F00u);
+            sum += (x6.x / 16)   * float(qs[4] & 0x00F0u);
+            sum += (x6.y / 4096) * float(qs[4] & 0xF000u);
+
+            // Word 5: elements {10, 26, 11, 27}
+            sum += x2.z          * float(qs[5] & 0x000Fu);
+            sum += (x2.w / 256)  * float(qs[5] & 0x0F00u);
+            sum += (x6.z / 16)   * float(qs[5] & 0x00F0u);
+            sum += (x6.w / 4096) * float(qs[5] & 0xF000u);
+
+            // Word 6: elements {12, 28, 13, 29}
+            sum += x3.x          * float(qs[6] & 0x000Fu);
+            sum += (x3.y / 256)  * float(qs[6] & 0x0F00u);
+            sum += (x7.x / 16)   * float(qs[6] & 0x00F0u);
+            sum += (x7.y / 4096) * float(qs[6] & 0xF000u);
+
+            // Word 7: elements {14, 30, 15, 31}
+            sum += x3.z          * float(qs[7] & 0x000Fu);
+            sum += (x3.w / 256)  * float(qs[7] & 0x0F00u);
+            sum += (x7.z / 16)   * float(qs[7] & 0x00F0u);
+            sum += (x7.w / 4096) * float(qs[7] & 0xF000u);
+
+            acc += d * (sumy * (-8.f) + sum);
         }
     }
 
@@ -101,10 +115,8 @@ kernel void q4_native_matvec(
 
     if (row_lane == 0 && global_row < rows) {
         uint bias_offset = p[4];
-        if (bias_offset > 0) {
-            // Fused FP32 bias stored after weight data at u32 offset bias_offset
+        if (bias_offset > 0)
             acc += as_type<float>(((device const uint *)weights)[bias_offset + global_row]);
-        }
         out[out_offset + token * rows + global_row] = acc;
     }
 }
