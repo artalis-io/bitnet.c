@@ -37,10 +37,9 @@ kernel void q8_matvec(device const uchar *weights [[buffer(0)]],
             device const char *qs = (device const char *)(block + 2);
             uint elem_base = b * 32;
             uint my_start = local_elem * ELEMS_PER_THREAD;
-            for (uint i = 0; i < ELEMS_PER_THREAD; i++) {
-                uint elem = my_start + i;
-                acc += scale * float(qs[elem]) * x[x_base + elem_base + elem];
-            }
+            char4 qv = *(device const char4 *)(qs + my_start);
+            float4 xv = *(device const float4 *)(x + x_base + elem_base + my_start);
+            acc += scale * dot(float4(qv), xv);
         }
     }
 
