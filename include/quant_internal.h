@@ -103,6 +103,8 @@ typedef BnKQuantSdotCtx BnQ6KSdotCtx;  // backward compat
 
 typedef BnKQuantSdotCtx BnQ4KSdotCtx;  // backward compat
 
+typedef BnKQuantSdotCtx BnQ5KSdotCtx;  // backward compat
+
 // K-quant matmul context (fused: weight loaded once for all tokens)
 typedef struct {
     float *out;                // [n_tokens * W->rows]
@@ -215,6 +217,8 @@ void bn_quant_q4k_scalar_range(void *ctx, int start, int end);
 
 // Q5_K kernels
 void bn_quant_q5k_neon_range(void *ctx, int start, int end);
+void bn_quant_q5k_neon_sdot_range(void *ctx, int start, int end);
+void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q5k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q5k_scalar_range(void *ctx, int start, int end);

@@ -240,80 +240,6 @@ static void slab_free_range(BnMetalCtx *ctx, size_t offset, size_t size)
     ctx->slab_free_count++;
 }
 
-/* ── Q4_0 weight repacking ──────────────────────────────────────────
- *
- * GGUF Q4_0: 18 bytes/block = [f16 scale][16 nibble bytes]
- *   nibble byte[i]: lo nibble = elem i, hi nibble = elem i+16
- *
- * Repacked GPU layout (matches wgpu q4_matvec shader):
- *   [f32 scales: n_blocks × 4 bytes][nibbles: n_blocks × 4 u32s]
- *   Elements stored in sequential order (0..31) for clean GPU access.
- */
-static void *repack_q4_0(BnMetalCtx *ctx, const void *data, size_t size,
-                           int rows, int cols, const void *bias, size_t bias_size)
-{
-    (void)size;
-    int n_blocks = rows * (cols / 32);
-    size_t base_size = (size_t)n_blocks * 4 + (size_t)n_blocks * 16;
-    size_t total = base_size + bias_size;
-    total = (total + 15) & ~(size_t)15;
-
-    uint8_t *repacked = (uint8_t *)calloc(1, total);
-    if (!repacked) return NULL;
-
-    float *scales = (float *)repacked;
-    uint8_t *nibbles = repacked + (size_t)n_blocks * 4;
-    const uint8_t *src = (const uint8_t *)data;
-
-    for (int b = 0; b < n_blocks; b++) {
-        const uint8_t *block = src + b * 18;
-        uint16_t d_bits = (uint16_t)(block[0] | (block[1] << 8));
-        scales[b] = bn_fp16_to_fp32(d_bits);
-
-        uint8_t *dst = nibbles + (size_t)b * 16;
-        const uint8_t *qs = block + 2;
-        /* Reorder: GGUF lo=elem[0..15], hi=elem[16..31] → sequential */
-        dst[0]  = (qs[0] & 0x0F)  | ((qs[1] & 0x0F) << 4);
-        dst[1]  = (qs[2] & 0x0F)  | ((qs[3] & 0x0F) << 4);
-        dst[2]  = (qs[4] & 0x0F)  | ((qs[5] & 0x0F) << 4);
-        dst[3]  = (qs[6] & 0x0F)  | ((qs[7] & 0x0F) << 4);
-        dst[4]  = (qs[8] & 0x0F)  | ((qs[9] & 0x0F) << 4);
-        dst[5]  = (qs[10] & 0x0F) | ((qs[11] & 0x0F) << 4);
-        dst[6]  = (qs[12] & 0x0F) | ((qs[13] & 0x0F) << 4);
-        dst[7]  = (qs[14] & 0x0F) | ((qs[15] & 0x0F) << 4);
-        dst[8]  = (qs[0] >> 4)    | ((qs[1] >> 4) << 4);
-        dst[9]  = (qs[2] >> 4)    | ((qs[3] >> 4) << 4);
-        dst[10] = (qs[4] >> 4)    | ((qs[5] >> 4) << 4);
-        dst[11] = (qs[6] >> 4)    | ((qs[7] >> 4) << 4);
-        dst[12] = (qs[8] >> 4)    | ((qs[9] >> 4) << 4);
-        dst[13] = (qs[10] >> 4)   | ((qs[11] >> 4) << 4);
-        dst[14] = (qs[12] >> 4)   | ((qs[13] >> 4) << 4);
-        dst[15] = (qs[14] >> 4)   | ((qs[15] >> 4) << 4);
-    }
-
-    uint32_t fused_bias_offset = 0;
-    if (bias && bias_size > 0) {
-        fused_bias_offset = (uint32_t)(base_size / sizeof(uint32_t));
-        memcpy(repacked + base_size, bias, bias_size);
-    }
-
-    BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
-    if (!buf) { free(repacked); return NULL; }
-
-    buf->buf = [ctx->device newBufferWithBytes:repacked
-                                        length:total
-                                       options:MTLResourceStorageModeShared];
-    free(repacked);
-    if (!buf->buf) { free(buf); return NULL; }
-
-    buf->size = total;
-    buf->type = BN_GGUF_TENSOR_Q4_0;
-    buf->rows = rows;
-    buf->cols = cols;
-    buf->bias_offset = fused_bias_offset;
-    return buf;
-}
-
 /* ── Vtable: buffer_create ─────────────────────────────────────────── */
 
 static void *metal_buffer_create(void *vctx, const void *data, size_t size,
@@ -835,7 +761,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         /* Dependency tracking: only insert barriers on actual RAW/WAR/WAW conflicts.
          * Same logic as wgpu execute — track read/write buffer masks since last barrier. */
         #define BUF_BIT(idx) (1u << (idx))
-        uint32_t since_barrier_reads = 0, since_barrier_writes = 0;
+        uint32_t since_barrier_writes = 0;
         id<MTLComputePipelineState> current_pso = nil;
 
         for (int i = 0; i < n_ops; i++) {
@@ -980,11 +906,10 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                     [enc memoryBarrierWithResources:barrier_bufs count:(NSUInteger)n_bbuf];
                 else
                     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-                since_barrier_reads = since_barrier_writes = 0;
+                since_barrier_writes = 0;
                 n_barriers++;
             }
 
-            since_barrier_reads |= op_reads;
             since_barrier_writes |= op_writes;
 
             /* Start compute encoder if needed */

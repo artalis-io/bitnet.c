@@ -60,8 +60,8 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             for (int j = 0; j < 8; j++)
                 bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
 
-            // Integer accumulation: sumi += vaddvq(sdot) * scale_byte
-            int32_t sumi = 0;
+            // Integer accumulation: keep lane sums vectorized and reduce once.
+            int32x4_t acc = zero;
             for (int j = 0; j < BN_QK_K; j += 64) {
                 int sub = j / 32;
 
@@ -74,7 +74,8 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
 
                 int32x4_t p0 = vdotq_s32(zero, lo0, vld1q_s8(xb + j));
                 int32x4_t p1 = vdotq_s32(zero, lo1, vld1q_s8(xb + j + 16));
-                sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub];
+                acc = vmlaq_n_s32(acc, p0, (int32_t)sc[sub]);
+                acc = vmlaq_n_s32(acc, p1, (int32_t)sc[sub]);
 
                 // High nibbles (sub-block 'sub+1'): unsigned 0..15
                 int8x16_t hi0 = vreinterpretq_s8_u8(vshrq_n_u8(raw0, 4));
@@ -82,10 +83,12 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
 
                 p0 = vdotq_s32(zero, hi0, vld1q_s8(xb + j + 32));
                 p1 = vdotq_s32(zero, hi1, vld1q_s8(xb + j + 48));
-                sumi += (vaddvq_s32(p0) + vaddvq_s32(p1)) * (int32_t)sc[sub + 1];
+                acc = vmlaq_n_s32(acc, p0, (int32_t)sc[sub + 1]);
+                acc = vmlaq_n_s32(acc, p1, (int32_t)sc[sub + 1]);
 
                 qs += 32;
             }
+            int32_t sumi = vaddvq_s32(acc);
 
             // Single float conversion per super-block
             row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);

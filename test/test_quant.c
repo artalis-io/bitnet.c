@@ -48,9 +48,22 @@ static void test_dispatch_routing(void) {
     bn_quant_matvec(&out, &W_q6k, x, x_q, NULL);
     assert(fabsf(out - (-8192.0f)) < 1.0f);
 
+    // Q5_K: all scales=1, mins=0, q=1 → dot = 256
+    BnBlockQ5K *q5k = (BnBlockQ5K *)calloc(1, sizeof(BnBlockQ5K));
+    q5k->d = 0x3C00;
+    q5k->dmin = 0;
+    for (int i = 0; i < 4; i++) q5k->scales[i] = 1;
+    for (int i = 8; i < 12; i++) q5k->scales[i] = 1;
+    for (int i = 0; i < 128; i++) q5k->qs[i] = 0x11;
+    BnQWeight W_q5k = { q5k, BN_GGUF_TENSOR_Q5_K, 1, 256, 1.0f };
+
+    bn_quant_matvec(&out, &W_q5k, x, x_q, NULL);
+    assert(fabsf(out - 256.0f) < 1.0f);
+
     free(tq2);
     free(q8);
     free(q6k);
+    free(q5k);
     printf("PASSED\n");
 }
 
@@ -200,12 +213,50 @@ static void test_matmul_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_q5k_matmul_correctness(void) {
+    printf("test_q5k_matmul_correctness... ");
+
+    int rows = 2, cols = 256, n_tokens = 3;
+    BnBlockQ5K *blocks = (BnBlockQ5K *)calloc((size_t)rows, sizeof(BnBlockQ5K));
+    for (int r = 0; r < rows; r++) {
+        blocks[r].d = 0x3C00;
+        for (int i = 0; i < 4; i++) blocks[r].scales[i] = 1;
+        for (int i = 8; i < 12; i++) blocks[r].scales[i] = 1;
+        memset(blocks[r].qs, r == 0 ? 0x11 : 0x22, sizeof(blocks[r].qs));
+    }
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f };
+
+    float *X = (float *)malloc((size_t)n_tokens * cols * sizeof(float));
+    for (int t = 0; t < n_tokens; t++)
+        for (int i = 0; i < cols; i++)
+            X[t * cols + i] = 0.05f * ((t * 11 + i * 5) % 23) - 0.5f;
+
+    float ref[6];
+    int8_t x_q[256];
+    for (int t = 0; t < n_tokens; t++)
+        bn_quant_matvec(ref + t * rows, &W, X + t * cols, x_q, NULL);
+
+    float out[6];
+    bn_quant_matmul(out, &W, X, n_tokens, x_q, NULL);
+
+    for (int i = 0; i < rows * n_tokens; i++) {
+        float diff = fabsf(out[i] - ref[i]);
+        float mag = fabsf(ref[i]) + 1e-6f;
+        assert(diff / mag < 0.02f);
+    }
+
+    free(blocks);
+    free(X);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_dispatch_routing();
     test_matvec_batch();
     test_matvec_threaded();
     test_matmul_correctness();
+    test_q5k_matmul_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }

@@ -238,9 +238,18 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
     }
 
     if (W->type == BN_GGUF_TENSOR_Q5_K) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        int n_sb = W->cols / BN_QK_K;
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) return;
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, W->cols);
+        BnQ5KSdotCtx ctx = { out, W, x_q_buf, q8k_d, q8k_bsums };
+        BnTPTask task = { bn_quant_q5k_neon_sdot_range, &ctx, W->rows };
+#else
         (void)x_q_buf;
         BnQ5KCtx ctx = { out, W, x };
-#ifdef __ARM_NEON
+#if defined(__ARM_NEON)
         BnTPTask task = { bn_quant_q5k_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
         BnTPTask task = { bn_quant_q5k_avx2_range, &ctx, W->rows };
@@ -248,6 +257,7 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         BnTPTask task = { bn_quant_q5k_wasm_range, &ctx, W->rows };
 #else
         BnTPTask task = { bn_quant_q5k_scalar_range, &ctx, W->rows };
+#endif
 #endif
         bn_tp_dispatch(pool, &task, 1);
         return;
@@ -580,7 +590,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     int all_i2s = 1, all_q4 = 1, all_tq1 = 1, all_tq2 = 1, all_q8 = 1;
-    int all_q4k = 1, all_q6k = 1;
+    int all_q4k = 1, all_q5k = 1, all_q6k = 1;
     for (int t = 0; t < n_tasks; t++) {
         if (tasks[t].W->type != BN_GGUF_TENSOR_I2_S) all_i2s = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_0) all_q4 = 0;
@@ -588,9 +598,10 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         if (tasks[t].W->type != BN_GGUF_TENSOR_TQ2_0) all_tq2 = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q8_0) all_q8 = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_K) all_q4k = 0;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_Q5_K) all_q5k = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q6_K) all_q6k = 0;
         if (!all_i2s && !all_q4 && !all_tq1 && !all_tq2 && !all_q8 &&
-            !all_q4k && !all_q6k) break;
+            !all_q4k && !all_q5k && !all_q6k) break;
     }
 
     if (all_i2s) {
@@ -718,6 +729,25 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, q8k_d, q8k_bsums };
             tp_tasks[t] = (BnTPTask){ bn_quant_q4k_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_q5k && n_tasks <= BN_MAX_BATCH) {
+        int n_sb = cols / BN_QK_K;
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
+
+        BnQ5KSdotCtx ctxs[BN_MAX_BATCH];
+        BnTPTask tp_tasks[BN_MAX_BATCH];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnQ5KSdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, q8k_d, q8k_bsums };
+            tp_tasks[t] = (BnTPTask){ bn_quant_q5k_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -1257,6 +1287,34 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
         free(xq_all); free(xd_all); free(xbs_all);
         return;
     }
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    if (W->type == BN_GGUF_TENSOR_Q5_K) {
+        int n_bpr = cols / BN_QK_K;
+        if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;
+        size_t xq_size = (size_t)n_tokens * cols;
+        if (n_tokens > 0 && xq_size / n_tokens != (size_t)cols) goto fallback_loop;
+        int8_t *xq_all = (int8_t *)malloc(xq_size);
+        float *xd_all = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+        int16_t *xbs_all = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+        if (!xq_all || !xd_all || !xbs_all) {
+            free(xq_all); free(xd_all); free(xbs_all);
+            goto fallback_loop;
+        }
+        for (int t = 0; t < n_tokens; t++)
+            bn_quant_x_to_q8k(X + (size_t)t * cols,
+                               xq_all + (size_t)t * cols,
+                               xd_all + (size_t)t * n_bpr,
+                               xbs_all + (size_t)t * n_bpr * 16, cols);
+
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnTPTask task = { bn_quant_q5k_neon_sdot_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+
+        free(xq_all); free(xd_all); free(xbs_all);
+        return;
+    }
+#endif
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
         int n_bpr = cols / BN_QK_K;
         if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;

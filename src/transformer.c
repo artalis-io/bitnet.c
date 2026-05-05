@@ -1928,12 +1928,19 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
     int kv_dim = c->kv_dim;
     int hidden_dim = c->hidden_dim;
     int q_dim = c->n_heads * head_size;
+    int q_buf_stride = (q_dim > dim ? q_dim * 2 : dim);
+    if (c->full_attn_interval > 0 && c->ssm_inner_size > 0) {
+        int ssm_qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 +
+                          c->ssm_inner_size;
+        if (ssm_qkv_dim > q_buf_stride)
+            q_buf_stride = ssm_qkv_dim;
+    }
     size_t nt = (size_t)n_tokens;
 
     /* Arena for all prefill scratch: single allocation, 32-byte aligned,
      * contiguous layout. Replaces 5 separate mallocs and simplifies cleanup. */
     size_t batch_floats = nt * dim                                            // xb
-                        + nt * (size_t)(q_dim > dim ? q_dim * 2 : dim)       // q_buf
+                        + nt * (size_t)q_buf_stride                          // q_buf
                         + nt * kv_dim * 2                                     // k_new, v_new
                         + nt * dim                                            // xb2
                         + nt * hidden_dim * 2;                                // hb, hb2
@@ -1977,7 +1984,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
     // Carve out pointers
     float *Xb   = batch_buf;
     float *Q_buf = Xb + nt * dim;
-    int q_buf_stride = (q_dim > dim ? q_dim * 2 : dim);
     float *K_new = Q_buf + nt * q_buf_stride;
     float *V_new = K_new + nt * kv_dim;
     float *Xb2  = V_new + nt * kv_dim;
@@ -2159,7 +2165,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
             // 2. Batch matmul: wqkv and wz (the two big projections)
             // QKV_all[n_tokens * qkv_dim_ssm], Z_all[n_tokens * value_dim]
             // Reuse Q_buf and K_new/V_new scratch from batch_buf
-            if (q_buf_stride < qkv_dim_ssm) { free(batch_buf); free(act); return NULL; }
+            if (q_buf_stride < qkv_dim_ssm) { sh_arena_free(pf_arena); return NULL; }
             float *QKV_all = Q_buf;   // verified: q_buf_stride >= qkv_dim_ssm
             float *Z_all   = Xb2;     // [nt * dim] >= [nt * value_dim]
             float *Out_all = Hb;      // [nt * hidden_dim] >= [nt * value_dim]

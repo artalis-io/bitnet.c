@@ -1,6 +1,9 @@
 #include "sampler.h"
 #include <math.h>
 #include <stdlib.h>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 static uint32_t rng_next(uint64_t *state) {
     *state ^= *state >> 12;
@@ -61,12 +64,51 @@ void bn_sampler_accept(BnSampler *s, int token) {
 // #28: Handle n <= 0
 static int argmax(float *v, int n) {
     if (n <= 0) return 0;
+#if defined(__ARM_NEON)
+    int i = 0;
+    int best = 0;
+    float best_val = v[0];
+
+    if (n >= 4) {
+        float32x4_t maxv = vld1q_f32(v);
+        int32x4_t maxi = {0, 1, 2, 3};
+        int32x4_t idx = {4, 5, 6, 7};
+        int32x4_t four = vdupq_n_s32(4);
+
+        for (i = 4; i + 3 < n; i += 4) {
+            float32x4_t x = vld1q_f32(v + i);
+            uint32x4_t gt = vcgtq_f32(x, maxv);
+            maxv = vbslq_f32(gt, x, maxv);
+            maxi = vbslq_s32(gt, idx, maxi);
+            idx = vaddq_s32(idx, four);
+        }
+
+        float vals[4];
+        int ids[4];
+        vst1q_f32(vals, maxv);
+        vst1q_s32(ids, maxi);
+        best_val = vals[0];
+        best = ids[0];
+        for (int k = 1; k < 4; k++) {
+            if (vals[k] > best_val) {
+                best_val = vals[k];
+                best = ids[k];
+            }
+        }
+    }
+
+    for (; i < n; i++) {
+        if (v[i] > best_val) { best_val = v[i]; best = i; }
+    }
+    return best;
+#else
     int best = 0;
     float best_val = v[0];
     for (int i = 1; i < n; i++) {
         if (v[i] > best_val) { best_val = v[i]; best = i; }
     }
     return best;
+#endif
 }
 
 // #28: Handle n <= 0

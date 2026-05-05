@@ -33,7 +33,7 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             const int16_t *bsums = x_bsums + b * 16;
 
             // Integer accumulation
-            int32_t sumi = 0;
+            int32x4_t acc = zero;
             int32_t bias_corr = 0;
 
             for (int chunk = 0; chunk < 2; chunk++) {
@@ -73,23 +73,23 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                 // SDOT + integer scale accumulation (4 pairs × 2 sub-blocks each)
                 int32x4_t s0a = vdotq_s32(zero, w0a, vld1q_s8(xb));
                 int32x4_t s0b = vdotq_s32(zero, w0b, vld1q_s8(xb + 16));
-                sumi += vaddvq_s32(s0a) * (int32_t)sc[0]
-                      + vaddvq_s32(s0b) * (int32_t)sc[1];
+                acc = vmlaq_n_s32(acc, s0a, (int32_t)sc[0]);
+                acc = vmlaq_n_s32(acc, s0b, (int32_t)sc[1]);
 
                 int32x4_t s1a = vdotq_s32(zero, w1a, vld1q_s8(xb + 32));
                 int32x4_t s1b = vdotq_s32(zero, w1b, vld1q_s8(xb + 48));
-                sumi += vaddvq_s32(s1a) * (int32_t)sc[2]
-                      + vaddvq_s32(s1b) * (int32_t)sc[3];
+                acc = vmlaq_n_s32(acc, s1a, (int32_t)sc[2]);
+                acc = vmlaq_n_s32(acc, s1b, (int32_t)sc[3]);
 
                 int32x4_t s2a = vdotq_s32(zero, w2a, vld1q_s8(xb + 64));
                 int32x4_t s2b = vdotq_s32(zero, w2b, vld1q_s8(xb + 80));
-                sumi += vaddvq_s32(s2a) * (int32_t)sc[4]
-                      + vaddvq_s32(s2b) * (int32_t)sc[5];
+                acc = vmlaq_n_s32(acc, s2a, (int32_t)sc[4]);
+                acc = vmlaq_n_s32(acc, s2b, (int32_t)sc[5]);
 
                 int32x4_t s3a = vdotq_s32(zero, w3a, vld1q_s8(xb + 96));
                 int32x4_t s3b = vdotq_s32(zero, w3b, vld1q_s8(xb + 112));
-                sumi += vaddvq_s32(s3a) * (int32_t)sc[6]
-                      + vaddvq_s32(s3b) * (int32_t)sc[7];
+                acc = vmlaq_n_s32(acc, s3a, (int32_t)sc[6]);
+                acc = vmlaq_n_s32(acc, s3b, (int32_t)sc[7]);
 
                 // Bias correction: sum(sc[g] * bsum[g]) for this chunk's 8 groups
                 for (int g = 0; g < 8; g++)
@@ -100,6 +100,7 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                 qh += 32;
                 sc += 8;
             }
+            int32_t sumi = vaddvq_s32(acc);
 
             // Single float conversion per super-block
             // val = d * sc * (w_unsigned - 32) * x_q * x_d
