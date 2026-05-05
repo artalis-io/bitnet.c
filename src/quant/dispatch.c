@@ -1105,8 +1105,12 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 
     // K-quant SDOT: quantize to Q8_K per task
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
-    if (all_same_type && (type0 == BN_GGUF_TENSOR_Q4_K || type0 == BN_GGUF_TENSOR_Q6_K)
-        && n_tasks <= BN_MAX_BATCH) {
+    if (all_same_type && (type0 == BN_GGUF_TENSOR_Q4_K ||
+                          type0 == BN_GGUF_TENSOR_Q6_K
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+                          || type0 == BN_GGUF_TENSOR_Q5_K
+#endif
+                          ) && n_tasks <= BN_MAX_BATCH) {
         int n_bpr = cols / BN_QK_K;
         if (n_bpr >= 1 && n_bpr <= BN_MAX_SCALE_BLOCKS / 8) {
             // VLAs sized by actual n_bpr (not worst-case BN_MAX_SCALE_BLOCKS)
@@ -1126,23 +1130,23 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     q8k_bsums + t * n_bpr * 16
                 };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-                void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
-                    ? bn_quant_q4k_neon_sdot_range : bn_quant_q6k_neon_sdot_range;
-#elif defined(__AVX2__)
                 void (*fn)(void *, int, int);
-                int use_4row = 1;
-                if (type0 == BN_GGUF_TENSOR_Q4_K) {
-                    fn = bn_quant_q4k_avx2_4row_range;
-                } else {
-                    fn = bn_quant_q6k_avx2_4row_range;
-                }
+                if (type0 == BN_GGUF_TENSOR_Q4_K)
+                    fn = bn_quant_q4k_neon_sdot_range;
+                else if (type0 == BN_GGUF_TENSOR_Q5_K)
+                    fn = bn_quant_q5k_neon_sdot_range;
+                else
+                    fn = bn_quant_q6k_neon_sdot_range;
+#elif defined(__AVX2__)
+                void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
+                    ? bn_quant_q4k_avx2_4row_range : bn_quant_q6k_avx2_4row_range;
 #else
                 void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
                     ? bn_quant_q4k_wasm_sdot_range : bn_quant_q6k_wasm_sdot_range;
 #endif
                 int n_items = tasks[t].W->rows;
 #ifdef __AVX2__
-                if (use_4row) n_items = (tasks[t].W->rows + 3) / 4;
+                n_items = (tasks[t].W->rows + 3) / 4;
 #endif
                 tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_items };
             }

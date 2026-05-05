@@ -250,6 +250,59 @@ static void test_q5k_matmul_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_q5k_matvec_multi_correctness(void) {
+    printf("test_q5k_matvec_multi_correctness... ");
+
+    int rows = 3, cols = 256, n_tasks = 2;
+    BnBlockQ5K *blocks1 = (BnBlockQ5K *)calloc((size_t)rows, sizeof(BnBlockQ5K));
+    BnBlockQ5K *blocks2 = (BnBlockQ5K *)calloc((size_t)rows, sizeof(BnBlockQ5K));
+    for (int r = 0; r < rows; r++) {
+        blocks1[r].d = 0x3C00;
+        blocks2[r].d = 0x3C00;
+        for (int i = 0; i < 4; i++) {
+            blocks1[r].scales[i] = 1;
+            blocks2[r].scales[i] = 1;
+        }
+        for (int i = 8; i < 12; i++) {
+            blocks1[r].scales[i] = 1;
+            blocks2[r].scales[i] = 1;
+        }
+        memset(blocks1[r].qs, 0x11 + r, sizeof(blocks1[r].qs));
+        memset(blocks2[r].qs, 0x22 + r, sizeof(blocks2[r].qs));
+    }
+    BnQWeight W1 = { blocks1, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f };
+    BnQWeight W2 = { blocks2, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f };
+
+    float X1[256], X2[256];
+    for (int i = 0; i < cols; i++) {
+        X1[i] = 0.04f * ((i * 7) % 29) - 0.5f;
+        X2[i] = 0.03f * ((i * 5 + 3) % 31) - 0.4f;
+    }
+
+    float ref1[3], ref2[3], out1[3], out2[3];
+    int8_t x_q_ref[256];
+    bn_quant_matvec(ref1, &W1, X1, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
+
+    BnMatvecMultiTask tasks[2] = {
+        { out1, &W1, X1 },
+        { out2, &W2, X2 },
+    };
+    int8_t x_q_bufs[2 * 256];
+    bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        float mag1 = fabsf(ref1[i]) + 1e-6f;
+        float mag2 = fabsf(ref2[i]) + 1e-6f;
+        assert(fabsf(out1[i] - ref1[i]) / mag1 < 0.02f);
+        assert(fabsf(out2[i] - ref2[i]) / mag2 < 0.02f);
+    }
+
+    free(blocks1);
+    free(blocks2);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_dispatch_routing();
@@ -257,6 +310,7 @@ int main(void) {
     test_matvec_threaded();
     test_matmul_correctness();
     test_q5k_matmul_correctness();
+    test_q5k_matvec_multi_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }
