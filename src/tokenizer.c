@@ -104,7 +104,14 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
         bn_tokenizer_free(t);
         return -1;
     }
-    const void *scores_data = bn_gguf_get_arr_data(f, "tokenizer.ggml.scores");
+    const void *scores_data = NULL;
+    int scores_idx = bn_gguf_find_key(f, "tokenizer.ggml.scores");
+    if (scores_idx >= 0 &&
+        f->kvs[scores_idx].type == BN_GGUF_TYPE_ARRAY &&
+        f->kvs[scores_idx].value.arr.elem_type == BN_GGUF_TYPE_FLOAT32 &&
+        f->kvs[scores_idx].value.arr.n >= (uint64_t)t->vocab_size) {
+        scores_data = f->kvs[scores_idx].value.arr.data;
+    }
     if (scores_data) {
         memcpy(t->scores, scores_data, t->vocab_size * sizeof(float));
     }

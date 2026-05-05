@@ -7,7 +7,7 @@
 #include <assert.h>
 
 // Build a minimal GGUF with tokenizer metadata
-static size_t build_tokenizer_gguf(uint8_t *buf, size_t buf_size) {
+static size_t build_tokenizer_gguf_scores(uint8_t *buf, size_t buf_size, uint32_t score_elem_type) {
     // We'll build a minimal GGUF with:
     // - tokenizer.ggml.tokens: string array ["<bos>", "<eos>", "h", "e", "l", "o", "he", "hel", "lo", "hello"]
     // - tokenizer.ggml.scores: float array [0,0, 0,0,0,0, 1,2,3,4]
@@ -40,10 +40,15 @@ static size_t build_tokenizer_gguf(uint8_t *buf, size_t buf_size) {
     // KV 2: tokenizer.ggml.scores (float array)
     WB_STR(wb, "tokenizer.ggml.scores");
     WB_U32(wb, 9);           // BN_GGUF_TYPE_ARRAY
-    WB_U32(wb, 6);           // elem_type = FLOAT32
+    WB_U32(wb, score_elem_type);
     WB_U64(wb, 10);          // count
-    float scores[] = {0,0, 0,0,0,0, 1,2,3,4};
-    WB_WRITE(wb, scores, sizeof(scores));
+    if (score_elem_type == BN_GGUF_TYPE_FLOAT32) {
+        float scores[] = {0,0, 0,0,0,0, 1,2,3,4};
+        WB_WRITE(wb, scores, sizeof(scores));
+    } else {
+        uint32_t scores[] = {0,0, 0,0,0,0, 1,2,3,4};
+        WB_WRITE(wb, scores, sizeof(scores));
+    }
 
     // KV 3: bos_token_id
     WB_STR(wb, "tokenizer.ggml.bos_token_id");
@@ -62,6 +67,10 @@ static size_t build_tokenizer_gguf(uint8_t *buf, size_t buf_size) {
     #undef WB_STR
 
     return wb.pos;
+}
+
+static size_t build_tokenizer_gguf(uint8_t *buf, size_t buf_size) {
+    return build_tokenizer_gguf_scores(buf, buf_size, BN_GGUF_TYPE_FLOAT32);
 }
 
 static void test_tokenizer_init(void) {
@@ -204,6 +213,26 @@ static void test_tokenizer_decode_oob(void) {
     printf("PASSED\n");
 }
 
+static void test_tokenizer_scores_wrong_type(void) {
+    printf("test_tokenizer_scores_wrong_type... ");
+
+    uint8_t buf[8192];
+    size_t size = build_tokenizer_gguf_scores(buf, sizeof(buf), BN_GGUF_TYPE_UINT32);
+    BnGGUFFile *gf = bn_gguf_open(buf, size);
+    assert(gf != NULL);
+
+    BnTokenizer t;
+    int rc = bn_tokenizer_init(&t, gf);
+    assert(rc == 0);
+    for (int i = 0; i < t.vocab_size; i++) {
+        assert(t.scores[i] == 0.0f);
+    }
+
+    bn_tokenizer_free(&t);
+    bn_gguf_free(gf);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Tokenizer Tests ===\n");
     test_tokenizer_init();
@@ -212,6 +241,7 @@ int main(void) {
     test_tokenizer_encode_empty();
     test_tokenizer_encode_max_tokens();
     test_tokenizer_decode_oob();
+    test_tokenizer_scores_wrong_type();
     printf("All tokenizer tests passed!\n");
     return 0;
 }

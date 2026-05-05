@@ -37,7 +37,7 @@ struct BnThreadPool {
     _Atomic int64_t generation;
     _Atomic int   n_done;
     int           shutdown;
-    int           poll_iters;
+    _Atomic int   poll_iters;
     _Atomic int   dispatching; // reentrancy guard (main-thread-only, atomic for safety)
 };
 
@@ -103,7 +103,7 @@ static void *worker_loop(void *arg) {
             }
 
             int picked_up = 0;
-            int poll_iters = pool->poll_iters;
+            int poll_iters = atomic_load_explicit(&pool->poll_iters, memory_order_relaxed);
             for (int spin = 0; spin < poll_iters; spin++) {
                 int64_t next_gen = atomic_load_explicit(&pool->generation, memory_order_acquire);
                 if (next_gen != my_gen) {
@@ -221,7 +221,9 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     for (int t = 0; t < n_tasks; t++) {
         if (tasks[t].n > max_n) max_n = tasks[t].n;
     }
-    pool->poll_iters = max_n >= 1024 ? TP_POLL_ITERS_LARGE : TP_POLL_ITERS_SMALL;
+    atomic_store_explicit(&pool->poll_iters,
+                          max_n >= 1024 ? TP_POLL_ITERS_LARGE : TP_POLL_ITERS_SMALL,
+                          memory_order_relaxed);
     atomic_fetch_add_explicit(&pool->generation, 1, memory_order_release);
     pthread_cond_broadcast(&pool->work_cond);
     pthread_mutex_unlock(&pool->mtx);
@@ -230,7 +232,7 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     tp_execute(pool);
 
     // Wait for workers to finish
-    int poll_iters = pool->poll_iters;
+    int poll_iters = atomic_load_explicit(&pool->poll_iters, memory_order_relaxed);
     for (int spin = 0; spin < poll_iters; spin++) {
         if (atomic_load_explicit(&pool->n_done, memory_order_acquire) >= pool->n_workers) {
             pool->dispatching = 0;

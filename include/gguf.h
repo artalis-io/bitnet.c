@@ -116,5 +116,6 @@ const char *bn_gguf_get_arr_str(BnGGUFFile *f, const char *key, int i);
 const void *bn_gguf_get_arr_data(BnGGUFFile *f, const char *key);
 int         bn_gguf_find_tensor(BnGGUFFile *f, const char *name);
 void       *bn_gguf_tensor_data(BnGGUFFile *f, int idx);
+int         bn_gguf_tensor_size(uint32_t type, uint64_t nelements, size_t *out);
 
 #endif // BN_GGUF_H

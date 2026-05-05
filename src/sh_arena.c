@@ -13,6 +13,10 @@ SHArena *sh_arena_create(size_t capacity)
     if (!arena) return NULL;
 
     /* Round capacity up to alignment so aligned_alloc is happy */
+    if (capacity > SIZE_MAX - (SH_ARENA_ALIGN - 1)) {
+        free(arena);
+        return NULL;
+    }
     size_t aligned_cap = (capacity + SH_ARENA_ALIGN - 1) & ~(size_t)(SH_ARENA_ALIGN - 1);
     arena->buffer = aligned_alloc(SH_ARENA_ALIGN, aligned_cap);
     if (!arena->buffer) {
@@ -30,9 +34,10 @@ void *sh_arena_alloc(SHArena *arena, size_t size)
     if (!arena || !arena->buffer) return NULL;
 
     /* Align to SH_ARENA_ALIGN bytes (32B for AVX2) */
+    if (size > SIZE_MAX - (SH_ARENA_ALIGN - 1)) return NULL;
     size = (size + SH_ARENA_ALIGN - 1) & ~(size_t)(SH_ARENA_ALIGN - 1);
 
-    if (arena->used + size > arena->capacity) {
+    if (size > arena->capacity - arena->used) {
         return NULL;  /* Out of space */
     }
 
@@ -73,6 +78,7 @@ void sh_arena_free(SHArena *arena)
 size_t sh_arena_remaining(const SHArena *arena)
 {
     if (!arena) return 0;
+    if (arena->used > arena->capacity) return 0;
     return arena->capacity - arena->used;
 }
 

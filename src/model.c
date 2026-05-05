@@ -9,6 +9,30 @@
 #include <limits.h>
 #include <math.h>
 
+static int checked_add_size(size_t *acc, size_t add) {
+    if (*acc > SIZE_MAX - add) return -1;
+    *acc += add;
+    return 0;
+}
+
+static int checked_mul_size(size_t a, size_t b, size_t *out) {
+    if (a != 0 && b > SIZE_MAX / a) return -1;
+    *out = a * b;
+    return 0;
+}
+
+static int checked_mul3_size(size_t a, size_t b, size_t c, size_t *out) {
+    size_t tmp;
+    if (checked_mul_size(a, b, &tmp) != 0) return -1;
+    return checked_mul_size(tmp, c, out);
+}
+
+static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out) {
+    size_t tmp;
+    if (checked_mul3_size(a, b, c, &tmp) != 0) return -1;
+    return checked_mul_size(tmp, d, out);
+}
+
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
 
 static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, const char *scale_name) {
@@ -149,36 +173,6 @@ static float *load_f32_tensor(BnGGUFFile *f, const char *name) {
     return (float *)bn_gguf_tensor_data(f, ti);
 }
 
-// --- Helper: compute byte size for quantized tensor type ---
-
-static size_t bn_tensor_type_size(int type, size_t nelements) {
-    switch (type) {
-        case BN_GGUF_TENSOR_F32:      return nelements * 4;
-        case BN_GGUF_TENSOR_F16:      return nelements * 2;
-        case BN_GGUF_TENSOR_BF16:     return nelements * 2;
-        case BN_GGUF_TENSOR_Q4_0:     return (nelements / 32) * 18;
-        case BN_GGUF_TENSOR_Q4_1:     return (nelements / 32) * 20;
-        case BN_GGUF_TENSOR_Q8_0:     return (nelements / 32) * 34;
-        case BN_GGUF_TENSOR_I2_S:     return (nelements / 4) + 4;
-        case BN_GGUF_TENSOR_TQ1_0:    return (nelements / 256) * 54;
-        case BN_GGUF_TENSOR_TQ2_0:    return (nelements / 256) * 66;
-        case BN_GGUF_TENSOR_Q2_K:     return (nelements / 256) * 84;
-        case BN_GGUF_TENSOR_Q3_K:     return (nelements / 256) * 110;
-        case BN_GGUF_TENSOR_Q4_K:     return (nelements / 256) * 144;
-        case BN_GGUF_TENSOR_Q5_K:     return (nelements / 256) * 176;
-        case BN_GGUF_TENSOR_Q6_K:     return (nelements / 256) * 210;
-        case BN_GGUF_TENSOR_Q8_K:     return (nelements / 256) * 292;
-        case BN_GGUF_TENSOR_IQ4_NL:   return (nelements / 32) * 18;
-        case BN_GGUF_TENSOR_IQ4_XS:   return (nelements / 256) * 136;
-        case BN_GGUF_TENSOR_IQ3_XXS:  return (nelements / 256) * 98;
-        case BN_GGUF_TENSOR_IQ3_S:    return (nelements / 256) * 114;
-        case BN_GGUF_TENSOR_IQ2_XXS:  return (nelements / 256) * 66;
-        case BN_GGUF_TENSOR_IQ2_XS:   return (nelements / 256) * 74;
-        case BN_GGUF_TENSOR_IQ2_S:    return (nelements / 256) * 82;
-        default: return 0;
-    }
-}
-
 // --- Helper: compute expert map for one fused 3D tensor ---
 // Tensor shape: [n_experts, rows_per_expert, cols_per_expert]
 // Returns file offset of first expert's data and bytes per expert slice.
@@ -196,6 +190,10 @@ static int load_expert_map_proj(BnGGUFFile *f, const char *name,
     }
 
     // GGUF dims: [cols, rows, n_experts] (column-major convention)
+    if (info->dims[0] > INT_MAX || info->dims[1] > INT_MAX || info->dims[2] > INT_MAX) {
+        SH_LOG_ERROR("Expert tensor dimensions exceed INT_MAX", "name", name);
+        return -1;
+    }
     int cols = (int)info->dims[0];
     int rows = (int)info->dims[1];
     int n_exp = (int)info->dims[2];
@@ -213,9 +211,9 @@ static int load_expert_map_proj(BnGGUFFile *f, const char *name,
     *base_offset_out = tensor_offset;
 
     // Bytes per single expert slice
-    size_t expert_elements = (size_t)rows * cols;
-    *expert_bytes_out = bn_tensor_type_size((int)info->type, expert_elements);
-    if (*expert_bytes_out == 0) {
+    size_t expert_elements = 0;
+    if (checked_mul_size((size_t)rows, (size_t)cols, &expert_elements) != 0 ||
+        !bn_gguf_tensor_size(info->type, (uint64_t)expert_elements, expert_bytes_out)) {
         SH_LOG_ERROR("Unsupported expert tensor type", "name", name);
         return -1;
     }
@@ -820,11 +818,21 @@ fail_layers:
 size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     (void)w;  // reserved for future per-session weight transforms
 
-    size_t att_size = (size_t)c->n_heads * c->seq_len;
+    if (!c || c->dim <= 0 || c->n_layers <= 0 || c->n_heads <= 0 ||
+        c->seq_len <= 0 || c->kv_dim <= 0 || c->head_size <= 0 ||
+        c->vocab_size <= 0) return 0;
+
+    size_t att_size = 0;
+    if (checked_mul_size((size_t)c->n_heads, (size_t)c->seq_len, &att_size) != 0)
+        return 0;
     int n_attn_layers = (c->full_attn_interval > 0)
         ? c->n_layers / c->full_attn_interval : c->n_layers;
     int n_ssm_layers = c->n_layers - n_attn_layers;
-    size_t kv_cache_size = (size_t)n_attn_layers * c->seq_len * c->kv_dim;
+    if (n_attn_layers < 0 || n_ssm_layers < 0) return 0;
+    size_t kv_cache_size = 0;
+    if (checked_mul3_size((size_t)n_attn_layers, (size_t)c->seq_len,
+                          (size_t)c->kv_dim, &kv_cache_size) != 0)
+        return 0;
 
     // #14: Validate q_dim won't overflow int (n_heads * head_size)
     if (c->n_heads > 0 && c->head_size > 0 &&
@@ -840,6 +848,11 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     int hb2_size = c->hidden_dim;
     int xb2_size = c->dim;
     if (c->full_attn_interval > 0) {
+        size_t qkv_tmp = 0;
+        if (checked_mul3_size((size_t)c->ssm_group_count,
+                              (size_t)c->ssm_state_size, 2, &qkv_tmp) != 0 ||
+            qkv_tmp > (size_t)INT_MAX - (size_t)c->ssm_inner_size)
+            return 0;
         int qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
         if (qkv_dim > hb_size) hb_size = qkv_dim;
         if (c->ssm_inner_size > hb2_size) hb2_size = c->ssm_inner_size;
@@ -859,12 +872,24 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     size_t ssm_conv_state_total = 0;
     if (n_ssm_layers > 0 && c->ssm_time_step_rank > 0) {
         int head_v_dim = c->ssm_inner_size / c->ssm_time_step_rank;
-        size_t state_per_layer = (size_t)c->ssm_time_step_rank *
-                                  c->ssm_state_size * head_v_dim;
-        ssm_state_size_total = (size_t)n_ssm_layers * state_per_layer;
+        size_t state_per_layer = 0;
+        if (checked_mul3_size((size_t)c->ssm_time_step_rank,
+                              (size_t)c->ssm_state_size, (size_t)head_v_dim,
+                              &state_per_layer) != 0 ||
+            checked_mul_size((size_t)n_ssm_layers, state_per_layer,
+                             &ssm_state_size_total) != 0)
+            return 0;
+        size_t conv_prefix = 0;
+        if (checked_mul3_size((size_t)c->ssm_group_count,
+                              (size_t)c->ssm_state_size, 2, &conv_prefix) != 0 ||
+            conv_prefix > (size_t)INT_MAX - (size_t)c->ssm_inner_size)
+            return 0;
         int conv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
-        ssm_conv_state_total = (size_t)n_ssm_layers *
-                                (c->ssm_conv_kernel - 1) * conv_dim;
+        if (c->ssm_conv_kernel <= 0 ||
+            checked_mul3_size((size_t)n_ssm_layers,
+                              (size_t)(c->ssm_conv_kernel - 1),
+                              (size_t)conv_dim, &ssm_conv_state_total) != 0)
+            return 0;
     }
 
     size_t moe_arena_bytes = 0;
@@ -882,34 +907,71 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
                 moe_expert_buf_size = em0->expert_down_bytes;
         }
 
-        moe_arena_bytes += sizeof(BnMoEState);
-        moe_arena_bytes += (size_t)c->n_experts * sizeof(float);
-        moe_arena_bytes += (size_t)c->dim * sizeof(float);
-        moe_arena_bytes += (size_t)c->n_experts_active * sizeof(float);
-        moe_arena_bytes += (size_t)c->n_experts_active * sizeof(int);
-        moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);
-        moe_arena_bytes += (size_t)c->moe_intermediate_size * sizeof(float);
-        moe_arena_bytes += 5 * moe_expert_buf_size;
+        size_t tmp = 0;
+        if (checked_add_size(&moe_arena_bytes, sizeof(BnMoEState)) != 0 ||
+            checked_mul_size((size_t)c->n_experts, sizeof(float), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size((size_t)c->dim, sizeof(float), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size((size_t)c->n_experts_active, sizeof(float), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size((size_t)c->n_experts_active, sizeof(int), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size((size_t)c->moe_intermediate_size, sizeof(float), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size(5, moe_expert_buf_size, &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0)
+            return 0;
         int moe_k = c->n_experts_active;
         if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
-        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float);
-        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size * sizeof(float);
-        moe_arena_bytes += (size_t)moe_k * c->dim * sizeof(float);
-        moe_arena_bytes += (size_t)moe_k * c->moe_intermediate_size;
-        moe_arena_bytes += (13 + 3 * moe_k) * SH_ARENA_ALIGN;
+        if (checked_mul3_size((size_t)moe_k, (size_t)c->moe_intermediate_size,
+                              sizeof(float), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul3_size((size_t)moe_k, (size_t)c->dim, sizeof(float), &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size((size_t)moe_k, (size_t)c->moe_intermediate_size, &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0 ||
+            checked_mul_size((size_t)(13 + 3 * moe_k), SH_ARENA_ALIGN, &tmp) != 0 ||
+            checked_add_size(&moe_arena_bytes, tmp) != 0)
+            return 0;
     }
 
     size_t arena_size = 0;
-    arena_size += ((size_t)c->dim + (size_t)xb_size + (size_t)xb2_size + (size_t)q_size) * sizeof(float);
-    arena_size += ((size_t)hb_size + (size_t)hb2_size) * sizeof(float);
-    arena_size += att_size * sizeof(float);
-    arena_size += (size_t)c->vocab_size * sizeof(float);
+    size_t tmp = 0;
+    if (checked_add_size(&tmp, (size_t)c->dim) != 0 ||
+        checked_add_size(&tmp, (size_t)xb_size) != 0 ||
+        checked_add_size(&tmp, (size_t)xb2_size) != 0 ||
+        checked_add_size(&tmp, (size_t)q_size) != 0 ||
+        checked_mul_size(tmp, sizeof(float), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0)
+        return 0;
+    tmp = 0;
+    if (checked_add_size(&tmp, (size_t)hb_size) != 0 ||
+        checked_add_size(&tmp, (size_t)hb2_size) != 0 ||
+        checked_mul_size(tmp, sizeof(float), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0 ||
+        checked_mul_size(att_size, sizeof(float), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0 ||
+        checked_mul_size((size_t)c->vocab_size, sizeof(float), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0)
+        return 0;
     size_t kv_elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
-    arena_size += 2 * kv_cache_size * kv_elem_size;
-    arena_size += (size_t)x_q_size * sizeof(int8_t);
-    arena_size += (size_t)half_head * sizeof(float);
-    arena_size += (ssm_state_size_total + ssm_conv_state_total) * sizeof(float);
-    arena_size += moe_arena_bytes;
+    if (checked_mul3_size(2, kv_cache_size, kv_elem_size, &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0 ||
+        checked_mul_size((size_t)x_q_size, sizeof(int8_t), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0 ||
+        checked_mul_size((size_t)half_head, sizeof(float), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0)
+        return 0;
+    tmp = 0;
+    if (checked_add_size(&tmp, ssm_state_size_total) != 0 ||
+        checked_add_size(&tmp, ssm_conv_state_total) != 0 ||
+        checked_mul_size(tmp, sizeof(float), &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0 ||
+        checked_add_size(&arena_size, moe_arena_bytes) != 0)
+        return 0;
 
     // TurboQuant compressed KV cache
     if (c->kv_tq_bits > 0) {
@@ -918,17 +980,28 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         if (bn_tq_init(&tq_tmp, c->head_size, c->kv_tq_bits, 0) == 0) {
             int key_bytes = bn_tq_key_bytes(&tq_tmp);
             int val_bytes = bn_tq_value_bytes(&tq_tmp);
-            size_t tq_keys = (size_t)n_attn_layers * c->seq_len * c->n_kv_heads * key_bytes;
-            size_t tq_vals = (size_t)n_attn_layers * c->seq_len * c->n_kv_heads * val_bytes;
-            arena_size += tq_keys + tq_vals;
-            // q_rotated scratch: n_heads * head_size floats
-            arena_size += (size_t)c->n_heads * c->head_size * sizeof(float);
-            arena_size += 3 * SH_ARENA_ALIGN;
+            size_t tq_keys = 0, tq_vals = 0;
+            if (checked_mul4_size((size_t)n_attn_layers, (size_t)c->seq_len,
+                                  (size_t)c->n_kv_heads, (size_t)key_bytes, &tq_keys) != 0 ||
+                checked_mul4_size((size_t)n_attn_layers, (size_t)c->seq_len,
+                                  (size_t)c->n_kv_heads, (size_t)val_bytes, &tq_vals) != 0 ||
+                checked_add_size(&arena_size, tq_keys) != 0 ||
+                checked_add_size(&arena_size, tq_vals) != 0 ||
+                checked_mul3_size((size_t)c->n_heads, (size_t)c->head_size,
+                                  sizeof(float), &tmp) != 0 ||
+                checked_add_size(&arena_size, tmp) != 0 ||
+                checked_mul_size(3, SH_ARENA_ALIGN, &tmp) != 0 ||
+                checked_add_size(&arena_size, tmp) != 0) {
+                bn_tq_free(&tq_tmp);
+                return 0;
+            }
             bn_tq_free(&tq_tmp);
         }
     }
 
-    arena_size += 16 * SH_ARENA_ALIGN;
+    if (checked_mul_size(16, SH_ARENA_ALIGN, &tmp) != 0 ||
+        checked_add_size(&arena_size, tmp) != 0)
+        return 0;
 
     return arena_size;
 }
@@ -956,16 +1029,17 @@ static void alloc_moe_pread_bufs(BnMoEState *ms, const BnWeights *w, SHArena *ar
 int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
                                     SHArena *arena,
                                     BnRunState *state, BnMoEState **moe_out) {
-    size_t att_size = (size_t)c->n_heads * c->seq_len;
-    if (c->n_heads > 0 && att_size / c->n_heads != (size_t)c->seq_len)
+    size_t att_size = 0;
+    if (checked_mul_size((size_t)c->n_heads, (size_t)c->seq_len, &att_size) != 0)
         return -1;
 
     int n_attn_layers = (c->full_attn_interval > 0)
         ? c->n_layers / c->full_attn_interval : c->n_layers;
     int n_ssm_layers = c->n_layers - n_attn_layers;
-    size_t kv_cache_size = (size_t)n_attn_layers * c->seq_len * c->kv_dim;
-    if (n_attn_layers > 0 && c->seq_len > 0 && c->kv_dim > 0 &&
-        kv_cache_size / n_attn_layers / c->seq_len != (size_t)c->kv_dim)
+    if (n_attn_layers < 0 || n_ssm_layers < 0) return -1;
+    size_t kv_cache_size = 0;
+    if (checked_mul3_size((size_t)n_attn_layers, (size_t)c->seq_len,
+                          (size_t)c->kv_dim, &kv_cache_size) != 0)
         return -1;
 
     if (c->n_heads > 0 && c->head_size > 0 &&
@@ -1019,12 +1093,18 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     size_t ssm_conv_state_total = 0;
     if (n_ssm_layers > 0 && c->ssm_time_step_rank > 0) {
         int head_v_dim = c->ssm_inner_size / c->ssm_time_step_rank;
-        size_t state_per_layer = (size_t)c->ssm_time_step_rank *
-                                  c->ssm_state_size * head_v_dim;
-        ssm_state_size_total = (size_t)n_ssm_layers * state_per_layer;
+        size_t state_per_layer = 0;
+        if (checked_mul3_size((size_t)c->ssm_time_step_rank,
+                              (size_t)c->ssm_state_size, (size_t)head_v_dim,
+                              &state_per_layer) != 0 ||
+            checked_mul_size((size_t)n_ssm_layers, state_per_layer,
+                             &ssm_state_size_total) != 0)
+            return -1;
         int conv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
-        ssm_conv_state_total = (size_t)n_ssm_layers *
-                                (c->ssm_conv_kernel - 1) * conv_dim;
+        if (checked_mul3_size((size_t)n_ssm_layers,
+                              (size_t)(c->ssm_conv_kernel - 1),
+                              (size_t)conv_dim, &ssm_conv_state_total) != 0)
+            return -1;
         s->ssm_state = (float *)sh_arena_calloc(arena, ssm_state_size_total, sizeof(float));
         s->ssm_conv_state = (float *)sh_arena_calloc(arena, ssm_conv_state_total, sizeof(float));
     }
@@ -1038,11 +1118,21 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         if (bn_tq_init(&tq_tmp, c->head_size, c->kv_tq_bits, 0) == 0) {
             int key_bytes = bn_tq_key_bytes(&tq_tmp);
             int val_bytes = bn_tq_value_bytes(&tq_tmp);
-            size_t tq_key_total = (size_t)n_attn_layers * (size_t)c->seq_len * (size_t)c->n_kv_heads * (size_t)key_bytes;
-            size_t tq_val_total = (size_t)n_attn_layers * (size_t)c->seq_len * (size_t)c->n_kv_heads * (size_t)val_bytes;
+            size_t tq_key_total = 0, tq_val_total = 0, q_rot_total = 0;
+            if (checked_mul4_size((size_t)n_attn_layers, (size_t)c->seq_len,
+                                  (size_t)c->n_kv_heads, (size_t)key_bytes,
+                                  &tq_key_total) != 0 ||
+                checked_mul4_size((size_t)n_attn_layers, (size_t)c->seq_len,
+                                  (size_t)c->n_kv_heads, (size_t)val_bytes,
+                                  &tq_val_total) != 0 ||
+                checked_mul_size((size_t)c->n_heads, (size_t)c->head_size,
+                                 &q_rot_total) != 0) {
+                bn_tq_free(&tq_tmp);
+                return -1;
+            }
             s->key_cache_tq   = (uint8_t *)sh_arena_calloc(arena, tq_key_total, 1);
             s->value_cache_tq = (uint8_t *)sh_arena_calloc(arena, tq_val_total, 1);
-            s->q_rotated      = (float *)sh_arena_calloc(arena, c->n_heads * c->head_size, sizeof(float));
+            s->q_rotated      = (float *)sh_arena_calloc(arena, q_rot_total, sizeof(float));
             bn_tq_free(&tq_tmp);
             if (!s->key_cache_tq || !s->value_cache_tq || !s->q_rotated)
                 return -1;
@@ -1174,9 +1264,10 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
     // If no untied output weight, upload tied embedding for GPU logits
     if (!w->output_weight.data && w->token_embedding) {
-        size_t nelements = (size_t)c->vocab_size * c->dim;
-        size_t emb_size = bn_tensor_type_size(w->emb_type, nelements);
-        if (emb_size > 0) {
+        size_t nelements = 0;
+        size_t emb_size = 0;
+        if (checked_mul_size((size_t)c->vocab_size, (size_t)c->dim, &nelements) == 0 &&
+            bn_gguf_tensor_size((uint32_t)w->emb_type, (uint64_t)nelements, &emb_size)) {
             w->emb_gpu_buf = gpu->buffer_create(gpu->ctx, w->token_embedding,
                 emb_size, w->emb_type, c->vocab_size, c->dim);
         }

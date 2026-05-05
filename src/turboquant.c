@@ -482,6 +482,7 @@ void bn_tq_quantize_value(const BnTQState *st, const float *val, uint8_t *out) {
 
 void bn_tq_rotate_query(const BnTQState *st, const float *q_in, float *q_out) {
     if (!st) return;
+    if (st->head_dim <= 0 || st->head_dim > BN_MAX_VLA_ELEMS) return;
     rht_forward(st, q_in, q_out, st->head_dim);
 }
 
@@ -629,6 +630,7 @@ void bn_tq_attention_combine(const BnTQState *st, const uint8_t *packed_values,
 void bn_tq_qjl_precompute(const BnTQState *st, const float *rotated_q,
                             uint8_t *q_signs_out) {
     if (!st) return;
+    if (st->head_dim <= 0 || st->head_dim > BN_MAX_VLA_ELEMS) return;
     qjl_project_signs(st, rotated_q, q_signs_out, st->head_dim);
 }
 

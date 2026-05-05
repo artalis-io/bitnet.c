@@ -112,6 +112,19 @@ static void test_null_arena(void) {
     printf("test_null_arena... PASSED\n");
 }
 
+static void test_overflow_guards(void) {
+    SHArena *huge = sh_arena_create(SIZE_MAX);
+    assert(huge == NULL);
+
+    SHArena *a = sh_arena_create(128);
+    assert(a != NULL);
+    assert(sh_arena_alloc(a, SIZE_MAX) == NULL);
+    assert(sh_arena_calloc(a, SIZE_MAX, 2) == NULL);
+    sh_arena_free(a);
+
+    printf("test_overflow_guards... PASSED\n");
+}
+
 int main(void) {
     printf("=== Arena Tests ===\n");
     test_create_free();
@@ -121,6 +134,7 @@ int main(void) {
     test_reset();
     test_alignment();
     test_null_arena();
+    test_overflow_guards();
     printf("All arena tests passed!\n");
     return 0;
 }

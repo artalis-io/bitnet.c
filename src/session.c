@@ -3,6 +3,25 @@
 #include "sh_log.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+
+static int checked_mul_size(size_t a, size_t b, size_t *out) {
+    if (a != 0 && b > SIZE_MAX / a) return -1;
+    *out = a * b;
+    return 0;
+}
+
+static int checked_mul3_size(size_t a, size_t b, size_t c, size_t *out) {
+    size_t tmp;
+    if (checked_mul_size(a, b, &tmp) != 0) return -1;
+    return checked_mul_size(tmp, c, out);
+}
+
+static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out) {
+    size_t tmp;
+    if (checked_mul3_size(a, b, c, &tmp) != 0) return -1;
+    return checked_mul_size(tmp, d, out);
+}
 
 BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
     if (!model) return NULL;
@@ -66,17 +85,27 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
     // KV cache
     int n_attn = (c->full_attn_interval > 0)
         ? c->n_layers / c->full_attn_interval : c->n_layers;
-    size_t kv_size = (size_t)n_attn * c->seq_len * c->kv_dim;
+    size_t kv_size = 0;
+    if (n_attn < 0 ||
+        checked_mul3_size((size_t)n_attn, (size_t)c->seq_len,
+                          (size_t)c->kv_dim, &kv_size) != 0)
+        return;
     size_t kv_elem = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
-    memset(rs->key_cache, 0, kv_size * kv_elem);
-    memset(rs->value_cache, 0, kv_size * kv_elem);
+    size_t kv_bytes = 0;
+    if (checked_mul_size(kv_size, kv_elem, &kv_bytes) != 0) return;
+    memset(rs->key_cache, 0, kv_bytes);
+    memset(rs->value_cache, 0, kv_bytes);
 
     // TQ compressed KV cache
     if (rs->key_cache_tq && rs->value_cache_tq && c->kv_tq_bits > 0 && model->tq_state) {
         int kb = bn_tq_key_bytes(model->tq_state);
         int vb = bn_tq_value_bytes(model->tq_state);
-        size_t tq_key_total = (size_t)n_attn * (size_t)c->seq_len * (size_t)c->n_kv_heads * (size_t)kb;
-        size_t tq_val_total = (size_t)n_attn * (size_t)c->seq_len * (size_t)c->n_kv_heads * (size_t)vb;
+        size_t tq_key_total = 0, tq_val_total = 0;
+        if (checked_mul4_size((size_t)n_attn, (size_t)c->seq_len,
+                              (size_t)c->n_kv_heads, (size_t)kb, &tq_key_total) != 0 ||
+            checked_mul4_size((size_t)n_attn, (size_t)c->seq_len,
+                              (size_t)c->n_kv_heads, (size_t)vb, &tq_val_total) != 0)
+            return;
         memset(rs->key_cache_tq, 0, tq_key_total);
         memset(rs->value_cache_tq, 0, tq_val_total);
     }
@@ -85,15 +114,24 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
     if (rs->ssm_state && c->ssm_time_step_rank > 0) {
         int n_ssm = c->n_layers - n_attn;
         int head_v_dim = c->ssm_inner_size / c->ssm_time_step_rank;
-        size_t state_total = (size_t)n_ssm * c->ssm_time_step_rank *
-                             c->ssm_state_size * head_v_dim;
-        memset(rs->ssm_state, 0, state_total * sizeof(float));
+        size_t state_total = 0;
+        if (n_ssm < 0 ||
+            checked_mul4_size((size_t)n_ssm, (size_t)c->ssm_time_step_rank,
+                              (size_t)c->ssm_state_size, (size_t)head_v_dim,
+                              &state_total) != 0 ||
+            checked_mul_size(state_total, sizeof(float), &state_total) != 0)
+            return;
+        memset(rs->ssm_state, 0, state_total);
     }
     if (rs->ssm_conv_state) {
         int n_ssm = c->n_layers - n_attn;
         int conv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
-        size_t conv_total = (size_t)n_ssm * (c->ssm_conv_kernel - 1) * conv_dim;
-        memset(rs->ssm_conv_state, 0, conv_total * sizeof(float));
+        size_t conv_total = 0;
+        if (n_ssm < 0 ||
+            checked_mul4_size((size_t)n_ssm, (size_t)(c->ssm_conv_kernel - 1),
+                              (size_t)conv_dim, sizeof(float), &conv_total) != 0)
+            return;
+        memset(rs->ssm_conv_state, 0, conv_total);
     }
 
     s->pos = 0;

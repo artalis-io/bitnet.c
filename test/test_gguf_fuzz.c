@@ -128,6 +128,21 @@ static void test_fuzz_string_overflow(void) {
     printf("PASSED\n");
 }
 
+static void test_fuzz_string_len_wrap(void) {
+    printf("test_fuzz_string_len_wrap... ");
+
+    uint8_t buf[256];
+    WriteBuffer wb = { buf, 0, sizeof(buf) };
+    wb_header(&wb, 0, 1);
+
+    wb_u64(&wb, UINT64_MAX);
+
+    BnGGUFFile *f = bn_gguf_open(buf, wb.pos);
+    assert(f == NULL);
+
+    printf("PASSED\n");
+}
+
 // ===================================================================
 // Test: tensor offset past data section should be caught
 // ===================================================================
@@ -185,6 +200,30 @@ static void test_fuzz_tensor_dims_overflow(void) {
         }
         bn_gguf_free(f);
     }
+
+    printf("PASSED\n");
+}
+
+static void test_fuzz_quant_tensor_truncated(void) {
+    printf("test_fuzz_quant_tensor_truncated... ");
+
+    uint8_t buf[512];
+    WriteBuffer wb = { buf, 0, sizeof(buf) };
+    wb_header(&wb, 1, 0);
+
+    wb_str(&wb, "truncated.q4k");
+    wb_u32(&wb, 2);
+    wb_u64(&wb, 256);
+    wb_u64(&wb, 1);
+    wb_u32(&wb, BN_GGUF_TENSOR_Q4_K);
+    wb_u64(&wb, 0);
+
+    BnGGUFFile *f = bn_gguf_open(buf, wb.pos);
+    assert(f != NULL);
+    int ti = bn_gguf_find_tensor(f, "truncated.q4k");
+    assert(ti >= 0);
+    assert(bn_gguf_tensor_data(f, ti) == NULL);
+    bn_gguf_free(f);
 
     printf("PASSED\n");
 }
@@ -274,8 +313,10 @@ int main(void) {
     test_fuzz_huge_n_kv();
     test_fuzz_bad_kv_type();
     test_fuzz_string_overflow();
+    test_fuzz_string_len_wrap();
     test_fuzz_tensor_offset_oob();
     test_fuzz_tensor_dims_overflow();
+    test_fuzz_quant_tensor_truncated();
     test_fuzz_zero_dim_tensor();
     test_fuzz_wrong_magic();
     test_fuzz_wrong_version();

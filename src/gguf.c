@@ -15,7 +15,8 @@ typedef struct {
 
 static int reader_ok(Reader *r, size_t need) {
     if (r->error) return 0;
-    return r->pos + need <= r->size;
+    if (r->pos > r->size) return 0;
+    return need <= r->size - r->pos;
 }
 
 // #12: All read helpers now check bounds and set error flag on OOB
@@ -350,24 +351,50 @@ int bn_gguf_find_tensor(BnGGUFFile *f, const char *name) {
     return -1;
 }
 
-// Compute byte size for a tensor given its type and element count.
-// Returns 0 for unknown types.
-static size_t tensor_type_size(uint32_t type, uint64_t nelements) {
+static int tensor_blocks(uint64_t nelements, uint64_t block_elems,
+                         size_t block_bytes, size_t *out) {
+    if (block_elems == 0 || nelements % block_elems != 0) return 0;
+    uint64_t blocks = nelements / block_elems;
+    if (blocks > SIZE_MAX / block_bytes) return 0;
+    *out = (size_t)blocks * block_bytes;
+    return 1;
+}
+
+int bn_gguf_tensor_size(uint32_t type, uint64_t nelements, size_t *out) {
+    if (!out) return 0;
+    *out = 0;
     switch (type) {
-        case BN_GGUF_TENSOR_F32:   return (size_t)nelements * 4;
-        case BN_GGUF_TENSOR_F16:   return (size_t)nelements * 2;
-        // Q4_0: 18 bytes per 32-element block (2-byte FP16 scale + 16 nibble bytes)
-        case BN_GGUF_TENSOR_Q4_0:  return (size_t)(nelements / 32) * 18;
-        // Q8_0: 34 bytes per 32-element block (2-byte FP16 scale + 32 int8 bytes)
-        case BN_GGUF_TENSOR_Q8_0:  return (size_t)(nelements / 32) * 34;
-        // I2_S: 2 bits per element + 4-byte per-tensor scale
-        case BN_GGUF_TENSOR_I2_S:  return (size_t)(nelements / 4) + 4;
-        // TQ1_0: 54 bytes per 256-element block
-        case BN_GGUF_TENSOR_TQ1_0: return (size_t)(nelements / 256) * 54;
-        // TQ2_0: 66 bytes per 256-element block
-        case BN_GGUF_TENSOR_TQ2_0: return (size_t)(nelements / 256) * 66;
-        // Q6_K: 210 bytes per 256-element block
-        case BN_GGUF_TENSOR_Q6_K:  return (size_t)(nelements / 256) * 210;
+        case BN_GGUF_TENSOR_F32:
+            if (nelements > SIZE_MAX / 4) return 0;
+            *out = (size_t)nelements * 4;
+            return 1;
+        case BN_GGUF_TENSOR_F16:
+        case BN_GGUF_TENSOR_BF16:
+            if (nelements > SIZE_MAX / 2) return 0;
+            *out = (size_t)nelements * 2;
+            return 1;
+        case BN_GGUF_TENSOR_Q4_0:    return tensor_blocks(nelements, 32, 18, out);
+        case BN_GGUF_TENSOR_Q4_1:    return tensor_blocks(nelements, 32, 20, out);
+        case BN_GGUF_TENSOR_Q8_0:    return tensor_blocks(nelements, 32, 34, out);
+        case BN_GGUF_TENSOR_I2_S:
+            if (nelements % 4 != 0 || nelements / 4 > SIZE_MAX - 4) return 0;
+            *out = (size_t)(nelements / 4) + 4;
+            return 1;
+        case BN_GGUF_TENSOR_TQ1_0:   return tensor_blocks(nelements, 256, 54, out);
+        case BN_GGUF_TENSOR_TQ2_0:   return tensor_blocks(nelements, 256, 66, out);
+        case BN_GGUF_TENSOR_Q2_K:    return tensor_blocks(nelements, 256, 84, out);
+        case BN_GGUF_TENSOR_Q3_K:    return tensor_blocks(nelements, 256, 110, out);
+        case BN_GGUF_TENSOR_Q4_K:    return tensor_blocks(nelements, 256, 144, out);
+        case BN_GGUF_TENSOR_Q5_K:    return tensor_blocks(nelements, 256, 176, out);
+        case BN_GGUF_TENSOR_Q6_K:    return tensor_blocks(nelements, 256, 210, out);
+        case BN_GGUF_TENSOR_Q8_K:    return tensor_blocks(nelements, 256, 292, out);
+        case BN_GGUF_TENSOR_IQ4_NL:  return tensor_blocks(nelements, 32, 18, out);
+        case BN_GGUF_TENSOR_IQ4_XS:  return tensor_blocks(nelements, 256, 136, out);
+        case BN_GGUF_TENSOR_IQ3_XXS: return tensor_blocks(nelements, 256, 98, out);
+        case BN_GGUF_TENSOR_IQ3_S:   return tensor_blocks(nelements, 256, 114, out);
+        case BN_GGUF_TENSOR_IQ2_XXS: return tensor_blocks(nelements, 256, 66, out);
+        case BN_GGUF_TENSOR_IQ2_XS:  return tensor_blocks(nelements, 256, 74, out);
+        case BN_GGUF_TENSOR_IQ2_S:   return tensor_blocks(nelements, 256, 82, out);
         default: return 0;
     }
 }
@@ -388,8 +415,12 @@ void *bn_gguf_tensor_data(BnGGUFFile *f, int idx) {
         nelements *= t->dims[d];
     }
 
-    size_t tsize = tensor_type_size(t->type, nelements);
-    if (tsize > 0 && offset + tsize > f->raw_size) {
+    size_t tsize = 0;
+    if (!bn_gguf_tensor_size(t->type, nelements, &tsize)) {
+        SH_LOG_ERROR("Unsupported or invalid tensor shape", "tensor", t->name ? t->name : "?");
+        return NULL;
+    }
+    if (tsize > f->raw_size - offset) {
         SH_LOG_ERROR("Tensor data exceeds buffer", "tensor", t->name ? t->name : "?");
         return NULL;
     }
