@@ -1,6 +1,10 @@
 #include "quant_internal.h"
 #include <arm_neon.h>
 
+static inline float q8_fp16_to_f32(uint16_t h) {
+    return vgetq_lane_f32(vcvt_f32_f16(vld1_dup_f16((const float16_t *)&h)), 0);
+}
+
 void bn_quant_q8_neon_sdot_range(void *ctx, int row_start, int row_end) {
     BnQ8SdotCtx *c = (BnQ8SdotCtx *)ctx;
     const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)c->W->data;
@@ -23,10 +27,10 @@ void bn_quant_q8_neon_sdot_range(void *ctx, int row_start, int row_end) {
             const BnBlockQ8_0 *b3 = &blocks[base + b + 3];
             __builtin_prefetch(b0 + 6, 0, 0);
 
-            float dw0 = bn_fp16_to_fp32(b0->d);
-            float dw1 = bn_fp16_to_fp32(b1->d);
-            float dw2 = bn_fp16_to_fp32(b2->d);
-            float dw3 = bn_fp16_to_fp32(b3->d);
+            float dw0 = q8_fp16_to_f32(b0->d);
+            float dw1 = q8_fp16_to_f32(b1->d);
+            float dw2 = q8_fp16_to_f32(b2->d);
+            float dw3 = q8_fp16_to_f32(b3->d);
 
             float dx0 = x_scales[b];
             float dx1 = x_scales[b + 1];
@@ -64,7 +68,7 @@ void bn_quant_q8_neon_sdot_range(void *ctx, int row_start, int row_end) {
         // Tail: remaining blocks
         for (; b < n_blocks_per_row; b++) {
             const BnBlockQ8_0 *blk = &blocks[base + b];
-            float d_w = bn_fp16_to_fp32(blk->d);
+            float d_w = q8_fp16_to_f32(blk->d);
             float d_x = x_scales[b];
 
             int32x4_t acc = vdotq_s32(zero, vld1q_s8(blk->qs), vld1q_s8(x_q + b * 32));
