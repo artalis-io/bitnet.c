@@ -42,30 +42,29 @@ kernel void q6k_matvec(device const uchar *weights [[buffer(0)]],
             uint elem_base = bi * QK_K;
 
             uint my_start = local_elem * ELEMS_PER_THREAD;
+            uint half_idx = my_start / 128;
+            uint quarter = (my_start % 128) / 32;
+            uint ql_off = half_idx * 64;
+            uint qh_off = half_idx * 32;
+            uint sc_off = half_idx * 8;
+            uint s_base;
+            uint qh_shift;
+            uint ql_add;
+            uint ql_high;
+            switch (quarter) {
+                case 0: s_base = 0; qh_shift = 0; ql_add = 0;  ql_high = 0; break;
+                case 1: s_base = 2; qh_shift = 2; ql_add = 32; ql_high = 0; break;
+                case 2: s_base = 4; qh_shift = 4; ql_add = 0;  ql_high = 1; break;
+                default: s_base = 6; qh_shift = 6; ql_add = 32; ql_high = 1; break;
+            }
             for (uint i = 0; i < ELEMS_PER_THREAD; i++) {
-                uint elem = my_start + i;
-                uint half_idx = elem / 128;
-                uint in_half = elem % 128;
-                uint quarter = in_half / 32;
-                uint l = in_half % 32;
-
-                uint ql_off = half_idx * 64;
-                uint qh_off = half_idx * 32;
-                uint sc_off = half_idx * 8;
-
-                uchar ql0 = ql[ql_off + l];
-                uchar ql1 = ql[ql_off + l + 32];
-                uchar qh_val = qh[qh_off + l];
-
-                int q6;
-                uint s_idx;
-                switch (quarter) {
-                    case 0: q6 = int((ql0 & 0xF) | (((qh_val >> 0) & 3) << 4)) - 32; s_idx = l / 16; break;
-                    case 1: q6 = int((ql1 & 0xF) | (((qh_val >> 2) & 3) << 4)) - 32; s_idx = l / 16 + 2; break;
-                    case 2: q6 = int((ql0 >> 4) | (((qh_val >> 4) & 3) << 4)) - 32; s_idx = l / 16 + 4; break;
-                    default: q6 = int((ql1 >> 4) | (((qh_val >> 6) & 3) << 4)) - 32; s_idx = l / 16 + 6; break;
-                }
-                acc += d * float(sc[sc_off + s_idx]) * float(q6) * x[x_base + elem_base + elem];
+                uchar ql_val = ql[ql_off + ql_add + i];
+                uchar qh_val = qh[qh_off + i];
+                uint ql_bits = ql_high ? (ql_val >> 4) : (ql_val & 0xF);
+                int q6 = int(ql_bits | (((qh_val >> qh_shift) & 3) << 4)) - 32;
+                uint s_idx = i / 16 + s_base;
+                acc += d * float(sc[sc_off + s_idx]) * float(q6) *
+                       x[x_base + elem_base + my_start + i];
             }
         }
     }

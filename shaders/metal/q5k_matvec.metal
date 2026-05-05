@@ -47,15 +47,18 @@ kernel void q5k_matvec(device const uchar *weights [[buffer(0)]],
             device const uchar *qs = block + 48;
             uint elem_base = bi * 256;
             uint my_start = local_elem * ELEMS_PER_THREAD;
+            uint group = my_start / 64;
+            uint is_high = (my_start % 64) / 32;
+            uint bit = group * 2 + is_high;
+            device const uchar *q_off = qs + group * 32;
+            uint2 sm = get_scale_min_q5k(group * 2 + is_high, scales);
             for (uint i = 0; i < ELEMS_PER_THREAD; i++) {
-                uint elem = my_start + i;
-                uint group = elem / 32;
-                uchar qbyte = qs[elem / 2];
-                uint nibble = (elem % 2 == 0) ? (qbyte & 0xF) : (qbyte >> 4);
-                uint hi = (qh[elem / 8] >> (elem % 8)) & 1;
+                uchar qbyte = q_off[i];
+                uint nibble = is_high == 0 ? (qbyte & 0xF) : (qbyte >> 4);
+                uint hi = (qh[i] >> bit) & 1;
                 uint q5 = nibble | (hi << 4);
-                uint2 sm = get_scale_min_q5k(group, scales);
-                acc += (d * float(sm.x) * float(q5) - dmin * float(sm.y)) * x[x_base + elem_base + elem];
+                acc += (d * float(sm.x) * float(q5) - dmin * float(sm.y)) *
+                       x[x_base + elem_base + my_start + i];
             }
         }
     }

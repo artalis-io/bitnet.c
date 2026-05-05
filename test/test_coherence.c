@@ -505,7 +505,19 @@ int main(int argc, char **argv) {
      * Phase 3: GPU standalone matvec vs CPU scalar
      * ════════════════════════════════════════════════════════════════ */
 
-    printf("--- Phase 3: GPU standalone matvec vs CPU scalar (layer 0 wq) ---\n");
+    printf("--- Phase 3: GPU standalone matvec vs CPU scalar (layer 0 weight) ---\n");
+
+    const BnQWeight *phase3_W = &L0->wq;
+    const char *phase3_name = "wq";
+    if (!phase3_W->data || phase3_W->rows == 0) {
+        if (L0->wqkv.data && L0->wqkv.rows > 0) {
+            phase3_W = &L0->wqkv;
+            phase3_name = "wqkv";
+        } else if (L0->ffn_gate.data && L0->ffn_gate.rows > 0) {
+            phase3_W = &L0->ffn_gate;
+            phase3_name = "ffn_gate";
+        }
+    }
 
 #ifdef BN_ENABLE_GPU
     if (use_gpu) {
@@ -514,9 +526,9 @@ int main(int argc, char **argv) {
             printf("  GPU: not available, skipping Phase 3\n");
             total_skip++;
         } else {
-            const BnQWeight *W = &L0->wq;
+            const BnQWeight *W = phase3_W;
             if (!W->data || W->rows == 0) {
-                printf("  SKIP: wq has no data\n");
+                printf("  SKIP: no layer 0 matvec weight has data\n");
                 total_skip++;
             } else {
                 int rows = W->rows;
@@ -557,8 +569,8 @@ int main(int argc, char **argv) {
                         }
 
                         int pass = max_diff < MATVEC_TOL;
-                        printf("  wq GPU vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
-                               pass ? "PASS" : "FAIL", max_diff, rows, cols, type_name(W->type));
+                        printf("  %s GPU vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
+                               phase3_name, pass ? "PASS" : "FAIL", max_diff, rows, cols, type_name(W->type));
                         if (pass)
                             total_pass++;
                         else {
@@ -586,9 +598,9 @@ int main(int argc, char **argv) {
             printf("  Metal: not available, skipping Phase 3\n");
             total_skip++;
         } else {
-            const BnQWeight *W = &L0->wq;
+            const BnQWeight *W = phase3_W;
             if (!W->data || W->rows == 0) {
-                printf("  SKIP: wq has no data\n");
+                printf("  SKIP: no layer 0 matvec weight has data\n");
                 total_skip++;
             } else {
                 int rows = W->rows;
@@ -625,8 +637,8 @@ int main(int argc, char **argv) {
                         }
 
                         int pass = max_diff < MATVEC_TOL;
-                        printf("  wq Metal vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
-                               pass ? "PASS" : "FAIL", max_diff, rows, cols, type_name(W->type));
+                        printf("  %s Metal vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
+                               phase3_name, pass ? "PASS" : "FAIL", max_diff, rows, cols, type_name(W->type));
                         if (pass)
                             total_pass++;
                         else {

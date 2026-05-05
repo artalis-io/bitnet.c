@@ -32,35 +32,56 @@ kernel void q4_fused_gateup_silu(device const char  *weights [[buffer(0)]],
             float gd = float(*(device const half *)gblk);
             float ud = float(*(device const half *)ublk);
 
-            device const ushort *gqs0 = (device const ushort *)(gblk + 2);
-            device const ushort *gqs1 = (device const ushort *)(gblk + 10);
-            device const ushort *uqs0 = (device const ushort *)(ublk + 2);
-            device const ushort *uqs1 = (device const ushort *)(ublk + 10);
+            device const uchar *gqs = (device const uchar *)(gblk + 2);
+            device const uchar *uqs = (device const uchar *)(ublk + 2);
             uint eb = b * 32;
 
-            float gsumy = 0.f, ga[8] = {0,0,0,0,0,0,0,0};
-            float usumy = 0.f, ua[8] = {0,0,0,0,0,0,0,0};
+            device const float4 *xp = (device const float4 *)(x + eb);
+            float4 x0 = xp[0], x1 = xp[1], x2 = xp[2], x3 = xp[3];
+            float4 x4 = xp[4], x5 = xp[5], x6 = xp[6], x7 = xp[7];
 
-            for (ushort i = 0; i < 8; i += 2) {
-                float y0=x[eb+i], y1=x[eb+i+1], y16=x[eb+i+16], y17=x[eb+i+17];
-                float y8=x[eb+8+i], y9=x[eb+8+i+1], y24=x[eb+24+i], y25=x[eb+24+i+1];
-                float sy = y0+y1+y16+y17+y8+y9+y24+y25;
-                gsumy += sy; usumy += sy;
+            float4 g_lo0 = float4(float(gqs[0] & 0x0Fu), float(gqs[1] & 0x0Fu),
+                                  float(gqs[2] & 0x0Fu), float(gqs[3] & 0x0Fu)) - 8.0f;
+            float4 g_hi0 = float4(float(gqs[0] >> 4), float(gqs[1] >> 4),
+                                  float(gqs[2] >> 4), float(gqs[3] >> 4)) - 8.0f;
+            float4 g_lo1 = float4(float(gqs[4] & 0x0Fu), float(gqs[5] & 0x0Fu),
+                                  float(gqs[6] & 0x0Fu), float(gqs[7] & 0x0Fu)) - 8.0f;
+            float4 g_hi1 = float4(float(gqs[4] >> 4), float(gqs[5] >> 4),
+                                  float(gqs[6] >> 4), float(gqs[7] >> 4)) - 8.0f;
+            float4 g_lo2 = float4(float(gqs[8] & 0x0Fu), float(gqs[9] & 0x0Fu),
+                                  float(gqs[10] & 0x0Fu), float(gqs[11] & 0x0Fu)) - 8.0f;
+            float4 g_hi2 = float4(float(gqs[8] >> 4), float(gqs[9] >> 4),
+                                  float(gqs[10] >> 4), float(gqs[11] >> 4)) - 8.0f;
+            float4 g_lo3 = float4(float(gqs[12] & 0x0Fu), float(gqs[13] & 0x0Fu),
+                                  float(gqs[14] & 0x0Fu), float(gqs[15] & 0x0Fu)) - 8.0f;
+            float4 g_hi3 = float4(float(gqs[12] >> 4), float(gqs[13] >> 4),
+                                  float(gqs[14] >> 4), float(gqs[15] >> 4)) - 8.0f;
 
-                ushort gw0=gqs0[i/2], gw1=gqs1[i/2];
-                ga[0] += y0        *float(gw0&0x000Fu); ga[1] += (y1/256)  *float(gw0&0x0F00u);
-                ga[2] += (y16/16)  *float(gw0&0x00F0u); ga[3] += (y17/4096)*float(gw0&0xF000u);
-                ga[4] += y8        *float(gw1&0x000Fu); ga[5] += (y9/256)  *float(gw1&0x0F00u);
-                ga[6] += (y24/16)  *float(gw1&0x00F0u); ga[7] += (y25/4096)*float(gw1&0xF000u);
+            float4 u_lo0 = float4(float(uqs[0] & 0x0Fu), float(uqs[1] & 0x0Fu),
+                                  float(uqs[2] & 0x0Fu), float(uqs[3] & 0x0Fu)) - 8.0f;
+            float4 u_hi0 = float4(float(uqs[0] >> 4), float(uqs[1] >> 4),
+                                  float(uqs[2] >> 4), float(uqs[3] >> 4)) - 8.0f;
+            float4 u_lo1 = float4(float(uqs[4] & 0x0Fu), float(uqs[5] & 0x0Fu),
+                                  float(uqs[6] & 0x0Fu), float(uqs[7] & 0x0Fu)) - 8.0f;
+            float4 u_hi1 = float4(float(uqs[4] >> 4), float(uqs[5] >> 4),
+                                  float(uqs[6] >> 4), float(uqs[7] >> 4)) - 8.0f;
+            float4 u_lo2 = float4(float(uqs[8] & 0x0Fu), float(uqs[9] & 0x0Fu),
+                                  float(uqs[10] & 0x0Fu), float(uqs[11] & 0x0Fu)) - 8.0f;
+            float4 u_hi2 = float4(float(uqs[8] >> 4), float(uqs[9] >> 4),
+                                  float(uqs[10] >> 4), float(uqs[11] >> 4)) - 8.0f;
+            float4 u_lo3 = float4(float(uqs[12] & 0x0Fu), float(uqs[13] & 0x0Fu),
+                                  float(uqs[14] & 0x0Fu), float(uqs[15] & 0x0Fu)) - 8.0f;
+            float4 u_hi3 = float4(float(uqs[12] >> 4), float(uqs[13] >> 4),
+                                  float(uqs[14] >> 4), float(uqs[15] >> 4)) - 8.0f;
 
-                ushort uw0=uqs0[i/2], uw1=uqs1[i/2];
-                ua[0] += y0        *float(uw0&0x000Fu); ua[1] += (y1/256)  *float(uw0&0x0F00u);
-                ua[2] += (y16/16)  *float(uw0&0x00F0u); ua[3] += (y17/4096)*float(uw0&0xF000u);
-                ua[4] += y8        *float(uw1&0x000Fu); ua[5] += (y9/256)  *float(uw1&0x0F00u);
-                ua[6] += (y24/16)  *float(uw1&0x00F0u); ua[7] += (y25/4096)*float(uw1&0xF000u);
-            }
-            gate_acc += gd * (gsumy*(-8.f) + ga[0]+ga[1]+ga[2]+ga[3]+ga[4]+ga[5]+ga[6]+ga[7]);
-            up_acc   += ud * (usumy*(-8.f) + ua[0]+ua[1]+ua[2]+ua[3]+ua[4]+ua[5]+ua[6]+ua[7]);
+            gate_acc += gd * (dot(x0, g_lo0) + dot(x4, g_hi0) +
+                              dot(x1, g_lo1) + dot(x5, g_hi1) +
+                              dot(x2, g_lo2) + dot(x6, g_hi2) +
+                              dot(x3, g_lo3) + dot(x7, g_hi3));
+            up_acc += ud * (dot(x0, u_lo0) + dot(x4, u_hi0) +
+                            dot(x1, u_lo1) + dot(x5, u_hi1) +
+                            dot(x2, u_lo2) + dot(x6, u_hi2) +
+                            dot(x3, u_lo3) + dot(x7, u_hi3));
         }
     }
 

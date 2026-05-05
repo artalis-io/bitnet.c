@@ -12,6 +12,8 @@
 #include "sh_log.h"
 #ifdef BN_ENABLE_GPU
 #include "gpu_wgpu.h"
+#endif
+#if defined(BN_ENABLE_GPU) || defined(BN_ENABLE_METAL)
 #include "gpu_moe_cache.h"
 #endif
 #ifdef BN_ENABLE_METAL
@@ -438,6 +440,16 @@ int main(int argc, char **argv) {
                         SH_LOG_INFO("Metal forward pass ready");
                         if (model.config.n_experts > 0)
                             bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
+                        if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
+                            model.config.n_layers > 0) {
+                            BnMoEExpertMap *em0 = &model.weights.layers[0].expert_map;
+                            size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
+                                               + em0->expert_down_bytes;
+                            if (entry_bytes > 0) {
+                                model.moe_io.gpu_moe_cache = bn_gpu_moe_cache_create(
+                                    (size_t)args.gpu_cache_mb * 1024 * 1024, entry_bytes, gpu);
+                            }
+                        }
                     }
                 }
             } else {

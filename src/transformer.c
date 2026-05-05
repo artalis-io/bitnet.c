@@ -1138,15 +1138,25 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
     BnGPUBackend *gpu = m->gpu;
+    int debug_fallback = getenv("BN_GPU_DEBUG_FALLBACK") != NULL;
+    static int debug_printed = 0;
 
-    if (!gpu || !gpu->execute || !gpu->write_activation) return NULL;
+#define GPU_REJECT(msg) do { \
+        if (debug_fallback && !debug_printed) { \
+            fprintf(stderr, "[gpu:fallback] %s\n", (msg)); \
+            debug_printed = 1; \
+        } \
+        return NULL; \
+    } while (0)
+
+    if (!gpu || !gpu->execute || !gpu->write_activation) GPU_REJECT("backend missing execute/write_activation");
 
     // Bounds checks
-    if (token < 0 || token >= c->vocab_size) return NULL;
-    if (pos < 0) return NULL;
+    if (token < 0 || token >= c->vocab_size) GPU_REJECT("token out of bounds");
+    if (pos < 0) GPU_REJECT("negative position");
 
     // FP16 KV cache not supported on GPU path
-    if (c->kv_f16) return NULL;
+    if (c->kv_f16) GPU_REJECT("kv_f16 unsupported");
 
     int dim = c->dim;
     int kv_dim = c->kv_dim;
@@ -1157,18 +1167,18 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
 
     // Embed token on CPU, upload to GPU x buffer
-    if (dim > BN_MAX_VLA_ELEMS) return NULL;
+    if (dim > BN_MAX_VLA_ELEMS) GPU_REJECT("dim exceeds VLA limit");
     float emb[dim];
     bn_model_embed_token(m, emb, token);
     if (gpu->write_activation(gpu->ctx, BN_GPU_BUF_X, emb,
                               (size_t)dim * sizeof(float), 0) != 0)
-        return NULL;
+        GPU_REJECT("write token embedding failed");
 
     /* no-op */
 
     // Validation: check for unsupported layer configurations
     // MoE and SSM layers are allowed but handled via CPU fallback per-layer.
-    if (!w->output_norm_gpu) return NULL;
+    if (!w->output_norm_gpu) GPU_REJECT("output norm not uploaded");
     int has_moe = 0, has_ssm = 0;
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
@@ -1176,20 +1186,17 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                       ((l + 1) % c->full_attn_interval == 0);
         if (!is_attn) { has_ssm = 1; continue; }
         if (lw->router_weight) { has_moe = 1; }
-        if (!lw->wq.data) return NULL;
-        // Q-gated: reject on GPU. Q4_K integer accum achieves exact matvec match,
-        // but SSM delta (0.002/layer) × MoE amplification (18x) = 0.036/layer
-        // compounds to garbage over 40 layers. Needs Metal backend for shared-memory precision.
-        if (lw->wq.rows > q_dim) return NULL;
-        if (lw->q_norm && !lw->q_norm_gpu) return NULL;
-        if (lw->k_norm && !lw->k_norm_gpu) return NULL;
-        if (lw->attn_sub_norm && !lw->attn_sub_norm_gpu) return NULL;
-        if (lw->ffn_sub_norm && !lw->ffn_sub_norm_gpu) return NULL;
-        if (!lw->attn_norm_gpu || !lw->ffn_norm_gpu) return NULL;
+        if (!lw->wq.data && !lw->wqkv.data) GPU_REJECT("attention layer has no wq/wqkv data");
+        // Q-gated attention is handled below via DEINTERLEAVE_Q + SIGMOID_GATE.
+        if (lw->q_norm && !lw->q_norm_gpu) GPU_REJECT("q norm not uploaded");
+        if (lw->k_norm && !lw->k_norm_gpu) GPU_REJECT("k norm not uploaded");
+        if (lw->attn_sub_norm && !lw->attn_sub_norm_gpu) GPU_REJECT("attention sub norm not uploaded");
+        if (lw->ffn_sub_norm && !lw->ffn_sub_norm_gpu) GPU_REJECT("ffn sub norm not uploaded");
+        if (!lw->attn_norm_gpu || !lw->ffn_norm_gpu) GPU_REJECT("layer norm not uploaded");
     }
     // Models with SSM or MoE need per-layer CPU-GPU sync via read/write_activation
     if ((has_moe || has_ssm) && (!gpu->read_activation || !gpu->write_activation))
-        return NULL;
+        GPU_REJECT("moe/ssm needs read/write activation");
 
     // Resolve logits weight
     BnQWeight *ow = &w->output_weight;
@@ -1203,7 +1210,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         logit_rows = c->vocab_size;
         logit_cols = dim;
     }
-    if (!logit_gpu_buf) return NULL;
+    if (!logit_gpu_buf) GPU_REJECT("logit weight not uploaded");
 
     // Precompute eps as uint32
     uint32_t u_eps;
@@ -1215,16 +1222,16 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     // SSM: ~16 (QKV + Z + conv + splits + L2norm + alpha/beta + delta + gate + out + resid)
     // MoE: K*5 + shared(5) + residual + rmsnorm = up to BN_MAX_MOE_K*5 + 7
     // Total worst case: 20 + BN_MAX_MOE_K*5 + 7 = 107 for K=16
-    int max_ops = has_moe || has_ssm ? (5 * BN_MAX_MOE_K + 40) : 34 * c->n_layers + 4;
+    int max_ops = 80 * c->n_layers + 5 * BN_MAX_MOE_K + 100;
 
     // Phase 4: reuse cached op array to avoid per-token malloc
     BnGPUGraph *graph = (BnGPUGraph *)m->gpu_graph;
     if (!graph || graph->cap < max_ops) {
         if (graph) free(graph->ops);
         else graph = (BnGPUGraph *)calloc(1, sizeof(BnGPUGraph));
-        if (!graph) return NULL;
+        if (!graph) GPU_REJECT("gpu graph allocation failed");
         graph->ops = (BnGPUOp *)malloc((size_t)max_ops * sizeof(BnGPUOp));
-        if (!graph->ops) { free(graph); return NULL; }
+        if (!graph->ops) { free(graph); GPU_REJECT("gpu graph ops allocation failed"); }
         graph->cap = max_ops;
         m->gpu_graph = graph;
     }
@@ -1234,7 +1241,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     // Helper: flush current ops (no readback), reset counter
     #define GPU_FLUSH() do { \
         if (n > 0) { \
-            if (gpu->execute(gpu->ctx, ops, n, -1, NULL, 0) != 0) return NULL; \
+            if (gpu->execute(gpu->ctx, ops, n, -1, NULL, 0) != 0) GPU_REJECT("gpu execute flush failed"); \
             n = 0; \
         } \
     } while(0)
@@ -1386,13 +1393,53 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
         // ---- QKV matvecs (direct-to-destination, no COPY ops) ----
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
-        int q_gated = (lw->wq.rows > q_dim);
+        int use_packed_qkv = lw->wqkv.data && lw->wqkv.gpu_buf &&
+                             !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
+                             lw->wqkv.rows == q_dim + 2 * kv_dim;
+        int q_gated = (!use_packed_qkv && lw->wq.rows > q_dim);
 
         // Batched QKV: single dispatch writes Q→Q buf, K→KEY_CACHE, V→VALUE_CACHE
         int use_split = lw->qkv_stacked_gpu && !q_gated &&
                         !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
                         lw->wq.type == BN_GGUF_TENSOR_Q4_0;
-        if (use_split) {
+        if (use_packed_qkv) {
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_MATVEC, .type = lw->wqkv.type,
+                .W_buf = lw->wqkv.gpu_buf,
+                .buf_in = BN_GPU_BUF_XB,
+                .buf_out = BN_GPU_BUF_QKV,
+                .buf_aux = -1,
+                .rows = lw->wqkv.rows, .cols = lw->wqkv.cols,
+                .p = { (uint32_t)lw->wqkv.rows, (uint32_t)lw->wqkv.cols, 1, 0, 0, 0, 0, 0 }
+            };
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
+                .buf_in = BN_GPU_BUF_QKV, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
+                .p = { 0, 0, (uint32_t)q_dim, 0, 0, 0, 0, 0 }
+            };
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
+                .buf_in = BN_GPU_BUF_QKV, .buf_out = BN_GPU_BUF_KEY_CACHE, .buf_aux = -1,
+                .p = { (uint32_t)q_dim, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 }
+            };
+            ops[n++] = (BnGPUOp){
+                .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
+                .buf_in = BN_GPU_BUF_QKV, .buf_out = BN_GPU_BUF_VALUE_CACHE, .buf_aux = -1,
+                .p = { (uint32_t)(q_dim + kv_dim), kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 }
+            };
+            if (lw->q_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->q_norm_gpu, .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = -1,
+                    .rows = n_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0 } };
+            }
+            if (lw->k_norm_gpu) {
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_PER_HEAD_RMSNORM, .type = -1,
+                    .W_buf = lw->k_norm_gpu, .buf_in = BN_GPU_BUF_KEY_CACHE, .buf_out = -1, .buf_aux = -1,
+                    .rows = c->n_kv_heads,
+                    .p = { (uint32_t)head_size, u_eps, (uint32_t)c->qk_norm_per_head, kv_cache_off, 0, 0, 0, 0 } };
+            }
+        } else if (use_split) {
             int total_rows = lw->wq.rows + lw->wk.rows + lw->wv.rows;
             // MATVEC_SPLIT: buf_out=Q(out0), buf_aux=KEY_CACHE(out1), rows=VALUE_CACHE(out2)
             ops[n++] = (BnGPUOp){
@@ -1874,13 +1921,15 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
     }
 
     // Safety: verify we didn't overflow the ops array
-    if (n > max_ops) { return NULL; }
+    if (n > max_ops) { GPU_REJECT("gpu op graph capacity exceeded"); }
 
     // Execute final batch (logits + any remaining layer ops)
     int rc = gpu->execute(gpu->ctx, ops, n, BN_GPU_BUF_LOGITS,
                           s->logits, c->vocab_size);
+    if (rc != 0) GPU_REJECT("gpu final execute failed");
     #undef GPU_FLUSH
-    return (rc == 0) ? s->logits : NULL;
+    #undef GPU_REJECT
+    return s->logits;
 }
 
 float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {

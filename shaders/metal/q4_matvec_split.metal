@@ -32,30 +32,34 @@ kernel void q4_matvec_split(device const char  *weights [[buffer(0)]],
         for (uint b = row_lane; b < nb; b += 8) {
             device const char *block = row_data + (size_t)b * 18;
             float d = float(*(device const half *)block);
-            device const ushort *qs0 = (device const ushort *)(block + 2);
-            device const ushort *qs1 = (device const ushort *)(block + 2 + 8);
+            device const uchar *qs = (device const uchar *)(block + 2);
             uint eb = b * 32;
 
-            float sumy = 0.f;
-            float a[8] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
-            for (ushort i = 0; i < 8; i += 2) {
-                float y0=x[eb+i], y1=x[eb+i+1], y16=x[eb+i+16], y17=x[eb+i+17];
-                sumy += y0 + y1 + y16 + y17;
-                ushort w = qs0[i/2];
-                a[0] += y0         * float(w & 0x000Fu);
-                a[1] += (y1/256)   * float(w & 0x0F00u);
-                a[2] += (y16/16)   * float(w & 0x00F0u);
-                a[3] += (y17/4096) * float(w & 0xF000u);
+            device const float4 *xp = (device const float4 *)(x + eb);
+            float4 x0 = xp[0], x1 = xp[1], x2 = xp[2], x3 = xp[3];
+            float4 x4 = xp[4], x5 = xp[5], x6 = xp[6], x7 = xp[7];
 
-                float y8=x[eb+8+i], y9=x[eb+8+i+1], y24=x[eb+24+i], y25=x[eb+24+i+1];
-                sumy += y8 + y9 + y24 + y25;
-                ushort w2 = qs1[i/2];
-                a[4] += y8         * float(w2 & 0x000Fu);
-                a[5] += (y9/256)   * float(w2 & 0x0F00u);
-                a[6] += (y24/16)   * float(w2 & 0x00F0u);
-                a[7] += (y25/4096) * float(w2 & 0xF000u);
-            }
-            acc += d * (sumy*(-8.f) + a[0]+a[1]+a[2]+a[3]+a[4]+a[5]+a[6]+a[7]);
+            float4 lo0 = float4(float(qs[0] & 0x0Fu), float(qs[1] & 0x0Fu),
+                                float(qs[2] & 0x0Fu), float(qs[3] & 0x0Fu)) - 8.0f;
+            float4 hi0 = float4(float(qs[0] >> 4), float(qs[1] >> 4),
+                                float(qs[2] >> 4), float(qs[3] >> 4)) - 8.0f;
+            float4 lo1 = float4(float(qs[4] & 0x0Fu), float(qs[5] & 0x0Fu),
+                                float(qs[6] & 0x0Fu), float(qs[7] & 0x0Fu)) - 8.0f;
+            float4 hi1 = float4(float(qs[4] >> 4), float(qs[5] >> 4),
+                                float(qs[6] >> 4), float(qs[7] >> 4)) - 8.0f;
+            float4 lo2 = float4(float(qs[8] & 0x0Fu), float(qs[9] & 0x0Fu),
+                                float(qs[10] & 0x0Fu), float(qs[11] & 0x0Fu)) - 8.0f;
+            float4 hi2 = float4(float(qs[8] >> 4), float(qs[9] >> 4),
+                                float(qs[10] >> 4), float(qs[11] >> 4)) - 8.0f;
+            float4 lo3 = float4(float(qs[12] & 0x0Fu), float(qs[13] & 0x0Fu),
+                                float(qs[14] & 0x0Fu), float(qs[15] & 0x0Fu)) - 8.0f;
+            float4 hi3 = float4(float(qs[12] >> 4), float(qs[13] >> 4),
+                                float(qs[14] >> 4), float(qs[15] >> 4)) - 8.0f;
+
+            acc += d * (dot(x0, lo0) + dot(x4, hi0) +
+                        dot(x1, lo1) + dot(x5, hi1) +
+                        dot(x2, lo2) + dot(x6, hi2) +
+                        dot(x3, lo3) + dot(x7, hi3));
         }
     }
 

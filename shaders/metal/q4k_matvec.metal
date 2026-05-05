@@ -60,24 +60,16 @@ kernel void q4k_matvec(device const uchar *weights [[buffer(0)]],
             uint2 sm = get_scale_min(sub, scales);
             device const uchar *q_off = qs + group * 32;
 
-            // Integer accumulation (matches CPU NEON SDOT precision)
-            float amax = 0.0f;
-            for (uint i = 0; i < 32; i++)
-                amax = max(amax, abs(x[x_base + elem_base + my_start + i]));
-
-            if (amax > 0.0f) {
-                float x_scale = amax / 127.0f;
-                float inv_scale = 127.0f / amax;
-                int sumi = 0, bsumi = 0;
-                for (uint i = 0; i < 32; i++) {
-                    int xq = int(round(x[x_base + elem_base + my_start + i] * inv_scale));
-                    uint qbyte = q_off[i];
-                    int qval = is_high == 0 ? int(qbyte & 0xF) : int(qbyte >> 4);
-                    sumi += qval * xq;
-                    bsumi += xq;
-                }
-                acc += x_scale * (d * float(sm.x) * float(sumi) - dmin * float(sm.y) * float(bsumi));
+            float sum_qx = 0.0f;
+            float sum_x = 0.0f;
+            for (uint i = 0; i < 32; i++) {
+                float xv = x[x_base + elem_base + my_start + i];
+                uint qbyte = q_off[i];
+                float qval = is_high == 0 ? float(qbyte & 0xF) : float(qbyte >> 4);
+                sum_qx += qval * xv;
+                sum_x += xv;
             }
+            acc += d * float(sm.x) * sum_qx - dmin * float(sm.y) * sum_x;
         }
     }
 
