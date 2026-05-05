@@ -90,7 +90,7 @@ static size_t q4_repack_bytes(const BnQWeight *w) {
     if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return 0;
     if (w->rows % 4 != 0) return 0;  // need complete 4-row groups
     size_t n_blocks = (size_t)w->rows * (w->cols / 32);
-    return n_blocks * sizeof(float) + n_blocks * 16 + 2 * SH_ARENA_ALIGN;
+    return n_blocks * sizeof(uint16_t) + n_blocks * 16 + 2 * SH_ARENA_ALIGN;
 }
 
 static void q4_repack(BnQWeight *w, SHArena *arena) {
@@ -99,7 +99,7 @@ static void q4_repack(BnQWeight *w, SHArena *arena) {
     int n_blocks_per_row = w->cols / 32;
     size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
 
-    w->rp_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
+    w->rp_scales = (uint16_t *)sh_arena_alloc(arena, n_blocks * sizeof(uint16_t));
     w->rp_qs = (uint8_t *)sh_arena_alloc(arena, n_blocks * 16);
     if (!w->rp_scales || !w->rp_qs) {
         w->rp_scales = NULL;
@@ -123,14 +123,17 @@ static void q4_repack(BnQWeight *w, SHArena *arena) {
             // Scales: same flat interleaved layout
             for (int r = 0; r < 4; r++) {
                 size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
-                w->rp_scales[gb * 4 + r] = bn_fp16_to_fp32(blocks[src].d);
+                w->rp_scales[gb * 4 + r] = blocks[src].d;
             }
             // Quants: nibble-transpose within 64-byte chunk
             uint8_t *dst = w->rp_qs + gb * 64;
             for (int ng = 0; ng < 4; ng++) {
                 for (int r = 0; r < 4; r++) {
                     size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
-                    memcpy(dst + ng * 16 + r * 4, blocks[src].qs + ng * 4, 4);
+                    const uint8_t *qs = blocks[src].qs + ng * 4;
+                    uint8_t *dp = dst + ng * 16 + r * 4;
+                    for (int j = 0; j < 4; j++)
+                        dp[j] = qs[j] ^ 0x88;
                 }
             }
         }

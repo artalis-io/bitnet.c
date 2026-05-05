@@ -13,7 +13,9 @@
 // Chunk size for atomic work-stealing.
 // Large chunks preserve memory locality (contiguous row access per thread).
 // Stealing only kicks in for the last chunk when threads finish at different times.
-#define TP_CHUNK_MIN 16
+#define TP_CHUNK_MIN 128
+#define TP_POLL_ITERS_LARGE 50000
+#define TP_POLL_ITERS_SMALL 50000
 
 typedef struct {
     BnThreadPool *pool;
@@ -32,9 +34,10 @@ struct BnThreadPool {
     pthread_mutex_t mtx;
     pthread_cond_t  work_cond;
     pthread_cond_t  done_cond;
-    int64_t       generation;
-    int           n_done;
+    _Atomic int64_t generation;
+    _Atomic int   n_done;
     int           shutdown;
+    int           poll_iters;
     _Atomic int   dispatching; // reentrancy guard (main-thread-only, atomic for safety)
 };
 
@@ -47,7 +50,11 @@ static void tp_execute(BnThreadPool *pool) {
         int n = task->n;
         int nt4 = nt <= INT_MAX / 4 ? nt * 4 : nt;  // avoid overflow
         int chunk = n / nt4;
-        if (chunk < TP_CHUNK_MIN) chunk = TP_CHUNK_MIN;
+        if (n <= nt4) {
+            chunk = 1;
+        } else if (chunk < TP_CHUNK_MIN) {
+            chunk = TP_CHUNK_MIN;
+        }
         for (;;) {
             int start = atomic_fetch_add_explicit(&pool->cursors[t], chunk,
                                                    memory_order_relaxed);
@@ -73,26 +80,41 @@ static void *worker_loop(void *arg) {
 
     for (;;) {
         pthread_mutex_lock(&pool->mtx);
-        while (pool->generation == my_gen && !pool->shutdown) {
+        while (atomic_load_explicit(&pool->generation, memory_order_acquire) == my_gen && !pool->shutdown) {
             pthread_cond_wait(&pool->work_cond, &pool->mtx);
         }
         if (pool->shutdown) {
             pthread_mutex_unlock(&pool->mtx);
             return NULL;
         }
-        my_gen = pool->generation;
+        my_gen = atomic_load_explicit(&pool->generation, memory_order_acquire);
         pthread_mutex_unlock(&pool->mtx);
 
-        // Do work
-        tp_execute(pool);
+        for (;;) {
+            // Do work
+            tp_execute(pool);
 
-        // Signal completion
-        pthread_mutex_lock(&pool->mtx);
-        pool->n_done++;
-        if (pool->n_done == pool->n_workers) {
-            pthread_cond_signal(&pool->done_cond);
+            // Signal completion
+            int done = atomic_fetch_add_explicit(&pool->n_done, 1, memory_order_acq_rel) + 1;
+            if (done == pool->n_workers) {
+                pthread_mutex_lock(&pool->mtx);
+                pthread_cond_signal(&pool->done_cond);
+                pthread_mutex_unlock(&pool->mtx);
+            }
+
+            int picked_up = 0;
+            int poll_iters = pool->poll_iters;
+            for (int spin = 0; spin < poll_iters; spin++) {
+                int64_t next_gen = atomic_load_explicit(&pool->generation, memory_order_acquire);
+                if (next_gen != my_gen) {
+                    my_gen = next_gen;
+                    picked_up = 1;
+                    break;
+                }
+                __asm__ volatile("yield" ::: "memory");
+            }
+            if (!picked_up) break;
         }
-        pthread_mutex_unlock(&pool->mtx);
     }
 }
 
@@ -194,8 +216,13 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     pthread_mutex_lock(&pool->mtx);
     pool->tasks = tasks;
     pool->n_tasks = n_tasks;
-    pool->n_done = 0;
-    pool->generation++;
+    atomic_store_explicit(&pool->n_done, 0, memory_order_release);
+    int max_n = 0;
+    for (int t = 0; t < n_tasks; t++) {
+        if (tasks[t].n > max_n) max_n = tasks[t].n;
+    }
+    pool->poll_iters = max_n >= 1024 ? TP_POLL_ITERS_LARGE : TP_POLL_ITERS_SMALL;
+    atomic_fetch_add_explicit(&pool->generation, 1, memory_order_release);
     pthread_cond_broadcast(&pool->work_cond);
     pthread_mutex_unlock(&pool->mtx);
 
@@ -203,8 +230,17 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
     tp_execute(pool);
 
     // Wait for workers to finish
+    int poll_iters = pool->poll_iters;
+    for (int spin = 0; spin < poll_iters; spin++) {
+        if (atomic_load_explicit(&pool->n_done, memory_order_acquire) >= pool->n_workers) {
+            pool->dispatching = 0;
+            return;
+        }
+        __asm__ volatile("yield" ::: "memory");
+    }
+
     pthread_mutex_lock(&pool->mtx);
-    while (pool->n_done < pool->n_workers) {
+    while (atomic_load_explicit(&pool->n_done, memory_order_acquire) < pool->n_workers) {
         pthread_cond_wait(&pool->done_cond, &pool->mtx);
     }
     pthread_mutex_unlock(&pool->mtx);

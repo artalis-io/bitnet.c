@@ -82,6 +82,14 @@ typedef struct {
     const float *x_scales;
 } BnQ4SdotCtx;
 
+typedef struct {
+    float *out;
+    const BnQWeight *gate;
+    const BnQWeight *up;
+    const int8_t *x_q;
+    const float *x_scales;
+} BnQ4GateUpCtx;
+
 // Q6_K context
 typedef struct {
     float *out;
@@ -177,6 +185,7 @@ void bn_quant_q8_scalar_range(void *ctx, int start, int end);
 // Q4_0 kernels
 void bn_quant_q4_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4_repacked_neon_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4_repacked_gate_up_silu_neon_range(void *ctx, int start, int end);
 void bn_quant_q4_neon_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_4row_range(void *ctx, int group_start, int group_end);

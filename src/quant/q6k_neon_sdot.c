@@ -1,6 +1,10 @@
 #include "quant_internal.h"
 #include <arm_neon.h>
 
+static inline float q6k_fp16_to_f32(uint16_t h) {
+    return vgetq_lane_f32(vcvt_f32_f16(vld1_dup_f16((const float16_t *)&h)), 0);
+}
+
 // Q6_K SDOT kernel with Q8_K x quantization:
 // - Unsigned 6-bit weights (no bias-32 subtract)
 // - Integer accumulation within super-block (one x_d per 256 elements)
@@ -24,7 +28,7 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ6K *blk = &blocks[(size_t)row * n_blocks_per_row + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d  = bn_fp16_to_fp32(blk->d);
+            float d  = q6k_fp16_to_f32(blk->d);
             float dx = x_d[b];
             const uint8_t *ql = blk->ql;
             const uint8_t *qh = blk->qh;
@@ -129,7 +133,7 @@ void bn_quant_q6k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
         for (int b = 0; b < n_bpr; b++) {
             const BnBlockQ6K *blk = &blocks[(size_t)row * n_bpr + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d = bn_fp16_to_fp32(blk->d);
+            float d = q6k_fp16_to_f32(blk->d);
 
             // Pre-unpack weight vectors for both chunks (stays in L1 across tokens)
             int8x16_t W_all[16];  // 2 chunks × 8 vectors

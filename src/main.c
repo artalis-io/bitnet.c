@@ -26,9 +26,8 @@
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <pthread/qos.h>
-#else
-#include <unistd.h>
 #endif
+#include <unistd.h>
 
 typedef struct {
     const char *model_path;
@@ -200,7 +199,8 @@ static int print_token(const char *piece, int token_id, void *user_data) {
         h->history[h->history_len++] = token_id;
     }
     printf("%s", piece);
-    fflush(stdout);
+    if (user_data || isatty(STDOUT_FILENO))
+        fflush(stdout);
     return 0;
 }
 
@@ -691,6 +691,9 @@ int main(int argc, char **argv) {
                 SH_LOG_ERROR("Forward pass returned NULL during prompt");
                 break;
             }
+            for (int i = 0; i < n; i++) {
+                bn_sampler_accept(&sampler, tokens[i]);
+            }
 
             // Cap generation to remaining context
             int max_gen = args.n_tokens;
@@ -761,7 +764,8 @@ int main(int argc, char **argv) {
             char nt[16]; snprintf(nt, sizeof(nt), "%d", args.n_tokens);
             SH_LOG_INFO("Starting generation", "n_tokens", nt);
         }
-        double gen_start = bn_platform_time_ms();
+        double prompt_start = bn_platform_time_ms();
+        double gen_start = prompt_start;
         int pos = 0;
         int n_generated = 0;
 
@@ -777,6 +781,10 @@ int main(int argc, char **argv) {
         if (!logits) {
             SH_LOG_ERROR("Forward pass returned NULL during prompt");
         } else {
+            for (int i = 0; i < n_prompt; i++) {
+                bn_sampler_accept(&sampler, prompt_tokens[i]);
+            }
+            gen_start = bn_platform_time_ms();
 #ifdef DEBUG
             // Dump top-10 logits after prefill
             {
@@ -817,15 +825,17 @@ int main(int argc, char **argv) {
 
         printf("\n");
         {
-            char ng[16], speed[32], total[32];
+            char ng[16], speed[32], prompt_ms[32], total[32];
             snprintf(ng, sizeof(ng), "%d", n_generated);
             if (n_generated > 0) {
                 snprintf(speed, sizeof(speed), "%.2f", n_generated / (gen_time / 1000.0));
             } else {
                 snprintf(speed, sizeof(speed), "0");
             }
+            snprintf(prompt_ms, sizeof(prompt_ms), "%.1f", gen_start - prompt_start);
             snprintf(total, sizeof(total), "%.1f", total_time);
-            SH_LOG_INFO("Generation complete", "tokens", ng, "tok/s", speed, "total_ms", total);
+            SH_LOG_INFO("Generation complete", "tokens", ng, "tok/s", speed,
+                        "prompt_ms", prompt_ms, "total_ms", total);
         }
 
         // Print MoE stats if applicable

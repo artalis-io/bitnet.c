@@ -24,25 +24,24 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
-            float k_buf[head_size];
-            const float *k_t;
-            if (kv_f16) {
-                const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                for (int d = 0; d < head_size; d += 4) {
-                    float16x4_t hv = vreinterpret_f16_u16(vld1_u16(k_f16 + d));
-                    vst1q_f32(k_buf + d, vcvt_f32_f16(hv));
-                }
-                k_t = k_buf;
-            } else {
-                k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-            }
             float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
             float32x4_t a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
-            for (int d = 0; d < head_size; d += 16) {
-                a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vld1q_f32(k_t + d));
-                a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vld1q_f32(k_t + d + 4));
-                a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
-                a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
+            if (kv_f16) {
+                const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                for (int d = 0; d < head_size; d += 16) {
+                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d))));
+                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d + 4))));
+                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d + 8))));
+                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d + 12))));
+                }
+            } else {
+                const float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                for (int d = 0; d < head_size; d += 16) {
+                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vld1q_f32(k_t + d));
+                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vld1q_f32(k_t + d + 4));
+                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
+                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
+                }
             }
             float32x4_t sum = vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3));
             att[i] = bn_transformer_neon_hsum_f32(sum) * inv_sqrt_hs;
@@ -54,25 +53,24 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
         memset(xb_h, 0, head_size * sizeof(float));
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
-            float v_buf[head_size];
-            const float *v_t;
-            if (kv_f16) {
-                const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                for (int d = 0; d < head_size; d += 4) {
-                    float16x4_t hv = vreinterpret_f16_u16(vld1_u16(v_f16 + d));
-                    vst1q_f32(v_buf + d, vcvt_f32_f16(hv));
-                }
-                v_t = v_buf;
-            } else {
-                v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-            }
             float a = att[i];
             float32x4_t a_v = vdupq_n_f32(a);
-            for (int d = 0; d < head_size; d += 16) {
-                vst1q_f32(xb_h + d,      vmlaq_f32(vld1q_f32(xb_h + d),      a_v, vld1q_f32(v_t + d)));
-                vst1q_f32(xb_h + d + 4,  vmlaq_f32(vld1q_f32(xb_h + d + 4),  a_v, vld1q_f32(v_t + d + 4)));
-                vst1q_f32(xb_h + d + 8,  vmlaq_f32(vld1q_f32(xb_h + d + 8),  a_v, vld1q_f32(v_t + d + 8)));
-                vst1q_f32(xb_h + d + 12, vmlaq_f32(vld1q_f32(xb_h + d + 12), a_v, vld1q_f32(v_t + d + 12)));
+            if (kv_f16) {
+                const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                for (int d = 0; d < head_size; d += 16) {
+                    vst1q_f32(xb_h + d,      vmlaq_f32(vld1q_f32(xb_h + d),      a_v, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(v_f16 + d)))));
+                    vst1q_f32(xb_h + d + 4,  vmlaq_f32(vld1q_f32(xb_h + d + 4),  a_v, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(v_f16 + d + 4)))));
+                    vst1q_f32(xb_h + d + 8,  vmlaq_f32(vld1q_f32(xb_h + d + 8),  a_v, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(v_f16 + d + 8)))));
+                    vst1q_f32(xb_h + d + 12, vmlaq_f32(vld1q_f32(xb_h + d + 12), a_v, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(v_f16 + d + 12)))));
+                }
+            } else {
+                const float *v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
+                for (int d = 0; d < head_size; d += 16) {
+                    vst1q_f32(xb_h + d,      vmlaq_f32(vld1q_f32(xb_h + d),      a_v, vld1q_f32(v_t + d)));
+                    vst1q_f32(xb_h + d + 4,  vmlaq_f32(vld1q_f32(xb_h + d + 4),  a_v, vld1q_f32(v_t + d + 4)));
+                    vst1q_f32(xb_h + d + 8,  vmlaq_f32(vld1q_f32(xb_h + d + 8),  a_v, vld1q_f32(v_t + d + 8)));
+                    vst1q_f32(xb_h + d + 12, vmlaq_f32(vld1q_f32(xb_h + d + 12), a_v, vld1q_f32(v_t + d + 12)));
+                }
             }
         }
     }

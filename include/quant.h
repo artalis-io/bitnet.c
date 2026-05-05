@@ -175,7 +175,7 @@ typedef struct {
     int type;           // BN_GGUF_TENSOR_TQ1_0, TQ2_0, or I2_S
     int rows, cols;
     float scale;        // per-tensor scale (from .scale tensor or embedded in data)
-    float *rp_scales;   // repacked: pre-converted FP32 per-block scales (NULL if not repacked)
+    uint16_t *rp_scales; // repacked: FP16 per-block scales (NULL if not repacked)
     uint8_t *rp_qs;     // repacked: contiguous quant data (NULL if not repacked)
     void *gpu_buf;      // GPU buffer handle (NULL = CPU only)
 } BnQWeight;

@@ -192,6 +192,14 @@ int bn_sampler_sample(BnSampler *s, float *logits) {
         for (int i = 0; i < s->recent_len; i++) {
             int tok = s->recent_tokens[i];
             if (tok >= 0 && tok < s->vocab_size) {
+                int seen = 0;
+                for (int j = 0; j < i; j++) {
+                    if (s->recent_tokens[j] == tok) {
+                        seen = 1;
+                        break;
+                    }
+                }
+                if (seen) continue;
                 if (logits[tok] > 0)
                     logits[tok] /= s->repeat_penalty;
                 else

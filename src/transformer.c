@@ -124,6 +124,21 @@ static inline void tq_gqa_dispatch(BnModel *m, BnRunState *s,
     bn_tp_dispatch(m->pool, &gqa, 1);
 }
 
+static inline void gqa_dispatch(BnModel *m, BnGQACtx *gctx, int n_heads, int kv_mul) {
+    (void)kv_mul;
+#ifdef __ARM_NEON
+    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
+#elif defined(__AVX2__)
+    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_avx2_range : bn_transformer_gqa_avx2_range;
+#elif defined(__wasm_simd128__)
+    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_wasm_range : bn_transformer_gqa_wasm_range;
+#else
+    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
+#endif
+    BnTPTask gqa = { attn_fn, gctx, n_heads };
+    bn_tp_dispatch(m->pool, &gqa, 1);
+}
+
 // Inline helper: add residual xb (or xb2) into x.
 // Invariant: dim % 8 == 0 (guaranteed by model load validation).
 static inline void residual_add(float *x, const float *r, int dim) {
@@ -336,6 +351,7 @@ static void forward_ffn_block(BnModel *m, BnSession *sess, BnLayerWeights *lw) {
     BnRunState *s = &sess->state;
     int dim = c->dim;
     int hidden_dim = c->hidden_dim;
+    int ffn_activated = 0;
 
     /* Fused RMSNorm + Q8K quantization on AVX2 for k-quant FFN weights:
      * saves 2 full passes over dim by combining norm scaling with Q8K
@@ -363,11 +379,28 @@ static void forward_ffn_block(BnModel *m, BnSession *sess, BnLayerWeights *lw) {
         rmsnorm(s->xb, s->x, lw->ffn_norm, dim, c->norm_eps);
 
         if (c->has_ffn_gate) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+            if (!m->gpu && c->act_type != 1 &&
+                lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
+                lw->ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
+                lw->ffn_gate.rp_scales && lw->ffn_up.rp_scales &&
+                dim % 32 == 0 && dim / 32 <= 8192) {
+                int n_blocks = dim / 32;
+                float x_scales[n_blocks];
+                bn_quant_x_to_q8_blocks(s->xb, s->x_q, x_scales, dim);
+                BnQ4GateUpCtx gu = { s->hb, &lw->ffn_gate, &lw->ffn_up, s->x_q, x_scales };
+                BnTPTask task = { bn_quant_q4_repacked_gate_up_silu_neon_range, &gu, hidden_dim };
+                bn_tp_dispatch(m->pool, &task, 1);
+                ffn_activated = 1;
+            } else
+#endif
+            {
             BnMatvecTask ffn[2] = {
                 { s->hb,  &lw->ffn_gate },
                 { s->hb2, &lw->ffn_up   },
             };
             bn_quant_matvec_batch_gpu(ffn, 2, s->xb, s->x_q, m->pool, m->gpu);
+            }
         } else {
             BnMatvecTask ffn[1] = {{ s->hb, &lw->ffn_up }};
             bn_quant_matvec_batch_gpu(ffn, 1, s->xb, s->x_q, m->pool, m->gpu);
@@ -375,7 +408,9 @@ static void forward_ffn_block(BnModel *m, BnSession *sess, BnLayerWeights *lw) {
     }
 
     /* Activation function (shared by fused and non-fused paths) */
-    if (c->has_ffn_gate) {
+    if (ffn_activated) {
+        /* Fused gate/up path already wrote activated hidden states. */
+    } else if (c->has_ffn_gate) {
         if (c->act_type == 1) {
 #ifdef __ARM_NEON
             float32x4_t zero = vdupq_n_f32(0);
@@ -616,17 +651,7 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
             if (!(c->kv_tq_bits > 0 && m->tq_state)) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
-#ifdef __ARM_NEON
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
-#elif defined(__AVX2__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_avx2_range : bn_transformer_gqa_avx2_range;
-#elif defined(__wasm_simd128__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_wasm_range : bn_transformer_gqa_wasm_range;
-#else
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
-#endif
-                BnTPTask gqa = { attn_fn, &gctx, n_heads };
-                bn_tp_dispatch(m->pool, &gqa, 1);
+                gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
             BL_ACC(bl_gqa_us);
 
@@ -710,17 +735,7 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
                 // Standard GQA
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
-#ifdef __ARM_NEON
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
-#elif defined(__AVX2__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_avx2_range : bn_transformer_gqa_avx2_range;
-#elif defined(__wasm_simd128__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_wasm_range : bn_transformer_gqa_wasm_range;
-#else
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
-#endif
-                BnTPTask gqa = { attn_fn, &gctx, n_heads };
-                bn_tp_dispatch(m->pool, &gqa, 1);
+                gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
             // wo projection (q_dim → dim) + residual
@@ -861,17 +876,7 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
             if (!(c->kv_tq_bits > 0 && m->tq_state)) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
-#ifdef __ARM_NEON
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
-#elif defined(__AVX2__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_avx2_range : bn_transformer_gqa_avx2_range;
-#elif defined(__wasm_simd128__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_wasm_range : bn_transformer_gqa_wasm_range;
-#else
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
-#endif
-                BnTPTask gqa = { attn_fn, &gctx, n_heads };
-                bn_tp_dispatch(m->pool, &gqa, 1);
+                gqa_dispatch(m, &gctx, n_heads, kv_mul);
                 BL_ACC(bl_gqa_us);
             }
 
@@ -2108,17 +2113,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 // GQA attention (same as single-token path)
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_dim, c->seq_len };
-#ifdef __ARM_NEON
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
-#elif defined(__AVX2__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_avx2_range : bn_transformer_gqa_avx2_range;
-#elif defined(__wasm_simd128__)
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_wasm_range : bn_transformer_gqa_wasm_range;
-#else
-                bn_tp_fn attn_fn = c->flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
-#endif
-                BnTPTask gqa = { attn_fn, &gctx, c->n_heads };
-                bn_tp_dispatch(m->pool, &gqa, 1);
+                gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
                 // Sigmoid gate (gated Q only)
                 if (q_gated) {
