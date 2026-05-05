@@ -1719,22 +1719,38 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                                                       &gate_gpu, &up_gpu, &down_gpu);
                 /* no-op */
                 if (!cached) {
-                    // Cache miss: load from host + upload to GPU
+                    // Cache miss: load each projection and upload immediately.  The
+                    // pread accessor reuses session scratch storage.
                     const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 0);
-                    const void *up_data   = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 1);
-                    const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 2);
-                    if (!gate_data || !up_data || !down_data) continue;
+                    if (!gate_data) continue;
 
                     gate_gpu = gpu->buffer_create(gpu->ctx, gate_data, em->expert_gate_bytes,
                         em->gate_type, em->gate_rows, em->gate_cols);
+                    if (!gate_gpu) continue;
+
+                    const void *up_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 1);
+                    if (!up_data) {
+                        gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                        continue;
+                    }
                     up_gpu = gpu->buffer_create(gpu->ctx, up_data, em->expert_up_bytes,
                         em->up_type, em->up_rows, em->up_cols);
+                    if (!up_gpu) {
+                        gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                        continue;
+                    }
+
+                    const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 2);
+                    if (!down_data) {
+                        gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                        gpu->buffer_destroy(gpu->ctx, up_gpu);
+                        continue;
+                    }
                     down_gpu = gpu->buffer_create(gpu->ctx, down_data, em->expert_down_bytes,
                         em->down_type, em->down_rows, em->down_cols);
-                    if (!gate_gpu || !up_gpu || !down_gpu) {
-                        if (gate_gpu) gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                        if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
-                        if (down_gpu) gpu->buffer_destroy(gpu->ctx, down_gpu);
+                    if (!down_gpu) {
+                        gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                        gpu->buffer_destroy(gpu->ctx, up_gpu);
                         continue;
                     }
 

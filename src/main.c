@@ -868,7 +868,7 @@ int main(int argc, char **argv) {
         bn_moe_cache_free(model.moe_io.cache);
         model.moe_io.cache = NULL;
     }
-#ifdef BN_ENABLE_GPU
+#if defined(BN_ENABLE_GPU) || defined(BN_ENABLE_METAL)
     if (model.moe_io.gpu_moe_cache) {
         bn_gpu_moe_cache_print_stats(model.moe_io.gpu_moe_cache);
         bn_gpu_moe_cache_free(model.moe_io.gpu_moe_cache);
