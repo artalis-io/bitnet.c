@@ -1,4 +1,5 @@
 #include "quant.h"
+#include "simd_helpers.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,12 +140,45 @@ static void test_fp16_embed(void) {
     printf("PASSED\n");
 }
 
+static void test_fast_silu(void) {
+    printf("test_fast_silu... ");
+
+#ifdef __ARM_NEON
+    float vals[12] = {
+        -8.0f, -4.0f, -1.5f, -0.25f,
+         0.0f,  0.25f, 1.0f,  2.0f,
+         4.0f,  8.0f, 12.0f, -12.0f
+    };
+    float out[12];
+    for (int i = 0; i < 12; i += 4) {
+        float32x4_t v = vld1q_f32(vals + i);
+        vst1q_f32(out + i, bn_neon_fast_silu_f32(v));
+    }
+    for (int i = 0; i < 12; i++) {
+        float exact = vals[i] / (1.0f + expf(-vals[i]));
+        assert(fabsf(out[i] - exact) < 2e-3f);
+    }
+#elif defined(__AVX2__)
+    float vals[8] = {-8.0f, -4.0f, -1.5f, -0.25f, 0.25f, 1.0f, 4.0f, 8.0f};
+    float out[8];
+    __m256 v = _mm256_loadu_ps(vals);
+    _mm256_storeu_ps(out, bn_avx2_fast_silu_ps(v));
+    for (int i = 0; i < 8; i++) {
+        float exact = vals[i] / (1.0f + expf(-vals[i]));
+        assert(fabsf(out[i] - exact) < 2e-3f);
+    }
+#endif
+
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Transformer Tests ===\n");
     test_rmsnorm();
     test_softmax();
     test_rope();
     test_fp16_embed();
+    test_fast_silu();
     printf("All transformer tests passed!\n");
     return 0;
 }

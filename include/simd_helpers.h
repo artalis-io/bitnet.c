@@ -1,8 +1,48 @@
 #ifndef BN_SIMD_HELPERS_H
 #define BN_SIMD_HELPERS_H
 
-// Shared SIMD helper functions for AVX2 and WASM SIMD128.
+// Shared SIMD helper functions for NEON, AVX2, and WASM SIMD128.
 // Used by quant.c and transformer.c.
+
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+
+// Fast vectorized exp approximation using range reduction + polynomial.
+// Accurate enough for activation functions; not used for probability math.
+static inline float32x4_t bn_neon_fast_exp_f32(float32x4_t x) {
+    const float32x4_t log2e = vdupq_n_f32(1.4426950409f);
+    const float32x4_t ln2   = vdupq_n_f32(0.6931471806f);
+    const float32x4_t half  = vdupq_n_f32(0.5f);
+    const float32x4_t one   = vdupq_n_f32(1.0f);
+    const float32x4_t p2    = vdupq_n_f32(0.49999994f);
+    const float32x4_t p3    = vdupq_n_f32(0.16666667f);
+    const float32x4_t p4    = vdupq_n_f32(0.04166664f);
+
+    x = vmaxq_f32(vdupq_n_f32(-87.3f), vminq_f32(vdupq_n_f32(88.7f), x));
+
+    float32x4_t n = vrndmq_f32(vmlaq_f32(half, x, log2e));
+    int32x4_t ni = vcvtq_s32_f32(n);
+    float32x4_t r = vmlsq_f32(x, n, ln2);
+
+    float32x4_t poly = vmlaq_f32(p3, p4, r);
+    poly = vmlaq_f32(p2, poly, r);
+    poly = vmlaq_f32(one, poly, r);
+    poly = vmlaq_f32(one, poly, r);
+
+    int32x4_t e2n = vshlq_n_s32(vaddq_s32(ni, vdupq_n_s32(127)), 23);
+    return vmulq_f32(poly, vreinterpretq_f32_s32(e2n));
+}
+
+static inline float32x4_t bn_neon_fast_sigmoid_f32(float32x4_t x) {
+    float32x4_t one = vdupq_n_f32(1.0f);
+    float32x4_t ex = bn_neon_fast_exp_f32(vnegq_f32(x));
+    return vdivq_f32(one, vaddq_f32(one, ex));
+}
+
+static inline float32x4_t bn_neon_fast_silu_f32(float32x4_t x) {
+    return vmulq_f32(x, bn_neon_fast_sigmoid_f32(x));
+}
+#endif // __ARM_NEON
 
 #ifdef __AVX2__
 #include <immintrin.h>

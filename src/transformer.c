@@ -402,7 +402,13 @@ static void forward_ffn_block(BnModel *m, BnSession *sess, BnLayerWeights *lw) {
             }
 #endif
         } else {
-#ifdef __AVX2__
+#ifdef __ARM_NEON
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t g = vld1q_f32(s->hb + i);
+                float32x4_t u = vld1q_f32(s->hb2 + i);
+                vst1q_f32(s->hb + i, vmulq_f32(bn_neon_fast_silu_f32(g), u));
+            }
+#elif defined(__AVX2__)
             for (int i = 0; i < hidden_dim; i += 8) {
                 __m256 g = _mm256_loadu_ps(s->hb + i);
                 __m256 u = _mm256_loadu_ps(s->hb2 + i);
@@ -422,7 +428,12 @@ static void forward_ffn_block(BnModel *m, BnSession *sess, BnLayerWeights *lw) {
                 s->hb[i] = v * v;
             }
         } else {
-#ifdef __AVX2__
+#ifdef __ARM_NEON
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t v = vld1q_f32(s->hb + i);
+                vst1q_f32(s->hb + i, bn_neon_fast_silu_f32(v));
+            }
+#elif defined(__AVX2__)
             for (int i = 0; i < hidden_dim; i += 8) {
                 __m256 v = _mm256_loadu_ps(s->hb + i);
                 _mm256_storeu_ps(s->hb + i, bn_avx2_fast_silu_ps(v));
