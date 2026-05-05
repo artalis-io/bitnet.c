@@ -140,11 +140,11 @@ static id<MTLComputePipelineState> compile_shader(BnMetalCtx *ctx,
 
     MTLCompileOptions *opts = [[MTLCompileOptions alloc] init];
     if (@available(macOS 15.0, *)) {
-        opts.mathMode = MTLMathModeSafe;  /* preserve precise transcendentals */
+        opts.mathMode = MTLMathModeFast;
     } else {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        opts.fastMathEnabled = NO;
+        opts.fastMathEnabled = YES;
 #pragma clang diagnostic pop
     }
     opts.languageVersion = MTLLanguageVersion3_0;
