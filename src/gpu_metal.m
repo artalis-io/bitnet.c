@@ -494,6 +494,7 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_ROPE_QK,          "rope_qk.metal",          "rope_qk"          },
         { BN_GPU_SHADER_FUSED_GATEUP_SILU,"q4_fused_gateup_silu.metal","q4_fused_gateup_silu"},
         { BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT, "ssm_alpha_beta_split.metal", "ssm_alpha_beta_split" },
+        { BN_GPU_SHADER_Q4K_MATVEC_SPLIT, "q4k_matvec_split.metal", "q4k_matvec_split" },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -887,6 +888,10 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 op_reads = BUF_BIT(op->buf_in);
                 op_writes = BUF_BIT(op->buf_out);
                 break;
+            case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
+                op_reads = BUF_BIT(op->buf_in);
+                op_writes = BUF_BIT(op->buf_out) | BUF_BIT(op->buf_aux);
+                break;
             default: continue;
             }
 
@@ -1147,6 +1152,16 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 [enc setBytes:params length:sizeof(params) atIndex:3];
                 break;
             }
+            case BN_GPU_SHADER_Q4K_MATVEC_SPLIT: {
+                BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
+                if (!wbuf) continue;
+                [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
+                [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
+                [enc setBuffer:ctx->act_bufs[op->buf_aux] offset:0 atIndex:3];
+                [enc setBytes:params length:sizeof(params) atIndex:4];
+                break;
+            }
             default: continue;
             }
 
@@ -1217,6 +1232,9 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             case BN_GPU_SHADER_FUSED_GATEUP_SILU:
                 wg_x = (op->p[2] + 31) / 32;  // gate_rows / 32
                 break;
+            case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
+                wg_x = (op->p[0] + 31) / 32;  // total_rows / 32
+                break;
             }
 
             if (wg_x == 0) wg_x = 1;
@@ -1263,7 +1281,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             "silu_gate","relu2_gate","resid_add","copy","bias_add","resid_rmsnorm",
             "weighted_add","ssm_conv","ssm_l2norm","ssm_ab","ssm_delta","ssm_gate",
             "per_head_norm","deinterleave_q","sigmoid_gate","flash_attn",
-            "matvec_split","rope_qk","fused_gateup","ssm_ab_split"
+            "matvec_split","rope_qk","fused_gateup","ssm_ab_split","q4k_split"
         };
         int cat_count[BN_GPU_SHADER_COUNT]; memset(cat_count, 0, sizeof(cat_count));
         for (int i = 0; i < n_ops; i++) {

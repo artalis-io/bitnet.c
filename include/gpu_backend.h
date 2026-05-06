@@ -33,7 +33,8 @@
 #define BN_GPU_SHADER_ROPE_QK          23 // Fused RoPE for Q and K in single dispatch
 #define BN_GPU_SHADER_FUSED_GATEUP_SILU 24 // Fused gate+up matvec + SiLU activation (Q4_0)
 #define BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT 25 // SSM alpha/beta activation from stacked matvec
-#define BN_GPU_SHADER_COUNT             26
+#define BN_GPU_SHADER_Q4K_MATVEC_SPLIT 26 // Q4_K two-output matvec split
+#define BN_GPU_SHADER_COUNT             27
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0

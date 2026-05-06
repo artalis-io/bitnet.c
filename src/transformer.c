@@ -1864,6 +1864,28 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     .p = { (uint32_t)total_rows, (uint32_t)lw->ffn_gate.cols,
                            (uint32_t)lw->ffn_gate.rows, 0, 0, 0, 0, 0 }
                 };
+            } else if (lw->gateup_stacked_gpu &&
+                       lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_K &&
+                       lw->ffn_gate.rows == lw->ffn_up.rows &&
+                       lw->ffn_gate.cols == lw->ffn_up.cols &&
+                       c->act_type != 1) {
+                int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_Q4K_MATVEC_SPLIT, .type = lw->ffn_gate.type,
+                    .W_buf = lw->gateup_stacked_gpu,
+                    .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_HB,
+                    .buf_aux = BN_GPU_BUF_HB2,
+                    .rows = total_rows, .cols = lw->ffn_gate.cols,
+                    .p = { (uint32_t)total_rows, (uint32_t)lw->ffn_gate.cols,
+                           (uint32_t)lw->ffn_gate.rows, 0, 0, 0, 0, 0 }
+                };
+                ops[n++] = (BnGPUOp){
+                    .shader = BN_GPU_SHADER_SILU_GATE, .type = -1, .W_buf = NULL,
+                    .buf_in = BN_GPU_BUF_HB, .buf_out = -1,
+                    .buf_aux = BN_GPU_BUF_HB2,
+                    .rows = 0, .cols = 0,
+                    .p = { (uint32_t)hidden_dim, 0, 0, 0, 0, 0, 0, 0 }
+                };
             } else {
                 ops[n++] = (BnGPUOp){
                     .shader = BN_GPU_SHADER_MATVEC, .type = lw->ffn_gate.type,
