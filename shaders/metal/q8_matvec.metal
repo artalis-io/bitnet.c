@@ -31,6 +31,7 @@ kernel void q8_matvec(device const uchar *weights [[buffer(0)]],
 
     float acc = 0.0f;
     if (global_row < rows) {
+        #pragma clang loop unroll_count(4)
         for (uint b = 0; b < blocks_per_row; b++) {
             device const uchar *block = weights + row_byte_base + b * 34;
             float scale = float(*(device const half *)block);
