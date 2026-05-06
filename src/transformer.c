@@ -1822,11 +1822,14 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
                 .W_buf = next_norm, .buf_in = BN_GPU_BUF_X, .buf_out = BN_GPU_BUF_XB, .buf_aux = -1,
                 .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 } };
-            // Flush all expert ops as ONE GPU submission
-            GPU_FLUSH();
-            // Destroy uncached expert buffers (after flush ensures GPU is done with them)
-            for (int ub = 0; ub < n_uncached; ub++)
-                gpu->buffer_destroy(gpu->ctx, uncached_bufs[ub]);
+            // If buffers are cached, let the next layer's attention join this
+            // submission; the next CPU routing readback will flush it.  Uncached
+            // buffers still require an immediate flush before destruction.
+            if (n_uncached > 0) {
+                GPU_FLUSH();
+                for (int ub = 0; ub < n_uncached; ub++)
+                    gpu->buffer_destroy(gpu->ctx, uncached_bufs[ub]);
+            }
             continue;  // skip dense FFN below
         }
         if (c->has_ffn_gate && lw->ffn_gate.data) {
