@@ -39,6 +39,7 @@ typedef struct {
     float topp;
     uint64_t seed;
     int max_seq_len;
+    int max_seq_len_set;
     int flash_attn;
     int chat;
     int temp_set;       // whether user explicitly set --temp
@@ -61,6 +62,8 @@ typedef struct {
     int gpu_cache_mb;   // GPU expert buffer cache in MB (default 4096, 0 to disable)
 } CLIArgs;
 
+#define BN_METAL_MOE_DEFAULT_MAXSEQ 4096
+
 static void print_usage(const char *prog) {
     fprintf(stderr, "Usage: %s <model.gguf> [options]\n", prog);
     fprintf(stderr, "Options:\n");
@@ -69,7 +72,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --temp <float>  Temperature (default: 0.0 = greedy)\n");
     fprintf(stderr, "  --topp <float>  Top-p sampling (default: 0.9)\n");
     fprintf(stderr, "  --seed <int>    Random seed (default: 42)\n");
-    fprintf(stderr, "  --maxseq <int>  Max sequence length (default: model max)\n");
+    fprintf(stderr, "  --maxseq <int>  Max sequence length (default: model max; Metal MoE auto-caps large contexts to 4096)\n");
     fprintf(stderr, "  --flash         Use flash attention (online softmax)\n");
     fprintf(stderr, "  --chat          Interactive chat REPL mode\n");
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.1)\n");
@@ -141,6 +144,7 @@ static CLIArgs parse_args(int argc, char **argv) {
             if (*end != '\0') { fprintf(stderr, "Invalid value for --seed: %s\n", argv[i]); exit(1); }
         } else if (strcmp(argv[i], "--maxseq") == 0 && i + 1 < argc) {
             args.max_seq_len = parse_int(argv[++i], "--maxseq");
+            args.max_seq_len_set = 1;
         } else if (strcmp(argv[i], "--flash") == 0) {
             args.flash_attn = 1;
         } else if (strcmp(argv[i], "--chat") == 0) {
@@ -185,6 +189,17 @@ static CLIArgs parse_args(int argc, char **argv) {
     }
 
     return args;
+}
+
+static int gguf_get_arch_u32(BnGGUFFile *gf, const char *suffix) {
+    const char *arch = bn_gguf_get_str(gf, "general.architecture");
+    char prefix[64] = "llama";
+    char key[128];
+    if (arch) {
+        snprintf(prefix, sizeof(prefix), "%s", arch);
+    }
+    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
+    return (int)bn_gguf_get_u32(gf, key);
 }
 
 // Chat history tracker for prompt caching
@@ -311,6 +326,16 @@ int main(int argc, char **argv) {
         snprintf(nt, sizeof(nt), "%llu", (unsigned long long)gf->n_tensors);
         snprintf(nkv, sizeof(nkv), "%llu", (unsigned long long)gf->n_kv);
         SH_LOG_INFO("GGUF parsed", "version", ver, "tensors", nt, "kv", nkv);
+    }
+
+    if (args.metal && !args.max_seq_len_set) {
+        int model_seq_len = gguf_get_arch_u32(gf, "context_length");
+        int n_experts = gguf_get_arch_u32(gf, "expert_count");
+        if (n_experts > 0 && model_seq_len > BN_METAL_MOE_DEFAULT_MAXSEQ) {
+            args.max_seq_len = BN_METAL_MOE_DEFAULT_MAXSEQ;
+            SH_LOG_WARN("Auto-capping Metal MoE sequence length",
+                        "seq", "4096", "override", "--maxseq");
+        }
     }
 
     // Load model
