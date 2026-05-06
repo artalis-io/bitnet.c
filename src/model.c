@@ -1407,6 +1407,30 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
+        // Stacked SSM alpha+beta projection.  These are tiny per-layer
+        // matvecs, so combining them saves one dispatch per SSM layer.
+        if (lw->ssm_alpha.data && lw->ssm_beta.data &&
+            lw->ssm_alpha.type != BN_GGUF_TENSOR_I2_S &&
+            lw->ssm_alpha.type == lw->ssm_beta.type &&
+            lw->ssm_alpha.cols == lw->ssm_beta.cols) {
+
+            int total_rows = lw->ssm_alpha.rows + lw->ssm_beta.rows;
+            size_t alpha_sz = bn_qweight_data_size(&lw->ssm_alpha);
+            size_t beta_sz = bn_qweight_data_size(&lw->ssm_beta);
+            size_t combined_sz = alpha_sz + beta_sz;
+
+            uint8_t *combined = (uint8_t *)malloc(combined_sz);
+            if (combined) {
+                memcpy(combined, lw->ssm_alpha.data, alpha_sz);
+                memcpy(combined + alpha_sz, lw->ssm_beta.data, beta_sz);
+
+                lw->ssm_ab_stacked_gpu = gpu->buffer_create(
+                    gpu->ctx, combined, combined_sz,
+                    lw->ssm_alpha.type, total_rows, lw->ssm_alpha.cols);
+                free(combined);
+            }
+        }
+
         // Upload Q/K norm and sub-norm weights
         if (lw->q_norm) {
             int q_norm_size = c->qk_norm_per_head ? (c->n_heads * c->head_size) : c->head_size;
@@ -1500,6 +1524,10 @@ void bn_model_release_gpu(BnModel *model) {
             if (lw->gateup_stacked_gpu) {
                 gpu->buffer_destroy(gpu->ctx, lw->gateup_stacked_gpu);
                 lw->gateup_stacked_gpu = NULL;
+            }
+            if (lw->ssm_ab_stacked_gpu) {
+                gpu->buffer_destroy(gpu->ctx, lw->ssm_ab_stacked_gpu);
+                lw->ssm_ab_stacked_gpu = NULL;
             }
         }
     }

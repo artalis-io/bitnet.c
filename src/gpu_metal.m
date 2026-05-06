@@ -493,6 +493,7 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_MATVEC_SPLIT,     "q4_matvec_split.metal",  "q4_matvec_split"  },
         { BN_GPU_SHADER_ROPE_QK,          "rope_qk.metal",          "rope_qk"          },
         { BN_GPU_SHADER_FUSED_GATEUP_SILU,"q4_fused_gateup_silu.metal","q4_fused_gateup_silu"},
+        { BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT, "ssm_alpha_beta_split.metal", "ssm_alpha_beta_split" },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -839,6 +840,10 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 op_reads = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
                 op_writes = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
                 break;
+            case BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT:
+                op_reads = BUF_BIT(op->buf_in);
+                op_writes = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
+                break;
             case BN_GPU_SHADER_SSM_DELTA:
                 op_reads = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
                          | BUF_BIT(BN_GPU_BUF_SSM_V) | BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
@@ -1044,6 +1049,20 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 [enc setBytes:params length:sizeof(params) atIndex:4];
                 break;
             }
+            case BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT: {
+                BnMetalBuf *dt_buf = (BnMetalBuf *)op->W_buf;
+                if (!dt_buf) continue;
+                void *a_ptr = (void *)(uintptr_t)((uint64_t)op->p[6] | ((uint64_t)op->p[7] << 32));
+                BnMetalBuf *a_wbuf = (BnMetalBuf *)a_ptr;
+                if (!a_wbuf) continue;
+                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:0];
+                [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_ALPHA] offset:0 atIndex:1];
+                [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_BETA] offset:0 atIndex:2];
+                [enc setBuffer:dt_buf->buf offset:dt_buf->offset atIndex:3];
+                [enc setBuffer:a_wbuf->buf offset:a_wbuf->offset atIndex:4];
+                [enc setBytes:params length:sizeof(params) atIndex:5];
+                break;
+            }
             case BN_GPU_SHADER_SSM_DELTA: {
                 [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_STATE] offset:0 atIndex:0];
                 [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:1];
@@ -1149,6 +1168,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             case BN_GPU_SHADER_RMSNORM:
             case BN_GPU_SHADER_RESIDUAL_RMSNORM:
             case BN_GPU_SHADER_SSM_ALPHA_BETA:
+            case BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT:
                 wg_x = 1;
                 break;
             case BN_GPU_SHADER_ROPE:
@@ -1243,7 +1263,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             "silu_gate","relu2_gate","resid_add","copy","bias_add","resid_rmsnorm",
             "weighted_add","ssm_conv","ssm_l2norm","ssm_ab","ssm_delta","ssm_gate",
             "per_head_norm","deinterleave_q","sigmoid_gate","flash_attn",
-            "matvec_split","rope_qk","fused_gateup"
+            "matvec_split","rope_qk","fused_gateup","ssm_ab_split"
         };
         int cat_count[BN_GPU_SHADER_COUNT]; memset(cat_count, 0, sizeof(cat_count));
         for (int i = 0; i < n_ops; i++) {

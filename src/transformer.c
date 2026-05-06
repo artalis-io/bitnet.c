@@ -1335,20 +1335,37 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_L2NORM, .type = -1, .W_buf = NULL,
                 .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = BN_GPU_BUF_SCRATCH,
                 .rows = num_k_heads, .p = { (uint32_t)head_k_dim, 0, 0, 0, 0, 0, 0, 0 } };
-            // 9. Alpha matvec: XB -> SSM_ALPHA
-            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = lw->ssm_alpha.type,
-                .W_buf = lw->ssm_alpha.gpu_buf, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SSM_ALPHA,
-                .buf_aux = -1, .rows = lw->ssm_alpha.rows, .cols = lw->ssm_alpha.cols,
-                .p = { (uint32_t)lw->ssm_alpha.rows, (uint32_t)lw->ssm_alpha.cols, 1, 0, 0, 0, 0, 0 } };
-            // 10. Beta matvec: XB -> SSM_BETA
-            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = lw->ssm_beta.type,
-                .W_buf = lw->ssm_beta.gpu_buf, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SSM_BETA,
-                .buf_aux = -1, .rows = lw->ssm_beta.rows, .cols = lw->ssm_beta.cols,
-                .p = { (uint32_t)lw->ssm_beta.rows, (uint32_t)lw->ssm_beta.cols, 1, 0, 0, 0, 0, 0 } };
-            // 11. Alpha/Beta activation (softplus+exp, sigmoid)
-            // NOTE: a_log GPU handle packed into p[6:7] as split pointer.
-            // This is safe on all 64-bit targets (sizeof(void*) == 8).
-            {
+            if (lw->ssm_ab_stacked_gpu &&
+                lw->ssm_alpha.rows == lw->ssm_beta.rows &&
+                lw->ssm_alpha.cols == lw->ssm_beta.cols) {
+                int ab_rows = lw->ssm_alpha.rows + lw->ssm_beta.rows;
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = lw->ssm_alpha.type,
+                    .W_buf = lw->ssm_ab_stacked_gpu, .buf_in = BN_GPU_BUF_XB,
+                    .buf_out = BN_GPU_BUF_SSM_QKV, .buf_aux = -1,
+                    .rows = ab_rows, .cols = lw->ssm_alpha.cols,
+                    .p = { (uint32_t)ab_rows, (uint32_t)lw->ssm_alpha.cols, 1, 0, 0, 0, 0, 0 } };
+                _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
+                uintptr_t a_ptr = (uintptr_t)lw->ssm_a_log_gpu;
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT, .type = -1,
+                    .W_buf = lw->ssm_dt_bias_gpu, .buf_in = BN_GPU_BUF_SSM_QKV,
+                    .buf_out = -1, .buf_aux = -1,
+                    .p = { (uint32_t)num_v_heads, (uint32_t)lw->ssm_alpha.rows,
+                           0, 0, 0, 0,
+                           (uint32_t)(a_ptr & 0xFFFFFFFF), (uint32_t)((uint64_t)a_ptr >> 32) } };
+            } else {
+                // 9. Alpha matvec: XB -> SSM_ALPHA
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = lw->ssm_alpha.type,
+                    .W_buf = lw->ssm_alpha.gpu_buf, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SSM_ALPHA,
+                    .buf_aux = -1, .rows = lw->ssm_alpha.rows, .cols = lw->ssm_alpha.cols,
+                    .p = { (uint32_t)lw->ssm_alpha.rows, (uint32_t)lw->ssm_alpha.cols, 1, 0, 0, 0, 0, 0 } };
+                // 10. Beta matvec: XB -> SSM_BETA
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = lw->ssm_beta.type,
+                    .W_buf = lw->ssm_beta.gpu_buf, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SSM_BETA,
+                    .buf_aux = -1, .rows = lw->ssm_beta.rows, .cols = lw->ssm_beta.cols,
+                    .p = { (uint32_t)lw->ssm_beta.rows, (uint32_t)lw->ssm_beta.cols, 1, 0, 0, 0, 0, 0 } };
+                // 11. Alpha/Beta activation (softplus+exp, sigmoid)
+                // NOTE: a_log GPU handle packed into p[6:7] as split pointer.
+                // This is safe on all 64-bit targets (sizeof(void*) == 8).
                 _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
                 uintptr_t a_ptr = (uintptr_t)lw->ssm_a_log_gpu;
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_ALPHA_BETA, .type = -1,
