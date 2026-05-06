@@ -115,6 +115,6 @@ kernel void q4_fused_gateup_silu(device const char  *weights [[buffer(0)]],
             g += as_type<float>(((device const uint *)weights)[bias_offset + global_row]);
             u += as_type<float>(((device const uint *)weights)[bias_offset + global_row + gate_rows]);
         }
-        out[global_row] = (g / (1.0f + exp(-g))) * u;
+        out[global_row] = (g / (1.0f + fast::exp(-g))) * u;
     }
 }
