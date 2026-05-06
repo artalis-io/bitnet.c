@@ -59,51 +59,51 @@ kernel void q4_native_matvec(
             // Process 8 uint16 words = 16 nibble bytes = 32 elements
             // Word 0: elements {0, 16, 1, 17} via masks 0x000F, 0x00F0, 0x0F00, 0xF000
             sum += x0.x          * float(qs[0] & 0x000Fu);
-            sum += (x0.y / 256)  * float(qs[0] & 0x0F00u);
-            sum += (x4.x / 16)   * float(qs[0] & 0x00F0u);
-            sum += (x4.y / 4096) * float(qs[0] & 0xF000u);
+            sum += (x0.y * 0.00390625f)  * float(qs[0] & 0x0F00u);
+            sum += (x4.x * 0.0625f)   * float(qs[0] & 0x00F0u);
+            sum += (x4.y * 0.000244140625f) * float(qs[0] & 0xF000u);
 
             // Word 1: elements {2, 18, 3, 19}
             sum += x0.z          * float(qs[1] & 0x000Fu);
-            sum += (x0.w / 256)  * float(qs[1] & 0x0F00u);
-            sum += (x4.z / 16)   * float(qs[1] & 0x00F0u);
-            sum += (x4.w / 4096) * float(qs[1] & 0xF000u);
+            sum += (x0.w * 0.00390625f)  * float(qs[1] & 0x0F00u);
+            sum += (x4.z * 0.0625f)   * float(qs[1] & 0x00F0u);
+            sum += (x4.w * 0.000244140625f) * float(qs[1] & 0xF000u);
 
             // Word 2: elements {4, 20, 5, 21}
             sum += x1.x          * float(qs[2] & 0x000Fu);
-            sum += (x1.y / 256)  * float(qs[2] & 0x0F00u);
-            sum += (x5.x / 16)   * float(qs[2] & 0x00F0u);
-            sum += (x5.y / 4096) * float(qs[2] & 0xF000u);
+            sum += (x1.y * 0.00390625f)  * float(qs[2] & 0x0F00u);
+            sum += (x5.x * 0.0625f)   * float(qs[2] & 0x00F0u);
+            sum += (x5.y * 0.000244140625f) * float(qs[2] & 0xF000u);
 
             // Word 3: elements {6, 22, 7, 23}
             sum += x1.z          * float(qs[3] & 0x000Fu);
-            sum += (x1.w / 256)  * float(qs[3] & 0x0F00u);
-            sum += (x5.z / 16)   * float(qs[3] & 0x00F0u);
-            sum += (x5.w / 4096) * float(qs[3] & 0xF000u);
+            sum += (x1.w * 0.00390625f)  * float(qs[3] & 0x0F00u);
+            sum += (x5.z * 0.0625f)   * float(qs[3] & 0x00F0u);
+            sum += (x5.w * 0.000244140625f) * float(qs[3] & 0xF000u);
 
             // Word 4: elements {8, 24, 9, 25}
             sum += x2.x          * float(qs[4] & 0x000Fu);
-            sum += (x2.y / 256)  * float(qs[4] & 0x0F00u);
-            sum += (x6.x / 16)   * float(qs[4] & 0x00F0u);
-            sum += (x6.y / 4096) * float(qs[4] & 0xF000u);
+            sum += (x2.y * 0.00390625f)  * float(qs[4] & 0x0F00u);
+            sum += (x6.x * 0.0625f)   * float(qs[4] & 0x00F0u);
+            sum += (x6.y * 0.000244140625f) * float(qs[4] & 0xF000u);
 
             // Word 5: elements {10, 26, 11, 27}
             sum += x2.z          * float(qs[5] & 0x000Fu);
-            sum += (x2.w / 256)  * float(qs[5] & 0x0F00u);
-            sum += (x6.z / 16)   * float(qs[5] & 0x00F0u);
-            sum += (x6.w / 4096) * float(qs[5] & 0xF000u);
+            sum += (x2.w * 0.00390625f)  * float(qs[5] & 0x0F00u);
+            sum += (x6.z * 0.0625f)   * float(qs[5] & 0x00F0u);
+            sum += (x6.w * 0.000244140625f) * float(qs[5] & 0xF000u);
 
             // Word 6: elements {12, 28, 13, 29}
             sum += x3.x          * float(qs[6] & 0x000Fu);
-            sum += (x3.y / 256)  * float(qs[6] & 0x0F00u);
-            sum += (x7.x / 16)   * float(qs[6] & 0x00F0u);
-            sum += (x7.y / 4096) * float(qs[6] & 0xF000u);
+            sum += (x3.y * 0.00390625f)  * float(qs[6] & 0x0F00u);
+            sum += (x7.x * 0.0625f)   * float(qs[6] & 0x00F0u);
+            sum += (x7.y * 0.000244140625f) * float(qs[6] & 0xF000u);
 
             // Word 7: elements {14, 30, 15, 31}
             sum += x3.z          * float(qs[7] & 0x000Fu);
-            sum += (x3.w / 256)  * float(qs[7] & 0x0F00u);
-            sum += (x7.z / 16)   * float(qs[7] & 0x00F0u);
-            sum += (x7.w / 4096) * float(qs[7] & 0xF000u);
+            sum += (x3.w * 0.00390625f)  * float(qs[7] & 0x0F00u);
+            sum += (x7.z * 0.0625f)   * float(qs[7] & 0x00F0u);
+            sum += (x7.w * 0.000244140625f) * float(qs[7] & 0xF000u);
 
             acc += d * (sumy * (-8.f) + sum);
         }
