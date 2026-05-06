@@ -58,7 +58,7 @@ typedef struct {
     const char *shader_dir; // --shader-dir for GPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
-    int gpu_cache_mb;   // GPU expert buffer cache in MB (default 512, 0 to disable)
+    int gpu_cache_mb;   // GPU expert buffer cache in MB (default 4096, 0 to disable)
 } CLIArgs;
 
 static void print_usage(const char *prog) {
@@ -78,7 +78,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --no-prefill    Disable batch prompt prefill (compute logits for every token)\n");
     fprintf(stderr, "  --pread         Force pread for MoE expert loading (measure SSD streaming speed)\n");
     fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
-    fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 512, 0 to disable)\n");
+    fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
     fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
@@ -115,7 +115,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.seed = 42;
     args.max_seq_len = 0;
     args.cache_mb = 4096;
-    args.gpu_cache_mb = 2048;
+    args.gpu_cache_mb = 4096;
     args.draft_k = 5;
 
     if (argc < 2) {
