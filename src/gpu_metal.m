@@ -1152,10 +1152,13 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 wg_x = 1;
                 break;
             case BN_GPU_SHADER_ROPE:
-            case BN_GPU_SHADER_GQA_SCORES:
             case BN_GPU_SHADER_SOFTMAX:
             case BN_GPU_SHADER_GQA_COMBINE:
                 wg_x = op->p[0];
+                break;
+            case BN_GPU_SHADER_GQA_SCORES:
+                wg_x = op->p[0];
+                wg_y = (op->p[2] + 7) / 8;
                 break;
             case BN_GPU_SHADER_SILU_GATE:
             case BN_GPU_SHADER_RELU2_GATE:
