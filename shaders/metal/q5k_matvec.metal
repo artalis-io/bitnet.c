@@ -34,6 +34,11 @@ kernel void q5k_matvec(device const uchar *weights [[buffer(0)]],
     uint global_row = tile_start + local_row;
     uint n_blocks = cols / 256;
     uint x_base = token * cols;
+    uint my_start = local_elem * ELEMS_PER_THREAD;
+    uint group = my_start / 64;
+    uint is_high = (my_start % 64) / 32;
+    uint bit = group * 2 + is_high;
+    uint q_off_base = group * 32;
 
     float acc = 0.0f;
     if (global_row < rows) {
@@ -46,12 +51,8 @@ kernel void q5k_matvec(device const uchar *weights [[buffer(0)]],
             device const uchar *qh = block + 16;
             device const uchar *qs = block + 48;
             uint elem_base = bi * 256;
-            uint my_start = local_elem * ELEMS_PER_THREAD;
-            uint group = my_start / 64;
-            uint is_high = (my_start % 64) / 32;
-            uint bit = group * 2 + is_high;
-            device const uchar *q_off = qs + group * 32;
-            uint2 sm = get_scale_min_q5k(group * 2 + is_high, scales);
+            device const uchar *q_off = qs + q_off_base;
+            uint2 sm = get_scale_min_q5k(bit, scales);
             for (uint i = 0; i < ELEMS_PER_THREAD; i++) {
                 uchar qbyte = q_off[i];
                 uint nibble = is_high == 0 ? (qbyte & 0xF) : (qbyte >> 4);

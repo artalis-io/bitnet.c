@@ -42,6 +42,11 @@ kernel void q4k_matvec(device const uchar *weights [[buffer(0)]],
     uint n_blocks = cols / QK_K;
     uint x_base = token * cols;
     uint row_byte = global_row * n_blocks * BLOCK_BYTES;
+    uint my_start = local_elem * ELEMS_PER_THREAD;
+    uint group = my_start / 64;
+    uint is_high = (my_start % 64) / 32;
+    uint sub = group * 2 + is_high;
+    uint q_off_base = group * 32;
 
     float acc = 0.0f;
     if (global_row < rows) {
@@ -53,12 +58,8 @@ kernel void q4k_matvec(device const uchar *weights [[buffer(0)]],
             device const uchar *qs = block + 16;
             uint elem_base = bi * QK_K;
 
-            uint my_start = local_elem * ELEMS_PER_THREAD;
-            uint group = my_start / 64;
-            uint is_high = (my_start % 64) / 32;
-            uint sub = group * 2 + is_high;
             uint2 sm = get_scale_min(sub, scales);
-            device const uchar *q_off = qs + group * 32;
+            device const uchar *q_off = qs + q_off_base;
 
             float sum_qx = 0.0f;
             float sum_x = 0.0f;
