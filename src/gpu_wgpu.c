@@ -1622,7 +1622,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             break;
         case BN_GPU_SHADER_SSM_DELTA:
             op_reads = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
-                     | BUF_BIT(BN_GPU_BUF_SSM_V) | BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
+                     | BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
+            if (op->p[7] == 0) op_reads |= BUF_BIT(BN_GPU_BUF_SSM_V);
             op_writes = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_out);
             break;
         case BN_GPU_SHADER_SSM_GATE:
@@ -1955,7 +1956,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             break;
         }
         case BN_GPU_SHADER_SSM_DELTA: {
-            /* state(rw), out(rw), q(ro), k(ro), v(rw), alpha(ro), beta(ro), uniforms */
+            /* state(rw), out(rw), q(ro), k(ro), v(ro), alpha(ro), beta(ro), uniforms */
+            int v_buf = op->p[7] ? op->buf_in : BN_GPU_BUF_SSM_V;
             entries[0] = (WGPUBindGroupEntry){
                 .binding = 0, .buffer = ctx->act_bufs[BN_GPU_BUF_SSM_STATE],
                 .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_STATE]};
@@ -1969,8 +1971,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .binding = 3, .buffer = ctx->act_bufs[op->buf_aux],
                 .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
             entries[4] = (WGPUBindGroupEntry){
-                .binding = 4, .buffer = ctx->act_bufs[BN_GPU_BUF_SSM_V],
-                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_V]};
+                .binding = 4, .buffer = ctx->act_bufs[v_buf],
+                .offset = 0, .size = ctx->act_sizes[v_buf]};
             entries[5] = (WGPUBindGroupEntry){
                 .binding = 5, .buffer = ctx->act_bufs[BN_GPU_BUF_SSM_ALPHA],
                 .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_ALPHA]};

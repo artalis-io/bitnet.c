@@ -13,13 +13,14 @@ kernel void ssm_l2norm(device float  *q [[buffer(0)]],
     uint head = wid.x;
     uint tid = lid.x;
     uint hd = p[0];
-    uint base = head * hd;
+    uint q_base = p[1] + head * hd;
+    uint k_base = p[2] + head * hd;
     uint simd_id = tid / 32;
     uint simd_lane = tid % 32;
 
     float qn = 0.0f, kn = 0.0f;
     for (uint d = tid; d < hd; d += 256) {
-        float qv = q[base + d], kv = k[base + d];
+        float qv = q[q_base + d], kv = k[k_base + d];
         qn += qv * qv;
         kn += kv * kv;
     }
@@ -52,7 +53,7 @@ kernel void ssm_l2norm(device float  *q [[buffer(0)]],
     float inv_kn = 1.0f / (sqrt(simd_k[0]) + 1e-6f);
 
     for (uint d = tid; d < hd; d += 256) {
-        q[base + d] *= inv_qn;
-        k[base + d] *= inv_kn;
+        q[q_base + d] *= inv_qn;
+        k[k_base + d] *= inv_kn;
     }
 }

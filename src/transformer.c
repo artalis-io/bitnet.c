@@ -1319,35 +1319,24 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_CONV_SILU, .type = -1,
                 .W_buf = lw->ssm_conv1d_gpu, .buf_in = BN_GPU_BUF_SSM_QKV, .buf_out = -1, .buf_aux = -1,
                 .p = { (uint32_t)qkv_dim_ssm, (uint32_t)kern, (uint32_t)conv_off, (uint32_t)((kern-1)*qkv_dim_ssm), 0, 0, 0, 0 } };
-            // 5. Split Q from SSM_QKV -> Q buf
-            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_SSM_QKV, .buf_out = BN_GPU_BUF_Q, .buf_aux = -1,
-                .p = { 0, 0, (uint32_t)key_dim, 0, 0, 0, 0, 0 } };
-            // 6. Split K from SSM_QKV -> SCRATCH
-            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_SSM_QKV, .buf_out = BN_GPU_BUF_SCRATCH, .buf_aux = -1,
-                .p = { (uint32_t)key_dim, 0, (uint32_t)key_dim, 0, 0, 0, 0, 0 } };
-            // 7. Split V from SSM_QKV -> SSM_V
-            ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_COPY, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_SSM_QKV, .buf_out = BN_GPU_BUF_SSM_V, .buf_aux = -1,
-                .p = { (uint32_t)(2*key_dim), 0, (uint32_t)value_dim, 0, 0, 0, 0, 0 } };
-            // 8. L2Norm Q (in Q buf) and K (in SCRATCH)
+            // 5. L2Norm packed Q and K in SSM_QKV.
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_L2NORM, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_Q, .buf_out = -1, .buf_aux = BN_GPU_BUF_SCRATCH,
-                .rows = num_k_heads, .p = { (uint32_t)head_k_dim, 0, 0, 0, 0, 0, 0, 0 } };
+                .buf_in = BN_GPU_BUF_SSM_QKV, .buf_out = -1, .buf_aux = BN_GPU_BUF_SSM_QKV,
+                .rows = num_k_heads,
+                .p = { (uint32_t)head_k_dim, 0, (uint32_t)key_dim, 0, 0, 0, 0, 0 } };
             if (lw->ssm_ab_stacked_gpu &&
                 lw->ssm_alpha.rows == lw->ssm_beta.rows &&
                 lw->ssm_alpha.cols == lw->ssm_beta.cols) {
                 int ab_rows = lw->ssm_alpha.rows + lw->ssm_beta.rows;
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = lw->ssm_alpha.type,
                     .W_buf = lw->ssm_ab_stacked_gpu, .buf_in = BN_GPU_BUF_XB,
-                    .buf_out = BN_GPU_BUF_SSM_QKV, .buf_aux = -1,
+                    .buf_out = BN_GPU_BUF_SSM_V, .buf_aux = -1,
                     .rows = ab_rows, .cols = lw->ssm_alpha.cols,
                     .p = { (uint32_t)ab_rows, (uint32_t)lw->ssm_alpha.cols, 1, 0, 0, 0, 0, 0 } };
                 _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
                 uintptr_t a_ptr = (uintptr_t)lw->ssm_a_log_gpu;
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT, .type = -1,
-                    .W_buf = lw->ssm_dt_bias_gpu, .buf_in = BN_GPU_BUF_SSM_QKV,
+                    .W_buf = lw->ssm_dt_bias_gpu, .buf_in = BN_GPU_BUF_SSM_V,
                     .buf_out = -1, .buf_aux = -1,
                     .p = { (uint32_t)num_v_heads, (uint32_t)lw->ssm_alpha.rows,
                            0, 0, 0, 0,
@@ -1376,11 +1365,11 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             }
             // 12. Delta rule recurrence
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_DELTA, .type = -1, .W_buf = NULL,
-                .buf_in = BN_GPU_BUF_Q, .buf_out = BN_GPU_BUF_XB2, .buf_aux = BN_GPU_BUF_SCRATCH,
+                .buf_in = BN_GPU_BUF_SSM_QKV, .buf_out = BN_GPU_BUF_XB2, .buf_aux = BN_GPU_BUF_SSM_QKV,
                 .rows = num_v_heads,
                 .p = { (uint32_t)head_k_dim, (uint32_t)head_v_dim, (uint32_t)num_k_heads,
                        u_qscale, (uint32_t)(state_off * sizeof(float)),
-                       (uint32_t)(state_per * sizeof(float)), 0, 0 } };
+                       (uint32_t)(state_per * sizeof(float)), 0, (uint32_t)key_dim } };
             // 13. Gate: per-head RMSNorm + SiLU gate
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SSM_GATE, .type = -1,
                 .W_buf = lw->ssm_norm_gpu, .buf_in = BN_GPU_BUF_XB2, .buf_out = -1,

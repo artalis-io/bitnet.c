@@ -894,7 +894,8 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 break;
             case BN_GPU_SHADER_SSM_DELTA:
                 op_reads = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
-                         | BUF_BIT(BN_GPU_BUF_SSM_V) | BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
+                         | BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
+                if (op->p[7] == 0) op_reads |= BUF_BIT(BN_GPU_BUF_SSM_V);
                 op_writes = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_out);
                 break;
             case BN_GPU_SHADER_SSM_GATE:
@@ -1116,11 +1117,12 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 break;
             }
             case BN_GPU_SHADER_SSM_DELTA: {
+                int v_buf = op->p[7] ? op->buf_in : BN_GPU_BUF_SSM_V;
                 [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_STATE] offset:0 atIndex:0];
                 [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:1];
                 [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:2];
                 [enc setBuffer:ctx->act_bufs[op->buf_aux] offset:0 atIndex:3];
-                [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_V] offset:0 atIndex:4];
+                [enc setBuffer:ctx->act_bufs[v_buf] offset:0 atIndex:4];
                 [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_ALPHA] offset:0 atIndex:5];
                 [enc setBuffer:ctx->act_bufs[BN_GPU_BUF_SSM_BETA] offset:0 atIndex:6];
                 [enc setBytes:params length:sizeof(params) atIndex:7];

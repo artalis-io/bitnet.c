@@ -15,13 +15,14 @@ struct Uniforms {
 @group(0) @binding(1) var<storage, read_write> out: array<f32>;     // [num_v_heads * hv]
 @group(0) @binding(2) var<storage, read> q: array<f32>;             // [num_k_heads * hk]
 @group(0) @binding(3) var<storage, read> k: array<f32>;             // [num_k_heads * hk]
-@group(0) @binding(4) var<storage, read_write> v: array<f32>;       // [num_v_heads * hv] (also used as sk temp)
+@group(0) @binding(4) var<storage, read> v: array<f32>;             // [num_v_heads * hv]
 @group(0) @binding(5) var<storage, read> alpha: array<f32>;         // [num_v_heads]
 @group(0) @binding(6) var<storage, read> beta: array<f32>;          // [num_v_heads]
 @group(0) @binding(7) var<uniform> u: Uniforms;
 
 // p0 = head_k_dim, p1 = head_v_dim, p2 = num_k_heads,
 // p3 = q_scale (bitcast to f32), p4 = state_offset (bytes), p5 = state_layer_size (bytes)
+// p6 = q offset, p7 = k offset (float indices); v offset is 2 * num_k_heads * head_k_dim.
 
 // Shared memory for sk. Must be >= head_v_dim. 512 covers all known models
 // (typical: 128, Qwen3.5: 128, max practical: ~256).
@@ -37,6 +38,9 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let num_k_heads = u.p2;
     let q_scale = bitcast<f32>(u.p3);
     let state_layer_off = u.p4 / 4u;  // byte offset → float offset
+    let q_off = u.p6;
+    let k_off = u.p7;
+    let v_off = 2u * num_k_heads * hk;
 
     let hk_idx = hv_idx % num_k_heads;
     let state_base = state_layer_off + hv_idx * hk * hv;
@@ -58,7 +62,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         var sum: f32 = 0.0;
         var comp: f32 = 0.0;
         for (var ki: u32 = 0u; ki < hk; ki++) {
-            let y = state[state_base + ki * hv + vi] * k[hk_idx * hk + ki] - comp;
+            let y = state[state_base + ki * hv + vi] * k[k_off + hk_idx * hk + ki] - comp;
             let t = sum + y;
             comp = (t - sum) - y;
             sum = t;
@@ -74,8 +78,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     while (i < total) {
         let ki = i / hv;
         let vi2 = i % hv;
-        let kk = k[hk_idx * hk + ki];
-        state[state_base + i] += kk * b * (v[hv_idx * hv + vi2] - sk[vi2]);
+        let kk = k[k_off + hk_idx * hk + ki];
+        state[state_base + i] += kk * b * (v[v_off + hv_idx * hv + vi2] - sk[vi2]);
         i += 256u;
     }
     workgroupBarrier();
@@ -86,7 +90,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         var sum: f32 = 0.0;
         var comp: f32 = 0.0;
         for (var ki: u32 = 0u; ki < hk; ki++) {
-            let y = state[state_base + ki * hv + vi] * q[hk_idx * hk + ki] - comp;
+            let y = state[state_base + ki * hv + vi] * q[q_off + hk_idx * hk + ki] - comp;
             let t = sum + y;
             comp = (t - sum) - y;
             sum = t;

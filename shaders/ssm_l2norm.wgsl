@@ -11,7 +11,7 @@ struct Uniforms {
 @group(0) @binding(1) var<storage, read_write> k: array<f32>;
 @group(0) @binding(2) var<uniform> u: Uniforms;
 
-// p0 = head_dim (e.g. 128)
+// p0 = head_dim, p1 = q offset, p2 = k offset (float indices)
 
 var<workgroup> shared_q: array<f32, 256>;
 var<workgroup> shared_k: array<f32, 256>;
@@ -22,15 +22,16 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let head = wid.x;
     let tid = lid.x;
     let hd = u.p0;
-    let base = head * hd;
+    let q_base = u.p1 + head * hd;
+    let k_base = u.p2 + head * hd;
 
     // Accumulate squared norm
     var qn: f32 = 0.0;
     var kn: f32 = 0.0;
     var d = tid;
     while (d < hd) {
-        let qv = q[base + d];
-        let kv = k[base + d];
+        let qv = q[q_base + d];
+        let kv = k[k_base + d];
         qn += qv * qv;
         kn += kv * kv;
         d += 256u;
@@ -57,8 +58,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     // Normalize
     d = tid;
     while (d < hd) {
-        q[base + d] *= inv_qn;
-        k[base + d] *= inv_kn;
+        q[q_base + d] *= inv_qn;
+        k[k_base + d] *= inv_kn;
         d += 256u;
     }
 }
