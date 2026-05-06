@@ -1601,7 +1601,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
             uint32_t u_inv_sqrt_hs;
             memcpy(&u_inv_sqrt_hs, &inv_sqrt_hs, 4);
-            if (gpu->caps & BN_GPU_CAP_FLASH_ATTN) {
+            if ((gpu->caps & BN_GPU_CAP_FLASH_ATTN) &&
+                (has_moe || m->config.flash_attn)) {
                 ops[n++] =(BnGPUOp){
                     .shader = BN_GPU_SHADER_FLASH_ATTN, .type = -1, .W_buf = NULL,
                     .buf_in = BN_GPU_BUF_Q, .buf_out = BN_GPU_BUF_XB, .buf_aux = -1,
