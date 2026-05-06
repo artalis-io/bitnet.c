@@ -30,6 +30,22 @@ kernel void q6k_matvec(device const uchar *weights [[buffer(0)]],
     uint n_blocks = cols / QK_K;
     uint x_base = token * cols;
     uint row_byte = global_row * n_blocks * BLOCK_BYTES;
+    uint my_start = local_elem * ELEMS_PER_THREAD;
+    uint half_idx = my_start / 128;
+    uint quarter = (my_start % 128) / 32;
+    uint ql_off = half_idx * 64;
+    uint qh_off = half_idx * 32;
+    uint sc_off = half_idx * 8;
+    uint s_base;
+    uint qh_shift;
+    uint ql_add;
+    uint ql_high;
+    switch (quarter) {
+        case 0: s_base = 0; qh_shift = 0; ql_add = 0;  ql_high = 0; break;
+        case 1: s_base = 2; qh_shift = 2; ql_add = 32; ql_high = 0; break;
+        case 2: s_base = 4; qh_shift = 4; ql_add = 0;  ql_high = 1; break;
+        default: s_base = 6; qh_shift = 6; ql_add = 32; ql_high = 1; break;
+    }
 
     float acc = 0.0f;
     if (global_row < rows) {
@@ -41,22 +57,6 @@ kernel void q6k_matvec(device const uchar *weights [[buffer(0)]],
             float d = float(*(device const half *)(block + 208));
             uint elem_base = bi * QK_K;
 
-            uint my_start = local_elem * ELEMS_PER_THREAD;
-            uint half_idx = my_start / 128;
-            uint quarter = (my_start % 128) / 32;
-            uint ql_off = half_idx * 64;
-            uint qh_off = half_idx * 32;
-            uint sc_off = half_idx * 8;
-            uint s_base;
-            uint qh_shift;
-            uint ql_add;
-            uint ql_high;
-            switch (quarter) {
-                case 0: s_base = 0; qh_shift = 0; ql_add = 0;  ql_high = 0; break;
-                case 1: s_base = 2; qh_shift = 2; ql_add = 32; ql_high = 0; break;
-                case 2: s_base = 4; qh_shift = 4; ql_add = 0;  ql_high = 1; break;
-                default: s_base = 6; qh_shift = 6; ql_add = 32; ql_high = 1; break;
-            }
             device const uchar *qlp = ql + ql_off + ql_add;
             device const uchar *qhp = qh + qh_off;
             device const float4 *xp = (device const float4 *)(x + x_base + elem_base + my_start);
