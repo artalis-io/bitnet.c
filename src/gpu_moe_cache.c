@@ -84,7 +84,8 @@ static void hash_remove(BnGPUMoECache *c, int layer, int expert_idx) {
 
 // --- Eviction: destroy LRU entry's GPU buffers, return slot ---
 
-static int cache_evict_slot(BnGPUMoECache *c, int slot) {
+static int cache_evict(BnGPUMoECache *c) {
+    int slot = c->lru_tail;
     if (slot < 0) return -1;
 
     BnGPUMoECacheEntry *e = &c->entries[slot];
@@ -102,18 +103,6 @@ static int cache_evict_slot(BnGPUMoECache *c, int slot) {
     e->layer = -1;
     e->gate_gpu = e->up_gpu = e->down_gpu = NULL;
     return slot;
-}
-
-static int cache_evict(BnGPUMoECache *c) {
-    return cache_evict_slot(c, c->lru_tail);
-}
-
-static int cache_evict_for_layer(BnGPUMoECache *c, int layer) {
-    for (int slot = c->lru_tail; slot >= 0; slot = c->entries[slot].prev) {
-        if (c->entries[slot].layer == layer)
-            return cache_evict_slot(c, slot);
-    }
-    return cache_evict(c);
 }
 
 // --- Public API ---
@@ -186,7 +175,7 @@ int bn_gpu_moe_cache_insert(BnGPUMoECache *c, int layer, int expert_idx,
         slot = c->free_head;
         c->free_head = c->entries[slot].next;
     } else {
-        slot = cache_evict_for_layer(c, layer);
+        slot = cache_evict(c);
         if (slot < 0) return -1;
     }
 
