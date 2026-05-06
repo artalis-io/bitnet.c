@@ -1722,6 +1722,11 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             int moe_hidden = c->moe_intermediate_size;
             const BnMoEExpertMap *em = &lw->expert_map;
             BnGPUMoECache *gpu_cache = (BnGPUMoECache *)m->moe_io.gpu_moe_cache;
+            int use_q4k_expert_split = em->gate_type == BN_GGUF_TENSOR_Q4_K &&
+                                       em->up_type == BN_GGUF_TENSOR_Q4_K &&
+                                       em->gate_rows == em->up_rows &&
+                                       em->gate_cols == em->up_cols;
+
             // Track uncached expert buffers for cleanup after flush
             void *uncached_bufs[BN_MAX_MOE_K * 3];
             int n_uncached = 0;
@@ -1742,33 +1747,44 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 0);
                     if (!gate_data) continue;
 
-                    gate_gpu = gpu->buffer_create(gpu->ctx, gate_data, em->expert_gate_bytes,
-                        em->gate_type, em->gate_rows, em->gate_cols);
-                    if (!gate_gpu) continue;
-
                     const void *up_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 1);
-                    if (!up_data) {
-                        gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                        continue;
-                    }
-                    up_gpu = gpu->buffer_create(gpu->ctx, up_data, em->expert_up_bytes,
-                        em->up_type, em->up_rows, em->up_cols);
-                    if (!up_gpu) {
-                        gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                        continue;
+                    if (!up_data) continue;
+
+                    if (use_q4k_expert_split) {
+                        size_t gateup_bytes = em->expert_gate_bytes + em->expert_up_bytes;
+                        uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
+                        if (!gateup_data) continue;
+                        memcpy(gateup_data, gate_data, em->expert_gate_bytes);
+                        memcpy(gateup_data + em->expert_gate_bytes, up_data, em->expert_up_bytes);
+                        gate_gpu = gpu->buffer_create(gpu->ctx, gateup_data, gateup_bytes,
+                            em->gate_type, em->gate_rows + em->up_rows, em->gate_cols);
+                        free(gateup_data);
+                        if (!gate_gpu) continue;
+                        up_gpu = NULL;
+                    } else {
+                        gate_gpu = gpu->buffer_create(gpu->ctx, gate_data, em->expert_gate_bytes,
+                            em->gate_type, em->gate_rows, em->gate_cols);
+                        if (!gate_gpu) continue;
+
+                        up_gpu = gpu->buffer_create(gpu->ctx, up_data, em->expert_up_bytes,
+                            em->up_type, em->up_rows, em->up_cols);
+                        if (!up_gpu) {
+                            gpu->buffer_destroy(gpu->ctx, gate_gpu);
+                            continue;
+                        }
                     }
 
                     const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms, em, eidx, 2);
                     if (!down_data) {
                         gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                        gpu->buffer_destroy(gpu->ctx, up_gpu);
+                        if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
                         continue;
                     }
                     down_gpu = gpu->buffer_create(gpu->ctx, down_data, em->expert_down_bytes,
                         em->down_type, em->down_rows, em->down_cols);
                     if (!down_gpu) {
                         gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                        gpu->buffer_destroy(gpu->ctx, up_gpu);
+                        if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
                         continue;
                     }
 
@@ -1777,20 +1793,30 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                     } else {
                         // Track for cleanup after GPU_FLUSH
                         uncached_bufs[n_uncached++] = gate_gpu;
-                        uncached_bufs[n_uncached++] = up_gpu;
+                        if (up_gpu) uncached_bufs[n_uncached++] = up_gpu;
                         uncached_bufs[n_uncached++] = down_gpu;
                     }
                 }
 
-                // 5 GPU ops: gate, up, silu_gate, down, weighted_add
-                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->gate_type,
-                    .W_buf = gate_gpu, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB,
-                    .buf_aux = -1, .rows = em->gate_rows, .cols = em->gate_cols,
-                    .p = { (uint32_t)em->gate_rows, (uint32_t)em->gate_cols, 1, 0, 0, 0, 0, 0 } };
-                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->up_type,
-                    .W_buf = up_gpu, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB2,
-                    .buf_aux = -1, .rows = em->up_rows, .cols = em->up_cols,
-                    .p = { (uint32_t)em->up_rows, (uint32_t)em->up_cols, 1, 0, 0, 0, 0, 0 } };
+                if (use_q4k_expert_split) {
+                    ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_Q4K_MATVEC_SPLIT,
+                        .type = em->gate_type, .W_buf = gate_gpu,
+                        .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB,
+                        .buf_aux = BN_GPU_BUF_MOE_HB2,
+                        .rows = em->gate_rows + em->up_rows, .cols = em->gate_cols,
+                        .p = { (uint32_t)(em->gate_rows + em->up_rows),
+                               (uint32_t)em->gate_cols, (uint32_t)em->gate_rows,
+                               0, 0, 0, 0, 0 } };
+                } else {
+                    ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->gate_type,
+                        .W_buf = gate_gpu, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB,
+                        .buf_aux = -1, .rows = em->gate_rows, .cols = em->gate_cols,
+                        .p = { (uint32_t)em->gate_rows, (uint32_t)em->gate_cols, 1, 0, 0, 0, 0, 0 } };
+                    ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_MATVEC, .type = em->up_type,
+                        .W_buf = up_gpu, .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_MOE_HB2,
+                        .buf_aux = -1, .rows = em->up_rows, .cols = em->up_cols,
+                        .p = { (uint32_t)em->up_rows, (uint32_t)em->up_cols, 1, 0, 0, 0, 0, 0 } };
+                }
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_SILU_GATE, .type = -1, .W_buf = NULL,
                     .buf_in = BN_GPU_BUF_MOE_HB, .buf_out = -1, .buf_aux = BN_GPU_BUF_MOE_HB2,
                     .p = { (uint32_t)moe_hidden, 0, 0, 0, 0, 0, 0, 0 } };
