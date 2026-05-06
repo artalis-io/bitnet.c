@@ -362,6 +362,53 @@ static void *metal_buffer_create_biased(void *vctx, const void *data, size_t siz
     return buf;
 }
 
+static void *metal_buffer_create_stacked2(void *vctx,
+                                          const void *data0, size_t size0,
+                                          const void *data1, size_t size1,
+                                          int type, int rows, int cols)
+{
+    BnMetalCtx *ctx = (BnMetalCtx *)vctx;
+    if (!ctx || !data0 || !data1 || size0 == 0 || size1 == 0) return NULL;
+
+    size_t total = size0 + size1;
+    BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
+    if (!buf) return NULL;
+
+    if (ctx->slab_buf) {
+        size_t aligned = (total + 255) & ~(size_t)255;
+        size_t offset = slab_alloc(ctx, aligned);
+        if (offset != (size_t)-1) {
+            uint8_t *dst = (uint8_t *)[ctx->slab_buf contents] + offset;
+            memcpy(dst, data0, size0);
+            memcpy(dst + size0, data1, size1);
+            buf->buf = ctx->slab_buf;
+            buf->size = total;
+            buf->offset = offset;
+            buf->type = type;
+            buf->rows = rows;
+            buf->cols = cols;
+            buf->is_slab = 1;
+            return buf;
+        }
+    }
+
+    buf->buf = [ctx->device newBufferWithLength:total
+                                        options:MTLResourceStorageModeShared];
+    if (!buf->buf) {
+        free(buf);
+        return NULL;
+    }
+    uint8_t *dst = (uint8_t *)[buf->buf contents];
+    memcpy(dst, data0, size0);
+    memcpy(dst + size0, data1, size1);
+    buf->size = total;
+    buf->offset = 0;
+    buf->type = type;
+    buf->rows = rows;
+    buf->cols = cols;
+    return buf;
+}
+
 static void metal_buffer_destroy(void *vctx, void *buffer)
 {
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
@@ -1356,6 +1403,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         }
         gpu->buffer_create        = metal_buffer_create;
         gpu->buffer_create_biased = metal_buffer_create_biased;
+        gpu->buffer_create_stacked2 = metal_buffer_create_stacked2;
         gpu->buffer_destroy       = metal_buffer_destroy;
         gpu->matvec               = metal_matvec;
         gpu->matmul               = metal_matmul;

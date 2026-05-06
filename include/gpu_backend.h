@@ -105,6 +105,13 @@ typedef struct {
                                    int type, int rows, int cols,
                                    const void *bias, size_t bias_size);
 
+    // Upload two adjacent logical weight tensors as one stacked GPU buffer.
+    // Optional (NULL = caller combines data before buffer_create).
+    void *(*buffer_create_stacked2)(void *ctx,
+                                    const void *data0, size_t size0,
+                                    const void *data1, size_t size1,
+                                    int type, int rows, int cols);
+
     // Quantized matvec: out[rows] = W[rows, cols] @ x[cols]
     // W_buf: opaque handle from buffer_create.
     // x: host float[cols], out: host float[rows] (GPU copies to/from device).

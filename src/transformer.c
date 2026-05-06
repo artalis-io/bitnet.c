@@ -1752,13 +1752,20 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
                     if (use_q4k_expert_split) {
                         size_t gateup_bytes = em->expert_gate_bytes + em->expert_up_bytes;
-                        uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
-                        if (!gateup_data) continue;
-                        memcpy(gateup_data, gate_data, em->expert_gate_bytes);
-                        memcpy(gateup_data + em->expert_gate_bytes, up_data, em->expert_up_bytes);
-                        gate_gpu = gpu->buffer_create(gpu->ctx, gateup_data, gateup_bytes,
-                            em->gate_type, em->gate_rows + em->up_rows, em->gate_cols);
-                        free(gateup_data);
+                        if (gpu->buffer_create_stacked2) {
+                            gate_gpu = gpu->buffer_create_stacked2(gpu->ctx,
+                                gate_data, em->expert_gate_bytes,
+                                up_data, em->expert_up_bytes,
+                                em->gate_type, em->gate_rows + em->up_rows, em->gate_cols);
+                        } else {
+                            uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
+                            if (!gateup_data) continue;
+                            memcpy(gateup_data, gate_data, em->expert_gate_bytes);
+                            memcpy(gateup_data + em->expert_gate_bytes, up_data, em->expert_up_bytes);
+                            gate_gpu = gpu->buffer_create(gpu->ctx, gateup_data, gateup_bytes,
+                                em->gate_type, em->gate_rows + em->up_rows, em->gate_cols);
+                            free(gateup_data);
+                        }
                         if (!gate_gpu) continue;
                         up_gpu = NULL;
                     } else {
