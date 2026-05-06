@@ -7,6 +7,54 @@ using namespace metal;
 // Pre-scaling trick. 32 rows/tile, 8 threads/row.
 // Dispatch: (ceil(gate_rows/32), 1, 1)
 
+static inline float q4_native_block_sum(device const ushort *qs,
+                                        float4 x0, float4 x1, float4 x2, float4 x3,
+                                        float4 x4, float4 x5, float4 x6, float4 x7) {
+    float sum = 0.0f;
+
+    sum += x0.x          * float(qs[0] & 0x000Fu);
+    sum += (x0.y / 256)  * float(qs[0] & 0x0F00u);
+    sum += (x4.x / 16)   * float(qs[0] & 0x00F0u);
+    sum += (x4.y / 4096) * float(qs[0] & 0xF000u);
+
+    sum += x0.z          * float(qs[1] & 0x000Fu);
+    sum += (x0.w / 256)  * float(qs[1] & 0x0F00u);
+    sum += (x4.z / 16)   * float(qs[1] & 0x00F0u);
+    sum += (x4.w / 4096) * float(qs[1] & 0xF000u);
+
+    sum += x1.x          * float(qs[2] & 0x000Fu);
+    sum += (x1.y / 256)  * float(qs[2] & 0x0F00u);
+    sum += (x5.x / 16)   * float(qs[2] & 0x00F0u);
+    sum += (x5.y / 4096) * float(qs[2] & 0xF000u);
+
+    sum += x1.z          * float(qs[3] & 0x000Fu);
+    sum += (x1.w / 256)  * float(qs[3] & 0x0F00u);
+    sum += (x5.z / 16)   * float(qs[3] & 0x00F0u);
+    sum += (x5.w / 4096) * float(qs[3] & 0xF000u);
+
+    sum += x2.x          * float(qs[4] & 0x000Fu);
+    sum += (x2.y / 256)  * float(qs[4] & 0x0F00u);
+    sum += (x6.x / 16)   * float(qs[4] & 0x00F0u);
+    sum += (x6.y / 4096) * float(qs[4] & 0xF000u);
+
+    sum += x2.z          * float(qs[5] & 0x000Fu);
+    sum += (x2.w / 256)  * float(qs[5] & 0x0F00u);
+    sum += (x6.z / 16)   * float(qs[5] & 0x00F0u);
+    sum += (x6.w / 4096) * float(qs[5] & 0xF000u);
+
+    sum += x3.x          * float(qs[6] & 0x000Fu);
+    sum += (x3.y / 256)  * float(qs[6] & 0x0F00u);
+    sum += (x7.x / 16)   * float(qs[6] & 0x00F0u);
+    sum += (x7.y / 4096) * float(qs[6] & 0xF000u);
+
+    sum += x3.z          * float(qs[7] & 0x000Fu);
+    sum += (x3.w / 256)  * float(qs[7] & 0x0F00u);
+    sum += (x7.z / 16)   * float(qs[7] & 0x00F0u);
+    sum += (x7.w / 4096) * float(qs[7] & 0xF000u);
+
+    return sum;
+}
+
 kernel void q4_fused_gateup_silu(device const char  *weights [[buffer(0)]],
                                   device const float *x       [[buffer(1)]],
                                   device float       *out     [[buffer(2)]],
@@ -32,56 +80,23 @@ kernel void q4_fused_gateup_silu(device const char  *weights [[buffer(0)]],
             float gd = float(*(device const half *)gblk);
             float ud = float(*(device const half *)ublk);
 
-            device const uchar *gqs = (device const uchar *)(gblk + 2);
-            device const uchar *uqs = (device const uchar *)(ublk + 2);
+            device const ushort *gqs = (device const ushort *)(gblk + 2);
+            device const ushort *uqs = (device const ushort *)(ublk + 2);
             uint eb = b * 32;
 
             device const float4 *xp = (device const float4 *)(x + eb);
             float4 x0 = xp[0], x1 = xp[1], x2 = xp[2], x3 = xp[3];
             float4 x4 = xp[4], x5 = xp[5], x6 = xp[6], x7 = xp[7];
 
-            float4 g_lo0 = float4(float(gqs[0] & 0x0Fu), float(gqs[1] & 0x0Fu),
-                                  float(gqs[2] & 0x0Fu), float(gqs[3] & 0x0Fu)) - 8.0f;
-            float4 g_hi0 = float4(float(gqs[0] >> 4), float(gqs[1] >> 4),
-                                  float(gqs[2] >> 4), float(gqs[3] >> 4)) - 8.0f;
-            float4 g_lo1 = float4(float(gqs[4] & 0x0Fu), float(gqs[5] & 0x0Fu),
-                                  float(gqs[6] & 0x0Fu), float(gqs[7] & 0x0Fu)) - 8.0f;
-            float4 g_hi1 = float4(float(gqs[4] >> 4), float(gqs[5] >> 4),
-                                  float(gqs[6] >> 4), float(gqs[7] >> 4)) - 8.0f;
-            float4 g_lo2 = float4(float(gqs[8] & 0x0Fu), float(gqs[9] & 0x0Fu),
-                                  float(gqs[10] & 0x0Fu), float(gqs[11] & 0x0Fu)) - 8.0f;
-            float4 g_hi2 = float4(float(gqs[8] >> 4), float(gqs[9] >> 4),
-                                  float(gqs[10] >> 4), float(gqs[11] >> 4)) - 8.0f;
-            float4 g_lo3 = float4(float(gqs[12] & 0x0Fu), float(gqs[13] & 0x0Fu),
-                                  float(gqs[14] & 0x0Fu), float(gqs[15] & 0x0Fu)) - 8.0f;
-            float4 g_hi3 = float4(float(gqs[12] >> 4), float(gqs[13] >> 4),
-                                  float(gqs[14] >> 4), float(gqs[15] >> 4)) - 8.0f;
+            float sumy = (x0.x+x0.y+x0.z+x0.w) + (x1.x+x1.y+x1.z+x1.w)
+                       + (x2.x+x2.y+x2.z+x2.w) + (x3.x+x3.y+x3.z+x3.w)
+                       + (x4.x+x4.y+x4.z+x4.w) + (x5.x+x5.y+x5.z+x5.w)
+                       + (x6.x+x6.y+x6.z+x6.w) + (x7.x+x7.y+x7.z+x7.w);
 
-            float4 u_lo0 = float4(float(uqs[0] & 0x0Fu), float(uqs[1] & 0x0Fu),
-                                  float(uqs[2] & 0x0Fu), float(uqs[3] & 0x0Fu)) - 8.0f;
-            float4 u_hi0 = float4(float(uqs[0] >> 4), float(uqs[1] >> 4),
-                                  float(uqs[2] >> 4), float(uqs[3] >> 4)) - 8.0f;
-            float4 u_lo1 = float4(float(uqs[4] & 0x0Fu), float(uqs[5] & 0x0Fu),
-                                  float(uqs[6] & 0x0Fu), float(uqs[7] & 0x0Fu)) - 8.0f;
-            float4 u_hi1 = float4(float(uqs[4] >> 4), float(uqs[5] >> 4),
-                                  float(uqs[6] >> 4), float(uqs[7] >> 4)) - 8.0f;
-            float4 u_lo2 = float4(float(uqs[8] & 0x0Fu), float(uqs[9] & 0x0Fu),
-                                  float(uqs[10] & 0x0Fu), float(uqs[11] & 0x0Fu)) - 8.0f;
-            float4 u_hi2 = float4(float(uqs[8] >> 4), float(uqs[9] >> 4),
-                                  float(uqs[10] >> 4), float(uqs[11] >> 4)) - 8.0f;
-            float4 u_lo3 = float4(float(uqs[12] & 0x0Fu), float(uqs[13] & 0x0Fu),
-                                  float(uqs[14] & 0x0Fu), float(uqs[15] & 0x0Fu)) - 8.0f;
-            float4 u_hi3 = float4(float(uqs[12] >> 4), float(uqs[13] >> 4),
-                                  float(uqs[14] >> 4), float(uqs[15] >> 4)) - 8.0f;
-
-            gate_acc += gd * (dot(x0, g_lo0) + dot(x4, g_hi0) +
-                              dot(x1, g_lo1) + dot(x5, g_hi1) +
-                              dot(x2, g_lo2) + dot(x6, g_hi2) +
-                              dot(x3, g_lo3) + dot(x7, g_hi3));
-            up_acc += ud * (dot(x0, u_lo0) + dot(x4, u_hi0) +
-                            dot(x1, u_lo1) + dot(x5, u_hi1) +
-                            dot(x2, u_lo2) + dot(x6, u_hi2) +
-                            dot(x3, u_lo3) + dot(x7, u_hi3));
+            gate_acc += gd * (sumy * (-8.0f) +
+                              q4_native_block_sum(gqs, x0, x1, x2, x3, x4, x5, x6, x7));
+            up_acc += ud * (sumy * (-8.0f) +
+                            q4_native_block_sum(uqs, x0, x1, x2, x3, x4, x5, x6, x7));
         }
     }
 
