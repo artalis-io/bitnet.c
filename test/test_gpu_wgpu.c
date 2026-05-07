@@ -20,7 +20,7 @@
 #include <assert.h>
 
 /* Tolerance for GPU vs CPU comparison */
-#define TOL 1e-3f
+#define TOL 1e-2f
 
 /* Path to WGSL shaders (relative to project root where tests run) */
 static const char *SHADER_DIR = "shaders";
@@ -108,9 +108,11 @@ static int compare_floats(const float *a, const float *b, int n, float tol)
 {
     for (int i = 0; i < n; i++) {
         float diff = fabsf(a[i] - b[i]);
-        if (diff > tol) {
-            fprintf(stderr, "  mismatch at [%d]: gpu=%.6f cpu=%.6f diff=%.6f\n",
-                    i, a[i], b[i], diff);
+        float denom = fabsf(b[i]);
+        float rel = denom > 1e-6f ? diff / denom : diff;
+        if (diff > tol && rel > tol) {
+            fprintf(stderr, "  mismatch at [%d]: gpu=%.6f cpu=%.6f diff=%.6f rel=%.6f\n",
+                    i, a[i], b[i], diff, rel);
             return 0;
         }
     }

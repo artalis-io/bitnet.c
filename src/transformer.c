@@ -1753,18 +1753,20 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         }
 
         // ---- Attention sub-norm (before Wo) ----
+        int wo_in_buf = BN_GPU_BUF_XB;
         if (lw->attn_sub_norm_gpu) {
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
                 .W_buf = lw->attn_sub_norm_gpu,
-                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_XB, .buf_aux = -1,
+                .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_SCRATCH, .buf_aux = -1,
                 .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 } };
+            wo_in_buf = BN_GPU_BUF_SCRATCH;
         }
 
         // ---- Wo matvec: xb -> xb2 ----
         ops[n++] =(BnGPUOp){
             .shader = BN_GPU_SHADER_MATVEC, .type = lw->wo.type,
             .W_buf = lw->wo.gpu_buf,
-            .buf_in = BN_GPU_BUF_XB, .buf_out = BN_GPU_BUF_XB2, .buf_aux = -1,
+            .buf_in = wo_in_buf, .buf_out = BN_GPU_BUF_XB2, .buf_aux = -1,
             .rows = lw->wo.rows, .cols = lw->wo.cols,
             .p = { (uint32_t)lw->wo.rows, (uint32_t)lw->wo.cols, 1, 0, 0, 0, 0, 0 }
         };
@@ -2058,29 +2060,31 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                        1, 0, 0, 0, 0, 0 }
             };
             ops[n++] =(BnGPUOp){
-                .shader = (c->act_type == 1) ? BN_GPU_SHADER_RELU2_GATE
-                                             : BN_GPU_SHADER_SILU_GATE,
+                .shader = (c->act_type == 1) ? BN_GPU_SHADER_RELU2_ACT
+                                             : BN_GPU_SHADER_SILU_ACT,
                 .type = -1, .W_buf = NULL,
                 .buf_in = BN_GPU_BUF_HB, .buf_out = -1,
-                .buf_aux = BN_GPU_BUF_HB,
+                .buf_aux = -1,
                 .rows = 0, .cols = 0,
                 .p = { (uint32_t)hidden_dim, 0, 0, 0, 0, 0, 0, 0 }
             };
         }
 
         // ---- FFN sub-norm (before down projection) ----
+        int down_in_buf = BN_GPU_BUF_HB;
         if (lw->ffn_sub_norm_gpu) {
             ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
                 .W_buf = lw->ffn_sub_norm_gpu,
-                .buf_in = BN_GPU_BUF_HB, .buf_out = BN_GPU_BUF_HB, .buf_aux = -1,
+                .buf_in = BN_GPU_BUF_HB, .buf_out = BN_GPU_BUF_HB2, .buf_aux = -1,
                 .p = { (uint32_t)hidden_dim, u_eps, 0, 0, 0, 0, 0, 0 } };
+            down_in_buf = BN_GPU_BUF_HB2;
         }
 
         // ---- Down matvec: hb -> xb2 ----
         ops[n++] =(BnGPUOp){
             .shader = BN_GPU_SHADER_MATVEC, .type = lw->ffn_down.type,
             .W_buf = lw->ffn_down.gpu_buf,
-            .buf_in = BN_GPU_BUF_HB, .buf_out = BN_GPU_BUF_XB2, .buf_aux = -1,
+            .buf_in = down_in_buf, .buf_out = BN_GPU_BUF_XB2, .buf_aux = -1,
             .rows = lw->ffn_down.rows, .cols = lw->ffn_down.cols,
             .p = { (uint32_t)lw->ffn_down.rows, (uint32_t)lw->ffn_down.cols,
                    1, 0, 0, 0, 0, 0 }
@@ -2100,6 +2104,25 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
     {
+        const size_t max_wgpu_binding = 128ull * 1024ull * 1024ull;
+        BnQWeight tied = {0};
+        BnQWeight *logit_cpu_w = ow->data ? ow : NULL;
+        if (!logit_cpu_w && w->token_embedding && logit_type >= 0) {
+            tied.data = w->token_embedding;
+            tied.type = logit_type;
+            tied.rows = c->vocab_size;
+            tied.cols = dim;
+            tied.scale = 1.0f;
+            logit_cpu_w = &tied;
+        }
+        if (logit_cpu_w && bn_qweight_data_size(logit_cpu_w) > max_wgpu_binding) {
+            GPU_FLUSH();
+            if (gpu->read_activation(gpu->ctx, BN_GPU_BUF_XB, s->x,
+                                      (size_t)dim * sizeof(float), 0) != 0)
+                GPU_REJECT("read logits input failed");
+            bn_quant_matvec(s->logits, logit_cpu_w, s->x, s->x_q, m->pool);
+            return s->logits;
+        }
         uint32_t logit_tgs = ((uint32_t)logit_rows + 31) / 32;
         uint32_t tile_x = (logit_tgs > 65535) ? 65535u : 0u;
         ops[n++] =(BnGPUOp){

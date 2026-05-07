@@ -252,15 +252,14 @@ static void get_timestamp(char *buf, size_t len, int json_format) {
 
     if (json_format) {
         /* ISO 8601 format for JSON */
-        snprintf(buf, len, "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ",
-                 tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-                 tm.tm_hour, tm.tm_min, tm.tm_sec,
-                 ts.tv_nsec / 1000000);
+        char base[20];
+        strftime(base, sizeof(base), "%Y-%m-%dT%H:%M:%S", &tm);
+        snprintf(buf, len, "%s.%03dZ", base, (int)(ts.tv_nsec / 1000000));
     } else {
         /* Compact format for text */
-        snprintf(buf, len, "%02d:%02d:%02d.%03ld",
-                 tm.tm_hour, tm.tm_min, tm.tm_sec,
-                 ts.tv_nsec / 1000000);
+        char base[9];
+        strftime(base, sizeof(base), "%H:%M:%S", &tm);
+        snprintf(buf, len, "%s.%03d", base, (int)(ts.tv_nsec / 1000000));
     }
 }
 

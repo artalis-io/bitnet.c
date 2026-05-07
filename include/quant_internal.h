@@ -178,6 +178,7 @@ void bn_quant_tq1_scalar_range(void *ctx, int start, int end);
 void bn_quant_q8_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_neon_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_range(void *ctx, int start, int end);
+void bn_quant_q8_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q8_wasm_range(void *ctx, int start, int end);
 void bn_quant_q8_wasm_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_scalar_range(void *ctx, int start, int end);
@@ -229,6 +230,7 @@ void bn_quant_q5k_neon_range(void *ctx, int start, int end);
 void bn_quant_q5k_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_range(void *ctx, int start, int end);
+void bn_quant_q5k_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q5k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q5k_scalar_range(void *ctx, int start, int end);
 
@@ -241,6 +243,7 @@ void bn_quant_q4_1_scalar_range(void *ctx, int start, int end);
 // BF16 weight kernels
 void bn_quant_bf16_neon_range(void *ctx, int start, int end);
 void bn_quant_bf16_avx2_range(void *ctx, int start, int end);
+void bn_quant_bf16_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_bf16_wasm_range(void *ctx, int start, int end);
 void bn_quant_bf16_scalar_range(void *ctx, int start, int end);
 

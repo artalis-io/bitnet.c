@@ -6,6 +6,12 @@
 #include <math.h>
 #include <assert.h>
 
+static uint16_t test_fp32_to_bf16(float f) {
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    return (uint16_t)(bits >> 16);
+}
+
 // --- Integration test: dispatch routing ---
 // Verifies that bn_quant_matvec dispatches correctly for each format.
 
@@ -303,6 +309,369 @@ static void test_q5k_matvec_multi_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_q5k_matvec_batch_correctness(void) {
+    printf("test_q5k_matvec_batch_correctness... ");
+
+    int rows = 7, cols = 256;
+    BnBlockQ5K *blocks1 = (BnBlockQ5K *)calloc((size_t)rows, sizeof(BnBlockQ5K));
+    BnBlockQ5K *blocks2 = (BnBlockQ5K *)calloc((size_t)rows, sizeof(BnBlockQ5K));
+    for (int r = 0; r < rows; r++) {
+        blocks1[r].d = 0x3C00;
+        blocks2[r].d = 0x3C00;
+        for (int i = 0; i < 4; i++) {
+            blocks1[r].scales[i] = (uint8_t)(1 + ((r + i) % 3));
+            blocks2[r].scales[i] = (uint8_t)(1 + ((2 * r + i) % 3));
+        }
+        for (int i = 8; i < 12; i++) {
+            blocks1[r].scales[i] = (uint8_t)(1 + ((r + i) % 3));
+            blocks2[r].scales[i] = (uint8_t)(1 + ((2 * r + i) % 3));
+        }
+        for (int i = 0; i < 128; i++) {
+            blocks1[r].qs[i] = (uint8_t)(r * 19 + i * 7);
+            blocks2[r].qs[i] = (uint8_t)(r * 23 + i * 5 + 1);
+        }
+        for (int i = 0; i < 32; i++) {
+            blocks1[r].qh[i] = (uint8_t)(r * 11 + i * 3);
+            blocks2[r].qh[i] = (uint8_t)(r * 13 + i * 5 + 2);
+        }
+    }
+
+    BnQWeight W1 = { blocks1, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f };
+    BnQWeight W2 = { blocks2, BN_GGUF_TENSOR_Q5_K, rows, cols, 1.0f };
+
+    float x[256];
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.04f * ((i * 7 + 5) % 31) - 0.6f;
+
+    float ref1[7], ref2[7], out1[7], out2[7];
+    int8_t x_q_ref[256];
+    bn_quant_matvec(ref1, &W1, x, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
+
+    BnMatvecTask tasks[2] = {
+        { out1, &W1 },
+        { out2, &W2 },
+    };
+    int8_t x_q[256];
+    bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) / (fabsf(ref1[i]) + 1e-6f) < 0.02f);
+        assert(fabsf(out2[i] - ref2[i]) / (fabsf(ref2[i]) + 1e-6f) < 0.02f);
+    }
+
+    free(blocks1);
+    free(blocks2);
+    printf("PASSED\n");
+}
+
+static void test_i2s_matvec_multi_correctness(void) {
+    printf("test_i2s_matvec_multi_correctness... ");
+
+    int rows = 7, cols = 256, n_tasks = 3;
+    int row_bytes = cols / 4;
+    size_t data_size = (size_t)rows * row_bytes + sizeof(float);
+    uint8_t *data1 = (uint8_t *)calloc(data_size, 1);
+    uint8_t *data2 = (uint8_t *)calloc(data_size, 1);
+    uint8_t *data3 = (uint8_t *)calloc(data_size, 1);
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < row_bytes; b++) {
+            data1[r * row_bytes + b] = (uint8_t)(r * 13 + b * 7);
+            data2[r * row_bytes + b] = (uint8_t)(r * 11 + b * 5 + 3);
+            data3[r * row_bytes + b] = (uint8_t)(r * 17 + b * 9 + 1);
+        }
+    }
+
+    float scale = 0.25f;
+    memcpy(data1 + (size_t)rows * row_bytes, &scale, sizeof(float));
+    memcpy(data2 + (size_t)rows * row_bytes, &scale, sizeof(float));
+    memcpy(data3 + (size_t)rows * row_bytes, &scale, sizeof(float));
+
+    BnQWeight W1 = { data1, BN_GGUF_TENSOR_I2_S, rows, cols, scale };
+    BnQWeight W2 = { data2, BN_GGUF_TENSOR_I2_S, rows, cols, scale };
+    BnQWeight W3 = { data3, BN_GGUF_TENSOR_I2_S, rows, cols, scale };
+
+    float X1[256], X2[256], X3[256];
+    for (int i = 0; i < cols; i++) {
+        X1[i] = 0.03f * ((i * 7) % 31) - 0.45f;
+        X2[i] = 0.04f * ((i * 5 + 2) % 29) - 0.55f;
+        X3[i] = 0.05f * ((i * 3 + 4) % 23) - 0.50f;
+    }
+
+    float ref1[7], ref2[7], ref3[7];
+    float out1[7], out2[7], out3[7];
+    int8_t x_q_ref[256];
+    bn_quant_matvec(ref1, &W1, X1, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
+    bn_quant_matvec(ref3, &W3, X3, x_q_ref, NULL);
+
+    BnMatvecMultiTask tasks[3] = {
+        { out1, &W1, X1 },
+        { out2, &W2, X2 },
+        { out3, &W3, X3 },
+    };
+    int8_t x_q_bufs[3 * 256];
+    bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) / (fabsf(ref1[i]) + 1e-6f) < 0.02f);
+        assert(fabsf(out2[i] - ref2[i]) / (fabsf(ref2[i]) + 1e-6f) < 0.02f);
+        assert(fabsf(out3[i] - ref3[i]) / (fabsf(ref3[i]) + 1e-6f) < 0.02f);
+    }
+
+    free(data1);
+    free(data2);
+    free(data3);
+    printf("PASSED\n");
+}
+
+static void test_q4_matvec_multi_correctness(void) {
+    printf("test_q4_matvec_multi_correctness... ");
+
+    int rows = 7, cols = 64, n_tasks = 2;
+    int n_bpr = cols / 32;
+    BnBlockQ4_0 *blocks1 = (BnBlockQ4_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ4_0));
+    BnBlockQ4_0 *blocks2 = (BnBlockQ4_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ4_0));
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ4_0 *a = &blocks1[r * n_bpr + b];
+            BnBlockQ4_0 *c = &blocks2[r * n_bpr + b];
+            a->d = 0x3C00;
+            c->d = 0x3C00;
+            for (int i = 0; i < 16; i++) {
+                a->qs[i] = (uint8_t)(r * 19 + b * 11 + i * 7);
+                c->qs[i] = (uint8_t)(r * 23 + b * 13 + i * 5 + 1);
+            }
+        }
+    }
+
+    BnQWeight W1 = { blocks1, BN_GGUF_TENSOR_Q4_0, rows, cols, 1.0f };
+    BnQWeight W2 = { blocks2, BN_GGUF_TENSOR_Q4_0, rows, cols, 1.0f };
+
+    float X1[64], X2[64];
+    for (int i = 0; i < cols; i++) {
+        X1[i] = 0.05f * ((i * 7) % 17) - 0.40f;
+        X2[i] = 0.04f * ((i * 5 + 3) % 19) - 0.35f;
+    }
+
+    float ref1[7], ref2[7], out1[7], out2[7];
+    int8_t x_q_ref[64];
+    bn_quant_matvec(ref1, &W1, X1, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
+
+    BnMatvecMultiTask tasks[2] = {
+        { out1, &W1, X1 },
+        { out2, &W2, X2 },
+    };
+    int8_t x_q_bufs[2 * 64];
+    bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) / (fabsf(ref1[i]) + 1e-6f) < 0.02f);
+        assert(fabsf(out2[i] - ref2[i]) / (fabsf(ref2[i]) + 1e-6f) < 0.02f);
+    }
+
+    free(blocks1);
+    free(blocks2);
+    printf("PASSED\n");
+}
+
+static void test_q8_matvec_batch_correctness(void) {
+    printf("test_q8_matvec_batch_correctness... ");
+
+    int rows = 7, cols = 64;
+    int n_bpr = cols / 32;
+    BnBlockQ8_0 *blocks1 = (BnBlockQ8_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ8_0));
+    BnBlockQ8_0 *blocks2 = (BnBlockQ8_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ8_0));
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ8_0 *a = &blocks1[r * n_bpr + b];
+            BnBlockQ8_0 *c = &blocks2[r * n_bpr + b];
+            a->d = 0x3C00;
+            c->d = 0x3C00;
+            for (int i = 0; i < 32; i++) {
+                a->qs[i] = (int8_t)(((r * 17 + b * 11 + i * 5) % 31) - 15);
+                c->qs[i] = (int8_t)(((r * 13 + b * 7 + i * 3) % 29) - 14);
+            }
+        }
+    }
+
+    BnQWeight W1 = { blocks1, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f };
+    BnQWeight W2 = { blocks2, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f };
+
+    float x[64];
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.04f * ((i * 7 + 3) % 23) - 0.45f;
+
+    float ref1[7], ref2[7], out1[7], out2[7];
+    int8_t x_q_ref[64];
+    bn_quant_matvec(ref1, &W1, x, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
+
+    BnMatvecTask tasks[2] = {
+        { out1, &W1 },
+        { out2, &W2 },
+    };
+    int8_t x_q[64];
+    bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) / (fabsf(ref1[i]) + 1e-6f) < 0.02f);
+        assert(fabsf(out2[i] - ref2[i]) / (fabsf(ref2[i]) + 1e-6f) < 0.02f);
+    }
+
+    free(blocks1);
+    free(blocks2);
+    printf("PASSED\n");
+}
+
+static void test_q8_matvec_multi_correctness(void) {
+    printf("test_q8_matvec_multi_correctness... ");
+
+    int rows = 7, cols = 64, n_tasks = 2;
+    int n_bpr = cols / 32;
+    BnBlockQ8_0 *blocks1 = (BnBlockQ8_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ8_0));
+    BnBlockQ8_0 *blocks2 = (BnBlockQ8_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ8_0));
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ8_0 *a = &blocks1[r * n_bpr + b];
+            BnBlockQ8_0 *c = &blocks2[r * n_bpr + b];
+            a->d = 0x3C00;
+            c->d = 0x3C00;
+            for (int i = 0; i < 32; i++) {
+                a->qs[i] = (int8_t)(((r * 19 + b * 5 + i * 7) % 37) - 18);
+                c->qs[i] = (int8_t)(((r * 11 + b * 13 + i * 3) % 35) - 17);
+            }
+        }
+    }
+
+    BnQWeight W1 = { blocks1, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f };
+    BnQWeight W2 = { blocks2, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f };
+
+    float X1[64], X2[64];
+    for (int i = 0; i < cols; i++) {
+        X1[i] = 0.04f * ((i * 5 + 1) % 23) - 0.42f;
+        X2[i] = 0.03f * ((i * 7 + 4) % 29) - 0.38f;
+    }
+
+    float ref1[7], ref2[7], out1[7], out2[7];
+    int8_t x_q_ref[64];
+    bn_quant_matvec(ref1, &W1, X1, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
+
+    BnMatvecMultiTask tasks[2] = {
+        { out1, &W1, X1 },
+        { out2, &W2, X2 },
+    };
+    int8_t x_q_bufs[2 * 64];
+    bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) / (fabsf(ref1[i]) + 1e-6f) < 0.02f);
+        assert(fabsf(out2[i] - ref2[i]) / (fabsf(ref2[i]) + 1e-6f) < 0.02f);
+    }
+
+    free(blocks1);
+    free(blocks2);
+    printf("PASSED\n");
+}
+
+static void test_bf16_matvec_batch_correctness(void) {
+    printf("test_bf16_matvec_batch_correctness... ");
+
+    int rows = 7, cols = 33;
+    uint16_t *data1 = (uint16_t *)calloc((size_t)rows * cols, sizeof(uint16_t));
+    uint16_t *data2 = (uint16_t *)calloc((size_t)rows * cols, sizeof(uint16_t));
+
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            float v1 = 0.0625f * ((r * 17 + c * 5) % 23) - 0.625f;
+            float v2 = 0.03125f * ((r * 11 + c * 7 + 3) % 29) - 0.4375f;
+            data1[(size_t)r * cols + c] = test_fp32_to_bf16(v1);
+            data2[(size_t)r * cols + c] = test_fp32_to_bf16(v2);
+        }
+    }
+
+    BnQWeight W1 = { data1, BN_GGUF_TENSOR_BF16, rows, cols, 1.0f };
+    BnQWeight W2 = { data2, BN_GGUF_TENSOR_BF16, rows, cols, 1.0f };
+
+    float x[33];
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.05f * ((i * 7 + 2) % 19) - 0.45f;
+
+    float ref1[7], ref2[7], out1[7], out2[7];
+    int8_t x_q_ref[33];
+    bn_quant_matvec(ref1, &W1, x, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
+
+    BnMatvecTask tasks[2] = {
+        { out1, &W1 },
+        { out2, &W2 },
+    };
+    int8_t x_q[33];
+    bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) < 1e-4f);
+        assert(fabsf(out2[i] - ref2[i]) < 1e-4f);
+    }
+
+    free(data1);
+    free(data2);
+    printf("PASSED\n");
+}
+
+static void test_bf16_matvec_multi_correctness(void) {
+    printf("test_bf16_matvec_multi_correctness... ");
+
+    int rows = 7, cols = 33, n_tasks = 2;
+    uint16_t *data1 = (uint16_t *)calloc((size_t)rows * cols, sizeof(uint16_t));
+    uint16_t *data2 = (uint16_t *)calloc((size_t)rows * cols, sizeof(uint16_t));
+
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            float v1 = 0.03125f * ((r * 13 + c * 3) % 31) - 0.5f;
+            float v2 = 0.0625f * ((r * 19 + c * 5 + 1) % 17) - 0.375f;
+            data1[(size_t)r * cols + c] = test_fp32_to_bf16(v1);
+            data2[(size_t)r * cols + c] = test_fp32_to_bf16(v2);
+        }
+    }
+
+    BnQWeight W1 = { data1, BN_GGUF_TENSOR_BF16, rows, cols, 1.0f };
+    BnQWeight W2 = { data2, BN_GGUF_TENSOR_BF16, rows, cols, 1.0f };
+
+    float X1[33], X2[33];
+    for (int i = 0; i < cols; i++) {
+        X1[i] = 0.04f * ((i * 5 + 1) % 23) - 0.42f;
+        X2[i] = 0.03f * ((i * 7 + 4) % 29) - 0.38f;
+    }
+
+    float ref1[7], ref2[7], out1[7], out2[7];
+    int8_t x_q_ref[33];
+    bn_quant_matvec(ref1, &W1, X1, x_q_ref, NULL);
+    bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
+
+    BnMatvecMultiTask tasks[2] = {
+        { out1, &W1, X1 },
+        { out2, &W2, X2 },
+    };
+    int8_t x_q_bufs[2 * 33];
+    bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out1[i] - ref1[i]) < 1e-4f);
+        assert(fabsf(out2[i] - ref2[i]) < 1e-4f);
+    }
+
+    free(data1);
+    free(data2);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_dispatch_routing();
@@ -311,6 +680,13 @@ int main(void) {
     test_matmul_correctness();
     test_q5k_matmul_correctness();
     test_q5k_matvec_multi_correctness();
+    test_q5k_matvec_batch_correctness();
+    test_i2s_matvec_multi_correctness();
+    test_q4_matvec_multi_correctness();
+    test_q8_matvec_batch_correctness();
+    test_q8_matvec_multi_correctness();
+    test_bf16_matvec_batch_correctness();
+    test_bf16_matvec_multi_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }

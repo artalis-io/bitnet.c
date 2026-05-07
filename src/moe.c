@@ -280,6 +280,57 @@ void bn_moe_cache_print_stats(const BnMoEState *ms) {
     SH_LOG_INFO("MoE cache", "hits", hits_s, "misses", misses_s, "hit_rate", rate_s);
 }
 
+int bn_moe_prefault_mmap(BnModel *m) {
+    if (!m || !m->moe_io.mmap_base || m->config.n_experts <= 0)
+        return -1;
+
+#if defined(__EMSCRIPTEN__)
+    return -1;
+#else
+    long ps = sysconf(_SC_PAGESIZE);
+    size_t page = ps > 0 ? (size_t)ps : 4096;
+    volatile uint8_t sink = 0;
+    size_t touched_pages = 0;
+    double t0 = bn_platform_time_ms();
+
+    for (int l = 0; l < m->config.n_layers; l++) {
+        BnMoEExpertMap *em = &m->weights.layers[l].expert_map;
+        if (em->expert_gate_bytes == 0 && em->expert_up_bytes == 0 &&
+            em->expert_down_bytes == 0)
+            continue;
+
+        const size_t bases[3] = { em->gate_offset, em->up_offset, em->down_offset };
+        const size_t sizes[3] = {
+            em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes
+        };
+
+        for (int p = 0; p < 3; p++) {
+            size_t proj_bytes = sizes[p];
+            if (proj_bytes == 0) continue;
+
+            for (int e = 0; e < m->config.n_experts; e++) {
+                const uint8_t *ptr = m->moe_io.mmap_base + bases[p] +
+                                     (size_t)e * proj_bytes;
+                for (size_t off = 0; off < proj_bytes; off += page) {
+                    sink ^= ptr[off];
+                    touched_pages++;
+                }
+                sink ^= ptr[proj_bytes - 1];
+            }
+        }
+    }
+
+    char pages_s[32], ms_s[32], mb_s[32];
+    snprintf(pages_s, sizeof(pages_s), "%zu", touched_pages);
+    snprintf(ms_s, sizeof(ms_s), "%.0f", bn_platform_time_ms() - t0);
+    snprintf(mb_s, sizeof(mb_s), "%.1f",
+             (double)touched_pages * (double)page / (1024.0 * 1024.0));
+    SH_LOG_INFO("MoE mmap prefault complete", "pages", pages_s, "MB", mb_s, "ms", ms_s);
+    (void)sink;
+    return 0;
+#endif
+}
+
 // --- I/O Prefetch Thread (pread pipeline) ---
 #if !defined(__EMSCRIPTEN__)
 
@@ -861,7 +912,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 
         // --- Two-phase: separate cache hits from misses ---
         int n_hits = 0, n_misses = 0;
-        int hit_indices[BN_MAX_MOE_K], miss_indices[BN_MAX_MOE_K];
+        int miss_indices[BN_MAX_MOE_K];
         float hit_weights[BN_MAX_MOE_K], miss_weights[BN_MAX_MOE_K];
         const uint8_t *hit_ptrs[BN_MAX_MOE_K];  // cache slab pointers for hits
 
@@ -872,7 +923,6 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
             if (cache) {
                 const uint8_t *cached = moe_cache_lookup(cache, l, eidx);
                 if (cached) {
-                    hit_indices[n_hits] = eidx;
                     hit_weights[n_hits] = ms->expert_weights[k];
                     hit_ptrs[n_hits] = cached;
                     n_hits++;

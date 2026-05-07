@@ -26,3 +26,35 @@ void bn_quant_q8_avx2_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum;
     }
 }
+
+void bn_quant_q8_avx2_4row_range(void *ctx, int group_start, int group_end) {
+    BnQ8SdotCtx *c = (BnQ8SdotCtx *)ctx;
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)c->W->data;
+    int n_blocks_per_row = c->W->cols / 32;
+    int rows = c->W->rows;
+    const int8_t *x_q = c->x_q;
+    const float *x_scales = c->x_scales;
+
+    for (int g = group_start; g < group_end; g++) {
+        int row0 = g * 4;
+        int nrows = (row0 + 4 <= rows) ? 4 : rows - row0;
+        float row_sums[4] = {0};
+
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            __m256i xq256 = _mm256_loadu_si256((const __m256i *)(x_q + b * 32));
+            float d_x = x_scales[b];
+
+            for (int r = 0; r < nrows; r++) {
+                const BnBlockQ8_0 *blk = &blocks[(size_t)(row0 + r) * n_blocks_per_row + b];
+                _mm_prefetch((const char *)(blk + 4), _MM_HINT_T0);
+
+                __m256i w256 = _mm256_loadu_si256((const __m256i *)blk->qs);
+                __m256i acc = bn_avx2_dpbusd(_mm256_setzero_si256(), w256, xq256);
+                row_sums[r] += bn_fp16_to_fp32(blk->d) * d_x * (float)bn_avx2_hsum_epi32(acc);
+            }
+        }
+
+        for (int r = 0; r < nrows; r++)
+            c->out[row0 + r] = row_sums[r];
+    }
+}

@@ -36,7 +36,9 @@
 #define BN_GPU_SHADER_Q4K_MATVEC_SPLIT 26 // Q4_K two-output matvec split
 #define BN_GPU_SHADER_Q8_MATVEC_SPLIT  27 // Q8_0 multi-output matvec split
 #define BN_GPU_SHADER_Q5K_MATVEC_SPLIT 28 // Q5_K multi-output matvec split
-#define BN_GPU_SHADER_COUNT             29
+#define BN_GPU_SHADER_SILU_ACT         29 // In-place SiLU activation
+#define BN_GPU_SHADER_RELU2_ACT        30 // In-place ReLU^2 activation
+#define BN_GPU_SHADER_COUNT             31
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0

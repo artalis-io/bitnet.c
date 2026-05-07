@@ -6,6 +6,10 @@
 #include <limits.h>
 #include <assert.h>
 
+#if defined(__i386__) || defined(__x86_64__)
+#include <immintrin.h>
+#endif
+
 #if defined(__APPLE__)
 #include <pthread/qos.h>
 #endif
@@ -40,6 +44,16 @@ struct BnThreadPool {
     _Atomic int   poll_iters;
     _Atomic int   dispatching; // reentrancy guard (main-thread-only, atomic for safety)
 };
+
+static inline void tp_cpu_relax(void) {
+#if defined(__i386__) || defined(__x86_64__)
+    _mm_pause();
+#elif defined(__aarch64__) || defined(__arm__)
+    __asm__ volatile("yield" ::: "memory");
+#else
+    atomic_signal_fence(memory_order_seq_cst);
+#endif
+}
 
 // Execute all tasks via atomic work-stealing with adaptive chunk size.
 // Chunk = n / (4 * n_threads) — mostly static, stealing for tail imbalance.
@@ -111,7 +125,7 @@ static void *worker_loop(void *arg) {
                     picked_up = 1;
                     break;
                 }
-                __asm__ volatile("yield" ::: "memory");
+                tp_cpu_relax();
             }
             if (!picked_up) break;
         }
@@ -238,7 +252,7 @@ void bn_tp_dispatch(BnThreadPool *pool, BnTPTask *tasks, int n_tasks) {
             pool->dispatching = 0;
             return;
         }
-        __asm__ volatile("yield" ::: "memory");
+        tp_cpu_relax();
     }
 
     pthread_mutex_lock(&pool->mtx);

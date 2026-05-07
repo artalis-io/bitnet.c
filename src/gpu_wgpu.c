@@ -676,10 +676,12 @@ static void *repack_q4_0_for_gpu(BnWgpuCtx *ctx, const void *data, size_t size,
     }
     handle->buf = buf;
     handle->size = repacked_size;
+    handle->offset = 0;
     handle->type = BN_GGUF_TENSOR_Q4_0;
     handle->rows = rows;
     handle->cols = cols;
     handle->bias_offset = fused_bias_offset;
+    handle->is_slab = 0;
     *out_size = repacked_size;
     return handle;
 }
@@ -1371,6 +1373,8 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_Q4K_MATVEC_SPLIT, "q4k_matvec_split" },
         { BN_GPU_SHADER_Q8_MATVEC_SPLIT,  "q8_matvec_split"  },
         { BN_GPU_SHADER_Q5K_MATVEC_SPLIT, "q5k_matvec_split" },
+        { BN_GPU_SHADER_SILU_ACT,         "silu_act"         },
+        { BN_GPU_SHADER_RELU2_ACT,        "relu2_act"        },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -1505,6 +1509,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     for (int i = 0; i < n_ops; i++) {
         memcpy(uni_data + (size_t)i * uni_stride, ops[i].p,
                sizeof(uint32_t) * BN_GPU_OP_PARAMS);
+        if (ops[i].shader == BN_GPU_SHADER_SSM_DELTA) {
+            uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
+            p[4] = 0;
+        }
         if (ops[i].shader == BN_GPU_SHADER_MATVEC &&
             ops[i].type != BN_GGUF_TENSOR_Q4_0) {
             uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
@@ -1539,6 +1547,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
     WGPUComputePassEncoder cur_pass = NULL;
     int n_passes = 0;
+    uint32_t pass_reads = 0;
+    uint32_t pass_writes = 0;
 
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
@@ -1667,6 +1677,11 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
             op_writes = BUF_BIT(op->buf_in);  /* in-place */
             break;
+        case BN_GPU_SHADER_SILU_ACT:
+        case BN_GPU_SHADER_RELU2_ACT:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_in);
+            break;
         case BN_GPU_SHADER_COPY:
             op_reads = BUF_BIT(op->buf_in);
             op_writes = BUF_BIT(op->buf_out);
@@ -1674,15 +1689,15 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         default: continue;
         }
 
-        /* Dispatches within a WebGPU compute pass are ordered, so storage
-         * hazards between dispatches do not require ending the pass. */
-        int conflict = 0;
+        int conflict = cur_pass != NULL;
 
         if (conflict && cur_pass) {
             wgpuComputePassEncoderEnd(cur_pass);
             wgpuComputePassEncoderRelease(cur_pass);
             cur_pass = NULL;
             n_passes++;
+            pass_reads = 0;
+            pass_writes = 0;
         }
 
         /* Start new pass if needed */
@@ -1693,6 +1708,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
         (void)op_reads;
         (void)op_writes;
+        pass_reads |= op_reads;
+        pass_writes |= op_writes;
 
         /* Build bind group entries per shader type */
         WGPUBindGroupEntry entries[8];
@@ -2027,7 +2044,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             int v_buf = op->p[7] ? op->buf_in : BN_GPU_BUF_SSM_V;
             entries[0] = (WGPUBindGroupEntry){
                 .binding = 0, .buffer = ctx->act_bufs[BN_GPU_BUF_SSM_STATE],
-                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_SSM_STATE]};
+                .offset = op->p[4], .size = op->p[5]};
             entries[1] = (WGPUBindGroupEntry){
                 .binding = 1, .buffer = ctx->act_bufs[op->buf_out],
                 .offset = 0, .size = ctx->act_sizes[op->buf_out]};
@@ -2113,6 +2130,17 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .binding = 2, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
             n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_SILU_ACT:
+        case BN_GPU_SHADER_RELU2_ACT: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 2;
             break;
         }
         case BN_GPU_SHADER_COPY: {
@@ -2215,6 +2243,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         case BN_GPU_SHADER_DEINTERLEAVE_Q:
         case BN_GPU_SHADER_SIGMOID_GATE:
             wg_x = (op->p[0] + 255) / 256;  /* ceil(q_dim / 256) */
+            break;
+        case BN_GPU_SHADER_SILU_ACT:
+        case BN_GPU_SHADER_RELU2_ACT:
+            wg_x = (op->p[0] + 255) / 256;
             break;
         case BN_GPU_SHADER_COPY:
             wg_x = (op->p[2] + 255) / 256;

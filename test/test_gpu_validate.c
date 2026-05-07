@@ -14,6 +14,11 @@
 #include "gpu_backend.h"
 #include "quant.h"
 #include "gguf.h"
+#include "model.h"
+#include "platform.h"
+#include "session.h"
+#include "threadpool.h"
+#include "transformer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -642,6 +647,338 @@ static int validate_matmul(BnGPUBackend *gpu, const TypeInfo *info, int n_tokens
     return result;
 }
 
+/* ── Optional timing benchmark ────────────────────────────────────── */
+
+static int env_int(const char *name, int default_value) {
+    const char *v = getenv(name);
+    if (!v || !*v) return default_value;
+    int parsed = atoi(v);
+    return parsed > 0 ? parsed : default_value;
+}
+
+static double bench_cpu_matvec(const BnQWeight *W, const float *x,
+                               int iters, int n_threads, float *checksum) {
+    float *out = calloc((size_t)W->rows, sizeof(float));
+    int8_t *scratch = calloc((size_t)W->cols, sizeof(int8_t));
+    BnThreadPool *pool = bn_tp_create(n_threads);
+    if (!out || !scratch) {
+        free(out);
+        free(scratch);
+        bn_tp_free(pool);
+        return -1.0;
+    }
+
+    for (int i = 0; i < 3; i++)
+        bn_quant_matvec(out, W, x, scratch, pool);
+
+    double t0 = bn_platform_time_ms();
+    for (int i = 0; i < iters; i++)
+        bn_quant_matvec(out, W, x, scratch, pool);
+    double elapsed = bn_platform_time_ms() - t0;
+
+    *checksum = out[0];
+    bn_tp_free(pool);
+    free(out);
+    free(scratch);
+    return elapsed / (double)iters;
+}
+
+static double bench_gpu_matvec(BnGPUBackend *gpu, const BnQWeight *W,
+                               const float *x, int iters, float *checksum) {
+    float *out = calloc((size_t)W->rows, sizeof(float));
+    if (!out || !W->gpu_buf) {
+        free(out);
+        return -1.0;
+    }
+
+    for (int i = 0; i < 3; i++) {
+        if (gpu->matvec(gpu->ctx, out, W->gpu_buf, x, W->rows, W->cols, W->type) != 0) {
+            free(out);
+            return -1.0;
+        }
+    }
+
+    double t0 = bn_platform_time_ms();
+    for (int i = 0; i < iters; i++) {
+        if (gpu->matvec(gpu->ctx, out, W->gpu_buf, x, W->rows, W->cols, W->type) != 0) {
+            free(out);
+            return -1.0;
+        }
+    }
+    double elapsed = bn_platform_time_ms() - t0;
+
+    *checksum = out[0];
+    free(out);
+    return elapsed / (double)iters;
+}
+
+static int run_timing_bench(BnGPUBackend *gpu) {
+    if (!getenv("BN_GPU_BENCH")) return 0;
+
+    int rows = env_int("BN_GPU_BENCH_ROWS", 4096);
+    int cols = env_int("BN_GPU_BENCH_COLS", 4096);
+    int iters = env_int("BN_GPU_BENCH_ITERS", 20);
+    int n_threads = env_int("BN_GPU_BENCH_THREADS", 8);
+    if (cols % 256 != 0) cols = ((cols + 255) / 256) * 256;
+
+    const TypeInfo bench_types[] = {
+        { "Q4_0",  BN_GGUF_TENSOR_Q4_0,  32,  0 },
+        { "Q8_0",  BN_GGUF_TENSOR_Q8_0,  32,  0 },
+        { "Q4_K",  BN_GGUF_TENSOR_Q4_K,  256, 0 },
+        { "Q5_K",  BN_GGUF_TENSOR_Q5_K,  256, 0 },
+        { "Q6_K",  BN_GGUF_TENSOR_Q6_K,  256, 0 },
+        { "BF16",  BN_GGUF_TENSOR_BF16,  1,   0 },
+    };
+    int n_bench = (int)(sizeof(bench_types) / sizeof(bench_types[0]));
+
+    float *x = calloc((size_t)cols, sizeof(float));
+    if (!x) return 1;
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.02f * (float)((i * 13) % 31) - 0.3f;
+
+    printf("--- Phase 3: timing (rows=%d cols=%d iters=%d cpu_threads=%d) ---\n",
+           rows, cols, iters, n_threads);
+    printf("  %-8s %10s %10s %10s %10s\n",
+           "type", "cpu_ms", "gpu_ms", "cpu/gpu", "result");
+
+    int slower = 0;
+    for (int i = 0; i < n_bench; i++) {
+        float tensor_scale = 1.0f;
+        void *data = make_weight_data(bench_types[i].type, rows, cols, &tensor_scale);
+        if (!data) {
+            printf("  %-8s SKIP\n", bench_types[i].name);
+            continue;
+        }
+
+        BnQWeight W = {0};
+        W.data = data;
+        W.type = bench_types[i].type;
+        W.rows = rows;
+        W.cols = cols;
+        W.scale = tensor_scale;
+
+        size_t sz = bn_qweight_data_size(&W);
+        W.gpu_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
+        if (!W.gpu_buf) {
+            printf("  %-8s SKIP (gpu buffer)\n", bench_types[i].name);
+            free(data);
+            continue;
+        }
+
+        float cpu0 = 0.0f, gpu0 = 0.0f;
+        double cpu_ms = bench_cpu_matvec(&W, x, iters, n_threads, &cpu0);
+        double gpu_ms = bench_gpu_matvec(gpu, &W, x, iters, &gpu0);
+        const char *result = "SKIP";
+        if (cpu_ms > 0.0 && gpu_ms > 0.0) {
+            result = cpu_ms <= gpu_ms ? "CPU<=GPU" : "CPU>GPU";
+            if (cpu_ms > gpu_ms) slower++;
+            printf("  %-8s %10.3f %10.3f %10.2f %10s",
+                   bench_types[i].name, cpu_ms, gpu_ms, cpu_ms / gpu_ms, result);
+            if (fabsf(cpu0 - gpu0) > 1e-2f)
+                printf(" checksum_diff=%.4f", fabsf(cpu0 - gpu0));
+            printf("\n");
+        } else {
+            printf("  %-8s SKIP (timing failed)\n", bench_types[i].name);
+        }
+
+        gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+        free(data);
+    }
+
+    free(x);
+    printf("\n");
+    return slower > 0 ? 2 : 0;
+}
+
+static float *alloc_f32(int n, float value) {
+    float *p = calloc((size_t)n, sizeof(float));
+    if (!p) return NULL;
+    for (int i = 0; i < n; i++) p[i] = value;
+    return p;
+}
+
+static int make_bench_qweight(BnQWeight *W, int type, int rows, int cols) {
+    float scale = 1.0f;
+    void *data = make_weight_data(type, rows, cols, &scale);
+    if (!data) return -1;
+    *W = (BnQWeight){0};
+    W->data = data;
+    W->type = type;
+    W->rows = rows;
+    W->cols = cols;
+    W->scale = scale;
+    return 0;
+}
+
+static void free_synthetic_model(BnModel *m) {
+    if (!m) return;
+    BnWeights *w = &m->weights;
+    free((void *)w->token_embedding);
+    free(w->output_norm);
+    free((void *)w->output_weight.data);
+    for (int l = 0; l < m->config.n_layers; l++) {
+        BnLayerWeights *lw = &w->layers[l];
+        free(lw->attn_norm);
+        free(lw->ffn_norm);
+        free((void *)lw->wq.data);
+        free((void *)lw->wk.data);
+        free((void *)lw->wv.data);
+        free((void *)lw->wo.data);
+        free((void *)lw->ffn_gate.data);
+        free((void *)lw->ffn_up.data);
+        free((void *)lw->ffn_down.data);
+    }
+    free(w->layers);
+    memset(m, 0, sizeof(*m));
+}
+
+static int build_synthetic_model(BnModel *m, int type, int dim, int hidden_dim,
+                                 int n_layers, int n_heads, int vocab_size,
+                                 int seq_len, int n_threads) {
+    memset(m, 0, sizeof(*m));
+    BnConfig *c = &m->config;
+    c->dim = dim;
+    c->hidden_dim = hidden_dim;
+    c->n_layers = n_layers;
+    c->n_heads = n_heads;
+    c->n_kv_heads = n_heads;
+    c->vocab_size = vocab_size;
+    c->seq_len = seq_len;
+    c->rope_theta = BN_DEFAULT_ROPE_THETA;
+    c->norm_eps = BN_DEFAULT_NORM_EPS;
+    c->head_size = dim / n_heads;
+    c->kv_dim = c->n_kv_heads * c->head_size;
+    c->kv_mul = c->n_heads / c->n_kv_heads;
+    c->has_ffn_gate = 1;
+    c->act_type = 0;
+
+    BnWeights *w = &m->weights;
+    w->emb_type = BN_GGUF_TENSOR_F32;
+    w->token_embedding = alloc_f32(vocab_size * dim, 0.01f);
+    w->output_norm = alloc_f32(dim, 1.0f);
+    w->layers = calloc((size_t)n_layers, sizeof(BnLayerWeights));
+    if (!w->token_embedding || !w->output_norm || !w->layers) return -1;
+
+    if (make_bench_qweight(&w->output_weight, type, vocab_size, dim) != 0)
+        return -1;
+
+    for (int l = 0; l < n_layers; l++) {
+        BnLayerWeights *lw = &w->layers[l];
+        lw->attn_norm = alloc_f32(dim, 1.0f);
+        lw->ffn_norm = alloc_f32(dim, 1.0f);
+        if (!lw->attn_norm || !lw->ffn_norm) return -1;
+        if (make_bench_qweight(&lw->wq, type, dim, dim) != 0 ||
+            make_bench_qweight(&lw->wk, type, c->kv_dim, dim) != 0 ||
+            make_bench_qweight(&lw->wv, type, c->kv_dim, dim) != 0 ||
+            make_bench_qweight(&lw->wo, type, dim, dim) != 0 ||
+            make_bench_qweight(&lw->ffn_gate, type, hidden_dim, dim) != 0 ||
+            make_bench_qweight(&lw->ffn_up, type, hidden_dim, dim) != 0 ||
+            make_bench_qweight(&lw->ffn_down, type, dim, hidden_dim) != 0)
+            return -1;
+    }
+
+    m->pool = bn_tp_create(n_threads);
+    return 0;
+}
+
+static double bench_forward(BnModel *m, BnSession *s, int iters, float *checksum) {
+    if (!m || !s) return -1.0;
+    for (int i = 0; i < 2; i++) {
+        bn_session_reset(s, m);
+        for (int t = 0; t < 4; t++) {
+            if (!bn_transformer_forward(m, s, t % m->config.vocab_size, t))
+                return -1.0;
+        }
+    }
+
+    bn_session_reset(s, m);
+    double t0 = bn_platform_time_ms();
+    float *logits = NULL;
+    for (int i = 0; i < iters; i++) {
+        logits = bn_transformer_forward(m, s, i % m->config.vocab_size, i);
+        if (!logits) return -1.0;
+    }
+    double elapsed = bn_platform_time_ms() - t0;
+    *checksum = logits ? logits[0] : 0.0f;
+    return elapsed / (double)iters;
+}
+
+static int run_forward_bench(BnGPUBackend *gpu) {
+    if (!getenv("BN_GPU_BENCH_FORWARD")) return 0;
+
+    int dim = env_int("BN_GPU_FORWARD_DIM", 512);
+    int hidden = env_int("BN_GPU_FORWARD_HIDDEN", dim * 4);
+    int layers = env_int("BN_GPU_FORWARD_LAYERS", 2);
+    int heads = env_int("BN_GPU_FORWARD_HEADS", 8);
+    int vocab = env_int("BN_GPU_FORWARD_VOCAB", 1024);
+    int seq = env_int("BN_GPU_FORWARD_SEQ", 64);
+    int iters = env_int("BN_GPU_FORWARD_ITERS", 16);
+    int n_threads = env_int("BN_GPU_BENCH_THREADS", 8);
+    int type = BN_GGUF_TENSOR_Q8_0;
+
+    if (dim % heads != 0 || dim % 32 != 0 || hidden % 32 != 0 || vocab % 32 != 0) {
+        printf("--- Phase 4: synthetic forward skipped (dims must align to heads and Q4_0 blocks) ---\n");
+        return 0;
+    }
+
+    printf("--- Phase 4: synthetic forward (type=Q8_0 dim=%d hidden=%d layers=%d vocab=%d iters=%d cpu_threads=%d) ---\n",
+           dim, hidden, layers, vocab, iters, n_threads);
+
+    BnModel cpu_model = {0};
+    BnModel gpu_model = {0};
+    int rc = 0;
+    if (build_synthetic_model(&cpu_model, type, dim, hidden, layers, heads, vocab, seq, n_threads) != 0 ||
+        build_synthetic_model(&gpu_model, type, dim, hidden, layers, heads, vocab, seq, n_threads) != 0) {
+        printf("  SKIP (model allocation failed)\n\n");
+        rc = 1;
+        goto cleanup;
+    }
+
+    if (bn_model_upload_weights(&gpu_model, gpu) != 0 ||
+        gpu->init_activations(gpu->ctx, &gpu_model.config) != 0) {
+        printf("  SKIP (gpu upload/init failed)\n\n");
+        goto cleanup;
+    }
+
+    BnSession *cpu_s = bn_session_create(&cpu_model, NULL);
+    BnSession *gpu_s = bn_session_create(&gpu_model, NULL);
+    if (!cpu_s || !gpu_s) {
+        printf("  SKIP (session allocation failed)\n\n");
+        bn_session_free(cpu_s, NULL);
+        bn_session_free(gpu_s, NULL);
+        goto cleanup;
+    }
+
+    float cpu0 = 0.0f, gpu0 = 0.0f;
+    double cpu_ms = bench_forward(&cpu_model, cpu_s, iters, &cpu0);
+    double gpu_ms = bench_forward(&gpu_model, gpu_s, iters, &gpu0);
+    if (cpu_ms > 0.0 && gpu_ms > 0.0) {
+        printf("  cpu_ms/token=%8.3f gpu_ms/token=%8.3f cpu/gpu=%6.2f %s",
+               cpu_ms, gpu_ms, cpu_ms / gpu_ms,
+               cpu_ms <= gpu_ms ? "CPU<=GPU" : "CPU>GPU");
+        if (fabsf(cpu0 - gpu0) > 1e-2f)
+            printf(" checksum_diff=%.4f", fabsf(cpu0 - gpu0));
+        printf("\n\n");
+    } else {
+        printf("  SKIP (forward timing failed)\n\n");
+    }
+
+    bn_session_free(cpu_s, NULL);
+    bn_session_free(gpu_s, NULL);
+
+cleanup:
+    if (gpu_model.gpu) {
+        bn_model_release_gpu(&gpu_model);
+        gpu_model.gpu = NULL;
+    }
+    if (gpu->free_activations) gpu->free_activations(gpu->ctx);
+    if (cpu_model.pool) bn_tp_free(cpu_model.pool);
+    if (gpu_model.pool) bn_tp_free(gpu_model.pool);
+    free_synthetic_model(&cpu_model);
+    free_synthetic_model(&gpu_model);
+    return rc;
+}
+
 /* ── Main ─────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -695,8 +1032,12 @@ int main(void) {
     printf("=== GPU Validation: %d matvec passed, %d matmul passed, %d total failed ===\n",
            passed, mm_passed, total_failed);
 
+    int bench_result = run_timing_bench(gpu);
+    int forward_result = run_forward_bench(gpu);
+
     bn_gpu_wgpu_destroy(gpu);
-    return total_failed > 0 ? 1 : 0;
+    if (total_failed > 0) return 1;
+    return (bench_result == 1 || forward_result == 1) ? 1 : 0;
 }
 
 #else /* !BN_ENABLE_GPU */

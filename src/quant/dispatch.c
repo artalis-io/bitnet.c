@@ -68,7 +68,8 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
         BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales };
-        BnTPTask task = { bn_quant_q8_avx2_range, &ctx, W->rows };
+        int n_groups = (W->rows + 3) / 4;
+        BnTPTask task = { bn_quant_q8_avx2_4row_range, &ctx, n_groups };
 #elif defined(__wasm_relaxed_simd__)
         int n_blocks = W->cols / 32;
         float x_scales[n_blocks];
@@ -252,7 +253,8 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
 #if defined(__ARM_NEON)
         BnTPTask task = { bn_quant_q5k_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
-        BnTPTask task = { bn_quant_q5k_avx2_range, &ctx, W->rows };
+        int n_groups = (W->rows + 3) / 4;
+        BnTPTask task = { bn_quant_q5k_avx2_4row_range, &ctx, n_groups };
 #elif defined(__wasm_simd128__)
         BnTPTask task = { bn_quant_q5k_wasm_range, &ctx, W->rows };
 #else
@@ -317,7 +319,8 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
 #ifdef __ARM_NEON
         BnTPTask task = { bn_quant_bf16_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
-        BnTPTask task = { bn_quant_bf16_avx2_range, &ctx, W->rows };
+        int n_groups = (W->rows + 3) / 4;
+        BnTPTask task = { bn_quant_bf16_avx2_4row_range, &ctx, n_groups };
 #elif defined(__wasm_simd128__)
         BnTPTask task = { bn_quant_bf16_wasm_range, &ctx, W->rows };
 #else
@@ -754,16 +757,17 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         return;
     }
 #elif defined(__AVX2__)
-    int all_i2s = 1, all_q4 = 1, all_tq1 = 1, all_tq2 = 1;
+    int all_i2s = 1, all_q4 = 1, all_q8 = 1, all_tq1 = 1, all_tq2 = 1;
     int all_q4k = 1, all_q6k = 1;
     for (int t = 0; t < n_tasks; t++) {
         if (tasks[t].W->type != BN_GGUF_TENSOR_I2_S) all_i2s = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_0) all_q4 = 0;
+        if (tasks[t].W->type != BN_GGUF_TENSOR_Q8_0) all_q8 = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_TQ1_0) all_tq1 = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_TQ2_0) all_tq2 = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q4_K) all_q4k = 0;
         if (tasks[t].W->type != BN_GGUF_TENSOR_Q6_K) all_q6k = 0;
-        if (!all_i2s && !all_q4 && !all_tq1 && !all_tq2 &&
+        if (!all_i2s && !all_q4 && !all_q8 && !all_tq1 && !all_tq2 &&
             !all_q4k && !all_q6k) break;
     }
 
@@ -803,6 +807,25 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
             ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
             int n_groups = (tasks[t].W->rows + 3) / 4;
             tp_tasks[t] = (BnTPTask){ bn_quant_q4_avx2_4row_range, &ctxs[t], n_groups };
+        }
+
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_q8 && n_tasks <= BN_MAX_BATCH) {
+        int n_blocks = cols / 32;
+        if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
+        float x_scales[n_blocks];
+        bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, cols);
+
+        BnQ8SdotCtx ctxs[BN_MAX_BATCH];
+        BnTPTask tp_tasks[BN_MAX_BATCH];
+
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx2_4row_range, &ctxs[t], n_groups };
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -995,6 +1018,30 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
             if (tasks[t].W->type != batch_type) { all_same = 0; break; }
         }
         if (all_same) {
+#ifdef __AVX2__
+            if (batch_type == BN_GGUF_TENSOR_Q5_K) {
+                BnQ5KCtx ctxs[BN_MAX_BATCH];
+                BnTPTask tp_tasks[BN_MAX_BATCH];
+                for (int t = 0; t < n_tasks; t++) {
+                    ctxs[t] = (BnQ5KCtx){ tasks[t].out, tasks[t].W, x };
+                    int n_groups = (tasks[t].W->rows + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ bn_quant_q5k_avx2_4row_range, &ctxs[t], n_groups };
+                }
+                bn_tp_dispatch(pool, tp_tasks, n_tasks);
+                return;
+            }
+            if (batch_type == BN_GGUF_TENSOR_BF16) {
+                BnBF16Ctx ctxs[BN_MAX_BATCH];
+                BnTPTask tp_tasks[BN_MAX_BATCH];
+                for (int t = 0; t < n_tasks; t++) {
+                    ctxs[t] = (BnBF16Ctx){ tasks[t].out, tasks[t].W, x };
+                    int n_groups = (tasks[t].W->rows + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ bn_quant_bf16_avx2_4row_range, &ctxs[t], n_groups };
+                }
+                bn_tp_dispatch(pool, tp_tasks, n_tasks);
+                return;
+            }
+#endif
             bn_tp_fn kernel = bn_quant_get_float_kernel(batch_type);
             if (kernel) {
                 // All float-x ctx types share { out, W, x } layout
@@ -1094,7 +1141,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
             tp_tasks[t] = (BnTPTask){ bn_quant_i2s_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
 #elif defined(__AVX2__)
-            tp_tasks[t] = (BnTPTask){ bn_quant_i2s_avx2_range, &ctxs[t], tasks[t].W->rows };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_i2s_avx2_4row_range, &ctxs[t], n_groups };
 #else
             tp_tasks[t] = (BnTPTask){ bn_quant_i2s_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
 #endif
@@ -1180,11 +1228,15 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                         ? bn_quant_q4_repacked_neon_sdot_range
                         : bn_quant_q4_neon_sdot_range;
 #elif defined(__AVX2__)
-                    void (*fn)(void *, int, int) = bn_quant_q4_avx2_range;
+                    void (*fn)(void *, int, int) = bn_quant_q4_avx2_4row_range;
 #else
                     void (*fn)(void *, int, int) = bn_quant_q4_wasm_sdot_range;
 #endif
-                    tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
+                    int n_items = tasks[t].W->rows;
+#ifdef __AVX2__
+                    n_items = (tasks[t].W->rows + 3) / 4;
+#endif
+                    tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_items };
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
                 return;
@@ -1202,7 +1254,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
                     tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
 #else
-                    tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx2_range, &ctxs[t], tasks[t].W->rows };
+                    int n_groups = (tasks[t].W->rows + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx2_4row_range, &ctxs[t], n_groups };
 #endif
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -1210,6 +1263,32 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
             }
 #endif
         }
+    }
+#endif
+
+#ifdef __AVX2__
+    if (all_same_type && type0 == BN_GGUF_TENSOR_Q5_K && n_tasks <= BN_MAX_BATCH) {
+        BnQ5KCtx ctxs[BN_MAX_BATCH];
+        BnTPTask tp_tasks[BN_MAX_BATCH];
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnQ5KCtx){ tasks[t].out, tasks[t].W, tasks[t].x };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_q5k_avx2_4row_range, &ctxs[t], n_groups };
+        }
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
+    }
+
+    if (all_same_type && type0 == BN_GGUF_TENSOR_BF16 && n_tasks <= BN_MAX_BATCH) {
+        BnBF16Ctx ctxs[BN_MAX_BATCH];
+        BnTPTask tp_tasks[BN_MAX_BATCH];
+        for (int t = 0; t < n_tasks; t++) {
+            ctxs[t] = (BnBF16Ctx){ tasks[t].out, tasks[t].W, tasks[t].x };
+            int n_groups = (tasks[t].W->rows + 3) / 4;
+            tp_tasks[t] = (BnTPTask){ bn_quant_bf16_avx2_4row_range, &ctxs[t], n_groups };
+        }
+        bn_tp_dispatch(pool, tp_tasks, n_tasks);
+        return;
     }
 #endif
 

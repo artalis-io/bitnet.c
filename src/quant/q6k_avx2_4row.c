@@ -16,7 +16,6 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
     const int16_t *x_bsums = c->x_bsums;
 
     const __m256i mask_lo4 = _mm256_set1_epi8(0xF);
-    const __m256i mask_2 = _mm256_set1_epi8(3);
     const __m256i mask_hi2 = _mm256_set1_epi8(0x30);
     const __m256i zero = _mm256_setzero_si256();
 

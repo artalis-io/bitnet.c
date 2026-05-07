@@ -51,6 +51,7 @@ typedef struct {
     int cache_mb;       // expert cache budget in MB (default 2048, 0 to disable)
     int cache_mb_set;   // whether user explicitly set --cache-mb
     int force_madvise;  // madvise-guided mmap for low-RSS expert streaming
+    int prefault_moe;   // touch all mmap'd MoE expert pages before generation
     const char *draft_path; // --draft <model.gguf> for speculative decoding
     int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
@@ -83,6 +84,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --cache-mb <int>  Expert cache budget in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
+    fprintf(stderr, "  --prefault-moe    Fault all mmap'd MoE expert pages during startup\n");
     fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
@@ -157,6 +159,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.force_pread = 1;
         } else if (strcmp(argv[i], "--madvise") == 0) {
             args.force_madvise = 1;
+        } else if (strcmp(argv[i], "--prefault-moe") == 0) {
+            args.prefault_moe = 1;
         } else if (strcmp(argv[i], "--draft") == 0 && i + 1 < argc) {
             args.draft_path = argv[++i];
         } else if (strcmp(argv[i], "--draft-k") == 0 && i + 1 < argc) {
@@ -376,6 +380,14 @@ int main(int argc, char **argv) {
             SH_LOG_INFO("Expert I/O mode", "mode", "pread (forced)");
         } else if (model.moe_io.mmap_base) {
             SH_LOG_INFO("Expert I/O mode", "mode", "mmap");
+        }
+
+        if (args.prefault_moe) {
+            if (args.force_pread || !model.moe_io.mmap_base) {
+                SH_LOG_WARN("--prefault-moe requires mmap, ignoring");
+            } else {
+                bn_moe_prefault_mmap(&model);
+            }
         }
 
         // Create I/O prefetch thread for pread pipeline (not needed for madvise)

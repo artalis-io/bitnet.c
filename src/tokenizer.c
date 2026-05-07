@@ -208,7 +208,7 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
             bpe_char[1] = (char)(0x80 | (byte & 0x3F));
             bpe_char[2] = '\0';
             bpe_len = 2;
-        } else if (byte >= 0xAE && byte <= 0xFF) {
+        } else if (byte >= 0xAE) {
             // Latin-1 printable: maps to itself (2-byte UTF-8)
             bpe_char[0] = (char)(0xC0 | (byte >> 6));
             bpe_char[1] = (char)(0x80 | (byte & 0x3F));

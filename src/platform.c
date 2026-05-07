@@ -108,8 +108,9 @@ size_t bn_platform_rss_bytes(void) {
 #elif defined(__linux__) && !defined(__EMSCRIPTEN__)
     FILE *fp = fopen("/proc/self/statm", "r");
     if (!fp) return 0;
+    long total_pages = 0;
     long pages = 0;
-    if (fscanf(fp, "%*ld %ld", &pages) != 1) pages = 0;
+    if (fscanf(fp, "%ld %ld", &total_pages, &pages) != 2) pages = 0;
     fclose(fp);
     return (size_t)pages * 4096;
 #else

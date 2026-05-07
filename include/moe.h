@@ -33,6 +33,11 @@ void bn_moe_cache_free(void *cache);
 // Print cache hit/miss stats.
 void bn_moe_cache_print_stats(const BnMoEState *ms);
 
+// Fault all mmap-backed MoE expert projection pages into memory.
+// This is a benchmark/server warmup helper: it increases startup time and RSS
+// so generation does not block on expert page faults.
+int bn_moe_prefault_mmap(BnModel *m);
+
 // Create I/O prefetch thread for pread pipeline (no-op on EMSCRIPTEN).
 // Call after moe_io.fd is set. Safe to call if mmap_base is set (returns immediately).
 void bn_moe_prefetch_create(BnMoEIO *io);
