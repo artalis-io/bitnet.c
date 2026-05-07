@@ -3,6 +3,10 @@
 #include <immintrin.h>
 #include <string.h>
 
+static inline __m256i q4k_scale_all(uint8_t scale) {
+    return _mm256_set1_epi16((int16_t)scale);
+}
+
 // 4-row Q4_K SDOT matvec: process 4 output rows at once, loading x_q once.
 // Amortizes activation vector memory read 4x for DDR bandwidth optimization.
 // Deferred hsum: accumulate all DPBUSD results before any horizontal sum
@@ -19,8 +23,6 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
     const int16_t *x_bsums = c->x_bsums;
 
     const __m256i mask_lo = _mm256_set1_epi8(0xF);
-    const __m256i zero = _mm256_setzero_si256();
-
     const uint32_t kmask1 = 0x3f3f3f3f;
     const uint32_t kmask2 = 0x0f0f0f0f;
     const uint32_t kmask3 = 0x03030303;
@@ -65,25 +67,21 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                 for (int j = 0; j < 8; j++)
                     bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
 
-                /* DPBUSD with deferred hsum: accumulate all 8 dot products,
-                 * then horizontal-sum in one batch to hide latency. */
-                __m256i dots[8];
+                __m256i sumi_v = _mm256_setzero_si256();
                 const uint8_t *qs = blk->qs;
                 for (int p = 0; p < 4; p++) {
                     __m256i raw = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
                     __m256i lo = _mm256_and_si256(raw, mask_lo);
                     __m256i hi = _mm256_and_si256(_mm256_srli_epi16(raw, 4), mask_lo);
-                    dots[2*p]     = bn_avx2_dpbusd(zero, lo, xv[2*p]);
-                    dots[2*p + 1] = bn_avx2_dpbusd(zero, hi, xv[2*p + 1]);
+
+                    __m256i plo = _mm256_maddubs_epi16(lo, xv[2*p]);
+                    __m256i phi = _mm256_maddubs_epi16(hi, xv[2*p + 1]);
+                    plo = _mm256_madd_epi16(q4k_scale_all(sc[2*p]), plo);
+                    phi = _mm256_madd_epi16(q4k_scale_all(sc[2*p + 1]), phi);
+                    sumi_v = _mm256_add_epi32(sumi_v, _mm256_add_epi32(plo, phi));
                 }
 
-                /* Deferred hsum phase: all dot products computed, now reduce */
-                int32_t sumi = 0;
-                for (int p = 0; p < 4; p++) {
-                    sumi += bn_avx2_hsum_epi32(dots[2*p])     * (int32_t)sc[2*p]
-                          + bn_avx2_hsum_epi32(dots[2*p + 1]) * (int32_t)sc[2*p + 1];
-                }
-
+                int32_t sumi = bn_avx2_hsum_epi32(sumi_v);
                 row_sums[r] += dx * (d * (float)sumi - dmin * (float)bsum_corr);
             }
         }

@@ -2,6 +2,11 @@
 #include "simd_helpers.h"
 #include <immintrin.h>
 
+static inline __m256i q6k_scale_pair(int8_t lo, int8_t hi) {
+    return _mm256_set_epi16(hi, hi, hi, hi, hi, hi, hi, hi,
+                            lo, lo, lo, lo, lo, lo, lo, lo);
+}
+
 // 4-row Q6_K SDOT matvec: process 4 output rows at once, unpacking weights
 // per-row but loading x_q once. Amortizes activation vector memory read 4x.
 
@@ -15,9 +20,11 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
     const float *x_d = c->x_d;
     const int16_t *x_bsums = c->x_bsums;
 
-    const __m256i mask_lo4 = _mm256_set1_epi8(0xF);
-    const __m256i mask_hi2 = _mm256_set1_epi8(0x30);
-    const __m256i zero = _mm256_setzero_si256();
+    const __m256i mask_lo4 = _mm256_set1_epi8(0x0F);
+    const __m256i mask_03  = _mm256_set1_epi8(0x03);
+    const __m256i mask_0c  = _mm256_set1_epi8(0x0C);
+    const __m256i mask_30  = _mm256_set1_epi8(0x30);
+    const __m256i mask_c0  = _mm256_set1_epi8((char)0xC0);
 
     for (int g = group_start; g < group_end; g++) {
         int row0 = g * 4;
@@ -28,6 +35,7 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
         for (int b = 0; b < n_bpr; b++) {
             float dx = x_d[b];
             const int16_t *bsums = x_bsums + b * 16;
+            const __m256i q8sums = _mm256_loadu_si256((const __m256i *)bsums);
 
             /* Load x_q block ONCE for all rows (2 chunks x 128 bytes = 256 bytes) */
             __m256i xv[8];
@@ -42,8 +50,10 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                 const uint8_t *qh = blk->qh;
                 const int8_t  *sc = blk->scales;
 
-                int32_t sumi = 0;
-                int32_t bias_corr = 0;
+                const __m128i sc128 = _mm_loadu_si128((const __m128i *)sc);
+                const __m256i sc16 = _mm256_cvtepi8_epi16(sc128);
+                const __m256i offset = _mm256_slli_epi32(_mm256_madd_epi16(q8sums, sc16), 5);
+                __m256i sumi = _mm256_setzero_si256();
 
                 for (int chunk = 0; chunk < 2; chunk++) {
                     __m256i ql0 = _mm256_loadu_si256((const __m256i *)ql);
@@ -55,54 +65,38 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                      * cross-byte contamination. */
                     __m256i w0 = _mm256_or_si256(
                         _mm256_and_si256(ql0, mask_lo4),
-                        _mm256_and_si256(_mm256_slli_epi16(qh0, 4), mask_hi2));
+                        _mm256_slli_epi16(_mm256_and_si256(qh0, mask_03), 4));
                     __m256i w1 = _mm256_or_si256(
                         _mm256_and_si256(ql1, mask_lo4),
-                        _mm256_and_si256(_mm256_slli_epi16(_mm256_srli_epi16(qh0, 2), 4), mask_hi2));
+                        _mm256_slli_epi16(_mm256_and_si256(qh0, mask_0c), 2));
                     __m256i w2 = _mm256_or_si256(
                         _mm256_and_si256(_mm256_srli_epi16(ql0, 4), mask_lo4),
-                        _mm256_and_si256(_mm256_slli_epi16(_mm256_srli_epi16(qh0, 4), 4), mask_hi2));
+                        _mm256_and_si256(qh0, mask_30));
                     __m256i w3 = _mm256_or_si256(
                         _mm256_and_si256(_mm256_srli_epi16(ql1, 4), mask_lo4),
-                        _mm256_and_si256(_mm256_slli_epi16(_mm256_srli_epi16(qh0, 6), 4), mask_hi2));
+                        _mm256_srli_epi16(_mm256_and_si256(qh0, mask_c0), 2));
 
                     int base = chunk * 4;
 
-                    /* DPBUSD all 4 dot products first — no scalar dependencies
-                     * between them, so CPU can pipeline all 4 in parallel. */
-                    __m256i dot0 = bn_avx2_dpbusd(zero, w0, xv[base + 0]);
-                    __m256i dot1 = bn_avx2_dpbusd(zero, w1, xv[base + 1]);
-                    __m256i dot2 = bn_avx2_dpbusd(zero, w2, xv[base + 2]);
-                    __m256i dot3 = bn_avx2_dpbusd(zero, w3, xv[base + 3]);
+                    __m256i p0 = _mm256_maddubs_epi16(w0, xv[base + 0]);
+                    __m256i p1 = _mm256_maddubs_epi16(w1, xv[base + 1]);
+                    __m256i p2 = _mm256_maddubs_epi16(w2, xv[base + 2]);
+                    __m256i p3 = _mm256_maddubs_epi16(w3, xv[base + 3]);
 
-                    /* Deferred hsum phase: per-lane sums with separate scales.
-                     * Each 256-bit dot has 2 sub-blocks (lo/hi 128-bit lanes). */
-                    __m128i lo0 = _mm256_castsi256_si128(dot0), hi0 = _mm256_extracti128_si256(dot0, 1);
-                    __m128i lo1 = _mm256_castsi256_si128(dot1), hi1 = _mm256_extracti128_si256(dot1, 1);
-                    __m128i lo2 = _mm256_castsi256_si128(dot2), hi2 = _mm256_extracti128_si256(dot2, 1);
-                    __m128i lo3 = _mm256_castsi256_si128(dot3), hi3 = _mm256_extracti128_si256(dot3, 1);
+                    const int8_t *sc_chunk = sc;
+                    p0 = _mm256_madd_epi16(q6k_scale_pair(sc_chunk[0], sc_chunk[1]), p0);
+                    p1 = _mm256_madd_epi16(q6k_scale_pair(sc_chunk[2], sc_chunk[3]), p1);
+                    p2 = _mm256_madd_epi16(q6k_scale_pair(sc_chunk[4], sc_chunk[5]), p2);
+                    p3 = _mm256_madd_epi16(q6k_scale_pair(sc_chunk[6], sc_chunk[7]), p3);
 
-                    /* Pairwise hadd to get [sum01_lo, sum01_hi, sum23_lo, sum23_hi] */
-                    __m128i p01 = _mm_hadd_epi32(_mm_hadd_epi32(lo0, hi0), _mm_hadd_epi32(lo1, hi1));
-                    __m128i p23 = _mm_hadd_epi32(_mm_hadd_epi32(lo2, hi2), _mm_hadd_epi32(lo3, hi3));
-                    /* p01 = [sum(lo0), sum(hi0), sum(lo1), sum(hi1)]
-                     * p23 = [sum(lo2), sum(hi2), sum(lo3), sum(hi3)] */
-
-                    int32_t s01[4], s23[4];
-                    _mm_storeu_si128((__m128i *)s01, p01);
-                    _mm_storeu_si128((__m128i *)s23, p23);
-                    sumi += s01[0] * (int32_t)sc[0] + s01[1] * (int32_t)sc[1]
-                          + s01[2] * (int32_t)sc[2] + s01[3] * (int32_t)sc[3]
-                          + s23[0] * (int32_t)sc[4] + s23[1] * (int32_t)sc[5]
-                          + s23[2] * (int32_t)sc[6] + s23[3] * (int32_t)sc[7];
-
-                    for (int s = 0; s < 8; s++)
-                        bias_corr += (int32_t)sc[s] * (int32_t)bsums[chunk * 8 + s];
+                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(p0, p1));
+                    sumi = _mm256_add_epi32(sumi, _mm256_add_epi32(p2, p3));
 
                     ql += 64; qh += 32; sc += 8;
                 }
 
-                row_sums[r] += d * dx * (float)(sumi - 32 * bias_corr);
+                sumi = _mm256_sub_epi32(sumi, offset);
+                row_sums[r] += d * dx * (float)bn_avx2_hsum_epi32(sumi);
             }
         }
 
