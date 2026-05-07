@@ -130,7 +130,7 @@ Usage: ./bitnet <model.gguf> [options]
   --temp <float>  Temperature (default: 0.0 = greedy)
   --topp <float>  Top-p sampling (default: 0.9)
   --seed <int>    Random seed (default: 42)
-  --maxseq <int>  Max sequence length (default: model max; Metal MoE auto-caps large contexts to 4096)
+  --maxseq <int>  Max sequence length (default: model max; GPU auto-caps large contexts to 4096)
   --flash         Use flash attention (online softmax)
   --chat          Interactive chat REPL mode
   --repeat-penalty <float>  Repetition penalty (default: 1.0, chat: 1.1)
@@ -465,7 +465,7 @@ VK_ICD_FILENAMES=/tmp/mesa-dzn/build/src/microsoft/vulkan/dzn_devenv_icd.x86_64.
 ./bitnet model.gguf --gpu --maxseq 4096 -p "Hello" -n 64
 ```
 
-**Note:** `--maxseq 4096` (or similar) is recommended on GPU to keep KV cache buffers within VRAM. Metal MoE inference auto-caps large model contexts to 4096 when `--maxseq` is omitted; pass `--maxseq N` to override. Other GPU paths still use the model's full context by default.
+**Note:** GPU inference auto-caps large model contexts to 4096 when `--maxseq` is omitted to keep KV cache buffers within device limits. Pass `--maxseq N` to override.
 
 The patch (`patches/mesa-dzn-wgpu-compat.patch`) makes these changes to Mesa's dzn driver:
 - Advertises `VK_EXT_robustness2`, `VK_EXT_image_robustness`, `VK_KHR_zero_initialize_workgroup_memory` (D3D12 provides the underlying guarantees)

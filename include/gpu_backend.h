@@ -34,7 +34,9 @@
 #define BN_GPU_SHADER_FUSED_GATEUP_SILU 24 // Fused gate+up matvec + SiLU activation (Q4_0)
 #define BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT 25 // SSM alpha/beta activation from stacked matvec
 #define BN_GPU_SHADER_Q4K_MATVEC_SPLIT 26 // Q4_K two-output matvec split
-#define BN_GPU_SHADER_COUNT             27
+#define BN_GPU_SHADER_Q8_MATVEC_SPLIT  27 // Q8_0 multi-output matvec split
+#define BN_GPU_SHADER_Q5K_MATVEC_SPLIT 28 // Q5_K multi-output matvec split
+#define BN_GPU_SHADER_COUNT             29
 
 // GPU-resident activation buffer indices
 #define BN_GPU_BUF_X           0
@@ -165,6 +167,8 @@ typedef struct {
 
 // Backend capability bits
 #define BN_GPU_CAP_FLASH_ATTN  (1u << 0)  // fused flash attention shader available
+#define BN_GPU_CAP_Q8_MATVEC_SPLIT (1u << 1) // stacked Q8_0 split matvec shader available
+#define BN_GPU_CAP_Q5K_MATVEC_SPLIT (1u << 2) // Q5_K packed split matvec shader available
 
 // Pre-compiled GPU op list for dense models (Phase 4: eliminates per-token malloc)
 typedef struct {

@@ -1,12 +1,6 @@
-// Q5_K TILED matvec — 5-bit k-quant, 256 elements per block, 176 bytes/block
-// Layout: d FP16 (bytes 0-1), dmin FP16 (bytes 2-3), scales[12] (bytes 4-15),
-//         qh[32] (bytes 16-47), qs[128] (bytes 48-175)
-//
-// Tiled: TILE_ROWS=32, 8 threads per row, async (no per-block barriers).
-// Dispatch: (ceil(rows / TILE_ROWS), n_tokens, 1)
+// Q5_K split matvec for packed QKV projection buffers.
 
 const TILE_ROWS: u32 = 32u;
-const WG_SIZE: u32 = 256u;
 const THREADS_PER_ROW: u32 = 8u;
 const ELEMS_PER_THREAD: u32 = 256u / THREADS_PER_ROW;
 const QK_K: u32 = 256u;
@@ -15,18 +9,20 @@ const BLOCK_BYTES: u32 = 176u;
 struct Uniforms {
     rows: u32,
     cols: u32,
-    n_tokens: u32,
-    extra: u32,
-    out_offset: u32,
-    _pad5: u32,
-    _pad6: u32,
-    _pad7: u32,
+    split1: u32,
+    split2: u32,
+    _pad4: u32,
+    off0: u32,
+    off1: u32,
+    off2: u32,
 }
 
 @group(0) @binding(0) var<storage, read> weights: array<u32>;
 @group(0) @binding(1) var<storage, read> x: array<f32>;
-@group(0) @binding(2) var<storage, read_write> out: array<f32>;
-@group(0) @binding(3) var<uniform> u: Uniforms;
+@group(0) @binding(2) var<storage, read_write> out0: array<f32>;
+@group(0) @binding(3) var<storage, read_write> out1: array<f32>;
+@group(0) @binding(4) var<storage, read_write> out2: array<f32>;
+@group(0) @binding(5) var<uniform> u: Uniforms;
 
 var<workgroup> reduce_buf: array<f32, 256>;
 
@@ -73,24 +69,15 @@ fn q5_value(qbyte: u32, hbyte: u32, bit: u32, is_high: bool) -> f32 {
     return f32(nibble | (hi << 4u));
 }
 
-fn byte_at(word: u32, idx: u32) -> u32 {
-    return (word >> (idx * 8u)) & 0xFFu;
-}
-
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
-    let tile_start = select(wid.x * TILE_ROWS, (wid.x + wid.y * u.extra) * TILE_ROWS, u.extra > 0u);
-    let token = select(wid.y, 0u, u.extra > 0u);
+    let tile_start = wid.x * TILE_ROWS;
     let tid = lid.x;
-
     let local_row = tid / THREADS_PER_ROW;
     let local_elem = tid % THREADS_PER_ROW;
     let global_row = tile_start + local_row;
-
-    let cols = u.cols;
-    let n_blocks = cols / QK_K;
-    let x_base = token * cols;
+    let n_blocks = u.cols / QK_K;
     let row_byte = global_row * n_blocks * BLOCK_BYTES;
     let my_start = local_elem * ELEMS_PER_THREAD;
     let group = my_start / 64u;
@@ -99,11 +86,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let q_off_base = group * 32u;
 
     var acc: f32 = 0.0;
-
     if (global_row < u.rows) {
         for (var bi = 0u; bi < n_blocks; bi++) {
             let base = row_byte + bi * BLOCK_BYTES;
-            let d    = fp16_to_f32(read_u16(base));
+            let d = fp16_to_f32(read_u16(base));
             let dmin = fp16_to_f32(read_u16(base + 2u));
             let scales_base = base + 4u;
             let qh_base = base + 16u;
@@ -114,64 +100,48 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
             let dm = dmin * f32(sm.y);
             let q_off = qs_base + q_off_base;
             let is_hi = is_high != 0u;
-            let xb = x_base + elem_base + my_start;
-            let qw0 = weights[(q_off + 0u) >> 2u];
-            let qw1 = weights[(q_off + 4u) >> 2u];
-            let qw2 = weights[(q_off + 8u) >> 2u];
-            let qw3 = weights[(q_off + 12u) >> 2u];
-            let qw4 = weights[(q_off + 16u) >> 2u];
-            let qw5 = weights[(q_off + 20u) >> 2u];
-            let qw6 = weights[(q_off + 24u) >> 2u];
-            let qw7 = weights[(q_off + 28u) >> 2u];
-            let hw0 = weights[(qh_base + 0u) >> 2u];
-            let hw1 = weights[(qh_base + 4u) >> 2u];
-            let hw2 = weights[(qh_base + 8u) >> 2u];
-            let hw3 = weights[(qh_base + 12u) >> 2u];
-            let hw4 = weights[(qh_base + 16u) >> 2u];
-            let hw5 = weights[(qh_base + 20u) >> 2u];
-            let hw6 = weights[(qh_base + 24u) >> 2u];
-            let hw7 = weights[(qh_base + 28u) >> 2u];
+            let xb = elem_base + my_start;
 
             let q0 = vec4<f32>(
-                q5_value(byte_at(qw0, 0u), byte_at(hw0, 0u), bit, is_hi),
-                q5_value(byte_at(qw0, 1u), byte_at(hw0, 1u), bit, is_hi),
-                q5_value(byte_at(qw0, 2u), byte_at(hw0, 2u), bit, is_hi),
-                q5_value(byte_at(qw0, 3u), byte_at(hw0, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 0u), read_u8(qh_base + 0u), bit, is_hi),
+                q5_value(read_u8(q_off + 1u), read_u8(qh_base + 1u), bit, is_hi),
+                q5_value(read_u8(q_off + 2u), read_u8(qh_base + 2u), bit, is_hi),
+                q5_value(read_u8(q_off + 3u), read_u8(qh_base + 3u), bit, is_hi));
             let q1 = vec4<f32>(
-                q5_value(byte_at(qw1, 0u), byte_at(hw1, 0u), bit, is_hi),
-                q5_value(byte_at(qw1, 1u), byte_at(hw1, 1u), bit, is_hi),
-                q5_value(byte_at(qw1, 2u), byte_at(hw1, 2u), bit, is_hi),
-                q5_value(byte_at(qw1, 3u), byte_at(hw1, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 4u), read_u8(qh_base + 4u), bit, is_hi),
+                q5_value(read_u8(q_off + 5u), read_u8(qh_base + 5u), bit, is_hi),
+                q5_value(read_u8(q_off + 6u), read_u8(qh_base + 6u), bit, is_hi),
+                q5_value(read_u8(q_off + 7u), read_u8(qh_base + 7u), bit, is_hi));
             let q2 = vec4<f32>(
-                q5_value(byte_at(qw2, 0u), byte_at(hw2, 0u), bit, is_hi),
-                q5_value(byte_at(qw2, 1u), byte_at(hw2, 1u), bit, is_hi),
-                q5_value(byte_at(qw2, 2u), byte_at(hw2, 2u), bit, is_hi),
-                q5_value(byte_at(qw2, 3u), byte_at(hw2, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 8u), read_u8(qh_base + 8u), bit, is_hi),
+                q5_value(read_u8(q_off + 9u), read_u8(qh_base + 9u), bit, is_hi),
+                q5_value(read_u8(q_off + 10u), read_u8(qh_base + 10u), bit, is_hi),
+                q5_value(read_u8(q_off + 11u), read_u8(qh_base + 11u), bit, is_hi));
             let q3 = vec4<f32>(
-                q5_value(byte_at(qw3, 0u), byte_at(hw3, 0u), bit, is_hi),
-                q5_value(byte_at(qw3, 1u), byte_at(hw3, 1u), bit, is_hi),
-                q5_value(byte_at(qw3, 2u), byte_at(hw3, 2u), bit, is_hi),
-                q5_value(byte_at(qw3, 3u), byte_at(hw3, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 12u), read_u8(qh_base + 12u), bit, is_hi),
+                q5_value(read_u8(q_off + 13u), read_u8(qh_base + 13u), bit, is_hi),
+                q5_value(read_u8(q_off + 14u), read_u8(qh_base + 14u), bit, is_hi),
+                q5_value(read_u8(q_off + 15u), read_u8(qh_base + 15u), bit, is_hi));
             let q4 = vec4<f32>(
-                q5_value(byte_at(qw4, 0u), byte_at(hw4, 0u), bit, is_hi),
-                q5_value(byte_at(qw4, 1u), byte_at(hw4, 1u), bit, is_hi),
-                q5_value(byte_at(qw4, 2u), byte_at(hw4, 2u), bit, is_hi),
-                q5_value(byte_at(qw4, 3u), byte_at(hw4, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 16u), read_u8(qh_base + 16u), bit, is_hi),
+                q5_value(read_u8(q_off + 17u), read_u8(qh_base + 17u), bit, is_hi),
+                q5_value(read_u8(q_off + 18u), read_u8(qh_base + 18u), bit, is_hi),
+                q5_value(read_u8(q_off + 19u), read_u8(qh_base + 19u), bit, is_hi));
             let q5 = vec4<f32>(
-                q5_value(byte_at(qw5, 0u), byte_at(hw5, 0u), bit, is_hi),
-                q5_value(byte_at(qw5, 1u), byte_at(hw5, 1u), bit, is_hi),
-                q5_value(byte_at(qw5, 2u), byte_at(hw5, 2u), bit, is_hi),
-                q5_value(byte_at(qw5, 3u), byte_at(hw5, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 20u), read_u8(qh_base + 20u), bit, is_hi),
+                q5_value(read_u8(q_off + 21u), read_u8(qh_base + 21u), bit, is_hi),
+                q5_value(read_u8(q_off + 22u), read_u8(qh_base + 22u), bit, is_hi),
+                q5_value(read_u8(q_off + 23u), read_u8(qh_base + 23u), bit, is_hi));
             let q6 = vec4<f32>(
-                q5_value(byte_at(qw6, 0u), byte_at(hw6, 0u), bit, is_hi),
-                q5_value(byte_at(qw6, 1u), byte_at(hw6, 1u), bit, is_hi),
-                q5_value(byte_at(qw6, 2u), byte_at(hw6, 2u), bit, is_hi),
-                q5_value(byte_at(qw6, 3u), byte_at(hw6, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 24u), read_u8(qh_base + 24u), bit, is_hi),
+                q5_value(read_u8(q_off + 25u), read_u8(qh_base + 25u), bit, is_hi),
+                q5_value(read_u8(q_off + 26u), read_u8(qh_base + 26u), bit, is_hi),
+                q5_value(read_u8(q_off + 27u), read_u8(qh_base + 27u), bit, is_hi));
             let q7 = vec4<f32>(
-                q5_value(byte_at(qw7, 0u), byte_at(hw7, 0u), bit, is_hi),
-                q5_value(byte_at(qw7, 1u), byte_at(hw7, 1u), bit, is_hi),
-                q5_value(byte_at(qw7, 2u), byte_at(hw7, 2u), bit, is_hi),
-                q5_value(byte_at(qw7, 3u), byte_at(hw7, 3u), bit, is_hi));
+                q5_value(read_u8(q_off + 28u), read_u8(qh_base + 28u), bit, is_hi),
+                q5_value(read_u8(q_off + 29u), read_u8(qh_base + 29u), bit, is_hi),
+                q5_value(read_u8(q_off + 30u), read_u8(qh_base + 30u), bit, is_hi),
+                q5_value(read_u8(q_off + 31u), read_u8(qh_base + 31u), bit, is_hi));
 
             let x0 = vec4<f32>(x[xb + 0u], x[xb + 1u], x[xb + 2u], x[xb + 3u]);
             let x1 = vec4<f32>(x[xb + 4u], x[xb + 5u], x[xb + 6u], x[xb + 7u]);
@@ -209,6 +179,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     workgroupBarrier();
 
     if (local_elem == 0u && global_row < u.rows) {
-        out[u.out_offset + token * u.rows + global_row] = reduce_buf[row_base];
+        if (u.split2 > 0u && global_row >= u.split2) {
+            out2[u.off2 + global_row - u.split2] = reduce_buf[row_base];
+        } else if (global_row >= u.split1) {
+            out1[u.off1 + global_row - u.split1] = reduce_buf[row_base];
+        } else {
+            out0[u.off0 + global_row] = reduce_buf[row_base];
+        }
     }
 }

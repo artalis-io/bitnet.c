@@ -150,6 +150,8 @@ typedef struct {
     void *gateup_stacked_gpu;
     // Stacked SSM alpha+beta weight buffer for GPU (NULL = use individual alpha/beta)
     void *ssm_ab_stacked_gpu;
+    // Stacked SSM qkv+z weight buffer for GPU (NULL = use individual qkv/z)
+    void *ssm_qkvz_stacked_gpu;
     // GPU handles for Q/K norms and sub-norms (NULL = not present)
     void *q_norm_gpu;
     void *k_norm_gpu;

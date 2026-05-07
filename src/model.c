@@ -1407,6 +1407,30 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
+        // Stacked SSM QKV+Z projection. These two large projections share
+        // the same input in SSM layers, so combining them saves a dispatch.
+        if (lw->wqkv.data && lw->wz.data &&
+            lw->wqkv.type != BN_GGUF_TENSOR_I2_S &&
+            lw->wqkv.type == lw->wz.type &&
+            lw->wqkv.cols == lw->wz.cols) {
+
+            int total_rows = lw->wqkv.rows + lw->wz.rows;
+            size_t qkv_sz = bn_qweight_data_size(&lw->wqkv);
+            size_t z_sz = bn_qweight_data_size(&lw->wz);
+            size_t combined_sz = qkv_sz + z_sz;
+
+            uint8_t *combined = (uint8_t *)malloc(combined_sz);
+            if (combined) {
+                memcpy(combined, lw->wqkv.data, qkv_sz);
+                memcpy(combined + qkv_sz, lw->wz.data, z_sz);
+
+                lw->ssm_qkvz_stacked_gpu = gpu->buffer_create(
+                    gpu->ctx, combined, combined_sz,
+                    lw->wqkv.type, total_rows, lw->wqkv.cols);
+                free(combined);
+            }
+        }
+
         // Stacked SSM alpha+beta projection.  These are tiny per-layer
         // matvecs, so combining them saves one dispatch per SSM layer.
         if (lw->ssm_alpha.data && lw->ssm_beta.data &&
@@ -1528,6 +1552,10 @@ void bn_model_release_gpu(BnModel *model) {
             if (lw->ssm_ab_stacked_gpu) {
                 gpu->buffer_destroy(gpu->ctx, lw->ssm_ab_stacked_gpu);
                 lw->ssm_ab_stacked_gpu = NULL;
+            }
+            if (lw->ssm_qkvz_stacked_gpu) {
+                gpu->buffer_destroy(gpu->ctx, lw->ssm_qkvz_stacked_gpu);
+                lw->ssm_qkvz_stacked_gpu = NULL;
             }
         }
     }

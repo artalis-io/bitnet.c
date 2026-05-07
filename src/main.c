@@ -62,7 +62,7 @@ typedef struct {
     int gpu_cache_mb;   // GPU expert buffer cache in MB (default 4096, 0 to disable)
 } CLIArgs;
 
-#define BN_METAL_MOE_DEFAULT_MAXSEQ 4096
+#define BN_GPU_DEFAULT_MAXSEQ 4096
 
 static void print_usage(const char *prog) {
     fprintf(stderr, "Usage: %s <model.gguf> [options]\n", prog);
@@ -72,7 +72,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --temp <float>  Temperature (default: 0.0 = greedy)\n");
     fprintf(stderr, "  --topp <float>  Top-p sampling (default: 0.9)\n");
     fprintf(stderr, "  --seed <int>    Random seed (default: 42)\n");
-    fprintf(stderr, "  --maxseq <int>  Max sequence length (default: model max; Metal MoE auto-caps large contexts to 4096)\n");
+    fprintf(stderr, "  --maxseq <int>  Max sequence length (default: model max; GPU auto-caps large contexts to 4096)\n");
     fprintf(stderr, "  --flash         Use flash attention (online softmax)\n");
     fprintf(stderr, "  --chat          Interactive chat REPL mode\n");
     fprintf(stderr, "  --repeat-penalty <float>  Repetition penalty (default: 1.1)\n");
@@ -328,12 +328,14 @@ int main(int argc, char **argv) {
         SH_LOG_INFO("GGUF parsed", "version", ver, "tensors", nt, "kv", nkv);
     }
 
-    if (args.metal && !args.max_seq_len_set) {
+    if ((args.gpu || args.metal) && !args.max_seq_len_set) {
         int model_seq_len = gguf_get_arch_u32(gf, "context_length");
         int n_experts = gguf_get_arch_u32(gf, "expert_count");
-        if (n_experts > 0 && model_seq_len > BN_METAL_MOE_DEFAULT_MAXSEQ) {
-            args.max_seq_len = BN_METAL_MOE_DEFAULT_MAXSEQ;
-            SH_LOG_WARN("Auto-capping Metal MoE sequence length",
+        if ((args.gpu || (args.metal && n_experts > 0)) &&
+            model_seq_len > BN_GPU_DEFAULT_MAXSEQ) {
+            args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;
+            SH_LOG_WARN(args.gpu ? "Auto-capping WebGPU sequence length" :
+                                   "Auto-capping Metal MoE sequence length",
                         "seq", "4096", "override", "--maxseq");
         }
     }

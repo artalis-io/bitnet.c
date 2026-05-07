@@ -58,6 +58,12 @@ fn read_u16(offset: u32) -> u32 {
     return (word >> shift) & 0xFFFFu;
 }
 
+fn q6_value(ql: u32, qh: u32, qh_shift: u32, ql_high: bool) -> f32 {
+    let qlo = select(ql & 0xFu, ql >> 4u, ql_high);
+    let q6 = i32(qlo | (((qh >> qh_shift) & 3u) << 4u)) - 32;
+    return f32(q6);
+}
+
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -73,6 +79,30 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let n_blocks = cols / QK_K;
     let x_base = token * cols;
     let row_byte = global_row * n_blocks * BLOCK_BYTES;
+    let my_start = local_elem * ELEMS_PER_THREAD;
+    let half_idx = my_start / 128u;
+    let quarter = (my_start % 128u) / 32u;
+    let ql_off = half_idx * 64u;
+    let qh_off = half_idx * 32u;
+    let sc_off = half_idx * 8u;
+    var s_base: u32 = 0u;
+    var qh_shift: u32 = 0u;
+    var ql_add: u32 = 0u;
+    var ql_high: bool = false;
+    switch quarter {
+        case 0u: {
+            s_base = 0u; qh_shift = 0u; ql_add = 0u; ql_high = false;
+        }
+        case 1u: {
+            s_base = 2u; qh_shift = 2u; ql_add = 32u; ql_high = false;
+        }
+        case 2u: {
+            s_base = 4u; qh_shift = 4u; ql_add = 0u; ql_high = true;
+        }
+        default: {
+            s_base = 6u; qh_shift = 6u; ql_add = 32u; ql_high = true;
+        }
+    }
 
     var acc: f32 = 0.0;
 
@@ -84,52 +114,65 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
             let sc_base = base + 192u;
             let d = fp16_to_f32(read_u16(base + 208u));
             let elem_base = bi * QK_K;
+            let qlp = ql_base + ql_off + ql_add;
+            let qhp = qh_base + qh_off;
+            let scp = sc_base + sc_off;
+            let scale0 = d * f32(read_i8(scp + s_base));
+            let scale1 = d * f32(read_i8(scp + s_base + 1u));
+            let xb = x_base + elem_base + my_start;
 
-            let my_start = local_elem * ELEMS_PER_THREAD;
+            let q0 = vec4<f32>(
+                q6_value(read_u8(qlp + 0u), read_u8(qhp + 0u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 1u), read_u8(qhp + 1u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 2u), read_u8(qhp + 2u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 3u), read_u8(qhp + 3u), qh_shift, ql_high));
+            let q1 = vec4<f32>(
+                q6_value(read_u8(qlp + 4u), read_u8(qhp + 4u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 5u), read_u8(qhp + 5u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 6u), read_u8(qhp + 6u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 7u), read_u8(qhp + 7u), qh_shift, ql_high));
+            let q2 = vec4<f32>(
+                q6_value(read_u8(qlp + 8u), read_u8(qhp + 8u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 9u), read_u8(qhp + 9u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 10u), read_u8(qhp + 10u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 11u), read_u8(qhp + 11u), qh_shift, ql_high));
+            let q3 = vec4<f32>(
+                q6_value(read_u8(qlp + 12u), read_u8(qhp + 12u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 13u), read_u8(qhp + 13u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 14u), read_u8(qhp + 14u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 15u), read_u8(qhp + 15u), qh_shift, ql_high));
+            let q4 = vec4<f32>(
+                q6_value(read_u8(qlp + 16u), read_u8(qhp + 16u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 17u), read_u8(qhp + 17u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 18u), read_u8(qhp + 18u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 19u), read_u8(qhp + 19u), qh_shift, ql_high));
+            let q5 = vec4<f32>(
+                q6_value(read_u8(qlp + 20u), read_u8(qhp + 20u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 21u), read_u8(qhp + 21u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 22u), read_u8(qhp + 22u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 23u), read_u8(qhp + 23u), qh_shift, ql_high));
+            let q6 = vec4<f32>(
+                q6_value(read_u8(qlp + 24u), read_u8(qhp + 24u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 25u), read_u8(qhp + 25u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 26u), read_u8(qhp + 26u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 27u), read_u8(qhp + 27u), qh_shift, ql_high));
+            let q7 = vec4<f32>(
+                q6_value(read_u8(qlp + 28u), read_u8(qhp + 28u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 29u), read_u8(qhp + 29u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 30u), read_u8(qhp + 30u), qh_shift, ql_high),
+                q6_value(read_u8(qlp + 31u), read_u8(qhp + 31u), qh_shift, ql_high));
 
-            for (var i = 0u; i < ELEMS_PER_THREAD; i++) {
-                let elem = my_start + i;
-                // 256 elements in 2 halves of 128. Each half: 4 sub-groups of 32.
-                // Element mapping: half*128 + subgroup -> maps to ql/qh/scale
-                let half = elem / 128u;
-                let in_half = elem % 128u;
-                // Q6_K: within each 128-element half, elements map to (l, l+32, l+64, l+96)
-                // where l = in_half % 32
-                let quarter = in_half / 32u;   // 0..3
-                let l = in_half % 32u;
+            let x0 = vec4<f32>(x[xb + 0u], x[xb + 1u], x[xb + 2u], x[xb + 3u]);
+            let x1 = vec4<f32>(x[xb + 4u], x[xb + 5u], x[xb + 6u], x[xb + 7u]);
+            let x2 = vec4<f32>(x[xb + 8u], x[xb + 9u], x[xb + 10u], x[xb + 11u]);
+            let x3 = vec4<f32>(x[xb + 12u], x[xb + 13u], x[xb + 14u], x[xb + 15u]);
+            let x4 = vec4<f32>(x[xb + 16u], x[xb + 17u], x[xb + 18u], x[xb + 19u]);
+            let x5 = vec4<f32>(x[xb + 20u], x[xb + 21u], x[xb + 22u], x[xb + 23u]);
+            let x6 = vec4<f32>(x[xb + 24u], x[xb + 25u], x[xb + 26u], x[xb + 27u]);
+            let x7 = vec4<f32>(x[xb + 28u], x[xb + 29u], x[xb + 30u], x[xb + 31u]);
 
-                let ql_off = ql_base + half * 64u;
-                let qh_off = qh_base + half * 32u;
-                let sc_off = sc_base + half * 8u;
-
-                let ql0 = read_u8(ql_off + l);
-                let ql1 = read_u8(ql_off + l + 32u);
-                let qh_val = read_u8(qh_off + l);
-
-                var q6: i32;
-                var s_idx: u32;
-                switch quarter {
-                    case 0u: {
-                        q6 = i32((ql0 & 0xFu) | (((qh_val >> 0u) & 3u) << 4u)) - 32;
-                        s_idx = l / 16u;
-                    }
-                    case 1u: {
-                        q6 = i32((ql1 & 0xFu) | (((qh_val >> 2u) & 3u) << 4u)) - 32;
-                        s_idx = l / 16u + 2u;
-                    }
-                    case 2u: {
-                        q6 = i32((ql0 >> 4u) | (((qh_val >> 4u) & 3u) << 4u)) - 32;
-                        s_idx = l / 16u + 4u;
-                    }
-                    default: { // case 3u
-                        q6 = i32((ql1 >> 4u) | (((qh_val >> 6u) & 3u) << 4u)) - 32;
-                        s_idx = l / 16u + 6u;
-                    }
-                }
-
-                let sc = f32(read_i8(sc_off + s_idx));
-                acc += d * sc * f32(q6) * x[x_base + elem_base + elem];
-            }
+            acc += scale0 * (dot(q0, x0) + dot(q1, x1) + dot(q2, x2) + dot(q3, x3)) +
+                   scale1 * (dot(q4, x4) + dot(q5, x5) + dot(q6, x6) + dot(q7, x7));
         }
     }
 

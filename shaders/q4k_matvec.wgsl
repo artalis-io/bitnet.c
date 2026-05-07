@@ -66,6 +66,14 @@ fn get_scale_min(j: u32, scales_base: u32) -> vec2<u32> {
     return vec2<u32>(sc, m);
 }
 
+fn q4_value(qbyte: u32, is_high: bool) -> f32 {
+    return select(f32(qbyte >> 4u), f32(qbyte & 0xFu), !is_high);
+}
+
+fn byte_at(word: u32, idx: u32) -> u32 {
+    return (word >> (idx * 8u)) & 0xFFu;
+}
+
 @compute @workgroup_size(256)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -93,45 +101,84 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
             let qs_base = base + 16u;
             let elem_base = bi * QK_K;
 
-            // Each thread handles one 32-element sub-block.
-            // Integer accumulation: quantize x to int8, exact integer dot product,
-            // single float conversion per sub-block (matches CPU NEON SDOT precision).
             let my_start = local_elem * ELEMS_PER_THREAD;
             let group = my_start / 64u;
             let is_high = (my_start % 64u) / 32u;
             let sub = group * 2u + is_high;
             let sm = get_scale_min(sub, scales_base);
             let q_off_base = qs_base + group * 32u;
+            let is_hi = is_high != 0u;
+            let xb = x_base + elem_base + my_start;
+            let qw0 = weights[(q_off_base + 0u) >> 2u];
+            let qw1 = weights[(q_off_base + 4u) >> 2u];
+            let qw2 = weights[(q_off_base + 8u) >> 2u];
+            let qw3 = weights[(q_off_base + 12u) >> 2u];
+            let qw4 = weights[(q_off_base + 16u) >> 2u];
+            let qw5 = weights[(q_off_base + 20u) >> 2u];
+            let qw6 = weights[(q_off_base + 24u) >> 2u];
+            let qw7 = weights[(q_off_base + 28u) >> 2u];
 
-            // Find amax of 32 x values for quantization
-            var amax: f32 = 0.0;
-            for (var i = 0u; i < 32u; i++) {
-                amax = max(amax, abs(x[x_base + elem_base + my_start + i]));
-            }
+            let q0 = vec4<f32>(
+                q4_value(byte_at(qw0, 0u), is_hi),
+                q4_value(byte_at(qw0, 1u), is_hi),
+                q4_value(byte_at(qw0, 2u), is_hi),
+                q4_value(byte_at(qw0, 3u), is_hi));
+            let q1 = vec4<f32>(
+                q4_value(byte_at(qw1, 0u), is_hi),
+                q4_value(byte_at(qw1, 1u), is_hi),
+                q4_value(byte_at(qw1, 2u), is_hi),
+                q4_value(byte_at(qw1, 3u), is_hi));
+            let q2 = vec4<f32>(
+                q4_value(byte_at(qw2, 0u), is_hi),
+                q4_value(byte_at(qw2, 1u), is_hi),
+                q4_value(byte_at(qw2, 2u), is_hi),
+                q4_value(byte_at(qw2, 3u), is_hi));
+            let q3 = vec4<f32>(
+                q4_value(byte_at(qw3, 0u), is_hi),
+                q4_value(byte_at(qw3, 1u), is_hi),
+                q4_value(byte_at(qw3, 2u), is_hi),
+                q4_value(byte_at(qw3, 3u), is_hi));
+            let q4 = vec4<f32>(
+                q4_value(byte_at(qw4, 0u), is_hi),
+                q4_value(byte_at(qw4, 1u), is_hi),
+                q4_value(byte_at(qw4, 2u), is_hi),
+                q4_value(byte_at(qw4, 3u), is_hi));
+            let q5 = vec4<f32>(
+                q4_value(byte_at(qw5, 0u), is_hi),
+                q4_value(byte_at(qw5, 1u), is_hi),
+                q4_value(byte_at(qw5, 2u), is_hi),
+                q4_value(byte_at(qw5, 3u), is_hi));
+            let q6 = vec4<f32>(
+                q4_value(byte_at(qw6, 0u), is_hi),
+                q4_value(byte_at(qw6, 1u), is_hi),
+                q4_value(byte_at(qw6, 2u), is_hi),
+                q4_value(byte_at(qw6, 3u), is_hi));
+            let q7 = vec4<f32>(
+                q4_value(byte_at(qw7, 0u), is_hi),
+                q4_value(byte_at(qw7, 1u), is_hi),
+                q4_value(byte_at(qw7, 2u), is_hi),
+                q4_value(byte_at(qw7, 3u), is_hi));
 
-            if (amax > 0.0) {
-                let x_scale = amax / 127.0;
-                let inv_scale = 127.0 / amax;
+            let x0 = vec4<f32>(x[xb + 0u], x[xb + 1u], x[xb + 2u], x[xb + 3u]);
+            let x1 = vec4<f32>(x[xb + 4u], x[xb + 5u], x[xb + 6u], x[xb + 7u]);
+            let x2 = vec4<f32>(x[xb + 8u], x[xb + 9u], x[xb + 10u], x[xb + 11u]);
+            let x3 = vec4<f32>(x[xb + 12u], x[xb + 13u], x[xb + 14u], x[xb + 15u]);
+            let x4 = vec4<f32>(x[xb + 16u], x[xb + 17u], x[xb + 18u], x[xb + 19u]);
+            let x5 = vec4<f32>(x[xb + 20u], x[xb + 21u], x[xb + 22u], x[xb + 23u]);
+            let x6 = vec4<f32>(x[xb + 24u], x[xb + 25u], x[xb + 26u], x[xb + 27u]);
+            let x7 = vec4<f32>(x[xb + 28u], x[xb + 29u], x[xb + 30u], x[xb + 31u]);
 
-                // Integer dot product: sum(qval * xq) and sum(xq) for bsums correction
-                var sumi: i32 = 0;
-                var bsumi: i32 = 0;
-                for (var i = 0u; i < 32u; i++) {
-                    let xq = i32(round(x[x_base + elem_base + my_start + i] * inv_scale));
-                    let qbyte = read_u8(q_off_base + i);
-                    var qval: i32;
-                    if (is_high == 0u) {
-                        qval = i32(qbyte & 0xFu);
-                    } else {
-                        qval = i32(qbyte >> 4u);
-                    }
-                    sumi += qval * xq;  // exact integer arithmetic
-                    bsumi += xq;
-                }
-
-                // Single float conversion per sub-block
-                acc += x_scale * (d * f32(sm.x) * f32(sumi) - dmin * f32(sm.y) * f32(bsumi));
-            }
+            let sum_qx = dot(q0, x0) + dot(q1, x1) + dot(q2, x2) + dot(q3, x3) +
+                         dot(q4, x4) + dot(q5, x5) + dot(q6, x6) + dot(q7, x7);
+            let sum_x = x0.x + x0.y + x0.z + x0.w +
+                        x1.x + x1.y + x1.z + x1.w +
+                        x2.x + x2.y + x2.z + x2.w +
+                        x3.x + x3.y + x3.z + x3.w +
+                        x4.x + x4.y + x4.z + x4.w +
+                        x5.x + x5.y + x5.z + x5.w +
+                        x6.x + x6.y + x6.z + x6.w +
+                        x7.x + x7.y + x7.z + x7.w;
+            acc += d * f32(sm.x) * sum_qx - dmin * f32(sm.y) * sum_x;
         }
     }
 

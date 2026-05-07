@@ -1366,8 +1366,11 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_DEINTERLEAVE_Q,   "deinterleave_q"   },
         { BN_GPU_SHADER_SIGMOID_GATE,     "sigmoid_gate"     },
         { BN_GPU_SHADER_COPY,             "buf_copy"         },
+        { BN_GPU_SHADER_ROPE_QK,          "rope_qk"          },
         { BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT, "ssm_alpha_beta_split" },
         { BN_GPU_SHADER_Q4K_MATVEC_SPLIT, "q4k_matvec_split" },
+        { BN_GPU_SHADER_Q8_MATVEC_SPLIT,  "q8_matvec_split"  },
+        { BN_GPU_SHADER_Q5K_MATVEC_SPLIT, "q5k_matvec_split" },
     };
     int n_fwd = (int)(sizeof(fwd_shaders) / sizeof(fwd_shaders[0]));
     int compiled = 0;
@@ -1502,6 +1505,11 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     for (int i = 0; i < n_ops; i++) {
         memcpy(uni_data + (size_t)i * uni_stride, ops[i].p,
                sizeof(uint32_t) * BN_GPU_OP_PARAMS);
+        if (ops[i].shader == BN_GPU_SHADER_MATVEC &&
+            ops[i].type != BN_GGUF_TENSOR_Q4_0) {
+            uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
+            p[4] = p[5];
+        }
         /* Fused bias: inject bias_offset from weight buffer metadata */
         if (ops[i].shader == BN_GPU_SHADER_MATVEC && ops[i].W_buf) {
             BnWgpuBuf *wbuf = (BnWgpuBuf *)ops[i].W_buf;
@@ -1530,7 +1538,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     #define BUF_BIT(idx) (1u << (idx))
 
     WGPUComputePassEncoder cur_pass = NULL;
-    uint32_t pass_reads = 0, pass_writes = 0;
     int n_passes = 0;
 
     for (int i = 0; i < n_ops; i++) {
@@ -1550,7 +1557,16 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             pipeline = ctx->fwd_pipelines[op->shader];
             layout = ctx->fwd_layouts[op->shader];
         }
-        if (!pipeline || !layout) continue;
+        if (!pipeline || !layout) {
+            fprintf(stderr, "[bn:gpu:wgpu] missing pipeline for shader %d\n",
+                    op->shader);
+            if (cur_pass) {
+                wgpuComputePassEncoderEnd(cur_pass);
+                wgpuComputePassEncoderRelease(cur_pass);
+            }
+            wgpuCommandEncoderRelease(encoder);
+            return -1;
+        }
 
         /* Compute this op's read/write buffer masks */
         uint32_t op_reads = 0, op_writes = 0;
@@ -1566,6 +1582,11 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         case BN_GPU_SHADER_ROPE:
             op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_ROPE_FREQ);
             op_writes = BUF_BIT(op->buf_in);  /* in-place */
+            break;
+        case BN_GPU_SHADER_ROPE_QK:
+            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
+                     | BUF_BIT(BN_GPU_BUF_ROPE_FREQ);
+            op_writes = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
             break;
         case BN_GPU_SHADER_GQA_SCORES:
             op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_KEY_CACHE);
@@ -1617,8 +1638,12 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             op_writes = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
             break;
         case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
             op_reads = BUF_BIT(op->buf_in);
             op_writes = BUF_BIT(op->buf_out) | BUF_BIT(op->buf_aux);
+            if (op->rows >= 0 && op->rows < BN_GPU_BUF_COUNT)
+                op_writes |= BUF_BIT(op->rows);
             break;
         case BN_GPU_SHADER_SSM_DELTA:
             op_reads = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
@@ -1649,15 +1674,14 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         default: continue;
         }
 
-        /* Check for conflicts with current pass */
-        int conflict = (op_reads & pass_writes) || (op_writes & pass_reads)
-                     || (op_writes & pass_writes);
+        /* Dispatches within a WebGPU compute pass are ordered, so storage
+         * hazards between dispatches do not require ending the pass. */
+        int conflict = 0;
 
         if (conflict && cur_pass) {
             wgpuComputePassEncoderEnd(cur_pass);
             wgpuComputePassEncoderRelease(cur_pass);
             cur_pass = NULL;
-            pass_reads = pass_writes = 0;
             n_passes++;
         }
 
@@ -1667,8 +1691,8 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             cur_pass = wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
         }
 
-        pass_reads |= op_reads;
-        pass_writes |= op_writes;
+        (void)op_reads;
+        (void)op_writes;
 
         /* Build bind group entries per shader type */
         WGPUBindGroupEntry entries[8];
@@ -1724,6 +1748,22 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .binding = 2, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
             n_entries = 3;
+            break;
+        }
+        case BN_GPU_SHADER_ROPE_QK: {
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_aux],
+                .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[BN_GPU_BUF_ROPE_FREQ],
+                .offset = 0, .size = ctx->act_sizes[BN_GPU_BUF_ROPE_FREQ]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 4;
             break;
         }
         case BN_GPU_SHADER_GQA_SCORES: {
@@ -1955,6 +1995,33 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             n_entries = 5;
             break;
         }
+        case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q5K_MATVEC_SPLIT: {
+            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+            if (!wbuf) continue;
+            int out2_idx = (op->rows >= 0 && op->rows < BN_GPU_BUF_COUNT)
+                         ? op->rows : op->buf_aux;
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = wbuf->buf,
+                .offset = wbuf->offset, .size = wbuf->size};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[op->buf_out],
+                .offset = 0, .size = ctx->act_sizes[op->buf_out]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->act_bufs[op->buf_aux],
+                .offset = 0, .size = ctx->act_sizes[op->buf_aux]};
+            entries[4] = (WGPUBindGroupEntry){
+                .binding = 4, .buffer = ctx->act_bufs[out2_idx],
+                .offset = 0, .size = ctx->act_sizes[out2_idx]};
+            entries[5] = (WGPUBindGroupEntry){
+                .binding = 5, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 6;
+            break;
+        }
         case BN_GPU_SHADER_SSM_DELTA: {
             /* state(rw), out(rw), q(ro), k(ro), v(ro), alpha(ro), beta(ro), uniforms */
             int v_buf = op->p[7] ? op->buf_in : BN_GPU_BUF_SSM_V;
@@ -2086,7 +2153,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         uint32_t wg_x = 1, wg_y = 1;
         switch (op->shader) {
         case BN_GPU_SHADER_MATVEC: {
-            /* Tiled dispatch: all types use TILE_ROWS=32 */
+            /* Tiled dispatch: all matvec shaders use TILE_ROWS=32. */
             if (op->p[3] > 0) {
                 /* Large-vocab tiling: extra = wg_x per slice, rows split across Y */
                 uint32_t tiled_rows = ((uint32_t)op->rows + 31) / 32;
@@ -2103,6 +2170,11 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             wg_x = 1;  /* single workgroup */
             break;
         case BN_GPU_SHADER_ROPE:
+            wg_x = op->p[0];  /* n_heads */
+            break;
+        case BN_GPU_SHADER_ROPE_QK:
+            wg_x = op->p[0] + op->p[4];  /* q heads + kv heads */
+            break;
         case BN_GPU_SHADER_GQA_SCORES:
         case BN_GPU_SHADER_SOFTMAX:
         case BN_GPU_SHADER_GQA_COMBINE:
@@ -2148,7 +2220,11 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             wg_x = (op->p[2] + 255) / 256;
             break;
         case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
-            wg_x = (op->p[0] + 31) / 32;
+        case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
+            wg_x = ((op->shader == BN_GPU_SHADER_Q4K_MATVEC_SPLIT &&
+                     op->p[3] != 0) ? op->p[2] : op->p[0]) + 31;
+            wg_x /= 32;
             break;
         }
 
@@ -2222,7 +2298,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     /* GPU profiling: set BN_GPU_PROFILE=1 to see per-frame timing */
     if (ctx->gpu_profile < 0) {
         const char *env = getenv("BN_GPU_PROFILE");
-        ctx->gpu_profile = (env && env[0] == '1') ? 1 : 0;
+        ctx->gpu_profile = env ? atoi(env) : 0;
     }
     if (ctx->gpu_profile && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
         fprintf(stderr, "[gpu:profile] frame=%d ops=%d passes=%d | "
@@ -2233,6 +2309,59 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 t3_gpu - t2_encode,
                 t4_readback - t3_gpu,
                 t4_readback - t0_all);
+        if (ctx->gpu_profile >= 2) {
+            int counts[BN_GPU_SHADER_COUNT] = {0};
+            int matvec_types[64] = {0};
+            struct {
+                int type;
+                uint32_t rows;
+                uint32_t cols;
+                int count;
+            } shapes[64] = {0};
+            int n_shapes = 0;
+            for (int i = 0; i < n_ops; i++) {
+                if (ops[i].shader >= 0 && ops[i].shader < BN_GPU_SHADER_COUNT)
+                    counts[ops[i].shader]++;
+                if (ops[i].shader == BN_GPU_SHADER_MATVEC &&
+                    ops[i].type >= 0 && ops[i].type < 64) {
+                    matvec_types[ops[i].type]++;
+                    int found = -1;
+                    for (int j = 0; j < n_shapes; j++) {
+                        if (shapes[j].type == ops[i].type &&
+                            shapes[j].rows == ops[i].p[0] &&
+                            shapes[j].cols == ops[i].p[1]) {
+                            found = j;
+                            break;
+                        }
+                    }
+                    if (found >= 0) {
+                        shapes[found].count++;
+                    } else if (n_shapes < (int)(sizeof(shapes) / sizeof(shapes[0]))) {
+                        shapes[n_shapes].type = ops[i].type;
+                        shapes[n_shapes].rows = ops[i].p[0];
+                        shapes[n_shapes].cols = ops[i].p[1];
+                        shapes[n_shapes].count = 1;
+                        n_shapes++;
+                    }
+                }
+            }
+            fprintf(stderr, "[gpu:profile] shaders");
+            for (int i = 0; i < BN_GPU_SHADER_COUNT; i++) {
+                if (counts[i]) fprintf(stderr, " %d:%d", i, counts[i]);
+            }
+            fprintf(stderr, "\n");
+            fprintf(stderr, "[gpu:profile] matvec_types");
+            for (int i = 0; i < 64; i++) {
+                if (matvec_types[i]) fprintf(stderr, " %d:%d", i, matvec_types[i]);
+            }
+            fprintf(stderr, "\n");
+            fprintf(stderr, "[gpu:profile] matvec_shapes");
+            for (int i = 0; i < n_shapes; i++) {
+                fprintf(stderr, " t%d:%ux%u=%d", shapes[i].type,
+                        shapes[i].rows, shapes[i].cols, shapes[i].count);
+            }
+            fprintf(stderr, "\n");
+        }
     }
     ctx->gpu_frame++;
 
@@ -2379,6 +2508,8 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->write_activation  = wgpu_write_activation;
     gpu->read_activation   = wgpu_read_activation;
     gpu->ctx               = ctx;
+    gpu->caps              = BN_GPU_CAP_Q8_MATVEC_SPLIT |
+                             BN_GPU_CAP_Q5K_MATVEC_SPLIT;
 
     return gpu;
 }
