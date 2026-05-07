@@ -482,6 +482,48 @@ typedef struct {
 
 static void moe_router_range(void *ctx, int start, int end) {
     BnRouterCtx *c = (BnRouterCtx *)ctx;
+#if defined(__AVX2__)
+    int avx2_e = start;
+    for (; avx2_e + 3 < end; avx2_e += 4) {
+        const float *row0 = c->router_w + (size_t)(avx2_e + 0) * c->dim;
+        const float *row1 = c->router_w + (size_t)(avx2_e + 1) * c->dim;
+        const float *row2 = c->router_w + (size_t)(avx2_e + 2) * c->dim;
+        const float *row3 = c->router_w + (size_t)(avx2_e + 3) * c->dim;
+        __m256 a00 = _mm256_setzero_ps(), a01 = _mm256_setzero_ps();
+        __m256 a10 = _mm256_setzero_ps(), a11 = _mm256_setzero_ps();
+        __m256 a20 = _mm256_setzero_ps(), a21 = _mm256_setzero_ps();
+        __m256 a30 = _mm256_setzero_ps(), a31 = _mm256_setzero_ps();
+        int d = 0;
+        for (; d + 15 < c->dim; d += 16) {
+            __m256 x0 = _mm256_loadu_ps(c->x + d);
+            __m256 x1 = _mm256_loadu_ps(c->x + d + 8);
+            a00 = _mm256_fmadd_ps(_mm256_loadu_ps(row0 + d),     x0, a00);
+            a01 = _mm256_fmadd_ps(_mm256_loadu_ps(row0 + d + 8), x1, a01);
+            a10 = _mm256_fmadd_ps(_mm256_loadu_ps(row1 + d),     x0, a10);
+            a11 = _mm256_fmadd_ps(_mm256_loadu_ps(row1 + d + 8), x1, a11);
+            a20 = _mm256_fmadd_ps(_mm256_loadu_ps(row2 + d),     x0, a20);
+            a21 = _mm256_fmadd_ps(_mm256_loadu_ps(row2 + d + 8), x1, a21);
+            a30 = _mm256_fmadd_ps(_mm256_loadu_ps(row3 + d),     x0, a30);
+            a31 = _mm256_fmadd_ps(_mm256_loadu_ps(row3 + d + 8), x1, a31);
+        }
+        float sum0 = bn_avx2_hsum_ps(_mm256_add_ps(a00, a01));
+        float sum1 = bn_avx2_hsum_ps(_mm256_add_ps(a10, a11));
+        float sum2 = bn_avx2_hsum_ps(_mm256_add_ps(a20, a21));
+        float sum3 = bn_avx2_hsum_ps(_mm256_add_ps(a30, a31));
+        for (; d < c->dim; d++) {
+            float x = c->x[d];
+            sum0 += row0[d] * x;
+            sum1 += row1[d] * x;
+            sum2 += row2[d] * x;
+            sum3 += row3[d] * x;
+        }
+        c->logits[avx2_e + 0] = sum0;
+        c->logits[avx2_e + 1] = sum1;
+        c->logits[avx2_e + 2] = sum2;
+        c->logits[avx2_e + 3] = sum3;
+    }
+    start = avx2_e;
+#endif
     for (int e = start; e < end; e++) {
         const float *row = c->router_w + (size_t)e * c->dim;
         float sum = 0.0f;
