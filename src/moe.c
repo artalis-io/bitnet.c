@@ -805,6 +805,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 
     // 4. Expert FFN compute
     double t_compute = moe_time_ms();
+    int shared_gu_ready = 0;
 
     if (m->moe_io.mmap_base && K <= BN_MAX_MOE_K) {
         // --- Cross-expert batched dispatch (mmap path) ---
@@ -844,12 +845,25 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
         if (valid_k > 0) {
             // Gate+up batch
             t0 = moe_time_ms();
-            BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K];
+            BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K + 2];
+            int n_gu = 0;
             for (int k = 0; k < valid_k; k++) {
-                gu_tasks[2*k]     = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k] };
-                gu_tasks[2*k + 1] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]   };
+                gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k] };
+                gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]   };
             }
-            bn_quant_matvec_batch(gu_tasks, 2 * valid_k, s->xb, s->x_q, m->pool);
+            if (c->has_shared_expert && lw->shared_gate.data) {
+                int batch_type = gu_tasks[0].W->type;
+                int can_batch_shared = (lw->shared_gate.type == batch_type &&
+                                        lw->shared_up.type == batch_type);
+                for (int i = 1; can_batch_shared && i < n_gu; i++)
+                    can_batch_shared = (gu_tasks[i].W->type == batch_type);
+                if (can_batch_shared) {
+                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb,  &lw->shared_gate };
+                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb2, &lw->shared_up   };
+                    shared_gu_ready = 1;
+                }
+            }
+            bn_quant_matvec_batch(gu_tasks, n_gu, s->xb, s->x_q, m->pool);
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
 
             // Parallel SwiGLU
@@ -1242,7 +1256,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
     if (c->has_shared_expert && lw->shared_gate.data) {
         int shared_hidden = c->shared_expert_intermediate_size;
 
-        {
+        if (!shared_gu_ready) {
             BnMatvecTask shared_gu[2] = {
                 { s->hb,  &lw->shared_gate },
                 { s->hb2, &lw->shared_up   },

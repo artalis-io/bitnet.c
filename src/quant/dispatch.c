@@ -9,7 +9,7 @@
 #define BN_MAX_SCALE_BLOCKS 8192
 
 // Max tasks in a single batch dispatch (supports MoE K=8 gate+up = 16)
-#define BN_MAX_BATCH 16
+#define BN_MAX_BATCH 24
 
 // --- Quantized matrix-vector multiply ---
 // out[rows] = W[rows x cols] @ x[cols]
