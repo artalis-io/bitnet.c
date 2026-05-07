@@ -123,6 +123,9 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
             }
         }
 
+        if (i + 1 == max_tokens)
+            break;
+
         logits = bn_transformer_forward(model, s, next, *pos);
         (*pos)++;
         if (!logits) return -2;
