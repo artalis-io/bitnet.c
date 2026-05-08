@@ -120,6 +120,8 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
     assert(n % BN_QK_K == 0 && "bn_quant_x_to_q8k: n must be multiple of BN_QK_K");
     __m256 sign_mask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF));
     __m256i perm = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
+    __m128i bsum_bias = _mm_set1_epi8((char)0x80);
+    __m128i bsum_zero = _mm_setzero_si128();
     int n_sb = n / BN_QK_K;
 
     for (int sb = 0; sb < n_sb; sb++) {
@@ -172,26 +174,18 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
             _mm256_storeu_si256((__m256i *)gq, packed);
 
             // Compute bsums: sum of 16-element halves
-            // Sum first 16 bytes
             __m128i lo = _mm256_castsi256_si128(packed);
             __m128i hi = _mm256_extracti128_si256(packed, 1);
-            // Widen to i16 and sum pairs
-            __m128i lo16_0 = _mm_cvtepi8_epi16(lo);
-            __m128i lo16_1 = _mm_cvtepi8_epi16(_mm_srli_si128(lo, 8));
-            __m128i sum16_0 = _mm_add_epi16(lo16_0, lo16_1);
-            __m128i sum32_0 = _mm_add_epi32(_mm_cvtepi16_epi32(sum16_0),
-                                             _mm_cvtepi16_epi32(_mm_srli_si128(sum16_0, 8)));
-            int32_t bsum0 = _mm_extract_epi32(sum32_0, 0) + _mm_extract_epi32(sum32_0, 1)
-                          + _mm_extract_epi32(sum32_0, 2) + _mm_extract_epi32(sum32_0, 3);
+            __m128i lo_sad = _mm_sad_epu8(_mm_xor_si128(lo, bsum_bias), bsum_zero);
+            int32_t bsum0 = (int32_t)_mm_cvtsi128_si32(lo_sad)
+                          + (int32_t)_mm_extract_epi16(lo_sad, 4)
+                          - 16 * 128;
             bsums[g * 2] = (int16_t)bsum0;
 
-            __m128i hi16_0 = _mm_cvtepi8_epi16(hi);
-            __m128i hi16_1 = _mm_cvtepi8_epi16(_mm_srli_si128(hi, 8));
-            __m128i sum16_1 = _mm_add_epi16(hi16_0, hi16_1);
-            __m128i sum32_1 = _mm_add_epi32(_mm_cvtepi16_epi32(sum16_1),
-                                             _mm_cvtepi16_epi32(_mm_srli_si128(sum16_1, 8)));
-            int32_t bsum1 = _mm_extract_epi32(sum32_1, 0) + _mm_extract_epi32(sum32_1, 1)
-                          + _mm_extract_epi32(sum32_1, 2) + _mm_extract_epi32(sum32_1, 3);
+            __m128i hi_sad = _mm_sad_epu8(_mm_xor_si128(hi, bsum_bias), bsum_zero);
+            int32_t bsum1 = (int32_t)_mm_cvtsi128_si32(hi_sad)
+                          + (int32_t)_mm_extract_epi16(hi_sad, 4)
+                          - 16 * 128;
             bsums[g * 2 + 1] = (int16_t)bsum1;
         }
     }
