@@ -119,30 +119,31 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
         float decay = c->alpha[hv];
         float beta = c->beta[hv];
 
-        // --- Pass 0: Decay state S *= decay ---
-        __m256 vdecay = _mm256_set1_ps(decay);
-        int n_state = head_k_dim * head_v_dim;
-        for (int i = 0; i < n_state; i += 16) {
-            _mm256_storeu_ps(S + i,     _mm256_mul_ps(_mm256_loadu_ps(S + i),     vdecay));
-            _mm256_storeu_ps(S + i + 8, _mm256_mul_ps(_mm256_loadu_ps(S + i + 8), vdecay));
-        }
-
-        // --- Pass 1: sk = S @ k ---
+        // --- Pass 1: decay S in-place while computing sk = S @ k ---
         float sk[head_v_dim] __attribute__((aligned(32)));
+        __m256 vdecay = _mm256_set1_ps(decay);
         {
             __m256 kv = _mm256_set1_ps(kh[0]);
             float *row = S;
             for (int v = 0; v < head_v_dim; v += 16) {
-                _mm256_storeu_ps(sk + v,     _mm256_mul_ps(_mm256_loadu_ps(row + v),     kv));
-                _mm256_storeu_ps(sk + v + 8, _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), kv));
+                __m256 r0 = _mm256_mul_ps(_mm256_loadu_ps(row + v),     vdecay);
+                __m256 r1 = _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), vdecay);
+                _mm256_storeu_ps(row + v,     r0);
+                _mm256_storeu_ps(row + v + 8, r1);
+                _mm256_storeu_ps(sk + v,     _mm256_mul_ps(r0, kv));
+                _mm256_storeu_ps(sk + v + 8, _mm256_mul_ps(r1, kv));
             }
         }
         for (int k = 1; k < head_k_dim; k++) {
             __m256 kv = _mm256_set1_ps(kh[k]);
             float *row = S + (size_t)k * head_v_dim;
             for (int v = 0; v < head_v_dim; v += 16) {
-                _mm256_storeu_ps(sk + v,     _mm256_fmadd_ps(_mm256_loadu_ps(row + v),     kv, _mm256_loadu_ps(sk + v)));
-                _mm256_storeu_ps(sk + v + 8, _mm256_fmadd_ps(_mm256_loadu_ps(row + v + 8), kv, _mm256_loadu_ps(sk + v + 8)));
+                __m256 r0 = _mm256_mul_ps(_mm256_loadu_ps(row + v),     vdecay);
+                __m256 r1 = _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), vdecay);
+                _mm256_storeu_ps(row + v,     r0);
+                _mm256_storeu_ps(row + v + 8, r1);
+                _mm256_storeu_ps(sk + v,     _mm256_fmadd_ps(r0, kv, _mm256_loadu_ps(sk + v)));
+                _mm256_storeu_ps(sk + v + 8, _mm256_fmadd_ps(r1, kv, _mm256_loadu_ps(sk + v + 8)));
             }
         }
 
@@ -153,32 +154,32 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
             _mm256_storeu_ps(sk + v + 8, _mm256_mul_ps(vbeta, _mm256_sub_ps(_mm256_loadu_ps(vh + v + 8), _mm256_loadu_ps(sk + v + 8))));
         }
 
-        // --- Pass 2: State update S[k][v] += kh[k] * delta[v] ---
-        for (int k = 0; k < head_k_dim; k++) {
-            __m256 kv = _mm256_set1_ps(kh[k]);
-            float *row = S + (size_t)k * head_v_dim;
-            for (int v = 0; v < head_v_dim; v += 16) {
-                _mm256_storeu_ps(row + v,     _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     _mm256_loadu_ps(row + v)));
-                _mm256_storeu_ps(row + v + 8, _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), _mm256_loadu_ps(row + v + 8)));
-            }
-        }
-
-        // --- Pass 3: Read output o = S^T @ q * q_scale ---
+        // --- Pass 2: update S and accumulate output o = S^T @ q * q_scale ---
         float *oh = c->out + hv * head_v_dim;
         {
+            __m256 kv = _mm256_set1_ps(kh[0]);
             __m256 qv = _mm256_set1_ps(qh[0] * q_scale);
             float *row = S;
             for (int v = 0; v < head_v_dim; v += 16) {
-                _mm256_storeu_ps(oh + v,     _mm256_mul_ps(_mm256_loadu_ps(row + v),     qv));
-                _mm256_storeu_ps(oh + v + 8, _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), qv));
+                __m256 r0 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     _mm256_loadu_ps(row + v));
+                __m256 r1 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), _mm256_loadu_ps(row + v + 8));
+                _mm256_storeu_ps(row + v,     r0);
+                _mm256_storeu_ps(row + v + 8, r1);
+                _mm256_storeu_ps(oh + v,     _mm256_mul_ps(r0, qv));
+                _mm256_storeu_ps(oh + v + 8, _mm256_mul_ps(r1, qv));
             }
         }
         for (int k = 1; k < head_k_dim; k++) {
+            __m256 kv = _mm256_set1_ps(kh[k]);
             __m256 qv = _mm256_set1_ps(qh[k] * q_scale);
             float *row = S + (size_t)k * head_v_dim;
             for (int v = 0; v < head_v_dim; v += 16) {
-                _mm256_storeu_ps(oh + v,     _mm256_fmadd_ps(_mm256_loadu_ps(row + v),     qv, _mm256_loadu_ps(oh + v)));
-                _mm256_storeu_ps(oh + v + 8, _mm256_fmadd_ps(_mm256_loadu_ps(row + v + 8), qv, _mm256_loadu_ps(oh + v + 8)));
+                __m256 r0 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     _mm256_loadu_ps(row + v));
+                __m256 r1 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), _mm256_loadu_ps(row + v + 8));
+                _mm256_storeu_ps(row + v,     r0);
+                _mm256_storeu_ps(row + v + 8, r1);
+                _mm256_storeu_ps(oh + v,     _mm256_fmadd_ps(r0, qv, _mm256_loadu_ps(oh + v)));
+                _mm256_storeu_ps(oh + v + 8, _mm256_fmadd_ps(r1, qv, _mm256_loadu_ps(oh + v + 8)));
             }
         }
     }
