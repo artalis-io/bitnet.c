@@ -30,6 +30,7 @@ test_gpu_wgpu
 test_gpu_validate
 bitnet_test_*
 test_*
+!test/*.c
 
 # Bench binaries
 bench_kernels
