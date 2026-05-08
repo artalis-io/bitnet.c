@@ -887,6 +887,20 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
                                         lw->shared_up.type == batch_type);
                 for (int i = 1; can_batch_shared && i < n_gu; i++)
                     can_batch_shared = (gu_tasks[i].W->type == batch_type);
+#if defined(__AVX2__)
+                if (!can_batch_shared &&
+                    (lw->shared_gate.type == BN_GGUF_TENSOR_Q4_K ||
+                     lw->shared_gate.type == BN_GGUF_TENSOR_Q6_K) &&
+                    (lw->shared_up.type == BN_GGUF_TENSOR_Q4_K ||
+                     lw->shared_up.type == BN_GGUF_TENSOR_Q6_K)) {
+                    can_batch_shared = 1;
+                    for (int i = 0; can_batch_shared && i < n_gu; i++) {
+                        int type = gu_tasks[i].W->type;
+                        can_batch_shared = (type == BN_GGUF_TENSOR_Q4_K ||
+                                            type == BN_GGUF_TENSOR_Q6_K);
+                    }
+                }
+#endif
                 if (can_batch_shared) {
                     gu_tasks[n_gu++] = (BnMatvecTask){ s->hb,  &lw->shared_gate };
                     gu_tasks[n_gu++] = (BnMatvecTask){ s->hb2, &lw->shared_up   };
