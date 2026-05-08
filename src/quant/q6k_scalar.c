@@ -18,16 +18,28 @@ void bn_quant_q6k_scalar_range(void *ctx, int row_start, int row_end) {
             const float *xb = x + b * BN_QK_K;
 
             for (int n = 0; n < BN_QK_K; n += 128) {
-                for (int l = 0; l < 32; l++) {
-                    int is = l / 16;
-                    int q1 = (int)((ql[l]      & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
-                    int q2 = (int)((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
-                    int q3 = (int)((ql[l]      >> 4)  | (((qh[l] >> 4) & 3) << 4)) - 32;
-                    int q4 = (int)((ql[l + 32] >> 4)  | (((qh[l] >> 6) & 3) << 4)) - 32;
-                    row_sum += d * sc[is + 0] * q1 * xb[l +  0];
-                    row_sum += d * sc[is + 2] * q2 * xb[l + 32];
-                    row_sum += d * sc[is + 4] * q3 * xb[l + 64];
-                    row_sum += d * sc[is + 6] * q4 * xb[l + 96];
+                for (int is = 0; is < 2; is++) {
+                    float sum1 = 0.0f;
+                    float sum2 = 0.0f;
+                    float sum3 = 0.0f;
+                    float sum4 = 0.0f;
+                    int l0 = is * 16;
+                    for (int i = 0; i < 16; i++) {
+                        int l = l0 + i;
+                        int q1 = (int)((ql[l]      & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+                        int q2 = (int)((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+                        int q3 = (int)((ql[l]      >> 4)  | (((qh[l] >> 4) & 3) << 4)) - 32;
+                        int q4 = (int)((ql[l + 32] >> 4)  | (((qh[l] >> 6) & 3) << 4)) - 32;
+                        sum1 += (float)q1 * xb[l +  0];
+                        sum2 += (float)q2 * xb[l + 32];
+                        sum3 += (float)q3 * xb[l + 64];
+                        sum4 += (float)q4 * xb[l + 96];
+                    }
+                    row_sum += d * (
+                        (float)sc[is + 0] * sum1 +
+                        (float)sc[is + 2] * sum2 +
+                        (float)sc[is + 4] * sum3 +
+                        (float)sc[is + 6] * sum4);
                 }
                 xb += 128;
                 ql += 64;

@@ -20,17 +20,24 @@ void bn_quant_q4k_scalar_range(void *ctx, int row_start, int row_end) {
                 uint8_t sc, m;
                 int sub = j / 32;
                 bn_q4k_get_scale_min(sub, blk->scales, &sc, &m);
-                float ds = d * sc;
-                float dm = dmin * m;
+                float sum_qx = 0.0f;
+                float sum_x = 0.0f;
                 for (int l = 0; l < 32; l++) {
-                    row_sum += (ds * (qs[l] & 0xF) - dm) * xb[j + l];
+                    float xv = xb[j + l];
+                    sum_qx += (float)(qs[l] & 0xF) * xv;
+                    sum_x += xv;
                 }
+                row_sum += (d * sc) * sum_qx - (dmin * m) * sum_x;
+
                 bn_q4k_get_scale_min(sub + 1, blk->scales, &sc, &m);
-                ds = d * sc;
-                dm = dmin * m;
+                sum_qx = 0.0f;
+                sum_x = 0.0f;
                 for (int l = 0; l < 32; l++) {
-                    row_sum += (ds * (qs[l] >> 4) - dm) * xb[j + l + 32];
+                    float xv = xb[j + l + 32];
+                    sum_qx += (float)(qs[l] >> 4) * xv;
+                    sum_x += xv;
                 }
+                row_sum += (d * sc) * sum_qx - (dmin * m) * sum_x;
                 qs += 32;
             }
         }

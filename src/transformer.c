@@ -2284,11 +2284,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
     float *batch_buf = (float *)sh_arena_alloc(pf_arena, batch_floats * sizeof(float));
     if (!batch_buf) { sh_arena_free(pf_arena); return NULL; }
 
-    /* Q8K scratch from same arena (NULL if non-k-quant or non-AVX2) */
+#ifdef __AVX2__
+    /* Q8K scratch from same arena (NULL if non-k-quant). */
     int8_t *pf_xq = NULL;
     float *pf_xd = NULL;
     int16_t *pf_xbs = NULL;
-#ifdef __AVX2__
     if (n_bpr_pf > 0) {
         pf_xq = (int8_t *)sh_arena_alloc(pf_arena, nt * dim);
         pf_xd = (float *)sh_arena_alloc(pf_arena, nt * n_bpr_pf * sizeof(float));
@@ -2568,6 +2568,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                 rmsnorm(Xb + t * dim, act + (size_t)t * dim, lw->ffn_norm, dim, c->norm_eps);
 
             if (c->has_ffn_gate) {
+#ifdef __AVX2__
                 if (pf_xq && !m->gpu &&
                     (lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_K || lw->ffn_gate.type == BN_GGUF_TENSOR_Q6_K)) {
                     int n_bpr = dim / BN_QK_K;
@@ -2577,7 +2578,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
                                            pf_xbs + (size_t)t * n_bpr * 16, dim);
                     bn_quant_matmul_preq8k(Hb, &lw->ffn_gate, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
                     bn_quant_matmul_preq8k(Hb2, &lw->ffn_up, n_tokens, pf_xq, pf_xd, pf_xbs, Xb, m->pool);
-                } else {
+                } else
+#endif
+                {
                     bn_quant_matmul_gpu(Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q, m->pool, m->gpu);
                     bn_quant_matmul_gpu(Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q, m->pool, m->gpu);
                 }

@@ -170,6 +170,29 @@ SCALAR_BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
 bench_scalar: $(SCALAR_BENCH_SRCS)
 	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
 
+SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
+    src/quant/tq2_scalar.c src/quant/tq1_scalar.c \
+    src/quant/q8_scalar.c src/quant/q4_scalar.c src/quant/q4_1_scalar.c \
+    src/quant/bf16_scalar.c \
+    src/quant/q6k_scalar.c src/quant/q8k_scalar.c src/quant/q4k_scalar.c \
+    src/quant/q5k_scalar.c src/quant/q3k_scalar.c src/quant/q2k_scalar.c \
+    src/quant/iq4nl_scalar.c src/quant/iq4xs_scalar.c \
+    src/quant/iq3xxs_scalar.c src/quant/iq3s_scalar.c \
+    src/quant/iq2xxs_scalar.c src/quant/iq2xs_scalar.c src/quant/iq2s_scalar.c
+
+SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c \
+    src/transformer/gqa_scalar.c src/transformer/gqa_tq_scalar.c \
+    src/transformer/logits_scalar.c src/transformer/ssm_scalar.c
+
+SCALAR_SRCS = src/platform.c src/gguf.c $(QUANT_COMMON) $(SCALAR_QUANT_BACKEND) \
+       src/turboquant.c src/model.c src/moe.c src/transformer.c src/gpu_moe_cache.c \
+       $(SCALAR_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
+       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c \
+       src/prompt_cache.c src/generate.c src/main.c
+
+bitnet_scalar: $(SCALAR_SRCS)
+	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
+
 bench_avx2: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -178,7 +201,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_kernels_run bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_kernels_run bitnet_scalar bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -433,4 +456,4 @@ test_coherence: $(COHERENCE_SRCS)
 endif
 
 clean:
-	rm -f bitnet bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o
+	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o

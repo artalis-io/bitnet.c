@@ -1119,11 +1119,12 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
         return;
     }
 
-    // Determine common type (all tasks should have same type for efficient batching)
-    int type0 = tasks[0].W->type;
     int cols = tasks[0].W->cols;
 
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+    // Determine common type (all tasks should have same type for efficient batching)
+    int type0 = tasks[0].W->type;
+
     // SDOT path: quantize each x independently, then dispatch all tasks
     int all_same_type = 1;
     for (int t = 1; t < n_tasks; t++)
