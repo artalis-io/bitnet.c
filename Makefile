@@ -84,26 +84,29 @@ endif
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
 TRANSFORMER_SRCS = src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND)
 
-# --- GPU (optional: BN_ENABLE_GPU=1) ---
+# --- WebGPU (optional: BN_ENABLE_WEBGPU=1; BN_ENABLE_GPU=1 is a compatibility alias) ---
 ifdef BN_ENABLE_GPU
+  BN_ENABLE_WEBGPU := 1
+endif
+ifdef BN_ENABLE_WEBGPU
   ifndef WGPU_LIB_DIR
     WGPU_LIB_DIR := vendor/wgpu
   endif
   WGPU_LIB := $(WGPU_LIB_DIR)/libwgpu_native.a
-  GPU_CFLAGS := -DBN_ENABLE_GPU -I$(WGPU_LIB_DIR)
+  WEBGPU_CFLAGS := -DBN_ENABLE_WEBGPU -I$(WGPU_LIB_DIR)
   ifeq ($(UNAME_S),Darwin)
     WGPU_FRAMEWORKS := -framework Metal -framework QuartzCore -framework CoreGraphics -framework Foundation
   else
     WGPU_FRAMEWORKS := -lvulkan
   endif
-  GPU_SRCS := src/gpu_wgpu.c
-  GPU_OBJS := src/gpu_wgpu.o
+  WEBGPU_SRCS := src/gpu_wgpu.c
+  WEBGPU_OBJS := src/gpu_wgpu.o
 else
   WGPU_LIB :=
-  GPU_CFLAGS :=
+  WEBGPU_CFLAGS :=
   WGPU_FRAMEWORKS :=
-  GPU_SRCS :=
-  GPU_OBJS :=
+  WEBGPU_SRCS :=
+  WEBGPU_OBJS :=
 endif
 
 # --- Metal (optional: BN_ENABLE_METAL=1, macOS only) ---
@@ -121,8 +124,8 @@ endif
 
 SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
        $(TRANSFORMER_SRCS) src/tokenizer.c src/sampler.c \
-       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(GPU_SRCS) src/main.c
-CFLAGS += $(GPU_CFLAGS) $(METAL_CFLAGS)
+       src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(WEBGPU_SRCS) src/main.c
+CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS)
 LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS)
 OBJS = $(SRCS:.c=.o) $(METAL_OBJS)
 
@@ -201,7 +204,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_kernels_run bitnet_scalar bench_scalar bench_avx2 bench_layers test test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_kernels_run bitnet_scalar bench_scalar bench_avx2 bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -211,7 +214,15 @@ bench_suite: $(MAIN_TARGET)
 
 bench_kernels_run: bench_kernels
 
-test: test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend
+test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend
+
+test_architecture: test_backend_matrix test_model_matrix
+
+test_backend_matrix:
+	./test/backend_matrix.sh
+
+test_model_matrix: test_coherence
+	./test/model_matrix.sh
 
 test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
@@ -408,36 +419,36 @@ fetch-wgpu:
 		echo "=== wgpu-native installed to $(WGPU_LIB_DIR) ==="; \
 	fi
 
-# GPU test (requires BN_ENABLE_GPU=1 and fetch-wgpu)
-GPU_TEST_SRCS = test/test_gpu_wgpu.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+# WebGPU test (requires BN_ENABLE_WEBGPU=1 and fetch-wgpu)
+WEBGPU_TEST_SRCS = test/test_gpu_wgpu.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                 src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                 src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                 src/session.c src/bn_alloc.c
-ifdef BN_ENABLE_GPU
-GPU_TEST_SRCS += src/gpu_wgpu.c
+ifdef BN_ENABLE_WEBGPU
+WEBGPU_TEST_SRCS += src/gpu_wgpu.c
 endif
 
-test_gpu_wgpu: $(GPU_TEST_SRCS)
+test_gpu_wgpu: $(WEBGPU_TEST_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-# GPU validation benchmark (all 22 quant types, requires BN_ENABLE_GPU=1)
-GPU_VALIDATE_SRCS = test/test_gpu_validate.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+# WebGPU validation benchmark (all 22 quant types, requires BN_ENABLE_WEBGPU=1)
+WEBGPU_VALIDATE_SRCS = test/test_gpu_validate.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                     src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                     src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                     src/session.c src/bn_alloc.c
-ifdef BN_ENABLE_GPU
-GPU_VALIDATE_SRCS += src/gpu_wgpu.c
+ifdef BN_ENABLE_WEBGPU
+WEBGPU_VALIDATE_SRCS += src/gpu_wgpu.c
 endif
 
-test_gpu_validate: $(GPU_VALIDATE_SRCS)
+test_gpu_validate: $(WEBGPU_VALIDATE_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-# Coherence test (GPU vs CPU forward pass, SIMD vs scalar matvec, requires model file)
+# Coherence test (WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec, requires model file)
 COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                  src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                  src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                  src/session.c src/bn_alloc.c src/prompt_cache.c src/generate.c src/sampler.c
-ifdef BN_ENABLE_GPU
+ifdef BN_ENABLE_WEBGPU
 COHERENCE_SRCS += src/gpu_wgpu.c
 endif
 ifdef BN_ENABLE_METAL

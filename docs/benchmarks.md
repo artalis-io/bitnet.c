@@ -52,7 +52,7 @@ Measured with `llama-bench`, same hardware (M1 Max, 8 threads), warm page cache 
 | Qwen2.5 3B Instruct | Q4_0 | 25.4 | **40.2** | Multi-row kernel gap |
 | Llama3 8B 1.58 | TQ1_0 | 14.5 | **19.3** | Multi-row kernel gap |
 | Qwen3-30B-A3B MoE | Q4_K_M | **19–20** | 10–12 | Steady state (see below) |
-| Qwen3.5-35B-A3B MoE | Q4_K_M | 5–7 | 6–8 | SSD-bound (21 GB > available RAM) |
+| Qwen3.5-35B-A3B MoE | Q4_K_M | 9–12 | 6–8 | Parity-or-better depending on I/O mode/cache state |
 
 ### MoE performance by page cache state (Qwen3-30B, M1 Max 32 GB)
 
@@ -70,7 +70,7 @@ MoE throughput depends heavily on whether expert weights are in the OS page cach
 
 **Key insight:** bitnet.c's pure CPU approach has higher variance but a higher ceiling. llama.cpp's GPU-assisted approach has lower variance but a lower ceiling. For interactive use (chat mode, continuous generation), bitnet.c delivers better sustained throughput.
 
-**Dense models:** llama.cpp leads due to multi-row interleaved Q4_K/Q4_0 kernels that amortize activation loads across rows.
+**Dense models:** bitnet.c is competitive but still model- and quant-specific; rebenchmark before claiming a universal dense-model win. The parity claim is strongest for the MoE serving path, where warm expert access and batched expert dispatch remove the earlier steady-state gap.
 
 ## Per-Kernel Bandwidth (GB/s)
 

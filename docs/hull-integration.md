@@ -462,7 +462,7 @@ Measured on Apple M1 Max, bitnet-b1.58-2B-4T (I2_S, 1.1GB):
 | WGSL compute shaders (22 types) | Done |
 | wgpu-native runtime (`gpu_wgpu.c`) | Done |
 | GPU validation benchmark | Done (20/20 matvec, 3/3 matmul pass) |
-| `--gpu` CLI flag | Done |
+| `--webgpu` CLI flag | Done |
 | Persistent GPU buffers (4b.1) | Done |
 | Batched command encoding (4b.2) | Done (2.6x speedup over naive) |
 | GPU-resident forward pass (4b.3) | Not started (planned — 8 new shaders + execute() vtable) |

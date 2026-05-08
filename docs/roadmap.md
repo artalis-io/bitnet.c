@@ -157,7 +157,7 @@ Only **reducing data volume** helps at this point:
 - [x] Norm weight + bias + tied embedding GPU upload
 - [x] Persistent scratch buffers + batched command encoding
 - [x] Single-submit GPU-resident forward pass (one command buffer per token)
-- [x] `--gpu` CLI flag, `make BN_ENABLE_GPU=1`, `make fetch-wgpu`
+- [x] `--webgpu` CLI flag, `make BN_ENABLE_WEBGPU=1`, `make fetch-wgpu`
 - [x] GPU validation benchmark (20/20 matvec pass, 3/3 matmul pass)
 - [x] wgpu-native vendoring with SHA-256 verification
 - See [docs/hull-integration.md](hull-integration.md) for the Hull integration design

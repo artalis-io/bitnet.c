@@ -28,8 +28,19 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
 
+      - name: Build scalar CPU backend
+        run: make bitnet_scalar
+        env:
+          CC: ${{ matrix.cc }}
+
       - name: Test
         run: make test
+        env:
+          CC: ${{ matrix.cc }}
+
+      - name: Metal backend compile check
+        if: runner.os == 'macOS'
+        run: make BN_ENABLE_METAL=1 test_coherence
         env:
           CC: ${{ matrix.cc }}
 
@@ -80,6 +91,17 @@ jobs:
 
       - name: AVX2 syntax check
         run: make avx2-check
+        env:
+          CC: clang
+
+  architecture-matrix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backend and model matrix dry run
+        run: make test_architecture
         env:
           CC: clang
 

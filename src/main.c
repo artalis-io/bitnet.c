@@ -10,10 +10,10 @@
 #include "session.h"
 #include "prompt_cache.h"
 #include "sh_log.h"
-#ifdef BN_ENABLE_GPU
+#ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif
-#if defined(BN_ENABLE_GPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
 #include "gpu_moe_cache.h"
 #endif
 #ifdef BN_ENABLE_METAL
@@ -55,9 +55,9 @@ typedef struct {
     const char *draft_path; // --draft <model.gguf> for speculative decoding
     int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
-    int gpu;            // use GPU backend for matvec (requires BN_ENABLE_GPU)
+    int webgpu;         // use WebGPU backend for matvec (requires BN_ENABLE_WEBGPU)
     int metal;          // use Metal backend (requires BN_ENABLE_METAL)
-    const char *shader_dir; // --shader-dir for GPU WGSL shaders
+    const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
     int gpu_cache_mb;   // GPU expert buffer cache in MB (default 4096, 0 to disable)
@@ -87,6 +87,10 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --prefault-moe    Fault all mmap'd MoE expert pages during startup\n");
     fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
+    fprintf(stderr, "  --webgpu        Enable WebGPU backend (requires BN_ENABLE_WEBGPU=1)\n");
+    fprintf(stderr, "  --metal         Enable Metal backend (requires BN_ENABLE_METAL=1)\n");
+    fprintf(stderr, "  --shader-dir <path>        WebGPU shader directory (default: shaders/)\n");
+    fprintf(stderr, "  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
 }
 
@@ -177,8 +181,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.repeat_set = 1;
         } else if (strcmp(argv[i], "--kv-tq") == 0 && i + 1 < argc) {
             args.kv_tq_bits = parse_int(argv[++i], "--kv-tq");
-        } else if (strcmp(argv[i], "--gpu") == 0) {
-            args.gpu = 1;
+        } else if (strcmp(argv[i], "--webgpu") == 0) {
+            args.webgpu = 1;
         } else if (strcmp(argv[i], "--metal") == 0) {
             args.metal = 1;
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
@@ -239,15 +243,15 @@ int main(int argc, char **argv) {
             fprintf(stderr, "--kv-tq and --kv16 are mutually exclusive\n");
             return 1;
         }
-        if (args.gpu || args.metal) {
-            fprintf(stderr, "--kv-tq and --gpu/--metal are mutually exclusive (GPU TQ not yet supported)\n");
+        if (args.webgpu || args.metal) {
+            fprintf(stderr, "--kv-tq and --webgpu/--metal are mutually exclusive (GPU TQ not yet supported)\n");
             return 1;
         }
     }
 
-    // Validate --gpu and --metal mutual exclusion
-    if (args.gpu && args.metal) {
-        fprintf(stderr, "--gpu and --metal are mutually exclusive\n");
+    // Validate --webgpu and --metal mutual exclusion
+    if (args.webgpu && args.metal) {
+        fprintf(stderr, "--webgpu and --metal are mutually exclusive\n");
         return 1;
     }
 
@@ -332,14 +336,14 @@ int main(int argc, char **argv) {
         SH_LOG_INFO("GGUF parsed", "version", ver, "tensors", nt, "kv", nkv);
     }
 
-    if ((args.gpu || args.metal) && !args.max_seq_len_set) {
+    if ((args.webgpu || args.metal) && !args.max_seq_len_set) {
         int model_seq_len = gguf_get_arch_u32(gf, "context_length");
         int n_experts = gguf_get_arch_u32(gf, "expert_count");
-        if ((args.gpu || (args.metal && n_experts > 0)) &&
+        if ((args.webgpu || (args.metal && n_experts > 0)) &&
             model_seq_len > BN_GPU_DEFAULT_MAXSEQ) {
             args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;
-            SH_LOG_WARN(args.gpu ? "Auto-capping WebGPU sequence length" :
-                                   "Auto-capping Metal MoE sequence length",
+            SH_LOG_WARN(args.webgpu ? "Auto-capping WebGPU sequence length" :
+                                      "Auto-capping Metal MoE sequence length",
                         "seq", "4096", "override", "--maxseq");
         }
     }
@@ -415,9 +419,9 @@ int main(int argc, char **argv) {
         SH_LOG_WARN("Failed to create thread pool, running single-threaded");
     }
 
-    // GPU backend (optional)
-#ifdef BN_ENABLE_GPU
-    if (args.gpu) {
+    // WebGPU backend (optional)
+#ifdef BN_ENABLE_WEBGPU
+    if (args.webgpu) {
         const char *sd = args.shader_dir ? args.shader_dir : "shaders/";
         BnGPUBackend *gpu = bn_gpu_wgpu_create(sd);
         if (gpu) {
@@ -425,7 +429,7 @@ int main(int argc, char **argv) {
             if (bn_model_upload_weights(&model, gpu) == 0) {
                 char ms[16];
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
-                SH_LOG_INFO("GPU weights uploaded", "ms", ms);
+                SH_LOG_INFO("WebGPU weights uploaded", "ms", ms);
                 // Initialize GPU-resident activation buffers for forward pass
                 if (gpu->init_activations) {
                     if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
@@ -447,16 +451,16 @@ int main(int argc, char **argv) {
                     }
                 }
             } else {
-                SH_LOG_WARN("GPU weight upload failed, falling back to CPU");
+                SH_LOG_WARN("WebGPU weight upload failed, falling back to CPU");
                 bn_gpu_wgpu_destroy(gpu);
             }
         } else {
-            SH_LOG_WARN("No GPU available, falling back to CPU");
+            SH_LOG_WARN("No WebGPU adapter available, falling back to CPU");
         }
     }
 #else
-    if (args.gpu) {
-        SH_LOG_WARN("--gpu requires BN_ENABLE_GPU=1 build, falling back to CPU");
+    if (args.webgpu) {
+        SH_LOG_WARN("--webgpu requires BN_ENABLE_WEBGPU=1 build, falling back to CPU");
     }
 #endif
 
@@ -907,7 +911,7 @@ int main(int argc, char **argv) {
         bn_moe_cache_free(model.moe_io.cache);
         model.moe_io.cache = NULL;
     }
-#if defined(BN_ENABLE_GPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
     if (model.moe_io.gpu_moe_cache) {
         bn_gpu_moe_cache_print_stats(model.moe_io.gpu_moe_cache);
         bn_gpu_moe_cache_free(model.moe_io.gpu_moe_cache);

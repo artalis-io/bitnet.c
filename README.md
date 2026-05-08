@@ -14,7 +14,7 @@ bitnet.c takes the opposite approach:
 - **CPU-first SIMD.** ARM NEON/SDOT, AVX2, WASM SIMD128 — auto-selected at compile time. The forward pass is a flat `for` loop over layers calling SIMD matvec kernels directly. No graph abstraction, no tensor framework.
 - **Embeddable.** ~8,000 lines of C11. Compiles to WASM and runs in a browser. Clean build under 3 seconds. Link it as a static library into anything.
 
-**When to use llama.cpp/Ollama instead:** CUDA/Metal GPU inference, OpenAI-compatible API serving, or multi-model management.
+**When to use llama.cpp/Ollama instead:** CUDA inference, OpenAI-compatible API serving, or multi-model management.
 
 ## Features
 
@@ -32,7 +32,7 @@ bitnet.c takes the opposite approach:
 - **BPE tokenizer** — loaded directly from GGUF metadata
 - **Sampling** — greedy (argmax), multinomial, and nucleus (top-p)
 - **Native mmap** — zero-copy model loading on macOS/Linux
-- **Optional GPU backend** — WebGPU via wgpu-native, 41 WGSL shaders, single-submit forward pass
+- **Optional WebGPU backend** — wgpu-native, 41 WGSL shaders, single-submit forward pass
 - **Prompt caching** — shared KV prefix cache with longest-prefix matching, FIFO eviction, TQ-aware (8.7x smaller entries with `--kv-tq`)
 - **SSE streaming** — OpenAI-compatible server-sent events formatter
 - **Logprobs API** — top-K log probabilities from logits
@@ -90,9 +90,37 @@ bitnet.c takes the opposite approach:
 | AVX2 | x86-64 (Haswell+) | DPBUSD int8 matvec, F16C conversion |
 | WASM SIMD128 | Browser (Emscripten) | Relaxed SIMD SDOT for all types |
 | Scalar | Any C11 compiler | Portable fallback |
-| WebGPU | GPU (wgpu-native) | 41 WGSL shaders, optional `BN_ENABLE_GPU=1` |
+| WebGPU | GPU (wgpu-native) | 41 WGSL shaders, optional `BN_ENABLE_WEBGPU=1` |
+| Metal | macOS GPU | Native Metal backend, optional `BN_ENABLE_METAL=1` |
 
-CPU backends auto-selected at compile time based on target architecture. GPU backend is opt-in.
+CPU backends auto-selected at compile time based on target architecture. WebGPU and Metal are opt-in.
+
+## Architecture And Test Matrix
+
+The codebase keeps model loading, quant kernels, transformer kernels, GPU backends, and request state in separate modules:
+
+- Quant formats live in `src/quant/{format}_{backend}.c`; dispatch is centralized in `src/quant/dispatch.c`.
+- Transformer kernels live in `src/transformer/{op}_{backend}.c`; the layer loop remains in `src/transformer.c`.
+- GPU implementations share the `BnGPUBackend` vtable in `include/gpu_backend.h`; WebGPU and Metal live in `src/gpu_wgpu.c` and `src/gpu_metal.m`.
+- `BnModel` is immutable after load; `BnSession` owns per-request mutable KV cache and activations.
+
+Executable harnesses keep those boundaries visible:
+
+```bash
+# Static backend/quant/shader coverage matrix
+make test_backend_matrix
+
+# Model-family coherence harness. Missing models are skipped by default.
+make test_model_matrix
+
+# Require all configured model-family cases to be present
+REQUIRE_MODELS=1 make test_model_matrix
+
+# Auto-discover local GGUFs under a root, e.g. /data/models/gguf
+BN_MODEL_ROOT=/data/models/gguf make test_model_matrix
+```
+
+The model matrix covers Llama 2, Llama 3, Microsoft BitNet 1.58, Qwen 2.5, Qwen 3 dense, Qwen 3 sparse MoE, Qwen 3.5 dense, and Qwen 3.5 sparse MoE. For exact paths, set `BN_MODEL_LLAMA2`, `BN_MODEL_LLAMA3`, `BN_MODEL_BITNET158`, `BN_MODEL_QWEN25`, `BN_MODEL_QWEN3_DENSE`, `BN_MODEL_QWEN3_MOE`, `BN_MODEL_QWEN35_DENSE`, or `BN_MODEL_QWEN35_MOE`.
 
 ## Quick Start
 
@@ -100,9 +128,9 @@ CPU backends auto-selected at compile time based on target architecture. GPU bac
 # Build (CPU)
 make
 
-# Build with GPU backend (optional)
+# Build with WebGPU backend (optional)
 make fetch-wgpu
-make BN_ENABLE_GPU=1
+make BN_ENABLE_WEBGPU=1
 
 # Run inference
 ./bitnet model.gguf -p "Hello" -n 256
@@ -117,8 +145,11 @@ make BN_ENABLE_GPU=1
 make test
 
 # Cross-backend coherence test (GPU vs CPU, SIMD vs scalar)
-make BN_ENABLE_GPU=1 test_coherence
-./test_coherence model.gguf --gpu
+make BN_ENABLE_WEBGPU=1 test_coherence
+./test_coherence model.gguf --webgpu
+
+# Architecture matrix dry run used by CI
+make test_architecture
 ```
 
 ### Options
@@ -139,10 +170,15 @@ Usage: ./bitnet <model.gguf> [options]
   --no-prefill    Disable batch prompt prefill (compute logits for every token)
   --pread         Force pread for MoE expert loading (lower RSS than mmap)
   --cache-mb <N>  Expert LRU cache budget in MB (default: 4096, 0 to disable)
+  --gpu-cache-mb <N>  GPU expert buffer cache in MB (default: 4096, 0 to disable)
   --madvise       madvise-guided mmap for MoE (experimental)
+  --prefault-moe  Fault all mmap'd MoE expert pages during startup
   --draft <path>  Draft model for speculative decoding (greedy, same tokenizer required, inherits --kv-tq)
   --draft-k <int> Draft tokens per iteration (default: 5)
-  --gpu           Enable GPU inference (requires BN_ENABLE_GPU=1 build)
+  --webgpu        Enable WebGPU inference (requires BN_ENABLE_WEBGPU=1 build)
+  --metal         Enable Metal inference (requires BN_ENABLE_METAL=1 build)
+  --shader-dir <path>        WebGPU shader directory (default: shaders/)
+  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)
   -t <int>        Number of threads (default: auto-detect)
 ```
 
@@ -270,6 +306,7 @@ bitnet.c/
 │   ├── prompt_cache.h          # BnPromptCache: shared KV prefix cache
 │   ├── gpu_backend.h           # BnGPUBackend: GPU compute vtable
 │   ├── gpu_wgpu.h              # wgpu-native WebGPU backend API
+│   ├── gpu_metal.h             # Native Metal backend API
 │   ├── transformer.h           # Forward pass public API
 │   ├── transformer_internal.h  # Transformer backend context structs + range function decls
 │   ├── tokenizer.h             # BPE tokenizer API
@@ -300,6 +337,7 @@ bitnet.c/
 │   ├── session.c               # BnSession create/free/reset
 │   ├── prompt_cache.c          # Shared KV prefix cache with FIFO eviction
 │   ├── gpu_wgpu.c              # wgpu-native WebGPU backend (optional)
+│   ├── gpu_metal.m             # Native Metal backend (optional)
 │   ├── generate.c              # Library API: generate, prefill, chat, SSE, logprobs
 │   ├── transformer.c           # Forward pass: layer loop, FFN, dispatch
 │   ├── tokenizer.c             # BPE encode/decode from GGUF vocab
@@ -326,7 +364,7 @@ bitnet.c/
 │   ├── ssm_alpha_beta.wgsl     # SSM: decay/update rates
 │   ├── ssm_delta.wgsl          # SSM: delta rule recurrence
 │   └── ssm_gate.wgsl           # SSM: SiLU gate + output
-├── test/                       # Assert-based unit tests (synthetic data, no model needed)
+├── test/                       # Assert-based unit tests + backend/model harnesses
 ├── wasm/                       # Emscripten WASM build + browser demo
 ├── docs/
 │   ├── inference.md            # Inference pipeline: math, algorithms, code map
@@ -363,7 +401,7 @@ prompt_cache        ← depends on model + session + turboquant
     ↓
  generate           ← depends on model + session + transformer + tokenizer + sampler
     ↓
-gpu_wgpu            ← optional GPU backend (BN_ENABLE_GPU=1)
+gpu_wgpu            ← optional WebGPU backend (BN_ENABLE_WEBGPU=1)
     ↓
   main              ← wires everything together
 ```
@@ -434,21 +472,21 @@ Requires [Emscripten](https://emscripten.org/):
 
 ## GPU Backend (WebGPU)
 
-Optional GPU inference via [wgpu-native](https://github.com/gfx-rs/wgpu-native). Requires `BN_ENABLE_GPU=1` at build time.
+Optional WebGPU inference via [wgpu-native](https://github.com/gfx-rs/wgpu-native). Requires `BN_ENABLE_WEBGPU=1` at build time.
 
 ```bash
 make fetch-wgpu                          # download wgpu-native v27
-make BN_ENABLE_GPU=1                     # build with GPU support
-./bitnet model.gguf -p "Hello" --gpu     # run on GPU
+make BN_ENABLE_WEBGPU=1                  # build with WebGPU support
+./bitnet model.gguf -p "Hello" --webgpu  # run on WebGPU
 ```
 
-The GPU backend uses 41 WGSL shaders (23 matvec covering all quantization formats + 10 forward-pass + 3 MoE + 5 SSM operations) with a single-submit forward pass — one command buffer per token. The `BnGPUBackend` vtable in `include/gpu_backend.h` abstracts GPU compute, with the wgpu-native implementation in `src/gpu_wgpu.c`.
+The WebGPU backend uses 41 WGSL shaders (23 matvec covering all quantization formats + 10 forward-pass + 3 MoE + 5 SSM operations) with a single-submit forward pass — one command buffer per token. The `BnGPUBackend` vtable in `include/gpu_backend.h` abstracts GPU compute, with the wgpu-native implementation in `src/gpu_wgpu.c`.
 
 For Hull integration, set `WGPU_LIB_DIR` to avoid double-vendoring the wgpu-native library.
 
 ### GPU on WSL2
 
-WSL2 does not ship a native NVIDIA Vulkan ICD. GPU inference requires Mesa's **dzn** (Dozen) driver, which translates Vulkan calls to D3D12 and routes them to the host GPU. Stock dzn lacks extensions wgpu-native requires, so a patch is included.
+WSL2 does not ship a native NVIDIA Vulkan ICD. WebGPU inference requires Mesa's **dzn** (Dozen) driver, which translates Vulkan calls to D3D12 and routes them to the host GPU. Stock dzn lacks extensions wgpu-native requires, so a patch is included.
 
 ```bash
 # Prerequisites
@@ -462,10 +500,10 @@ pip3 install --user meson   # need meson >= 1.4
 # Run with GPU
 LD_LIBRARY_PATH=/usr/lib/wsl/lib \
 VK_ICD_FILENAMES=/tmp/mesa-dzn/build/src/microsoft/vulkan/dzn_devenv_icd.x86_64.json \
-./bitnet model.gguf --gpu --maxseq 4096 -p "Hello" -n 64
+./bitnet model.gguf --webgpu --maxseq 4096 -p "Hello" -n 64
 ```
 
-**Note:** GPU inference auto-caps large model contexts to 4096 when `--maxseq` is omitted to keep KV cache buffers within device limits. Pass `--maxseq N` to override.
+**Note:** WebGPU inference auto-caps large model contexts to 4096 when `--maxseq` is omitted to keep KV cache buffers within device limits. Pass `--maxseq N` to override.
 
 The patch (`patches/mesa-dzn-wgpu-compat.patch`) makes these changes to Mesa's dzn driver:
 - Advertises `VK_EXT_robustness2`, `VK_EXT_image_robustness`, `VK_KHR_zero_initialize_workgroup_memory` (D3D12 provides the underlying guarantees)
@@ -482,8 +520,8 @@ Tested models with generation quality and performance on Apple M1 Max (8 P-cores
 | bitnet-b1.58-2B-4T | 1.1 GB | I2_S (ternary) | Transformer | **29–41** | Factual, correct code |
 | Qwen2.5-3B-Instruct | 1.7 GB | Q4_0 | Transformer | **23–25** | Coherent, instruct-following |
 | Llama3-8B-1.58 | 3.3 GB | TQ1_0 (ternary) | Transformer | **8–9** | Basic completion |
-| Qwen3-30B-A3B | 17.7 GB | Q4_K_M | MoE (128 experts, K=8) | **19–20** | 2x faster than llama.cpp at steady state |
-| Qwen3.5-35B-A3B | 21.0 GB | Q4_K_M | SSM+MoE (256 experts) | **5–7** | SSD-bound (21 GB model, 32 GB machine) |
+| Qwen3-30B-A3B | 17.7 GB | Q4_K_M | MoE (128 experts, K=8) | **19–20** | Parity-or-better than llama.cpp at steady state |
+| Qwen3.5-35B-A3B | 21.0 GB | Q4_K_M | SSM+MoE (256 experts) | **9–12** | Parity-class CPU throughput with pread/mmap modes |
 | Qwen3.5-9B | 5.3 GB | Q4_K_M (mixed) | Hybrid SSM+Attention | **2.8–3.1** | Best quality, chain-of-thought |
 
 Any GGUF model using supported weight types works — these are just the tested configurations.
@@ -498,15 +536,17 @@ bitnet.c supports hybrid architectures that mix SSM (state space model) layers w
 
 ## Performance
 
-Measured on Apple M1 Max (8 P-cores, 32 GB), PGO build, greedy decoding, 8 threads. llama.cpp b8320 via Homebrew.
+Measured on Apple M1 Max (8 P-cores, 32 GB), PGO build, greedy decoding, 8 threads. llama.cpp b8320 via Homebrew. Current results are parity-class with llama.cpp on the serving-oriented MoE workloads and competitive on dense CPU workloads; exact winners vary by quant format, page-cache state, and whether llama.cpp routes work to Metal.
 
-| Model | Size | Quant | bitnet.c | llama.cpp CPU | llama.cpp Metal |
-|-------|------|-------|----------|---------------|-----------------|
-| bitnet-b1.58-2B-4T | 620 MB | I2_S (ternary) | **52 tok/s** | — | — |
-| Qwen2.5-3B-Instruct | 1.7 GB | Q4_0 | **30 tok/s** | 40 tok/s | 84 tok/s |
-| Llama3-8B-1.58 | 3.4 GB | TQ1_0 (ternary) | **14.5 tok/s** | 19 tok/s | — |
+| Model | Size | Quant | bitnet.c | llama.cpp CPU | Status |
+|-------|------|-------|----------|---------------|--------|
+| bitnet-b1.58-2B-4T | 620 MB | I2_S (ternary) | **52 tok/s** | — | Native BitNet path; llama.cpp does not cover this quant |
+| Qwen2.5-3B-Instruct | 1.7 GB | Q4_0 | **30 tok/s** | 40 tok/s | Competitive dense CPU path |
+| Llama3-8B-1.58 | 3.4 GB | TQ1_0 (ternary) | **14.5 tok/s** | 19 tok/s | Competitive ternary CPU path |
+| Qwen3-30B-A3B MoE | 17.7 GB | Q4_K_M | **19–20 tok/s** | 10–12 tok/s | Ahead at steady state |
+| Qwen3.5-35B-A3B MoE | 21.0 GB | Q4_K_M | **9–12 tok/s** | 6–8 tok/s | Parity-or-better depending on I/O mode and cache state |
 
-CPU performance: on ternary models (TQ1_0) it reaches **76% of llama.cpp CPU** — close to parity. On standard quants (Q4_0) it reaches **75% of llama.cpp CPU** using multi-row interleaved kernels (4 output rows per pass, amortizing activation loads). llama.cpp does not support TQ1_0 on Metal. An optional WebGPU backend (`--gpu`) is available for GPU-accelerated inference.
+CPU performance is now best described as parity-class rather than a blanket percentage. Dense Q4_0/TQ1_0 rows remain close but still model-specific; MoE serving rows reach parity or exceed llama.cpp once the expert working set is warm. llama.cpp may route some nominal CPU MoE work through Metal, so comparisons should note backend and page-cache state. Optional WebGPU (`--webgpu`) and native Metal (`--metal`) backends are available for GPU-accelerated inference.
 
 ## Known Limitations
 

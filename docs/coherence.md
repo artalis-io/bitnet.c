@@ -5,8 +5,8 @@ Cross-backend validation: GPU forward pass vs CPU, SIMD (NEON SDOT) vs scalar ma
 ## Running
 
 ```bash
-make BN_ENABLE_GPU=1 test_coherence
-./test_coherence <model.gguf> --gpu    # all 3 phases
+make BN_ENABLE_WEBGPU=1 test_coherence
+./test_coherence <model.gguf> --webgpu # all 3 phases
 ./test_coherence <model.gguf>          # CPU-only (Phase 2 only)
 ```
 

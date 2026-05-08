@@ -5,10 +5,10 @@
  * and CPU scalar matvec, and verifies the results match within tolerance.
  * Also validates matmul (batch matvec) for a few representative types.
  *
- * Requires: BN_ENABLE_GPU=1 and `make fetch-wgpu` before building.
+ * Requires: BN_ENABLE_WEBGPU=1 and `make fetch-wgpu` before building.
  */
 
-#ifdef BN_ENABLE_GPU
+#ifdef BN_ENABLE_WEBGPU
 
 #include "gpu_wgpu.h"
 #include "gpu_backend.h"
@@ -1040,13 +1040,13 @@ int main(void) {
     return (bench_result == 1 || forward_result == 1) ? 1 : 0;
 }
 
-#else /* !BN_ENABLE_GPU */
+#else /* !BN_ENABLE_WEBGPU */
 
 #include <stdio.h>
 
 int main(void) {
-    printf("GPU validation skipped (BN_ENABLE_GPU not set)\n");
+    printf("WebGPU validation skipped (BN_ENABLE_WEBGPU not set)\n");
     return 0;
 }
 
-#endif /* BN_ENABLE_GPU */
+#endif /* BN_ENABLE_WEBGPU */

@@ -6,7 +6,7 @@
  * matvec/matmul on GPU with staging buffer readback.
  */
 
-#ifdef BN_ENABLE_GPU
+#ifdef BN_ENABLE_WEBGPU
 
 #include "gpu_wgpu.h"
 #include "gpu_backend.h"
@@ -2604,4 +2604,4 @@ void bn_gpu_wgpu_destroy(BnGPUBackend *gpu)
     free(gpu);
 }
 
-#endif /* BN_ENABLE_GPU */
+#endif /* BN_ENABLE_WEBGPU */

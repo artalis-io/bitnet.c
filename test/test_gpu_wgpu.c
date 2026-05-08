@@ -4,10 +4,10 @@
  * Tests real GPU dispatch using wgpu-native. Validates shader correctness
  * by comparing GPU matvec results against CPU reference (bn_quant_matvec).
  *
- * Requires: BN_ENABLE_GPU=1 and `make fetch-wgpu` before building.
+ * Requires: BN_ENABLE_WEBGPU=1 and `make fetch-wgpu` before building.
  */
 
-#ifdef BN_ENABLE_GPU
+#ifdef BN_ENABLE_WEBGPU
 
 #include "gpu_wgpu.h"
 #include "gpu_backend.h"
@@ -357,18 +357,18 @@ int main(void)
     test_wgpu_q4_matvec();
     test_wgpu_q4k_matvec();
     test_wgpu_matmul();
-    printf("All GPU wgpu tests completed\n");
+    printf("All WebGPU tests completed\n");
     return 0;
 }
 
-#else /* !BN_ENABLE_GPU */
+#else /* !BN_ENABLE_WEBGPU */
 
 #include <stdio.h>
 
 int main(void)
 {
-    printf("GPU tests skipped (BN_ENABLE_GPU not set)\n");
+    printf("WebGPU tests skipped (BN_ENABLE_WEBGPU not set)\n");
     return 0;
 }
 
-#endif /* BN_ENABLE_GPU */
+#endif /* BN_ENABLE_WEBGPU */

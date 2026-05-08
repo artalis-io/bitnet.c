@@ -4,7 +4,7 @@
  * Verifies that GPU forward pass and CPU SIMD backends produce consistent
  * results against scalar baselines. Requires a real GGUF model file.
  *
- * Usage: ./test_coherence <model.gguf> [--gpu]
+ * Usage: ./test_coherence <model.gguf> [--webgpu]
  *
  * Phase 1: Forward pass coherence (GPU vs CPU greedy decode)
  * Phase 2: Matvec backend comparison (SIMD vs scalar)
@@ -21,7 +21,7 @@
 #include "quant.h"
 #include "quant_internal.h"
 #include "gpu_backend.h"
-#ifdef BN_ENABLE_GPU
+#ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif
 #ifdef BN_ENABLE_METAL
@@ -190,14 +190,14 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--gpu] [--metal]\n", argv[0]);
-        fprintf(stderr, "Coherence test: GPU vs CPU forward pass, SIMD vs scalar matvec\n");
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal]\n", argv[0]);
+        fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
 
-    int use_gpu = 0, use_metal = 0;
+    int use_webgpu = 0, use_metal = 0;
     for (int i = 2; i < argc; i++) {
-        if (strcmp(argv[i], "--gpu") == 0) use_gpu = 1;
+        if (strcmp(argv[i], "--webgpu") == 0) use_webgpu = 1;
         if (strcmp(argv[i], "--metal") == 0) use_metal = 1;
     }
 
@@ -205,7 +205,7 @@ int main(int argc, char **argv) {
 
     printf("=== Coherence Test ===\n");
     printf("Model: %s\n", argv[1]);
-    printf("GPU:   %s\n\n", use_gpu ? "wgpu" : use_metal ? "metal" : "off");
+    printf("GPU:   %s\n\n", use_webgpu ? "webgpu" : use_metal ? "metal" : "off");
 
     /* ── Load model ──────────────────────────────────────────────── */
 
@@ -299,8 +299,8 @@ int main(int argc, char **argv) {
         model.gpu = saved_gpu;
     }
 
-#ifdef BN_ENABLE_GPU
-    if (use_gpu) {
+#ifdef BN_ENABLE_WEBGPU
+    if (use_webgpu) {
         /* GPU decode */
         BnGPUBackend *gpu = bn_gpu_wgpu_create("shaders/");
         if (!gpu) {
@@ -463,7 +463,7 @@ int main(int argc, char **argv) {
     } else
 #endif
     {
-        if (use_gpu || use_metal)
+        if (use_webgpu || use_metal)
             printf("  GPU: not compiled, skipping\n");
         else
             printf("  GPU: not requested, skipping GPU vs CPU comparison\n");
@@ -518,9 +518,12 @@ int main(int argc, char **argv) {
             phase3_name = "ffn_gate";
         }
     }
+#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL)
+    (void)phase3_name;
+#endif
 
-#ifdef BN_ENABLE_GPU
-    if (use_gpu) {
+#ifdef BN_ENABLE_WEBGPU
+    if (use_webgpu) {
         BnGPUBackend *gpu = bn_gpu_wgpu_create("shaders/");
         if (!gpu) {
             printf("  GPU: not available, skipping Phase 3\n");
@@ -660,7 +663,7 @@ int main(int argc, char **argv) {
     } else
 #endif
     {
-        if (use_gpu || use_metal)
+        if (use_webgpu || use_metal)
             printf("  GPU: not compiled, skipping\n");
         else
             printf("  GPU: not requested, skipping\n");
