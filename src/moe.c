@@ -587,26 +587,21 @@ void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
         ms->router_logits[e] = expf(ms->router_logits[e] - max_val);
         sum += ms->router_logits[e];
     }
-    for (int e = 0; e < n_experts; e++)
-        ms->router_logits[e] /= sum;
-
-    // Top-K selection (partial sort)
+    // Top-K selection (partial sort). Select over exp(logit - max);
+    // the all-expert softmax denominator is common and cancels after
+    // the selected weights are normalized below.
     for (int i = 0; i < k; i++) {
         int best = -1;
         float best_val = -1.0f;
         for (int e = 0; e < n_experts; e++) {
-            // Skip already-selected experts
-            int skip = 0;
-            for (int j = 0; j < i; j++)
-                if (ms->expert_indices[j] == e) { skip = 1; break; }
-            if (skip) continue;
             if (ms->router_logits[e] > best_val) {
                 best_val = ms->router_logits[e];
                 best = e;
             }
         }
         ms->expert_indices[i] = best;
-        ms->expert_weights[i] = best_val;
+        ms->expert_weights[i] = best_val / sum;
+        ms->router_logits[best] = -1.0f;
     }
 
     // Normalize selected weights to sum to 1.0
@@ -777,6 +772,41 @@ static inline double moe_time_ms(void) {
     return t;
 }
 
+static inline void moe_weighted_add(float *dst, const float *src, float weight, int n) {
+    int i = 0;
+#ifdef __AVX2__
+    __m256 wv = _mm256_set1_ps(weight);
+    for (; i + 7 < n; i += 8) {
+        __m256 acc = _mm256_loadu_ps(dst + i);
+        __m256 val = _mm256_mul_ps(wv, _mm256_loadu_ps(src + i));
+        _mm256_storeu_ps(dst + i, _mm256_add_ps(acc, val));
+    }
+#elif defined(__ARM_NEON)
+    float32x4_t wv = vdupq_n_f32(weight);
+    for (; i + 3 < n; i += 4) {
+        float32x4_t acc = vld1q_f32(dst + i);
+        float32x4_t val = vmulq_f32(wv, vld1q_f32(src + i));
+        vst1q_f32(dst + i, vaddq_f32(acc, val));
+    }
+#endif
+    for (; i < n; i++)
+        dst[i] += weight * src[i];
+}
+
+static inline void moe_residual_add(float *x, const float *r, int n) {
+    int i = 0;
+#ifdef __AVX2__
+    for (; i + 7 < n; i += 8)
+        _mm256_storeu_ps(x + i, _mm256_add_ps(_mm256_loadu_ps(x + i),
+                                              _mm256_loadu_ps(r + i)));
+#elif defined(__ARM_NEON)
+    for (; i + 3 < n; i += 4)
+        vst1q_f32(x + i, vaddq_f32(vld1q_f32(x + i), vld1q_f32(r + i)));
+#endif
+    for (; i < n; i++)
+        x[i] += r[i];
+}
+
 // Full MoE FFN block
 void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 #if defined(__EMSCRIPTEN__)
@@ -925,8 +955,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
             for (int k = 0; k < valid_k; k++) {
                 float w = valid_weights[k];
                 if (w == 0.0f) continue;
-                for (int d = 0; d < dim; d++)
-                    ms->expert_out[d] += w * ms->expert_down_batch[k][d];
+                moe_weighted_add(ms->expert_out, ms->expert_down_batch[k], w, dim);
             }
             ms->stats.accum_time_ms += moe_time_ms() - t0;
 
@@ -1066,8 +1095,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
             t0 = moe_time_ms();
             for (int h = 0; h < n_hits; h++) {
                 float w = hit_weights[h];
-                for (int d = 0; d < dim; d++)
-                    ms->expert_out[d] += w * ms->expert_down_batch[h][d];
+                moe_weighted_add(ms->expert_out, ms->expert_down_batch[h], w, dim);
             }
             ms->stats.accum_time_ms += moe_time_ms() - t0;
         }
@@ -1193,8 +1221,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 
             // Weighted accumulation
             t0 = moe_time_ms();
-            for (int d = 0; d < dim; d++)
-                ms->expert_out[d] += weight * s->xb2[d];
+            moe_weighted_add(ms->expert_out, s->xb2, weight, dim);
             ms->stats.accum_time_ms += moe_time_ms() - t0;
         }
 
@@ -1245,8 +1272,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 
             // Weighted accumulation
             t0 = moe_time_ms();
-            for (int d = 0; d < dim; d++)
-                ms->expert_out[d] += weight * s->xb2[d];
+            moe_weighted_add(ms->expert_out, s->xb2, weight, dim);
             ms->stats.accum_time_ms += moe_time_ms() - t0;
         }
     }
@@ -1273,11 +1299,9 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
             for (int d = 0; d < dim; d++)
                 gate_dot += s->xb[d] * lw->shared_expert_gate[d];
             float gate = 1.0f / (1.0f + expf(-gate_dot));
-            for (int d = 0; d < dim; d++)
-                ms->expert_out[d] += gate * s->xb2[d];
+            moe_weighted_add(ms->expert_out, s->xb2, gate, dim);
         } else {
-            for (int d = 0; d < dim; d++)
-                ms->expert_out[d] += s->xb2[d];
+            moe_weighted_add(ms->expert_out, s->xb2, 1.0f, dim);
         }
     }
     ms->stats.shared_time_ms += moe_time_ms() - t0;
@@ -1288,8 +1312,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
     memcpy(s->xb, ms->expert_out, dim * sizeof(float));
 
     // 7. Residual add
-    for (int d = 0; d < dim; d++)
-        s->x[d] += s->xb[d];
+    moe_residual_add(s->x, s->xb, dim);
 }
 
 // --- Batch MoE FFN for prefill ---

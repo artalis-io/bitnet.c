@@ -3,6 +3,14 @@
 #include <immintrin.h>
 #include <string.h>
 
+static inline float q4k_fp16_to_fp32(uint16_t h) {
+#ifdef __F16C__
+    return _cvtsh_ss(h);
+#else
+    return bn_fp16_to_fp32(h);
+#endif
+}
+
 static inline __m256i q4k_scale_all(uint8_t scale) {
     return _mm256_set1_epi16((int16_t)scale);
 }
@@ -33,6 +41,9 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
 
         float row_sums[4] = {0};
 
+#if defined(__GNUC__) || defined(__clang__)
+        #pragma GCC unroll 8
+#endif
         for (int b = 0; b < n_bpr; b++) {
             float dx = x_d[b];
             const int16_t *bsums = x_bsums + b * 16;
@@ -47,8 +58,8 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
 
             for (int r = 0; r < nrows; r++) {
                 const BnBlockQ4K *blk = &blocks[(size_t)(row0 + r) * n_bpr + b];
-                float d    = bn_fp16_to_fp32(blk->d);
-                float dmin = bn_fp16_to_fp32(blk->dmin);
+                float d    = q4k_fp16_to_fp32(blk->d);
+                float dmin = q4k_fp16_to_fp32(blk->dmin);
 
                 /* Decode scales and mins */
                 uint32_t utmp[3];

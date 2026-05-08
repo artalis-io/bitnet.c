@@ -257,7 +257,25 @@ static void forward_ssm_block(BnModel *m, BnSession *sess, BnLayerWeights *lw, i
     BL_START();
 
     // 1. Norm input
-    rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
+    int ssm_preq8k = 0;
+    int n_sb_ssm = dim / BN_QK_K;
+    float ssm_q8k_d[n_sb_ssm > 0 ? n_sb_ssm : 1];
+    int16_t ssm_q8k_bsums[n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
+#ifdef __AVX2__
+    int ssm_kquant = !m->gpu && dim % BN_QK_K == 0 &&
+                     (lw->wqkv.type == BN_GGUF_TENSOR_Q4_K ||
+                      lw->wqkv.type == BN_GGUF_TENSOR_Q6_K) &&
+                     (lw->wz.type == BN_GGUF_TENSOR_Q4_K ||
+                      lw->wz.type == BN_GGUF_TENSOR_Q6_K);
+    if (ssm_kquant) {
+        bn_quant_rmsnorm_q8k_avx2(s->x, lw->attn_norm, dim, c->norm_eps,
+                                  s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
+        ssm_preq8k = 1;
+    } else
+#endif
+    {
+        rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
+    }
     BL_ACC(bl_rmsnorm_us);
 
     // 2. QKV + Z gate projections (both read from s->xb)
@@ -268,7 +286,11 @@ static void forward_ssm_block(BnModel *m, BnSession *sess, BnLayerWeights *lw, i
             { qkv, &lw->wqkv },
             { z,   &lw->wz   },
         };
-        bn_quant_matvec_batch_gpu(tasks, 2, s->xb, s->x_q, m->pool, m->gpu);
+        if (ssm_preq8k)
+            bn_quant_matvec_batch_preq8k(tasks, 2, s->x_q,
+                                         ssm_q8k_d, ssm_q8k_bsums, s->xb, m->pool);
+        else
+            bn_quant_matvec_batch_gpu(tasks, 2, s->xb, s->x_q, m->pool, m->gpu);
     }
     BL_ACC(bl_matvec_qkv_us);
 
@@ -304,7 +326,16 @@ static void forward_ssm_block(BnModel *m, BnSession *sess, BnLayerWeights *lw, i
             { alpha_arr, &lw->ssm_alpha },
             { beta_arr,  &lw->ssm_beta  },
         };
-        bn_quant_matvec_batch_gpu(ab, 2, s->xb, s->x_q, m->pool, m->gpu);
+        if (ssm_preq8k &&
+            (lw->ssm_alpha.type == BN_GGUF_TENSOR_Q4_K ||
+             lw->ssm_alpha.type == BN_GGUF_TENSOR_Q6_K) &&
+            (lw->ssm_beta.type == BN_GGUF_TENSOR_Q4_K ||
+             lw->ssm_beta.type == BN_GGUF_TENSOR_Q6_K)) {
+            bn_quant_matvec_batch_preq8k(ab, 2, s->x_q,
+                                         ssm_q8k_d, ssm_q8k_bsums, s->xb, m->pool);
+        } else {
+            bn_quant_matvec_batch_gpu(ab, 2, s->xb, s->x_q, m->pool, m->gpu);
+        }
     }
     for (int h = 0; h < num_v_heads; h++) {
         float dt = alpha_arr[h] + lw->ssm_dt_bias[h];
@@ -561,37 +592,31 @@ static int forward_single_layer(BnModel *m, BnSession *sess, int l, int pos, int
             float *k_tmp = s->hb2;
             float *v_tmp = s->hb2 + kv_dim;
 
-            // Q matvec (reuse cached Q8K if available)
-            {
-                BnMatvecTask q_task[1] = {{ q_full, &lw->wq }};
-                if (attn_preq8k)
-                    bn_quant_matvec_batch_preq8k(q_task, 1, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb, m->pool);
-                else
-                    bn_quant_matvec_batch_gpu(q_task, 1, s->xb, s->x_q, m->pool, m->gpu);
-            }
-            // K+V matvecs (reuse same cached Q8K)
+            // Q+K+V matvecs (reuse cached Q8K if available)
             if (!(c->kv_tq_bits > 0 && m->tq_state) && !c->kv_f16) {
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_dim;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_dim;
-                BnMatvecTask kv[2] = {
+                BnMatvecTask qkv[3] = {
+                    { q_full,          &lw->wq },
                     { key_cache_row,   &lw->wk },
                     { value_cache_row, &lw->wv },
                 };
                 if (attn_preq8k)
-                    bn_quant_matvec_batch_preq8k(kv, 2, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb, m->pool);
+                    bn_quant_matvec_batch_preq8k(qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb, m->pool);
                 else
-                    bn_quant_matvec_batch_gpu(kv, 2, s->xb, s->x_q, m->pool, m->gpu);
+                    bn_quant_matvec_batch_gpu(qkv, 3, s->xb, s->x_q, m->pool, m->gpu);
                 k_tmp = key_cache_row;
                 v_tmp = value_cache_row;
             } else {
-                BnMatvecTask kv[2] = {
+                BnMatvecTask qkv[3] = {
+                    { q_full, &lw->wq },
                     { k_tmp, &lw->wk },
                     { v_tmp, &lw->wv },
                 };
                 if (attn_preq8k)
-                    bn_quant_matvec_batch_preq8k(kv, 2, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb, m->pool);
+                    bn_quant_matvec_batch_preq8k(qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb, m->pool);
                 else
-                    bn_quant_matvec_batch_gpu(kv, 2, s->xb, s->x_q, m->pool, m->gpu);
+                    bn_quant_matvec_batch_gpu(qkv, 3, s->xb, s->x_q, m->pool, m->gpu);
             }
             BL_ACC(bl_matvec_qkv_us);
 
@@ -2211,11 +2236,20 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
     int hidden_dim = c->hidden_dim;
     int q_dim = c->n_heads * head_size;
     int q_buf_stride = (q_dim > dim ? q_dim * 2 : dim);
+    int xb2_stride = dim;
+    int hb_stride = hidden_dim;
+    int hb2_stride = hidden_dim;
     if (c->full_attn_interval > 0 && c->ssm_inner_size > 0) {
         int ssm_qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 +
                           c->ssm_inner_size;
         if (ssm_qkv_dim > q_buf_stride)
             q_buf_stride = ssm_qkv_dim;
+        if (c->ssm_inner_size > xb2_stride)
+            xb2_stride = c->ssm_inner_size;
+        if (c->ssm_inner_size > hb_stride)
+            hb_stride = c->ssm_inner_size;
+        if (c->ssm_inner_size > hb2_stride)
+            hb2_stride = c->ssm_inner_size;
     }
     size_t nt = (size_t)n_tokens;
 
@@ -2224,8 +2258,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
     size_t batch_floats = nt * dim                                            // xb
                         + nt * (size_t)q_buf_stride                          // q_buf
                         + nt * kv_dim * 2                                     // k_new, v_new
-                        + nt * dim                                            // xb2
-                        + nt * hidden_dim * 2;                                // hb, hb2
+                        + nt * (size_t)xb2_stride                             // xb2 / SSM z
+                        + nt * (size_t)hb_stride                              // hb / SSM out
+                        + nt * (size_t)hb2_stride;                            // hb2
     size_t arena_size = act_elems * sizeof(float)                             // act
                       + batch_floats * sizeof(float);                         // batch
 #ifdef __AVX2__
@@ -2269,8 +2304,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens, i
     float *K_new = Q_buf + nt * q_buf_stride;
     float *V_new = K_new + nt * kv_dim;
     float *Xb2  = V_new + nt * kv_dim;
-    float *Hb   = Xb2 + nt * dim;
-    float *Hb2  = Hb + nt * hidden_dim;
+    float *Hb   = Xb2 + nt * xb2_stride;
+    float *Hb2  = Hb + nt * hb_stride;
 
     BnWeights *w = &m->weights;
 

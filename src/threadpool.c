@@ -17,9 +17,10 @@
 // Chunk size for atomic work-stealing.
 // Large chunks preserve memory locality (contiguous row access per thread).
 // Stealing only kicks in for the last chunk when threads finish at different times.
-#define TP_CHUNK_MIN 128
-#define TP_POLL_ITERS_LARGE 50000
-#define TP_POLL_ITERS_SMALL 50000
+#define TP_CHUNK_MIN 32
+#define TP_CHUNK_MIN_LARGE 128
+#define TP_POLL_ITERS_LARGE 5000
+#define TP_POLL_ITERS_SMALL 5000
 
 typedef struct {
     BnThreadPool *pool;
@@ -64,10 +65,11 @@ static void tp_execute(BnThreadPool *pool) {
         int n = task->n;
         int nt4 = nt <= INT_MAX / 4 ? nt * 4 : nt;  // avoid overflow
         int chunk = n / nt4;
+        int min_chunk = (n >= 4096) ? TP_CHUNK_MIN_LARGE : TP_CHUNK_MIN;
         if (n <= nt4) {
             chunk = 1;
-        } else if (chunk < TP_CHUNK_MIN) {
-            chunk = TP_CHUNK_MIN;
+        } else if (chunk < min_chunk) {
+            chunk = min_chunk;
         }
         for (;;) {
             int start = atomic_fetch_add_explicit(&pool->cursors[t], chunk,

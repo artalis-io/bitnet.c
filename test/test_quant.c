@@ -672,6 +672,104 @@ static void test_bf16_matvec_multi_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_mixed_kquant_matvec_batch_correctness(void) {
+    printf("test_mixed_kquant_matvec_batch_correctness... ");
+
+    int rows = 5, cols = 256;
+    BnBlockQ4K *q4 = (BnBlockQ4K *)calloc((size_t)rows, sizeof(BnBlockQ4K));
+    BnBlockQ6K *q6 = (BnBlockQ6K *)calloc((size_t)rows, sizeof(BnBlockQ6K));
+
+    for (int r = 0; r < rows; r++) {
+        q4[r].d = 0x3C00;
+        q4[r].dmin = 0;
+        for (int i = 0; i < 12; i++) q4[r].scales[i] = (uint8_t)((r * 7 + i * 3) & 0x3f);
+        for (int i = 0; i < 128; i++) q4[r].qs[i] = (uint8_t)(r * 17 + i * 11);
+
+        q6[r].d = 0x3C00;
+        for (int i = 0; i < 16; i++) q6[r].scales[i] = (int8_t)((r * 5 + i * 3) % 17 - 8);
+        for (int i = 0; i < 128; i++) q6[r].ql[i] = (uint8_t)(r * 13 + i * 5);
+        for (int i = 0; i < 64; i++) q6[r].qh[i] = (uint8_t)(r * 19 + i * 7);
+    }
+
+    BnQWeight W4 = { .data = q4, .type = BN_GGUF_TENSOR_Q4_K, .rows = rows, .cols = cols, .scale = 1.0f };
+    BnQWeight W6 = { .data = q6, .type = BN_GGUF_TENSOR_Q6_K, .rows = rows, .cols = cols, .scale = 1.0f };
+
+    float x[256];
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.03125f * ((i * 11 + 3) % 37) - 0.5f;
+
+    float ref4[5], ref6[5], out4[5], out6[5];
+    int8_t x_q_ref[256];
+    bn_quant_matvec(ref4, &W4, x, x_q_ref, NULL);
+    bn_quant_matvec(ref6, &W6, x, x_q_ref, NULL);
+
+    BnMatvecTask tasks[2] = {
+        { out4, &W4 },
+        { out6, &W6 },
+    };
+    int8_t x_q[256];
+    bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out4[i] - ref4[i]) < 1e-4f);
+        assert(fabsf(out6[i] - ref6[i]) < 1e-4f);
+    }
+
+    free(q4);
+    free(q6);
+    printf("PASSED\n");
+}
+
+static void test_mixed_kquant_matvec_multi_correctness(void) {
+    printf("test_mixed_kquant_matvec_multi_correctness... ");
+
+    int rows = 5, cols = 256;
+    BnBlockQ4K *q4 = (BnBlockQ4K *)calloc((size_t)rows, sizeof(BnBlockQ4K));
+    BnBlockQ6K *q6 = (BnBlockQ6K *)calloc((size_t)rows, sizeof(BnBlockQ6K));
+
+    for (int r = 0; r < rows; r++) {
+        q4[r].d = 0x3C00;
+        q4[r].dmin = 0;
+        for (int i = 0; i < 12; i++) q4[r].scales[i] = (uint8_t)((r * 9 + i * 5) & 0x3f);
+        for (int i = 0; i < 128; i++) q4[r].qs[i] = (uint8_t)(r * 23 + i * 3);
+
+        q6[r].d = 0x3C00;
+        for (int i = 0; i < 16; i++) q6[r].scales[i] = (int8_t)((r * 7 + i * 5) % 19 - 9);
+        for (int i = 0; i < 128; i++) q6[r].ql[i] = (uint8_t)(r * 11 + i * 13);
+        for (int i = 0; i < 64; i++) q6[r].qh[i] = (uint8_t)(r * 17 + i * 7);
+    }
+
+    BnQWeight W4 = { .data = q4, .type = BN_GGUF_TENSOR_Q4_K, .rows = rows, .cols = cols, .scale = 1.0f };
+    BnQWeight W6 = { .data = q6, .type = BN_GGUF_TENSOR_Q6_K, .rows = rows, .cols = cols, .scale = 1.0f };
+
+    float x4[256], x6[256];
+    for (int i = 0; i < cols; i++) {
+        x4[i] = 0.025f * ((i * 7 + 5) % 41) - 0.45f;
+        x6[i] = 0.02f * ((i * 13 + 2) % 43) - 0.42f;
+    }
+
+    float ref4[5], ref6[5], out4[5], out6[5];
+    int8_t x_q_ref[256];
+    bn_quant_matvec(ref4, &W4, x4, x_q_ref, NULL);
+    bn_quant_matvec(ref6, &W6, x6, x_q_ref, NULL);
+
+    BnMatvecMultiTask tasks[2] = {
+        { out4, &W4, x4 },
+        { out6, &W6, x6 },
+    };
+    int8_t x_q_bufs[2 * 256];
+    bn_quant_matvec_multi(tasks, 2, x_q_bufs, NULL);
+
+    for (int i = 0; i < rows; i++) {
+        assert(fabsf(out4[i] - ref4[i]) < 1e-4f);
+        assert(fabsf(out6[i] - ref6[i]) < 1e-4f);
+    }
+
+    free(q4);
+    free(q6);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_dispatch_routing();
@@ -687,6 +785,8 @@ int main(void) {
     test_q8_matvec_multi_correctness();
     test_bf16_matvec_batch_correctness();
     test_bf16_matvec_multi_correctness();
+    test_mixed_kquant_matvec_batch_correctness();
+    test_mixed_kquant_matvec_multi_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }

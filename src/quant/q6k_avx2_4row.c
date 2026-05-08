@@ -2,6 +2,14 @@
 #include "simd_helpers.h"
 #include <immintrin.h>
 
+static inline float q6k_fp16_to_fp32(uint16_t h) {
+#ifdef __F16C__
+    return _cvtsh_ss(h);
+#else
+    return bn_fp16_to_fp32(h);
+#endif
+}
+
 static inline __m256i q6k_scale_pair(int8_t lo, int8_t hi) {
     return _mm256_set_epi16(hi, hi, hi, hi, hi, hi, hi, hi,
                             lo, lo, lo, lo, lo, lo, lo, lo);
@@ -32,6 +40,9 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
 
         float row_sums[4] = {0};
 
+#if defined(__GNUC__) || defined(__clang__)
+        #pragma GCC unroll 8
+#endif
         for (int b = 0; b < n_bpr; b++) {
             float dx = x_d[b];
             const int16_t *bsums = x_bsums + b * 16;
@@ -45,7 +56,7 @@ void bn_quant_q6k_avx2_4row_range(void *ctx, int group_start, int group_end) {
 
             for (int r = 0; r < nrows; r++) {
                 const BnBlockQ6K *blk = &blocks[(size_t)(row0 + r) * n_bpr + b];
-                float d = bn_fp16_to_fp32(blk->d);
+                float d = q6k_fp16_to_fp32(blk->d);
                 const uint8_t *ql = blk->ql;
                 const uint8_t *qh = blk->qh;
                 const int8_t  *sc = blk->scales;

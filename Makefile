@@ -51,6 +51,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
   # x86: AVX2 + scalar
+  CFLAGS += -mprefer-vector-width=256
   QUANT_BACKEND = src/quant/x_quant_avx2.c src/quant/rmsnorm_q8k_avx2.c \
     src/quant/i2s_avx2.c src/quant/i2s_avx2_4row.c src/quant/i2s_scalar.c \
     src/quant/tq2_avx2.c src/quant/tq2_scalar.c \
