@@ -59,6 +59,8 @@ run_case "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" "*qwen3-*0.6b*.gguf"
 run_case "Qwen 3 sparse MoE" "BN_MODEL_QWEN3_MOE" "*qwen3-*a3b*.gguf"
 run_case "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" "*qwen3.5*9b*.gguf"
 run_case "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" "*qwen3.5*35b*a3b*.gguf"
+run_case "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" "*qwen3.6*27b*.gguf"
+run_case "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" "*qwen3.6*35b*a3b*.gguf"
 
 if [ "$REQUIRE_MODELS" = "1" ] && [ "$missing" -ne 0 ]; then
     echo "Model matrix FAILED: $missing required model case(s) missing"

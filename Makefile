@@ -29,6 +29,8 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/quant/q8_neon_sdot.c src/quant/q8_neon.c src/quant/q8_scalar.c \
     src/quant/q4_neon_sdot.c src/quant/q4_neon.c src/quant/q4_scalar.c \
     src/quant/q4_1_neon.c src/quant/q4_1_scalar.c \
+    src/quant/f32_neon.c src/quant/f32_scalar.c \
+    src/quant/f16_neon.c src/quant/f16_scalar.c \
     src/quant/bf16_neon.c src/quant/bf16_scalar.c \
     src/quant/q6k_neon_sdot.c src/quant/q6k_neon.c src/quant/q6k_scalar.c \
     src/quant/q8k_neon.c src/quant/q8k_scalar.c \
@@ -59,6 +61,8 @@ else
     src/quant/q8_avx2.c src/quant/q8_scalar.c \
     src/quant/q4_avx2.c src/quant/q4_avx2_4row.c src/quant/q4_avx2_matmul.c src/quant/q4_scalar.c \
     src/quant/q4_1_avx2.c src/quant/q4_1_scalar.c \
+    src/quant/f32_avx2.c src/quant/f32_scalar.c \
+    src/quant/f16_avx2.c src/quant/f16_scalar.c \
     src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
     src/quant/q6k_avx2.c src/quant/q6k_avx2_sdot.c src/quant/q6k_avx2_4row.c src/quant/q6k_scalar.c \
     src/quant/q8k_avx2.c src/quant/q8k_scalar.c \
@@ -128,10 +132,21 @@ SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/
 CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS)
 LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS)
 OBJS = $(SRCS:.c=.o) $(METAL_OBJS)
+BUILD_CONFIG := webgpu=$(if $(BN_ENABLE_WEBGPU),1,0) metal=$(if $(BN_ENABLE_METAL),1,0) cc=$(CC) cflags=$(CFLAGS)
+BUILD_CONFIG_STAMP := .build-config
+
+.PHONY: config-check
+config-check:
+	@old=$$(cat $(BUILD_CONFIG_STAMP) 2>/dev/null || true); \
+	if [ "$$old" != "$(BUILD_CONFIG)" ]; then \
+		echo "Build config changed; rebuilding objects"; \
+		rm -f src/*.o src/quant/*.o src/transformer/*.o src/gpu_metal.o bitnet; \
+		printf '%s\n' "$(BUILD_CONFIG)" > $(BUILD_CONFIG_STAMP); \
+	fi
 
 # Default target
-bitnet: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+bitnet: config-check $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(LDFLAGS)
 
 # Debug build
 debug: CFLAGS += -DDEBUG -g -O0
@@ -176,7 +191,7 @@ bench_scalar: $(SCALAR_BENCH_SRCS)
 SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
     src/quant/tq2_scalar.c src/quant/tq1_scalar.c \
     src/quant/q8_scalar.c src/quant/q4_scalar.c src/quant/q4_1_scalar.c \
-    src/quant/bf16_scalar.c \
+    src/quant/f32_scalar.c src/quant/f16_scalar.c src/quant/bf16_scalar.c \
     src/quant/q6k_scalar.c src/quant/q8k_scalar.c src/quant/q4k_scalar.c \
     src/quant/q5k_scalar.c src/quant/q3k_scalar.c src/quant/q2k_scalar.c \
     src/quant/iq4nl_scalar.c src/quant/iq4xs_scalar.c \
@@ -467,4 +482,4 @@ test_coherence: $(COHERENCE_SRCS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o
+	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)

@@ -10,7 +10,7 @@ require_file() {
     fi
 }
 
-quant_formats="i2s tq2 tq1 q8 q4 q4_1 bf16 q6k q8k q4k q5k q3k q2k iq4nl iq4xs iq3xxs iq3s iq2xxs iq2xs iq2s"
+quant_formats="i2s tq2 tq1 q8 q4 q4_1 f32 f16 bf16 q6k q8k q4k q5k q3k q2k iq4nl iq4xs iq3xxs iq3s iq2xxs iq2xs iq2s"
 cpu_backends="scalar avx2 neon wasm"
 
 for fmt in $quant_formats; do

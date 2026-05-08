@@ -330,6 +330,38 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         return;
     }
 
+    if (W->type == BN_GGUF_TENSOR_F32) {
+        (void)x_q_buf;
+        BnF32Ctx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_f32_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_f32_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_f32_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_f32_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
+    if (W->type == BN_GGUF_TENSOR_F16) {
+        (void)x_q_buf;
+        BnF16Ctx ctx = { out, W, x };
+#ifdef __ARM_NEON
+        BnTPTask task = { bn_quant_f16_neon_range, &ctx, W->rows };
+#elif defined(__AVX2__)
+        BnTPTask task = { bn_quant_f16_avx2_range, &ctx, W->rows };
+#elif defined(__wasm_simd128__)
+        BnTPTask task = { bn_quant_f16_wasm_range, &ctx, W->rows };
+#else
+        BnTPTask task = { bn_quant_f16_scalar_range, &ctx, W->rows };
+#endif
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
     if (W->type == BN_GGUF_TENSOR_IQ4_NL) {
         (void)x_q_buf;
         BnIQ4NLCtx ctx = { out, W, x };
@@ -520,6 +552,8 @@ bn_tp_fn bn_quant_get_float_kernel(int type) {
     case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_neon_range;
     case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_neon_range;
     case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_neon_range;
+    case BN_GGUF_TENSOR_F32:     return bn_quant_f32_neon_range;
+    case BN_GGUF_TENSOR_F16:     return bn_quant_f16_neon_range;
     case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_neon_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_neon_range;
     case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_neon_range;
@@ -536,6 +570,8 @@ bn_tp_fn bn_quant_get_float_kernel(int type) {
     case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_avx2_range;
     case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_avx2_range;
     case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_avx2_range;
+    case BN_GGUF_TENSOR_F32:     return bn_quant_f32_avx2_range;
+    case BN_GGUF_TENSOR_F16:     return bn_quant_f16_avx2_range;
     case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_avx2_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_avx2_range;
     case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_avx2_range;
@@ -552,6 +588,8 @@ bn_tp_fn bn_quant_get_float_kernel(int type) {
     case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_wasm_range;
     case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_wasm_range;
     case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_wasm_range;
+    case BN_GGUF_TENSOR_F32:     return bn_quant_f32_wasm_range;
+    case BN_GGUF_TENSOR_F16:     return bn_quant_f16_wasm_range;
     case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_wasm_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_wasm_range;
     case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_wasm_range;
@@ -568,6 +606,8 @@ bn_tp_fn bn_quant_get_float_kernel(int type) {
     case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_scalar_range;
     case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_scalar_range;
     case BN_GGUF_TENSOR_Q8_K:    return bn_quant_q8k_scalar_range;
+    case BN_GGUF_TENSOR_F32:     return bn_quant_f32_scalar_range;
+    case BN_GGUF_TENSOR_F16:     return bn_quant_f16_scalar_range;
     case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_scalar_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_scalar_range;
     case BN_GGUF_TENSOR_IQ4_NL:  return bn_quant_iq4nl_scalar_range;

@@ -74,6 +74,7 @@ typedef struct {
 
     /* Device limits (stored at creation for runtime validation) */
     uint64_t max_buffer_size;
+    uint64_t max_storage_binding_size;
 
     /* Profiling state */
     int gpu_frame;
@@ -295,7 +296,8 @@ static const char *shader_name_for_type(int type)
 static const int supported_types[] = {
     BN_GGUF_TENSOR_I2_S, BN_GGUF_TENSOR_TQ1_0, BN_GGUF_TENSOR_TQ2_0,
     BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_1, BN_GGUF_TENSOR_Q8_0,
-    BN_GGUF_TENSOR_F16, BN_GGUF_TENSOR_BF16, BN_GGUF_TENSOR_Q2_K, BN_GGUF_TENSOR_Q3_K,
+    BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F16, BN_GGUF_TENSOR_BF16,
+    BN_GGUF_TENSOR_Q2_K, BN_GGUF_TENSOR_Q3_K,
     BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K,
     BN_GGUF_TENSOR_Q8_K, BN_GGUF_TENSOR_IQ4_NL, BN_GGUF_TENSOR_IQ4_XS,
     BN_GGUF_TENSOR_IQ3_XXS, BN_GGUF_TENSOR_IQ3_S, BN_GGUF_TENSOR_IQ2_XXS,
@@ -799,6 +801,9 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
     if (!ctx || !wbuf || !x || !out) return -1;
     if (type < 0 || type >= BN_WGPU_MAX_TYPES) return -1;
     if (!ctx->pipelines[type]) return -1;  /* no pipeline -> CPU fallback */
+    if (ctx->max_storage_binding_size > 0 &&
+        wbuf->size > ctx->max_storage_binding_size)
+        return -1;
 
     int rc = -1;
     WGPUBindGroup bind_group = NULL;
@@ -1055,6 +1060,10 @@ static int wgpu_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         if (t < 0 || t >= BN_WGPU_MAX_TYPES || !ctx->pipelines[t])
             return -1;
         if (!ops[i].W_buf || !ops[i].out) return -1;
+        BnWgpuBuf *wbuf = (BnWgpuBuf *)ops[i].W_buf;
+        if (ctx->max_storage_binding_size > 0 &&
+            wbuf->size > ctx->max_storage_binding_size)
+            return -1;
         size_t op_out = (size_t)ops[i].rows * sizeof(float);
         /* Align each op's output region to 4 bytes for copyBufferToBuffer */
         op_out = (op_out + 3) & ~(size_t)3;
@@ -2465,6 +2474,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     if (limits.maxBufferSize > wgpu_ceil)
         limits.maxBufferSize = wgpu_ceil;
     ctx->max_buffer_size = limits.maxBufferSize;
+    ctx->max_storage_binding_size = limits.maxStorageBufferBindingSize;
     /* Request ShaderF16 feature for f16 WGSL shaders */
     WGPUFeatureName required_features[] = { WGPUFeatureName_ShaderF16 };
     WGPUDeviceDescriptor dev_desc = {

@@ -1287,13 +1287,10 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         int is_attn = (c->full_attn_interval == 0) ||
                       ((l + 1) % c->full_attn_interval == 0);
 
-        // ---- SSM layer: GPU-native if weights uploaded, else CPU fallback ----
+        // ---- SSM layer: CPU fallback until the WebGPU SSM path is token-coherent ----
         if (!is_attn) {
-            if (!lw->ssm_conv1d_gpu || !lw->ssm_dt_bias_gpu || !lw->ssm_a_log_gpu || !lw->ssm_norm_gpu ||
-                !lw->wqkv.gpu_buf || !lw->wz.gpu_buf ||
-                !lw->ssm_alpha.gpu_buf || !lw->ssm_beta.gpu_buf ||
-                !lw->ssm_out.gpu_buf) {
-                // CPU fallback: flush GPU, run SSM on CPU, upload result
+            int use_cpu_ssm_fallback = 1;
+            if (use_cpu_ssm_fallback) {
                 GPU_FLUSH();
                 if (gpu->read_activation(gpu->ctx, BN_GPU_BUF_X, s->x,
                                           (size_t)dim * sizeof(float), 0) != 0)
@@ -1808,28 +1805,26 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         // ---- FFN (MoE or dense) ----
         ffn_block:;
         if (lw->router_weight) {
-            // MoE FFN: GPU expert matvecs with CPU-side routing
-            GPU_FLUSH();
-
-            // Read back xb (normed input) for CPU routing — small: dim floats
-            float xb_cpu[dim];
-            if (gpu->read_activation(gpu->ctx, BN_GPU_BUF_XB, xb_cpu,
-                                      (size_t)dim * sizeof(float), 0) != 0)
-                { return NULL; }
-
-            /* no-op */
-            // CPU routing: select top-K experts
             BnMoEState *ms = sess->moe_state;
             int K = c->n_experts_active;
-            bn_moe_route(ms, xb_cpu, lw->router_weight, dim, c->n_experts, K, m->pool);
 
-            // Zero the MoE output accumulator on GPU
-            {
-                float zeros[dim];
-                memset(zeros, 0, sizeof(zeros));
-                if (gpu->write_activation(gpu->ctx, BN_GPU_BUF_MOE_OUT, zeros,
+            // MoE FFN: CPU fallback until the WebGPU MoE path is token-coherent
+            int use_cpu_moe_fallback = 1;
+            if (use_cpu_moe_fallback) {
+                GPU_FLUSH();
+                if (gpu->read_activation(gpu->ctx, BN_GPU_BUF_X, s->x,
+                                          (size_t)dim * sizeof(float), 0) != 0)
+                    { return NULL; }
+                bn_moe_forward(m, sess, lw, l);
+                if (gpu->write_activation(gpu->ctx, BN_GPU_BUF_X, s->x,
                                            (size_t)dim * sizeof(float), 0) != 0)
                     { return NULL; }
+                void *moe_next_norm = (l + 1 < c->n_layers)
+                    ? w->layers[l + 1].attn_norm_gpu : w->output_norm_gpu;
+                ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_RMSNORM, .type = -1,
+                    .W_buf = moe_next_norm, .buf_in = BN_GPU_BUF_X, .buf_out = BN_GPU_BUF_XB, .buf_aux = -1,
+                    .p = { (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0 } };
+                continue;
             }
 
             // GPU expert dispatch with LRU cache for GPU buffer reuse

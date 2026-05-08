@@ -36,6 +36,10 @@ emcc \
     "$PROJECT_DIR/src/quant/q2k_scalar.c" \
     "$PROJECT_DIR/src/quant/q4_1_wasm.c" \
     "$PROJECT_DIR/src/quant/q4_1_scalar.c" \
+    "$PROJECT_DIR/src/quant/f32_wasm.c" \
+    "$PROJECT_DIR/src/quant/f32_scalar.c" \
+    "$PROJECT_DIR/src/quant/f16_wasm.c" \
+    "$PROJECT_DIR/src/quant/f16_scalar.c" \
     "$PROJECT_DIR/src/quant/bf16_wasm.c" \
     "$PROJECT_DIR/src/quant/bf16_scalar.c" \
     "$PROJECT_DIR/src/quant/iq4nl_wasm.c" \

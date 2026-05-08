@@ -35,6 +35,63 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
 
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
 
+static int qweight_type_supported(int type) {
+    switch (type) {
+        case BN_GGUF_TENSOR_F32:
+        case BN_GGUF_TENSOR_F16:
+        case BN_GGUF_TENSOR_BF16:
+        case BN_GGUF_TENSOR_I2_S:
+        case BN_GGUF_TENSOR_Q4_0:
+        case BN_GGUF_TENSOR_Q4_1:
+        case BN_GGUF_TENSOR_Q8_0:
+        case BN_GGUF_TENSOR_TQ1_0:
+        case BN_GGUF_TENSOR_TQ2_0:
+        case BN_GGUF_TENSOR_Q2_K:
+        case BN_GGUF_TENSOR_Q3_K:
+        case BN_GGUF_TENSOR_Q4_K:
+        case BN_GGUF_TENSOR_Q5_K:
+        case BN_GGUF_TENSOR_Q6_K:
+        case BN_GGUF_TENSOR_Q8_K:
+        case BN_GGUF_TENSOR_IQ4_NL:
+        case BN_GGUF_TENSOR_IQ4_XS:
+        case BN_GGUF_TENSOR_IQ3_XXS:
+        case BN_GGUF_TENSOR_IQ3_S:
+        case BN_GGUF_TENSOR_IQ2_XXS:
+        case BN_GGUF_TENSOR_IQ2_XS:
+        case BN_GGUF_TENSOR_IQ2_S:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int qweight_type_uses_embedded_scale(int type) {
+    switch (type) {
+        case BN_GGUF_TENSOR_F32:
+        case BN_GGUF_TENSOR_F16:
+        case BN_GGUF_TENSOR_BF16:
+        case BN_GGUF_TENSOR_Q4_0:
+        case BN_GGUF_TENSOR_Q4_1:
+        case BN_GGUF_TENSOR_Q8_0:
+        case BN_GGUF_TENSOR_Q2_K:
+        case BN_GGUF_TENSOR_Q3_K:
+        case BN_GGUF_TENSOR_Q4_K:
+        case BN_GGUF_TENSOR_Q5_K:
+        case BN_GGUF_TENSOR_Q6_K:
+        case BN_GGUF_TENSOR_Q8_K:
+        case BN_GGUF_TENSOR_IQ4_NL:
+        case BN_GGUF_TENSOR_IQ4_XS:
+        case BN_GGUF_TENSOR_IQ3_XXS:
+        case BN_GGUF_TENSOR_IQ3_S:
+        case BN_GGUF_TENSOR_IQ2_XXS:
+        case BN_GGUF_TENSOR_IQ2_XS:
+        case BN_GGUF_TENSOR_IQ2_S:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, const char *scale_name) {
     int ti = bn_gguf_find_tensor(f, weight_name);
     if (ti < 0) {
@@ -60,18 +117,7 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
     w->rows = (int)info->dims[1];
     w->cols = (int)info->dims[0];
 
-    // Validate supported tensor types
-    if (w->type != BN_GGUF_TENSOR_I2_S && w->type != BN_GGUF_TENSOR_Q4_0 &&
-        w->type != BN_GGUF_TENSOR_Q4_1 && w->type != BN_GGUF_TENSOR_Q8_0 &&
-        w->type != BN_GGUF_TENSOR_TQ1_0 && w->type != BN_GGUF_TENSOR_TQ2_0 &&
-        w->type != BN_GGUF_TENSOR_Q2_K && w->type != BN_GGUF_TENSOR_Q3_K &&
-        w->type != BN_GGUF_TENSOR_Q4_K && w->type != BN_GGUF_TENSOR_Q5_K &&
-        w->type != BN_GGUF_TENSOR_Q6_K && w->type != BN_GGUF_TENSOR_Q8_K &&
-        w->type != BN_GGUF_TENSOR_BF16 &&
-        w->type != BN_GGUF_TENSOR_IQ4_NL && w->type != BN_GGUF_TENSOR_IQ4_XS &&
-        w->type != BN_GGUF_TENSOR_IQ3_XXS && w->type != BN_GGUF_TENSOR_IQ3_S &&
-        w->type != BN_GGUF_TENSOR_IQ2_XXS && w->type != BN_GGUF_TENSOR_IQ2_XS &&
-        w->type != BN_GGUF_TENSOR_IQ2_S) {
+    if (!qweight_type_supported(w->type)) {
         SH_LOG_ERROR("Unsupported tensor type", "name", weight_name);
         return -1;
     }
@@ -81,17 +127,8 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
         size_t nelements = (size_t)w->rows * w->cols;
         const uint8_t *base = (const uint8_t *)w->data;
         memcpy(&w->scale, base + nelements / 4, sizeof(float));
-    } else if (w->type == BN_GGUF_TENSOR_Q4_0 || w->type == BN_GGUF_TENSOR_Q4_1 ||
-               w->type == BN_GGUF_TENSOR_Q8_0 ||
-               w->type == BN_GGUF_TENSOR_Q2_K || w->type == BN_GGUF_TENSOR_Q3_K ||
-               w->type == BN_GGUF_TENSOR_Q4_K || w->type == BN_GGUF_TENSOR_Q5_K ||
-               w->type == BN_GGUF_TENSOR_Q6_K || w->type == BN_GGUF_TENSOR_Q8_K ||
-               w->type == BN_GGUF_TENSOR_BF16 ||
-               w->type == BN_GGUF_TENSOR_IQ4_NL || w->type == BN_GGUF_TENSOR_IQ4_XS ||
-               w->type == BN_GGUF_TENSOR_IQ3_XXS || w->type == BN_GGUF_TENSOR_IQ3_S ||
-               w->type == BN_GGUF_TENSOR_IQ2_XXS || w->type == BN_GGUF_TENSOR_IQ2_XS ||
-               w->type == BN_GGUF_TENSOR_IQ2_S) {
-        // Per-block scales embedded in each block's d field
+    } else if (qweight_type_uses_embedded_scale(w->type)) {
+        // Per-block scales are embedded for quantized types; plain float types need no scale.
         w->scale = 1.0f;
     } else {
         // TQ1_0/TQ2_0: companion .scale tensor

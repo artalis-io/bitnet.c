@@ -480,7 +480,7 @@ make BN_ENABLE_WEBGPU=1                  # build with WebGPU support
 ./bitnet model.gguf -p "Hello" --webgpu  # run on WebGPU
 ```
 
-The WebGPU backend uses 41 WGSL shaders (23 matvec covering all quantization formats + 10 forward-pass + 3 MoE + 5 SSM operations) with a single-submit forward pass — one command buffer per token. The `BnGPUBackend` vtable in `include/gpu_backend.h` abstracts GPU compute, with the wgpu-native implementation in `src/gpu_wgpu.c`.
+The WebGPU backend uses 41 WGSL shaders (23 matvec covering all quantization formats + 10 forward-pass + 3 MoE + 5 SSM operations) with a single-submit forward pass — one command buffer per token for dense transformer models. Hybrid SSM and sparse MoE models use WebGPU for supported attention/dense operations while routing SSM and MoE layers through the CPU path for token-coherent generation until the full WebGPU SSM/MoE paths pass coherence tests. The `BnGPUBackend` vtable in `include/gpu_backend.h` abstracts GPU compute, with the wgpu-native implementation in `src/gpu_wgpu.c`.
 
 For Hull integration, set `WGPU_LIB_DIR` to avoid double-vendoring the wgpu-native library.
 
@@ -523,6 +523,8 @@ Tested models with generation quality and performance on Apple M1 Max (8 P-cores
 | Qwen3-30B-A3B | 17.7 GB | Q4_K_M | MoE (128 experts, K=8) | **19–20** | Parity-or-better than llama.cpp at steady state |
 | Qwen3.5-35B-A3B | 21.0 GB | Q4_K_M | SSM+MoE (256 experts) | **9–12** | Parity-class CPU throughput with pread/mmap modes |
 | Qwen3.5-9B | 5.3 GB | Q4_K_M (mixed) | Hybrid SSM+Attention | **2.8–3.1** | Best quality, chain-of-thought |
+| Qwen3.6-27B | 15.7 GB | Q4_K_M | Hybrid SSM+Attention | **2.5–2.8** | llama.cpp parity-class on AVX2 for short greedy runs |
+| Qwen3.6-35B-A3B | 20.6 GB | Q4_K_M | SSM+MoE (256 experts) | **1.4–1.8 cold**, higher when warm | Functional on CPU and hybrid WebGPU/CPU fallback |
 
 Any GGUF model using supported weight types works — these are just the tested configurations.
 
@@ -545,8 +547,10 @@ Measured on Apple M1 Max (8 P-cores, 32 GB), PGO build, greedy decoding, 8 threa
 | Llama3-8B-1.58 | 3.4 GB | TQ1_0 (ternary) | **14.5 tok/s** | 19 tok/s | Competitive ternary CPU path |
 | Qwen3-30B-A3B MoE | 17.7 GB | Q4_K_M | **19–20 tok/s** | 10–12 tok/s | Ahead at steady state |
 | Qwen3.5-35B-A3B MoE | 21.0 GB | Q4_K_M | **9–12 tok/s** | 6–8 tok/s | Parity-or-better depending on I/O mode and cache state |
+| Qwen3.6-27B hybrid | 15.7 GB | Q4_K_M | **2.5–2.8 tok/s** | 2.5 tok/s observed via llama.cpp CPU completion | Parity-class AVX2; first-token prefill dominates short prompts |
+| Qwen3.6-35B-A3B MoE | 20.6 GB | Q4_K_M | **1.4–1.8 tok/s cold** | Comparable CPU behavior, strongly cache-state dependent | Sparse Qwen3.6 is token-coherent; `--webgpu` uses CPU fallback for SSM/MoE layers |
 
-CPU performance is now best described as parity-class rather than a blanket percentage. Dense Q4_0/TQ1_0 rows remain close but still model-specific; MoE serving rows reach parity or exceed llama.cpp once the expert working set is warm. llama.cpp may route some nominal CPU MoE work through Metal, so comparisons should note backend and page-cache state. Optional WebGPU (`--webgpu`) and native Metal (`--metal`) backends are available for GPU-accelerated inference.
+CPU performance is now best described as parity-class rather than a blanket percentage. Dense Q4_0/TQ1_0 rows remain close but still model-specific; MoE serving rows reach parity or exceed llama.cpp once the expert working set is warm. Qwen3.6 uses F32 SSM projection tensors inside otherwise quantized GGUFs, so the unquantized F32/F16 matvec path is required for CPU and GPU backends. llama.cpp may route some nominal CPU MoE work through Metal, so comparisons should note backend and page-cache state. Optional WebGPU (`--webgpu`) and native Metal (`--metal`) backends are available for GPU-accelerated inference; on adapters with 128 MB storage-binding limits, oversized logits weights fall back to CPU while the main forward pass remains on GPU. Hybrid SSM and sparse MoE models currently use CPU fallback for SSM/MoE layers under `--webgpu` because the full WebGPU SSM/MoE paths are not yet token-coherent.
 
 ## Known Limitations
 

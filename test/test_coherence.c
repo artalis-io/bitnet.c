@@ -18,6 +18,7 @@
 #include "transformer.h"
 #include "tokenizer.h"
 #include "sampler.h"
+#include "moe.h"
 #include "quant.h"
 #include "quant_internal.h"
 #include "gpu_backend.h"
@@ -88,6 +89,8 @@ static scalar_fn get_scalar_fn(int type) {
     case BN_GGUF_TENSOR_Q4_0:    return bn_quant_q4_scalar_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_scalar_range;
     case BN_GGUF_TENSOR_Q8_0:    return bn_quant_q8_scalar_range;
+    case BN_GGUF_TENSOR_F32:     return bn_quant_f32_scalar_range;
+    case BN_GGUF_TENSOR_F16:     return bn_quant_f16_scalar_range;
     case BN_GGUF_TENSOR_BF16:    return bn_quant_bf16_scalar_range;
     case BN_GGUF_TENSOR_Q2_K:    return bn_quant_q2k_scalar_range;
     case BN_GGUF_TENSOR_Q3_K:    return bn_quant_q3k_scalar_range;
@@ -230,6 +233,15 @@ int main(int argc, char **argv) {
         return 1;
     }
     model.file = mf;
+    if (model.config.n_experts > 0) {
+        if (mf.is_mmap == 1 && mf.data)
+            model.moe_io.mmap_base = mf.data;
+        if (mf.fd >= 0) {
+            model.moe_io.fd = mf.fd;
+            model.expert_fd = mf.fd;
+        }
+        bn_moe_prefetch_create(&model.moe_io);
+    }
 
     BnTokenizer tok;
     if (bn_tokenizer_init(&tok, gf) != 0) {

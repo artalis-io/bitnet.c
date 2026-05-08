@@ -38,10 +38,7 @@ typedef struct {
     int cols;           /* test matrix columns (multiple of block_elems) */
 } TypeInfo;
 
-/* All 22 quant types.
- * F16 and F32 have no CPU matvec kernel in dispatch.c, so they are
- * listed but will be skipped by the CPU path (bn_quant_matvec does not
- * handle them). BF16 does have a kernel. */
+/* All supported matvec weight types, including unquantized F32/F16/BF16. */
 static const TypeInfo ALL_TYPES[] = {
     { "I2_S",      BN_GGUF_TENSOR_I2_S,     128, 256 },
     { "TQ1_0",     BN_GGUF_TENSOR_TQ1_0,    256, 256 },
@@ -83,7 +80,6 @@ static uint16_t fp32_to_bf16(float f) {
  * make_weight_data: allocate and fill valid synthetic weight data for a
  * given quant type. Returns malloc'd buffer. Sets *tensor_scale for
  * types that need per-tensor scale (I2_S, TQ1_0, TQ2_0). Returns NULL
- * if the type is not supported (F16, F32 have no CPU matvec kernel).
  */
 static void *make_weight_data(int type, int rows, int cols, float *tensor_scale) {
     size_t nelements = (size_t)rows * cols;
@@ -461,13 +457,6 @@ static void cpu_matvec(float *out, const BnQWeight *W, const float *x) {
 static int validate_type(BnGPUBackend *gpu, const TypeInfo *info) {
     int rows = ROWS;
     int cols = info->cols;
-
-    /* F16 and F32 have no CPU matvec kernel in dispatch.c */
-    if (info->type == BN_GGUF_TENSOR_F16 ||
-        info->type == BN_GGUF_TENSOR_F32) {
-        printf("SKIP (no CPU matvec kernel)\n");
-        return 0;
-    }
 
     /* Generate weight data */
     float tensor_scale = 1.0f;

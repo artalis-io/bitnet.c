@@ -12,6 +12,18 @@ static uint16_t test_fp32_to_bf16(float f) {
     return (uint16_t)(bits >> 16);
 }
 
+static float ref_dot_f32(const float *w, const float *x, int cols) {
+    float sum = 0.0f;
+    for (int i = 0; i < cols; i++) sum += w[i] * x[i];
+    return sum;
+}
+
+static float ref_dot_f16(const uint16_t *w, const float *x, int cols) {
+    float sum = 0.0f;
+    for (int i = 0; i < cols; i++) sum += bn_fp16_to_fp32(w[i]) * x[i];
+    return sum;
+}
+
 // --- Integration test: dispatch routing ---
 // Verifies that bn_quant_matvec dispatches correctly for each format.
 
@@ -625,6 +637,44 @@ static void test_bf16_matvec_batch_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_unquantized_matvec_correctness(void) {
+    printf("test_unquantized_matvec_correctness... ");
+
+    int rows = 5, cols = 37;
+    float *f32_data = (float *)calloc((size_t)rows * cols, sizeof(float));
+    uint16_t *f16_data = (uint16_t *)calloc((size_t)rows * cols, sizeof(uint16_t));
+    assert(f32_data && f16_data);
+
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            float v = 0.02f * ((r * 13 + c * 7) % 31) - 0.27f;
+            f32_data[(size_t)r * cols + c] = v;
+            f16_data[(size_t)r * cols + c] = bn_fp32_to_fp16(v);
+        }
+    }
+
+    float x[37];
+    for (int i = 0; i < cols; i++)
+        x[i] = 0.03f * ((i * 11 + 5) % 23) - 0.31f;
+
+    BnQWeight W32 = { f32_data, BN_GGUF_TENSOR_F32, rows, cols, 1.0f };
+    BnQWeight W16 = { f16_data, BN_GGUF_TENSOR_F16, rows, cols, 1.0f };
+    float out32[5], out16[5];
+    int8_t x_q[37];
+
+    bn_quant_matvec(out32, &W32, x, x_q, NULL);
+    bn_quant_matvec(out16, &W16, x, x_q, NULL);
+
+    for (int r = 0; r < rows; r++) {
+        assert(fabsf(out32[r] - ref_dot_f32(f32_data + (size_t)r * cols, x, cols)) < 1e-5f);
+        assert(fabsf(out16[r] - ref_dot_f16(f16_data + (size_t)r * cols, x, cols)) < 1e-4f);
+    }
+
+    free(f32_data);
+    free(f16_data);
+    printf("PASSED\n");
+}
+
 static void test_bf16_matvec_multi_correctness(void) {
     printf("test_bf16_matvec_multi_correctness... ");
 
@@ -783,6 +833,7 @@ int main(void) {
     test_q4_matvec_multi_correctness();
     test_q8_matvec_batch_correctness();
     test_q8_matvec_multi_correctness();
+    test_unquantized_matvec_correctness();
     test_bf16_matvec_batch_correctness();
     test_bf16_matvec_multi_correctness();
     test_mixed_kquant_matvec_batch_correctness();
