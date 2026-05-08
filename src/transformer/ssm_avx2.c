@@ -2,8 +2,9 @@
 
 #ifdef __AVX2__
 
-// Conv1d + SiLU over channel range [start, end)
-// Optimized: process 8 channels at a time using AVX2 + fast SiLU.
+// Conv1d + SiLU over channel range [start, end).
+// Keep scalar accumulation order here: recurrent Qwen3.5 layers are sensitive
+// enough that AVX2 FMA regrouping changes greedy token selection vs llama.cpp.
 void bn_transformer_ssm_conv_silu_avx2_range(void *ctx, int start, int end) {
     BnSSMConvCtx *c = (BnSSMConvCtx *)ctx;
     float *qkv = c->qkv;
@@ -12,49 +13,7 @@ void bn_transformer_ssm_conv_silu_avx2_range(void *ctx, int start, int end) {
     int qkv_dim = c->qkv_dim;
     int kern = c->kern;
 
-    // Vectorized path: 8 channels at a time (kern=4 specialized)
-    int ch = start;
-    if (kern == 4) {
-        for (; ch + 7 < end; ch += 8) {
-            // Gather conv_state and weights for 8 channels
-            // conv_state layout: [tap][qkv_dim], weights: [ch][kern]
-            float *cs0 = conv_state + ch;
-            float *cs1 = conv_state + (size_t)qkv_dim + ch;
-            float *cs2 = conv_state + (size_t)2 * qkv_dim + ch;
-
-            // Load conv_state for 3 taps (kern-1 = 3)
-            __m256 s0 = _mm256_loadu_ps(cs0);
-            __m256 s1 = _mm256_loadu_ps(cs1);
-            __m256 s2 = _mm256_loadu_ps(cs2);
-            __m256 cur = _mm256_loadu_ps(qkv + ch);
-
-            // Load weights: conv1d_w[ch*4 + k] for 8 channels
-            // Weights are contiguous per channel: [w0,w1,w2,w3] for each ch
-            // We need to gather w[ch*4+0], w[ch*4+1], w[ch*4+2], w[ch*4+3]
-            // Using scalar gathers is fine since weights are likely in L1
-            float w0[8], w1[8], w2[8], w3[8];
-            for (int i = 0; i < 8; i++) {
-                const float *wp = conv1d_w + (size_t)(ch + i) * 4;
-                w0[i] = wp[0]; w1[i] = wp[1]; w2[i] = wp[2]; w3[i] = wp[3];
-            }
-
-            __m256 sum = _mm256_mul_ps(s0, _mm256_loadu_ps(w0));
-            sum = _mm256_fmadd_ps(s1, _mm256_loadu_ps(w1), sum);
-            sum = _mm256_fmadd_ps(s2, _mm256_loadu_ps(w2), sum);
-            sum = _mm256_fmadd_ps(cur, _mm256_loadu_ps(w3), sum);
-
-            // Shift conv_state: cs0 = cs1, cs1 = cs2, cs2 = cur
-            _mm256_storeu_ps(cs0, s1);
-            _mm256_storeu_ps(cs1, s2);
-            _mm256_storeu_ps(cs2, cur);
-
-            // SiLU: sum * sigmoid(sum) using fast exp
-            _mm256_storeu_ps(qkv + ch, bn_avx2_fast_silu_ps(sum));
-        }
-    }
-
-    // Scalar fallback for remaining channels
-    for (; ch < end; ch++) {
+    for (int ch = start; ch < end; ch++) {
         float sum = 0;
         for (int k = 0; k < kern - 1; k++)
             sum += conv_state[(size_t)k * qkv_dim + ch] *
@@ -205,13 +164,10 @@ void bn_transformer_ssm_gate_avx2_range(void *ctx, int start, int end) {
             ss1 = _mm256_fmadd_ps(o1, o1, ss1);
         }
         float ss = bn_avx2_hsum_ps(_mm256_add_ps(ss0, ss1));
-        __m256 scale = _mm256_set1_ps(1.0f / sqrtf(ss / hd + eps));
-
-        // Apply norm weight + SiLU gate (fast vectorized exp)
-        for (int d = 0; d < hd; d += 8) {
-            __m256 o = _mm256_mul_ps(_mm256_mul_ps(_mm256_loadu_ps(oh + d), scale), _mm256_loadu_ps(nw + d));
-            __m256 g = _mm256_loadu_ps(zh + d);
-            _mm256_storeu_ps(oh + d, _mm256_mul_ps(o, bn_avx2_fast_silu_ps(g)));
+        float scale_s = 1.0f / sqrtf(ss / hd + eps);
+        for (int d = 0; d < hd; d++) {
+            float g = zh[d];
+            oh[d] = oh[d] * scale_s * nw[d] * (g / (1.0f + expf(-g)));
         }
     }
 }
