@@ -78,7 +78,7 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
         float decay = c->alpha[hv];
         float beta = c->beta[hv];
 
-        // --- Pass 1: decay S in-place while computing sk = S @ k ---
+        // --- Pass 1: compute sk = (decay * S) @ k ---
         float sk[head_v_dim] __attribute__((aligned(32)));
         __m256 vdecay = _mm256_set1_ps(decay);
         {
@@ -87,8 +87,6 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
             for (int v = 0; v < head_v_dim; v += 16) {
                 __m256 r0 = _mm256_mul_ps(_mm256_loadu_ps(row + v),     vdecay);
                 __m256 r1 = _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), vdecay);
-                _mm256_storeu_ps(row + v,     r0);
-                _mm256_storeu_ps(row + v + 8, r1);
                 _mm256_storeu_ps(sk + v,     _mm256_mul_ps(r0, kv));
                 _mm256_storeu_ps(sk + v + 8, _mm256_mul_ps(r1, kv));
             }
@@ -99,8 +97,6 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
             for (int v = 0; v < head_v_dim; v += 16) {
                 __m256 r0 = _mm256_mul_ps(_mm256_loadu_ps(row + v),     vdecay);
                 __m256 r1 = _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), vdecay);
-                _mm256_storeu_ps(row + v,     r0);
-                _mm256_storeu_ps(row + v + 8, r1);
                 _mm256_storeu_ps(sk + v,     _mm256_fmadd_ps(r0, kv, _mm256_loadu_ps(sk + v)));
                 _mm256_storeu_ps(sk + v + 8, _mm256_fmadd_ps(r1, kv, _mm256_loadu_ps(sk + v + 8)));
             }
@@ -120,8 +116,10 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
             __m256 qv = _mm256_set1_ps(qh[0] * q_scale);
             float *row = S;
             for (int v = 0; v < head_v_dim; v += 16) {
-                __m256 r0 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     _mm256_loadu_ps(row + v));
-                __m256 r1 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), _mm256_loadu_ps(row + v + 8));
+                __m256 r0 = _mm256_mul_ps(_mm256_loadu_ps(row + v),     vdecay);
+                __m256 r1 = _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), vdecay);
+                r0 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     r0);
+                r1 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), r1);
                 _mm256_storeu_ps(row + v,     r0);
                 _mm256_storeu_ps(row + v + 8, r1);
                 _mm256_storeu_ps(oh + v,     _mm256_mul_ps(r0, qv));
@@ -133,8 +131,10 @@ void bn_transformer_ssm_delta_avx2_range(void *ctx, int start, int end) {
             __m256 qv = _mm256_set1_ps(qh[k] * q_scale);
             float *row = S + (size_t)k * head_v_dim;
             for (int v = 0; v < head_v_dim; v += 16) {
-                __m256 r0 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     _mm256_loadu_ps(row + v));
-                __m256 r1 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), _mm256_loadu_ps(row + v + 8));
+                __m256 r0 = _mm256_mul_ps(_mm256_loadu_ps(row + v),     vdecay);
+                __m256 r1 = _mm256_mul_ps(_mm256_loadu_ps(row + v + 8), vdecay);
+                r0 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v),     r0);
+                r1 = _mm256_fmadd_ps(kv, _mm256_loadu_ps(sk + v + 8), r1);
                 _mm256_storeu_ps(row + v,     r0);
                 _mm256_storeu_ps(row + v + 8, r1);
                 _mm256_storeu_ps(oh + v,     _mm256_fmadd_ps(r0, qv, _mm256_loadu_ps(oh + v)));
