@@ -43,6 +43,7 @@ static int qweight_type_supported(int type) {
         case BN_GGUF_TENSOR_I2_S:
         case BN_GGUF_TENSOR_Q4_0:
         case BN_GGUF_TENSOR_Q4_1:
+        case BN_GGUF_TENSOR_Q5_1:
         case BN_GGUF_TENSOR_Q8_0:
         case BN_GGUF_TENSOR_TQ1_0:
         case BN_GGUF_TENSOR_TQ2_0:
@@ -72,6 +73,7 @@ static int qweight_type_uses_embedded_scale(int type) {
         case BN_GGUF_TENSOR_BF16:
         case BN_GGUF_TENSOR_Q4_0:
         case BN_GGUF_TENSOR_Q4_1:
+        case BN_GGUF_TENSOR_Q5_1:
         case BN_GGUF_TENSOR_Q8_0:
         case BN_GGUF_TENSOR_Q2_K:
         case BN_GGUF_TENSOR_Q3_K:
@@ -210,6 +212,29 @@ static float *load_f32_tensor(BnGGUFFile *f, const char *name) {
     return (float *)bn_gguf_tensor_data(f, ti);
 }
 
+static int gguf_get_u32_or_i32_array(BnGGUFFile *f, const char *key, int idx) {
+    int ki = bn_gguf_find_key(f, key);
+    if (ki < 0) return 0;
+    BnGGUFKeyValue *kv = &f->kvs[ki];
+    if (kv->type == BN_GGUF_TYPE_UINT32) return (int)kv->value.u32;
+    if (kv->type == BN_GGUF_TYPE_INT32) return kv->value.i32;
+    if (kv->type != BN_GGUF_TYPE_ARRAY || idx < 0) return 0;
+    BnGGUFArray *a = &kv->value.arr;
+    if ((uint64_t)idx >= a->n || !a->data) return 0;
+    if (a->elem_type == BN_GGUF_TYPE_INT32)
+        return ((const int32_t *)a->data)[idx];
+    if (a->elem_type == BN_GGUF_TYPE_UINT32)
+        return (int)((const uint32_t *)a->data)[idx];
+    return 0;
+}
+
+static int tensor_dim0(BnGGUFFile *f, const char *name) {
+    int ti = bn_gguf_find_tensor(f, name);
+    if (ti < 0 || f->tensors[ti].n_dims < 1 || f->tensors[ti].dims[0] > INT_MAX)
+        return 0;
+    return (int)f->tensors[ti].dims[0];
+}
+
 // --- Helper: compute expert map for one fused 3D tensor ---
 // Tensor shape: [n_experts, rows_per_expert, cols_per_expert]
 // Returns file offset of first expert's data and bytes per expert slice.
@@ -258,6 +283,47 @@ static int load_expert_map_proj(BnGGUFFile *f, const char *name,
     return 0;
 }
 
+static int load_expert_map_gate_up_fused(BnGGUFFile *f, const char *name,
+                                         int n_experts, int expert_hidden,
+                                         BnMoEExpertMap *em) {
+    int ti = bn_gguf_find_tensor(f, name);
+    if (ti < 0) return -1;
+    BnGGUFTensorInfo *info = &f->tensors[ti];
+    if (info->n_dims < 3 || info->dims[0] > INT_MAX ||
+        info->dims[1] > INT_MAX || info->dims[2] > INT_MAX)
+        return -1;
+
+    int cols = (int)info->dims[0];
+    int rows = (int)info->dims[1];
+    int n_exp = (int)info->dims[2];
+    if (n_exp != n_experts || rows != expert_hidden * 2) {
+        SH_LOG_ERROR("Fused gate/up expert tensor shape mismatch", "name", name);
+        return -1;
+    }
+
+    size_t one_proj_elems = 0, fused_elems = 0;
+    size_t one_proj_bytes = 0, fused_bytes = 0;
+    if (checked_mul_size((size_t)expert_hidden, (size_t)cols, &one_proj_elems) != 0 ||
+        checked_mul_size((size_t)rows, (size_t)cols, &fused_elems) != 0 ||
+        !bn_gguf_tensor_size(info->type, (uint64_t)one_proj_elems, &one_proj_bytes) ||
+        !bn_gguf_tensor_size(info->type, (uint64_t)fused_elems, &fused_bytes))
+        return -1;
+
+    em->gate_type = (int)info->type;
+    em->up_type = (int)info->type;
+    em->gate_rows = expert_hidden;
+    em->up_rows = expert_hidden;
+    em->gate_cols = cols;
+    em->up_cols = cols;
+    em->expert_gate_bytes = one_proj_bytes;
+    em->expert_up_bytes = one_proj_bytes;
+    em->gate_stride = fused_bytes;
+    em->up_stride = fused_bytes;
+    em->gate_offset = f->data_offset + info->offset;
+    em->up_offset = em->gate_offset + one_proj_bytes;
+    return 0;
+}
+
 // --- Model loading ---
 
 int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits) {
@@ -272,6 +338,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     if (arch) {
         snprintf(prefix, sizeof(prefix), "%s", arch);
     }
+    int is_gemma4 = arch && strcmp(arch, "gemma4") == 0;
+    c->arch_gemma4 = is_gemma4;
 
     // Build key names with architecture prefix
     char key[128];
@@ -280,7 +348,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     c->dim = (int)bn_gguf_get_u32(f, key);
 
     snprintf(key, sizeof(key), "%s.feed_forward_length", prefix);
-    c->hidden_dim = (int)bn_gguf_get_u32(f, key);
+    c->hidden_dim = gguf_get_u32_or_i32_array(f, key, 0);
 
     snprintf(key, sizeof(key), "%s.block_count", prefix);
     c->n_layers = (int)bn_gguf_get_u32(f, key);
@@ -289,7 +357,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     c->n_heads = (int)bn_gguf_get_u32(f, key);
 
     snprintf(key, sizeof(key), "%s.attention.head_count_kv", prefix);
-    c->n_kv_heads = (int)bn_gguf_get_u32(f, key);
+    c->n_kv_heads = gguf_get_u32_or_i32_array(f, key, 0);
     if (c->n_kv_heads == 0) c->n_kv_heads = c->n_heads;
 
     snprintf(key, sizeof(key), "%s.context_length", prefix);
@@ -327,6 +395,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     c->head_size = (explicit_head_size > 0) ? explicit_head_size : (c->dim / c->n_heads);
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
+    int max_head_size = c->head_size;
+    int max_kv_dim = c->kv_dim;
+    int max_q_dim = c->n_heads * c->head_size;
 
     // Validate alignment for SIMD vectorized paths
     if (explicit_head_size == 0 && c->dim % c->n_heads != 0) {
@@ -413,6 +484,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (ti >= 0 && f->tensors[ti].n_dims >= 3) {
                 c->moe_intermediate_size = (int)f->tensors[ti].dims[1];
             }
+            if (c->moe_intermediate_size == 0) {
+                ti = bn_gguf_find_tensor(f, "blk.0.ffn_gate_up_exps.weight");
+                if (ti >= 0 && f->tensors[ti].n_dims >= 3)
+                    c->moe_intermediate_size = (int)(f->tensors[ti].dims[1] / 2);
+            }
         }
 
         // Shared expert
@@ -497,6 +573,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             ot != BN_GGUF_TENSOR_Q8_0 &&
             ot != BN_GGUF_TENSOR_Q2_K && ot != BN_GGUF_TENSOR_Q3_K &&
             ot != BN_GGUF_TENSOR_Q4_K && ot != BN_GGUF_TENSOR_Q5_K &&
+            ot != BN_GGUF_TENSOR_Q5_1 &&
             ot != BN_GGUF_TENSOR_Q6_K && ot != BN_GGUF_TENSOR_Q8_K &&
             ot != BN_GGUF_TENSOR_I2_S && ot != BN_GGUF_TENSOR_TQ1_0 &&
             ot != BN_GGUF_TENSOR_TQ2_0 && ot != BN_GGUF_TENSOR_F16 &&
@@ -521,6 +598,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         w->output_weight.rows = (int)out_info->dims[1];
         w->output_weight.cols = (int)out_info->dims[0];
         if (ot == BN_GGUF_TENSOR_Q4_0 || ot == BN_GGUF_TENSOR_Q4_1 ||
+            ot == BN_GGUF_TENSOR_Q5_1 ||
             ot == BN_GGUF_TENSOR_Q8_0 ||
             ot == BN_GGUF_TENSOR_Q2_K || ot == BN_GGUF_TENSOR_Q3_K ||
             ot == BN_GGUF_TENSOR_Q4_K || ot == BN_GGUF_TENSOR_Q5_K ||
@@ -618,7 +696,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
             snprintf(wname, sizeof(wname), "blk.%d.attn_v.weight", i);
             snprintf(sname, sizeof(sname), "blk.%d.attn_v.scale", i);
-            if (load_qweight(&lw->wv, f, wname, sname) != 0) goto fail_layers;
+            if (bn_gguf_find_tensor(f, wname) >= 0) {
+                if (load_qweight(&lw->wv, f, wname, sname) != 0) goto fail_layers;
+            } else if (is_gemma4) {
+                lw->wv = lw->wk;
+            } else {
+                SH_LOG_ERROR("Tensor not found", "name", wname);
+                goto fail_layers;
+            }
 
             snprintf(wname, sizeof(wname), "blk.%d.attn_output.weight", i);
             snprintf(sname, sizeof(sname), "blk.%d.attn_output.scale", i);
@@ -645,6 +730,32 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 if (qi >= 0 && f->tensors[qi].dims[0] == (uint64_t)c->dim)
                     c->qk_norm_per_head = 1;
             }
+
+            lw->q_dim = lw->wq.rows;
+            lw->head_size = c->head_size;
+            if (lw->q_norm && !c->qk_norm_per_head) {
+                snprintf(wname, sizeof(wname), "blk.%d.attn_q_norm.weight", i);
+                int hs = tensor_dim0(f, wname);
+                if (hs > 0) lw->head_size = hs;
+            } else if (!lw->q_norm && c->n_heads > 0 && lw->wq.rows > 0 &&
+                       lw->wq.rows % c->n_heads == 0) {
+                lw->head_size = lw->wq.rows / c->n_heads;
+            }
+            snprintf(key, sizeof(key), "%s.attention.head_count_kv", prefix);
+            lw->n_kv_heads = gguf_get_u32_or_i32_array(f, key, i);
+            if (lw->n_kv_heads <= 0 && lw->head_size > 0)
+                lw->n_kv_heads = lw->wk.rows / lw->head_size;
+            if (lw->n_kv_heads <= 0) lw->n_kv_heads = c->n_kv_heads;
+            lw->kv_dim = lw->wk.rows > 0 ? lw->wk.rows : lw->n_kv_heads * lw->head_size;
+            lw->kv_mul = (lw->n_kv_heads > 0) ? c->n_heads / lw->n_kv_heads : c->kv_mul;
+            if (lw->head_size <= 0 || lw->kv_dim <= 0 || lw->kv_mul <= 0 ||
+                c->n_heads % lw->n_kv_heads != 0) {
+                SH_LOG_ERROR("Invalid per-layer attention dimensions");
+                goto fail_layers;
+            }
+            if (lw->head_size > max_head_size) max_head_size = lw->head_size;
+            if (lw->kv_dim > max_kv_dim) max_kv_dim = lw->kv_dim;
+            if (lw->q_dim > max_q_dim) max_q_dim = lw->q_dim;
         }
 
         // #25: FFN norms — must exist
@@ -679,19 +790,26 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             BnMoEExpertMap *em = &lw->expert_map;
 
             snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_exps.weight", i);
-            if (load_expert_map_proj(f, wname, c->n_experts,
-                    &em->gate_type, &em->gate_rows, &em->gate_cols,
-                    &em->gate_offset, &em->expert_gate_bytes) != 0) goto fail_layers;
+            if (bn_gguf_find_tensor(f, wname) >= 0) {
+                if (load_expert_map_proj(f, wname, c->n_experts,
+                        &em->gate_type, &em->gate_rows, &em->gate_cols,
+                        &em->gate_offset, &em->expert_gate_bytes) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_up_exps.weight", i);
-            if (load_expert_map_proj(f, wname, c->n_experts,
-                    &em->up_type, &em->up_rows, &em->up_cols,
-                    &em->up_offset, &em->expert_up_bytes) != 0) goto fail_layers;
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_up_exps.weight", i);
+                if (load_expert_map_proj(f, wname, c->n_experts,
+                        &em->up_type, &em->up_rows, &em->up_cols,
+                        &em->up_offset, &em->expert_up_bytes) != 0) goto fail_layers;
+            } else {
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_up_exps.weight", i);
+                if (load_expert_map_gate_up_fused(f, wname, c->n_experts,
+                        c->moe_intermediate_size, em) != 0) goto fail_layers;
+            }
 
             snprintf(wname, sizeof(wname), "blk.%d.ffn_down_exps.weight", i);
             if (load_expert_map_proj(f, wname, c->n_experts,
                     &em->down_type, &em->down_rows, &em->down_cols,
                     &em->down_offset, &em->expert_down_bytes) != 0) goto fail_layers;
+            em->down_stride = em->expert_down_bytes;
 
             // Shared expert (optional, always resident)
             if (c->has_shared_expert) {
@@ -728,6 +846,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (load_qweight(&lw->ffn_down, f, wname, sname) != 0) goto fail_layers;
         }
     }
+
+    if (is_gemma4) {
+        c->head_size = max_head_size;
+        c->kv_dim = max_kv_dim;
+        c->kv_mul = c->n_heads / c->n_kv_heads;
+    }
+    (void)max_q_dim;
 
     // --- Weight arena: INT8 embeddings + Q4_0 repacking ---
 
@@ -1679,6 +1804,13 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
         const BnBlockQ4_1 *row = blocks + (size_t)token * n_blocks_per_row;
         for (int b = 0; b < n_blocks_per_row; b++) {
             bn_quant_dequant_q4_1(&row[b], out + b * 32);
+        }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_Q5_1) {
+        const BnBlockQ5_1 *blocks = (const BnBlockQ5_1 *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / 32;
+        const BnBlockQ5_1 *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_q5_1(&row[b], out + b * 32);
         }
     } else if (m->weights.emb_type == BN_GGUF_TENSOR_BF16) {
         const uint16_t *emb = (const uint16_t *)m->weights.token_embedding;

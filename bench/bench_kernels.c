@@ -10,6 +10,9 @@
 #include "transformer.h"
 #include "sampler.h"
 #include "threadpool.h"
+#ifdef BN_ENABLE_WEBGPU
+#include "gpu_wgpu.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,7 +46,8 @@ static const char *type_name(int type) {
     }
 }
 
-static const char *backend_name(void) {
+static const char *backend_name(int webgpu) {
+    if (webgpu) return "WebGPU";
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     return "ARM NEON + SDOT";
 #elif defined(__ARM_NEON)
@@ -250,7 +254,7 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--webgpu] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -258,6 +262,11 @@ int main(int argc, char **argv) {
     int n_iters = 100;
     int n_threads = 1;
     int n_toks = 32;
+    int kv_f16 = 0;
+    int use_webgpu = 0;
+#ifdef BN_ENABLE_WEBGPU
+    const char *shader_dir = "shaders/";
+#endif
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--iters") == 0 && i + 1 < argc)
@@ -266,6 +275,17 @@ int main(int argc, char **argv) {
             n_threads = (int)strtol(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--toks") == 0 && i + 1 < argc)
             n_toks = (int)strtol(argv[++i], NULL, 10);
+        else if (strcmp(argv[i], "--kv16") == 0)
+            kv_f16 = 1;
+        else if (strcmp(argv[i], "--webgpu") == 0)
+            use_webgpu = 1;
+        else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
+#ifdef BN_ENABLE_WEBGPU
+            shader_dir = argv[++i];
+#else
+            i++;
+#endif
+        }
     }
 
     // Load model
@@ -284,12 +304,58 @@ int main(int argc, char **argv) {
 
     BnModel model = {0};
     model.file = mf;
-    if (bn_model_load(&model, gf, 32, 0, 0) != 0) {
+    int bench_seq_len = n_toks + 8;
+    if (bench_seq_len < 32) bench_seq_len = 32;
+    if (bn_model_load(&model, gf, bench_seq_len, kv_f16, 0) != 0) {
         fprintf(stderr, "Failed to load model\n");
         bn_gguf_free(gf);
         bn_platform_unload_file(&mf);
         return 1;
     }
+    model.file = mf;
+    if (model.config.n_experts > 0) {
+        if (mf.is_mmap == 1 && mf.data)
+            model.moe_io.mmap_base = mf.data;
+        if (mf.fd >= 0) {
+            model.moe_io.fd = mf.fd;
+            model.expert_fd = mf.fd;
+        }
+    }
+
+#ifdef BN_ENABLE_WEBGPU
+    BnGPUBackend *gpu = NULL;
+    if (use_webgpu) {
+        gpu = bn_gpu_wgpu_create(shader_dir);
+        if (!gpu) {
+            fprintf(stderr, "Failed to create WebGPU backend\n");
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        if (bn_model_upload_weights(&model, gpu) != 0) {
+            fprintf(stderr, "Failed to upload model weights to WebGPU\n");
+            bn_gpu_wgpu_destroy(gpu);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        if (gpu->init_activations &&
+            gpu->init_activations(gpu->ctx, &model.config) != 0) {
+            fprintf(stderr, "Failed to initialize WebGPU activations\n");
+            bn_model_free(&model);
+            bn_gpu_wgpu_destroy(gpu);
+            bn_gguf_free(gf);
+            return 1;
+        }
+    }
+#else
+    if (use_webgpu) {
+        fprintf(stderr, "--webgpu requires BN_ENABLE_WEBGPU=1 build\n");
+        bn_model_free(&model);
+        bn_gguf_free(gf);
+        return 1;
+    }
+#endif
 
     // Extract model name from path
     const char *fname = strrchr(model_path, '/');
@@ -300,10 +366,34 @@ int main(int argc, char **argv) {
     if (n_threads > 1)
         pool = bn_tp_create(n_threads - 1);
 
-    // Allocate input buffers
+    // Allocate input buffers large enough for the widest loaded projection.
+    // Some hybrid/Gemma-family layers have projection input widths that differ
+    // from both dim and hidden_dim.
     int dim = model.config.dim;
     int hidden_dim = model.config.hidden_dim;
     int buf_size = dim > hidden_dim ? dim : hidden_dim;
+    if (model.config.moe_intermediate_size > buf_size)
+        buf_size = model.config.moe_intermediate_size;
+    if (model.config.ssm_inner_size > buf_size)
+        buf_size = model.config.ssm_inner_size;
+    for (int l = 0; l < model.config.n_layers; l++) {
+        BnLayerWeights *lw = &model.weights.layers[l];
+        const BnQWeight *weights[] = {
+            &lw->wq, &lw->wk, &lw->wv, &lw->wo,
+            &lw->ffn_gate, &lw->ffn_up, &lw->ffn_down,
+            &lw->wqkv, &lw->wz, &lw->ssm_alpha, &lw->ssm_beta, &lw->ssm_out,
+            &lw->shared_gate, &lw->shared_up, &lw->shared_down,
+        };
+        for (size_t i = 0; i < sizeof(weights) / sizeof(weights[0]); i++) {
+            if (weights[i]->data && weights[i]->cols > buf_size)
+                buf_size = weights[i]->cols;
+        }
+        if (lw->expert_map.gate_cols > buf_size) buf_size = lw->expert_map.gate_cols;
+        if (lw->expert_map.up_cols > buf_size) buf_size = lw->expert_map.up_cols;
+        if (lw->expert_map.down_cols > buf_size) buf_size = lw->expert_map.down_cols;
+    }
+    if (model.weights.output_weight.data && model.weights.output_weight.cols > buf_size)
+        buf_size = model.weights.output_weight.cols;
 
     float *x = calloc((size_t)buf_size, sizeof(float));
     int8_t *x_q = calloc((size_t)buf_size, sizeof(int8_t));
@@ -319,7 +409,7 @@ int main(int argc, char **argv) {
 
     // Print header
     printf("Backend: %-20s | Model: %-30s | Iters: %d | Threads: %d\n",
-           backend_name(), fname, n_iters, pool ? bn_tp_num_threads(pool) : 1);
+           backend_name(use_webgpu), fname, n_iters, pool ? bn_tp_num_threads(pool) : 1);
     printf("%-8s | %-7s | %-13s | %8s | %s\n",
            "Matrix", "Format", "Dims", "us/call", "GB/s");
     printf("---------|---------|---------------|----------|------\n");
@@ -370,6 +460,9 @@ int main(int argc, char **argv) {
     free(x_q);
     if (pool) bn_tp_free(pool);
     bn_model_free(&model);
+#ifdef BN_ENABLE_WEBGPU
+    if (gpu) bn_gpu_wgpu_destroy(gpu);
+#endif
     bn_gguf_free(gf);
 
     return 0;

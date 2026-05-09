@@ -136,6 +136,7 @@ typedef BnFloatXCtx BnQ8KCtx;
 typedef BnFloatXCtx BnQ4KCtx;
 typedef BnFloatXCtx BnQ5KCtx;
 typedef BnFloatXCtx BnQ4_1Ctx;
+typedef BnFloatXCtx BnQ5_1Ctx;
 typedef BnFloatXCtx BnF32Ctx;
 typedef BnFloatXCtx BnF16Ctx;
 typedef BnFloatXCtx BnBF16Ctx;
@@ -183,6 +184,7 @@ void bn_quant_q8_avx2_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q8_wasm_range(void *ctx, int start, int end);
 void bn_quant_q8_wasm_sdot_range(void *ctx, int start, int end);
+void bn_quant_q8_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_scalar_range(void *ctx, int start, int end);
 
 // Q4_0 kernels
@@ -202,6 +204,7 @@ void bn_quant_q6k_neon_range(void *ctx, int start, int end);
 void bn_quant_q6k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q6k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q6k_wasm_sdot_range(void *ctx, int start, int end);
+void bn_quant_q6k_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_range(void *ctx, int start, int end);
 
 // Q8_K kernels
@@ -225,6 +228,7 @@ void bn_quant_q4k_neon_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4k_wasm_range(void *ctx, int start, int end);
 void bn_quant_q4k_wasm_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4k_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_scalar_range(void *ctx, int start, int end);
 
 // Q5_K kernels
@@ -241,6 +245,7 @@ void bn_quant_q4_1_neon_range(void *ctx, int start, int end);
 void bn_quant_q4_1_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4_1_wasm_range(void *ctx, int start, int end);
 void bn_quant_q4_1_scalar_range(void *ctx, int start, int end);
+void bn_quant_q5_1_scalar_range(void *ctx, int start, int end);
 
 // Unquantized/BF16 weight kernels
 void bn_quant_f32_neon_range(void *ctx, int start, int end);

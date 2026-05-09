@@ -33,6 +33,8 @@ enum {
     BN_GGUF_TENSOR_F16      = 1,
     BN_GGUF_TENSOR_Q4_0     = 2,
     BN_GGUF_TENSOR_Q4_1     = 3,
+    BN_GGUF_TENSOR_Q5_0     = 6,
+    BN_GGUF_TENSOR_Q5_1     = 7,
     BN_GGUF_TENSOR_Q8_0     = 8,
     BN_GGUF_TENSOR_Q2_K     = 10,
     BN_GGUF_TENSOR_Q3_K     = 11,

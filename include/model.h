@@ -13,6 +13,7 @@
 typedef struct {
     size_t gate_offset, up_offset, down_offset;
     size_t expert_gate_bytes, expert_up_bytes, expert_down_bytes;
+    size_t gate_stride, up_stride, down_stride;
     int gate_type, up_type, down_type;
     int gate_rows, gate_cols;
     int up_rows, up_cols;
@@ -92,6 +93,7 @@ typedef struct {
     float rope_theta, norm_eps;
     int head_size, kv_dim, kv_mul;  // derived
     int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU²
+    int arch_gemma4;                // GGUF architecture == "gemma4"
     int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)
     int kv_f16;                     // store KV cache in FP16 (halves attention DRAM bandwidth)
@@ -117,6 +119,7 @@ typedef struct {
 typedef struct {
     float *attn_norm, *attn_sub_norm;       // RMSNorm weights [dim]
     BnQWeight wq, wk, wv, wo;                 // attention projection weights (NULL for SSM layers)
+    int head_size, kv_dim, kv_mul, n_kv_heads, q_dim;
     float *q_bias, *k_bias, *v_bias;        // attention biases (NULL if not present)
     float *q_norm, *k_norm;                 // per-head Q/K RMSNorm (NULL if absent)
     float *ffn_norm, *ffn_sub_norm;         // RMSNorm weights

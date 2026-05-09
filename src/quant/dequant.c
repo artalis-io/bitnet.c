@@ -116,6 +116,20 @@ void bn_quant_dequant_q4_1(const BnBlockQ4_1 *block, float *out) {
     }
 }
 
+void bn_quant_dequant_q5_1(const BnBlockQ5_1 *block, float *out) {
+    float d = bn_fp16_to_fp32(block->d);
+    float m = bn_fp16_to_fp32(block->m);
+    uint32_t qh = (uint32_t)block->qh[0] |
+                  ((uint32_t)block->qh[1] << 8) |
+                  ((uint32_t)block->qh[2] << 16) |
+                  ((uint32_t)block->qh[3] << 24);
+    for (int i = 0; i < 16; i++) {
+        uint8_t byte = block->qs[i];
+        out[i] = ((byte & 0xF) | (((qh >> i) & 1u) << 4)) * d + m;
+        out[i + 16] = ((byte >> 4) | (((qh >> (i + 16)) & 1u) << 4)) * d + m;
+    }
+}
+
 // --- Q6_K dequantization ---
 
 void bn_quant_dequant_q6k(const BnBlockQ6K *block, float *out) {

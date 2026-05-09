@@ -39,7 +39,11 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
         int row0 = g * 4;
         int nrows = (row0 + 4 <= rows) ? 4 : rows - row0;
 
-        float row_sums[4] = {0};
+        __m256 row_acc[4] = {
+            _mm256_setzero_ps(), _mm256_setzero_ps(),
+            _mm256_setzero_ps(), _mm256_setzero_ps()
+        };
+        float row_corr[4] = {0};
 
 #if defined(__GNUC__) || defined(__clang__)
         #pragma GCC unroll 8
@@ -92,12 +96,13 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                     sumi_v = _mm256_add_epi32(sumi_v, _mm256_add_epi32(plo, phi));
                 }
 
-                int32_t sumi = bn_avx2_hsum_epi32(sumi_v);
-                row_sums[r] += dx * (d * (float)sumi - dmin * (float)bsum_corr);
+                row_acc[r] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(sumi_v),
+                                             _mm256_set1_ps(dx * d), row_acc[r]);
+                row_corr[r] += dx * dmin * (float)bsum_corr;
             }
         }
 
         for (int r = 0; r < nrows; r++)
-            c->out[row0 + r] = row_sums[r];
+            c->out[row0 + r] = bn_avx2_hsum_ps(row_acc[r]) - row_corr[r];
     }
 }

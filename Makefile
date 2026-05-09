@@ -183,11 +183,6 @@ SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude
 ifeq ($(UNAME_S),Linux)
 SCALAR_CFLAGS += -D_GNU_SOURCE
 endif
-SCALAR_BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
-
-bench_scalar: $(SCALAR_BENCH_SRCS)
-	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
-
 SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
     src/quant/tq2_scalar.c src/quant/tq1_scalar.c \
     src/quant/q8_scalar.c src/quant/q4_scalar.c src/quant/q4_1_scalar.c \
@@ -208,18 +203,35 @@ SCALAR_SRCS = src/platform.c src/gguf.c $(QUANT_COMMON) $(SCALAR_QUANT_BACKEND) 
        src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c \
        src/prompt_cache.c src/generate.c src/main.c
 
+SCALAR_BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SCALAR_SRCS))
+
+bench_scalar: $(SCALAR_BENCH_SRCS)
+	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
+
+bench_scalar_layers: SCALAR_CFLAGS += -DBN_BENCH_LAYERS
+bench_scalar_layers: $(SCALAR_BENCH_SRCS)
+	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
+
 bitnet_scalar: $(SCALAR_SRCS)
 	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
 
 bench_avx2: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+ifeq ($(BN_ENABLE_WEBGPU),1)
+bench_webgpu: $(BENCH_SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+else
+bench_webgpu:
+	@echo "bench_webgpu skipped: set BN_ENABLE_WEBGPU=1"
+endif
+
 # Per-layer timing build (BN_BENCH_LAYERS)
 bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_kernels_run bitnet_scalar bench_scalar bench_avx2 bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -229,7 +241,7 @@ bench_suite: $(MAIN_TARGET)
 
 bench_kernels_run: bench_kernels
 
-test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend
+test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend
 
 test_architecture: test_backend_matrix test_model_matrix
 
@@ -280,6 +292,31 @@ test_qwen36: test/test_qwen36.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turb
              src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
              src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+test_gemma4: test/test_gemma4.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+             src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+test_gemma4_avx2: test/test_gemma4.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+             src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
+ifeq ($(UNAME_M),x86_64)
+	$(CC) $(CFLAGS) -mavx2 -mfma -mf16c -o $@ $^ $(LDFLAGS) && ./$@
+else
+	@echo "test_gemma4_avx2 skipped: requires x86_64 host"
+endif
+
+test_gemma4_webgpu: test/test_gemma4.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
+             src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c $(WEBGPU_SRCS)
+ifdef BN_ENABLE_WEBGPU
+	$(CC) $(CFLAGS) -DBN_GEMMA4_TEST_WEBGPU -o $@ $^ $(LDFLAGS) && ./$@
+else
+	@echo "test_gemma4_webgpu skipped: set BN_ENABLE_WEBGPU=1"
+endif
+
+test_gemma4_backend_matrix: test_gemma4 test_gemma4_avx2 test_gemma4_webgpu
 
 test_generate: test/test_generate.c src/generate.c src/bn_alloc.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c src/model.c src/moe.c \
                src/transformer.c src/gpu_moe_cache.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
@@ -487,4 +524,4 @@ test_coherence: $(COHERENCE_SRCS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_avx2 bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)

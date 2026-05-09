@@ -165,6 +165,11 @@ typedef struct {
 
     // Capability flags (set by backend, checked by transformer)
     uint32_t caps;
+
+    // Maximum storage-buffer binding size in bytes. 0 = unknown; callers
+    // should use a conservative fallback when deciding whether to bind a
+    // large weight buffer in a GPU-resident graph.
+    size_t max_storage_binding_size;
 } BnGPUBackend;
 
 // Backend capability bits

@@ -1698,7 +1698,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         default: continue;
         }
 
-        int conflict = cur_pass != NULL;
+        /* Dispatches inside a compute pass are encoded in order. Keep the
+         * forward graph in one pass to avoid hundreds of pass boundaries per
+         * token; the previous logic forced a new pass for every op. */
+        int conflict = 0;
 
         if (conflict && cur_pass) {
             wgpuComputePassEncoderEnd(cur_pass);
@@ -2552,6 +2555,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->ctx               = ctx;
     gpu->caps              = BN_GPU_CAP_Q8_MATVEC_SPLIT |
                              BN_GPU_CAP_Q5K_MATVEC_SPLIT;
+    gpu->max_storage_binding_size = (size_t)ctx->max_storage_binding_size;
 
     return gpu;
 }

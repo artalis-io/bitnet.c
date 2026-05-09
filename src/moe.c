@@ -620,15 +620,18 @@ static int moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                           size_t *offset, size_t *proj_bytes) {
     switch (proj) {
         case 0:
-            *offset = map->gate_offset + (size_t)expert_idx * map->expert_gate_bytes;
+            *offset = map->gate_offset + (size_t)expert_idx *
+                      (map->gate_stride ? map->gate_stride : map->expert_gate_bytes);
             *proj_bytes = map->expert_gate_bytes;
             return 0;
         case 1:
-            *offset = map->up_offset + (size_t)expert_idx * map->expert_up_bytes;
+            *offset = map->up_offset + (size_t)expert_idx *
+                      (map->up_stride ? map->up_stride : map->expert_up_bytes);
             *proj_bytes = map->expert_up_bytes;
             return 0;
         case 2:
-            *offset = map->down_offset + (size_t)expert_idx * map->expert_down_bytes;
+            *offset = map->down_offset + (size_t)expert_idx *
+                      (map->down_stride ? map->down_stride : map->expert_down_bytes);
             *proj_bytes = map->expert_down_bytes;
             return 0;
         default:
