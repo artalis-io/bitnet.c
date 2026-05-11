@@ -1377,7 +1377,9 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
         { BN_GPU_SHADER_DEINTERLEAVE_Q,   "deinterleave_q"   },
         { BN_GPU_SHADER_SIGMOID_GATE,     "sigmoid_gate"     },
         { BN_GPU_SHADER_COPY,             "buf_copy"         },
+        { BN_GPU_SHADER_MATVEC_SPLIT,     "q4_matvec_split"  },
         { BN_GPU_SHADER_ROPE_QK,          "rope_qk"          },
+        { BN_GPU_SHADER_FUSED_GATEUP_SILU, "q4_fused_gateup_silu" },
         { BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT, "ssm_alpha_beta_split" },
         { BN_GPU_SHADER_Q4K_MATVEC_SPLIT, "q4k_matvec_split" },
         { BN_GPU_SHADER_Q8_MATVEC_SPLIT,  "q8_matvec_split"  },
@@ -1528,7 +1530,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             p[4] = p[5];
         }
         /* Fused bias: inject bias_offset from weight buffer metadata */
-        if (ops[i].shader == BN_GPU_SHADER_MATVEC && ops[i].W_buf) {
+        if ((ops[i].shader == BN_GPU_SHADER_MATVEC ||
+             ops[i].shader == BN_GPU_SHADER_MATVEC_SPLIT ||
+             ops[i].shader == BN_GPU_SHADER_FUSED_GATEUP_SILU) &&
+            ops[i].W_buf) {
             BnWgpuBuf *wbuf = (BnWgpuBuf *)ops[i].W_buf;
             if (wbuf->bias_offset > 0) {
                 uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
@@ -1556,8 +1561,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
     WGPUComputePassEncoder cur_pass = NULL;
     int n_passes = 0;
-    uint32_t pass_reads = 0;
-    uint32_t pass_writes = 0;
 
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
@@ -1656,6 +1659,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             op_reads = BUF_BIT(op->buf_in);
             op_writes = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
             break;
+        case BN_GPU_SHADER_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
@@ -1663,6 +1667,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             op_writes = BUF_BIT(op->buf_out) | BUF_BIT(op->buf_aux);
             if (op->rows >= 0 && op->rows < BN_GPU_BUF_COUNT)
                 op_writes |= BUF_BIT(op->rows);
+            break;
+        case BN_GPU_SHADER_FUSED_GATEUP_SILU:
+            op_reads = BUF_BIT(op->buf_in);
+            op_writes = BUF_BIT(op->buf_out);
             break;
         case BN_GPU_SHADER_SSM_DELTA:
             op_reads = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
@@ -1708,8 +1716,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             wgpuComputePassEncoderRelease(cur_pass);
             cur_pass = NULL;
             n_passes++;
-            pass_reads = 0;
-            pass_writes = 0;
         }
 
         /* Start new pass if needed */
@@ -1720,8 +1726,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
         (void)op_reads;
         (void)op_writes;
-        pass_reads |= op_reads;
-        pass_writes |= op_writes;
 
         /* Build bind group entries per shader type */
         WGPUBindGroupEntry entries[8];
@@ -2024,6 +2028,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             n_entries = 5;
             break;
         }
+        case BN_GPU_SHADER_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q5K_MATVEC_SPLIT: {
             BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
@@ -2049,6 +2054,24 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
                 .binding = 5, .buffer = ctx->uniform_ring,
                 .offset = uni_offset, .size = 32};
             n_entries = 6;
+            break;
+        }
+        case BN_GPU_SHADER_FUSED_GATEUP_SILU: {
+            BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
+            if (!wbuf) continue;
+            entries[0] = (WGPUBindGroupEntry){
+                .binding = 0, .buffer = wbuf->buf,
+                .offset = wbuf->offset, .size = wbuf->size};
+            entries[1] = (WGPUBindGroupEntry){
+                .binding = 1, .buffer = ctx->act_bufs[op->buf_in],
+                .offset = 0, .size = ctx->act_sizes[op->buf_in]};
+            entries[2] = (WGPUBindGroupEntry){
+                .binding = 2, .buffer = ctx->act_bufs[op->buf_out],
+                .offset = 0, .size = ctx->act_sizes[op->buf_out]};
+            entries[3] = (WGPUBindGroupEntry){
+                .binding = 3, .buffer = ctx->uniform_ring,
+                .offset = uni_offset, .size = 32};
+            n_entries = 4;
             break;
         }
         case BN_GPU_SHADER_SSM_DELTA: {
@@ -2263,6 +2286,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         case BN_GPU_SHADER_COPY:
             wg_x = (op->p[2] + 255) / 256;
             break;
+        case BN_GPU_SHADER_FUSED_GATEUP_SILU:
+            wg_x = (op->p[2] + 31) / 32;
+            break;
+        case BN_GPU_SHADER_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
@@ -2553,7 +2580,9 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->write_activation  = wgpu_write_activation;
     gpu->read_activation   = wgpu_read_activation;
     gpu->ctx               = ctx;
-    gpu->caps              = BN_GPU_CAP_Q8_MATVEC_SPLIT |
+    gpu->caps              = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+                             BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
+                             BN_GPU_CAP_Q8_MATVEC_SPLIT |
                              BN_GPU_CAP_Q5K_MATVEC_SPLIT;
     gpu->max_storage_binding_size = (size_t)ctx->max_storage_binding_size;
 

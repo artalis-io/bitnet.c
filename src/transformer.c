@@ -1471,7 +1471,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         // Batched QKV: single dispatch writes Q→Q buf, K→KEY_CACHE, V→VALUE_CACHE
         int use_split = lw->qkv_stacked_gpu && !q_gated &&
                         !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
-                        lw->wq.type == BN_GGUF_TENSOR_Q4_0;
+                        lw->wq.type == BN_GGUF_TENSOR_Q4_0 &&
+                        (gpu->caps & BN_GPU_CAP_Q4_MATVEC_SPLIT);
         int use_q8_split = lw->qkv_stacked_gpu && !q_gated &&
                            !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
                            lw->wq.type == BN_GGUF_TENSOR_Q8_0 &&
@@ -2021,7 +2022,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         if (c->has_ffn_gate && lw->ffn_gate.data) {
             int use_fused_gateup = lw->gateup_stacked_gpu &&
                                    lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
-                                   c->act_type != 1;
+                                   c->act_type != 1 &&
+                                   (gpu->caps & BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
             if (use_fused_gateup) {
                 int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
                 ops[n++] = (BnGPUOp){

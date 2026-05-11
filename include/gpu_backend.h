@@ -176,6 +176,8 @@ typedef struct {
 #define BN_GPU_CAP_FLASH_ATTN  (1u << 0)  // fused flash attention shader available
 #define BN_GPU_CAP_Q8_MATVEC_SPLIT (1u << 1) // stacked Q8_0 split matvec shader available
 #define BN_GPU_CAP_Q5K_MATVEC_SPLIT (1u << 2) // Q5_K packed split matvec shader available
+#define BN_GPU_CAP_Q4_MATVEC_SPLIT (1u << 3) // stacked Q4_0 split matvec shader available
+#define BN_GPU_CAP_Q4_FUSED_GATEUP_SILU (1u << 4) // fused Q4_0 gate/up SiLU shader available
 
 // Pre-compiled GPU op list for dense models (Phase 4: eliminates per-token malloc)
 typedef struct {

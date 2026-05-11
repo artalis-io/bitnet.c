@@ -1416,7 +1416,9 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         gpu->write_activation     = metal_write_activation;
         gpu->read_activation      = metal_read_activation;
         gpu->ctx                  = ctx;
-        gpu->caps                 = BN_GPU_CAP_FLASH_ATTN;
+        gpu->caps                 = BN_GPU_CAP_FLASH_ATTN |
+                                    BN_GPU_CAP_Q4_MATVEC_SPLIT |
+                                    BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
 
         return gpu;
     }
