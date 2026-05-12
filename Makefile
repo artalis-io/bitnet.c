@@ -179,7 +179,7 @@ bench_kernels: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Scalar benchmark (no -march=native, no SIMD)
-SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude
+SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -DBN_FORCE_SCALAR
 ifeq ($(UNAME_S),Linux)
 SCALAR_CFLAGS += -D_GNU_SOURCE
 endif

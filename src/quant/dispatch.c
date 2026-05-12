@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
 // Max VLA elements for stack-allocated scale arrays
 #define BN_MAX_SCALE_BLOCKS 8192
 

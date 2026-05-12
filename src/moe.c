@@ -11,6 +11,14 @@
 #include <stdlib.h>
 #include <limits.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
 #ifndef __EMSCRIPTEN__
 #include <unistd.h>
 #include <pthread.h>

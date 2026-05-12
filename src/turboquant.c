@@ -3,6 +3,14 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
 #ifdef __ARM_NEON
 #include <arm_neon.h>
 static inline float tq_neon_hsum(float32x4_t v) {

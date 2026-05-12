@@ -11,6 +11,14 @@
 #include <limits.h>
 #include <math.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
 static int checked_add_size(size_t *acc, size_t add) {
     if (*acc > SIZE_MAX - add) return -1;
     *acc += add;

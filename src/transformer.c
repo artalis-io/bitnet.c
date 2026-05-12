@@ -11,6 +11,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
 // Per-layer timing instrumentation (compile with -DBN_BENCH_LAYERS)
 #ifdef BN_BENCH_LAYERS
 static double bl_rmsnorm_us, bl_matvec_qkv_us, bl_rope_us, bl_gqa_us;
