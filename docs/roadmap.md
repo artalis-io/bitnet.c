@@ -7,7 +7,7 @@ Development roadmap for bitnet.c.
 - [x] `platform` — mmap/buffer abstraction, timing
 - [x] `gguf` — GGUF v3 binary format parser
 - [x] `quant` — TQ1_0/TQ2_0 dequantization, ternary matvec
-- [x] `model` — GGUF → Config/Weights mapping, RunState allocation
+- [x] `model` — GGUF → config, architecture rules, and immutable weights
 - [x] `transformer` — full forward pass (RoPE, GQA, sub-norms, tied embeddings)
 - [x] `tokenizer` — BPE encode/decode from GGUF metadata
 - [x] `sampler` — argmax, multinomial, top-p sampling
@@ -45,7 +45,7 @@ Development roadmap for bitnet.c.
 ## Phase 5: Memory & Performance — Done
 
 - [x] Pthread thread pool (~2us condvar dispatch, replaces OMP fork/join)
-- [x] Arena allocator for RunState (single allocation for all buffers)
+- [x] Arena-backed session buffers for request-local state
 - [x] RoPE frequency + cos/sin precomputation
 - [x] Preallocated sampler candidates buffer (eliminates per-token malloc)
 - [x] Prefetch hints in I2_S SDOT, TQ1_0, TQ2_0 kernels
@@ -201,7 +201,12 @@ Success criteria: adding a new quant should primarily touch `gguf`, `quant`, bac
 
 ### Architecture Cohesion Follow-up
 
-The transformer redesign introduced explicit plan structs and capability checks, but the ownership boundaries are still not fully orthogonal. `BnModel`, `BnLayerWeights`, `BnQWeight`, backend upload state, quant-format metadata, and GPU shader graph details still leak into each other. The next architecture phase should make model anatomy, quant formats, backend layouts, and execution backends independently extensible.
+The transformer redesign introduced explicit plan structs, quant metadata,
+backend-owned model/session state, and backend-private shader lowering. The
+largest ownership leaks are gone. The remaining cleanup is mostly about turning
+the current GPU command emission into a higher-level graph/value IR, making
+fallback reasons first-class, and expanding architecture rules without adding
+new cross-product branches.
 
 Target ownership model:
 
@@ -221,7 +226,7 @@ backend lowerer   -> CPU / Metal / WebGPU / CUDA / AVX512 concrete execution
 - [x] **Step 14: replace concrete GPU shader IDs with backend-neutral op kinds** — define an intermediate operation IR (`MATVEC`, `RMSNORM`, `ROPE`, `ATTENTION`, `FFN`, `FUSED_GATE_UP_ACT`, `LOGITS`, etc.) and let each backend lower it to Metal/WebGPU/CUDA-specific kernels. Keep shader IDs and buffer indices private to backend implementations.
 - [x] **Step 15: promote backend layout into a real module** — move inline layout/upload helpers out of `include/backend_layout.h` into `src/backend_layout.c`. This module should choose native vs repacked layouts, stacked tensors, fused-bias buffers, QKV/gate-up/SSM packing, and record deterministic fallback reasons for debug output and tests.
 - [x] **Step 16: make model architecture rules pluggable** — replace one-off config flags such as `arch_gemma4` with a `BnModelArchOps` registry for architecture-specific config loading, tensor-role mapping, layer classification, activation/norm rules, MRoPE rules, SSM rules, MoE/shared-expert rules, and future Qwen/Gemma/DeepSeek/Nemotron variants.
-- [x] **Step 17: shrink `transformer.c` into orchestration only** — split the remaining implementation into focused modules such as `transformer_plan.c`, `transformer_cpu.c`, `transformer_gpu_emit.c`, `transformer_kv.c`, `transformer_attention.c`, `transformer_ffn.c`, `transformer_ssm.c`, and `transformer_logits.c`. The top-level transformer loop should select plans, execute blocks, and handle deterministic fallback, not encode backend/model/quant cross-product logic.
+- [x] **Step 17: shrink `transformer.c` into orchestration only** — split the remaining implementation into focused modules under `src/transformer/`: `plan.c`, `cpu.c`, `gpu.c`, `gpu_emit.c`, `kv.c`, `logits.c`, and `prefill.c`. The top-level transformer loop should select plans, execute blocks, and handle deterministic fallback, not encode backend/model/quant cross-product logic.
 - [x] **Step 18: add architecture boundary tests** — add synthetic tests that prove model load does not allocate backend state, backend upload does not mutate model anatomy, quant registry entries advertise consistent capabilities, and CPU/GPU/CUDA/AVX512 placement decisions are visible before execution. These tests should not require model files.
 
 Success criteria: model-family additions primarily register architecture rules and tensor-role mappings; quant additions primarily register `BnQuantFormatOps` and kernels; backend additions primarily implement layout lowering and execution; `BnModel` remains backend-neutral; fallback decisions are explainable in logs/tests; and `transformer.c` no longer needs direct knowledge of individual quant formats or backend shader IDs.
@@ -238,7 +243,18 @@ Current audit for Steps 12-18:
 | 17 | Planning moved to `src/transformer/plan.c`; QKV/logits/RMSNorm/attention/SSM/dense-FFN/MoE GPU emission moved to `src/transformer/gpu_emit.c`; GPU-resident forward graph orchestration moved to `src/transformer/gpu.c`; TurboQuant, FP16, and FP32 KV row/write helpers moved to `src/transformer/kv.c`; CPU logits orchestration moved to `src/transformer/logits.c`; batch prefill moved to `src/transformer/prefill.c`; CPU layer execution, attention execution, SSM block execution, dense-FFN block execution, FFN activation, residual add, RoPE application, and GQA backend dispatch moved to `src/transformer/cpu.c`; `transformer.c` now handles token bounds, embedding/RoPE setup, CPU-vs-GPU top-level routing, and logits timing. It is currently 144 lines, down from 2,699 before the split. | `transformer.c` is now near orchestration-only, but `src/transformer/gpu_emit.c` still builds backend command arrays directly instead of producing a higher-level graph-value IR first. |
 | 18 | Synthetic tests cover backend model/session ownership, upload-not-mutating CPU weights, quant registry metadata, model-load-without-backend-state, model architecture registry behavior, CPU execution helper boundaries, CPU ISA placement including AVX-512, and Metal/WebGPU/CUDA placement visibility. | There is no CUDA implementation or real CUDA/AVX-512 benchmark matrix beyond advertised placement visibility. |
 
-Latest local gate: `make test`, `make clean` followed by `make bitnet`, `make BN_ENABLE_METAL=1 test_coherence`, `./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal`, `make BN_ENABLE_WEBGPU=1 test_gpu_wgpu`, `make bench_llama_compare`, and `./test/backend_matrix.sh` pass after the shader/buffer contract cleanup. `make BN_ENABLE_WEBGPU=1 test_gpu_wgpu` compiles the WebGPU backend but skips runtime GPU checks on this machine because wgpu-native reports no suitable adapter. The llama.cpp comparison gate runs three trials and reports median plus mean. On `qwen2.5-3b-instruct-q4_0.gguf` with 32 tokens and 8 threads, the latest run measured median bitnet.c at 39.30 tok/s versus median llama.cpp at 17.59 tok/s (median ratio 2.2347; mean ratio 2.1997). This short 32-token benchmark remains noisy and should be treated as a gate/check, not a durable performance claim. `./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal` passes all phases with exact five-token greedy decode match, CPU SIMD/scalar checks, and Metal standalone matvec versus CPU scalar. The previous real-model prefill check reported matching top token with max logit drift 0.676631 versus sequential forward.
+Latest local code gate before this docs-only cleanup: `make test`, `make clean`
+followed by `make bitnet`, `make BN_ENABLE_METAL=1 test_coherence`,
+`./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal`,
+`make BN_ENABLE_WEBGPU=1 test_gpu_wgpu`, `make bench_llama_compare`, and
+`./test/backend_matrix.sh` passed after the shader/buffer contract cleanup.
+`make BN_ENABLE_WEBGPU=1 test_gpu_wgpu` compiled the WebGPU backend but skipped
+runtime GPU checks on this machine because wgpu-native reported no suitable
+adapter. The llama.cpp comparison gate runs three trials and reports median plus
+mean. On `qwen2.5-3b-instruct-q4_0.gguf` with 32 tokens and 8 threads, that run
+measured median bitnet.c at 39.30 tok/s versus median llama.cpp at 17.59 tok/s
+(median ratio 2.2347; mean ratio 2.1997). This short 32-token benchmark remains
+noisy and should be treated as a gate/check, not a durable performance claim.
 
 ### Backend Expansion Plan
 
@@ -284,22 +300,26 @@ Do not add model, quant, or backend support as isolated one-offs. Each milestone
 - [ ] **Fallback reasons** — every unsupported matrix cell should point to a concrete missing capability: tensor role, op kind, quant kernel, backend memory policy, architecture rule, tokenizer behavior, or validation fixture.
 - [ ] **Benchmark parity rows** — for representative cells, keep bitnet.c vs llama.cpp prompt-processing and generation numbers with the same model, quant, thread count, context length, batch size, and GPU placement.
 
-### Transformer Module Split Plan
+### Next Architecture Cleanup
 
-`transformer.c` should become orchestration, not the place where model families, quant formats, backend details, and fallback rules accumulate. This is the next highest cleanup item before broad CUDA/AVX-512/model-family expansion.
+The transformer file split is complete enough that the next work should focus on
+the remaining leaks between planning, graph values, backend lowering, and
+capability reporting.
 
-- [ ] **Move planning into `src/transformer/plan.c`** — layer kind, tensor roles, shape derivation, KV mode, backend placement, and fallback decisions should be built once and tested synthetically.
-- [ ] **Move CPU execution into `src/transformer/cpu.c`** — keep reference CPU math readable and backend-independent, consuming only plans, model weights, session state, and quant dispatch APIs.
-- [ ] **Move backend op emission into `src/transformer/gpu_emit.c`** — lower backend-neutral op kinds into the `BnGPUBackend` command interface without exposing shader IDs to planner code.
-- [ ] **Move attention/KV helpers into focused modules** — isolate RoPE, flash attention, GQA, sliding-window KV, FP16 KV, TurboQuant KV, and MRoPE behavior behind narrow internal APIs.
-- [ ] **Move FFN/MoE/SSM/logits helpers into focused modules** — isolate dense FFN, gated activation, MoE routing/expert loading, SSM blocks, and logits paths so model families compose features instead of branching in the main loop.
-- [ ] **Delete cross-product branches as modules land** — after each split, remove the equivalent direct checks from `transformer.c` and add route tests proving the same placement and fallback decisions.
+- [ ] **Introduce a higher-level graph-value IR** — `gpu_emit.c` still builds the backend command array directly. Add an internal graph layer that models values, aliases, multi-output ops, and fallback boundaries before lowering to `BnGPUOp`.
+- [ ] **Make fallback reasons first-class** — store the reason for CPU fallback or reduced GPU placement in plan/layout structs and expose it in tests/debug logs.
+- [ ] **Finish native/repacked layout policy** — make backend layout choose native GGUF, repacked, split, stacked, or fused layouts through a table-driven policy instead of backend-local ad hoc decisions.
+- [ ] **Move remaining backend switch logic behind registries** — quant and architecture registries should own capability declarations; backend lowerers should consume them without adding model-family branches.
+- [ ] **Expand architecture registry coverage** — add fuller rules for MRoPE, local attention, tokenizer-family assumptions, DeepSeek/Nemotron-style tensor roles, and backend placement constraints.
+- [ ] **Keep `transformer.c` orchestration-only** — new model, quant, and backend support should not grow the top-level transformer loop.
 
 ### GPU Optimization
-- [ ] Improve GPU forward-pass shader precision (match CPU output beyond first token)
-- [ ] FP16 KV cache on GPU
-- [ ] Sub-norms, Q/K norms, gated-Q support in GPU forward path
-- [ ] MoE expert dispatch on GPU
+
+- [ ] Improve GPU forward-pass precision where backend reductions diverge too early.
+- [ ] Add FP16 KV cache support on GPU.
+- [ ] Broaden GPU-native SSM and MoE execution to reduce CPU fallback.
+- [ ] Finish native-layout Q4_0 and related low-bit matvec kernels.
+- [ ] Add a graph-value IR before backend lowering so Metal/WebGPU/CUDA can share more planning logic.
 
 ### Extended Model Support
 - [ ] LoRA adapter loading
@@ -313,22 +333,6 @@ Do not add model, quant, or backend support as isolated one-offs. Each milestone
 - [ ] Token probability output mode (for debugging/research)
 - [ ] JSON output mode (structured generation metadata)
 - [ ] Model info dump command (`--info` to print config without inference)
-
-### GPU Performance (Metal/WebGPU)
-
-Current: 290 ops, 289 barriers, ~22.7ms/token on M1 Max (Qwen 2.5 3B Q4_0). llama.cpp: ~9ms.
-
-**Key finding**: Barriers cost zero (22.7ms with 0 barriers vs 22.8ms with 289). The bottleneck is **Q4_0 matvec kernel execution** — the DQ4 dequantization + float4 dot product inner loop. Reducing ops/barriers further has no impact. The path to parity requires a fundamentally faster matvec kernel.
-
-- [x] Eliminate COPY ops: direct-to-destination QKV writes via shader offsets (-108 ops, -108 barriers)
-- [x] Batched QKV matvec: single-dispatch split shader for Q4_0 (-72 ops)
-- [x] PSO caching: skip redundant setComputePipelineState calls
-- [x] Fused RoPE Q+K: single dispatch for Q and K rotation (-36 ops)
-- [x] Fused gate+up+SiLU: stacked weight buffer, single Q4_0 kernel (-72 ops, -36 barriers)
-- [x] Fix logits tiling: dispatch (4748,1,1) not (65535,1,1) for vocab=151936
-- [ ] **Q4_0 native-format kernel** (THE bottleneck): our repacked format splits scales and nibbles into separate memory regions (~2.8MB apart for gate weights). llama.cpp reads ORIGINAL GGUF format (18 bytes/block, contiguous) with a pre-scaling trick: mask uint16 with 0x000F/0x00F0/0x0F00/0xF000, pre-divide input by 1/16/256/4096 to absorb bit positions. Zero shift instructions. Sequential weight reads. Enables zero-copy from mmap. Implementation started but has correctness issues in the pre-scaling math — needs careful nibble layout verification against GGUF Q4_0 spec (qs[j] = elem[j] | (elem[j+16] << 4)).
-- [ ] MATVEC_SPLIT + fused_gateup_silu for native Q4_0 format (currently disabled, use repacked)
-- [ ] Half-precision intermediates where precision allows
 
 ### SIMD Backends
 - [ ] AVX-512 VNNI — native `vpdpbusd`, 512-bit vectors (Ice Lake+, Zen 4+)

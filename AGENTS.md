@@ -16,7 +16,16 @@ docs/      — documentation and roadmap
 
 Modules have strict, one-directional dependencies. When modifying a module, only its own files and downstream consumers should be affected. Never introduce circular dependencies.
 
-**Dependency order**: platform → gguf → quant → model → tokenizer → moe → session → transformer → sampler → threadpool → bn_alloc → prompt_cache → generate → gpu_wgpu (optional) → main
+**Dependency order**: platform -> gguf -> quant -> turboquant -> model_arch -> model -> backend_layout/backend_model -> tokenizer -> moe -> session -> transformer -> sampler -> threadpool -> bn_alloc -> prompt_cache -> generate -> gpu_wgpu/gpu_metal (optional) -> main
+
+Architecture ownership rules:
+
+- `BnModel` is shared and immutable after load. It owns model anatomy, CPU-visible weights, config, file state, pool, and shared MoE I/O.
+- `BnSession` owns request-local mutable state: KV cache, activation buffers, MoE compute buffers, SSM state, and position.
+- `BnBackendModel` / backend session state own GPU/backend-resident buffers, packed layouts, stacked/fused tensors, activation buffers, and future CUDA/AVX-512 backend state.
+- `BnQuantFormatOps` in `include/quant.h` / `src/quant/registry.c` owns quant metadata and capability declarations. Add quant behavior there before adding backend-specific branches.
+- `BnModelArchOps` in `include/model_arch.h` owns model-family shape, tensor-role, activation, norm, SSM, MoE, and naming rules.
+- Public GPU graph code uses `BnGPUOpKind`, `BnGPUOpCode`, and `BN_GPU_VALUE_*`. Backend-private shader IDs stay in `src/gpu_shader.h` and backend implementations.
 
 ## Agent Workflow
 
@@ -52,9 +61,10 @@ Modules have strict, one-directional dependencies. When modifying a module, only
 - The e2e test (`test/test_e2e.c`) requires a real GGUF model file
 - The coherence test (`test/test_coherence.c`) requires a real GGUF model file:
   - Phase 1: GPU vs CPU forward pass — 5 greedy tokens, first 3 must match
-  - Phase 2: SIMD vs scalar matvec — all layer 0 weights, max_diff < 1.0
-  - Phase 3: GPU standalone matvec vs CPU scalar — layer 0 wq, max_diff < 1.0
-  - Run: `make BN_ENABLE_GPU=1 test_coherence && ./test_coherence model.gguf --gpu`
+  - Phase 2: SIMD vs scalar matvec — layer 0 weights, max_diff < 2.0
+  - Phase 3: GPU standalone matvec vs CPU scalar — layer 0 wq when available, max_diff < 2.0
+  - Run Metal: `make BN_ENABLE_METAL=1 test_coherence && ./test_coherence model.gguf --metal`
+  - Run WebGPU: `make BN_ENABLE_WEBGPU=1 test_coherence && ./test_coherence model.gguf --webgpu`
 
 ## Code Conventions
 
@@ -64,13 +74,15 @@ Modules have strict, one-directional dependencies. When modifying a module, only
 - Memory management: `_init`/`_free` pairs; caller owns the struct, module fills it. Exception: `BnSession` is heap-allocated via `bn_session_create`/`bn_session_free`.
 - Error handling: return -1 or NULL on failure, print to stderr
 - No global mutable state in library modules (only in main.c and wasm/api.c)
-- **Model/Session split**: `BnModel` is shared and immutable after load (config, weights, file, pool, MoE I/O, GPU backend). `BnSession` holds per-request mutable state (KV cache, activation buffers, MoE compute buffers, pos). All forward pass and generation functions take both `BnModel *` and `BnSession *`.
-- **GPU vtable**: `BnGPUBackend` in `include/gpu_backend.h` abstracts GPU compute (buffer ops, matvec, matmul, execute). The wgpu-native implementation is in `src/gpu_wgpu.c`. GPU code is gated by `BN_ENABLE_GPU`.
+- **Model/Session split**: `BnModel` is shared and immutable after load. `BnSession` holds per-request mutable state. All forward pass and generation functions take both `BnModel *` and `BnSession *`.
+- **Backend state split**: GPU handles and packed/fused backend layouts do not live on `BnQWeight` or `BnLayerWeights`; use `BnBackendModel` and backend session state.
+- **GPU vtable**: `BnGPUBackend` in `include/gpu_backend.h` abstracts GPU compute. wgpu-native lives in `src/gpu_wgpu.c` and is gated by `BN_ENABLE_WEBGPU`; Metal lives in `src/gpu_metal.m` and is gated by `BN_ENABLE_METAL`. `BN_ENABLE_GPU` is a compatibility alias for WebGPU.
+- **Transformer split**: `src/transformer.c` is top-level orchestration. Planning lives in `src/transformer/plan.c`, CPU execution in `src/transformer/cpu.c`, GPU orchestration/emission in `src/transformer/gpu.c` and `src/transformer/gpu_emit.c`, KV/logits/prefill helpers in `src/transformer/{kv,logits,prefill}.c`.
 - Platform-specific code gated by `#ifdef __EMSCRIPTEN__`
 
 ## Performance Considerations
 
-- 5 SIMD backends: NEON SDOT, AVX2, WASM SIMD128, scalar fallback (auto-selected at compile time), WebGPU (optional)
+- CPU backends: NEON SDOT, AVX2, WASM SIMD128, scalar fallback. Optional GPU backends: Metal and WebGPU.
 - Q8_K x quantization for Q4_K/Q6_K: integer accumulation, unsigned nibbles, bsums correction
 - MoE expert LRU cache with open-addressing hash + intrusive LRU list (pread mode)
 - Atomic work-stealing thread dispatch for load balancing
@@ -89,7 +101,8 @@ Modules have strict, one-directional dependencies. When modifying a module, only
 - `--kv16` — FP16 KV cache
 - `--kv-tq <bits>` — TurboQuant KV cache compression (2, 3, or 4 bits; recommended: 3). 8.9x per-session KV compression — the key benefit is multi-user serving: ~9x more concurrent sessions in the same RAM. Combine with `--pread --cache-mb 2048` for minimal footprint: 35B MoE + 64K context = 8.4 GB/session (vs 26 GB with FP32 KV).
 - `--no-prefill` — disable batch prefill
-- `--gpu` — enable GPU inference (requires `BN_ENABLE_GPU=1` build)
+- `--metal` — enable Metal inference (requires `BN_ENABLE_METAL=1` build)
+- `--webgpu` / `--gpu` — enable WebGPU inference (`--gpu` is compatibility spelling; requires `BN_ENABLE_WEBGPU=1` or `BN_ENABLE_GPU=1` build)
 - `--maxseq N` — cap sequence length (recommended on GPU to limit KV cache VRAM)
 - `-t N` — thread count
 

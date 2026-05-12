@@ -1,165 +1,85 @@
 # Benchmarks
 
-Single-core and multi-core performance on Apple M1 Max (32 GB), macOS.
+Benchmark numbers in this repository are local checkpoints. They are useful for
+detecting regressions and comparing implementation choices on the same machine;
+they should not be treated as universal performance claims.
 
-**Toolchain:** Apple Clang 17.0.0, Emscripten 4.0.1, Node.js 20.20.1
+Important variables:
 
-## Throughput (tok/s)
+- model family and quant format
+- prompt length and generated token count
+- thread count
+- backend placement: scalar, NEON, AVX2, WASM SIMD, Metal, WebGPU, llama.cpp CPU,
+  or llama.cpp Metal
+- mmap versus pread and page-cache state for MoE models
+- `--maxseq`, KV mode, and whether prefill is enabled
 
-| Model | Format | Params | NEON 1T | NEON 8T | NEON 8T PGO | WASM 1T |
-|-------|--------|--------|---------|---------|-------------|---------|
-| BitNet b1.58 2B-4T | I2_S | 2B | 20.5 | 48.7 | 52.5 | 7.3 |
-| Qwen2.5 3B Instruct | Q4_0 | 3B | 4.3 | 18.7 | 25.4 | 4.5 |
-| Llama3 8B 1.58 | TQ1_0 | 8B | 3.2 | 10.4 | 14.5 | - |
+## Reproducible Gates
 
-PGO build trained on respective model (128 tokens). Q4_0 uses weight repacking (split scales/qs) for NEON SDOT. WASM is single-threaded (no SharedArrayBuffer in Node.js RAWFS mode).
-Llama3 8B (3.3 GB) exceeds the WASM 4 GB address space with runtime allocations.
-
-## MoE Throughput (tok/s)
-
-Apple M1 Max 8T, 64-128 tokens generated.
-
-### Qwen3-30B-A3B-Q4_K_M (17.7 GB, 128 experts/layer, K=8)
-
-| Mode | tok/s | Hit rate | MB/tok | RSS |
-|------|-------|----------|--------|-----|
-| mmap | **19.04** | — | 1046 | 16.2 GB |
-| pread + 4 GB cache | 11.88 | 86% | 144 | 10.3 GB |
-| pread (no cache) | 6.54 | — | 1046 | 8.3 GB |
-
-### Qwen3.5-35B-A3B-Q4_K_M (21.0 GB, 256 experts/layer, K=8, hybrid SSM+MoE)
-
-| Mode | tok/s | Hit rate | MB/tok | RSS |
-|------|-------|----------|--------|-----|
-| mmap | **11.74** | — | 580 | 20.1 GB |
-| pread + 4 GB cache | 9.67 | 73% | 157 | 11.3 GB |
-| pread (no cache) | 5.83 | — | 580 | 11.0 GB |
-
-Expert LRU cache (open-addressing hash + intrusive LRU list) stores full expert weights (gate+up+down) in a contiguous slab. Batched down projection dispatch (K tasks in one wake/wait cycle) and shared expert gate+up batching reduce dispatch overhead. `--cache-mb N` to configure (0 to disable, pread mode only).
-
-**When to use which mode:**
-- **mmap** (default): Use when the model fits comfortably in RAM. Best throughput, simplest.
-- **pread + cache**: Use when the model exceeds available RAM, or you want to limit RSS.
-- **madvise**: Experimental. Currently slower than both mmap and pread due to syscall overhead. Not recommended for production use.
-
-## vs llama.cpp (b8320)
-
-Measured with `llama-bench`, same hardware (M1 Max, 8 threads), warm page cache (`cat model.gguf > /dev/null` before measurement).
-
-| Model | Format | bitnet.c | llama.cpp `-ngl 0` | Notes |
-|-------|--------|----------|-------------------|-------|
-| BitNet b1.58 2B-4T | I2_S | **52.5** | — | Ternary (no llama.cpp support) |
-| Qwen2.5 3B Instruct | Q4_0 | 25.4 | **40.2** | Multi-row kernel gap |
-| Llama3 8B 1.58 | TQ1_0 | 14.5 | **19.3** | Multi-row kernel gap |
-| Qwen3-30B-A3B MoE | Q4_K_M | **19–20** | 10–12 | Steady state (see below) |
-| Qwen3.5-35B-A3B MoE | Q4_K_M | 9–12 | 6–8 | Parity-or-better depending on I/O mode/cache state |
-
-### MoE performance by page cache state (Qwen3-30B, M1 Max 32 GB)
-
-MoE throughput depends heavily on whether expert weights are in the OS page cache. In sustained use (chat, server), bitnet.c's mmap access pattern keeps the working set warm and delivers peak throughput.
-
-| Condition | bitnet.c | llama.cpp | Winner |
-|-----------|----------|-----------|--------|
-| Cold start (first run, SSD-bound) | 5–7 tok/s | 7–8 tok/s | llama.cpp (+30%) |
-| Single warm run | 8–10 tok/s | 10–12 tok/s | llama.cpp (+20%) |
-| **Steady state (sustained generation)** | **19–20 tok/s** | **10–12 tok/s** | **bitnet.c (2x faster)** |
-
-**Why bitnet.c wins at steady state:** The mmap access pattern for MoE expert weights warms the CPU page cache progressively. After the first few tokens, frequently-accessed experts are fully resident in DRAM and served at ~200 GB/s. The expert LRU access pattern exhibits strong temporal locality (Zipf distribution), so the hot working set stabilizes quickly.
-
-**Why llama.cpp is more stable:** llama.cpp routes MoE expert dispatch (`MUL_MAT_ID`) to Metal GPU even with `-ngl 0` (triggered when batch_size >= 32, always true for 128+ experts). The GPU handles scattered memory access better than CPU due to thousands of in-flight threads hiding latency, giving consistent 10–12 tok/s regardless of cache state — but it can't exceed this because the GPU and CPU share the same DRAM bandwidth.
-
-**Key insight:** bitnet.c's pure CPU approach has higher variance but a higher ceiling. llama.cpp's GPU-assisted approach has lower variance but a lower ceiling. For interactive use (chat mode, continuous generation), bitnet.c delivers better sustained throughput.
-
-**Dense models:** bitnet.c is competitive but still model- and quant-specific; rebenchmark before claiming a universal dense-model win. The parity claim is strongest for the MoE serving path, where warm expert access and batched expert dispatch remove the earlier steady-state gap.
-
-## Per-Kernel Bandwidth (GB/s)
-
-### BitNet b1.58 2B-4T (I2_S)
-
-| Kernel | Dims | NEON 1T | NEON 4T | WASM 1T | WASM/NEON |
-|--------|------|---------|---------|---------|-----------|
-| wq | 2560x2560 | 14.3 | 34.0 | 13.6 | 0.95x |
-| wk | 640x2560 | 14.2 | 26.5 | 14.0 | 0.99x |
-| wv | 640x2560 | 14.2 | 29.7 | 13.6 | 0.96x |
-| wo | 2560x2560 | 14.1 | 30.7 | 13.8 | 0.98x |
-| up | 6912x2560 | 12.1 | 33.3 | 13.7 | **1.13x** |
-| down | 2560x6912 | 12.4 | 32.1 | 14.0 | **1.13x** |
-| gate | 6912x2560 | 12.0 | 34.0 | 13.6 | **1.13x** |
-
-WASM Relaxed SIMD SDOT achieves 95-113% of native NEON SDOT throughput on I2_S ternary matvec. The FFN kernels (up/down/gate) are slightly faster in WASM due to V8's superior instruction scheduling for large matrices.
-
-### Qwen2.5 3B Instruct (Q4_0)
-
-| Kernel | Dims | NEON 1T | NEON 4T | WASM 1T | WASM/NEON |
-|--------|------|---------|---------|---------|-----------|
-| wq | 2048x2048 | 8.3 | 20.7 | 9.1 | **1.09x** |
-| wk | 256x2048 | 8.2 | 7.3 | 9.3 | **1.13x** |
-| wv | 256x2048 | 8.3 | 19.0 | 9.4 | **1.13x** |
-| wo | 2048x2048 | 8.2 | 21.7 | 9.2 | **1.12x** |
-| up | 11008x2048 | 6.7 | 27.9 | 9.1 | **1.36x** |
-| down | 2048x11008 | 8.1 | 29.0 | 9.4 | **1.16x** |
-| gate | 11008x2048 | 8.0 | 28.3 | 9.1 | **1.13x** |
-
-WASM Q4_0 SDOT kernels consistently outperform single-threaded NEON by 9-36%, likely due to V8's SIMD JIT optimizations and more efficient register allocation for the Q4 dequant+dot product loop.
-
-### Llama3 8B 1.58 (TQ1_0) — native only
-
-| Kernel | Dims | NEON 1T | NEON 4T |
-|--------|------|---------|---------|
-| wq | 4096x4096 | 5.0 | 17.1 |
-| wk | 1024x4096 | 5.3 | 16.7 |
-| wv | 1024x4096 | 5.3 | 15.7 |
-| wo | 4096x4096 | 5.0 | 16.6 |
-| up | 14336x4096 | 5.0 | 18.4 |
-| down | 4096x14336 | 5.1 | 18.3 |
-| gate | 14336x4096 | 5.1 | 18.3 |
-| logits (F16) | 128256x4096 | 12.1 | 46.5 |
-
-## Per-Kernel Latency (us/call)
-
-### BitNet b1.58 2B-4T (I2_S)
-
-| Kernel | NEON 1T | NEON 4T | WASM 1T |
-|--------|---------|---------|---------|
-| wq | 115 | 49 | 121 |
-| wk | 30 | 16 | 30 |
-| wv | 30 | 14 | 31 |
-| wo | 117 | 54 | 119 |
-| up | 365 | 133 | 325 |
-| down | 358 | 139 | 318 |
-| gate | 369 | 130 | 327 |
-
-### Qwen2.5 3B Instruct (Q4_0)
-
-| Kernel | NEON 1T | NEON 4T | WASM 1T |
-|--------|---------|---------|---------|
-| wq | 284 | 114 | 260 |
-| wk | 37 | 41 | 33 |
-| wv | 36 | 16 | 32 |
-| wo | 287 | 109 | 257 |
-| up | 1898 | 454 | 1397 |
-| down | 1574 | 440 | 1361 |
-| gate | 1582 | 448 | 1402 |
-
-## Notes
-
-**Backend details:**
-- **ARM NEON + SDOT**: `vdotq_s32` for integer dot products (I2_S, TQ1, TQ2, Q4_0, Q8_0), `vmlaq_f32` FMA, native FP16 logits with `vfmaq_f16`
-- **WASM Relaxed SIMD**: `i32x4.relaxed_dot_i8x16_i7x16_add` (SDOT equivalent), `f32x4.relaxed_madd` (FMA), vectorized F16 bit-manipulation for logits
-- Multi-threading uses a persistent pthread pool with condvar dispatch (~2us overhead)
-
-**WASM limitations:**
-- Single-threaded only (no `SharedArrayBuffer` in Node.js RAWFS mode)
-- 4 GB address space limit (wasm32) — models + runtime must fit in 4 GB
-- Logits benchmark unreliable (V8 JIT eliminates unused results); tok/s numbers are authoritative
-
-**Reproducing:**
 ```bash
-# Native
+make bench_llama_compare
 make bench
-./bench_kernels models/<model>.gguf --iters 100 --threads 4 --toks 32
-
-# WASM (requires Emscripten + Node.js 20+)
-bash bench/bench_wasm.sh
-node --experimental-wasm-relaxed-simd bench/bench_wasm.js models/<model>.gguf --iters 100 --toks 32
+./bench_kernels models/model.gguf --iters 100 --threads 4 --toks 32
 ```
+
+GPU/coherence-adjacent checks:
+
+```bash
+make BN_ENABLE_METAL=1 test_coherence
+./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal
+
+make fetch-wgpu
+make BN_ENABLE_WEBGPU=1 test_gpu_wgpu
+```
+
+## Current Local Checkpoint
+
+The most recent llama.cpp comparison gate used
+`qwen2.5-3b-instruct-q4_0.gguf`, 32 generated tokens, 8 threads, and three
+trials. It reported:
+
+| Engine | Median tok/s |
+|---|---:|
+| bitnet.c | 39.30 |
+| llama.cpp | 17.59 |
+
+Median ratio: 2.2347. Mean ratio: 2.1997.
+
+This is a short local gate and is noisy. It is useful as a regression check for
+this machine and model, not as a durable statement that bitnet.c is faster in all
+dense Q4_0 settings.
+
+## MoE Notes
+
+MoE models are strongly affected by page-cache state and expert locality.
+
+- `mmap` usually gives the best throughput when the model fits in RAM and the
+  expert working set is warm.
+- `--pread --cache-mb N` lowers RSS and can be preferable for serving larger
+  sparse models.
+- No-cache pread is a memory-saving fallback and is normally slower.
+
+When comparing against llama.cpp, record whether llama.cpp is actually CPU-only
+or whether it routes some work to Metal/GPU even when a CPU-looking flag is used.
+
+## GPU Notes
+
+Metal and WebGPU use the `BnGPUBackend` command contract. Backend performance is
+limited by the availability and quality of native kernels for the selected quant
+and op kind.
+
+Current caveats:
+
+- WebGPU runtime checks may skip on machines where wgpu-native reports no
+  suitable adapter.
+- Unsupported SSM or MoE blocks can fall back to CPU.
+- Oversized bindings can force CPU logits fallback on constrained adapters.
+- Native-layout Q4_0 and broader low-bit GPU kernels remain optimization work.
+
+## Historical Context
+
+Earlier measurements on an Apple M1 Max showed the CPU path reaching high memory
+bandwidth utilization on BitNet ternary models and competitive throughput on
+several dense and sparse quantized models. Keep old numbers in commit history;
+current docs should prefer reproducible commands and recent gates over broad
+claims.

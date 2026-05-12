@@ -1,54 +1,55 @@
-# GPU/CPU Coherence Test Results
+# Coherence Tests
 
-Cross-backend validation: GPU forward pass vs CPU, SIMD (NEON SDOT) vs scalar matvec, GPU standalone matvec vs CPU scalar.
+`test_coherence` validates cross-backend behavior using a real GGUF model.
 
-## Running
+## Build And Run
 
 ```bash
+# CPU-only scalar/SIMD checks
+make test_coherence
+./test_coherence models/model.gguf
+
+# Metal
+make BN_ENABLE_METAL=1 test_coherence
+./test_coherence models/model.gguf --metal
+
+# WebGPU
+make fetch-wgpu
 make BN_ENABLE_WEBGPU=1 test_coherence
-./test_coherence <model.gguf> --webgpu # all 3 phases
-./test_coherence <model.gguf>          # CPU-only (Phase 2 only)
+./test_coherence models/model.gguf --webgpu
 ```
+
+`--gpu` remains accepted by the CLI/test harness as a compatibility spelling for
+the available GPU backend in older scripts.
 
 ## Phases
 
-| Phase | What | Pass criteria |
-|-------|------|---------------|
-| 1 | GPU vs CPU greedy decode (5 tokens) | First 3 tokens must match (FP32 drift allowed after) |
-| 2 | Scalar kernel vs compile-time SIMD backend (layer 0 weights) | max_diff < 2.0 per weight |
-| 3 | GPU standalone matvec vs CPU scalar (layer 0 wq) | max_diff < 2.0 |
+| Phase | What it checks | Pass criteria |
+|---|---|---|
+| 1 | GPU/backend forward pass versus CPU greedy decode | First 3 of 5 tokens match. |
+| 2 | Compile-time SIMD backend versus scalar matvec on layer 0 weights | `max_diff < 2.0` per weight. |
+| 3 | Standalone GPU matvec versus CPU scalar on layer 0 `wq` when available | `max_diff < 2.0`. |
 
-## Results (M1 Max, 2025-03-25)
+Some models skip a phase when layer 0 does not expose the required standard
+attention tensor, for example SSM-first hybrids.
 
-| Model | Weight types | Phase 1 (GPU=CPU) | Phase 2 (NEON SDOT vs scalar) | Phase 3 (GPU matvec) | Result |
-|-------|-------------|-------------------|-------------------------------|---------------------|--------|
-| bitnet-b1.58-2B-4T | I2_S | 5/5 match | 7/7 PASS (max 1.25) | PASS (0.48) | **PASS** |
-| Llama3-8B-1.58-TQ1_0-F16 | TQ1_0/F16 | 0/5 (FP32 drift, 8B model) | 7/7 PASS (max 0.01) | PASS (0.01) | **DRIFT** |
-| olmoe-1b-7b-q2k | Q2_K/Q3_K | 5/5 match | 4/4 PASS (0.00) | PASS (0.00) | **PASS** |
-| olmoe-1b-7b-q4_0 | Q4_0 | 5/5 match | 4/4 PASS (max 0.01) | PASS (0.01) | **PASS** |
-| qwen2.5-3b-instruct-q4_0 | Q4_0 | 5/5 match | 7/7 PASS (max 0.02) | PASS (0.02) | **PASS** |
-| Qwen3-0.6B-Q8_0 | Q8_0 | 5/5 match | 7/7 PASS (max 0.02) | PASS (0.01) | **PASS** |
-| Qwen3-30B-A3B-Q4_K_M | Q4_K/Q6_K (MoE) | 5/5 match | 4/4 PASS (max 0.03) | PASS (0.01) | **PASS** |
-| Qwen3.5-35B-A3B-Q4_K_M | Q4_K (SSM+Attn) | 5/5 match | SKIP (SSM layer 0) | SKIP | **PASS** |
-| Qwen3.5-9B-Q4_K_M | Q4_K/Q6_K | 5/5 match | 3/3 PASS (max 0.03) | SKIP (SSM) | **PASS** |
-| TinyMixtral-4x220M-Q4_K_M | Q4_K/Q6_K (MoE) | 5/5 match | 4/4 PASS (max 0.01) | PASS (0.01) | **PASS** |
+## Interpreting Results
 
-## Known Issues
+Exact token equality is expected on many small and medium models. Larger models
+can diverge after a few tokens from harmless FP32 reduction-order drift, even
+when standalone matvec checks pass.
 
-- **Llama3-8B TQ1_0**: GPU output is coherent English but diverges from CPU at token 0 due to FP32 precision drift through 32 layers. The standalone matvec matches CPU exactly (max_diff=0.006). This is expected for 8B models — both outputs are valid completions.
-- **MoE models** (OLMoE, Qwen3-30B, TinyMixtral): GPU forward pass falls back to CPU for MoE layers (router_weight check in forward_gpu). Phase 1 compares CPU-via-GPU-fallback vs pure-CPU, so tokens match trivially. Phase 2/3 still validate the matvec kernels.
-- **SSM hybrid models** (Qwen3.5): Layer 0 may be an SSM layer with no standard attention weights, causing Phase 2/3 SKIPs.
-- **I2_S SDOT vs scalar**: max_diff up to ~1.3 for large cols (6912) due to INT8 x-quantization noise in the SDOT path. This is expected — the SDOT kernel quantizes x to INT8 for integer dot products, while scalar uses FP32 throughout.
+MoE and hybrid models may use CPU fallback for unsupported GPU blocks. That is
+acceptable only when the fallback is deterministic and visible in tests or debug
+output.
 
-## Quant Types Covered
+## Quant Coverage
 
-| Type | Phase 2 tested | Phase 3 tested | Models |
-|------|---------------|---------------|--------|
-| I2_S | yes | yes | bitnet-2B |
-| TQ1_0 | yes | yes | Llama3-8B |
-| Q2_K | yes | yes | olmoe-q2k |
-| Q3_K | yes | - | olmoe-q2k |
-| Q4_0 | yes | yes | olmoe-q4_0, qwen2.5-3b |
-| Q4_K | yes | yes | Qwen3-30B, Qwen3.5-9B, TinyMixtral |
-| Q6_K | yes | - | Qwen3-30B, Qwen3.5-9B, TinyMixtral |
-| Q8_0 | yes | yes | Qwen3-0.6B |
+The test is most useful when the selected model exercises the quant formats and
+model blocks touched by the change. Keep at least one representative model for:
+
+- ternary: `I2_S`, `TQ1_0`, `TQ2_0`
+- legacy quants: `Q4_0`, `Q4_1`, `Q8_0`
+- k-quants: `Q2_K`, `Q3_K`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_K`
+- IQ formats: `IQ2_*`, `IQ3_*`, `IQ4_*`
+- dense attention, MoE, and hybrid SSM/attention models

@@ -1,59 +1,56 @@
 # Transformer Behavior Map
 
-This file freezes the current branch surface of `src/transformer.c` before the
-planner/executor split is completed. It is intentionally descriptive: each row
-names an existing route that should remain visible in tests or planner policy.
+This file records the planner and executor decisions that should stay visible in
+tests as the transformer evolves. It reflects the post-split architecture.
 
 ## CPU Decode
 
-| Area | Route | Current decision source | Coverage |
-|---|---|---|---|
-| Layer kind | full-attention layer vs SSM layer | `full_attn_interval`, `bn_transformer_is_attn_layer` | `test_layer_shape_planning` |
-| Layer index | attention and SSM compact indices | `bn_transformer_attn_index`, `bn_transformer_ssm_index` | `test_layer_shape_planning` |
-| Q shape | classic Q, gated Q, wide Q | `BnLayerShapePlan.kind` | `test_layer_shape_planning` |
-| KV cache | FP32, FP16, TurboQuant | `BnLayerShapePlan.kv_mode` | `test_layer_shape_planning` |
-| Attention norms | optional Q/K RMSNorm, per-head stride | `q_norm`, `k_norm`, `qk_norm_per_head` | `test_layer_shape_planning` |
-| Attention bias | optional Q/K/V bias | `q_bias`, `k_bias`, `v_bias` | `test_layer_shape_planning` |
-| Attention math | standard GQA vs TurboQuant GQA | `kv_mode`, `m->tq_state` | `make test`, coherence |
-| SSM block | conv, L2 norm, delta recurrence, gate, output | `BnSSMPlan` and SSM config fields | `test_block_planning`, `test_ssm` |
-| FFN kind | dense up-only, dense gate/up, MoE | `BnFFNPlan.kind` | `test_block_planning`, `test_moe` |
-| FFN activation | SiLU vs ReLU2 | `BnFFNPlan.activation` | `test_block_planning`, `make test` |
-| FFN CPU fast path | AVX2 pre-Q8K for Q4_K/Q6_K | compile target, k-quant type | `make test` |
-| FFN CPU fast path | NEON repacked Q4_0 gate/up SiLU | compile target, repack scales | `make test`, coherence |
-| Logits | tied F32, tied F16, tied INT8, untied output | `BnLogitsPlan.kind` | `test_block_planning`, `make test` |
-
-## Batch Prefill
-
-| Area | Route | Current decision source | Coverage |
-|---|---|---|---|
-| Layer kind | batched attention vs SSM | `BnLayerShapePlan.is_attn` | `make test` |
-| Q shape | classic/gated/wide per-token extraction | `BnLayerShapePlan` | `make test` |
-| KV cache | FP32/FP16/TurboQuant writes | config KV mode | `make test` |
-| FFN | dense batch matmul vs batch MoE | `router_weight`, FFN config | `make test`, model matrix smoke |
+| Area | Decision source | Coverage |
+|---|---|---|
+| Attention layer vs SSM layer | `BnLayerShapePlan`, `BnModelArchOps` | `test_layer_shape_planning`, `test_block_planning` |
+| Compact attention/SSM index | planner helpers | `test_layer_shape_planning` |
+| Classic, gated, or wide Q | layer shape plan | `test_layer_shape_planning` |
+| Q/K norms and per-head norms | attention plan | `test_block_planning` |
+| Q/K/V bias | attention plan | `test_block_planning` |
+| FP32, FP16, or TurboQuant KV | KV plan and session config | `test_layer_shape_planning`, `make test` |
+| Standard GQA vs TurboQuant GQA | KV mode and TurboQuant state | `make test`, coherence |
+| SSM conv/delta/gate/output path | SSM plan | `test_ssm`, `test_block_planning` |
+| Dense FFN vs MoE/shared expert | FFN and MoE plans | `test_moe`, `test_block_planning` |
+| SiLU vs ReLU2 activation | FFN plan and arch ops | `test_block_planning` |
+| Logits tied/untied and dtype | logits plan | `test_block_planning`, `make test` |
 
 ## GPU Decode
 
-| Area | Route | Current decision source | Coverage |
-|---|---|---|---|
-| Backend availability | GPU graph vs CPU fallback | backend vtable and validation | `test_gpu_capability_routing`, coherence |
-| Capability checks | Q4/Q8/Q5 split, fused gate/up, flash attention | `bn_transformer_gpu_can_*` | `test_gpu_capability_routing` |
-| Attention QKV | packed QKV, split stacked QKV, separate Q/K/V | tensor layout, quant type, caps | `test_block_planning`, coherence |
-| Gated Q | deinterleave Q then sigmoid gate | `BnLayerShapePlan.q_gated` | `test_layer_shape_planning` |
-| Q/K norms | per-head RMSNorm shader when uploaded | norm GPU handles | `make BN_ENABLE_METAL=1 test_coherence` |
-| Attention kernel | flash attention vs scores/softmax/combine | `BnAttentionPlan.use_flash`, caps | `test_block_planning` |
-| SSM | CPU fallback unless forced GPU graph | placement/fallback policy | `test_block_planning`, coherence |
-| MoE | CPU fallback in default GPU-resident path | `BnFFNPlan.kind`, `BnMoEPlan` | `test_block_planning` |
-| Dense FFN | fused Q4_0 gate/up, Q4_K split, Q8 split, separate matvecs | `emit_gpu_dense_ffn_ops`, caps | `test_block_planning`, coherence |
-| Logits | GPU matvec or CPU fallback for oversized binding | binding size and logits plan | coherence |
+| Area | Decision source | Coverage |
+|---|---|---|
+| GPU graph vs CPU fallback | backend vtable, caps, placement plan | `test_gpu_capability_routing`, coherence |
+| QKV packed/split/separate | tensor roles, quant registry, backend caps | `test_block_planning` |
+| Fused Q/K RoPE | backend capability and attention shape | backend matrix tests |
+| Flash attention vs scores/softmax/combine | attention plan and backend caps | `test_block_planning` |
+| Dense FFN fusion/split | quant registry and backend layout | backend matrix tests |
+| MoE backend placement | MoE plan and backend caps | `test_block_planning` |
+| SSM backend placement | SSM plan and backend caps | `test_block_planning`, coherence |
+| Logits GPU vs CPU fallback | logits plan and binding limits | coherence |
+| Shader lowering | backend-private `src/gpu_shader.h` | backend matrix tests |
 
-## Verification Gates
+## Architecture Boundaries
 
-For transformer architecture changes, use this minimum gate:
+| Boundary | Expected rule |
+|---|---|
+| Model family | Add or update `BnModelArchOps`; avoid transformer cross-product branches. |
+| Quant format | Add `BnQuantFormatOps` metadata and kernels; avoid model-family branches. |
+| Backend layout | Use `BnBackendModel` and `backend_layout`; do not mutate model anatomy. |
+| Backend execution | Lower op codes privately; do not expose shader IDs in public headers. |
+| Session state | Keep activation, KV, SSM, and MoE scratch request-local. |
 
-1. `make test_transformer`
-2. `make clean && make bitnet`
-3. `make test`
-4. `make BN_ENABLE_METAL=1 bitnet test_coherence`
-5. `./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal`
-6. Short bitnet vs `llama-bench` CPU/Metal checkpoint on the same local model
+## Minimum Gates
 
+```bash
+make test_transformer
+make test
+make clean
+make bitnet
+make BN_ENABLE_METAL=1 test_coherence
+./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal
+./test/backend_matrix.sh
+```
