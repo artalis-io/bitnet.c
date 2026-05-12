@@ -9,6 +9,7 @@ struct BnSession {
     BnRunState state;          // activation buffers + KV cache (arena-allocated)
     BnMoEState *moe_state;     // MoE compute buffers (NULL for dense models)
     SHArena *arena;            // owns all session buffer memory
+    BnBackendSession *backend; // per-request backend state
     int pos;                   // generation position
 };
 typedef struct BnSession BnSession;

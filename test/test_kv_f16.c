@@ -2,6 +2,7 @@
 #include "gguf.h"
 #include "model.h"
 #include "transformer.h"
+#include "session.h"
 #include "tokenizer.h"
 #include "sampler.h"
 
@@ -54,11 +55,13 @@ int main(int argc, char **argv) {
     // --- Run 1: F32 KV cache ---
     printf("Running F32 KV cache...\n");
     BnModel model_f32;
-    if (bn_model_load(&model_f32, gf, 2048, 0) != 0) {
+    if (bn_model_load(&model_f32, gf, 2048, 0, 0) != 0) {
         fprintf(stderr, "Failed to load model (F32)\n");
         return 1;
     }
     model_f32.file = mf;
+    BnSession *sess_f32 = bn_session_create(&model_f32, NULL);
+    assert(sess_f32);
 
     int vocab_size = model_f32.config.vocab_size;
     float *logits_f32 = (float *)malloc(vocab_size * sizeof(float));
@@ -67,7 +70,7 @@ int main(int argc, char **argv) {
     // Sequential forward for all prompt tokens
     float *lf = NULL;
     for (int i = 0; i < n_prompt; i++) {
-        lf = bn_transformer_forward(&model_f32, prompt_tokens[i], i);
+        lf = bn_transformer_forward(&model_f32, sess_f32, prompt_tokens[i], i);
         assert(lf != NULL);
     }
     memcpy(logits_f32, lf, vocab_size * sizeof(float));
@@ -85,7 +88,7 @@ int main(int argc, char **argv) {
             n_gen = i + 1;
             break;
         }
-        lf = bn_transformer_forward(&model_f32, gen_f32[i], pos++);
+        lf = bn_transformer_forward(&model_f32, sess_f32, gen_f32[i], pos++);
         assert(lf != NULL);
     }
 
@@ -96,16 +99,19 @@ int main(int argc, char **argv) {
     }
     printf("\n");
 
+    bn_session_free(sess_f32, NULL);
     bn_model_free(&model_f32);
 
     // --- Run 2: F16 KV cache ---
     printf("Running F16 KV cache...\n");
     BnModel model_f16;
-    if (bn_model_load(&model_f16, gf, 2048, 1) != 0) {
+    if (bn_model_load(&model_f16, gf, 2048, 1, 0) != 0) {
         fprintf(stderr, "Failed to load model (F16)\n");
         return 1;
     }
     model_f16.file = mf;
+    BnSession *sess_f16 = bn_session_create(&model_f16, NULL);
+    assert(sess_f16);
 
     float *logits_f16 = (float *)malloc(vocab_size * sizeof(float));
     assert(logits_f16);
@@ -113,7 +119,7 @@ int main(int argc, char **argv) {
     // Sequential forward for all prompt tokens
     float *lh = NULL;
     for (int i = 0; i < n_prompt; i++) {
-        lh = bn_transformer_forward(&model_f16, prompt_tokens[i], i);
+        lh = bn_transformer_forward(&model_f16, sess_f16, prompt_tokens[i], i);
         assert(lh != NULL);
     }
     memcpy(logits_f16, lh, vocab_size * sizeof(float));
@@ -154,7 +160,7 @@ int main(int argc, char **argv) {
     for (int i = 0; i < n_gen; i++) {
         gen_f16[i] = bn_sampler_sample(&sampler, lh);
         if (gen_f16[i] == tok.eos_id || gen_f16[i] == tok.eot_id) break;
-        lh = bn_transformer_forward(&model_f16, gen_f16[i], pos++);
+        lh = bn_transformer_forward(&model_f16, sess_f16, gen_f16[i], pos++);
         assert(lh != NULL);
     }
 
@@ -185,6 +191,7 @@ int main(int argc, char **argv) {
     free(logits_f16);
     bn_sampler_free(&sampler);
     bn_tokenizer_free(&tok);
+    bn_session_free(sess_f16, NULL);
     bn_model_free(&model_f16);
     bn_gguf_free(gf);
     bn_platform_unload_file(&mf);

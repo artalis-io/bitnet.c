@@ -900,15 +900,12 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
                     can_batch_shared = (gu_tasks[i].W->type == batch_type);
 #if defined(__AVX2__)
                 if (!can_batch_shared &&
-                    (lw->shared_gate.type == BN_GGUF_TENSOR_Q4_K ||
-                     lw->shared_gate.type == BN_GGUF_TENSOR_Q6_K) &&
-                    (lw->shared_up.type == BN_GGUF_TENSOR_Q4_K ||
-                     lw->shared_up.type == BN_GGUF_TENSOR_Q6_K)) {
+                    bn_quant_format_can_preq8k(lw->shared_gate.type) &&
+                    bn_quant_format_can_preq8k(lw->shared_up.type)) {
                     can_batch_shared = 1;
                     for (int i = 0; can_batch_shared && i < n_gu; i++) {
                         int type = gu_tasks[i].W->type;
-                        can_batch_shared = (type == BN_GGUF_TENSOR_Q4_K ||
-                                            type == BN_GGUF_TENSOR_Q6_K);
+                        can_batch_shared = bn_quant_format_can_preq8k(type);
                     }
                 }
 #endif

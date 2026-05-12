@@ -47,6 +47,11 @@ require_file "include/gpu_metal.h"
 require_file "src/gpu_wgpu.c"
 require_file "src/gpu_metal.m"
 
+if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "GPU emit must use BN_GPU_CODE_* and backend lowering, not BN_GPU_SHADER_*"
+    fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "Backend matrix FAILED"
     exit 1

@@ -46,62 +46,11 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
 
 static int qweight_type_supported(int type) {
-    switch (type) {
-        case BN_GGUF_TENSOR_F32:
-        case BN_GGUF_TENSOR_F16:
-        case BN_GGUF_TENSOR_BF16:
-        case BN_GGUF_TENSOR_I2_S:
-        case BN_GGUF_TENSOR_Q4_0:
-        case BN_GGUF_TENSOR_Q4_1:
-        case BN_GGUF_TENSOR_Q5_1:
-        case BN_GGUF_TENSOR_Q8_0:
-        case BN_GGUF_TENSOR_TQ1_0:
-        case BN_GGUF_TENSOR_TQ2_0:
-        case BN_GGUF_TENSOR_Q2_K:
-        case BN_GGUF_TENSOR_Q3_K:
-        case BN_GGUF_TENSOR_Q4_K:
-        case BN_GGUF_TENSOR_Q5_K:
-        case BN_GGUF_TENSOR_Q6_K:
-        case BN_GGUF_TENSOR_Q8_K:
-        case BN_GGUF_TENSOR_IQ4_NL:
-        case BN_GGUF_TENSOR_IQ4_XS:
-        case BN_GGUF_TENSOR_IQ3_XXS:
-        case BN_GGUF_TENSOR_IQ3_S:
-        case BN_GGUF_TENSOR_IQ2_XXS:
-        case BN_GGUF_TENSOR_IQ2_XS:
-        case BN_GGUF_TENSOR_IQ2_S:
-            return 1;
-        default:
-            return 0;
-    }
+    return bn_quant_format_supported(type);
 }
 
 static int qweight_type_uses_embedded_scale(int type) {
-    switch (type) {
-        case BN_GGUF_TENSOR_F32:
-        case BN_GGUF_TENSOR_F16:
-        case BN_GGUF_TENSOR_BF16:
-        case BN_GGUF_TENSOR_Q4_0:
-        case BN_GGUF_TENSOR_Q4_1:
-        case BN_GGUF_TENSOR_Q5_1:
-        case BN_GGUF_TENSOR_Q8_0:
-        case BN_GGUF_TENSOR_Q2_K:
-        case BN_GGUF_TENSOR_Q3_K:
-        case BN_GGUF_TENSOR_Q4_K:
-        case BN_GGUF_TENSOR_Q5_K:
-        case BN_GGUF_TENSOR_Q6_K:
-        case BN_GGUF_TENSOR_Q8_K:
-        case BN_GGUF_TENSOR_IQ4_NL:
-        case BN_GGUF_TENSOR_IQ4_XS:
-        case BN_GGUF_TENSOR_IQ3_XXS:
-        case BN_GGUF_TENSOR_IQ3_S:
-        case BN_GGUF_TENSOR_IQ2_XXS:
-        case BN_GGUF_TENSOR_IQ2_XS:
-        case BN_GGUF_TENSOR_IQ2_S:
-            return 1;
-        default:
-            return 0;
-    }
+    return bn_quant_format_uses_embedded_scale(type);
 }
 
 static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, const char *scale_name) {
@@ -344,10 +293,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // Try to detect architecture prefix
     const char *arch = bn_gguf_get_str(f, "general.architecture");
+    const BnModelArchOps *arch_ops = bn_model_arch_ops_for(arch);
+    if (!arch_ops) {
+        SH_LOG_ERROR("No model architecture ops registered");
+        return -1;
+    }
     char prefix[64];
-    snprintf(prefix, sizeof(prefix), "%s", bn_model_arch_prefix(arch));
-    int is_gemma4 = bn_model_arch_is_gemma4(arch);
-    c->arch_gemma4 = is_gemma4;
+    snprintf(prefix, sizeof(prefix), "%s", arch_ops->prefix(arch));
+    c->arch_flags = arch_ops->flags;
 
     // Build key names with architecture prefix
     char key[128];
@@ -476,7 +429,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // MoE config
-    bn_model_arch_load_moe_config(c, f, prefix);
+    bn_model_arch_load_moe_config(c, f, arch_ops, prefix);
     if (c->n_experts > 0) {
         if (c->n_experts_active <= 0 || c->moe_intermediate_size <= 0) {
             SH_LOG_ERROR("Invalid MoE config: n_experts_active and moe_intermediate_size must be > 0");
@@ -493,10 +446,17 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // Detect FFN gate and activation type
-    c->has_ffn_gate = (bn_gguf_find_tensor(f, "blk.0.ffn_gate.weight") >= 0) ? 1 : 0;
+    {
+        char ffn_gate_name[128];
+        if (bn_model_arch_tensor_name_for(arch_ops, ffn_gate_name,
+                                          sizeof(ffn_gate_name), 0,
+                                          BN_MODEL_TENSOR_FFN_GATE) != 0)
+            return -1;
+        c->has_ffn_gate = (bn_gguf_find_tensor(f, ffn_gate_name) >= 0) ? 1 : 0;
+    }
 
     // Check for activation type: bitnet uses ReLU² (act_type=1)
-    c->act_type = bn_model_arch_activation(arch);
+    c->act_type = arch_ops->activation(arch);
 
     {
         char dim_s[16], layers_s[16], heads_s[16], vocab_s[16];
@@ -539,19 +499,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     if (out_idx >= 0) {
         BnGGUFTensorInfo *out_info = &f->tensors[out_idx];
         int ot = out_info->type;
-        if (ot != BN_GGUF_TENSOR_Q4_0 && ot != BN_GGUF_TENSOR_Q4_1 &&
-            ot != BN_GGUF_TENSOR_Q8_0 &&
-            ot != BN_GGUF_TENSOR_Q2_K && ot != BN_GGUF_TENSOR_Q3_K &&
-            ot != BN_GGUF_TENSOR_Q4_K && ot != BN_GGUF_TENSOR_Q5_K &&
-            ot != BN_GGUF_TENSOR_Q5_1 &&
-            ot != BN_GGUF_TENSOR_Q6_K && ot != BN_GGUF_TENSOR_Q8_K &&
-            ot != BN_GGUF_TENSOR_I2_S && ot != BN_GGUF_TENSOR_TQ1_0 &&
-            ot != BN_GGUF_TENSOR_TQ2_0 && ot != BN_GGUF_TENSOR_F16 &&
-            ot != BN_GGUF_TENSOR_BF16 &&
-            ot != BN_GGUF_TENSOR_IQ4_NL && ot != BN_GGUF_TENSOR_IQ4_XS &&
-            ot != BN_GGUF_TENSOR_IQ3_XXS && ot != BN_GGUF_TENSOR_IQ3_S &&
-            ot != BN_GGUF_TENSOR_IQ2_XXS && ot != BN_GGUF_TENSOR_IQ2_XS &&
-            ot != BN_GGUF_TENSOR_IQ2_S) {
+        if (!qweight_type_supported(ot)) {
             SH_LOG_ERROR("Unsupported output.weight type");
             return -1;
         }
@@ -567,17 +515,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
         w->output_weight.rows = (int)out_info->dims[1];
         w->output_weight.cols = (int)out_info->dims[0];
-        if (ot == BN_GGUF_TENSOR_Q4_0 || ot == BN_GGUF_TENSOR_Q4_1 ||
-            ot == BN_GGUF_TENSOR_Q5_1 ||
-            ot == BN_GGUF_TENSOR_Q8_0 ||
-            ot == BN_GGUF_TENSOR_Q2_K || ot == BN_GGUF_TENSOR_Q3_K ||
-            ot == BN_GGUF_TENSOR_Q4_K || ot == BN_GGUF_TENSOR_Q5_K ||
-            ot == BN_GGUF_TENSOR_Q6_K || ot == BN_GGUF_TENSOR_Q8_K ||
-            ot == BN_GGUF_TENSOR_BF16 ||
-            ot == BN_GGUF_TENSOR_IQ4_NL || ot == BN_GGUF_TENSOR_IQ4_XS ||
-            ot == BN_GGUF_TENSOR_IQ3_XXS || ot == BN_GGUF_TENSOR_IQ3_S ||
-            ot == BN_GGUF_TENSOR_IQ2_XXS || ot == BN_GGUF_TENSOR_IQ2_XS ||
-            ot == BN_GGUF_TENSOR_IQ2_S) {
+        if (qweight_type_uses_embedded_scale(ot)) {
             w->output_weight.scale = 1.0f;
         } else if (ot == BN_GGUF_TENSOR_I2_S) {
             size_t nel = (size_t)w->output_weight.rows * w->output_weight.cols;
@@ -607,94 +545,145 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         char wname[128], sname[128];
 
         // Determine layer type for hybrid models
-        int is_ssm = bn_model_arch_is_ssm_layer(c, i);
+        int is_ssm = arch_ops->is_ssm_layer(c, i);
 
         // #25: Attention norms — must exist
-        snprintf(wname, sizeof(wname), "blk.%d.attn_norm.weight", i);
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_ATTN_NORM) != 0)
+            goto fail_layers;
         lw->attn_norm = load_f32_tensor(f, wname);
         if (!lw->attn_norm) {
             SH_LOG_ERROR("Tensor not found", "name", wname);
             goto fail_layers;
         }
 
-        snprintf(wname, sizeof(wname), "blk.%d.attn_sub_norm.weight", i);
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_ATTN_SUB_NORM) != 0)
+            goto fail_layers;
         lw->attn_sub_norm = load_f32_tensor(f, wname);  // optional
 
         if (is_ssm) {
             // --- SSM layer weights ---
-            snprintf(wname, sizeof(wname), "blk.%d.attn_qkv.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.attn_qkv.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_QKV) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_SSM_QKV) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->wqkv, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.attn_gate.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.attn_gate.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_GATE) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_SSM_GATE) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->wz, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_a", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_A) != 0)
+                goto fail_layers;
             lw->ssm_a = load_f32_tensor(f, wname);
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_alpha.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.ssm_alpha.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_ALPHA) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_SSM_ALPHA) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->ssm_alpha, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_beta.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.ssm_beta.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_BETA) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_SSM_BETA) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->ssm_beta, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_conv1d.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_CONV1D) != 0)
+                goto fail_layers;
             lw->ssm_conv1d = load_f32_tensor(f, wname);
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_dt.bias", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_DT_BIAS) != 0)
+                goto fail_layers;
             lw->ssm_dt_bias = load_f32_tensor(f, wname);
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_norm.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_NORM) != 0)
+                goto fail_layers;
             lw->ssm_norm = load_f32_tensor(f, wname);
 
-            snprintf(wname, sizeof(wname), "blk.%d.ssm_out.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.ssm_out.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_SSM_OUT) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_SSM_OUT) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->ssm_out, f, wname, sname) != 0) goto fail_layers;
         } else {
             // --- Attention layer weights ---
-            snprintf(wname, sizeof(wname), "blk.%d.attn_q.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.attn_q.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_Q) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_ATTN_Q) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->wq, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.attn_k.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.attn_k.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_K) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_ATTN_K) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->wk, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.attn_v.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.attn_v.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_V) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_ATTN_V) != 0)
+                goto fail_layers;
             if (bn_gguf_find_tensor(f, wname) >= 0) {
                 if (load_qweight(&lw->wv, f, wname, sname) != 0) goto fail_layers;
-            } else if (bn_model_arch_attention_value_shares_key(arch)) {
+            } else if (arch_ops->attention_value_shares_key(arch)) {
                 lw->wv = lw->wk;
             } else {
                 SH_LOG_ERROR("Tensor not found", "name", wname);
                 goto fail_layers;
             }
 
-            snprintf(wname, sizeof(wname), "blk.%d.attn_output.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.attn_output.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_OUTPUT) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_ATTN_OUTPUT) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->wo, f, wname, sname) != 0) goto fail_layers;
 
             // Attention biases (optional, used by Qwen2)
-            snprintf(wname, sizeof(wname), "blk.%d.attn_q.bias", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_Q_BIAS) != 0)
+                goto fail_layers;
             lw->q_bias = load_f32_tensor(f, wname);
-            snprintf(wname, sizeof(wname), "blk.%d.attn_k.bias", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_K_BIAS) != 0)
+                goto fail_layers;
             lw->k_bias = load_f32_tensor(f, wname);
-            snprintf(wname, sizeof(wname), "blk.%d.attn_v.bias", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_V_BIAS) != 0)
+                goto fail_layers;
             lw->v_bias = load_f32_tensor(f, wname);
 
             // Q/K norms (Qwen3.5 / OLMoE attention)
-            snprintf(wname, sizeof(wname), "blk.%d.attn_q_norm.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
+                goto fail_layers;
             lw->q_norm = load_f32_tensor(f, wname);
-            snprintf(wname, sizeof(wname), "blk.%d.attn_k_norm.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_ATTN_K_NORM) != 0)
+                goto fail_layers;
             lw->k_norm = load_f32_tensor(f, wname);
 
             // Detect per-head vs shared norms (layer 0 only)
             if (i == 0 && lw->q_norm) {
-                snprintf(wname, sizeof(wname), "blk.0.attn_q_norm.weight");
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), 0,
+                                                  BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
+                    goto fail_layers;
                 int qi = bn_gguf_find_tensor(f, wname);
                 if (qi >= 0 && f->tensors[qi].dims[0] == (uint64_t)c->dim)
                     c->qk_norm_per_head = 1;
@@ -703,7 +692,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             lw->q_dim = lw->wq.rows;
             lw->head_size = c->head_size;
             if (lw->q_norm && !c->qk_norm_per_head) {
-                snprintf(wname, sizeof(wname), "blk.%d.attn_q_norm.weight", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
+                    goto fail_layers;
                 int hs = tensor_dim0(f, wname);
                 if (hs > 0) lw->head_size = hs;
             } else if (!lw->q_norm && c->n_heads > 0 && lw->wq.rows > 0 &&
@@ -728,11 +719,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 
         // #25: FFN norms — must exist
-        snprintf(wname, sizeof(wname), "blk.%d.ffn_norm.weight", i);
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_FFN_NORM) != 0)
+            goto fail_layers;
         lw->ffn_norm = load_f32_tensor(f, wname);
         if (!lw->ffn_norm) {
             // Qwen3.5 uses post_attention_norm instead of ffn_norm
-            snprintf(wname, sizeof(wname), "blk.%d.post_attention_norm.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_FFN_POST_ATTN_NORM) != 0)
+                goto fail_layers;
             lw->ffn_norm = load_f32_tensor(f, wname);
         }
         if (!lw->ffn_norm) {
@@ -740,7 +735,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             goto fail_layers;
         }
 
-        snprintf(wname, sizeof(wname), "blk.%d.ffn_sub_norm.weight", i);
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_FFN_SUB_NORM) != 0)
+            goto fail_layers;
         lw->ffn_sub_norm = load_f32_tensor(f, wname);  // optional
 
         // FFN weights: MoE or dense
@@ -748,7 +745,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             // --- MoE layer: router + expert offsets + shared expert ---
 
             // Router weight: [n_experts, dim] F32 — always resident
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_inp.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_MOE_ROUTER) != 0)
+                goto fail_layers;
             lw->router_weight = (float *)load_f32_tensor(f, wname);
             if (!lw->router_weight) {
                 SH_LOG_ERROR("Router weight not found", "name", wname);
@@ -758,23 +757,31 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             // Expert tensor offsets (NOT loaded into memory)
             BnMoEExpertMap *em = &lw->expert_map;
 
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_exps.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_MOE_GATE_EXPS) != 0)
+                goto fail_layers;
             if (bn_gguf_find_tensor(f, wname) >= 0) {
                 if (load_expert_map_proj(f, wname, c->n_experts,
                         &em->gate_type, &em->gate_rows, &em->gate_cols,
                         &em->gate_offset, &em->expert_gate_bytes) != 0) goto fail_layers;
 
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_up_exps.weight", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_MOE_UP_EXPS) != 0)
+                    goto fail_layers;
                 if (load_expert_map_proj(f, wname, c->n_experts,
                         &em->up_type, &em->up_rows, &em->up_cols,
                         &em->up_offset, &em->expert_up_bytes) != 0) goto fail_layers;
             } else {
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_up_exps.weight", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_MOE_GATE_UP_EXPS) != 0)
+                    goto fail_layers;
                 if (load_expert_map_gate_up_fused(f, wname, c->n_experts,
                         c->moe_intermediate_size, em) != 0) goto fail_layers;
             }
 
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_down_exps.weight", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_MOE_DOWN_EXPS) != 0)
+                goto fail_layers;
             if (load_expert_map_proj(f, wname, c->n_experts,
                     &em->down_type, &em->down_rows, &em->down_cols,
                     &em->down_offset, &em->expert_down_bytes) != 0) goto fail_layers;
@@ -782,41 +789,61 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
             // Shared expert (optional, always resident)
             if (c->has_shared_expert) {
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_shexp.weight", i);
-                snprintf(sname, sizeof(sname), "blk.%d.ffn_gate_shexp.scale", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_SHARED_FFN_GATE) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_SHARED_FFN_GATE) != 0)
+                    goto fail_layers;
                 if (load_qweight(&lw->shared_gate, f, wname, sname) != 0) goto fail_layers;
 
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_up_shexp.weight", i);
-                snprintf(sname, sizeof(sname), "blk.%d.ffn_up_shexp.scale", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_SHARED_FFN_UP) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_SHARED_FFN_UP) != 0)
+                    goto fail_layers;
                 if (load_qweight(&lw->shared_up, f, wname, sname) != 0) goto fail_layers;
 
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_down_shexp.weight", i);
-                snprintf(sname, sizeof(sname), "blk.%d.ffn_down_shexp.scale", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_SHARED_FFN_DOWN) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_SHARED_FFN_DOWN) != 0)
+                    goto fail_layers;
                 if (load_qweight(&lw->shared_down, f, wname, sname) != 0) goto fail_layers;
 
                 // Shared expert sigmoid gate (optional, Qwen3.5 MoE)
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_inp_shexp.weight", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_SHARED_FFN_ROUTER) != 0)
+                    goto fail_layers;
                 lw->shared_expert_gate = load_f32_tensor(f, wname);
             }
         } else {
             // --- Dense FFN ---
             if (c->has_ffn_gate) {
-                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate.weight", i);
-                snprintf(sname, sizeof(sname), "blk.%d.ffn_gate.scale", i);
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_FFN_GATE) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_FFN_GATE) != 0)
+                    goto fail_layers;
                 if (load_qweight(&lw->ffn_gate, f, wname, sname) != 0) goto fail_layers;
             }
 
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_up.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.ffn_up.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_FFN_UP) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_FFN_UP) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->ffn_up, f, wname, sname) != 0) goto fail_layers;
 
-            snprintf(wname, sizeof(wname), "blk.%d.ffn_down.weight", i);
-            snprintf(sname, sizeof(sname), "blk.%d.ffn_down.scale", i);
+            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                              BN_MODEL_TENSOR_FFN_DOWN) != 0 ||
+                bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                    BN_MODEL_TENSOR_FFN_DOWN) != 0)
+                goto fail_layers;
             if (load_qweight(&lw->ffn_down, f, wname, sname) != 0) goto fail_layers;
         }
     }
 
-    bn_model_arch_apply_gemma4_shapes(c, max_head_size, max_kv_dim);
+    arch_ops->apply_shapes(c, max_head_size, max_kv_dim);
     (void)max_q_dim;
 
     // --- Weight arena: INT8 embeddings + Q4_0 repacking ---
@@ -1327,13 +1354,6 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
 void bn_model_free(BnModel *m) {
     if (!m) return;
     bn_model_release_gpu(m);
-    // Free cached GPU op list (Phase 4)
-    if (m->gpu_graph) {
-        BnGPUGraph *g = (BnGPUGraph *)m->gpu_graph;
-        free(g->ops);
-        free(g);
-        m->gpu_graph = NULL;
-    }
     bn_moe_prefetch_destroy(&m->moe_io);
     bn_tp_free(m->pool);
     if (m->tq_state) {
@@ -1349,22 +1369,32 @@ void bn_model_free(BnModel *m) {
 
 // --- GPU weight upload/release ---
 
-// Helper: try to upload a single BnQWeight to GPU. Returns 0 on success.
-static int upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
-    if (!w->data) return 0;  // skip empty weights
-    size_t sz = bn_qweight_data_size(w);
-    if (sz == 0) return 0;   // unknown type, skip
-    w->gpu_buf = gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
-    if (!w->gpu_buf) return -1;
-    return 0;
+BnGPUBackend *bn_model_gpu(const BnModel *model) {
+    return model ? bn_backend_model_gpu(model->backend) : NULL;
 }
 
-// Helper: release GPU buffer for a single BnQWeight.
-static void release_qweight(BnGPUBackend *gpu, BnQWeight *w) {
-    if (w->gpu_buf) {
-        gpu->buffer_destroy(gpu->ctx, w->gpu_buf);
-        w->gpu_buf = NULL;
+void bn_model_set_gpu_disabled(BnModel *model, int disabled) {
+    if (!model) return;
+    bn_backend_model_set_gpu_disabled(model->backend, disabled);
+}
+
+// Helper: try to upload a single BnQWeight to GPU.
+static void *upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
+    if (!w->data) return NULL;  // skip empty weights
+    size_t sz = bn_qweight_data_size(w);
+    if (sz == 0) return NULL;   // unknown type, skip
+    return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
+}
+
+static int upload_qweight_owned(BnBackendModel *backend, BnGPUBackend *gpu, BnQWeight *w) {
+    void *handle = upload_qweight(gpu, w);
+    if (!w->data) return 0;
+    if (!handle) return -1;
+    if (bn_backend_model_register_qweight(backend, w, handle) != 0) {
+        gpu->buffer_destroy(gpu->ctx, handle);
+        return -1;
     }
+    return 0;
 }
 
 // Helper: upload an F32 array as a GPU storage buffer.
@@ -1375,16 +1405,26 @@ static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
                               -1, n_elems, 1);
 }
 
+static int register_gpu_handle(BnModel *model, int layer,
+                               BnBackendHandleRole role, void *handle) {
+    if (!handle) return 0;
+    return bn_backend_model_register_handle(model->backend, layer, role, handle);
+}
+
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     if (!model || !gpu || !gpu->buffer_create) return -1;
-    model->gpu = gpu;
+    if (!model->backend) {
+        model->backend = bn_backend_model_create();
+        if (!model->backend) return -1;
+    }
+    bn_backend_model_bind_gpu(model->backend, gpu);
 
     BnWeights *w = &model->weights;
     BnConfig *c = &model->config;
     int n_layers = c->n_layers;
 
     // Upload output weight
-    if (upload_qweight(gpu, &w->output_weight) != 0) {
+    if (upload_qweight_owned(model->backend, gpu, &w->output_weight) != 0) {
         bn_model_release_gpu(model);
         return -1;
     }
@@ -1395,13 +1435,25 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         size_t emb_size = 0;
         if (checked_mul_size((size_t)c->vocab_size, (size_t)c->dim, &nelements) == 0 &&
             bn_gguf_tensor_size((uint32_t)w->emb_type, (uint64_t)nelements, &emb_size)) {
-            w->emb_gpu_buf = gpu->buffer_create(gpu->ctx, w->token_embedding,
+            void *emb_gpu_buf = gpu->buffer_create(gpu->ctx, w->token_embedding,
                 emb_size, w->emb_type, c->vocab_size, c->dim);
+            if (register_gpu_handle(model, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING,
+                                    emb_gpu_buf) != 0) {
+                if (emb_gpu_buf) gpu->buffer_destroy(gpu->ctx, emb_gpu_buf);
+                bn_model_release_gpu(model);
+                return -1;
+            }
         }
     }
 
     // Upload output norm (F32)
-    w->output_norm_gpu = upload_f32_buf(gpu, w->output_norm, c->dim);
+    void *output_norm_gpu = upload_f32_buf(gpu, w->output_norm, c->dim);
+    if (register_gpu_handle(model, -1, BN_BACKEND_HANDLE_OUTPUT_NORM,
+                            output_norm_gpu) != 0) {
+        if (output_norm_gpu) gpu->buffer_destroy(gpu->ctx, output_norm_gpu);
+        bn_model_release_gpu(model);
+        return -1;
+    }
 
     // Upload per-layer weights
     for (int l = 0; l < n_layers; l++) {
@@ -1415,31 +1467,49 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (upload_qweight(gpu, weights[i]) != 0) {
+            if (upload_qweight_owned(model->backend, gpu, weights[i]) != 0) {
                 bn_model_release_gpu(model);
                 return -1;
             }
         }
 
         // Upload per-layer F32 norm weights
-        lw->attn_norm_gpu = upload_f32_buf(gpu, lw->attn_norm, c->dim);
-        lw->ffn_norm_gpu  = upload_f32_buf(gpu, lw->ffn_norm, c->dim);
+        void *attn_norm_gpu = upload_f32_buf(gpu, lw->attn_norm, c->dim);
+        void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->ffn_norm, c->dim);
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_NORM,
+                                attn_norm_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_NORM,
+                                ffn_norm_gpu) != 0) {
+            if (attn_norm_gpu) gpu->buffer_destroy(gpu->ctx, attn_norm_gpu);
+            if (ffn_norm_gpu) gpu->buffer_destroy(gpu->ctx, ffn_norm_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
 
         // Fused bias: replace individual Q/K/V weight buffers with biased versions.
-        // When successful, q_bias_gpu stays NULL (bias embedded in weight buffer).
+        // When successful, bias handle stays NULL (bias embedded in weight buffer).
+        void *q_bias_gpu = NULL;
+        void *k_bias_gpu = NULL;
+        void *v_bias_gpu = NULL;
         if (gpu->buffer_create_biased) {
             struct { BnQWeight *w; float *bias; void **bias_gpu; } qkv_bias[] = {
-                { &lw->wq, lw->q_bias, &lw->q_bias_gpu },
-                { &lw->wk, lw->k_bias, &lw->k_bias_gpu },
-                { &lw->wv, lw->v_bias, &lw->v_bias_gpu },
+                { &lw->wq, lw->q_bias, &q_bias_gpu },
+                { &lw->wk, lw->k_bias, &k_bias_gpu },
+                { &lw->wv, lw->v_bias, &v_bias_gpu },
             };
             for (int i = 0; i < 3; i++) {
-                if (!qkv_bias[i].bias || !qkv_bias[i].w->gpu_buf) continue;
+                void *old_handle = bn_backend_model_qweight_buf(model->backend, qkv_bias[i].w);
+                if (!qkv_bias[i].bias || !old_handle) continue;
                 void *fused = bn_backend_layout_upload_biased_qweight(
                     gpu, qkv_bias[i].w, qkv_bias[i].bias);
                 if (fused) {
-                    gpu->buffer_destroy(gpu->ctx, qkv_bias[i].w->gpu_buf);
-                    qkv_bias[i].w->gpu_buf = fused;
+                    gpu->buffer_destroy(gpu->ctx, old_handle);
+                    if (bn_backend_model_register_qweight(model->backend,
+                                                          qkv_bias[i].w,
+                                                          fused) != 0) {
+                        bn_model_release_gpu(model);
+                        return -1;
+                    }
                     /* bias is fused — don't set bias_gpu */
                 } else {
                     *qkv_bias[i].bias_gpu = upload_f32_buf(gpu, qkv_bias[i].bias,
@@ -1448,42 +1518,101 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         } else {
             if (lw->q_bias)
-                lw->q_bias_gpu = upload_f32_buf(gpu, lw->q_bias, c->dim);
+                q_bias_gpu = upload_f32_buf(gpu, lw->q_bias, c->dim);
             if (lw->k_bias)
-                lw->k_bias_gpu = upload_f32_buf(gpu, lw->k_bias, c->kv_dim);
+                k_bias_gpu = upload_f32_buf(gpu, lw->k_bias, c->kv_dim);
             if (lw->v_bias)
-                lw->v_bias_gpu = upload_f32_buf(gpu, lw->v_bias, c->kv_dim);
+                v_bias_gpu = upload_f32_buf(gpu, lw->v_bias, c->kv_dim);
+        }
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_Q_BIAS, q_bias_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_K_BIAS, k_bias_gpu) != 0 ||
+            register_gpu_handle(model, l, BN_BACKEND_HANDLE_V_BIAS, v_bias_gpu) != 0) {
+            if (q_bias_gpu) gpu->buffer_destroy(gpu->ctx, q_bias_gpu);
+            if (k_bias_gpu) gpu->buffer_destroy(gpu->ctx, k_bias_gpu);
+            if (v_bias_gpu) gpu->buffer_destroy(gpu->ctx, v_bias_gpu);
+            bn_model_release_gpu(model);
+            return -1;
         }
 
-        lw->qkv_stacked_gpu = bn_backend_layout_upload_stacked3_qkv(
+        void *qkv_stacked_gpu = bn_backend_layout_upload_stacked3_qkv(
             gpu, &lw->wq, &lw->wk, &lw->wv,
             lw->q_bias, lw->k_bias, lw->v_bias,
-            lw->q_bias && !lw->q_bias_gpu,
-            lw->k_bias && !lw->k_bias_gpu,
-            lw->v_bias && !lw->v_bias_gpu);
+            lw->q_bias && !q_bias_gpu,
+            lw->k_bias && !k_bias_gpu,
+            lw->v_bias && !v_bias_gpu);
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_QKV_STACKED,
+                                qkv_stacked_gpu) != 0) {
+            if (qkv_stacked_gpu) gpu->buffer_destroy(gpu->ctx, qkv_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
 
-        lw->gateup_stacked_gpu =
+        void *gateup_stacked_gpu =
             bn_backend_layout_upload_stacked2(gpu, &lw->ffn_gate, &lw->ffn_up);
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_GATEUP_STACKED,
+                                gateup_stacked_gpu) != 0) {
+            if (gateup_stacked_gpu) gpu->buffer_destroy(gpu->ctx, gateup_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
 
-        lw->ssm_qkvz_stacked_gpu =
+        void *ssm_qkvz_stacked_gpu =
             bn_backend_layout_upload_stacked2(gpu, &lw->wqkv, &lw->wz);
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED,
+                                ssm_qkvz_stacked_gpu) != 0) {
+            if (ssm_qkvz_stacked_gpu) gpu->buffer_destroy(gpu->ctx, ssm_qkvz_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
 
-        lw->ssm_ab_stacked_gpu =
+        void *ssm_ab_stacked_gpu =
             bn_backend_layout_upload_stacked2(gpu, &lw->ssm_alpha, &lw->ssm_beta);
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_AB_STACKED,
+                                ssm_ab_stacked_gpu) != 0) {
+            if (ssm_ab_stacked_gpu) gpu->buffer_destroy(gpu->ctx, ssm_ab_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
 
         // Upload Q/K norm and sub-norm weights
         if (lw->q_norm) {
             int q_norm_size = c->qk_norm_per_head ? (c->n_heads * c->head_size) : c->head_size;
-            lw->q_norm_gpu = upload_f32_buf(gpu, lw->q_norm, q_norm_size);
+            void *q_norm_gpu = upload_f32_buf(gpu, lw->q_norm, q_norm_size);
+            if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_Q_NORM,
+                                    q_norm_gpu) != 0) {
+                if (q_norm_gpu) gpu->buffer_destroy(gpu->ctx, q_norm_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
         }
         if (lw->k_norm) {
             int k_norm_size = c->qk_norm_per_head ? c->kv_dim : c->head_size;
-            lw->k_norm_gpu = upload_f32_buf(gpu, lw->k_norm, k_norm_size);
+            void *k_norm_gpu = upload_f32_buf(gpu, lw->k_norm, k_norm_size);
+            if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_K_NORM,
+                                    k_norm_gpu) != 0) {
+                if (k_norm_gpu) gpu->buffer_destroy(gpu->ctx, k_norm_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
         }
-        if (lw->attn_sub_norm)
-            lw->attn_sub_norm_gpu = upload_f32_buf(gpu, lw->attn_sub_norm, c->dim);
-        if (lw->ffn_sub_norm)
-            lw->ffn_sub_norm_gpu = upload_f32_buf(gpu, lw->ffn_sub_norm, c->hidden_dim);
+        if (lw->attn_sub_norm) {
+            void *attn_sub_norm_gpu = upload_f32_buf(gpu, lw->attn_sub_norm, c->dim);
+            if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_SUB_NORM,
+                                    attn_sub_norm_gpu) != 0) {
+                if (attn_sub_norm_gpu) gpu->buffer_destroy(gpu->ctx, attn_sub_norm_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+        }
+        if (lw->ffn_sub_norm) {
+            void *ffn_sub_norm_gpu = upload_f32_buf(gpu, lw->ffn_sub_norm, c->hidden_dim);
+            if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_SUB_NORM,
+                                    ffn_sub_norm_gpu) != 0) {
+                if (ffn_sub_norm_gpu) gpu->buffer_destroy(gpu->ctx, ffn_sub_norm_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
+        }
 
         // Upload SSM F32 weights (for hybrid SSM+Attention models)
         if (lw->ssm_conv1d) {
@@ -1492,17 +1621,43 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             int key_dim     = c->ssm_group_count * head_k_dim;
             int qkv_dim     = key_dim * 2 + c->ssm_inner_size;
             int kern        = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
-            lw->ssm_conv1d_gpu = upload_f32_buf(gpu, lw->ssm_conv1d, kern * qkv_dim);
+            void *ssm_conv1d_gpu = upload_f32_buf(gpu, lw->ssm_conv1d, kern * qkv_dim);
+            if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_CONV1D,
+                                    ssm_conv1d_gpu) != 0) {
+                if (ssm_conv1d_gpu) gpu->buffer_destroy(gpu->ctx, ssm_conv1d_gpu);
+                bn_model_release_gpu(model);
+                return -1;
+            }
 
-            if (lw->ssm_dt_bias && num_v_heads > 0)
-                lw->ssm_dt_bias_gpu = upload_f32_buf(gpu, lw->ssm_dt_bias, num_v_heads);
-            if (lw->ssm_a && num_v_heads > 0)
-                lw->ssm_a_log_gpu = upload_f32_buf(gpu, lw->ssm_a, num_v_heads);
+            if (lw->ssm_dt_bias && num_v_heads > 0) {
+                void *ssm_dt_bias_gpu = upload_f32_buf(gpu, lw->ssm_dt_bias, num_v_heads);
+                if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_DT_BIAS,
+                                        ssm_dt_bias_gpu) != 0) {
+                    if (ssm_dt_bias_gpu) gpu->buffer_destroy(gpu->ctx, ssm_dt_bias_gpu);
+                    bn_model_release_gpu(model);
+                    return -1;
+                }
+            }
+            if (lw->ssm_a && num_v_heads > 0) {
+                void *ssm_a_log_gpu = upload_f32_buf(gpu, lw->ssm_a, num_v_heads);
+                if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_A_LOG,
+                                        ssm_a_log_gpu) != 0) {
+                    if (ssm_a_log_gpu) gpu->buffer_destroy(gpu->ctx, ssm_a_log_gpu);
+                    bn_model_release_gpu(model);
+                    return -1;
+                }
+            }
 
             if (lw->ssm_norm) {
                 int head_v_dim = num_v_heads > 0
                     ? c->ssm_inner_size / num_v_heads : c->ssm_inner_size;
-                lw->ssm_norm_gpu = upload_f32_buf(gpu, lw->ssm_norm, head_v_dim);
+                void *ssm_norm_gpu = upload_f32_buf(gpu, lw->ssm_norm, head_v_dim);
+                if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_NORM,
+                                        ssm_norm_gpu) != 0) {
+                    if (ssm_norm_gpu) gpu->buffer_destroy(gpu->ctx, ssm_norm_gpu);
+                    bn_model_release_gpu(model);
+                    return -1;
+                }
             }
         }
     }
@@ -1510,73 +1665,15 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     return 0;
 }
 
-// Helper: release a GPU F32 buffer handle.
-static void release_f32_buf(BnGPUBackend *gpu, void **handle) {
-    if (*handle) {
-        gpu->buffer_destroy(gpu->ctx, *handle);
-        *handle = NULL;
-    }
-}
-
 void bn_model_release_gpu(BnModel *model) {
-    if (!model || !model->gpu) return;
-    BnGPUBackend *gpu = model->gpu;
-    BnWeights *w = &model->weights;
-    int n_layers = model->config.n_layers;
+    if (!model) return;
+    BnBackendModel *backend = model->backend;
 
-    release_qweight(gpu, &w->output_weight);
-    release_f32_buf(gpu, &w->output_norm_gpu);
-    if (w->emb_gpu_buf) {
-        gpu->buffer_destroy(gpu->ctx, w->emb_gpu_buf);
-        w->emb_gpu_buf = NULL;
-    }
+    if (backend)
+        bn_backend_model_release_gpu(backend);
 
-    if (w->layers) {
-        for (int l = 0; l < n_layers; l++) {
-            BnLayerWeights *lw = &w->layers[l];
-            BnQWeight *weights[] = {
-                &lw->wq, &lw->wk, &lw->wv, &lw->wo,
-                &lw->ffn_gate, &lw->ffn_up, &lw->ffn_down,
-                &lw->wqkv, &lw->wz,
-                &lw->ssm_alpha, &lw->ssm_beta, &lw->ssm_out,
-                &lw->shared_gate, &lw->shared_up, &lw->shared_down,
-            };
-            int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
-            for (int i = 0; i < n_weights; i++)
-                release_qweight(gpu, weights[i]);
-            release_f32_buf(gpu, &lw->attn_norm_gpu);
-            release_f32_buf(gpu, &lw->ffn_norm_gpu);
-            release_f32_buf(gpu, &lw->q_bias_gpu);
-            release_f32_buf(gpu, &lw->k_bias_gpu);
-            release_f32_buf(gpu, &lw->v_bias_gpu);
-            release_f32_buf(gpu, &lw->q_norm_gpu);
-            release_f32_buf(gpu, &lw->k_norm_gpu);
-            release_f32_buf(gpu, &lw->attn_sub_norm_gpu);
-            release_f32_buf(gpu, &lw->ffn_sub_norm_gpu);
-            release_f32_buf(gpu, &lw->ssm_conv1d_gpu);
-            release_f32_buf(gpu, &lw->ssm_norm_gpu);
-            release_f32_buf(gpu, &lw->ssm_dt_bias_gpu);
-            release_f32_buf(gpu, &lw->ssm_a_log_gpu);
-            if (lw->qkv_stacked_gpu) {
-                gpu->buffer_destroy(gpu->ctx, lw->qkv_stacked_gpu);
-                lw->qkv_stacked_gpu = NULL;
-            }
-            if (lw->gateup_stacked_gpu) {
-                gpu->buffer_destroy(gpu->ctx, lw->gateup_stacked_gpu);
-                lw->gateup_stacked_gpu = NULL;
-            }
-            if (lw->ssm_ab_stacked_gpu) {
-                gpu->buffer_destroy(gpu->ctx, lw->ssm_ab_stacked_gpu);
-                lw->ssm_ab_stacked_gpu = NULL;
-            }
-            if (lw->ssm_qkvz_stacked_gpu) {
-                gpu->buffer_destroy(gpu->ctx, lw->ssm_qkvz_stacked_gpu);
-                lw->ssm_qkvz_stacked_gpu = NULL;
-            }
-        }
-    }
-
-    model->gpu = NULL;
+    bn_backend_model_free(backend);
+    model->backend = NULL;
 }
 
 // #8: Bounds-check token before accessing embedding table

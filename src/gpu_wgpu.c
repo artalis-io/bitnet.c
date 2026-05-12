@@ -10,6 +10,7 @@
 
 #include "gpu_wgpu.h"
 #include "gpu_backend.h"
+#include "gpu_shader.h"
 #include "model.h"
 #include "quant.h"
 #include "gguf.h"
@@ -1520,19 +1521,19 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
     for (int i = 0; i < n_ops; i++) {
         memcpy(uni_data + (size_t)i * uni_stride, ops[i].p,
                sizeof(uint32_t) * BN_GPU_OP_PARAMS);
-        if (ops[i].shader == BN_GPU_SHADER_SSM_DELTA) {
+        if (bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_SSM_DELTA) {
             uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
             p[4] = 0;
         }
-        if (ops[i].shader == BN_GPU_SHADER_MATVEC &&
+        if (bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_MATVEC &&
             ops[i].type != BN_GGUF_TENSOR_Q4_0) {
             uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
             p[4] = p[5];
         }
         /* Fused bias: inject bias_offset from weight buffer metadata */
-        if ((ops[i].shader == BN_GPU_SHADER_MATVEC ||
-             ops[i].shader == BN_GPU_SHADER_MATVEC_SPLIT ||
-             ops[i].shader == BN_GPU_SHADER_FUSED_GATEUP_SILU) &&
+        if ((bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_MATVEC ||
+             bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_MATVEC_SPLIT ||
+             bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_FUSED_GATEUP_SILU) &&
             ops[i].W_buf) {
             BnWgpuBuf *wbuf = (BnWgpuBuf *)ops[i].W_buf;
             if (wbuf->bias_offset > 0) {
@@ -1564,24 +1565,25 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
+        int shader = bn_gpu_shader_from_op_code(op->op_code);
 
         /* COPY handled as compute shader — stays in same compute pass */
 
         /* Determine pipeline and layout */
         WGPUComputePipeline pipeline = NULL;
         WGPUBindGroupLayout layout = NULL;
-        if (op->shader == BN_GPU_SHADER_MATVEC) {
+        if (shader == BN_GPU_SHADER_MATVEC) {
             if (op->type >= 0 && op->type < BN_WGPU_MAX_TYPES) {
                 pipeline = ctx->pipelines[op->type];
                 layout = ctx->layouts[op->type];
             }
-        } else if (op->shader > 0 && op->shader < BN_GPU_SHADER_COUNT) {
-            pipeline = ctx->fwd_pipelines[op->shader];
-            layout = ctx->fwd_layouts[op->shader];
+        } else if (shader > 0 && shader < BN_GPU_SHADER_COUNT) {
+            pipeline = ctx->fwd_pipelines[shader];
+            layout = ctx->fwd_layouts[shader];
         }
         if (!pipeline || !layout) {
             fprintf(stderr, "[bn:gpu:wgpu] missing pipeline for shader %d\n",
-                    op->shader);
+                    shader);
             if (cur_pass) {
                 wgpuComputePassEncoderEnd(cur_pass);
                 wgpuComputePassEncoderRelease(cur_pass);
@@ -1592,7 +1594,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
         /* Compute this op's read/write buffer masks */
         uint32_t op_reads = 0, op_writes = 0;
-        switch (op->shader) {
+        switch (shader) {
         case BN_GPU_SHADER_MATVEC:
             op_reads = BUF_BIT(op->buf_in);
             op_writes = BUF_BIT(op->buf_out);
@@ -1732,7 +1734,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         int n_entries = 0;
         size_t uni_offset = (size_t)i * uni_stride;
 
-        switch (op->shader) {
+        switch (shader) {
         case BN_GPU_SHADER_MATVEC: {
             BnWgpuBuf *wbuf = (BnWgpuBuf *)op->W_buf;
             if (!wbuf) continue;
@@ -2214,7 +2216,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
         /* Compute workgroup count */
         uint32_t wg_x = 1, wg_y = 1;
-        switch (op->shader) {
+        switch (shader) {
         case BN_GPU_SHADER_MATVEC: {
             /* Tiled dispatch: all matvec shaders use TILE_ROWS=32. */
             if (op->p[3] > 0) {
@@ -2293,7 +2295,7 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
         case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
-            wg_x = ((op->shader == BN_GPU_SHADER_Q4K_MATVEC_SPLIT &&
+            wg_x = ((shader == BN_GPU_SHADER_Q4K_MATVEC_SPLIT &&
                      op->p[3] != 0) ? op->p[2] : op->p[0]) + 31;
             wg_x /= 32;
             break;
@@ -2391,9 +2393,9 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             } shapes[64] = {0};
             int n_shapes = 0;
             for (int i = 0; i < n_ops; i++) {
-                if (ops[i].shader >= 0 && ops[i].shader < BN_GPU_SHADER_COUNT)
-                    counts[ops[i].shader]++;
-                if (ops[i].shader == BN_GPU_SHADER_MATVEC &&
+                if (bn_gpu_shader_from_op_code(ops[i].op_code) >= 0 && bn_gpu_shader_from_op_code(ops[i].op_code) < BN_GPU_SHADER_COUNT)
+                    counts[bn_gpu_shader_from_op_code(ops[i].op_code)]++;
+                if (bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_MATVEC &&
                     ops[i].type >= 0 && ops[i].type < 64) {
                     matvec_types[ops[i].type]++;
                     int found = -1;
@@ -2581,6 +2583,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->read_activation   = wgpu_read_activation;
     gpu->ctx               = ctx;
     gpu->caps              = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+                             BN_GPU_CAP_Q4K_MATVEC_SPLIT |
                              BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
                              BN_GPU_CAP_Q8_MATVEC_SPLIT |
                              BN_GPU_CAP_Q5K_MATVEC_SPLIT;

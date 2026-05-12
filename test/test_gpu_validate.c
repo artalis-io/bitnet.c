@@ -482,8 +482,8 @@ static int validate_type(BnGPUBackend *gpu, const TypeInfo *info) {
         return 0;
     }
 
-    W.gpu_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
-    if (!W.gpu_buf) {
+    void *W_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
+    if (!W_buf) {
         printf("SKIP (buffer_create failed)\n");
         free(data);
         return 0;
@@ -491,7 +491,7 @@ static int validate_type(BnGPUBackend *gpu, const TypeInfo *info) {
 
     /* Input vector: all 1.0 */
     float *x = calloc((size_t)cols, sizeof(float));
-    if (!x) { gpu->buffer_destroy(gpu->ctx, W.gpu_buf); free(data); return 0; }
+    if (!x) { gpu->buffer_destroy(gpu->ctx, W_buf); free(data); return 0; }
     for (int i = 0; i < cols; i++)
         x[i] = 1.0f;
 
@@ -503,7 +503,7 @@ static int validate_type(BnGPUBackend *gpu, const TypeInfo *info) {
     /* GPU dispatch */
     float out_gpu[ROWS];
     memset(out_gpu, 0, sizeof(out_gpu));
-    int rc = gpu->matvec(gpu->ctx, out_gpu, W.gpu_buf, x, rows, cols, W.type);
+    int rc = gpu->matvec(gpu->ctx, out_gpu, W_buf, x, rows, cols, W.type);
 
     int result;
     if (rc != 0) {
@@ -538,7 +538,7 @@ static int validate_type(BnGPUBackend *gpu, const TypeInfo *info) {
     }
 
     /* Cleanup */
-    gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+    gpu->buffer_destroy(gpu->ctx, W_buf);
     free(x);
     free(data);
     return result;
@@ -569,12 +569,12 @@ static int validate_matmul(BnGPUBackend *gpu, const TypeInfo *info, int n_tokens
     W.scale = tensor_scale;
 
     size_t sz = bn_qweight_data_size(&W);
-    W.gpu_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
-    if (!W.gpu_buf) { printf("SKIP (buffer)\n"); free(data); return 0; }
+    void *W_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
+    if (!W_buf) { printf("SKIP (buffer)\n"); free(data); return 0; }
 
     /* X: n_tokens x cols, varied input per token */
     float *X = calloc((size_t)n_tokens * cols, sizeof(float));
-    if (!X) { gpu->buffer_destroy(gpu->ctx, W.gpu_buf); free(data); return 0; }
+    if (!X) { gpu->buffer_destroy(gpu->ctx, W_buf); free(data); return 0; }
     for (int t = 0; t < n_tokens; t++)
         for (int j = 0; j < cols; j++)
             X[t * cols + j] = (j % 2 == 0) ? 1.0f : 2.0f;
@@ -582,15 +582,15 @@ static int validate_matmul(BnGPUBackend *gpu, const TypeInfo *info, int n_tokens
     /* GPU matmul */
     float *out_gpu = calloc((size_t)n_tokens * rows, sizeof(float));
     if (!out_gpu) {
-        gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+        gpu->buffer_destroy(gpu->ctx, W_buf);
         free(X); free(data);
         return 0;
     }
-    int rc = gpu->matmul(gpu->ctx, out_gpu, W.gpu_buf, X,
+    int rc = gpu->matmul(gpu->ctx, out_gpu, W_buf, X,
                           rows, cols, n_tokens, W.type);
     if (rc != 0) {
         printf("SKIP (matmul dispatch error %d)\n", rc);
-        gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+        gpu->buffer_destroy(gpu->ctx, W_buf);
         free(out_gpu); free(X); free(data);
         return 0;
     }
@@ -598,7 +598,7 @@ static int validate_matmul(BnGPUBackend *gpu, const TypeInfo *info, int n_tokens
     /* CPU reference: per-token matvec */
     float *out_cpu = calloc((size_t)n_tokens * rows, sizeof(float));
     if (!out_cpu) {
-        gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+        gpu->buffer_destroy(gpu->ctx, W_buf);
         free(out_gpu); free(X); free(data);
         return 0;
     }
@@ -631,7 +631,7 @@ static int validate_matmul(BnGPUBackend *gpu, const TypeInfo *info, int n_tokens
         result = -1;
     }
 
-    gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+    gpu->buffer_destroy(gpu->ctx, W_buf);
     free(out_gpu); free(out_cpu); free(X); free(data);
     return result;
 }
@@ -673,15 +673,16 @@ static double bench_cpu_matvec(const BnQWeight *W, const float *x,
 }
 
 static double bench_gpu_matvec(BnGPUBackend *gpu, const BnQWeight *W,
+                               void *W_buf,
                                const float *x, int iters, float *checksum) {
     float *out = calloc((size_t)W->rows, sizeof(float));
-    if (!out || !W->gpu_buf) {
+    if (!out || !W_buf) {
         free(out);
         return -1.0;
     }
 
     for (int i = 0; i < 3; i++) {
-        if (gpu->matvec(gpu->ctx, out, W->gpu_buf, x, W->rows, W->cols, W->type) != 0) {
+        if (gpu->matvec(gpu->ctx, out, W_buf, x, W->rows, W->cols, W->type) != 0) {
             free(out);
             return -1.0;
         }
@@ -689,7 +690,7 @@ static double bench_gpu_matvec(BnGPUBackend *gpu, const BnQWeight *W,
 
     double t0 = bn_platform_time_ms();
     for (int i = 0; i < iters; i++) {
-        if (gpu->matvec(gpu->ctx, out, W->gpu_buf, x, W->rows, W->cols, W->type) != 0) {
+        if (gpu->matvec(gpu->ctx, out, W_buf, x, W->rows, W->cols, W->type) != 0) {
             free(out);
             return -1.0;
         }
@@ -747,8 +748,8 @@ static int run_timing_bench(BnGPUBackend *gpu) {
         W.scale = tensor_scale;
 
         size_t sz = bn_qweight_data_size(&W);
-        W.gpu_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
-        if (!W.gpu_buf) {
+        void *W_buf = gpu->buffer_create(gpu->ctx, data, sz, W.type, W.rows, W.cols);
+        if (!W_buf) {
             printf("  %-8s SKIP (gpu buffer)\n", bench_types[i].name);
             free(data);
             continue;
@@ -756,7 +757,7 @@ static int run_timing_bench(BnGPUBackend *gpu) {
 
         float cpu0 = 0.0f, gpu0 = 0.0f;
         double cpu_ms = bench_cpu_matvec(&W, x, iters, n_threads, &cpu0);
-        double gpu_ms = bench_gpu_matvec(gpu, &W, x, iters, &gpu0);
+        double gpu_ms = bench_gpu_matvec(gpu, &W, W_buf, x, iters, &gpu0);
         const char *result = "SKIP";
         if (cpu_ms > 0.0 && gpu_ms > 0.0) {
             result = cpu_ms <= gpu_ms ? "CPU<=GPU" : "CPU>GPU";
@@ -770,7 +771,7 @@ static int run_timing_bench(BnGPUBackend *gpu) {
             printf("  %-8s SKIP (timing failed)\n", bench_types[i].name);
         }
 
-        gpu->buffer_destroy(gpu->ctx, W.gpu_buf);
+        gpu->buffer_destroy(gpu->ctx, W_buf);
         free(data);
     }
 
@@ -956,9 +957,8 @@ static int run_forward_bench(BnGPUBackend *gpu) {
     bn_session_free(gpu_s, NULL);
 
 cleanup:
-    if (gpu_model.gpu) {
+    if (bn_model_gpu(&gpu_model)) {
         bn_model_release_gpu(&gpu_model);
-        gpu_model.gpu = NULL;
     }
     if (gpu->free_activations) gpu->free_activations(gpu->ctx);
     if (cpu_model.pool) bn_tp_free(cpu_model.pool);

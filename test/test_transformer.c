@@ -1,4 +1,5 @@
 #include "transformer_internal.h"
+#include "model_arch.h"
 #include "quant.h"
 #include "simd_helpers.h"
 #include <stdio.h>
@@ -173,6 +174,60 @@ static void test_fast_silu(void) {
     printf("PASSED\n");
 }
 
+static void test_cpu_execution_helpers(void) {
+    printf("test_cpu_execution_helpers... ");
+
+    float x[8] = {1.0f, -2.0f, 3.0f, -4.0f, 5.0f, -6.0f, 7.0f, -8.0f};
+    float r[8] = {0.5f, 0.5f, -1.0f, -1.0f, 2.0f, 2.0f, -3.0f, -3.0f};
+    bn_transformer_cpu_residual_add(x, r, 8);
+    float expected_residual[8] = {1.5f, -1.5f, 2.0f, -5.0f, 7.0f, -4.0f, 4.0f, -11.0f};
+    for (int i = 0; i < 8; i++)
+        assert(fabsf(x[i] - expected_residual[i]) < 1e-6f);
+
+    float rope_buf[8] = {1.0f, 2.0f, 3.0f, 4.0f, -1.0f, -2.0f, -3.0f, -4.0f};
+    float rc[2] = {0.0f, 1.0f};
+    float rs[2] = {1.0f, 0.0f};
+    bn_transformer_cpu_apply_rope_heads(rope_buf, 2, 4, 4, rc, rs);
+    float expected_rope[8] = {-2.0f, 1.0f, 3.0f, 4.0f, 2.0f, -1.0f, -3.0f, -4.0f};
+    for (int i = 0; i < 8; i++)
+        assert(fabsf(rope_buf[i] - expected_rope[i]) < 1e-6f);
+
+    float hb[8] = {-2.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 2.0f, 4.0f};
+    float hb2[8] = {1.0f, 0.5f, 2.0f, 3.0f, -1.0f, 1.5f, -0.5f, 2.0f};
+    BnRunState s;
+    memset(&s, 0, sizeof(s));
+    s.hb = hb;
+    s.hb2 = hb2;
+    BnFFNPlan ffn;
+    memset(&ffn, 0, sizeof(ffn));
+    ffn.has_gate = 1;
+    ffn.activation = 0;
+    bn_transformer_cpu_apply_ffn_activation(&s, &ffn, 8, 0);
+    for (int i = 0; i < 8; i++) {
+        float g = (float[]){-2.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 2.0f, 4.0f}[i];
+        float u = (float[]){1.0f, 0.5f, 2.0f, 3.0f, -1.0f, 1.5f, -0.5f, 2.0f}[i];
+        float expected = (g / (1.0f + expf(-g))) * u;
+        assert(fabsf(hb[i] - expected) < 2e-3f);
+    }
+
+    float relu_hb[8] = {-2.0f, -1.0f, -0.25f, 0.0f, 0.25f, 1.0f, 2.0f, 4.0f};
+    s.hb = relu_hb;
+    ffn.has_gate = 0;
+    ffn.activation = 1;
+    bn_transformer_cpu_apply_ffn_activation(&s, &ffn, 8, 0);
+    float expected_relu2[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0625f, 1.0f, 4.0f, 16.0f};
+    for (int i = 0; i < 8; i++)
+        assert(fabsf(relu_hb[i] - expected_relu2[i]) < 1e-6f);
+
+    float unchanged[8] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+    s.hb = unchanged;
+    bn_transformer_cpu_apply_ffn_activation(&s, &ffn, 8, 1);
+    for (int i = 0; i < 8; i++)
+        assert(fabsf(unchanged[i] - (float)(i + 1)) < 1e-6f);
+
+    printf("PASSED\n");
+}
+
 static void test_gpu_capability_routing(void) {
     printf("test_gpu_capability_routing... ");
 
@@ -183,8 +238,10 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_0));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q8_0));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
 
     gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+               BN_GPU_CAP_Q4K_MATVEC_SPLIT |
                BN_GPU_CAP_Q8_MATVEC_SPLIT |
                BN_GPU_CAP_Q5K_MATVEC_SPLIT |
                BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
@@ -194,13 +251,160 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_0));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q8_0));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
+    assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_F16));
 
     assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 0));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 1));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q8_0, 0));
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
+
+    printf("PASSED\n");
+}
+
+static void test_gpu_op_kind_mapping(void) {
+    printf("test_gpu_op_kind_mapping... ");
+
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_MATVEC) == BN_GPU_OP_MATVEC);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_Q8_MATVEC_SPLIT) == BN_GPU_OP_MATVEC);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_RMSNORM) == BN_GPU_OP_RMSNORM);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_ROPE_QK) == BN_GPU_OP_ROPE);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FLASH_ATTN) == BN_GPU_OP_ATTENTION);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_SILU_ACT) == BN_GPU_OP_ACTIVATION);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_RESIDUAL_ADD) == BN_GPU_OP_RESIDUAL);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_COPY) == BN_GPU_OP_COPY);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FUSED_GATEUP_SILU) == BN_GPU_OP_FFN);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_SSM_DELTA) == BN_GPU_OP_SSM);
+    assert(bn_gpu_op_kind_from_code(99999) == BN_GPU_OP_UNKNOWN);
+    assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FLASH_ATTN) == BN_GPU_OP_ATTENTION);
+
+    BnGPUOp op;
+    memset(&op, 0, sizeof(op));
+    op.op_code = BN_GPU_CODE_MATVEC;
+    assert(bn_gpu_op_kind(&op) == BN_GPU_OP_MATVEC);
+    op.op_kind = BN_GPU_OP_LOGITS;
+    assert(bn_gpu_op_kind(&op) == BN_GPU_OP_LOGITS);
+    memset(&op, 0, sizeof(op));
+    op.op_code = BN_GPU_CODE_SSM_DELTA;
+    assert(bn_gpu_op_kind(&op) == BN_GPU_OP_SSM);
+
+    BnGPUOp ops[2];
+    int n = 0;
+    bn_transformer_gpu_emit_rmsnorm(ops, &n, (void *)1,
+                                    BN_GPU_VALUE_X, BN_GPU_VALUE_XB,
+                                    64, 0);
+    bn_transformer_gpu_emit_logits(ops, &n, (void *)2,
+                                   BN_GGUF_TENSOR_Q4_0, 100, 64);
+    assert(n == 2);
+    assert(ops[0].op_kind == BN_GPU_OP_RMSNORM);
+    assert(ops[0].op_code == BN_GPU_CODE_RMSNORM);
+    assert(ops[1].op_kind == BN_GPU_OP_LOGITS);
+    assert(ops[1].op_code == BN_GPU_CODE_MATVEC);
+
+    memset(&op, 0, sizeof(op));
+    op.op_code = BN_GPU_CODE_ROPE_QK;
+    bn_transformer_gpu_finalize_op_kinds(&op, 1);
+    assert(op.op_kind == BN_GPU_OP_ROPE);
+
+    printf("PASSED\n");
+}
+
+static void test_model_arch_registry(void) {
+    printf("test_model_arch_registry... ");
+
+    size_t count = 0;
+    const BnModelArchOps *registry = bn_model_arch_registry(&count);
+    assert(registry);
+    assert(count >= 4);
+
+    const BnModelArchOps *gemma = bn_model_arch_ops_for("gemma4");
+    assert(gemma);
+    assert(strcmp(gemma->name, "gemma4") == 0);
+    assert(gemma->flags & BN_MODEL_ARCH_FLAG_GEMMA4);
+    assert(gemma->flags & BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK);
+    assert(strcmp(gemma->prefix("gemma4"), "gemma4") == 0);
+    assert(gemma->attention_value_shares_key("gemma4"));
+    assert(gemma->activation("gemma4") == 0);
+
+    BnConfig c = {0};
+    c.arch_flags = gemma->flags;
+    assert(bn_model_arch_requires_large_gpu_graph_fallback(&c));
+
+    const BnModelArchOps *bitnet = bn_model_arch_ops_for("bitnet");
+    assert(bitnet);
+    assert(strcmp(bitnet->name, "bitnet") == 0);
+    assert(bitnet->flags & BN_MODEL_ARCH_FLAG_BITNET);
+    assert(strcmp(bitnet->prefix("bitnet"), "bitnet") == 0);
+    assert(bitnet->activation("bitnet") == 1);
+    assert(!bitnet->attention_value_shares_key("bitnet"));
+
+    const BnModelArchOps *qwen = bn_model_arch_ops_for("qwen35");
+    assert(qwen);
+    assert(strcmp(qwen->name, "qwen") == 0);
+    assert(qwen->flags & BN_MODEL_ARCH_FLAG_QWEN);
+    assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
+    assert(qwen->activation("qwen35") == 0);
+    assert(!qwen->attention_value_shares_key("qwen35"));
+
+    char name[128];
+    char scale[128];
+    assert(bn_model_arch_tensor_name_for(qwen, name, sizeof(name), 7,
+                                         BN_MODEL_TENSOR_ATTN_Q) == 0);
+    assert(strcmp(name, "blk.7.attn_q.weight") == 0);
+    assert(bn_model_arch_tensor_scale_name_for(qwen, scale, sizeof(scale), 7,
+                                               BN_MODEL_TENSOR_ATTN_Q) == 0);
+    assert(strcmp(scale, "blk.7.attn_q.scale") == 0);
+    assert(bn_model_arch_tensor_name_for(gemma, name, sizeof(name), 2,
+                                         BN_MODEL_TENSOR_ATTN_K_BIAS) == 0);
+    assert(strcmp(name, "blk.2.attn_k.bias") == 0);
+    assert(bn_model_arch_tensor_name_for(bitnet, name, sizeof(name), 3,
+                                         BN_MODEL_TENSOR_FFN_DOWN) == 0);
+    assert(strcmp(name, "blk.3.ffn_down.weight") == 0);
+    assert(bn_model_arch_tensor_name_for(qwen, name, sizeof(name), 4,
+                                         BN_MODEL_TENSOR_SSM_ALPHA) == 0);
+    assert(strcmp(name, "blk.4.ssm_alpha.weight") == 0);
+    assert(bn_model_arch_tensor_scale_name_for(qwen, scale, sizeof(scale), 4,
+                                               BN_MODEL_TENSOR_SSM_ALPHA) == 0);
+    assert(strcmp(scale, "blk.4.ssm_alpha.scale") == 0);
+    assert(bn_model_arch_tensor_name_for(qwen, name, sizeof(name), 5,
+                                         BN_MODEL_TENSOR_MOE_GATE_UP_EXPS) == 0);
+    assert(strcmp(name, "blk.5.ffn_gate_up_exps.weight") == 0);
+    assert(bn_model_arch_tensor_name_for(qwen, name, sizeof(name), 6,
+                                         BN_MODEL_TENSOR_SHARED_FFN_ROUTER) == 0);
+    assert(strcmp(name, "blk.6.ffn_gate_inp_shexp.weight") == 0);
+    assert(bn_model_arch_tensor_name_for(qwen, name, 8, 7,
+                                         (BnModelTensorRole)12345) != 0);
+    assert(bn_model_arch_tensor_scale_name_for(qwen, scale, sizeof(scale), 7,
+                                               BN_MODEL_TENSOR_ATTN_Q_BIAS) != 0);
+    assert(bn_model_arch_tensor_scale_name_for(qwen, scale, sizeof(scale), 7,
+                                               BN_MODEL_TENSOR_SSM_A) != 0);
+
+    const BnModelArchOps *fallback = bn_model_arch_ops_for(NULL);
+    assert(fallback);
+    assert(strcmp(fallback->name, "default") == 0);
+    assert(strcmp(fallback->prefix(NULL), "llama") == 0);
+
+    memset(&c, 0, sizeof(c));
+    c.n_heads = 8;
+    c.n_kv_heads = 2;
+    gemma->apply_shapes(&c, 256, 512);
+    assert(c.head_size == 256);
+    assert(c.kv_dim == 512);
+    assert(c.kv_mul == 4);
+
+    memset(&c, 0, sizeof(c));
+    c.n_heads = 8;
+    c.n_kv_heads = 2;
+    c.head_size = 128;
+    c.kv_dim = 256;
+    bitnet->apply_shapes(&c, 512, 1024);
+    assert(c.head_size == 128);
+    assert(c.kv_dim == 256);
+
+    memset(&c, 0, sizeof(c));
+    c.full_attn_interval = 4;
+    assert(gemma->is_ssm_layer(&c, 0));
+    assert(!gemma->is_ssm_layer(&c, 3));
 
     printf("PASSED\n");
 }
@@ -332,6 +536,7 @@ static void test_block_planning(void) {
     c.shared_expert_intermediate_size = 2048;
 
     gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+               BN_GPU_CAP_Q4K_MATVEC_SPLIT |
                BN_GPU_CAP_Q8_MATVEC_SPLIT |
                BN_GPU_CAP_Q5K_MATVEC_SPLIT |
                BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
@@ -343,12 +548,23 @@ static void test_block_planning(void) {
     lw.wq.type = BN_GGUF_TENSOR_Q4_0;
     lw.wk.type = BN_GGUF_TENSOR_Q4_0;
     lw.wv.type = BN_GGUF_TENSOR_Q4_0;
-    lw.qkv_stacked_gpu = (void *)1;
-    lw.q_bias_gpu = (void *)1;
-    lw.k_bias_gpu = (void *)1;
-    lw.v_bias_gpu = (void *)1;
 
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
+    BnBackendModel *backend = bn_backend_model_create();
+    assert(backend != NULL);
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_QKV_STACKED,
+                                            (void *)1) == 0);
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_Q_BIAS,
+                                            (void *)2) == 0);
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_K_BIAS,
+                                            (void *)3) == 0);
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_V_BIAS,
+                                            (void *)4) == 0);
+
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.placement == BN_EXEC_GPU);
     assert(attn.backend == BN_BACKEND_METAL);
     assert(attn.shape.kind == BN_LAYER_ATTN_CLASSIC);
@@ -360,31 +576,37 @@ static void test_block_planning(void) {
     assert(!(attn.fusion_flags & BN_FUSION_ROPE_QK));
     assert(!attn.needs_cpu_fallback);
 
-    lw.k_bias_gpu = NULL;
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_K_BIAS,
+                                            NULL) == 0);
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.fusion_flags & BN_FUSION_ROPE_QK);
-    lw.k_bias_gpu = (void *)1;
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_K_BIAS,
+                                            (void *)3) == 0);
 
     lw.wq.type = BN_GGUF_TENSOR_Q8_0;
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
-    assert(attn.use_q8_qkv_split);
-    assert(attn.fusion_flags & BN_FUSION_Q8_QKV_SPLIT);
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
+    assert(attn.use_qkv_split);
+    assert(attn.qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT);
+    assert(attn.fusion_flags & BN_FUSION_QKV_SPLIT);
 
     lw.wq.type = BN_GGUF_TENSOR_Q5_K;
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
-    assert(attn.use_q5_qkv_split);
-    assert(attn.fusion_flags & BN_FUSION_Q5_QKV_SPLIT);
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
+    assert(attn.use_qkv_split);
+    assert(attn.qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT);
+    assert(attn.fusion_flags & BN_FUSION_QKV_SPLIT);
 
     lw.wq.type = BN_GGUF_TENSOR_Q4_0;
     lw.wq.rows = 4096;
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.shape.kind == BN_LAYER_ATTN_GATED_Q);
     assert(!attn.use_packed_qkv);
     assert(!attn.use_qkv_split);
     assert(!(attn.fusion_flags & BN_FUSION_QKV_SPLIT));
 
     c.full_attn_interval = 4;
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.placement == BN_EXEC_CPU_FALLBACK);
     assert(attn.backend == BN_BACKEND_CPU);
     assert(attn.needs_cpu_fallback);
@@ -397,10 +619,12 @@ static void test_block_planning(void) {
     lw.ffn_up.rows = 8192;
     lw.ffn_gate.cols = 2048;
     lw.ffn_up.cols = 2048;
-    lw.gateup_stacked_gpu = (void *)1;
+    assert(bn_backend_model_register_handle(backend, 0,
+                                            BN_BACKEND_HANDLE_GATEUP_STACKED,
+                                            (void *)5) == 0);
     lw.ffn_sub_norm = (float *)1;
 
-    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, 0, 1);
+    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_DENSE_GATE_UP);
     assert(ffn.placement == BN_EXEC_GPU);
     assert(ffn.backend == BN_BACKEND_METAL);
@@ -414,16 +638,20 @@ static void test_block_planning(void) {
     assert(ffn.fusion_flags & BN_FUSION_RESIDUAL_RMSNORM);
 
     lw.router_weight = (float *)1;
-    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, 0, 1);
+    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_MOE);
     assert(ffn.placement == BN_EXEC_CPU_FALLBACK);
     assert(ffn.backend == BN_BACKEND_CPU);
     assert(ffn.needs_cpu_fallback);
     assert(ffn.fusion_flags == BN_FUSION_NONE);
 
-    lw.ssm_qkvz_stacked_gpu = (void *)1;
-    lw.ssm_ab_stacked_gpu = (void *)1;
-    bn_transformer_plan_ssm(&ssm, &c, &lw, 1, 1, &gpu);
+    assert(bn_backend_model_register_handle(backend, 1,
+                                            BN_BACKEND_HANDLE_SSM_QKVZ_STACKED,
+                                            (void *)6) == 0);
+    assert(bn_backend_model_register_handle(backend, 1,
+                                            BN_BACKEND_HANDLE_SSM_AB_STACKED,
+                                            (void *)7) == 0);
+    bn_transformer_plan_ssm(&ssm, &c, &lw, 1, 1, &gpu, backend);
     assert(ssm.placement == BN_EXEC_GPU);
     assert(ssm.backend == BN_BACKEND_METAL);
     assert(ssm.ssm_idx == -1);
@@ -435,6 +663,21 @@ static void test_block_planning(void) {
     assert(ssm.use_qkvz_stack);
     assert(ssm.use_alpha_beta_stack);
 
+    lw.router_weight = NULL;
+    lw.wq.type = BN_GGUF_TENSOR_Q4_0;
+    lw.wq.rows = 2048;
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
+    assert(attn.use_packed_qkv);
+    assert(attn.use_qkv_split);
+    assert(!(attn.fusion_flags & BN_FUSION_ROPE_QK));
+    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
+    assert(ffn.use_gateup_split);
+    bn_transformer_plan_ssm(&ssm, &c, &lw, 1, 1, &gpu, backend);
+    assert(ssm.use_qkvz_stack);
+    assert(ssm.use_alpha_beta_stack);
+    bn_backend_model_free(backend);
+
+    lw.router_weight = (float *)1;
     bn_transformer_plan_moe(&moe, &c, &lw, &gpu, 0, 1);
     assert(moe.placement == BN_EXEC_CPU_FALLBACK);
     assert(moe.backend == BN_BACKEND_CPU);
@@ -465,12 +708,22 @@ static void test_block_planning(void) {
     assert(logits.weight_type == BN_GGUF_TENSOR_Q4_K);
 
     gpu.kind = BN_GPU_BACKEND_WEBGPU;
-    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, 0, 0, 1);
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, NULL, 0, 0, 1);
     assert(attn.backend == BN_BACKEND_WEBGPU);
 
     gpu.kind = BN_GPU_BACKEND_CUDA;
     bn_transformer_plan_logits(&logits, &c, &w, &gpu, 1);
     assert(logits.backend == BN_BACKEND_CUDA);
+
+    BnCPUBackendPlacement cpu_backend = bn_transformer_cpu_backend_placement();
+    assert(cpu_backend == BN_CPU_BACKEND_SCALAR ||
+           cpu_backend == BN_CPU_BACKEND_NEON ||
+           cpu_backend == BN_CPU_BACKEND_AVX2 ||
+           cpu_backend == BN_CPU_BACKEND_AVX512 ||
+           cpu_backend == BN_CPU_BACKEND_WASM_SIMD);
+#if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
+    assert(cpu_backend == BN_CPU_BACKEND_AVX512);
+#endif
 
     printf("PASSED\n");
 }
@@ -482,7 +735,10 @@ int main(void) {
     test_rope();
     test_fp16_embed();
     test_fast_silu();
+    test_cpu_execution_helpers();
     test_gpu_capability_routing();
+    test_gpu_op_kind_mapping();
+    test_model_arch_registry();
     test_layer_shape_planning();
     test_block_planning();
     printf("All transformer tests passed!\n");

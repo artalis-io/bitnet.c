@@ -15,6 +15,7 @@
 
 #include "gpu_metal.h"
 #include "gpu_backend.h"
+#include "gpu_shader.h"
 #include "model.h"
 #include "quant.h"
 #include "gguf.h"
@@ -815,22 +816,23 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
         for (int i = 0; i < n_ops; i++) {
             const BnGPUOp *op = &ops[i];
+            int shader = bn_gpu_shader_from_op_code(op->op_code);
 
             /* COPY as compute shader — stays in compute encoder, no blit transitions */
 
             /* Determine pipeline */
             id<MTLComputePipelineState> pipeline = nil;
-            if (op->shader == BN_GPU_SHADER_MATVEC) {
+            if (shader == BN_GPU_SHADER_MATVEC) {
                 if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES)
                     pipeline = ctx->pipelines[op->type];
-            } else if (op->shader > 0 && op->shader < BN_GPU_SHADER_COUNT) {
-                pipeline = ctx->fwd_pipelines[op->shader];
+            } else if (shader > 0 && shader < BN_GPU_SHADER_COUNT) {
+                pipeline = ctx->fwd_pipelines[shader];
             }
             if (!pipeline) continue;
 
             /* Compute this op's read/write buffer masks */
             uint32_t op_reads = 0, op_writes = 0;
-            switch (op->shader) {
+            switch (shader) {
             case BN_GPU_SHADER_MATVEC:
                 op_reads = BUF_BIT(op->buf_in);
                 op_writes = BUF_BIT(op->buf_out);
@@ -986,12 +988,12 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             memcpy(params, op->p, sizeof(params));
 
             /* Inject fused bias for matvec */
-            if (op->shader == BN_GPU_SHADER_MATVEC && op->W_buf) {
+            if (shader == BN_GPU_SHADER_MATVEC && op->W_buf) {
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
             }
 
-            switch (op->shader) {
+            switch (shader) {
             case BN_GPU_SHADER_MATVEC: {
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (!wbuf) continue;
@@ -1216,7 +1218,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
 
             /* Compute workgroup count (same logic as wgpu) */
             uint32_t wg_x = 1, wg_y = 1;
-            switch (op->shader) {
+            switch (shader) {
             case BN_GPU_SHADER_MATVEC: {
                 if (op->p[3] > 0) {
                     uint32_t tiled_rows = ((uint32_t)op->rows + 31) / 32;
@@ -1334,7 +1336,7 @@ static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         };
         int cat_count[BN_GPU_SHADER_COUNT]; memset(cat_count, 0, sizeof(cat_count));
         for (int i = 0; i < n_ops; i++) {
-            int s = ops[i].shader;
+            int s = bn_gpu_shader_from_op_code(ops[i].op_code);
             if (s >= 0 && s < BN_GPU_SHADER_COUNT) cat_count[s]++;
         }
         fprintf(stderr, "[gpu:metal:breakdown] --- op counts ---\n");
@@ -1418,6 +1420,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         gpu->ctx                  = ctx;
         gpu->caps                 = BN_GPU_CAP_FLASH_ATTN |
                                     BN_GPU_CAP_Q4_MATVEC_SPLIT |
+                                    BN_GPU_CAP_Q4K_MATVEC_SPLIT |
                                     BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
         gpu->kind                 = BN_GPU_BACKEND_METAL;
 

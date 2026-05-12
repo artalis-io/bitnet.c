@@ -6,70 +6,84 @@
 
 // --- Phase 4b.3: GPU-resident forward pass ---
 
-// Shader IDs for forward-pass operations
-#define BN_GPU_SHADER_MATVEC       0
-#define BN_GPU_SHADER_RMSNORM      1
-#define BN_GPU_SHADER_ROPE         2
-#define BN_GPU_SHADER_GQA_SCORES   3
-#define BN_GPU_SHADER_SOFTMAX      4
-#define BN_GPU_SHADER_GQA_COMBINE  5
-#define BN_GPU_SHADER_SILU_GATE    6
-#define BN_GPU_SHADER_RELU2_GATE   7
-#define BN_GPU_SHADER_RESIDUAL_ADD 8
-#define BN_GPU_SHADER_COPY         9  // compute-shader buffer copy (stays in encoder)
-#define BN_GPU_SHADER_BIAS_ADD     10 // x[i] += bias[i], bias from W_buf
-#define BN_GPU_SHADER_RESIDUAL_RMSNORM 11 // fused residual_add + rmsnorm
-#define BN_GPU_SHADER_WEIGHTED_ADD   12 // x[i] += weight * r[i] (MoE expert accum)
-#define BN_GPU_SHADER_SSM_CONV_SILU  13 // Conv1d + SiLU + conv_state shift
-#define BN_GPU_SHADER_SSM_L2NORM     14 // Per-head L2 normalization of Q/K
-#define BN_GPU_SHADER_SSM_ALPHA_BETA 15 // Softplus + exp/sigmoid for decay/update
-#define BN_GPU_SHADER_SSM_DELTA      16 // Delta rule recurrence
-#define BN_GPU_SHADER_SSM_GATE           17 // Per-head RMSNorm + SiLU gate
-#define BN_GPU_SHADER_PER_HEAD_RMSNORM  18 // Per-head RMSNorm (Q/K norms)
-#define BN_GPU_SHADER_DEINTERLEAVE_Q    19 // Extract Q from interleaved [Q,Gate] layout
-#define BN_GPU_SHADER_SIGMOID_GATE      20 // out *= sigmoid(gate) for gated Q
-#define BN_GPU_SHADER_FLASH_ATTN       21 // Fused Q·K softmax att·V (online softmax)
-#define BN_GPU_SHADER_MATVEC_SPLIT     22 // Multi-output matvec (QKV batched, gate+up batched)
-#define BN_GPU_SHADER_ROPE_QK          23 // Fused RoPE for Q and K in single dispatch
-#define BN_GPU_SHADER_FUSED_GATEUP_SILU 24 // Fused gate+up matvec + SiLU activation (Q4_0)
-#define BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT 25 // SSM alpha/beta activation from stacked matvec
-#define BN_GPU_SHADER_Q4K_MATVEC_SPLIT 26 // Q4_K two-output matvec split
-#define BN_GPU_SHADER_Q8_MATVEC_SPLIT  27 // Q8_0 multi-output matvec split
-#define BN_GPU_SHADER_Q5K_MATVEC_SPLIT 28 // Q5_K multi-output matvec split
-#define BN_GPU_SHADER_SILU_ACT         29 // In-place SiLU activation
-#define BN_GPU_SHADER_RELU2_ACT        30 // In-place ReLU^2 activation
-#define BN_GPU_SHADER_COUNT             31
-
-// GPU-resident activation buffer indices
-#define BN_GPU_BUF_X           0
-#define BN_GPU_BUF_XB          1
-#define BN_GPU_BUF_XB2         2
-#define BN_GPU_BUF_Q           3
-#define BN_GPU_BUF_HB          4
-#define BN_GPU_BUF_HB2         5
-#define BN_GPU_BUF_KEY_CACHE   6
-#define BN_GPU_BUF_VALUE_CACHE 7
-#define BN_GPU_BUF_ATT         8
-#define BN_GPU_BUF_LOGITS      9
-#define BN_GPU_BUF_ROPE_FREQ   10
-#define BN_GPU_BUF_SCRATCH     11  // temp output for KV cache writes
-#define BN_GPU_BUF_QKV         12  // stacked QKV matvec output [q_dim + 2*kv_dim]
-// MoE buffers
-#define BN_GPU_BUF_MOE_HB     13  // expert gate output [moe_hidden_dim]
-#define BN_GPU_BUF_MOE_HB2    14  // expert up output [moe_hidden_dim]
-#define BN_GPU_BUF_MOE_OUT    15  // accumulated expert output [dim]
-// SSM buffers (persistent across tokens)
-#define BN_GPU_BUF_SSM_STATE      16  // [n_ssm * num_v_heads * hk * hv]
-#define BN_GPU_BUF_SSM_CONV_STATE 17  // [n_ssm * (kern-1) * qkv_dim]
-#define BN_GPU_BUF_SSM_QKV        18  // SSM QKV projection output [qkv_dim]
-#define BN_GPU_BUF_SSM_Z          19  // Z gate projection output [value_dim]
-#define BN_GPU_BUF_SSM_ALPHA      20  // decay rates [num_v_heads]
-#define BN_GPU_BUF_SSM_BETA       21  // update rates [num_v_heads]
-#define BN_GPU_BUF_SSM_V          22  // V vectors for delta [value_dim]
-#define BN_GPU_BUF_COUNT          23
+// Backend-neutral graph values used by GPU-resident forward ops.
+// Backends lower these values to their own activation buffer slots.
+#define BN_GPU_VALUE_X           0
+#define BN_GPU_VALUE_XB          1
+#define BN_GPU_VALUE_XB2         2
+#define BN_GPU_VALUE_Q           3
+#define BN_GPU_VALUE_HB          4
+#define BN_GPU_VALUE_HB2         5
+#define BN_GPU_VALUE_KEY_CACHE   6
+#define BN_GPU_VALUE_VALUE_CACHE 7
+#define BN_GPU_VALUE_ATT         8
+#define BN_GPU_VALUE_LOGITS      9
+#define BN_GPU_VALUE_ROPE_FREQ   10
+#define BN_GPU_VALUE_SCRATCH     11
+#define BN_GPU_VALUE_QKV         12
+#define BN_GPU_VALUE_MOE_HB      13
+#define BN_GPU_VALUE_MOE_HB2     14
+#define BN_GPU_VALUE_MOE_OUT     15
+#define BN_GPU_VALUE_SSM_STATE      16
+#define BN_GPU_VALUE_SSM_CONV_STATE 17
+#define BN_GPU_VALUE_SSM_QKV        18
+#define BN_GPU_VALUE_SSM_Z          19
+#define BN_GPU_VALUE_SSM_ALPHA      20
+#define BN_GPU_VALUE_SSM_BETA       21
+#define BN_GPU_VALUE_SSM_V          22
+#define BN_GPU_VALUE_COUNT          23
 
 // Shader uniform parameter count (32 bytes = 8 × u32, matches WGSL Uniforms structs)
 #define BN_GPU_OP_PARAMS 8
+
+typedef enum {
+    BN_GPU_OP_UNKNOWN = 0,
+    BN_GPU_OP_MATVEC = 1,
+    BN_GPU_OP_RMSNORM = 2,
+    BN_GPU_OP_ROPE = 3,
+    BN_GPU_OP_ATTENTION = 4,
+    BN_GPU_OP_ACTIVATION = 5,
+    BN_GPU_OP_RESIDUAL = 6,
+    BN_GPU_OP_COPY = 7,
+    BN_GPU_OP_FFN = 8,
+    BN_GPU_OP_SSM = 9,
+    BN_GPU_OP_LOGITS = 10,
+} BnGPUOpKind;
+
+typedef enum {
+    BN_GPU_CODE_UNKNOWN = 0,
+    BN_GPU_CODE_MATVEC,
+    BN_GPU_CODE_RMSNORM,
+    BN_GPU_CODE_ROPE,
+    BN_GPU_CODE_GQA_SCORES,
+    BN_GPU_CODE_SOFTMAX,
+    BN_GPU_CODE_GQA_COMBINE,
+    BN_GPU_CODE_SILU_GATE,
+    BN_GPU_CODE_RELU2_GATE,
+    BN_GPU_CODE_RESIDUAL_ADD,
+    BN_GPU_CODE_COPY,
+    BN_GPU_CODE_BIAS_ADD,
+    BN_GPU_CODE_RESIDUAL_RMSNORM,
+    BN_GPU_CODE_WEIGHTED_ADD,
+    BN_GPU_CODE_SSM_CONV_SILU,
+    BN_GPU_CODE_SSM_L2NORM,
+    BN_GPU_CODE_SSM_ALPHA_BETA,
+    BN_GPU_CODE_SSM_DELTA,
+    BN_GPU_CODE_SSM_GATE,
+    BN_GPU_CODE_PER_HEAD_RMSNORM,
+    BN_GPU_CODE_DEINTERLEAVE_Q,
+    BN_GPU_CODE_SIGMOID_GATE,
+    BN_GPU_CODE_FLASH_ATTN,
+    BN_GPU_CODE_MATVEC_SPLIT,
+    BN_GPU_CODE_ROPE_QK,
+    BN_GPU_CODE_FUSED_GATEUP_SILU,
+    BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT,
+    BN_GPU_CODE_Q4K_MATVEC_SPLIT,
+    BN_GPU_CODE_Q8_MATVEC_SPLIT,
+    BN_GPU_CODE_Q5K_MATVEC_SPLIT,
+    BN_GPU_CODE_SILU_ACT,
+    BN_GPU_CODE_RELU2_ACT,
+} BnGPUOpCode;
 
 typedef enum {
     BN_GPU_BACKEND_UNKNOWN = 0,
@@ -80,15 +94,69 @@ typedef enum {
 
 // A single GPU operation in the forward pass
 typedef struct {
-    int shader;          // BN_GPU_SHADER_* constant
+    int op_kind;         // BnGPUOpKind semantic op; 0 = infer from op_code
+    int op_code;         // BnGPUOpCode backend-neutral concrete op
     int type;            // BN_GGUF_TENSOR_* (matvec only, -1 otherwise)
     void *W_buf;         // weight buffer handle (matvec only, NULL otherwise)
-    int buf_in;          // activation buffer index for primary input
-    int buf_out;         // activation buffer index for output
-    int buf_aux;         // secondary input buffer (-1 if unused)
+    int buf_in;          // BnGPU graph value for primary input
+    int buf_out;         // BnGPU graph value for output
+    int buf_aux;         // secondary graph value (-1 if unused)
     int rows, cols;      // dimensions (matvec: weight dims; others: element count in p0)
     uint32_t p[BN_GPU_OP_PARAMS]; // shader-specific parameters (32 bytes)
 } BnGPUOp;
+
+static inline BnGPUOpKind bn_gpu_op_kind_from_code(int code) {
+    switch (code) {
+        case BN_GPU_CODE_MATVEC:
+        case BN_GPU_CODE_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q8_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q5K_MATVEC_SPLIT:
+            return BN_GPU_OP_MATVEC;
+        case BN_GPU_CODE_RMSNORM:
+        case BN_GPU_CODE_RESIDUAL_RMSNORM:
+        case BN_GPU_CODE_PER_HEAD_RMSNORM:
+            return BN_GPU_OP_RMSNORM;
+        case BN_GPU_CODE_ROPE:
+        case BN_GPU_CODE_ROPE_QK:
+            return BN_GPU_OP_ROPE;
+        case BN_GPU_CODE_GQA_SCORES:
+        case BN_GPU_CODE_SOFTMAX:
+        case BN_GPU_CODE_GQA_COMBINE:
+        case BN_GPU_CODE_FLASH_ATTN:
+            return BN_GPU_OP_ATTENTION;
+        case BN_GPU_CODE_SILU_GATE:
+        case BN_GPU_CODE_RELU2_GATE:
+        case BN_GPU_CODE_SIGMOID_GATE:
+        case BN_GPU_CODE_SILU_ACT:
+        case BN_GPU_CODE_RELU2_ACT:
+            return BN_GPU_OP_ACTIVATION;
+        case BN_GPU_CODE_RESIDUAL_ADD:
+        case BN_GPU_CODE_WEIGHTED_ADD:
+        case BN_GPU_CODE_BIAS_ADD:
+            return BN_GPU_OP_RESIDUAL;
+        case BN_GPU_CODE_COPY:
+        case BN_GPU_CODE_DEINTERLEAVE_Q:
+            return BN_GPU_OP_COPY;
+        case BN_GPU_CODE_FUSED_GATEUP_SILU:
+            return BN_GPU_OP_FFN;
+        case BN_GPU_CODE_SSM_CONV_SILU:
+        case BN_GPU_CODE_SSM_L2NORM:
+        case BN_GPU_CODE_SSM_ALPHA_BETA:
+        case BN_GPU_CODE_SSM_DELTA:
+        case BN_GPU_CODE_SSM_GATE:
+        case BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT:
+            return BN_GPU_OP_SSM;
+        default:
+            return BN_GPU_OP_UNKNOWN;
+    }
+}
+
+static inline BnGPUOpKind bn_gpu_op_kind(const BnGPUOp *op) {
+    if (!op) return BN_GPU_OP_UNKNOWN;
+    return op->op_kind ? (BnGPUOpKind)op->op_kind
+                       : bn_gpu_op_kind_from_code(op->op_code);
+}
 
 // Descriptor for one operation in a batched matvec submission.
 typedef struct {
@@ -100,7 +168,12 @@ typedef struct {
 // GPU compute backend vtable. The caller (e.g., Hull) fills this in
 // with their GPU API. bitnet.c calls it for matvec dispatch.
 // All function pointers may be NULL (graceful fallback to CPU SIMD).
-typedef struct {
+#ifndef BN_GPU_BACKEND_DECLARED
+#define BN_GPU_BACKEND_DECLARED
+typedef struct BnGPUBackend BnGPUBackend;
+#endif
+
+struct BnGPUBackend {
     // Upload quantized weight data to GPU. Returns opaque buffer handle.
     // type: BN_GGUF_TENSOR_* constant. data/size: raw GGUF tensor bytes.
     // Returns NULL on failure.
@@ -157,13 +230,13 @@ typedef struct {
     void (*free_activations)(void *ctx);
 
     // Write host data to a GPU-resident activation buffer.
-    // buf_idx: BN_GPU_BUF_* index.  offset/size in bytes.
+    // buf_idx: BN_GPU_VALUE_* graph value. offset/size in bytes.
     // Returns 0 on success, -1 on error.  Optional (NULL = not supported).
     int (*write_activation)(void *ctx, int buf_idx, const void *data,
                             size_t size, size_t offset);
 
     // Read GPU-resident activation buffer to host.
-    // buf_idx: BN_GPU_BUF_* index.  out: host buffer, size in bytes.
+    // buf_idx: BN_GPU_VALUE_* graph value. out: host buffer, size in bytes.
     // Returns 0 on success, -1 on error.  Optional (NULL = not supported).
     int (*read_activation)(void *ctx, int buf_idx, void *out,
                            size_t size, size_t offset);
@@ -181,7 +254,7 @@ typedef struct {
     // should use a conservative fallback when deciding whether to bind a
     // large weight buffer in a GPU-resident graph.
     size_t max_storage_binding_size;
-} BnGPUBackend;
+};
 
 // Backend capability bits
 #define BN_GPU_CAP_FLASH_ATTN  (1u << 0)  // fused flash attention shader available
@@ -189,6 +262,7 @@ typedef struct {
 #define BN_GPU_CAP_Q5K_MATVEC_SPLIT (1u << 2) // Q5_K packed split matvec shader available
 #define BN_GPU_CAP_Q4_MATVEC_SPLIT (1u << 3) // stacked Q4_0 split matvec shader available
 #define BN_GPU_CAP_Q4_FUSED_GATEUP_SILU (1u << 4) // fused Q4_0 gate/up SiLU shader available
+#define BN_GPU_CAP_Q4K_MATVEC_SPLIT (1u << 5) // Q4_K packed split matvec shader available
 
 // Pre-compiled GPU op list for dense models (Phase 4: eliminates per-token malloc)
 typedef struct {

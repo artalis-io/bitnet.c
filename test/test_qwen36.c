@@ -306,6 +306,10 @@ static void test_qwen36_dense(void) {
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
+    assert(model.backend == NULL);
+    assert(bn_model_gpu(&model) == NULL);
+    assert(model.config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN);
+    assert(!bn_model_arch_requires_large_gpu_graph_fallback(&model.config));
     assert(model.config.n_experts == 0);
     assert(model.config.full_attn_interval == 4);
     assert(model.config.n_layers == 4);
@@ -330,12 +334,18 @@ static void test_qwen36_moe(void) {
     assert(buf != NULL);
     BnGGUFFile *gf = build_qwen36_gguf(buf, 4 * 1024 * 1024, "qwen35moe", 1);
     assert(gf != NULL);
-    assert(bn_model_arch_infer_moe_hidden(gf) == 64);
-    assert(bn_model_arch_has_shared_expert(gf) == 1);
-    assert(bn_model_arch_infer_shared_expert_hidden(gf) == 64);
+    const BnModelArchOps *ops = bn_model_arch_ops_for("qwen36");
+    assert(ops);
+    assert(bn_model_arch_infer_moe_hidden(gf, ops) == 64);
+    assert(bn_model_arch_has_shared_expert(gf, ops) == 1);
+    assert(bn_model_arch_infer_shared_expert_hidden(gf, ops) == 64);
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
+    assert(model.backend == NULL);
+    assert(bn_model_gpu(&model) == NULL);
+    assert(model.config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN);
+    assert(!bn_model_arch_requires_large_gpu_graph_fallback(&model.config));
     model.moe_io.mmap_base = gf->raw;
     assert(model.config.n_experts == 4);
     assert(model.config.n_experts_active == 2);

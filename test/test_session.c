@@ -1,5 +1,6 @@
 #include "session.h"
 #include "model.h"
+#include "gpu_backend.h"
 #include "turboquant.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,9 +31,12 @@ static void test_session_create_free(void) {
     BnModel model;
     memset(&model, 0, sizeof(model));
     init_test_config(&model.config);
+    assert(model.backend == NULL);
 
     BnSession *s1 = bn_session_create(&model, NULL);
     assert(s1 != NULL);
+    assert(model.backend == NULL);
+    assert(s1->backend != NULL);
     assert(s1->state.x != NULL);
     assert(s1->state.logits != NULL);
     assert(s1->state.key_cache != NULL);
@@ -40,6 +44,8 @@ static void test_session_create_free(void) {
 
     BnSession *s2 = bn_session_create(&model, NULL);
     assert(s2 != NULL);
+    assert(model.backend == NULL);
+    assert(s2->backend != NULL);
     assert(s2->state.x != NULL);
 
     // Sessions should have independent buffers
@@ -231,6 +237,44 @@ static void test_session_reset_tq(void) {
     printf("PASSED\n");
 }
 
+// Test: cached GPU op graphs are per-session, not model-owned
+static void test_session_gpu_graph_isolation(void) {
+    printf("test_session_gpu_graph_isolation... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+
+    BnSession *s1 = bn_session_create(&model, NULL);
+    BnSession *s2 = bn_session_create(&model, NULL);
+    assert(s1 && s2);
+    assert(bn_backend_session_gpu_graph(s1->backend) == NULL);
+    assert(bn_backend_session_gpu_graph(s2->backend) == NULL);
+
+    BnGPUGraph *g1 =
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(s1->backend, 4);
+    BnGPUGraph *g2 =
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(s2->backend, 8);
+    assert(g1 && g2);
+    assert(g1->ops && g2->ops);
+    g1->cap = 4;
+    g2->cap = 8;
+    assert(bn_backend_session_gpu_graph(s1->backend) !=
+           bn_backend_session_gpu_graph(s2->backend));
+    assert(bn_backend_session_ensure_gpu_graph(s1->backend, 2) == g1);
+    BnGPUGraph *g1_grown =
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(s1->backend, 16);
+    assert(g1_grown != NULL);
+    assert(g1_grown->cap == 16);
+    assert(g1_grown->ops != NULL);
+    bn_backend_session_release_gpu_graph(s1->backend);
+    assert(bn_backend_session_gpu_graph(s1->backend) == NULL);
+
+    bn_session_free(s1, NULL);
+    bn_session_free(s2, NULL);
+    printf("PASSED\n");
+}
+
 int main(void) {
     test_session_create_free();
     test_session_kv_isolation();
@@ -238,6 +282,7 @@ int main(void) {
     test_session_pos_tracking();
     test_multiple_sessions();
     test_session_reset_tq();
+    test_session_gpu_graph_isolation();
     printf("\nAll session tests passed!\n");
     return 0;
 }

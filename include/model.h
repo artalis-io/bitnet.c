@@ -6,8 +6,8 @@
 #include "quant.h"
 #include "threadpool.h"
 #include "sh_arena.h"
-#include "gpu_backend.h"
 #include "turboquant.h"
+#include "backend_model.h"
 
 // Forward declaration for MoE expert map (defined in moe.h)
 typedef struct {
@@ -93,7 +93,7 @@ typedef struct {
     float rope_theta, norm_eps;
     int head_size, kv_dim, kv_mul;  // derived
     int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU²
-    int arch_gemma4;                // GGUF architecture == "gemma4"
+    uint32_t arch_flags;            // BnModelArchOps flags for planner/backend constraints
     int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)
     int kv_f16;                     // store KV cache in FP16 (halves attention DRAM bandwidth)
@@ -140,31 +140,6 @@ typedef struct {
     // Shared expert (always resident, standard QWeight)
     BnQWeight shared_gate, shared_up, shared_down;
     float *shared_expert_gate;   // [dim] sigmoid gate for shared expert output (NULL if absent)
-    // GPU handles for F32 norm weights (NULL = not uploaded)
-    void *attn_norm_gpu;
-    void *ffn_norm_gpu;
-    // GPU handles for attention biases (NULL = not uploaded or no biases)
-    void *q_bias_gpu;
-    void *k_bias_gpu;
-    void *v_bias_gpu;
-    // Stacked QKV weight buffer for GPU (NULL = use individual Q/K/V)
-    void *qkv_stacked_gpu;
-    // Stacked gate+up weight buffer for GPU (NULL = use individual gate/up)
-    void *gateup_stacked_gpu;
-    // Stacked SSM alpha+beta weight buffer for GPU (NULL = use individual alpha/beta)
-    void *ssm_ab_stacked_gpu;
-    // Stacked SSM qkv+z weight buffer for GPU (NULL = use individual qkv/z)
-    void *ssm_qkvz_stacked_gpu;
-    // GPU handles for Q/K norms and sub-norms (NULL = not present)
-    void *q_norm_gpu;
-    void *k_norm_gpu;
-    void *attn_sub_norm_gpu;
-    void *ffn_sub_norm_gpu;
-    // GPU handles for SSM weights (NULL = not uploaded or not SSM layer)
-    void *ssm_conv1d_gpu;       // [kern * qkv_dim] F32
-    void *ssm_dt_bias_gpu;      // [nv] F32
-    void *ssm_a_log_gpu;        // [nv] F32
-    void *ssm_norm_gpu;         // [head_v_dim] F32
 } BnLayerWeights;
 
 typedef struct {
@@ -174,8 +149,6 @@ typedef struct {
     float  *emb_out_scales;      // [vocab_size] per-row scales (NULL if unused)
     BnQWeight output_weight;      // untied output projection (data=NULL if tied)
     float *output_norm;           // [dim]
-    void *output_norm_gpu;        // GPU handle for output_norm (NULL = not uploaded)
-    void *emb_gpu_buf;            // GPU handle for tied embedding (NULL if untied or not uploaded)
     BnLayerWeights *layers;         // [n_layers]
 } BnWeights;
 
@@ -207,17 +180,17 @@ typedef struct {
     // MoE shared I/O (zero for dense models)
     BnMoEIO moe_io;
     int expert_fd;           // file descriptor for expert pread, -1 if unused
-    BnGPUBackend *gpu;       // GPU compute backend (NULL = CPU only)
+    BnBackendModel *backend; // backend-resident model state/control
     BnTQState *tq_state;     // TurboQuant state (NULL = no TQ compression)
-    // Cached GPU op list (Phase 4: eliminates per-token malloc)
-    void *gpu_graph;         // BnGPUGraph* (opaque, allocated by forward_gpu)
 } BnModel;
 
 int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits);
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
+BnGPUBackend *bn_model_gpu(const BnModel *model);
+void bn_model_set_gpu_disabled(BnModel *model, int disabled);
 
-// Upload all model weights to GPU. Sets gpu_buf on each BnQWeight.
+// Upload all model weights to backend-owned GPU buffers.
 // Returns 0 on success. On failure, releases partially uploaded buffers.
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu);
 

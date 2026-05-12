@@ -267,8 +267,7 @@ int main(int argc, char **argv) {
     int cpu_tokens[N_DECODE_STEPS];
     {
         /* Ensure no GPU for CPU baseline */
-        BnGPUBackend *saved_gpu = model.gpu;
-        model.gpu = NULL;
+        bn_model_set_gpu_disabled(&model, 1);
 
         BnSession *s = bn_session_create(&model, NULL);
         if (!s) {
@@ -308,7 +307,7 @@ int main(int argc, char **argv) {
 
         bn_sampler_free(&sampler);
         bn_session_free(s, NULL);
-        model.gpu = saved_gpu;
+        bn_model_set_gpu_disabled(&model, 0);
     }
 
 #ifdef BN_ENABLE_WEBGPU
