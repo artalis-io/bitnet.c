@@ -1,5 +1,6 @@
 #include "gguf.h"
 #include "model.h"
+#include "model_arch.h"
 #include "session.h"
 #include "transformer.h"
 #if defined(BN_GEMMA4_TEST_WEBGPU) && defined(BN_ENABLE_WEBGPU)
@@ -192,6 +193,10 @@ static void test_gemma4_dense(void) {
     printf("test_gemma4_dense... ");
     uint8_t *buf = calloc(1, 4 * 1024 * 1024); assert(buf);
     BnGGUFFile *gf = build_gemma4(buf, 4 * 1024 * 1024, 0); assert(gf);
+    int32_t sections[3] = {16, 24, 24};
+    assert(bn_model_arch_is_gemma4("gemma4") == 1);
+    assert(bn_model_arch_attention_value_shares_key("gemma4") == 1);
+    assert(bn_model_arch_rope_text_dims(64, sections, 3) == 32);
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
     assert(m.config.head_size == 64);
     assert(m.config.kv_dim == 64);
@@ -207,6 +212,8 @@ static void test_gemma4_moe_fused_gate_up(void) {
     printf("test_gemma4_moe_fused_gate_up... ");
     uint8_t *buf = calloc(1, 4 * 1024 * 1024); assert(buf);
     BnGGUFFile *gf = build_gemma4(buf, 4 * 1024 * 1024, 1); assert(gf);
+    assert(bn_model_arch_infer_moe_hidden(gf) == 32);
+    assert(bn_model_arch_has_shared_expert(gf) == 0);
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
     m.moe_io.mmap_base = gf->raw;
     BnMoEExpertMap *em = &m.weights.layers[0].expert_map;

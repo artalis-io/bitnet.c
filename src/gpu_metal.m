@@ -1419,6 +1419,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         gpu->caps                 = BN_GPU_CAP_FLASH_ATTN |
                                     BN_GPU_CAP_Q4_MATVEC_SPLIT |
                                     BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
+        gpu->kind                 = BN_GPU_BACKEND_METAL;
 
         return gpu;
     }

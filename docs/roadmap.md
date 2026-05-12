@@ -175,13 +175,27 @@ Only **reducing data volume** helps at this point:
 
 The next major maintainability item is to split `src/transformer.c` into explicit planning and execution layers while preserving CPU correctness and Metal/WebGPU behavior. The goal is not a new math path first; it is to make model-family, quant-format, and backend decisions visible and testable before adding more SoTA model and quant coverage.
 
-- [ ] **Phase 1: map and freeze behavior** — catalog every architecture branch, quant special case, and backend fast path in `transformer.c`; add lightweight route tests for QKV, FFN, MoE, SSM, KV cache, flash attention, and fallback behavior.
-- [ ] **Phase 2: kernel capability layer** — replace ad hoc backend capability checks with named predicates and shader-selection helpers so adding a quant/backend feature is localized.
-- [ ] **Phase 3: split planning from execution** — build a small per-layer plan describing attention, FFN/MoE/SSM, KV policy, fused ops, and fallback placement; keep the CPU path as the reference executor.
-- [ ] **Phase 4: extract architecture-specific logic** — move Qwen/Gemma/DeepSeek/Nemotron-style shape and activation rules out of the main forward loop into model-architecture helpers.
-- [ ] **Phase 5: declarative fusion rules** — represent QKV split, gate/up fusion, RoPE fusion, residual+norm, and flash attention as rules gated by model shape, quant format, and backend capability.
-- [ ] **Phase 6: explicit backend placement** — make CPU, Metal, WebGPU, and future CUDA/AVX-512 choices explicit per op with deterministic fallback to the CPU reference implementation.
-- [ ] **Phase 7: parity gates** — require `make clean && make bitnet`, `make test`, coherence tests for touched GPU backends, and llama.cpp CPU/Metal benchmark comparisons before declaring the redesign complete.
+Target architecture:
+
+```
+GGUF/model load -> model anatomy + tensor roles
+quant layer     -> format operations
+backend layout  -> uploaded buffers and optional stacked/fused layouts
+planner         -> layer/block execution plan
+executor        -> CPU / Metal / WebGPU / CUDA
+```
+
+- [x] **Step 1: map and freeze behavior** — catalog every architecture branch, quant special case, and backend fast path in `transformer.c`; add lightweight route tests for QKV, FFN, MoE, SSM, KV cache, flash attention, and fallback behavior. See [transformer-behavior-map.md](transformer-behavior-map.md).
+- [x] **Step 2: start the kernel capability layer** — replace direct backend capability bit checks with named internal predicates (`bn_transformer_gpu_can_*`) and cover them in `test_transformer`.
+- [x] **Step 3: extract layer-shape planning** — introduce internal helpers for `is_attn`, `attn_idx`, `ssm_idx`, `q_dim`, `q_gated`, `q_wide`, per-layer `head_size`, `kv_dim`, `n_kv_heads`, `kv_mul`, and KV mode. These helpers should be synthetic-testable without loading a GGUF.
+- [x] **Step 4: define per-block plan structs** — add small internal plan structs for attention, FFN, SSM, MoE, logits, and backend placement. Start with `BnAttentionPlan` carrying layer kind, KV mode, Q/K/V shape, norm/bias flags, and placement.
+- [x] **Step 5: split CPU planning from CPU execution** — make `forward_single_layer` consume layer/block plans while keeping CPU math straightforward and reference-quality. Do not optimize or fuse CPU behavior during this step.
+- [x] **Step 6: split GPU op emission by block** — move GPU construction out of `forward_gpu` into internal emitters such as `emit_gpu_attention_ops`, `emit_gpu_ffn_ops`, `emit_gpu_ssm_ops`, `emit_gpu_moe_ops`, and `emit_gpu_logits_ops`.
+- [x] **Step 7: make fusion rules declarative** — represent QKV split, gate/up fusion, RoPE QK fusion, residual+norm, flash attention, Q4_K split, Q8 split, and Q5_K split as rule checks with explicit required tensor roles, quant format, shape compatibility, activation, and backend cap.
+- [x] **Step 8: move backend buffer layout out of model loading** — keep `model.c` responsible for model anatomy and tensor roles; move QKV stacks, gate/up stacks, SSM stacks, fused bias buffers, and backend-specific upload choices into a backend layout layer.
+- [x] **Step 9: extract architecture-specific model rules** — move Qwen/Gemma/DeepSeek/Nemotron-style shape, activation, norm, MRoPE, SSM, and shared-expert rules out of the main transformer loop into model-architecture helpers.
+- [x] **Step 10: make backend placement explicit** — choose CPU, Metal, WebGPU, future CUDA, or CPU fallback per planned op/block. Fallback must be deterministic and visible in tests/debug output.
+- [x] **Step 11: enforce parity gates** — require `make clean && make bitnet`, `make test`, coherence tests for touched GPU backends, and llama.cpp CPU/Metal benchmark comparisons before declaring the redesign complete.
 
 Success criteria: adding a new quant should primarily touch `gguf`, `quant`, backend kernels, and capability registration; adding a backend should primarily implement `BnGPUBackend` and advertised caps; adding a model family should primarily touch model metadata and architecture helpers. `transformer.c` should stop accumulating backend/model/quant cross-product branches except for genuinely new execution primitives.
 

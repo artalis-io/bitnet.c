@@ -1,5 +1,7 @@
 #include "model.h"
+#include "backend_layout.h"
 #include "gpu_backend.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "sh_arena.h"
 #include "sh_log.h"
@@ -334,11 +336,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // Try to detect architecture prefix
     const char *arch = bn_gguf_get_str(f, "general.architecture");
-    char prefix[64] = "llama";
-    if (arch) {
-        snprintf(prefix, sizeof(prefix), "%s", arch);
-    }
-    int is_gemma4 = arch && strcmp(arch, "gemma4") == 0;
+    char prefix[64];
+    snprintf(prefix, sizeof(prefix), "%s", bn_model_arch_prefix(arch));
+    int is_gemma4 = bn_model_arch_is_gemma4(arch);
     c->arch_gemma4 = is_gemma4;
 
     // Build key names with architecture prefix
@@ -428,9 +428,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         uint64_t nsect = bn_gguf_get_arr_n(f, key);
         if (nsect > 0) {
             const int32_t *sections = (const int32_t *)bn_gguf_get_arr_data(f, key);
-            if (sections && sections[0] > 0 && c->rope_dim_count > 0) {
-                c->rope_text_dims = sections[0] * 2;  // pairs → dims
-            }
+            c->rope_text_dims =
+                bn_model_arch_rope_text_dims(c->rope_dim_count, sections, nsect);
         }
     }
 
@@ -469,41 +468,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // MoE config
-    snprintf(key, sizeof(key), "%s.expert_count", prefix);
-    c->n_experts = (int)bn_gguf_get_u32(f, key);
-    snprintf(key, sizeof(key), "%s.expert_used_count", prefix);
-    c->n_experts_active = (int)bn_gguf_get_u32(f, key);
-
+    bn_model_arch_load_moe_config(c, f, prefix);
     if (c->n_experts > 0) {
-        // Per-expert intermediate size (from expert FFN tensors)
-        snprintf(key, sizeof(key), "%s.expert_feed_forward_length", prefix);
-        c->moe_intermediate_size = (int)bn_gguf_get_u32(f, key);
-        if (c->moe_intermediate_size == 0) {
-            // Fallback: infer from tensor dims
-            int ti = bn_gguf_find_tensor(f, "blk.0.ffn_gate_exps.weight");
-            if (ti >= 0 && f->tensors[ti].n_dims >= 3) {
-                c->moe_intermediate_size = (int)f->tensors[ti].dims[1];
-            }
-            if (c->moe_intermediate_size == 0) {
-                ti = bn_gguf_find_tensor(f, "blk.0.ffn_gate_up_exps.weight");
-                if (ti >= 0 && f->tensors[ti].n_dims >= 3)
-                    c->moe_intermediate_size = (int)(f->tensors[ti].dims[1] / 2);
-            }
-        }
-
-        // Shared expert
-        c->has_shared_expert = (bn_gguf_find_tensor(f, "blk.0.ffn_gate_shexp.weight") >= 0) ? 1 : 0;
-        if (c->has_shared_expert) {
-            snprintf(key, sizeof(key), "%s.expert_shared_feed_forward_length", prefix);
-            c->shared_expert_intermediate_size = (int)bn_gguf_get_u32(f, key);
-            if (c->shared_expert_intermediate_size == 0) {
-                // Fallback: infer from tensor dims
-                int ti = bn_gguf_find_tensor(f, "blk.0.ffn_gate_shexp.weight");
-                if (ti >= 0 && f->tensors[ti].n_dims >= 2)
-                    c->shared_expert_intermediate_size = (int)f->tensors[ti].dims[1];
-            }
-        }
-
         if (c->n_experts_active <= 0 || c->moe_intermediate_size <= 0) {
             SH_LOG_ERROR("Invalid MoE config: n_experts_active and moe_intermediate_size must be > 0");
             return -1;
@@ -522,11 +488,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     c->has_ffn_gate = (bn_gguf_find_tensor(f, "blk.0.ffn_gate.weight") >= 0) ? 1 : 0;
 
     // Check for activation type: bitnet uses ReLU² (act_type=1)
-    if (arch && strncmp(arch, "bitnet", 6) == 0) {
-        c->act_type = 1;  // ReLU²
-    } else {
-        c->act_type = 0;  // SiLU (default for LLaMA-like)
-    }
+    c->act_type = bn_model_arch_activation(arch);
 
     {
         char dim_s[16], layers_s[16], heads_s[16], vocab_s[16];
@@ -637,8 +599,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         char wname[128], sname[128];
 
         // Determine layer type for hybrid models
-        int is_ssm = (c->full_attn_interval > 0) &&
-                     ((i + 1) % c->full_attn_interval != 0);
+        int is_ssm = bn_model_arch_is_ssm_layer(c, i);
 
         // #25: Attention norms — must exist
         snprintf(wname, sizeof(wname), "blk.%d.attn_norm.weight", i);
@@ -698,7 +659,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             snprintf(sname, sizeof(sname), "blk.%d.attn_v.scale", i);
             if (bn_gguf_find_tensor(f, wname) >= 0) {
                 if (load_qweight(&lw->wv, f, wname, sname) != 0) goto fail_layers;
-            } else if (is_gemma4) {
+            } else if (bn_model_arch_attention_value_shares_key(arch)) {
                 lw->wv = lw->wk;
             } else {
                 SH_LOG_ERROR("Tensor not found", "name", wname);
@@ -847,11 +808,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
     }
 
-    if (is_gemma4) {
-        c->head_size = max_head_size;
-        c->kv_dim = max_kv_dim;
-        c->kv_mul = c->n_heads / c->n_kv_heads;
-    }
+    bn_model_arch_apply_gemma4_shapes(c, max_head_size, max_kv_dim);
     (void)max_q_dim;
 
     // --- Weight arena: INT8 embeddings + Q4_0 repacking ---
@@ -1470,12 +1427,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             };
             for (int i = 0; i < 3; i++) {
                 if (!qkv_bias[i].bias || !qkv_bias[i].w->gpu_buf) continue;
-                size_t sz = bn_qweight_data_size(qkv_bias[i].w);
-                void *fused = gpu->buffer_create_biased(gpu->ctx,
-                    qkv_bias[i].w->data, sz,
-                    qkv_bias[i].w->type, qkv_bias[i].w->rows, qkv_bias[i].w->cols,
-                    qkv_bias[i].bias,
-                    (size_t)qkv_bias[i].w->rows * sizeof(float));
+                void *fused = bn_backend_layout_upload_biased_qweight(
+                    gpu, qkv_bias[i].w, qkv_bias[i].bias);
                 if (fused) {
                     gpu->buffer_destroy(gpu->ctx, qkv_bias[i].w->gpu_buf);
                     qkv_bias[i].w->gpu_buf = fused;
@@ -1494,128 +1447,21 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 lw->v_bias_gpu = upload_f32_buf(gpu, lw->v_bias, c->kv_dim);
         }
 
-        // Stacked QKV weight buffer for improved GPU occupancy.
-        // Only created when all Q/K/V are same type and same cols.
-        // I2_S excluded: per-tensor scale at end of data breaks concatenation.
-        if (lw->wq.data && lw->wk.data && lw->wv.data &&
-            lw->wq.type != BN_GGUF_TENSOR_I2_S &&
-            lw->wq.type == lw->wk.type && lw->wq.type == lw->wv.type &&
-            lw->wq.cols == lw->wk.cols && lw->wq.cols == lw->wv.cols) {
+        lw->qkv_stacked_gpu = bn_backend_layout_upload_stacked3_qkv(
+            gpu, &lw->wq, &lw->wk, &lw->wv,
+            lw->q_bias, lw->k_bias, lw->v_bias,
+            lw->q_bias && !lw->q_bias_gpu,
+            lw->k_bias && !lw->k_bias_gpu,
+            lw->v_bias && !lw->v_bias_gpu);
 
-            int total_rows = lw->wq.rows + lw->wk.rows + lw->wv.rows;
-            size_t q_sz = bn_qweight_data_size(&lw->wq);
-            size_t k_sz = bn_qweight_data_size(&lw->wk);
-            size_t v_sz = bn_qweight_data_size(&lw->wv);
-            size_t combined_sz = q_sz + k_sz + v_sz;
+        lw->gateup_stacked_gpu =
+            bn_backend_layout_upload_stacked2(gpu, &lw->ffn_gate, &lw->ffn_up);
 
-            uint8_t *combined = (uint8_t *)malloc(combined_sz);
-            if (combined) {
-                memcpy(combined, lw->wq.data, q_sz);
-                memcpy(combined + q_sz, lw->wk.data, k_sz);
-                memcpy(combined + q_sz + k_sz, lw->wv.data, v_sz);
+        lw->ssm_qkvz_stacked_gpu =
+            bn_backend_layout_upload_stacked2(gpu, &lw->wqkv, &lw->wz);
 
-                // Check if all biases are fused (bias_gpu ptrs are NULL)
-                int all_biased = lw->q_bias && !lw->q_bias_gpu &&
-                                 lw->k_bias && !lw->k_bias_gpu &&
-                                 lw->v_bias && !lw->v_bias_gpu;
-                int no_bias = !lw->q_bias && !lw->k_bias && !lw->v_bias;
-
-                if (all_biased && gpu->buffer_create_biased) {
-                    float *cbias = (float *)malloc((size_t)total_rows * sizeof(float));
-                    if (cbias) {
-                        memcpy(cbias, lw->q_bias,
-                               (size_t)lw->wq.rows * sizeof(float));
-                        memcpy(cbias + lw->wq.rows, lw->k_bias,
-                               (size_t)lw->wk.rows * sizeof(float));
-                        memcpy(cbias + lw->wq.rows + lw->wk.rows, lw->v_bias,
-                               (size_t)lw->wv.rows * sizeof(float));
-                        lw->qkv_stacked_gpu = gpu->buffer_create_biased(
-                            gpu->ctx, combined, combined_sz,
-                            lw->wq.type, total_rows, lw->wq.cols,
-                            cbias, (size_t)total_rows * sizeof(float));
-                        free(cbias);
-                    }
-                } else if (no_bias) {
-                    lw->qkv_stacked_gpu = gpu->buffer_create(
-                        gpu->ctx, combined, combined_sz,
-                        lw->wq.type, total_rows, lw->wq.cols);
-                }
-                free(combined);
-            }
-        }
-
-        // Stacked gate+up weight buffer for improved GPU occupancy.
-        // Only created when gate/up are same type and same cols.
-        // I2_S excluded: per-tensor scale at end of data breaks concatenation.
-        if (lw->ffn_gate.data && lw->ffn_up.data &&
-            lw->ffn_gate.type != BN_GGUF_TENSOR_I2_S &&
-            lw->ffn_gate.type == lw->ffn_up.type &&
-            lw->ffn_gate.cols == lw->ffn_up.cols) {
-
-            int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
-            size_t gate_sz = bn_qweight_data_size(&lw->ffn_gate);
-            size_t up_sz = bn_qweight_data_size(&lw->ffn_up);
-            size_t combined_sz = gate_sz + up_sz;
-
-            uint8_t *combined = (uint8_t *)malloc(combined_sz);
-            if (combined) {
-                memcpy(combined, lw->ffn_gate.data, gate_sz);
-                memcpy(combined + gate_sz, lw->ffn_up.data, up_sz);
-
-                lw->gateup_stacked_gpu = gpu->buffer_create(
-                    gpu->ctx, combined, combined_sz,
-                    lw->ffn_gate.type, total_rows, lw->ffn_gate.cols);
-                free(combined);
-            }
-        }
-
-        // Stacked SSM QKV+Z projection. These two large projections share
-        // the same input in SSM layers, so combining them saves a dispatch.
-        if (lw->wqkv.data && lw->wz.data &&
-            lw->wqkv.type != BN_GGUF_TENSOR_I2_S &&
-            lw->wqkv.type == lw->wz.type &&
-            lw->wqkv.cols == lw->wz.cols) {
-
-            int total_rows = lw->wqkv.rows + lw->wz.rows;
-            size_t qkv_sz = bn_qweight_data_size(&lw->wqkv);
-            size_t z_sz = bn_qweight_data_size(&lw->wz);
-            size_t combined_sz = qkv_sz + z_sz;
-
-            uint8_t *combined = (uint8_t *)malloc(combined_sz);
-            if (combined) {
-                memcpy(combined, lw->wqkv.data, qkv_sz);
-                memcpy(combined + qkv_sz, lw->wz.data, z_sz);
-
-                lw->ssm_qkvz_stacked_gpu = gpu->buffer_create(
-                    gpu->ctx, combined, combined_sz,
-                    lw->wqkv.type, total_rows, lw->wqkv.cols);
-                free(combined);
-            }
-        }
-
-        // Stacked SSM alpha+beta projection.  These are tiny per-layer
-        // matvecs, so combining them saves one dispatch per SSM layer.
-        if (lw->ssm_alpha.data && lw->ssm_beta.data &&
-            lw->ssm_alpha.type != BN_GGUF_TENSOR_I2_S &&
-            lw->ssm_alpha.type == lw->ssm_beta.type &&
-            lw->ssm_alpha.cols == lw->ssm_beta.cols) {
-
-            int total_rows = lw->ssm_alpha.rows + lw->ssm_beta.rows;
-            size_t alpha_sz = bn_qweight_data_size(&lw->ssm_alpha);
-            size_t beta_sz = bn_qweight_data_size(&lw->ssm_beta);
-            size_t combined_sz = alpha_sz + beta_sz;
-
-            uint8_t *combined = (uint8_t *)malloc(combined_sz);
-            if (combined) {
-                memcpy(combined, lw->ssm_alpha.data, alpha_sz);
-                memcpy(combined + alpha_sz, lw->ssm_beta.data, beta_sz);
-
-                lw->ssm_ab_stacked_gpu = gpu->buffer_create(
-                    gpu->ctx, combined, combined_sz,
-                    lw->ssm_alpha.type, total_rows, lw->ssm_alpha.cols);
-                free(combined);
-            }
-        }
+        lw->ssm_ab_stacked_gpu =
+            bn_backend_layout_upload_stacked2(gpu, &lw->ssm_alpha, &lw->ssm_beta);
 
         // Upload Q/K norm and sub-norm weights
         if (lw->q_norm) {

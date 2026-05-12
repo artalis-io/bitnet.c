@@ -71,6 +71,13 @@
 // Shader uniform parameter count (32 bytes = 8 × u32, matches WGSL Uniforms structs)
 #define BN_GPU_OP_PARAMS 8
 
+typedef enum {
+    BN_GPU_BACKEND_UNKNOWN = 0,
+    BN_GPU_BACKEND_METAL = 1,
+    BN_GPU_BACKEND_WEBGPU = 2,
+    BN_GPU_BACKEND_CUDA = 3,
+} BnGPUBackendKind;
+
 // A single GPU operation in the forward pass
 typedef struct {
     int shader;          // BN_GPU_SHADER_* constant
@@ -165,6 +172,10 @@ typedef struct {
 
     // Capability flags (set by backend, checked by transformer)
     uint32_t caps;
+
+    // Concrete backend identity for planning/debugging. Future backends should
+    // set this instead of relying on capability inference alone.
+    BnGPUBackendKind kind;
 
     // Maximum storage-buffer binding size in bytes. 0 = unknown; callers
     // should use a conservative fallback when deciding whether to bind a

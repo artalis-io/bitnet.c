@@ -1,5 +1,6 @@
 #include "gguf.h"
 #include "model.h"
+#include "model_arch.h"
 #include "session.h"
 #include "transformer.h"
 #include <assert.h>
@@ -299,6 +300,9 @@ static void test_qwen36_dense(void) {
     assert(buf != NULL);
     BnGGUFFile *gf = build_qwen36_gguf(buf, 4 * 1024 * 1024, "qwen35", 0);
     assert(gf != NULL);
+    assert(strcmp(bn_model_arch_prefix("qwen35"), "qwen35") == 0);
+    assert(bn_model_arch_activation("qwen35") == 0);
+    assert(bn_model_arch_attention_value_shares_key("qwen35") == 0);
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
@@ -326,6 +330,9 @@ static void test_qwen36_moe(void) {
     assert(buf != NULL);
     BnGGUFFile *gf = build_qwen36_gguf(buf, 4 * 1024 * 1024, "qwen35moe", 1);
     assert(gf != NULL);
+    assert(bn_model_arch_infer_moe_hidden(gf) == 64);
+    assert(bn_model_arch_has_shared_expert(gf) == 1);
+    assert(bn_model_arch_infer_shared_expert_hidden(gf) == 64);
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);

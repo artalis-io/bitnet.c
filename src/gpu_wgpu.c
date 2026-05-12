@@ -2584,6 +2584,7 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
                              BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
                              BN_GPU_CAP_Q8_MATVEC_SPLIT |
                              BN_GPU_CAP_Q5K_MATVEC_SPLIT;
+    gpu->kind              = BN_GPU_BACKEND_WEBGPU;
     gpu->max_storage_binding_size = (size_t)ctx->max_storage_binding_size;
 
     return gpu;
