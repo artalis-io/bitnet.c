@@ -9,8 +9,6 @@ void bn_quant_q5k_wasm_range(void *ctx, int row_start, int row_end) {
     const BnBlockQ5K *blocks = (const BnBlockQ5K *)c->W->data;
     const float *x = c->x;
 
-    const v128_t mask_lo = wasm_i8x16_splat(0xF);
-
     for (int row = row_start; row < row_end; row++) {
         float row_sum = 0.0f;
         for (int b = 0; b < n_blocks_per_row; b++) {

@@ -122,7 +122,7 @@ void bn_quant_q6k_wasm_sdot_range(void *ctx, int row_start, int row_end) {
             const int16_t *bsums = x_bsums + b * 16;
 
             // Integer accumulation
-            int32_t sumi = 0;
+            v128_t sumi4 = wasm_i32x4_splat(0);
             int32_t bias_corr = 0;
 
             for (int chunk = 0; chunk < 2; chunk++) {
@@ -156,41 +156,29 @@ void bn_quant_q6k_wasm_sdot_range(void *ctx, int row_start, int row_end) {
                     wasm_v128_load(xb), w0a, zero);
                 v128_t s0b = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 16), w0b, zero);
-                int32_t d0a = wasm_i32x4_extract_lane(s0a, 0) + wasm_i32x4_extract_lane(s0a, 1) +
-                              wasm_i32x4_extract_lane(s0a, 2) + wasm_i32x4_extract_lane(s0a, 3);
-                int32_t d0b = wasm_i32x4_extract_lane(s0b, 0) + wasm_i32x4_extract_lane(s0b, 1) +
-                              wasm_i32x4_extract_lane(s0b, 2) + wasm_i32x4_extract_lane(s0b, 3);
-                sumi += d0a * (int32_t)sc[0] + d0b * (int32_t)sc[1];
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s0a, wasm_i32x4_splat((int32_t)sc[0])));
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s0b, wasm_i32x4_splat((int32_t)sc[1])));
 
                 v128_t s1a = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 32), w1a, zero);
                 v128_t s1b = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 48), w1b, zero);
-                int32_t d1a = wasm_i32x4_extract_lane(s1a, 0) + wasm_i32x4_extract_lane(s1a, 1) +
-                              wasm_i32x4_extract_lane(s1a, 2) + wasm_i32x4_extract_lane(s1a, 3);
-                int32_t d1b = wasm_i32x4_extract_lane(s1b, 0) + wasm_i32x4_extract_lane(s1b, 1) +
-                              wasm_i32x4_extract_lane(s1b, 2) + wasm_i32x4_extract_lane(s1b, 3);
-                sumi += d1a * (int32_t)sc[2] + d1b * (int32_t)sc[3];
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s1a, wasm_i32x4_splat((int32_t)sc[2])));
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s1b, wasm_i32x4_splat((int32_t)sc[3])));
 
                 v128_t s2a = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 64), w2a, zero);
                 v128_t s2b = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 80), w2b, zero);
-                int32_t d2a = wasm_i32x4_extract_lane(s2a, 0) + wasm_i32x4_extract_lane(s2a, 1) +
-                              wasm_i32x4_extract_lane(s2a, 2) + wasm_i32x4_extract_lane(s2a, 3);
-                int32_t d2b = wasm_i32x4_extract_lane(s2b, 0) + wasm_i32x4_extract_lane(s2b, 1) +
-                              wasm_i32x4_extract_lane(s2b, 2) + wasm_i32x4_extract_lane(s2b, 3);
-                sumi += d2a * (int32_t)sc[4] + d2b * (int32_t)sc[5];
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s2a, wasm_i32x4_splat((int32_t)sc[4])));
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s2b, wasm_i32x4_splat((int32_t)sc[5])));
 
                 v128_t s3a = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 96), w3a, zero);
                 v128_t s3b = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + 112), w3b, zero);
-                int32_t d3a = wasm_i32x4_extract_lane(s3a, 0) + wasm_i32x4_extract_lane(s3a, 1) +
-                              wasm_i32x4_extract_lane(s3a, 2) + wasm_i32x4_extract_lane(s3a, 3);
-                int32_t d3b = wasm_i32x4_extract_lane(s3b, 0) + wasm_i32x4_extract_lane(s3b, 1) +
-                              wasm_i32x4_extract_lane(s3b, 2) + wasm_i32x4_extract_lane(s3b, 3);
-                sumi += d3a * (int32_t)sc[6] + d3b * (int32_t)sc[7];
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s3a, wasm_i32x4_splat((int32_t)sc[6])));
+                sumi4 = wasm_i32x4_add(sumi4, wasm_i32x4_mul(s3b, wasm_i32x4_splat((int32_t)sc[7])));
 
                 // Bias correction: sum(sc[g] * bsum[g]) for this chunk's 8 groups
                 for (int g = 0; g < 8; g++)
@@ -203,6 +191,8 @@ void bn_quant_q6k_wasm_sdot_range(void *ctx, int row_start, int row_end) {
             }
 
             // Single float conversion per super-block
+            int32_t sumi = wasm_i32x4_extract_lane(sumi4, 0) + wasm_i32x4_extract_lane(sumi4, 1) +
+                           wasm_i32x4_extract_lane(sumi4, 2) + wasm_i32x4_extract_lane(sumi4, 3);
             row_sum += d * dx * (float)(sumi - 32 * bias_corr);
         }
         c->out[row] = row_sum;

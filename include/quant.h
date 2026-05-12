@@ -187,6 +187,7 @@ typedef struct BnQWeight {
     float scale;        // per-tensor scale (from .scale tensor or embedded in data)
     uint16_t *rp_scales; // repacked: FP16 per-block scales (NULL if not repacked)
     uint8_t *rp_qs;     // repacked: contiguous quant data (NULL if not repacked)
+    float *rp_f32_scales; // optional repacked FP32 scales for backends without fast FP16 conversion
 } BnQWeight;
 
 typedef enum {

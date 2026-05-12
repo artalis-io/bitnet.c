@@ -821,23 +821,35 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         cpu_rmsnorm(s->xb, s->x, lw->ffn_norm, dim, c->norm_eps);
 
         if (ffn_plan->has_gate) {
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
             if (!bn_model_gpu(m) && ffn_plan->activation != 1 &&
                 lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
                 lw->ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
-                lw->ffn_gate.rp_scales && lw->ffn_up.rp_scales &&
-                dim % 32 == 0 && dim / 32 <= 8192) {
+                dim % 32 == 0 && dim / 32 <= 8192
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+                && lw->ffn_gate.rp_scales && lw->ffn_up.rp_scales
+#else
+                && (getenv("BN_WASM_Q4_CANONICAL4") ||
+                    (lw->ffn_gate.rp_qs && lw->ffn_up.rp_qs))
+#endif
+                ) {
                 int n_blocks = dim / 32;
                 float x_scales[n_blocks];
                 bn_quant_x_to_q8_blocks(s->xb, s->x_q, x_scales, dim);
                 BnQ4GateUpCtx gu = {
                     s->hb, &lw->ffn_gate, &lw->ffn_up, s->x_q, x_scales
                 };
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
                 BnTPTask task = {
                     bn_quant_q4_repacked_gate_up_silu_neon_range,
                     &gu,
                     hidden_dim
                 };
+#else
+                BnTPTask task = getenv("BN_WASM_Q4_CANONICAL4")
+                    ? (BnTPTask){ bn_quant_q4_wasm_gate_up_silu_4row_range, &gu, (hidden_dim + 3) / 4 }
+                    : (BnTPTask){ bn_quant_q4_repacked_gate_up_silu_wasm_range, &gu, hidden_dim };
+#endif
                 bn_tp_dispatch(m->pool, &task, 1);
                 ffn_activated = 1;
             } else

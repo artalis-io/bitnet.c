@@ -107,12 +107,18 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
 
 // --- Q4_0 weight repacking helpers ---
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
 static size_t q4_repack_bytes(const BnQWeight *w) {
     if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return 0;
     if (w->rows % 4 != 0) return 0;  // need complete 4-row groups
     size_t n_blocks = (size_t)w->rows * (w->cols / 32);
-    return n_blocks * sizeof(uint16_t) + n_blocks * 16 + 2 * SH_ARENA_ALIGN;
+    size_t bytes = n_blocks * 16 + SH_ARENA_ALIGN;
+#ifdef __wasm_relaxed_simd__
+    bytes += n_blocks * sizeof(float) + SH_ARENA_ALIGN;
+#else
+    bytes += n_blocks * sizeof(uint16_t) + SH_ARENA_ALIGN;
+#endif
+    return bytes;
 }
 
 static void q4_repack(BnQWeight *w, SHArena *arena) {
@@ -121,13 +127,33 @@ static void q4_repack(BnQWeight *w, SHArena *arena) {
     int n_blocks_per_row = w->cols / 32;
     size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
 
-    w->rp_scales = (uint16_t *)sh_arena_alloc(arena, n_blocks * sizeof(uint16_t));
     w->rp_qs = (uint8_t *)sh_arena_alloc(arena, n_blocks * 16);
-    if (!w->rp_scales || !w->rp_qs) {
+#ifdef __wasm_relaxed_simd__
+    w->rp_scales = NULL;
+    w->rp_f32_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
+#else
+    w->rp_scales = (uint16_t *)sh_arena_alloc(arena, n_blocks * sizeof(uint16_t));
+    w->rp_f32_scales = NULL;
+#endif
+    if (!w->rp_qs) {
         w->rp_scales = NULL;
+        w->rp_qs = NULL;
+        w->rp_f32_scales = NULL;
+        return;
+    }
+#ifdef __wasm_relaxed_simd__
+    if (!w->rp_f32_scales) {
+        w->rp_scales = NULL;
+        w->rp_qs = NULL;
+        w->rp_f32_scales = NULL;
+        return;
+    }
+#else
+    if (!w->rp_scales) {
         w->rp_qs = NULL;
         return;
     }
+#endif
 
     // Nibble-transposed 4-row interleaved layout for vdotq_laneq_s32:
     // Scales: group g, block b → rp_scales[(g * n_blocks_per_row + b) * 4 + r]
@@ -145,7 +171,11 @@ static void q4_repack(BnQWeight *w, SHArena *arena) {
             // Scales: same flat interleaved layout
             for (int r = 0; r < 4; r++) {
                 size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
+#ifdef __wasm_relaxed_simd__
+                w->rp_f32_scales[gb * 4 + r] = bn_fp16_to_fp32(blocks[src].d);
+#else
                 w->rp_scales[gb * 4 + r] = blocks[src].d;
+#endif
             }
             // Quants: nibble-transpose within 64-byte chunk
             uint8_t *dst = w->rp_qs + gb * 64;
@@ -160,6 +190,28 @@ static void q4_repack(BnQWeight *w, SHArena *arena) {
             }
         }
     }
+}
+#endif
+
+#ifdef __wasm_relaxed_simd__
+static size_t q8_f32_scale_bytes(const BnQWeight *w) {
+    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data) return 0;
+    if ((w->cols & 31) != 0) return 0;
+    size_t n_blocks = (size_t)w->rows * (w->cols / 32);
+    return n_blocks * sizeof(float) + SH_ARENA_ALIGN;
+}
+
+static void q8_prepare_f32_scales(BnQWeight *w, SHArena *arena) {
+    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data) return;
+    if ((w->cols & 31) != 0) return;
+    int n_blocks_per_row = w->cols / 32;
+    size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
+    w->rp_f32_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
+    if (!w->rp_f32_scales) return;
+
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)w->data;
+    for (size_t i = 0; i < n_blocks; i++)
+        w->rp_f32_scales[i] = bn_fp16_to_fp32(blocks[i].d);
 }
 #endif
 
@@ -863,9 +915,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 #endif
 
-    // Q4_0 weight repacking size (NEON SDOT only)
+    // Q4_0 weight repacking size for lane-dot kernels.
     size_t q4_repack_total = 0;
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
     for (int i = 0; i < c->n_layers; i++) {
         BnLayerWeights *lw = &w->layers[i];
         q4_repack_total += q4_repack_bytes(&lw->wq);
@@ -882,7 +934,25 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     q4_repack_total += q4_repack_bytes(&w->output_weight);
 #endif
 
-    size_t weight_arena_size = emb_i8_bytes + emb_i8_scales_bytes + q4_repack_total
+    size_t q8_scale_total = 0;
+#ifdef __wasm_relaxed_simd__
+    for (int i = 0; i < c->n_layers; i++) {
+        BnLayerWeights *lw = &w->layers[i];
+        q8_scale_total += q8_f32_scale_bytes(&lw->wq);
+        q8_scale_total += q8_f32_scale_bytes(&lw->wk);
+        q8_scale_total += q8_f32_scale_bytes(&lw->wv);
+        q8_scale_total += q8_f32_scale_bytes(&lw->wo);
+        q8_scale_total += q8_f32_scale_bytes(&lw->wqkv);
+        q8_scale_total += q8_f32_scale_bytes(&lw->wz);
+        q8_scale_total += q8_f32_scale_bytes(&lw->ssm_out);
+        q8_scale_total += q8_f32_scale_bytes(&lw->ffn_gate);
+        q8_scale_total += q8_f32_scale_bytes(&lw->ffn_up);
+        q8_scale_total += q8_f32_scale_bytes(&lw->ffn_down);
+    }
+    q8_scale_total += q8_f32_scale_bytes(&w->output_weight);
+#endif
+
+    size_t weight_arena_size = emb_i8_bytes + emb_i8_scales_bytes + q4_repack_total + q8_scale_total
                               + 4 * SH_ARENA_ALIGN;
     m->weight_arena = NULL;
     m->expert_fd = -1;
@@ -917,8 +987,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 #endif
 
-        // Repack Q4_0 weights into split scales/qs layout for NEON SDOT
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        // Repack Q4_0 weights into split scales/qs layout for lane-dot kernels.
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
         if (q4_repack_total > 0) {
             for (int i = 0; i < c->n_layers; i++) {
                 BnLayerWeights *lw = &w->layers[i];
@@ -936,6 +1006,27 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             q4_repack(&w->output_weight, m->weight_arena);
             char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f", (double)q4_repack_total / (1024*1024));
             SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
+        }
+#endif
+
+#ifdef __wasm_relaxed_simd__
+        if (q8_scale_total > 0) {
+            for (int i = 0; i < c->n_layers; i++) {
+                BnLayerWeights *lw = &w->layers[i];
+                q8_prepare_f32_scales(&lw->wq, m->weight_arena);
+                q8_prepare_f32_scales(&lw->wk, m->weight_arena);
+                q8_prepare_f32_scales(&lw->wv, m->weight_arena);
+                q8_prepare_f32_scales(&lw->wo, m->weight_arena);
+                q8_prepare_f32_scales(&lw->wqkv, m->weight_arena);
+                q8_prepare_f32_scales(&lw->wz, m->weight_arena);
+                q8_prepare_f32_scales(&lw->ssm_out, m->weight_arena);
+                q8_prepare_f32_scales(&lw->ffn_gate, m->weight_arena);
+                q8_prepare_f32_scales(&lw->ffn_up, m->weight_arena);
+                q8_prepare_f32_scales(&lw->ffn_down, m->weight_arena);
+            }
+            q8_prepare_f32_scales(&w->output_weight, m->weight_arena);
+            char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f", (double)q8_scale_total / (1024*1024));
+            SH_LOG_INFO("Q8_0 FP32 scales ready", "MB", q8_mb);
         }
 #endif
     }

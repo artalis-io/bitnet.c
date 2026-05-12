@@ -118,7 +118,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     } else if (bn_quant_format_supported(w->emb_type) &&
                w->emb_type != BN_GGUF_TENSOR_F16 &&
                w->emb_type != BN_GGUF_TENSOR_F32) {
-        BnQWeight tied = { w->token_embedding, w->emb_type, c->vocab_size, dim, 1.0f, NULL, NULL };
+        BnQWeight tied = { w->token_embedding, w->emb_type, c->vocab_size, dim, 1.0f, NULL, NULL, NULL };
         bn_quant_matvec_gpu_buf(s->logits, &tied,
                                 bn_transformer_backend_handle_or(m->backend, -1,
                                                                   BN_BACKEND_HANDLE_TIED_EMBEDDING),

@@ -10,8 +10,13 @@
 #include "transformer.h"
 #include "sampler.h"
 #include "threadpool.h"
+#include "quant_internal.h"
 #ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
+#endif
+#if defined(__wasm_relaxed_simd__)
+#include <wasm_simd128.h>
+#include "simd_helpers.h"
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +72,9 @@ static const char *backend_name(int webgpu) {
 
 // Simple LCG for deterministic random fill
 static uint32_t bench_rng_state = 42;
+static volatile float bench_sink = 0.0f;
+static int bench_q4_expand_enabled = 0;
+
 static float bench_randf(void) {
     bench_rng_state = bench_rng_state * 1664525u + 1013904223u;
     return (float)(bench_rng_state >> 16) / 65536.0f - 0.5f;
@@ -76,6 +84,168 @@ typedef struct {
     const char *name;
     const BnQWeight *W;
 } BenchTarget;
+
+#if defined(__wasm_relaxed_simd__)
+typedef struct {
+    int rows;
+    int cols;
+    int n_blocks_per_row;
+    int8_t *qs;
+    uint16_t *scales;
+} BenchQ4Expanded;
+
+static void bench_q4_expanded_free(BenchQ4Expanded *e) {
+    if (!e) return;
+    free(e->qs);
+    free(e->scales);
+    memset(e, 0, sizeof(*e));
+}
+
+static int bench_q4_expanded_build(BenchQ4Expanded *e, const BnQWeight *W) {
+    memset(e, 0, sizeof(*e));
+    if (!W || W->type != BN_GGUF_TENSOR_Q4_0 || W->cols % 32 != 0)
+        return -1;
+
+    int n_blocks_per_row = W->cols / 32;
+    size_t n_blocks = (size_t)W->rows * n_blocks_per_row;
+    e->qs = (int8_t *)malloc((size_t)W->rows * W->cols);
+    e->scales = (uint16_t *)malloc(n_blocks * sizeof(uint16_t));
+    if (!e->qs || !e->scales) {
+        bench_q4_expanded_free(e);
+        return -1;
+    }
+
+    e->rows = W->rows;
+    e->cols = W->cols;
+    e->n_blocks_per_row = n_blocks_per_row;
+
+    const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)W->data;
+    for (int row = 0; row < W->rows; row++) {
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
+            int8_t *dst = e->qs + (size_t)row * W->cols + b * 32;
+            e->scales[(size_t)row * n_blocks_per_row + b] = blk->d;
+            for (int i = 0; i < 16; i++) {
+                uint8_t raw = blk->qs[i];
+                dst[i] = (int8_t)((raw & 0x0F) - 8);
+                dst[i + 16] = (int8_t)((raw >> 4) - 8);
+            }
+        }
+    }
+    return 0;
+}
+
+static void bench_q4_expanded_matvec(float *out, const BenchQ4Expanded *e,
+                                     const int8_t *x_q, const float *x_scales) {
+    int row = 0;
+    for (; row + 3 < e->rows; row += 4) {
+        v128_t accf0 = wasm_f32x4_splat(0.0f);
+        v128_t accf1 = wasm_f32x4_splat(0.0f);
+        v128_t accf2 = wasm_f32x4_splat(0.0f);
+        v128_t accf3 = wasm_f32x4_splat(0.0f);
+        const int8_t *row_qs0 = e->qs + (size_t)row * e->cols;
+        const int8_t *row_qs1 = row_qs0 + e->cols;
+        const int8_t *row_qs2 = row_qs1 + e->cols;
+        const int8_t *row_qs3 = row_qs2 + e->cols;
+        const uint16_t *row_scales0 = e->scales + (size_t)row * e->n_blocks_per_row;
+        const uint16_t *row_scales1 = row_scales0 + e->n_blocks_per_row;
+        const uint16_t *row_scales2 = row_scales1 + e->n_blocks_per_row;
+        const uint16_t *row_scales3 = row_scales2 + e->n_blocks_per_row;
+
+        for (int b = 0; b < e->n_blocks_per_row; b++) {
+            const int8_t *x = x_q + b * 32;
+            v128_t x0 = wasm_v128_load(x);
+            v128_t x1 = wasm_v128_load(x + 16);
+            float dx = x_scales[b];
+
+#define BENCH_Q4_EXP_ACC(accf_, row_qs_, row_scales_) do { \
+                const int8_t *w_ = (row_qs_) + b * 32; \
+                v128_t acc_ = wasm_i32x4_relaxed_dot_i8x16_i7x16_add( \
+                    wasm_v128_load(w_), x0, wasm_i32x4_splat(0)); \
+                acc_ = wasm_i32x4_relaxed_dot_i8x16_i7x16_add( \
+                    wasm_v128_load(w_ + 16), x1, acc_); \
+                v128_t scale_ = wasm_f32x4_splat(bn_fp16_to_fp32((row_scales_)[b]) * dx); \
+                accf_ = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(acc_), scale_, accf_); \
+            } while (0)
+
+            BENCH_Q4_EXP_ACC(accf0, row_qs0, row_scales0);
+            BENCH_Q4_EXP_ACC(accf1, row_qs1, row_scales1);
+            BENCH_Q4_EXP_ACC(accf2, row_qs2, row_scales2);
+            BENCH_Q4_EXP_ACC(accf3, row_qs3, row_scales3);
+
+#undef BENCH_Q4_EXP_ACC
+        }
+        out[row] = bn_wasm_hsum_f32x4(accf0);
+        out[row + 1] = bn_wasm_hsum_f32x4(accf1);
+        out[row + 2] = bn_wasm_hsum_f32x4(accf2);
+        out[row + 3] = bn_wasm_hsum_f32x4(accf3);
+    }
+
+    for (; row < e->rows; row++) {
+        v128_t accf = wasm_f32x4_splat(0.0f);
+        const int8_t *row_qs = e->qs + (size_t)row * e->cols;
+        const uint16_t *row_scales = e->scales + (size_t)row * e->n_blocks_per_row;
+        for (int b = 0; b < e->n_blocks_per_row; b++) {
+            const int8_t *w = row_qs + b * 32;
+            const int8_t *x = x_q + b * 32;
+            v128_t acc = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
+                wasm_v128_load(w), wasm_v128_load(x), wasm_i32x4_splat(0));
+            acc = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
+                wasm_v128_load(w + 16), wasm_v128_load(x + 16), acc);
+            v128_t scale = wasm_f32x4_splat(bn_fp16_to_fp32(row_scales[b]) * x_scales[b]);
+            accf = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(acc), scale, accf);
+        }
+        out[row] = bn_wasm_hsum_f32x4(accf);
+    }
+}
+
+static void bench_q4_expanded(const char *name, const BnQWeight *W,
+                              const float *x, int8_t *x_q, int n_iters) {
+    if (!bench_q4_expand_enabled || W->type != BN_GGUF_TENSOR_Q4_0)
+        return;
+
+    BenchQ4Expanded e;
+    if (bench_q4_expanded_build(&e, W) != 0)
+        return;
+
+    float *out = (float *)calloc((size_t)W->rows, sizeof(float));
+    float *x_scales = (float *)malloc((size_t)e.n_blocks_per_row * sizeof(float));
+    if (!out || !x_scales) {
+        free(out);
+        free(x_scales);
+        bench_q4_expanded_free(&e);
+        return;
+    }
+
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
+
+    for (int i = 0; i < 5; i++)
+        bench_q4_expanded_matvec(out, &e, x_q, x_scales);
+
+    double t0 = bn_platform_time_ms();
+    for (int i = 0; i < n_iters; i++)
+        bench_q4_expanded_matvec(out, &e, x_q, x_scales);
+    double elapsed = bn_platform_time_ms() - t0;
+    bench_sink += out[0] + out[W->rows / 2] + out[W->rows - 1];
+
+    double us_per_call = (elapsed * 1000.0) / n_iters;
+    size_t total_bytes = (size_t)W->rows * W->cols + (size_t)W->cols * sizeof(float);
+    double gb_per_s = (total_bytes / 1e9) / (us_per_call / 1e6);
+    char expanded_name[16];
+    snprintf(expanded_name, sizeof(expanded_name), "%s_x8", name);
+    printf("%-8s | %-7s | %5d x %-5d | %8.1f | %5.2f\n",
+           expanded_name, "Q4i8", W->rows, W->cols, us_per_call, gb_per_s);
+
+    free(out);
+    free(x_scales);
+    bench_q4_expanded_free(&e);
+}
+#else
+static void bench_q4_expanded(const char *name, const BnQWeight *W,
+                              const float *x, int8_t *x_q, int n_iters) {
+    (void)name; (void)W; (void)x; (void)x_q; (void)n_iters;
+}
+#endif
 
 static void bench_matvec(const char *name, const BnQWeight *W,
                           const float *x, int8_t *x_q, BnThreadPool *pool,
@@ -92,6 +262,7 @@ static void bench_matvec(const char *name, const BnQWeight *W,
     for (int i = 0; i < n_iters; i++)
         bn_quant_matvec(out, W, x, x_q, pool);
     double elapsed = bn_platform_time_ms() - t0;
+    bench_sink += out[0] + out[W->rows / 2] + out[W->rows - 1];
 
     double us_per_call = (elapsed * 1000.0) / n_iters;
 
@@ -131,6 +302,8 @@ static void bench_matvec(const char *name, const BnQWeight *W,
     printf("%-8s | %-7s | %5d x %-5d | %8.1f | %5.2f\n",
            name, type_name(W->type), W->rows, W->cols, us_per_call, gb_per_s);
 
+    bench_q4_expanded(name, W, x, x_q, n_iters);
+
     free(out);
 }
 
@@ -168,6 +341,7 @@ static void bench_logits_f16(const BnModel *m, const float *x, int n_iters) {
         }
     }
     double elapsed = bn_platform_time_ms() - t0;
+    bench_sink += logits[0] + logits[vocab / 2] + logits[vocab - 1];
     double us_per_call = (elapsed * 1000.0) / n_iters;
     size_t total_bytes = (size_t)vocab * dim * 2 + (size_t)dim * sizeof(float);
     double gb_per_s = (total_bytes / 1e9) / (us_per_call / 1e6);
@@ -203,6 +377,7 @@ static void bench_logits_real(const BnModel *m, int n_iters, BnThreadPool *pool)
         for (int i = 0; i < n_iters; i++)
             bn_quant_matvec(logits, W, x, x_q, pool);
         double elapsed = bn_platform_time_ms() - t0;
+        bench_sink += logits[0] + logits[vocab / 2] + logits[vocab - 1];
         double us_per_call = (elapsed * 1000.0) / n_iters;
 
         // Rough bandwidth
@@ -254,7 +429,7 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--webgpu] [--shader-dir DIR]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--q4-expand] [--webgpu] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -277,6 +452,8 @@ int main(int argc, char **argv) {
             n_toks = (int)strtol(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--kv16") == 0)
             kv_f16 = 1;
+        else if (strcmp(argv[i], "--q4-expand") == 0)
+            bench_q4_expand_enabled = 1;
         else if (strcmp(argv[i], "--webgpu") == 0)
             use_webgpu = 1;
         else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
@@ -314,7 +491,7 @@ int main(int argc, char **argv) {
     }
     model.file = mf;
     if (model.config.n_experts > 0) {
-        if (mf.is_mmap == 1 && mf.data)
+        if ((mf.is_mmap == 1 || mf.is_mmap == 0) && mf.data)
             model.moe_io.mmap_base = mf.data;
         if (mf.fd >= 0) {
             model.moe_io.fd = mf.fd;

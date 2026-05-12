@@ -3,6 +3,17 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+export EM_CACHE="${EM_CACHE:-/tmp/bitnet-emscripten-cache}"
+mkdir -p "$EM_CACHE"
+
+WASM_SIMD_FLAGS=(-msimd128)
+if [ "${BN_WASM_RELAXED:-1}" != "0" ]; then
+    WASM_SIMD_FLAGS+=(-mrelaxed-simd)
+fi
+WASM_THREAD_FLAGS=()
+if [ "${BN_WASM_THREADS:-0}" != "0" ]; then
+    WASM_THREAD_FLAGS+=(-pthread "-sPTHREAD_POOL_SIZE=${BN_WASM_PTHREAD_POOL_SIZE:-7}")
+fi
 
 echo "Building bitnet.c WASM module..."
 
@@ -10,6 +21,7 @@ emcc \
     "$PROJECT_DIR/src/gguf.c" \
     "$PROJECT_DIR/src/quant/fp16.c" \
     "$PROJECT_DIR/src/quant/dequant.c" \
+    "$PROJECT_DIR/src/quant/registry.c" \
     "$PROJECT_DIR/src/quant/dispatch.c" \
     "$PROJECT_DIR/src/quant/x_quant_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_wasm.c" \
@@ -58,9 +70,18 @@ emcc \
     "$PROJECT_DIR/src/quant/iq2s_scalar.c" \
     "$PROJECT_DIR/src/turboquant.c" \
     "$PROJECT_DIR/src/model.c" \
+    "$PROJECT_DIR/src/backend_layout.c" \
+    "$PROJECT_DIR/src/backend_model.c" \
     "$PROJECT_DIR/src/moe.c" \
     "$PROJECT_DIR/src/gpu_moe_cache.c" \
     "$PROJECT_DIR/src/transformer.c" \
+    "$PROJECT_DIR/src/transformer/cpu.c" \
+    "$PROJECT_DIR/src/transformer/gpu.c" \
+    "$PROJECT_DIR/src/transformer/gpu_emit.c" \
+    "$PROJECT_DIR/src/transformer/kv.c" \
+    "$PROJECT_DIR/src/transformer/logits.c" \
+    "$PROJECT_DIR/src/transformer/plan.c" \
+    "$PROJECT_DIR/src/transformer/prefill.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_scalar.c" \
     "$PROJECT_DIR/src/transformer/gqa_wasm.c" \
@@ -81,11 +102,13 @@ emcc \
     "$PROJECT_DIR/wasm/api.c" \
     -I"$PROJECT_DIR/include" \
     -std=c11 -D_GNU_SOURCE -Wall -Wextra \
-    -O3 -flto -msimd128 -mrelaxed-simd \
+    -O3 -flto "${WASM_SIMD_FLAGS[@]}" "${WASM_THREAD_FLAGS[@]}" \
     -sWASM=1 \
     -sALLOW_MEMORY_GROWTH=1 \
     -sMAXIMUM_MEMORY=4294967296 \
+    -sSTACK_SIZE=1048576 \
     -sFILESYSTEM=0 \
+    --minify 0 \
     -sMODULARIZE=1 \
     -sEXPORT_NAME=BitNet \
     -sENVIRONMENT=worker \

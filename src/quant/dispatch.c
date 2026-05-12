@@ -138,7 +138,8 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
         BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales };
-        BnTPTask task = { bn_quant_q8_wasm_sdot_range, &ctx, W->rows };
+        int n_groups = (W->rows + 3) / 4;
+        BnTPTask task = { bn_quant_q8_wasm_sdot_4row_range, &ctx, n_groups };
 #else
 #ifdef __ARM_NEON
         (void)x_q_buf;
@@ -188,8 +189,18 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
         BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales };
-        BnTPTask task = { bn_quant_q4_wasm_sdot_range, &ctx, W->rows };
-        bn_tp_dispatch(pool, &task, 1);
+        if (getenv("BN_WASM_Q4_CANONICAL4")) {
+            int n_groups = (W->rows + 3) / 4;
+            BnTPTask task = { bn_quant_q4_wasm_sdot_4row_range, &ctx, n_groups };
+            bn_tp_dispatch(pool, &task, 1);
+        } else if (W->rp_qs) {
+            int n_groups = (W->rows + 7) / 8;
+            BnTPTask task = { bn_quant_q4_repacked_wasm_sdot_8row_range, &ctx, n_groups };
+            bn_tp_dispatch(pool, &task, 1);
+        } else {
+            BnTPTask task = { bn_quant_q4_wasm_sdot_range, &ctx, W->rows };
+            bn_tp_dispatch(pool, &task, 1);
+        }
 #elif defined(__wasm_simd128__)
         (void)x_q_buf;
         BnQ4Ctx ctx = { out, W, x };
@@ -1049,7 +1060,15 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
-            tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
+            if (getenv("BN_WASM_Q4_CANONICAL4")) {
+                int n_groups = (tasks[t].W->rows + 3) / 4;
+                tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_4row_range, &ctxs[t], n_groups };
+            } else if (tasks[t].W->rp_qs) {
+                int n_groups = (tasks[t].W->rows + 7) / 8;
+                tp_tasks[t] = (BnTPTask){ bn_quant_q4_repacked_wasm_sdot_8row_range, &ctxs[t], n_groups };
+            } else {
+                tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_range, &ctxs[t], tasks[t].W->rows };
+            }
         }
 
         bn_tp_dispatch(pool, tp_tasks, n_tasks);
@@ -1429,12 +1448,23 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                         : bn_quant_q4_neon_sdot_range;
 #elif defined(__AVX2__)
                     void (*fn)(void *, int, int) = bn_quant_q4_avx2_4row_range;
+#elif defined(__wasm_relaxed_simd__)
+                    void (*fn)(void *, int, int) = getenv("BN_WASM_Q4_CANONICAL4")
+                        ? bn_quant_q4_wasm_sdot_4row_range
+                        : (tasks[t].W->rp_qs
+                           ? bn_quant_q4_repacked_wasm_sdot_8row_range
+                           : bn_quant_q4_wasm_sdot_range);
 #else
-                    void (*fn)(void *, int, int) = bn_quant_q4_wasm_sdot_range;
+                    void (*fn)(void *, int, int) = bn_quant_q4_scalar_range;
 #endif
                     int n_items = tasks[t].W->rows;
-#ifdef __AVX2__
+#if defined(__AVX2__)
                     n_items = (tasks[t].W->rows + 3) / 4;
+#elif defined(__wasm_relaxed_simd__)
+                    if (getenv("BN_WASM_Q4_CANONICAL4"))
+                        n_items = (tasks[t].W->rows + 3) / 4;
+                    else if (tasks[t].W->rp_qs)
+                        n_items = (tasks[t].W->rows + 7) / 8;
 #endif
                     tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_items };
                 }

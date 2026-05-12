@@ -184,6 +184,7 @@ void bn_quant_q8_avx2_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q8_wasm_range(void *ctx, int start, int end);
 void bn_quant_q8_wasm_sdot_range(void *ctx, int start, int end);
+void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q8_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_scalar_range(void *ctx, int start, int end);
 
@@ -196,6 +197,11 @@ void bn_quant_q4_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_4row_range(void *ctx, int group_start, int group_end);
 void bn_quant_q4_wasm_range(void *ctx, int start, int end);
 void bn_quant_q4_wasm_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4_wasm_sdot_4row_range(void *ctx, int group_start, int group_end);
+void bn_quant_q4_repacked_wasm_sdot_range(void *ctx, int start, int end);
+void bn_quant_q4_repacked_wasm_sdot_8row_range(void *ctx, int group_start, int group_end);
+void bn_quant_q4_wasm_gate_up_silu_4row_range(void *ctx, int group_start, int group_end);
+void bn_quant_q4_repacked_gate_up_silu_wasm_range(void *ctx, int start, int end);
 void bn_quant_q4_scalar_range(void *ctx, int start, int end);
 
 // Q6_K kernels

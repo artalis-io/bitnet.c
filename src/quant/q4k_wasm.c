@@ -141,8 +141,8 @@ void bn_quant_q4k_wasm_sdot_range(void *ctx, int row_start, int row_end) {
             for (int j = 0; j < 8; j++)
                 bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
 
-            // Integer accumulation: relaxed SDOT for unsigned nibble × signed Q8_K
-            int32_t sumi = 0;
+            // Integer accumulation: relaxed SDOT for unsigned nibble × signed Q8_K.
+            v128_t sumi4 = wasm_i32x4_splat(0);
             for (int j = 0; j < BN_QK_K; j += 64) {
                 int sub = j / 32;
 
@@ -158,9 +158,9 @@ void bn_quant_q4k_wasm_sdot_range(void *ctx, int row_start, int row_end) {
                 v128_t p1 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + j + 16), lo1, zero);
                 v128_t psum = wasm_i32x4_add(p0, p1);
-                int32_t dot_lo = wasm_i32x4_extract_lane(psum, 0) + wasm_i32x4_extract_lane(psum, 1) +
-                                 wasm_i32x4_extract_lane(psum, 2) + wasm_i32x4_extract_lane(psum, 3);
-                sumi += dot_lo * (int32_t)sc[sub];
+                sumi4 = wasm_i32x4_add(
+                    sumi4,
+                    wasm_i32x4_mul(psum, wasm_i32x4_splat((int32_t)sc[sub])));
 
                 // High nibbles (sub-block 'sub+1'): unsigned 0..15
                 v128_t hi0 = wasm_u8x16_shr(raw0, 4);
@@ -171,14 +171,16 @@ void bn_quant_q4k_wasm_sdot_range(void *ctx, int row_start, int row_end) {
                 p1 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(xb + j + 48), hi1, zero);
                 psum = wasm_i32x4_add(p0, p1);
-                int32_t dot_hi = wasm_i32x4_extract_lane(psum, 0) + wasm_i32x4_extract_lane(psum, 1) +
-                                 wasm_i32x4_extract_lane(psum, 2) + wasm_i32x4_extract_lane(psum, 3);
-                sumi += dot_hi * (int32_t)sc[sub + 1];
+                sumi4 = wasm_i32x4_add(
+                    sumi4,
+                    wasm_i32x4_mul(psum, wasm_i32x4_splat((int32_t)sc[sub + 1])));
 
                 qs += 32;
             }
 
             // Single float conversion per super-block
+            int32_t sumi = wasm_i32x4_extract_lane(sumi4, 0) + wasm_i32x4_extract_lane(sumi4, 1) +
+                           wasm_i32x4_extract_lane(sumi4, 2) + wasm_i32x4_extract_lane(sumi4, 3);
             row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);
         }
         c->out[row] = row_sum;

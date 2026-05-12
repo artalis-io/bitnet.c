@@ -695,6 +695,8 @@ static const void *moe_load_expert_proj_into(const BnMoEIO *io, BnMoEStats *stat
     if (n != (ssize_t)proj_bytes) return NULL;
     return buf;
 #else
+    (void)buf;
+    (void)buf_size;
     return NULL;
 #endif
 }
