@@ -1,3 +1,4 @@
+#include "transformer_internal.h"
 #include "quant.h"
 #include "simd_helpers.h"
 #include <stdio.h>
@@ -172,6 +173,37 @@ static void test_fast_silu(void) {
     printf("PASSED\n");
 }
 
+static void test_gpu_capability_routing(void) {
+    printf("test_gpu_capability_routing... ");
+
+    BnGPUBackend gpu;
+    memset(&gpu, 0, sizeof(gpu));
+
+    assert(!bn_transformer_gpu_has_cap(NULL, BN_GPU_CAP_FLASH_ATTN));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
+
+    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+               BN_GPU_CAP_Q8_MATVEC_SPLIT |
+               BN_GPU_CAP_Q5K_MATVEC_SPLIT |
+               BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
+               BN_GPU_CAP_FLASH_ATTN;
+
+    assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_0));
+    assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q8_0));
+    assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_F16));
+
+    assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 0));
+    assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 1));
+    assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q8_0, 0));
+    assert(bn_transformer_gpu_can_flash_attn(&gpu));
+
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Transformer Tests ===\n");
     test_rmsnorm();
@@ -179,6 +211,7 @@ int main(void) {
     test_rope();
     test_fp16_embed();
     test_fast_silu();
+    test_gpu_capability_routing();
     printf("All transformer tests passed!\n");
     return 0;
 }

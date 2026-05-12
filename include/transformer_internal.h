@@ -5,11 +5,43 @@
 // Not part of the public API.
 
 #include "transformer.h"
+#include "gpu_backend.h"
 #include "simd_helpers.h"
 #include "quant.h"
 #include "turboquant.h"
 #include <math.h>
 #include <string.h>
+
+// --- GPU planning helpers ---
+
+static inline int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
+    return gpu && ((gpu->caps & cap) != 0);
+}
+
+static inline int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type) {
+    switch (tensor_type) {
+        case BN_GGUF_TENSOR_Q4_0:
+            return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_Q4_MATVEC_SPLIT);
+        case BN_GGUF_TENSOR_Q8_0:
+            return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_Q8_MATVEC_SPLIT);
+        case BN_GGUF_TENSOR_Q5_K:
+            return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_Q5K_MATVEC_SPLIT);
+        default:
+            return 0;
+    }
+}
+
+static inline int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
+                                                            int tensor_type,
+                                                            int act_type) {
+    return tensor_type == BN_GGUF_TENSOR_Q4_0 &&
+           act_type != 1 &&
+           bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
+}
+
+static inline int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_FLASH_ATTN);
+}
 
 // --- Context structs ---
 

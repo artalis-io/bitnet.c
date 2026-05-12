@@ -1355,7 +1355,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             // 1. RMSNorm: X -> XB (already done by previous layer's fused resid+norm)
             if (lw->ssm_qkvz_stacked_gpu &&
                 lw->wqkv.type == BN_GGUF_TENSOR_Q5_K &&
-                (gpu->caps & BN_GPU_CAP_Q5K_MATVEC_SPLIT)) {
+                bn_transformer_gpu_can_matvec_split(gpu, lw->wqkv.type)) {
                 int total_rows = lw->wqkv.rows + lw->wz.rows;
                 ops[n++] = (BnGPUOp){ .shader = BN_GPU_SHADER_Q5K_MATVEC_SPLIT, .type = lw->wqkv.type,
                     .W_buf = lw->ssm_qkvz_stacked_gpu,
@@ -1466,21 +1466,21 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         int q_gated = (!use_packed_qkv && lw->wq.rows > q_dim);
         int use_packed_q5_split = use_packed_qkv &&
                                   lw->wqkv.type == BN_GGUF_TENSOR_Q5_K &&
-                                  (gpu->caps & BN_GPU_CAP_Q5K_MATVEC_SPLIT);
+                                  bn_transformer_gpu_can_matvec_split(gpu, lw->wqkv.type);
 
         // Batched QKV: single dispatch writes Q→Q buf, K→KEY_CACHE, V→VALUE_CACHE
         int use_split = lw->qkv_stacked_gpu && !q_gated &&
                         !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
                         lw->wq.type == BN_GGUF_TENSOR_Q4_0 &&
-                        (gpu->caps & BN_GPU_CAP_Q4_MATVEC_SPLIT);
+                        bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
         int use_q8_split = lw->qkv_stacked_gpu && !q_gated &&
                            !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
                            lw->wq.type == BN_GGUF_TENSOR_Q8_0 &&
-                           (gpu->caps & BN_GPU_CAP_Q8_MATVEC_SPLIT);
+                           bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
         int use_q5_split = lw->qkv_stacked_gpu && !q_gated &&
                            !lw->q_bias_gpu && !lw->k_bias_gpu && !lw->v_bias_gpu &&
                            lw->wq.type == BN_GGUF_TENSOR_Q5_K &&
-                           (gpu->caps & BN_GPU_CAP_Q5K_MATVEC_SPLIT);
+                           bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
         if (use_packed_q5_split) {
             ops[n++] = (BnGPUOp){
                 .shader = BN_GPU_SHADER_Q5K_MATVEC_SPLIT, .type = lw->wqkv.type,
@@ -1754,7 +1754,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
             float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
             uint32_t u_inv_sqrt_hs;
             memcpy(&u_inv_sqrt_hs, &inv_sqrt_hs, 4);
-            if ((gpu->caps & BN_GPU_CAP_FLASH_ATTN) &&
+            if (bn_transformer_gpu_can_flash_attn(gpu) &&
                 (has_moe || m->config.flash_attn)) {
                 ops[n++] =(BnGPUOp){
                     .shader = BN_GPU_SHADER_FLASH_ATTN, .type = -1, .W_buf = NULL,
@@ -2021,9 +2021,8 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
         }
         if (c->has_ffn_gate && lw->ffn_gate.data) {
             int use_fused_gateup = lw->gateup_stacked_gpu &&
-                                   lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
-                                   c->act_type != 1 &&
-                                   (gpu->caps & BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
+                                   bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn_gate.type,
+                                                                             c->act_type);
             if (use_fused_gateup) {
                 int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
                 ops[n++] = (BnGPUOp){
@@ -2053,7 +2052,7 @@ static float *forward_gpu(BnModel *m, BnSession *sess, int token, int pos) {
                        lw->ffn_gate.type == BN_GGUF_TENSOR_Q8_0 &&
                        lw->ffn_gate.rows == lw->ffn_up.rows &&
                        lw->ffn_gate.cols == lw->ffn_up.cols &&
-                       (gpu->caps & BN_GPU_CAP_Q8_MATVEC_SPLIT)) {
+                       bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type)) {
                 int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
                 ops[n++] = (BnGPUOp){
                     .shader = BN_GPU_SHADER_Q8_MATVEC_SPLIT, .type = lw->ffn_gate.type,

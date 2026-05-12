@@ -171,6 +171,20 @@ Only **reducing data volume** helps at this point:
 
 ## Future Work
 
+### Transformer Architecture Redesign
+
+The next major maintainability item is to split `src/transformer.c` into explicit planning and execution layers while preserving CPU correctness and Metal/WebGPU behavior. The goal is not a new math path first; it is to make model-family, quant-format, and backend decisions visible and testable before adding more SoTA model and quant coverage.
+
+- [ ] **Phase 1: map and freeze behavior** — catalog every architecture branch, quant special case, and backend fast path in `transformer.c`; add lightweight route tests for QKV, FFN, MoE, SSM, KV cache, flash attention, and fallback behavior.
+- [ ] **Phase 2: kernel capability layer** — replace ad hoc backend capability checks with named predicates and shader-selection helpers so adding a quant/backend feature is localized.
+- [ ] **Phase 3: split planning from execution** — build a small per-layer plan describing attention, FFN/MoE/SSM, KV policy, fused ops, and fallback placement; keep the CPU path as the reference executor.
+- [ ] **Phase 4: extract architecture-specific logic** — move Qwen/Gemma/DeepSeek/Nemotron-style shape and activation rules out of the main forward loop into model-architecture helpers.
+- [ ] **Phase 5: declarative fusion rules** — represent QKV split, gate/up fusion, RoPE fusion, residual+norm, and flash attention as rules gated by model shape, quant format, and backend capability.
+- [ ] **Phase 6: explicit backend placement** — make CPU, Metal, WebGPU, and future CUDA/AVX-512 choices explicit per op with deterministic fallback to the CPU reference implementation.
+- [ ] **Phase 7: parity gates** — require `make clean && make bitnet`, `make test`, coherence tests for touched GPU backends, and llama.cpp CPU/Metal benchmark comparisons before declaring the redesign complete.
+
+Success criteria: adding a new quant should primarily touch `gguf`, `quant`, backend kernels, and capability registration; adding a backend should primarily implement `BnGPUBackend` and advertised caps; adding a model family should primarily touch model metadata and architecture helpers. `transformer.c` should stop accumulating backend/model/quant cross-product branches except for genuinely new execution primitives.
+
 ### GPU Optimization
 - [ ] Improve GPU forward-pass shader precision (match CPU output beyond first token)
 - [ ] FP16 KV cache on GPU
