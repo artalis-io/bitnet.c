@@ -411,7 +411,7 @@ static void test_gpu_op_kind_mapping(void) {
                BN_GPU_VALUE_HB, 64, 32, 0) == 0);
     assert(bn_transformer_gpu_emit_context_fused_gateup_silu(
                &ctx, BN_GGUF_TENSOR_Q4_K, (void *)6, BN_GPU_VALUE_XB,
-               BN_GPU_VALUE_HB, 64, 64, 32) == 0);
+               BN_GPU_VALUE_HB, 64, 64, 32, 0) == 0);
     assert(ctx.n == 0);
     assert(ctx.graph->n_ops == 5);
     assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);

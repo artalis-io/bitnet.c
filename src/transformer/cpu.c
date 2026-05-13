@@ -21,6 +21,8 @@
 static inline const BnPreparedWeight *cpu_qweight_prepared(
     const BnBackendModel *backend,
     const BnQWeight *w) {
+    if (getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS"))
+        return NULL;
     return bn_backend_model_prepared_qweight(backend, w);
 }
 

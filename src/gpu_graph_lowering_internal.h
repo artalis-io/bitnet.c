@@ -185,6 +185,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->p[1] = (uint32_t)ir_op->cols;
             shader_op->p[2] = (uint32_t)(ir_op->aux0 > 0 ? ir_op->aux0 : 1);
             shader_op->p[5] = (uint32_t)ir_op->aux1;
+            shader_op->p[6] = ir_op->flags & 1u;
             return 0;
         }
         case BN_GPU_IR_OP_MATVEC_SPLIT: {
@@ -239,6 +240,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
             shader_op->p[0] = (uint32_t)(ir_op->rows + ir_op->aux0);
             shader_op->p[1] = (uint32_t)ir_op->cols;
             shader_op->p[2] = (uint32_t)ir_op->rows;
+            shader_op->p[6] = ir_op->flags & 1u;
             return 0;
         }
         case BN_GPU_IR_OP_ROPE:

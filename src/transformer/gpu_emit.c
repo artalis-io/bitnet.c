@@ -347,14 +347,15 @@ int bn_transformer_gpu_emit_context_activation(
     return 0;
 }
 
-int bn_transformer_gpu_emit_context_matvec(BnTransformerGPUEmitContext *ctx,
-                                           int type,
-                                           void *weight_buf,
-                                           int buf_in,
-                                           int buf_out,
-                                           int rows,
-                                           int cols,
-                                           int output_offset) {
+static int emit_context_matvec_flags(BnTransformerGPUEmitContext *ctx,
+                                     int type,
+                                     void *weight_buf,
+                                     int buf_in,
+                                     int buf_out,
+                                     int rows,
+                                     int cols,
+                                     int output_offset,
+                                     uint32_t flags) {
     if (!ctx) return -1;
     int input = emit_context_add_value(
         ctx, BN_GPU_IR_VALUE_TRANSIENT, -1, 1, cols,
@@ -367,6 +368,8 @@ int bn_transformer_gpu_emit_context_matvec(BnTransformerGPUEmitContext *ctx,
     int output = bn_gpu_value_graph_add_matvec(
         ctx->graph, input, weight, rows, cols, 1, output_offset,
         "matvec.out");
+    if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0)
+        ctx->graph->ops[ctx->graph->n_ops - 1].flags |= flags;
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
@@ -378,6 +381,18 @@ int bn_transformer_gpu_emit_context_matvec(BnTransformerGPUEmitContext *ctx,
     return 0;
 }
 
+int bn_transformer_gpu_emit_context_matvec(BnTransformerGPUEmitContext *ctx,
+                                           int type,
+                                           void *weight_buf,
+                                           int buf_in,
+                                           int buf_out,
+                                           int rows,
+                                           int cols,
+                                           int output_offset) {
+    return emit_context_matvec_flags(ctx, type, weight_buf, buf_in, buf_out,
+                                     rows, cols, output_offset, 0);
+}
+
 int bn_transformer_gpu_emit_context_fused_gateup_silu(
     BnTransformerGPUEmitContext *ctx,
     int type,
@@ -386,7 +401,8 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int buf_out,
     int gate_rows,
     int up_rows,
-    int cols) {
+    int cols,
+    int use_q4_q8) {
     if (!ctx) return -1;
     int input = emit_context_add_value(
         ctx, BN_GPU_IR_VALUE_TRANSIENT, -1, 1, cols,
@@ -399,6 +415,9 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int output = bn_gpu_value_graph_add_fused_gateup(
         ctx->graph, input, weight, gate_rows, up_rows, cols,
         BN_GPU_IR_ACTIVATION_SILU, "fused_gateup.out");
+    if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0 &&
+        use_q4_q8)
+        ctx->graph->ops[ctx->graph->n_ops - 1].flags |= 1u;
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
@@ -666,6 +685,13 @@ int bn_transformer_gpu_read_xb(const BnGPUBackend *gpu,
     return gpu->read_activation(gpu->ctx, BN_GPU_VALUE_XB, xb, size_bytes, 0);
 }
 
+int bn_transformer_gpu_read_xb2(const BnGPUBackend *gpu,
+                                float *xb2,
+                                size_t size_bytes) {
+    if (!gpu || !gpu->read_activation || !xb2) return -1;
+    return gpu->read_activation(gpu->ctx, BN_GPU_VALUE_XB2, xb2, size_bytes, 0);
+}
+
 int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
                                            int buf_idx,
                                            float *out,
@@ -684,7 +710,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     uint32_t u_eps,
     void *next_norm,
     int skip_down,
-    int *down_input_buf) {
+    int *down_input_buf,
+    int use_q4_q8) {
     int hidden_dim = ffn_plan->hidden_dim;
     void *gateup_stacked = res ? res->gateup_stacked : NULL;
     void *ffn_sub_norm = res ? res->ffn_sub_norm : NULL;
@@ -698,7 +725,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             bn_transformer_gpu_emit_context_fused_gateup_silu(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
-                lw->ffn.ffn_up.rows, lw->ffn.ffn_gate.cols);
+                lw->ffn.ffn_up.rows, lw->ffn.ffn_gate.cols, use_q4_q8);
         } else if (!getenv("BN_GPU_DISABLE_GATEUP_SPLIT") &&
                    gateup_stacked &&
                    lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
@@ -728,16 +755,16 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, hidden_dim, 0,
                 BN_GPU_IR_ACTIVATION_SILU);
         } else {
-            bn_transformer_gpu_emit_context_matvec(
+            emit_context_matvec_flags(
                 ctx, lw->ffn.ffn_gate.type,
                 res ? res->ffn_gate : NULL,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
-                lw->ffn.ffn_gate.cols, 0);
-            bn_transformer_gpu_emit_context_matvec(
+                lw->ffn.ffn_gate.cols, 0, use_q4_q8 ? 1u : 0u);
+            emit_context_matvec_flags(
                 ctx, lw->ffn.ffn_up.type,
                 res ? res->ffn_up : NULL,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2, lw->ffn.ffn_up.rows,
-                lw->ffn.ffn_up.cols, 0);
+                lw->ffn.ffn_up.cols, 0, use_q4_q8 ? 1u : 0u);
             BnGPUIRActivationKind act_kind = (ffn_plan->activation == 1)
                 ? BN_GPU_IR_ACTIVATION_RELU2
                 : BN_GPU_IR_ACTIVATION_SILU;
@@ -746,10 +773,11 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 act_kind);
         }
     } else {
-        bn_transformer_gpu_emit_context_matvec(
+        emit_context_matvec_flags(
             ctx, lw->ffn.ffn_up.type,
             res ? res->ffn_up : NULL, BN_GPU_VALUE_XB,
-            BN_GPU_VALUE_HB, lw->ffn.ffn_up.rows, lw->ffn.ffn_up.cols, 0);
+            BN_GPU_VALUE_HB, lw->ffn.ffn_up.rows, lw->ffn.ffn_up.cols, 0,
+            use_q4_q8 ? 1u : 0u);
         BnGPUIRActivationKind act_kind = (ffn_plan->activation == 1)
             ? BN_GPU_IR_ACTIVATION_RELU2
             : BN_GPU_IR_ACTIVATION_SILU;
@@ -772,10 +800,11 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         return;
     }
 
-    bn_transformer_gpu_emit_context_matvec(
+    emit_context_matvec_flags(
         ctx, lw->ffn.ffn_down.type,
         res ? res->ffn_down : NULL, down_in_buf,
-        BN_GPU_VALUE_XB2, lw->ffn.ffn_down.rows, lw->ffn.ffn_down.cols, 0);
+        BN_GPU_VALUE_XB2, lw->ffn.ffn_down.rows, lw->ffn.ffn_down.cols, 0,
+        use_q4_q8 ? 1u : 0u);
 
     uint32_t residual_norm_params[8] = {
         (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0

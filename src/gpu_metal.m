@@ -37,6 +37,10 @@ typedef struct {
     id<MTLCommandQueue>         queue;
     id<MTLComputePipelineState> pipelines[BN_METAL_MAX_TYPES];  /* matvec per quant type */
     id<MTLComputePipelineState> fwd_pipelines[BN_GPU_SHADER_COUNT]; /* forward-pass shaders */
+    id<MTLComputePipelineState> q8_quant_pipeline;
+    id<MTLComputePipelineState> q4_q8_matvec_pipeline;
+    id<MTLComputePipelineState> q4_q8_gateup_pipeline;
+    int q4_q8_enabled;
 
     /* GPU-resident activation buffers (storageModeShared) */
     id<MTLBuffer> act_bufs[BN_GPU_BUF_COUNT];
@@ -47,6 +51,10 @@ typedef struct {
     size_t        x_buf_size;
     id<MTLBuffer> out_buf;
     size_t        out_buf_size;
+    id<MTLBuffer> q8_buf;
+    size_t        q8_buf_size;
+    id<MTLBuffer> q8_scales_buf;
+    size_t        q8_scales_buf_size;
 
     /* Shader directory path */
     char shader_dir[256];
@@ -617,6 +625,45 @@ static int ensure_scratch(BnMetalCtx *ctx, size_t x_need, size_t out_need)
     return 0;
 }
 
+static int ensure_q8_scratch(BnMetalCtx *ctx, int cols, int n_tokens)
+{
+    size_t q8_need = (size_t)cols * (size_t)n_tokens * sizeof(int8_t);
+    size_t scales_need = (size_t)(cols >> 5) * (size_t)n_tokens * sizeof(float);
+    if (!ctx->q8_buf || ctx->q8_buf_size < q8_need) {
+        ctx->q8_buf = [ctx->device newBufferWithLength:q8_need
+                                                options:MTLResourceStorageModeShared];
+        if (!ctx->q8_buf) return -1;
+        ctx->q8_buf_size = q8_need;
+    }
+    if (!ctx->q8_scales_buf || ctx->q8_scales_buf_size < scales_need) {
+        ctx->q8_scales_buf = [ctx->device newBufferWithLength:scales_need
+                                                      options:MTLResourceStorageModeShared];
+        if (!ctx->q8_scales_buf) return -1;
+        ctx->q8_scales_buf_size = scales_need;
+    }
+    return 0;
+}
+
+static void metal_encode_q8_quant(id<MTLComputeCommandEncoder> enc,
+                                  BnMetalCtx *ctx,
+                                  id<MTLBuffer> x_buf,
+                                  uint32_t cols,
+                                  uint32_t n_tokens)
+{
+    uint32_t params[8] = { cols, n_tokens, 0, 0, 0, 0, 0, 0 };
+    [enc setComputePipelineState:ctx->q8_quant_pipeline];
+    [enc setBuffer:x_buf offset:0 atIndex:0];
+    [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+    [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+    [enc setBytes:params length:sizeof(params) atIndex:3];
+    MTLSize tpg = MTLSizeMake(1, 1, 1);
+    MTLSize grid = MTLSizeMake((cols + 31) / 32, n_tokens ? n_tokens : 1, 1);
+    [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
+    [enc memoryBarrierWithResources:&ctx->q8_buf count:1];
+    id<MTLBuffer> scale_buf = ctx->q8_scales_buf;
+    [enc memoryBarrierWithResources:&scale_buf count:1];
+}
+
 static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
                          int rows, int cols, int type)
 {
@@ -628,6 +675,9 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t x_size = (size_t)cols * sizeof(float);
     size_t out_size = (size_t)rows * sizeof(float);
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
+    int use_q4_q8 = ctx->q4_q8_enabled && type == BN_GGUF_TENSOR_Q4_0 &&
+                    ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline;
+    if (use_q4_q8 && ensure_q8_scratch(ctx, cols, 1) != 0) return -1;
 
     memcpy([ctx->x_buf contents], x, x_size);
 
@@ -641,11 +691,21 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
         id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
-        [enc setComputePipelineState:ctx->pipelines[type]];
-        [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
-        [enc setBuffer:ctx->x_buf offset:0 atIndex:1];
-        [enc setBuffer:ctx->out_buf offset:0 atIndex:2];
-        [enc setBytes:params length:sizeof(params) atIndex:3];
+        if (use_q4_q8) {
+            metal_encode_q8_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
+            [enc setComputePipelineState:ctx->q4_q8_matvec_pipeline];
+            [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+            [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+            [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+            [enc setBuffer:ctx->out_buf offset:0 atIndex:3];
+            [enc setBytes:params length:sizeof(params) atIndex:4];
+        } else {
+            [enc setComputePipelineState:ctx->pipelines[type]];
+            [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+            [enc setBuffer:ctx->x_buf offset:0 atIndex:1];
+            [enc setBuffer:ctx->out_buf offset:0 atIndex:2];
+            [enc setBytes:params length:sizeof(params) atIndex:3];
+        }
 
         MTLSize tpg = MTLSizeMake(256, 1, 1);
         MTLSize grid = MTLSizeMake(wg_x, 1, 1);
@@ -823,8 +883,20 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             /* Determine pipeline */
             id<MTLComputePipelineState> pipeline = nil;
             if (shader == BN_GPU_SHADER_MATVEC) {
-                if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES)
+                if (ctx->q4_q8_enabled && op->p[6] &&
+                    op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline) {
+                    pipeline = ctx->q4_q8_matvec_pipeline;
+                } else if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES) {
                     pipeline = ctx->pipelines[op->type];
+                }
+            } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
+                       ctx->q4_q8_enabled &&
+                       op->p[6] &&
+                       op->type == BN_GGUF_TENSOR_Q4_0 &&
+                       ctx->q8_quant_pipeline &&
+                       ctx->q4_q8_gateup_pipeline) {
+                pipeline = ctx->q4_q8_gateup_pipeline;
             } else if (shader > 0 && shader < BN_GPU_SHADER_COUNT) {
                 pipeline = ctx->fwd_pipelines[shader];
             }
@@ -888,10 +960,27 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             case BN_GPU_SHADER_MATVEC: {
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (!wbuf) continue;
-                [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
-                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
-                [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
-                [enc setBytes:params length:sizeof(params) atIndex:3];
+                if (ctx->q4_q8_enabled && op->p[6] &&
+                    op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline) {
+                    uint32_t n_tokens = params[2] ? params[2] : 1;
+                    if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
+                        return -1;
+                    metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
+                                          (uint32_t)op->cols, n_tokens);
+                    [enc setComputePipelineState:ctx->q4_q8_matvec_pipeline];
+                    current_pso = ctx->q4_q8_matvec_pipeline;
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+                    [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
+                    [enc setBytes:params length:sizeof(params) atIndex:4];
+                } else {
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
+                    [enc setBytes:params length:sizeof(params) atIndex:3];
+                }
                 break;
             }
             case BN_GPU_SHADER_RMSNORM: {
@@ -1088,10 +1177,28 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (!wbuf) continue;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
-                [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
-                [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
-                [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
-                [enc setBytes:params length:sizeof(params) atIndex:3];
+                if (ctx->q4_q8_enabled &&
+                    op->p[6] &&
+                    op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    ctx->q8_quant_pipeline &&
+                    ctx->q4_q8_gateup_pipeline) {
+                    if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
+                        return -1;
+                    metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
+                                          (uint32_t)op->cols, 1);
+                    [enc setComputePipelineState:ctx->q4_q8_gateup_pipeline];
+                    current_pso = ctx->q4_q8_gateup_pipeline;
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+                    [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
+                    [enc setBytes:params length:sizeof(params) atIndex:4];
+                } else {
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
+                    [enc setBytes:params length:sizeof(params) atIndex:3];
+                }
                 break;
             }
             case BN_GPU_SHADER_Q4K_MATVEC_SPLIT: {
@@ -1281,6 +1388,18 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         }
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
                 compiled, N_SUPPORTED_TYPES);
+
+        ctx->q4_q8_enabled = getenv("BN_METAL_Q4_Q8") ? 1 : 0;
+        if (ctx->q4_q8_enabled) {
+            ctx->q8_quant_pipeline = compile_shader(ctx, dir,
+                "q8_quantize.metal", "q8_quantize");
+            ctx->q4_q8_matvec_pipeline = compile_shader(ctx, dir,
+                "q4_native_q8_prequant_matvec.metal",
+                "q4_native_q8_prequant_matvec");
+            ctx->q4_q8_gateup_pipeline = compile_shader(ctx, dir,
+                "q4_fused_gateup_silu_q8_prequant.metal",
+                "q4_fused_gateup_silu_q8_prequant");
+        }
 
         /* Override Q4_0 with native-format kernel */
         {

@@ -43,6 +43,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int cpu_fallback_from_layer = -1;
     int cpu_fallback_ffn_from_layer = -1;
     int cpu_fallback_ffn_down_from_layer = -1;
+    int compare_ffn_down_layer = -1;
+    int compare_ffn_down_pos = -1;
+    int q4_q8_from_layer = -1;
     {
         const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
         if (env) cpu_fallback_from_layer = atoi(env);
@@ -50,6 +53,16 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         if (env) cpu_fallback_ffn_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
         if (env) cpu_fallback_ffn_down_from_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_FFN_DOWN_LAYER");
+        if (env) compare_ffn_down_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_FFN_DOWN_POS");
+        if (env) compare_ffn_down_pos = atoi(env);
+        env = getenv("BN_METAL_Q4_Q8_FROM_LAYER");
+        if (env) {
+            q4_q8_from_layer = atoi(env);
+        } else if (getenv("BN_METAL_Q4_Q8")) {
+            q4_q8_from_layer = c->n_layers - 1;
+        }
     }
 
     // Embed token on CPU, upload to GPU x buffer
@@ -206,9 +219,19 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         int ffn_down_input_buf = -1;
         int skip_ffn_down = cpu_fallback_ffn_down_from_layer >= 0 &&
                             l >= cpu_fallback_ffn_down_from_layer;
+        int use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
-            next_norm, skip_ffn_down, &ffn_down_input_buf);
+            next_norm, skip_ffn_down, &ffn_down_input_buf, use_q4_q8);
+        if (!skip_ffn_down &&
+            compare_ffn_down_layer == l &&
+            (compare_ffn_down_pos < 0 || compare_ffn_down_pos == pos)) {
+            if (bn_transformer_gpu_debug_compare_ffn_down(
+                    &emit, gpu, m, sess, lw, l, pos, ffn_down_input_buf,
+                    ffn_plan.hidden_dim, dim) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu ffn-down compare failed");
+        }
         if (skip_ffn_down) {
             if (bn_transformer_gpu_fallback_cpu_ffn_down(
                     &emit, gpu, m, sess, lw, ffn_down_input_buf,
@@ -220,7 +243,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
     {
-        if (bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res)) {
+        if (getenv("BN_GPU_CPU_LOGITS") ||
+            bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res)) {
             if (bn_transformer_gpu_fallback_logits(
                     &emit, gpu, m, sess, logit_res, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
