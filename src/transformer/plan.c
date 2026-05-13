@@ -1,7 +1,6 @@
 #include "transformer_plan_internal.h"
 #include "backend_quant.h"
 #include "gpu_backend.h"
-#include "gpu_shader_ir.h"
 #include "transformer_backend_internal.h"
 #include <string.h>
 
@@ -153,9 +152,6 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
                         q_bias && k_bias && v_bias;
     p->use_qkv_split = qkv_stacked && !p->shape.q_gated &&
                        bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
-    p->qkv_split_op_code = p->use_qkv_split
-        ? bn_backend_quant_gpu_split_op_code(lw->attn.wq.type)
-        : 0;
     if (p->use_qkv_split) p->fusion_flags |= BN_FUSION_QKV_SPLIT;
     if (p->use_flash) p->fusion_flags |= BN_FUSION_FLASH_ATTN;
     if (p->placement == BN_EXEC_GPU && !k_bias)
@@ -197,9 +193,8 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
         lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
         lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
         bn_transformer_gpu_can_matvec_split(gpu, lw->ffn.ffn_gate.type) &&
-        (c->act_type != 1 ||
-         bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type) !=
-             BN_GPU_CODE_Q4K_MATVEC_SPLIT);
+        bn_backend_quant_can_gpu_gateup_split_activation(lw->ffn.ffn_gate.type,
+                                                         c->act_type);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
     if (p->use_gateup_split) p->fusion_flags |= BN_FUSION_GATEUP_SPLIT;
     if (p->placement == BN_EXEC_GPU) p->fusion_flags |= BN_FUSION_RESIDUAL_RMSNORM;

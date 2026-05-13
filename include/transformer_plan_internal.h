@@ -92,7 +92,6 @@ typedef struct {
     int use_flash;
     int use_packed_qkv;
     int use_qkv_split;
-    int qkv_split_op_code;
     int needs_cpu_fallback;
     uint32_t fusion_flags;
 } BnAttentionPlan;

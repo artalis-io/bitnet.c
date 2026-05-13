@@ -2,6 +2,7 @@
 #include "transformer_gqa_internal.h"
 #include "transformer_gpu_internal.h"
 #include "transformer_plan_internal.h"
+#include "gpu_quant_lowering_internal.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "simd_helpers.h"
@@ -280,6 +281,15 @@ static void test_gpu_op_kind_mapping(void) {
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_SSM_DELTA) == BN_GPU_OP_SSM);
     assert(bn_gpu_op_kind_from_code(99999) == BN_GPU_OP_UNKNOWN);
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FLASH_ATTN) == BN_GPU_OP_ATTENTION);
+    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
+           BN_GPU_CODE_MATVEC_SPLIT);
+    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q8_0) ==
+           BN_GPU_CODE_Q8_MATVEC_SPLIT);
+    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q5_K) ==
+           BN_GPU_CODE_Q5K_MATVEC_SPLIT);
+    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
+           BN_GPU_CODE_Q4K_MATVEC_SPLIT);
+    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
 
     BnGPUOp op;
     memset(&op, 0, sizeof(op));
@@ -598,13 +608,11 @@ static void test_block_planning(void) {
     lw.attn.wq.type = BN_GGUF_TENSOR_Q8_0;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.use_qkv_split);
-    assert(attn.qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT);
     assert(attn.fusion_flags & BN_FUSION_QKV_SPLIT);
 
     lw.attn.wq.type = BN_GGUF_TENSOR_Q5_K;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.use_qkv_split);
-    assert(attn.qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT);
     assert(attn.fusion_flags & BN_FUSION_QKV_SPLIT);
 
     lw.attn.wq.type = BN_GGUF_TENSOR_Q4_0;

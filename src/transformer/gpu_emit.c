@@ -1,5 +1,6 @@
 #include "transformer_gpu_internal.h"
 #include "backend_quant.h"
+#include "gpu_quant_lowering_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
@@ -74,11 +75,11 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
                    lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
                    lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
                    ffn_plan->activation != 1 &&
-                   bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type) ==
+                   bn_gpu_quant_split_op_code(lw->ffn.ffn_gate.type) ==
                        BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
                    bn_transformer_gpu_can_matvec_split(gpu, lw->ffn.ffn_gate.type)) {
             int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
-            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type);
+            int split_op_code = bn_gpu_quant_split_op_code(lw->ffn.ffn_gate.type);
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(split_op_code),
                 .type = lw->ffn.ffn_gate.type,
@@ -94,7 +95,7 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
                    lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
                    bn_transformer_gpu_can_matvec_split(gpu, lw->ffn.ffn_gate.type)) {
             int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
-            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type);
+            int split_op_code = bn_gpu_quant_split_op_code(lw->ffn.ffn_gate.type);
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(split_op_code),
                 .type = lw->ffn.ffn_gate.type,
@@ -223,13 +224,13 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
                          !q_bias && !k_bias && !v_bias &&
                          lw->ssm.wqkv.rows == q_dim + 2 * kv_dim;
     int q_gated = !use_packed_qkv && plan->q_gated;
-    int packed_split_op_code = bn_backend_quant_gpu_split_op_code(lw->ssm.wqkv.type);
+    int packed_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
     int use_packed_q5_split =
         use_packed_qkv &&
         packed_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
         bn_transformer_gpu_can_matvec_split(gpu, lw->ssm.wqkv.type);
 
-    int qkv_split_op_code = bn_backend_quant_gpu_split_op_code(lw->attn.wq.type);
+    int qkv_split_op_code = bn_gpu_quant_split_op_code(lw->attn.wq.type);
     int use_split = qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     qkv_split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
@@ -588,7 +589,7 @@ void bn_transformer_gpu_emit_ssm(BnGPUOp *ops, int *n,
     void *ffn_norm = bn_transformer_backend_handle_or(
         backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
 
-    int ssm_split_op_code = bn_backend_quant_gpu_split_op_code(lw->ssm.wqkv.type);
+    int ssm_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
     if (ssm_qkvz_stacked &&
         ssm_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
         bn_transformer_gpu_can_matvec_split(gpu, lw->ssm.wqkv.type)) {

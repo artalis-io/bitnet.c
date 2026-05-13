@@ -1,6 +1,7 @@
 #include "gpu_moe_bridge.h"
 #include "backend_quant.h"
 #include "gpu_backend.h"
+#include "gpu_quant_lowering_internal.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
 #include <stdlib.h>
@@ -46,7 +47,7 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
 
     const BnMoEExpertMap *em = &lw->moe.expert_map;
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
-    int split_op_code = bn_backend_quant_gpu_split_op_code(em->gate_type);
+    int split_op_code = bn_gpu_quant_split_op_code(em->gate_type);
     int use_split = gpu_moe_can_gateup_split(gpu, em, split_op_code);
 
     memset(out, 0, sizeof(*out));

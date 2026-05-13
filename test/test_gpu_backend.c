@@ -451,10 +451,9 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CAP_Q4_MATVEC_SPLIT);
-    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
-           BN_GPU_CODE_MATVEC_SPLIT);
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
+    assert(bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_0, 1));
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q4_0, 1, 32) == 18);
 
     const BnQuantFormatOps *i2s = bn_quant_format_ops(BN_GGUF_TENSOR_I2_S);
@@ -470,7 +469,6 @@ static void test_quant_registry(void) {
     assert(!bn_backend_quant_can_gpu_repack(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_I2_S));
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_I2_S) == 0);
-    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_I2_S) == 0);
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_I2_S, 1, 128) == 36);
 
@@ -482,19 +480,15 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_has_cap(99999, BN_QUANT_CAP_LOADABLE));
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CAP_Q8_MATVEC_SPLIT);
-    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q8_0) ==
-           BN_GPU_CODE_Q8_MATVEC_SPLIT);
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_MATVEC_SPLIT);
-    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q5_K) ==
-           BN_GPU_CODE_Q5K_MATVEC_SPLIT);
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) == 0);
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CAP_Q4K_MATVEC_SPLIT);
-    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
-           BN_GPU_CODE_Q4K_MATVEC_SPLIT);
+    assert(!bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
+    assert(bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_can_gpu_native(BN_GGUF_TENSOR_Q5_K));
