@@ -15,6 +15,9 @@
 #define GPU_OP(code_) \
     .op_code = (code_)
 
+static int emit_context_reserve_lowering(BnTransformerGPUEmitContext *ctx,
+                                         int needed);
+
 void bn_transformer_gpu_finalize_op_kinds(void *ops, int n) {
     BnGPUOp *shader_ops = (BnGPUOp *)ops;
     for (int i = 0; i < n; i++) {
@@ -31,6 +34,20 @@ void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,
     ctx->lowered_ops = lowered_ops;
     ctx->cap = cap;
     bn_gpu_value_graph_init(&ctx->graph);
+}
+
+int bn_transformer_gpu_emit_context_reserve(
+    BnTransformerGPUEmitContext *ctx,
+    int cap_values,
+    int cap_ops) {
+    if (!ctx || cap_values < 0 || cap_ops < 0) return -1;
+    if (bn_gpu_value_graph_reserve_values(&ctx->graph, cap_values) != 0)
+        return -1;
+    if (bn_gpu_value_graph_reserve_ops(&ctx->graph, cap_ops) != 0)
+        return -1;
+    if (emit_context_reserve_lowering(ctx, cap_values) != 0)
+        return -1;
+    return 0;
 }
 
 void bn_transformer_gpu_emit_context_free(BnTransformerGPUEmitContext *ctx) {

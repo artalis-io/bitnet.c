@@ -59,6 +59,10 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
     bn_transformer_gpu_emit_context_init(&emit, command_buffer, command_cap);
+    if (bn_transformer_gpu_emit_context_reserve(
+            &emit, max_ops * 4, max_ops) != 0)
+        return bn_transformer_gpu_reject_forward(
+            &emit, "gpu graph reserve failed");
 
     // ---- Initial RMSNorm: x -> xb (using layer 0 attn_norm) ----
     if (bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(

@@ -164,6 +164,10 @@ void bn_transformer_gpu_finalize_op_kinds(void *ops, int n);
 void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,
                                           void *lowered_ops,
                                           int cap);
+int bn_transformer_gpu_emit_context_reserve(
+    BnTransformerGPUEmitContext *ctx,
+    int cap_values,
+    int cap_ops);
 void bn_transformer_gpu_emit_context_free(BnTransformerGPUEmitContext *ctx);
 int bn_transformer_gpu_emit_context_lower_pending(
     BnTransformerGPUEmitContext *ctx);

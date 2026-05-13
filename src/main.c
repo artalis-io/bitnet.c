@@ -52,6 +52,7 @@ typedef struct {
     int cache_mb_set;   // whether user explicitly set --cache-mb
     int force_madvise;  // madvise-guided mmap for low-RSS expert streaming
     int prefault_moe;   // touch all mmap'd MoE expert pages before generation
+    int quiet;          // suppress generated token output
     const char *draft_path; // --draft <model.gguf> for speculative decoding
     int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
@@ -85,6 +86,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --gpu-cache-mb <int>  GPU expert buffer cache in MB (default: 4096, 0 to disable)\n");
     fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
     fprintf(stderr, "  --prefault-moe    Fault all mmap'd MoE expert pages during startup\n");
+    fprintf(stderr, "  --quiet           Suppress generated token output\n");
     fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
     fprintf(stderr, "  --webgpu        Enable WebGPU backend (requires BN_ENABLE_WEBGPU=1)\n");
@@ -165,6 +167,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.force_madvise = 1;
         } else if (strcmp(argv[i], "--prefault-moe") == 0) {
             args.prefault_moe = 1;
+        } else if (strcmp(argv[i], "--quiet") == 0) {
+            args.quiet = 1;
         } else if (strcmp(argv[i], "--draft") == 0 && i + 1 < argc) {
             args.draft_path = argv[++i];
         } else if (strcmp(argv[i], "--draft-k") == 0 && i + 1 < argc) {
@@ -868,13 +872,14 @@ int main(int argc, char **argv) {
                 n_generated = bn_generate_speculative(
                     &model, session, &draft_model, draft_session, args.draft_k,
                     &tokenizer, &sampler, args.n_tokens, &pos,
-                    print_token, NULL, NULL);
+                    args.quiet ? NULL : print_token, NULL, NULL);
                 if (n_generated < 0)
                     SH_LOG_ERROR("Speculative generation failed");
             } else {
                 n_generated = bn_generate(&model, session, &tokenizer, &sampler,
                                            args.n_tokens, &pos,
-                                           print_token, NULL, NULL, NULL);
+                                           args.quiet ? NULL : print_token,
+                                           NULL, NULL, NULL);
             }
         }
 

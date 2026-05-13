@@ -95,7 +95,9 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
 
         bn_sampler_accept(sampler, next);
 
-        const char *piece = bn_tokenizer_decode(tok, next);
+        const char *piece = (cb || max_stop_len > 0)
+                                ? bn_tokenizer_decode(tok, next)
+                                : NULL;
         if (piece && cb) {
             if (cb(piece, next, user_data))
                 break;

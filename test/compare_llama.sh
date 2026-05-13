@@ -4,6 +4,7 @@
 # Usage:
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -n 50
+#   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -v    # verbose
 #
 # Requires: llama-completion (brew install llama.cpp)
@@ -14,9 +15,14 @@ MODEL="${1:?Usage: $0 <model.gguf> [-n tokens] [-v]}"
 shift
 N_TOKENS=30
 VERBOSE=0
+BITNET_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -n) N_TOKENS="$2"; shift 2 ;;
+        --metal) BITNET_ARGS+=(--metal); shift ;;
+        --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
+        --maxseq) BITNET_ARGS+=(--maxseq "$2"); shift 2 ;;
+        -t) BITNET_ARGS+=(-t "$2"); shift 2 ;;
         -v) VERBOSE=1; shift ;;
         *)  echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -62,11 +68,14 @@ first_word_matches=0
 echo -e "${BOLD}Q4_0 output comparison: bitnet.c vs llama.cpp${RESET}"
 echo "Model:  $MODEL"
 echo "Tokens: $N_TOKENS per prompt"
+if (( ${#BITNET_ARGS[@]} > 0 )); then
+    echo "bitnet args: ${BITNET_ARGS[*]}"
+fi
 echo "---"
 
 for prompt in "${PROMPTS[@]}"; do
     # Run bitnet.c (raw completion, temp=0)
-    bitnet_out=$("$BITNET" "$MODEL" -p "$prompt" -n "$N_TOKENS" --temp 0 2>/dev/null) || true
+    bitnet_out=$("$BITNET" "$MODEL" "${BITNET_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" --temp 0 2>/dev/null) || true
 
     # Run llama.cpp (raw completion, no chat template, temp=0, single thread)
     llama_out=$("$LLAMA" -m "$MODEL" -p "$prompt" -n "$N_TOKENS" --temp 0 \
