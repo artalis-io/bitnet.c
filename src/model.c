@@ -1,4 +1,5 @@
 #include "model_internal.h"
+#include "backend_layout.h"
 #include "backend_model.h"
 #include "model_arch.h"
 #include "moe.h"
@@ -204,106 +205,6 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
 
     return 0;
 }
-
-// --- Q4_0 weight repacking helpers ---
-
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
-static size_t q4_repack_bytes(const BnQWeight *w) {
-    if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return 0;
-    if (w->rows % 4 != 0) return 0;  // need complete 4-row groups
-    size_t n_blocks = (size_t)w->rows * (w->cols / 32);
-    size_t bytes = n_blocks * 16 + SH_ARENA_ALIGN;
-#ifdef __wasm_relaxed_simd__
-    bytes += n_blocks * sizeof(float) + SH_ARENA_ALIGN;
-#else
-    bytes += n_blocks * sizeof(uint16_t) + SH_ARENA_ALIGN;
-#endif
-    return bytes;
-}
-
-static void q4_repack(BnBackendModel *backend, const BnQWeight *w, SHArena *arena) {
-    if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return;
-    if (w->rows % 4 != 0) return;  // need complete 4-row groups
-    int n_blocks_per_row = w->cols / 32;
-    size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
-    BnPreparedWeight prepared = { 0 };
-
-    prepared.qs = (uint8_t *)sh_arena_alloc(arena, n_blocks * 16);
-#ifdef __wasm_relaxed_simd__
-    prepared.f32_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
-#else
-    prepared.scales = (uint16_t *)sh_arena_alloc(arena, n_blocks * sizeof(uint16_t));
-#endif
-    if (!prepared.qs) return;
-#ifdef __wasm_relaxed_simd__
-    if (!prepared.f32_scales) return;
-#else
-    if (!prepared.scales) return;
-#endif
-
-    // Nibble-transposed 4-row interleaved layout for vdotq_laneq_s32:
-    // Scales: group g, block b → rp_scales[(g * n_blocks_per_row + b) * 4 + r]
-    // Quants: group g, block b → rp_qs[(g * n_blocks_per_row + b) * 64 + ...]
-    //   Within each 64-byte chunk, bytes are ordered for lane-select SDOT:
-    //   [r0_b0..b3, r1_b0..b3, r2_b0..b3, r3_b0..b3,   <- register 0 (16 bytes)
-    //    r0_b4..b7, r1_b4..b7, r2_b4..b7, r3_b4..b7,   <- register 1
-    //    r0_b8..b11, r1_b8..b11, r2_b8..b11, r3_b8..b11, <- register 2
-    //    r0_b12..b15, r1_b12..b15, r2_b12..b15, r3_b12..b15] <- register 3
-    const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)w->data;
-    int n_groups = w->rows / 4;
-    for (int g = 0; g < n_groups; g++) {
-        for (int b = 0; b < n_blocks_per_row; b++) {
-            size_t gb = (size_t)g * n_blocks_per_row + b;
-            // Scales: same flat interleaved layout
-            for (int r = 0; r < 4; r++) {
-                size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
-#ifdef __wasm_relaxed_simd__
-                prepared.f32_scales[gb * 4 + r] = bn_fp16_to_fp32(blocks[src].d);
-#else
-                prepared.scales[gb * 4 + r] = blocks[src].d;
-#endif
-            }
-            // Quants: nibble-transpose within 64-byte chunk
-            uint8_t *dst = prepared.qs + gb * 64;
-            for (int ng = 0; ng < 4; ng++) {
-                for (int r = 0; r < 4; r++) {
-                    size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
-                    const uint8_t *qs = blocks[src].qs + ng * 4;
-                    uint8_t *dp = dst + ng * 16 + r * 4;
-                    for (int j = 0; j < 4; j++)
-                        dp[j] = qs[j] ^ 0x88;
-                }
-            }
-        }
-    }
-    (void)bn_backend_model_register_prepared_qweight(backend, w, &prepared);
-}
-#endif
-
-#ifdef __wasm_relaxed_simd__
-static size_t q8_f32_scale_bytes(const BnQWeight *w) {
-    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data) return 0;
-    if ((w->cols & 31) != 0) return 0;
-    size_t n_blocks = (size_t)w->rows * (w->cols / 32);
-    return n_blocks * sizeof(float) + SH_ARENA_ALIGN;
-}
-
-static void q8_prepare_f32_scales(BnBackendModel *backend, const BnQWeight *w,
-                                  SHArena *arena) {
-    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data) return;
-    if ((w->cols & 31) != 0) return;
-    int n_blocks_per_row = w->cols / 32;
-    size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
-    BnPreparedWeight prepared = { 0 };
-    prepared.f32_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
-    if (!prepared.f32_scales) return;
-
-    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)w->data;
-    for (size_t i = 0; i < n_blocks; i++)
-        prepared.f32_scales[i] = bn_fp16_to_fp32(blocks[i].d);
-    (void)bn_backend_model_register_prepared_qweight(backend, w, &prepared);
-}
-#endif
 
 // --- Helper: load F32 norm weights from GGUF ---
 
@@ -992,7 +893,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     arch_ops->apply_shapes(c, max_head_size, max_kv_dim);
     (void)max_q_dim;
 
-    // --- Weight arena: INT8 embeddings + Q4_0 repacking ---
+    // --- Weight arena: INT8 embeddings + backend-prepared CPU layouts ---
 
     // INT8 embedding size (DOTPROD + F16 only)
     size_t emb_i8_bytes = 0;
@@ -1009,44 +910,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 #endif
 
-    // Q4_0 weight repacking size for lane-dot kernels.
-    size_t q4_repack_total = 0;
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
-    for (int i = 0; i < c->n_layers; i++) {
-        BnLayerWeights *lw = &w->layers[i];
-        q4_repack_total += q4_repack_bytes(&lw->wq);
-        q4_repack_total += q4_repack_bytes(&lw->wk);
-        q4_repack_total += q4_repack_bytes(&lw->wv);
-        q4_repack_total += q4_repack_bytes(&lw->wo);
-        q4_repack_total += q4_repack_bytes(&lw->wqkv);
-        q4_repack_total += q4_repack_bytes(&lw->wz);
-        q4_repack_total += q4_repack_bytes(&lw->ssm_out);
-        q4_repack_total += q4_repack_bytes(&lw->ffn_gate);
-        q4_repack_total += q4_repack_bytes(&lw->ffn_up);
-        q4_repack_total += q4_repack_bytes(&lw->ffn_down);
-    }
-    q4_repack_total += q4_repack_bytes(&w->output_weight);
-#endif
+    BnBackendLayoutPreparedStats prepared_stats = { 0 };
+    size_t prepared_weight_bytes =
+        bn_backend_layout_prepared_qweights_size(c, w, &prepared_stats);
 
-    size_t q8_scale_total = 0;
-#ifdef __wasm_relaxed_simd__
-    for (int i = 0; i < c->n_layers; i++) {
-        BnLayerWeights *lw = &w->layers[i];
-        q8_scale_total += q8_f32_scale_bytes(&lw->wq);
-        q8_scale_total += q8_f32_scale_bytes(&lw->wk);
-        q8_scale_total += q8_f32_scale_bytes(&lw->wv);
-        q8_scale_total += q8_f32_scale_bytes(&lw->wo);
-        q8_scale_total += q8_f32_scale_bytes(&lw->wqkv);
-        q8_scale_total += q8_f32_scale_bytes(&lw->wz);
-        q8_scale_total += q8_f32_scale_bytes(&lw->ssm_out);
-        q8_scale_total += q8_f32_scale_bytes(&lw->ffn_gate);
-        q8_scale_total += q8_f32_scale_bytes(&lw->ffn_up);
-        q8_scale_total += q8_f32_scale_bytes(&lw->ffn_down);
-    }
-    q8_scale_total += q8_f32_scale_bytes(&w->output_weight);
-#endif
-
-    size_t weight_arena_size = emb_i8_bytes + emb_i8_scales_bytes + q4_repack_total + q8_scale_total
+    size_t weight_arena_size = emb_i8_bytes + emb_i8_scales_bytes + prepared_weight_bytes
                               + 4 * SH_ARENA_ALIGN;
     m->runtime->weight_arena = NULL;
     memset(&m->io->moe_io, 0, sizeof(m->io->moe_io));
@@ -1080,48 +948,22 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 #endif
 
-        // Repack Q4_0 weights into split scales/qs layout for lane-dot kernels.
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
-        if (q4_repack_total > 0) {
-            for (int i = 0; i < c->n_layers; i++) {
-                BnLayerWeights *lw = &w->layers[i];
-                q4_repack(m->backend_state->backend, &lw->wq, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->wk, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->wv, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->wo, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->wqkv, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->wz, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->ssm_out, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->ffn_gate, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->ffn_up, m->runtime->weight_arena);
-                q4_repack(m->backend_state->backend, &lw->ffn_down, m->runtime->weight_arena);
+        if (prepared_weight_bytes > 0) {
+            BnBackendLayoutPreparedStats built_stats = { 0 };
+            bn_backend_layout_prepare_qweights(m->backend_state->backend, c, w,
+                                               m->runtime->weight_arena,
+                                               &built_stats);
+            if (built_stats.q4_repack_bytes > 0) {
+                char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f",
+                                          (double)built_stats.q4_repack_bytes / (1024*1024));
+                SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
             }
-            q4_repack(m->backend_state->backend, &w->output_weight, m->runtime->weight_arena);
-            char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f", (double)q4_repack_total / (1024*1024));
-            SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
-        }
-#endif
-
-#ifdef __wasm_relaxed_simd__
-        if (q8_scale_total > 0) {
-            for (int i = 0; i < c->n_layers; i++) {
-                BnLayerWeights *lw = &w->layers[i];
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->wq, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->wk, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->wv, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->wo, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->wqkv, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->wz, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->ssm_out, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->ffn_gate, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->ffn_up, m->runtime->weight_arena);
-                q8_prepare_f32_scales(m->backend_state->backend, &lw->ffn_down, m->runtime->weight_arena);
+            if (built_stats.q8_scale_bytes > 0) {
+                char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f",
+                                          (double)built_stats.q8_scale_bytes / (1024*1024));
+                SH_LOG_INFO("Q8_0 FP32 scales ready", "MB", q8_mb);
             }
-            q8_prepare_f32_scales(m->backend_state->backend, &w->output_weight, m->runtime->weight_arena);
-            char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f", (double)q8_scale_total / (1024*1024));
-            SH_LOG_INFO("Q8_0 FP32 scales ready", "MB", q8_mb);
         }
-#endif
     }
 
     // Initialize TurboQuant state if KV compression is enabled

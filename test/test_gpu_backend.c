@@ -5,6 +5,7 @@
 #include "quant.h"
 #include "model.h"
 #include "gguf.h"
+#include "sh_arena.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -571,10 +572,69 @@ static void test_backend_layout_reasons(void) {
     printf("PASSED\n");
 }
 
+static void test_backend_layout_prepared_qweights(void) {
+    printf("test_backend_layout_prepared_qweights... ");
+
+    BnBlockQ4_0 q4_blocks[4];
+    memset(q4_blocks, 0, sizeof(q4_blocks));
+    for (int i = 0; i < 4; i++) {
+        q4_blocks[i].d = bn_fp32_to_fp16(1.0f);
+        memset(q4_blocks[i].qs, 0x88, sizeof(q4_blocks[i].qs));
+    }
+
+    BnConfig config = {0};
+    config.n_layers = 1;
+    BnWeights weights = {0};
+    BnLayerWeights layer = {0};
+    weights.layers = &layer;
+    layer.wq.data = q4_blocks;
+    layer.wq.type = BN_GGUF_TENSOR_Q4_0;
+    layer.wq.rows = 4;
+    layer.wq.cols = 32;
+
+    BnBackendLayoutPreparedStats stats = {0};
+    size_t bytes = bn_backend_layout_prepared_qweights_size(&config, &weights, &stats);
+
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
+    assert(bytes > 0);
+    assert(stats.q4_repack_bytes == bytes);
+    assert(stats.q8_scale_bytes == 0);
+
+    SHArena *arena = sh_arena_create(bytes + 4 * SH_ARENA_ALIGN);
+    assert(arena != NULL);
+    BnBackendModel *backend = bn_backend_model_create();
+    assert(backend != NULL);
+
+    BnBackendLayoutPreparedStats built = {0};
+    bn_backend_layout_prepare_qweights(backend, &config, &weights, arena, &built);
+    assert(built.q4_repack_bytes == stats.q4_repack_bytes);
+    assert(built.q8_scale_bytes == 0);
+    const BnPreparedWeight *prepared =
+        bn_backend_model_prepared_qweight(backend, &layer.wq);
+    assert(prepared != NULL);
+    assert(prepared->qs != NULL);
+#ifdef __wasm_relaxed_simd__
+    assert(prepared->f32_scales != NULL);
+#else
+    assert(prepared->scales != NULL);
+#endif
+
+    bn_backend_model_free(backend);
+    sh_arena_free(arena);
+#else
+    assert(bytes == 0);
+    assert(stats.q4_repack_bytes == 0);
+    assert(stats.q8_scale_bytes == 0);
+#endif
+
+    printf("PASSED\n");
+}
+
 int main(void) {
     test_data_size();
     test_quant_registry();
     test_backend_layout_reasons();
+    test_backend_layout_prepared_qweights();
     test_gpu_upload_weights();
     test_gpu_matvec();
     test_gpu_fallback();
