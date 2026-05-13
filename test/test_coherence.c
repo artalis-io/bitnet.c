@@ -279,7 +279,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--q4-q8-from-layer N] [--disable-qkv-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--q4-q8-from-layer N] [--disable-qkv-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -292,8 +292,13 @@ int main(int argc, char **argv) {
     int cpu_ffn_down_from_layer = -1;
     int compare_attention_layer = -1;
     int compare_attention_pos = -1;
+    int compare_qkv_layer = -1;
+    int compare_qkv_pos = -1;
     int compare_ffn_down_layer = -1;
     int compare_ffn_down_pos = -1;
+    int compare_ffn_state_layer = -1;
+    int compare_ffn_state_pos = -1;
+    int compare_logits = 0;
     int q4_q8_from_layer = -1;
     int use_flash = 0;
     int disable_qkv_split = 0;
@@ -321,10 +326,20 @@ int main(int argc, char **argv) {
             compare_attention_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-attention-pos") == 0 && i + 1 < argc) {
             compare_attention_pos = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-qkv-layer") == 0 && i + 1 < argc) {
+            compare_qkv_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-qkv-pos") == 0 && i + 1 < argc) {
+            compare_qkv_pos = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-ffn-down-layer") == 0 && i + 1 < argc) {
             compare_ffn_down_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-ffn-down-pos") == 0 && i + 1 < argc) {
             compare_ffn_down_pos = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-ffn-state-layer") == 0 && i + 1 < argc) {
+            compare_ffn_state_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-ffn-state-pos") == 0 && i + 1 < argc) {
+            compare_ffn_state_pos = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-logits") == 0) {
+            compare_logits = 1;
         } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
             q4_q8_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--flash") == 0) {
@@ -375,6 +390,16 @@ int main(int argc, char **argv) {
         snprintf(pos_env, sizeof(pos_env), "%d", compare_attention_pos);
         setenv("BN_GPU_COMPARE_ATTENTION_POS", pos_env, 1);
     }
+    if (compare_qkv_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", compare_qkv_layer);
+        setenv("BN_GPU_COMPARE_QKV_LAYER", layer_env, 1);
+    }
+    if (compare_qkv_pos >= 0) {
+        char pos_env[32];
+        snprintf(pos_env, sizeof(pos_env), "%d", compare_qkv_pos);
+        setenv("BN_GPU_COMPARE_QKV_POS", pos_env, 1);
+    }
     if (compare_ffn_down_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", compare_ffn_down_layer);
@@ -385,11 +410,21 @@ int main(int argc, char **argv) {
         snprintf(pos_env, sizeof(pos_env), "%d", compare_ffn_down_pos);
         setenv("BN_GPU_COMPARE_FFN_DOWN_POS", pos_env, 1);
     }
+    if (compare_ffn_state_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", compare_ffn_state_layer);
+        setenv("BN_GPU_COMPARE_FFN_STATE_LAYER", layer_env, 1);
+    }
+    if (compare_ffn_state_pos >= 0) {
+        char pos_env[32];
+        snprintf(pos_env, sizeof(pos_env), "%d", compare_ffn_state_pos);
+        setenv("BN_GPU_COMPARE_FFN_STATE_POS", pos_env, 1);
+    }
     if (q4_q8_from_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", q4_q8_from_layer);
-        setenv("BN_METAL_Q4_Q8", "1", 1);
-        setenv("BN_METAL_Q4_Q8_FROM_LAYER", layer_env, 1);
+        setenv("BN_GPU_Q4_Q8", "1", 1);
+        setenv("BN_GPU_Q4_Q8_FROM_LAYER", layer_env, 1);
     }
     if (disable_fused_gateup)
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
@@ -397,6 +432,8 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_DISABLE_QKV_SPLIT", "1", 1);
     if (split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
+    if (compare_logits)
+        setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
 
     int total_pass = 0, total_fail = 0, total_skip = 0;
 

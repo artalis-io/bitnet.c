@@ -1,64 +1,73 @@
 #include <metal_stdlib>
 using namespace metal;
 
-#define DQ4_LO(qs, i) float4( \
-    float(int((qs)[(i)]     & 0x0Fu) - 8), \
-    float(int((qs)[(i) + 1] & 0x0Fu) - 8), \
-    float(int((qs)[(i) + 2] & 0x0Fu) - 8), \
-    float(int((qs)[(i) + 3] & 0x0Fu) - 8))
+// Q4_0 repacked fused gate/up matvec with prequantized Q8 activation blocks.
 
-#define DQ4_HI(qs, i) float4( \
-    float(int((qs)[(i)]     >> 4) - 8), \
-    float(int((qs)[(i) + 1] >> 4) - 8), \
-    float(int((qs)[(i) + 2] >> 4) - 8), \
-    float(int((qs)[(i) + 3] >> 4) - 8))
+#define DQ4(w, sh) char4( \
+    char(int(((w) >> (sh))       & 0xF) - 8), \
+    char(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
+    char(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
+    char(int(((w) >> ((sh) + 12))& 0xF) - 8))
 
-static inline float q4_q8_dot(device const uchar *qs,
-                              device const char4 *xq) {
-    return dot(DQ4_LO(qs, 0),  float4(xq[0]))
-         + dot(DQ4_LO(qs, 4),  float4(xq[1]))
-         + dot(DQ4_LO(qs, 8),  float4(xq[2]))
-         + dot(DQ4_LO(qs, 12), float4(xq[3]))
-         + dot(DQ4_HI(qs, 0),  float4(xq[4]))
-         + dot(DQ4_HI(qs, 4),  float4(xq[5]))
-         + dot(DQ4_HI(qs, 8),  float4(xq[6]))
-         + dot(DQ4_HI(qs, 12), float4(xq[7]));
+static inline int q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
+                            device const char4 *xq) {
+    #define DOT4(a, b) (int((a).x) * int((b).x) + int((a).y) * int((b).y) + \
+                       int((a).z) * int((b).z) + int((a).w) * int((b).w))
+    int acc = 0;
+    acc += DOT4(DQ4(w0,  0), xq[0]);
+    acc += DOT4(DQ4(w0, 16), xq[1]);
+    acc += DOT4(DQ4(w1,  0), xq[2]);
+    acc += DOT4(DQ4(w1, 16), xq[3]);
+    acc += DOT4(DQ4(w2,  0), xq[4]);
+    acc += DOT4(DQ4(w2, 16), xq[5]);
+    acc += DOT4(DQ4(w3,  0), xq[6]);
+    acc += DOT4(DQ4(w3, 16), xq[7]);
+    #undef DOT4
+    return acc;
 }
 
 kernel void q4_fused_gateup_silu_q8_prequant(
-    device const char  *weights  [[buffer(0)]],
+    device const uint  *weights  [[buffer(0)]],
     device const char  *x_q      [[buffer(1)]],
     device const float *x_scales [[buffer(2)]],
     device float       *out      [[buffer(3)]],
     constant uint      *p        [[buffer(4)]],
     uint3 wid [[threadgroup_position_in_grid]],
     uint3 lid [[thread_position_in_threadgroup]]) {
-    uint cols = p[1], gate_rows = p[2];
+    uint total_rows = p[0], cols = p[1], gate_rows = p[2];
     uint tile_start = wid.x * 32;
     uint row_lane = lid.x & 7;
     uint local_row = lid.x >> 3;
     uint global_row = tile_start + local_row;
 
-    uint nb = cols >> 5;
+    uint blocks_per_row = cols >> 5;
+    uint total_blocks = total_rows * blocks_per_row;
     float gate_acc = 0.0f, up_acc = 0.0f;
 
     if (global_row < gate_rows) {
-        device const char *gate_data = weights + (size_t)global_row * nb * 18;
-        device const char *up_data = weights + (size_t)(global_row + gate_rows) * nb * 18;
-
-        for (uint b = row_lane; b < nb; b += 8) {
-            device const char *gblk = gate_data + (size_t)b * 18;
-            device const char *ublk = up_data + (size_t)b * 18;
-            float gd = float(*(device const half *)gblk);
-            float ud = float(*(device const half *)ublk);
+        uint gate_row_base = global_row * blocks_per_row;
+        uint up_row_base = (global_row + gate_rows) * blocks_per_row;
+        for (uint b = row_lane; b < blocks_per_row; b += 8) {
             float dx = x_scales[b];
             if (dx == 0.0f)
                 continue;
+
+            uint gate_block = gate_row_base + b;
+            uint up_block = up_row_base + b;
+            float gate_d = as_type<float>(weights[gate_block]);
+            float up_d = as_type<float>(weights[up_block]);
+            uint gate_nib = total_blocks + gate_block * 4;
+            uint up_nib = total_blocks + up_block * 4;
             device const char4 *xqb = (device const char4 *)(x_q + b * 32);
-            gate_acc += gd * dx *
-                q4_q8_dot((device const uchar *)(gblk + 2), xqb);
-            up_acc += ud * dx *
-                q4_q8_dot((device const uchar *)(ublk + 2), xqb);
+
+            int gate_dot = q4_q8_dot(weights[gate_nib], weights[gate_nib + 1],
+                                     weights[gate_nib + 2], weights[gate_nib + 3],
+                                     xqb);
+            int up_dot = q4_q8_dot(weights[up_nib], weights[up_nib + 1],
+                                   weights[up_nib + 2], weights[up_nib + 3],
+                                   xqb);
+            gate_acc += gate_d * dx * float(gate_dot);
+            up_acc += up_d * dx * float(up_dot);
         }
     }
 
@@ -74,12 +83,11 @@ kernel void q4_fused_gateup_silu_q8_prequant(
         float u = up_acc;
         uint bias_offset = p[4];
         if (bias_offset > 0) {
-            g += as_type<float>(((device const uint *)weights)[bias_offset + global_row]);
-            u += as_type<float>(((device const uint *)weights)[bias_offset + global_row + gate_rows]);
+            g += as_type<float>(weights[bias_offset + global_row]);
+            u += as_type<float>(weights[bias_offset + global_row + gate_rows]);
         }
         out[global_row] = (g / (1.0f + fast::exp(-g))) * u;
     }
 }
 
-#undef DQ4_LO
-#undef DQ4_HI
+#undef DQ4

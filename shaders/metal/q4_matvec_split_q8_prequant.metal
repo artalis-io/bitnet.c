@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 repacked matvec using prequantized Q8 activation blocks.
+// Q4_0 repacked split matvec using prequantized Q8 activation blocks.
 
 #define DQ4(w, sh) char4( \
     char(int(((w) >> (sh))       & 0xF) - 8), \
@@ -26,28 +26,28 @@ static inline int q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
     return acc;
 }
 
-kernel void q4_native_q8_prequant_matvec(
+kernel void q4_matvec_split_q8_prequant(
     device const uint  *weights  [[buffer(0)]],
     device const char  *x_q      [[buffer(1)]],
     device const float *x_scales [[buffer(2)]],
-    device float       *out      [[buffer(3)]],
-    constant uint      *p        [[buffer(4)]],
+    device float       *out0     [[buffer(3)]],
+    device float       *out1     [[buffer(4)]],
+    device float       *out2     [[buffer(5)]],
+    constant uint      *p        [[buffer(6)]],
     uint3 wid [[threadgroup_position_in_grid]],
-    uint3 lid [[thread_position_in_threadgroup]])
-{
-    uint rows = p[0], cols = p[1], extra = p[3], out_offset = p[5];
-    uint tile_start = (extra > 0) ? (wid.x + wid.y * extra) * 32 : wid.x * 32;
-    uint token = (extra > 0) ? 0 : wid.y;
+    uint3 lid [[thread_position_in_threadgroup]]) {
+    uint rows = p[0], cols = p[1];
+    uint split1 = p[2], split2 = p[3];
+    uint bias_offset = p[4];
+    uint off1 = p[6], off2 = p[7];
 
+    uint tile_start = wid.x * 32;
     uint row_lane = lid.x & 7;
     uint local_row = lid.x >> 3;
     uint global_row = tile_start + local_row;
 
     uint blocks_per_row = cols >> 5;
     uint total_blocks = rows * blocks_per_row;
-    uint x_base = token * cols;
-    uint scale_base = token * blocks_per_row;
-
     float acc = 0.0f;
 
     if (global_row < rows) {
@@ -55,11 +55,11 @@ kernel void q4_native_q8_prequant_matvec(
         for (uint b = row_lane; b < blocks_per_row; b += 8) {
             uint block_idx = row_block_base + b;
             float d = as_type<float>(weights[block_idx]);
-            float dx = x_scales[scale_base + b];
+            float dx = x_scales[b];
             if (dx == 0.0f)
                 continue;
             uint nib_base = total_blocks + block_idx * 4;
-            device const char4 *xqb = (device const char4 *)(x_q + x_base + b * 32);
+            device const char4 *xqb = (device const char4 *)(x_q + b * 32);
             int idot = q4_q8_dot(weights[nib_base], weights[nib_base + 1],
                                  weights[nib_base + 2], weights[nib_base + 3],
                                  xqb);
@@ -72,10 +72,15 @@ kernel void q4_native_q8_prequant_matvec(
     acc += simd_shuffle_xor(acc, 4);
 
     if (row_lane == 0 && global_row < rows) {
-        uint bias_offset = p[4];
         if (bias_offset > 0)
             acc += as_type<float>(weights[bias_offset + global_row]);
-        out[out_offset + token * rows + global_row] = acc;
+        if (split2 > 0 && global_row >= split2) {
+            out2[off2 + global_row - split2] = acc;
+        } else if (global_row >= split1) {
+            out1[off1 + global_row - split1] = acc;
+        } else {
+            out0[global_row] = acc;
+        }
     }
 }
 

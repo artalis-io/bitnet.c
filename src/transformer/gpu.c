@@ -2,6 +2,7 @@
 #include "backend_session.h"
 #include "session.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -47,8 +48,12 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int cpu_fallback_ffn_down_from_layer = -1;
     int compare_attention_layer = -1;
     int compare_attention_pos = -1;
+    int compare_qkv_layer = -1;
+    int compare_qkv_pos = -1;
     int compare_ffn_down_layer = -1;
     int compare_ffn_down_pos = -1;
+    int compare_ffn_state_layer = -1;
+    int compare_ffn_state_pos = -1;
     int q4_q8_from_layer = -1;
     {
         const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
@@ -65,14 +70,22 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         if (env) compare_attention_layer = atoi(env);
         env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
         if (env) compare_attention_pos = atoi(env);
+        env = getenv("BN_GPU_COMPARE_QKV_LAYER");
+        if (env) compare_qkv_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_QKV_POS");
+        if (env) compare_qkv_pos = atoi(env);
         env = getenv("BN_GPU_COMPARE_FFN_DOWN_LAYER");
         if (env) compare_ffn_down_layer = atoi(env);
         env = getenv("BN_GPU_COMPARE_FFN_DOWN_POS");
         if (env) compare_ffn_down_pos = atoi(env);
-        env = getenv("BN_METAL_Q4_Q8_FROM_LAYER");
+        env = getenv("BN_GPU_COMPARE_FFN_STATE_LAYER");
+        if (env) compare_ffn_state_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_FFN_STATE_POS");
+        if (env) compare_ffn_state_pos = atoi(env);
+        env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
         if (env) {
             q4_q8_from_layer = atoi(env);
-        } else if (getenv("BN_METAL_Q4_Q8")) {
+        } else if (getenv("BN_GPU_Q4_Q8")) {
             q4_q8_from_layer = c->n_layers - 1;
         }
     }
@@ -191,6 +204,14 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                 &emit, c, lw, &plan, &qkv_res, pos, q_dim,
                 head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
                 use_q4_q8);
+            if (compare_qkv_layer == l &&
+                (compare_qkv_pos < 0 || compare_qkv_pos == pos)) {
+                if (bn_transformer_gpu_debug_compare_qkv(
+                        &emit, gpu, m, sess, lw, l, pos, kv_cache_off,
+                        dim, q_dim, kv_dim) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu qkv compare failed");
+            }
             bn_transformer_gpu_emit_context_attention(
                 &emit, c, lw, &attn_res, pos, dim, q_dim,
                 head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
@@ -260,6 +281,17 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         int ffn_down_input_buf = -1;
         int skip_ffn_down = cpu_fallback_ffn_down_from_layer >= 0 &&
                             l >= cpu_fallback_ffn_down_from_layer;
+        int compare_ffn_state = compare_ffn_state_layer == l &&
+            (compare_ffn_state_pos < 0 || compare_ffn_state_pos == pos);
+        if (compare_ffn_state) {
+            if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                bn_transformer_gpu_read_x(gpu, sess->state.x,
+                                          (size_t)dim * sizeof(float)) != 0 ||
+                bn_transformer_gpu_read_xb(gpu, sess->state.xb,
+                                           (size_t)dim * sizeof(float)) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu ffn-state pre-compare snapshot failed");
+        }
         use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
@@ -272,6 +304,17 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                     ffn_plan.hidden_dim, dim) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu ffn-down compare failed");
+        }
+        if (!skip_ffn_down && compare_ffn_state) {
+            const float *next_norm_cpu = (l + 1 < c->n_layers)
+                ? w->layers[l + 1].norm.attn_norm
+                : w->output_norm;
+            if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                bn_transformer_gpu_debug_compare_ffn_state(
+                    &emit, gpu, m, sess, lw, &ffn_plan, next_norm_cpu,
+                    l, pos, dim) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu ffn-state compare failed");
         }
         if (skip_ffn_down) {
             if (bn_transformer_gpu_fallback_cpu_ffn_down(
@@ -310,6 +353,36 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     if (rc != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu final execute failed");
+    if (getenv("BN_GPU_COMPARE_LOGITS")) {
+        float *cpu_logits = (float *)malloc((size_t)c->vocab_size *
+                                            sizeof(float));
+        if (cpu_logits &&
+            bn_transformer_gpu_read_xb(gpu, s->x,
+                                       (size_t)dim * sizeof(float)) == 0) {
+            bn_quant_matvec(cpu_logits, logit_res->cpu_weight, s->x,
+                            s->x_q, bn_model_pool(m));
+            double sum_abs = 0.0;
+            double sum_sq = 0.0;
+            float max_abs = 0.0f;
+            int max_i = 0;
+            for (int i = 0; i < c->vocab_size; i++) {
+                float diff = fabsf(s->logits[i] - cpu_logits[i]);
+                sum_abs += (double)diff;
+                sum_sq += (double)diff * (double)diff;
+                if (diff > max_abs) {
+                    max_abs = diff;
+                    max_i = i;
+                }
+            }
+            fprintf(stderr,
+                    "[bn:gpu:debug] logits_compare pos=%d max_abs=%.9g "
+                    "max_i=%d cpu=%.9g gpu=%.9g mean_abs=%.9g rms=%.9g\n",
+                    pos, max_abs, max_i, cpu_logits[max_i],
+                    s->logits[max_i], sum_abs / (double)c->vocab_size,
+                    sqrt(sum_sq / (double)c->vocab_size));
+        }
+        free(cpu_logits);
+    }
     bn_transformer_gpu_emit_context_free(&emit);
     #undef GPU_LEGACY_OPS
     return s->logits;

@@ -298,6 +298,108 @@ int bn_transformer_gpu_debug_compare_ffn_down(
     return 0;
 }
 
+static void debug_compare_vec(const char *label,
+                              int layer,
+                              int pos,
+                              const float *cpu,
+                              const float *gpu,
+                              int n) {
+    double sum_abs = 0.0;
+    double sum_sq = 0.0;
+    float max_abs = 0.0f;
+    int max_i = 0;
+    for (int i = 0; i < n; i++) {
+        float diff = fabsf(gpu[i] - cpu[i]);
+        sum_abs += (double)diff;
+        sum_sq += (double)diff * (double)diff;
+        if (diff > max_abs) {
+            max_abs = diff;
+            max_i = i;
+        }
+    }
+    fprintf(stderr,
+            "[bn:gpu:debug] %s layer=%d pos=%d "
+            "max_abs=%.9g max_i=%d cpu=%.9g gpu=%.9g "
+            "mean_abs=%.9g rms=%.9g\n",
+            label, layer, pos, max_abs, max_i, cpu[max_i], gpu[max_i],
+            sum_abs / (double)n, sqrt(sum_sq / (double)n));
+}
+
+int bn_transformer_gpu_debug_compare_ffn_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    const BnFFNPlan *ffn_plan,
+    const float *next_norm,
+    int layer,
+    int pos,
+    int dim) {
+    BnRunState *s = &sess->state;
+    float *cpu_x_in = (float *)malloc((size_t)dim * sizeof(float));
+    float *cpu_xb_in = (float *)malloc((size_t)dim * sizeof(float));
+    float *cpu_x = (float *)malloc((size_t)dim * sizeof(float));
+    float *cpu_xb = (float *)malloc((size_t)dim * sizeof(float));
+    float *gpu_x = (float *)malloc((size_t)dim * sizeof(float));
+    float *gpu_xb = (float *)malloc((size_t)dim * sizeof(float));
+    if (!cpu_x_in || !cpu_xb_in || !cpu_x || !cpu_xb || !gpu_x || !gpu_xb) {
+        free(cpu_x_in);
+        free(cpu_xb_in);
+        free(cpu_x);
+        free(cpu_xb);
+        free(gpu_x);
+        free(gpu_xb);
+        return -1;
+    }
+
+    memcpy(cpu_x_in, s->x, (size_t)dim * sizeof(float));
+    memcpy(cpu_xb_in, s->xb, (size_t)dim * sizeof(float));
+
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0) {
+        free(cpu_x_in);
+        free(cpu_xb_in);
+        free(cpu_x);
+        free(cpu_xb);
+        free(gpu_x);
+        free(gpu_xb);
+        return -1;
+    }
+
+    memcpy(s->x, cpu_x_in, (size_t)dim * sizeof(float));
+    memcpy(s->xb, cpu_xb_in, (size_t)dim * sizeof(float));
+    bn_transformer_cpu_forward_ffn_block(m, sess, lw, ffn_plan);
+    memcpy(cpu_x, s->x, (size_t)dim * sizeof(float));
+    if (next_norm)
+        fallback_rmsnorm(cpu_xb, cpu_x, next_norm, dim, m->config.norm_eps);
+
+    if (bn_transformer_gpu_read_x(gpu, gpu_x,
+                                  (size_t)dim * sizeof(float)) != 0 ||
+        (next_norm && bn_transformer_gpu_read_xb(gpu, gpu_xb,
+                                                 (size_t)dim * sizeof(float)) != 0)) {
+        free(cpu_x_in);
+        free(cpu_xb_in);
+        free(cpu_x);
+        free(cpu_xb);
+        free(gpu_x);
+        free(gpu_xb);
+        return -1;
+    }
+    debug_compare_vec("ffn_state_compare", layer, pos, cpu_x, gpu_x, dim);
+    if (next_norm)
+        debug_compare_vec("ffn_next_norm_compare", layer, pos, cpu_xb, gpu_xb,
+                          dim);
+
+    memcpy(s->x, gpu_x, (size_t)dim * sizeof(float));
+    free(cpu_x_in);
+    free(cpu_xb_in);
+    free(cpu_x);
+    free(cpu_xb);
+    free(gpu_x);
+    free(gpu_xb);
+    return 0;
+}
+
 int bn_transformer_gpu_debug_compare_attention(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -422,6 +524,72 @@ int bn_transformer_gpu_debug_compare_attention(
 
     free(cpu_in);
     free(gpu_x);
+    return 0;
+}
+
+int bn_transformer_gpu_debug_compare_qkv(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int pos,
+    uint32_t kv_cache_off,
+    int dim,
+    int q_dim,
+    int kv_dim) {
+    BnRunState *s = &sess->state;
+    float *cpu_q = (float *)malloc((size_t)q_dim * sizeof(float));
+    float *cpu_k = (float *)malloc((size_t)kv_dim * sizeof(float));
+    float *cpu_v = (float *)malloc((size_t)kv_dim * sizeof(float));
+    float *gpu_q = (float *)malloc((size_t)q_dim * sizeof(float));
+    float *gpu_k = (float *)malloc((size_t)kv_dim * sizeof(float));
+    float *gpu_v = (float *)malloc((size_t)kv_dim * sizeof(float));
+    if (!cpu_q || !cpu_k || !cpu_v || !gpu_q || !gpu_k || !gpu_v) {
+        free(cpu_q); free(cpu_k); free(cpu_v);
+        free(gpu_q); free(gpu_k); free(gpu_v);
+        return -1;
+    }
+
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_x(gpu, s->x,
+                                  (size_t)dim * sizeof(float)) != 0 ||
+        bn_transformer_gpu_read_activation_buf(gpu, BN_GPU_VALUE_Q, gpu_q,
+                                               (size_t)q_dim * sizeof(float)) != 0 ||
+        bn_transformer_gpu_read_activation_buf_offset(
+            gpu, BN_GPU_VALUE_KEY_CACHE, gpu_k,
+            (size_t)kv_dim * sizeof(float),
+            (size_t)kv_cache_off * sizeof(float)) != 0 ||
+        bn_transformer_gpu_read_activation_buf_offset(
+            gpu, BN_GPU_VALUE_VALUE_CACHE, gpu_v,
+            (size_t)kv_dim * sizeof(float),
+            (size_t)kv_cache_off * sizeof(float)) != 0) {
+        free(cpu_q); free(cpu_k); free(cpu_v);
+        free(gpu_q); free(gpu_k); free(gpu_v);
+        return -1;
+    }
+
+    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, m->config.norm_eps);
+    bn_quant_matvec(cpu_q, &lw->attn.wq, s->xb, s->x_q, bn_model_pool(m));
+    bn_quant_matvec(cpu_k, &lw->attn.wk, s->xb, s->x_q, bn_model_pool(m));
+    bn_quant_matvec(cpu_v, &lw->attn.wv, s->xb, s->x_q, bn_model_pool(m));
+    if (lw->attn.q_bias) {
+        for (int i = 0; i < q_dim; i++) cpu_q[i] += lw->attn.q_bias[i];
+    }
+    if (lw->attn.k_bias) {
+        for (int i = 0; i < kv_dim; i++) cpu_k[i] += lw->attn.k_bias[i];
+    }
+    if (lw->attn.v_bias) {
+        for (int i = 0; i < kv_dim; i++) cpu_v[i] += lw->attn.v_bias[i];
+    }
+
+    debug_compare_vec("qkv_q_compare", layer, pos, cpu_q, gpu_q, q_dim);
+    debug_compare_vec("qkv_k_compare", layer, pos, cpu_k, gpu_k, kv_dim);
+    debug_compare_vec("qkv_v_compare", layer, pos, cpu_v, gpu_v, kv_dim);
+
+    free(cpu_q); free(cpu_k); free(cpu_v);
+    free(gpu_q); free(gpu_k); free(gpu_v);
     return 0;
 }
 

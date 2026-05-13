@@ -59,6 +59,8 @@ typedef struct {
     int threads;        // 0 = auto-detect
     int webgpu;         // use WebGPU backend for matvec (requires BN_ENABLE_WEBGPU)
     int metal;          // use Metal backend (requires BN_ENABLE_METAL)
+    int gpu_cpu_logits; // hidden diagnostic: run final logits on CPU
+    int gpu_compare_logits; // hidden diagnostic: compare GPU logits to CPU
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -193,6 +195,10 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.webgpu = 1;
         } else if (strcmp(argv[i], "--metal") == 0) {
             args.metal = 1;
+        } else if (strcmp(argv[i], "--gpu-cpu-logits") == 0) {
+            args.gpu_cpu_logits = 1;
+        } else if (strcmp(argv[i], "--gpu-compare-logits") == 0) {
+            args.gpu_compare_logits = 1;
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -506,6 +512,10 @@ int main(int argc, char **argv) {
                 if (gpu->init_activations) {
                     if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
                         SH_LOG_INFO("Metal forward pass ready");
+                        if (args.gpu_cpu_logits)
+                            setenv("BN_GPU_CPU_LOGITS", "1", 1);
+                        if (args.gpu_compare_logits)
+                            setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
                         if (model.config.n_experts > 0)
                             bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&

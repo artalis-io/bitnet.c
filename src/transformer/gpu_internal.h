@@ -329,6 +329,17 @@ int bn_transformer_gpu_debug_compare_ffn_down(
     int down_input_buf,
     int hidden_dim,
     int dim);
+int bn_transformer_gpu_debug_compare_ffn_state(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    const BnFFNPlan *ffn_plan,
+    const float *next_norm,
+    int layer,
+    int pos,
+    int dim);
 int bn_transformer_gpu_fallback_logits(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -376,6 +387,18 @@ int bn_transformer_gpu_debug_compare_attention(
     const float *rope_cos,
     const float *rope_sin,
     int dim);
+int bn_transformer_gpu_debug_compare_qkv(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int pos,
+    uint32_t kv_cache_off,
+    int dim,
+    int q_dim,
+    int kv_dim);
 void bn_transformer_gpu_emit_context_dense_ffn(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
