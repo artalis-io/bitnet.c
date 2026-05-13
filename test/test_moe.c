@@ -168,7 +168,7 @@ static void test_moe_config_compat(void) {
 
     // Dense layer should have NULL router_weight
     BnLayerWeights lw = {0};
-    assert(lw.router_weight == NULL);
+    assert(lw.moe.router_weight == NULL);
 
     printf("PASSED\n");
 }

@@ -811,24 +811,24 @@ static void free_synthetic_model(BnModel *m) {
     w->output_weight.data = NULL;
     for (int l = 0; l < m->config.n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
-        free(lw->attn_norm);
-        lw->attn_norm = NULL;
-        free(lw->ffn_norm);
-        lw->ffn_norm = NULL;
-        free((void *)lw->wq.data);
-        lw->wq.data = NULL;
-        free((void *)lw->wk.data);
-        lw->wk.data = NULL;
-        free((void *)lw->wv.data);
-        lw->wv.data = NULL;
-        free((void *)lw->wo.data);
-        lw->wo.data = NULL;
-        free((void *)lw->ffn_gate.data);
-        lw->ffn_gate.data = NULL;
-        free((void *)lw->ffn_up.data);
-        lw->ffn_up.data = NULL;
-        free((void *)lw->ffn_down.data);
-        lw->ffn_down.data = NULL;
+        free(lw->norm.attn_norm);
+        lw->norm.attn_norm = NULL;
+        free(lw->norm.ffn_norm);
+        lw->norm.ffn_norm = NULL;
+        free((void *)lw->attn.wq.data);
+        lw->attn.wq.data = NULL;
+        free((void *)lw->attn.wk.data);
+        lw->attn.wk.data = NULL;
+        free((void *)lw->attn.wv.data);
+        lw->attn.wv.data = NULL;
+        free((void *)lw->attn.wo.data);
+        lw->attn.wo.data = NULL;
+        free((void *)lw->ffn.ffn_gate.data);
+        lw->ffn.ffn_gate.data = NULL;
+        free((void *)lw->ffn.ffn_up.data);
+        lw->ffn.ffn_up.data = NULL;
+        free((void *)lw->ffn.ffn_down.data);
+        lw->ffn.ffn_down.data = NULL;
     }
     bn_model_free(m);
 }
@@ -865,16 +865,18 @@ static int build_synthetic_model(BnModel *m, int type, int dim, int hidden_dim,
 
     for (int l = 0; l < n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
-        lw->attn_norm = alloc_f32(dim, 1.0f);
-        lw->ffn_norm = alloc_f32(dim, 1.0f);
-        if (!lw->attn_norm || !lw->ffn_norm) return -1;
-        if (make_bench_qweight(&lw->wq, type, dim, dim) != 0 ||
-            make_bench_qweight(&lw->wk, type, c->kv_dim, dim) != 0 ||
-            make_bench_qweight(&lw->wv, type, c->kv_dim, dim) != 0 ||
-            make_bench_qweight(&lw->wo, type, dim, dim) != 0 ||
-            make_bench_qweight(&lw->ffn_gate, type, hidden_dim, dim) != 0 ||
-            make_bench_qweight(&lw->ffn_up, type, hidden_dim, dim) != 0 ||
-            make_bench_qweight(&lw->ffn_down, type, dim, hidden_dim) != 0)
+        lw->block_kind = BN_LAYER_BLOCK_ATTENTION;
+        lw->ffn_kind = BN_LAYER_FFN_DENSE;
+        lw->norm.attn_norm = alloc_f32(dim, 1.0f);
+        lw->norm.ffn_norm = alloc_f32(dim, 1.0f);
+        if (!lw->norm.attn_norm || !lw->norm.ffn_norm) return -1;
+        if (make_bench_qweight(&lw->attn.wq, type, dim, dim) != 0 ||
+            make_bench_qweight(&lw->attn.wk, type, c->kv_dim, dim) != 0 ||
+            make_bench_qweight(&lw->attn.wv, type, c->kv_dim, dim) != 0 ||
+            make_bench_qweight(&lw->attn.wo, type, dim, dim) != 0 ||
+            make_bench_qweight(&lw->ffn.ffn_gate, type, hidden_dim, dim) != 0 ||
+            make_bench_qweight(&lw->ffn.ffn_up, type, hidden_dim, dim) != 0 ||
+            make_bench_qweight(&lw->ffn.ffn_down, type, dim, hidden_dim) != 0)
             return -1;
     }
 

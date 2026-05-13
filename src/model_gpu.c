@@ -91,11 +91,11 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     for (int l = 0; l < n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
         BnQWeight *weights[] = {
-            &lw->wq, &lw->wk, &lw->wv, &lw->wo,
-            &lw->ffn_gate, &lw->ffn_up, &lw->ffn_down,
-            &lw->wqkv, &lw->wz,
-            &lw->ssm_alpha, &lw->ssm_beta, &lw->ssm_out,
-            &lw->shared_gate, &lw->shared_up, &lw->shared_down,
+            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
+            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
+            &lw->ssm.wqkv, &lw->ssm.wz,
+            &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta, &lw->ssm.ssm_out,
+            &lw->shared.shared_gate, &lw->shared.shared_up, &lw->shared.shared_down,
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
@@ -105,8 +105,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
-        void *attn_norm_gpu = upload_f32_buf(gpu, lw->attn_norm, c->dim);
-        void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->ffn_norm, c->dim);
+        void *attn_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_norm, c->dim);
+        void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->norm.ffn_norm, c->dim);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_NORM,
                                 attn_norm_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_NORM,
@@ -122,9 +122,9 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         void *v_bias_gpu = NULL;
         if (gpu->buffer_create_biased) {
             struct { BnQWeight *w; float *bias; void **bias_gpu; } qkv_bias[] = {
-                { &lw->wq, lw->q_bias, &q_bias_gpu },
-                { &lw->wk, lw->k_bias, &k_bias_gpu },
-                { &lw->wv, lw->v_bias, &v_bias_gpu },
+                { &lw->attn.wq, lw->attn.q_bias, &q_bias_gpu },
+                { &lw->attn.wk, lw->attn.k_bias, &k_bias_gpu },
+                { &lw->attn.wv, lw->attn.v_bias, &v_bias_gpu },
             };
             for (int i = 0; i < 3; i++) {
                 void *old_handle = bn_backend_model_qweight_buf(backend, qkv_bias[i].w);
@@ -145,12 +145,12 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 }
             }
         } else {
-            if (lw->q_bias)
-                q_bias_gpu = upload_f32_buf(gpu, lw->q_bias, c->dim);
-            if (lw->k_bias)
-                k_bias_gpu = upload_f32_buf(gpu, lw->k_bias, c->kv_dim);
-            if (lw->v_bias)
-                v_bias_gpu = upload_f32_buf(gpu, lw->v_bias, c->kv_dim);
+            if (lw->attn.q_bias)
+                q_bias_gpu = upload_f32_buf(gpu, lw->attn.q_bias, c->dim);
+            if (lw->attn.k_bias)
+                k_bias_gpu = upload_f32_buf(gpu, lw->attn.k_bias, c->kv_dim);
+            if (lw->attn.v_bias)
+                v_bias_gpu = upload_f32_buf(gpu, lw->attn.v_bias, c->kv_dim);
         }
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_Q_BIAS, q_bias_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_K_BIAS, k_bias_gpu) != 0 ||
@@ -163,11 +163,11 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *qkv_stacked_gpu = bn_backend_layout_upload_stacked3_qkv(
-            gpu, &lw->wq, &lw->wk, &lw->wv,
-            lw->q_bias, lw->k_bias, lw->v_bias,
-            lw->q_bias && !q_bias_gpu,
-            lw->k_bias && !k_bias_gpu,
-            lw->v_bias && !v_bias_gpu);
+            gpu, &lw->attn.wq, &lw->attn.wk, &lw->attn.wv,
+            lw->attn.q_bias, lw->attn.k_bias, lw->attn.v_bias,
+            lw->attn.q_bias && !q_bias_gpu,
+            lw->attn.k_bias && !k_bias_gpu,
+            lw->attn.v_bias && !v_bias_gpu);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_QKV_STACKED,
                                 qkv_stacked_gpu) != 0) {
             if (qkv_stacked_gpu) gpu->buffer_destroy(gpu->ctx, qkv_stacked_gpu);
@@ -176,7 +176,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *gateup_stacked_gpu =
-            bn_backend_layout_upload_stacked2(gpu, &lw->ffn_gate, &lw->ffn_up);
+            bn_backend_layout_upload_stacked2(gpu, &lw->ffn.ffn_gate, &lw->ffn.ffn_up);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_GATEUP_STACKED,
                                 gateup_stacked_gpu) != 0) {
             if (gateup_stacked_gpu) gpu->buffer_destroy(gpu->ctx, gateup_stacked_gpu);
@@ -185,7 +185,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *ssm_qkvz_stacked_gpu =
-            bn_backend_layout_upload_stacked2(gpu, &lw->wqkv, &lw->wz);
+            bn_backend_layout_upload_stacked2(gpu, &lw->ssm.wqkv, &lw->ssm.wz);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED,
                                 ssm_qkvz_stacked_gpu) != 0) {
             if (ssm_qkvz_stacked_gpu) gpu->buffer_destroy(gpu->ctx, ssm_qkvz_stacked_gpu);
@@ -194,7 +194,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         }
 
         void *ssm_ab_stacked_gpu =
-            bn_backend_layout_upload_stacked2(gpu, &lw->ssm_alpha, &lw->ssm_beta);
+            bn_backend_layout_upload_stacked2(gpu, &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_AB_STACKED,
                                 ssm_ab_stacked_gpu) != 0) {
             if (ssm_ab_stacked_gpu) gpu->buffer_destroy(gpu->ctx, ssm_ab_stacked_gpu);
@@ -202,9 +202,9 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             return -1;
         }
 
-        if (lw->q_norm) {
+        if (lw->attn.q_norm) {
             int q_norm_size = c->qk_norm_per_head ? (c->n_heads * c->head_size) : c->head_size;
-            void *q_norm_gpu = upload_f32_buf(gpu, lw->q_norm, q_norm_size);
+            void *q_norm_gpu = upload_f32_buf(gpu, lw->attn.q_norm, q_norm_size);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_Q_NORM,
                                     q_norm_gpu) != 0) {
                 if (q_norm_gpu) gpu->buffer_destroy(gpu->ctx, q_norm_gpu);
@@ -212,9 +212,9 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
         }
-        if (lw->k_norm) {
+        if (lw->attn.k_norm) {
             int k_norm_size = c->qk_norm_per_head ? c->kv_dim : c->head_size;
-            void *k_norm_gpu = upload_f32_buf(gpu, lw->k_norm, k_norm_size);
+            void *k_norm_gpu = upload_f32_buf(gpu, lw->attn.k_norm, k_norm_size);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_K_NORM,
                                     k_norm_gpu) != 0) {
                 if (k_norm_gpu) gpu->buffer_destroy(gpu->ctx, k_norm_gpu);
@@ -222,8 +222,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
         }
-        if (lw->attn_sub_norm) {
-            void *attn_sub_norm_gpu = upload_f32_buf(gpu, lw->attn_sub_norm, c->dim);
+        if (lw->norm.attn_sub_norm) {
+            void *attn_sub_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_sub_norm, c->dim);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_SUB_NORM,
                                     attn_sub_norm_gpu) != 0) {
                 if (attn_sub_norm_gpu) gpu->buffer_destroy(gpu->ctx, attn_sub_norm_gpu);
@@ -231,8 +231,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
         }
-        if (lw->ffn_sub_norm) {
-            void *ffn_sub_norm_gpu = upload_f32_buf(gpu, lw->ffn_sub_norm, c->hidden_dim);
+        if (lw->norm.ffn_sub_norm) {
+            void *ffn_sub_norm_gpu = upload_f32_buf(gpu, lw->norm.ffn_sub_norm, c->hidden_dim);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_SUB_NORM,
                                     ffn_sub_norm_gpu) != 0) {
                 if (ffn_sub_norm_gpu) gpu->buffer_destroy(gpu->ctx, ffn_sub_norm_gpu);
@@ -241,13 +241,13 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
 
-        if (lw->ssm_conv1d) {
+        if (lw->ssm.ssm_conv1d) {
             int num_v_heads = c->ssm_time_step_rank;
             int head_k_dim  = c->ssm_state_size;
             int key_dim     = c->ssm_group_count * head_k_dim;
             int qkv_dim     = key_dim * 2 + c->ssm_inner_size;
             int kern        = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
-            void *ssm_conv1d_gpu = upload_f32_buf(gpu, lw->ssm_conv1d, kern * qkv_dim);
+            void *ssm_conv1d_gpu = upload_f32_buf(gpu, lw->ssm.ssm_conv1d, kern * qkv_dim);
             if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_CONV1D,
                                     ssm_conv1d_gpu) != 0) {
                 if (ssm_conv1d_gpu) gpu->buffer_destroy(gpu->ctx, ssm_conv1d_gpu);
@@ -255,8 +255,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
 
-            if (lw->ssm_dt_bias && num_v_heads > 0) {
-                void *ssm_dt_bias_gpu = upload_f32_buf(gpu, lw->ssm_dt_bias, num_v_heads);
+            if (lw->ssm.ssm_dt_bias && num_v_heads > 0) {
+                void *ssm_dt_bias_gpu = upload_f32_buf(gpu, lw->ssm.ssm_dt_bias, num_v_heads);
                 if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_DT_BIAS,
                                         ssm_dt_bias_gpu) != 0) {
                     if (ssm_dt_bias_gpu) gpu->buffer_destroy(gpu->ctx, ssm_dt_bias_gpu);
@@ -264,8 +264,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                     return -1;
                 }
             }
-            if (lw->ssm_a && num_v_heads > 0) {
-                void *ssm_a_log_gpu = upload_f32_buf(gpu, lw->ssm_a, num_v_heads);
+            if (lw->ssm.ssm_a && num_v_heads > 0) {
+                void *ssm_a_log_gpu = upload_f32_buf(gpu, lw->ssm.ssm_a, num_v_heads);
                 if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_A_LOG,
                                         ssm_a_log_gpu) != 0) {
                     if (ssm_a_log_gpu) gpu->buffer_destroy(gpu->ctx, ssm_a_log_gpu);
@@ -274,10 +274,10 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 }
             }
 
-            if (lw->ssm_norm) {
+            if (lw->ssm.ssm_norm) {
                 int head_v_dim = num_v_heads > 0
                     ? c->ssm_inner_size / num_v_heads : c->ssm_inner_size;
-                void *ssm_norm_gpu = upload_f32_buf(gpu, lw->ssm_norm, head_v_dim);
+                void *ssm_norm_gpu = upload_f32_buf(gpu, lw->ssm.ssm_norm, head_v_dim);
                 if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_NORM,
                                         ssm_norm_gpu) != 0) {
                     if (ssm_norm_gpu) gpu->buffer_destroy(gpu->ctx, ssm_norm_gpu);

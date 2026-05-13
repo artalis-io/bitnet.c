@@ -105,47 +105,47 @@ static void test_gpu_upload_weights(void) {
         attn_norm[i] = 1.0f;
         ffn_norm[i] = 1.0f;
     }
-    model.weights.layers[0].attn_norm = attn_norm;
-    model.weights.layers[0].ffn_norm = ffn_norm;
+    model.weights.layers[0].norm.attn_norm = attn_norm;
+    model.weights.layers[0].norm.ffn_norm = ffn_norm;
 
     // Create a simple I2_S weight for wq
     float scale = 1.0f;
     uint8_t *wq_data = make_i2s_data(128, 128, scale);
-    model.weights.layers[0].wq.data = wq_data;
-    model.weights.layers[0].wq.type = BN_GGUF_TENSOR_I2_S;
-    model.weights.layers[0].wq.rows = 128;
-    model.weights.layers[0].wq.cols = 128;
-    model.weights.layers[0].wq.scale = scale;
+    model.weights.layers[0].attn.wq.data = wq_data;
+    model.weights.layers[0].attn.wq.type = BN_GGUF_TENSOR_I2_S;
+    model.weights.layers[0].attn.wq.rows = 128;
+    model.weights.layers[0].attn.wq.cols = 128;
+    model.weights.layers[0].attn.wq.scale = scale;
 
     // Create ffn_up weight
     uint8_t *up_data = make_i2s_data(256, 128, scale);
-    model.weights.layers[0].ffn_up.data = up_data;
-    model.weights.layers[0].ffn_up.type = BN_GGUF_TENSOR_I2_S;
-    model.weights.layers[0].ffn_up.rows = 256;
-    model.weights.layers[0].ffn_up.cols = 128;
-    model.weights.layers[0].ffn_up.scale = scale;
+    model.weights.layers[0].ffn.ffn_up.data = up_data;
+    model.weights.layers[0].ffn.ffn_up.type = BN_GGUF_TENSOR_I2_S;
+    model.weights.layers[0].ffn.ffn_up.rows = 256;
+    model.weights.layers[0].ffn.ffn_up.cols = 128;
+    model.weights.layers[0].ffn.ffn_up.scale = scale;
 
-    const void *wq_cpu_data = model.weights.layers[0].wq.data;
-    const void *up_cpu_data = model.weights.layers[0].ffn_up.data;
-    int wq_type = model.weights.layers[0].wq.type;
-    int up_type = model.weights.layers[0].ffn_up.type;
-    int wq_rows = model.weights.layers[0].wq.rows;
-    int wq_cols = model.weights.layers[0].wq.cols;
-    int up_rows = model.weights.layers[0].ffn_up.rows;
-    int up_cols = model.weights.layers[0].ffn_up.cols;
+    const void *wq_cpu_data = model.weights.layers[0].attn.wq.data;
+    const void *up_cpu_data = model.weights.layers[0].ffn.ffn_up.data;
+    int wq_type = model.weights.layers[0].attn.wq.type;
+    int up_type = model.weights.layers[0].ffn.ffn_up.type;
+    int wq_rows = model.weights.layers[0].attn.wq.rows;
+    int wq_cols = model.weights.layers[0].attn.wq.cols;
+    int up_rows = model.weights.layers[0].ffn.ffn_up.rows;
+    int up_cols = model.weights.layers[0].ffn.ffn_up.cols;
 
     int rc = bn_model_upload_weights(&model, &mock_gpu);
     assert(rc == 0);
     assert(bn_model_gpu(&model) == &mock_gpu);
     assert(bn_model_backend(&model) != NULL);
-    assert(model.weights.layers[0].wq.data == wq_cpu_data);
-    assert(model.weights.layers[0].ffn_up.data == up_cpu_data);
-    assert(model.weights.layers[0].wq.type == wq_type);
-    assert(model.weights.layers[0].ffn_up.type == up_type);
-    assert(model.weights.layers[0].wq.rows == wq_rows);
-    assert(model.weights.layers[0].wq.cols == wq_cols);
-    assert(model.weights.layers[0].ffn_up.rows == up_rows);
-    assert(model.weights.layers[0].ffn_up.cols == up_cols);
+    assert(model.weights.layers[0].attn.wq.data == wq_cpu_data);
+    assert(model.weights.layers[0].ffn.ffn_up.data == up_cpu_data);
+    assert(model.weights.layers[0].attn.wq.type == wq_type);
+    assert(model.weights.layers[0].ffn.ffn_up.type == up_type);
+    assert(model.weights.layers[0].attn.wq.rows == wq_rows);
+    assert(model.weights.layers[0].attn.wq.cols == wq_cols);
+    assert(model.weights.layers[0].ffn.ffn_up.rows == up_rows);
+    assert(model.weights.layers[0].ffn.ffn_up.cols == up_cols);
     bn_model_set_gpu_disabled(&model, 1);
     assert(bn_model_gpu(&model) == NULL);
     bn_model_set_gpu_disabled(&model, 0);
@@ -155,13 +155,13 @@ static void test_gpu_upload_weights(void) {
     assert(bn_backend_model_handle(bn_model_backend(&model), 0,
                                    BN_BACKEND_HANDLE_FFN_NORM) != NULL);
     assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
-                                        &model.weights.layers[0].wq) != NULL);
+                                        &model.weights.layers[0].attn.wq) != NULL);
     assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
-                                        &model.weights.layers[0].ffn_up) != NULL);
+                                        &model.weights.layers[0].ffn.ffn_up) != NULL);
     assert(bn_backend_model_handle(bn_model_backend(&model), 0,
                                    BN_BACKEND_HANDLE_QKV_STACKED) == NULL);
     assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
-                                        &model.weights.layers[0].wk) == NULL);
+                                        &model.weights.layers[0].attn.wk) == NULL);
 
     bn_model_release_gpu(&model);
     assert(bn_model_backend(&model) != NULL);
@@ -258,16 +258,16 @@ static void test_gpu_release(void) {
 
     float scale = 1.0f;
     uint8_t *data = make_i2s_data(128, 128, scale);
-    model.weights.layers[0].wq.data = data;
-    model.weights.layers[0].wq.type = BN_GGUF_TENSOR_I2_S;
-    model.weights.layers[0].wq.rows = 128;
-    model.weights.layers[0].wq.cols = 128;
-    model.weights.layers[0].wq.scale = scale;
+    model.weights.layers[0].attn.wq.data = data;
+    model.weights.layers[0].attn.wq.type = BN_GGUF_TENSOR_I2_S;
+    model.weights.layers[0].attn.wq.rows = 128;
+    model.weights.layers[0].attn.wq.cols = 128;
+    model.weights.layers[0].attn.wq.scale = scale;
 
     int rc = bn_model_upload_weights(&model, &mock_gpu);
     assert(rc == 0);
     assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
-                                        &model.weights.layers[0].wq) != NULL);
+                                        &model.weights.layers[0].attn.wq) != NULL);
 
     bn_model_release_gpu(&model);
     assert(bn_model_gpu(&model) == NULL);
@@ -587,10 +587,10 @@ static void test_backend_layout_prepared_qweights(void) {
     BnWeights weights = {0};
     BnLayerWeights layer = {0};
     weights.layers = &layer;
-    layer.wq.data = q4_blocks;
-    layer.wq.type = BN_GGUF_TENSOR_Q4_0;
-    layer.wq.rows = 4;
-    layer.wq.cols = 32;
+    layer.attn.wq.data = q4_blocks;
+    layer.attn.wq.type = BN_GGUF_TENSOR_Q4_0;
+    layer.attn.wq.rows = 4;
+    layer.attn.wq.cols = 32;
 
     BnBackendLayoutPreparedStats stats = {0};
     size_t bytes = bn_backend_layout_prepared_qweights_size(&config, &weights, &stats);
@@ -610,7 +610,7 @@ static void test_backend_layout_prepared_qweights(void) {
     assert(built.q4_repack_bytes == stats.q4_repack_bytes);
     assert(built.q8_scale_bytes == 0);
     const BnPreparedWeight *prepared =
-        bn_backend_model_prepared_qweight(backend, &layer.wq);
+        bn_backend_model_prepared_qweight(backend, &layer.attn.wq);
     assert(prepared != NULL);
     assert(prepared->qs != NULL);
 #ifdef __wasm_relaxed_simd__

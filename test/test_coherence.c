@@ -491,13 +491,13 @@ int main(int argc, char **argv) {
 
     typedef struct { const char *name; const BnQWeight *W; } WeightEntry;
     WeightEntry weights[] = {
-        { "wq",       &L0->wq },
-        { "wk",       &L0->wk },
-        { "wv",       &L0->wv },
-        { "wo",       &L0->wo },
-        { "ffn_gate", &L0->ffn_gate },
-        { "ffn_up",   &L0->ffn_up },
-        { "ffn_down", &L0->ffn_down },
+        { "wq",       &L0->attn.wq },
+        { "wk",       &L0->attn.wk },
+        { "wv",       &L0->attn.wv },
+        { "wo",       &L0->attn.wo },
+        { "ffn_gate", &L0->ffn.ffn_gate },
+        { "ffn_up",   &L0->ffn.ffn_up },
+        { "ffn_down", &L0->ffn.ffn_down },
     };
     int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
 
@@ -516,14 +516,14 @@ int main(int argc, char **argv) {
 
     printf("--- Phase 3: GPU standalone matvec vs CPU scalar (layer 0 weight) ---\n");
 
-    const BnQWeight *phase3_W = &L0->wq;
+    const BnQWeight *phase3_W = &L0->attn.wq;
     const char *phase3_name = "wq";
     if (!phase3_W->data || phase3_W->rows == 0) {
-        if (L0->wqkv.data && L0->wqkv.rows > 0) {
-            phase3_W = &L0->wqkv;
+        if (L0->ssm.wqkv.data && L0->ssm.wqkv.rows > 0) {
+            phase3_W = &L0->ssm.wqkv;
             phase3_name = "wqkv";
-        } else if (L0->ffn_gate.data && L0->ffn_gate.rows > 0) {
-            phase3_W = &L0->ffn_gate;
+        } else if (L0->ffn.ffn_gate.data && L0->ffn.ffn_gate.rows > 0) {
+            phase3_W = &L0->ffn.ffn_gate;
             phase3_name = "ffn_gate";
         }
     }

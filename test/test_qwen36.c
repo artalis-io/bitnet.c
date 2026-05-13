@@ -316,9 +316,12 @@ static void test_qwen36_dense(void) {
     assert(model.config.seq_len == 8);
     assert(model.config.head_size == 64);
     assert(model.config.rope_dim_count == 64);
-    assert(model.weights.layers[0].wqkv.data != NULL);
-    assert(model.weights.layers[3].wq.rows == 256);
-    assert(model.weights.layers[3].ffn_gate.data != NULL);
+    assert(model.weights.layers[0].block_kind == BN_LAYER_BLOCK_SSM);
+    assert(model.weights.layers[3].block_kind == BN_LAYER_BLOCK_ATTENTION);
+    assert(model.weights.layers[3].ffn_kind == BN_LAYER_FFN_DENSE);
+    assert(model.weights.layers[0].ssm.wqkv.data != NULL);
+    assert(model.weights.layers[3].attn.wq.rows == 256);
+    assert(model.weights.layers[3].ffn.ffn_gate.data != NULL);
     assert_forward_finite(&model);
 
     bn_model_free(&model);
@@ -351,9 +354,10 @@ static void test_qwen36_moe(void) {
     assert(model.config.n_experts_active == 2);
     assert(model.config.moe_intermediate_size == 64);
     assert(model.config.has_shared_expert == 1);
-    assert(model.weights.layers[0].expert_map.expert_gate_bytes == 128 * 64 * sizeof(float));
-    assert(model.weights.layers[0].shared_expert_gate != NULL);
-    assert(model.weights.layers[3].wq.rows == 256);
+    assert(model.weights.layers[0].ffn_kind == BN_LAYER_FFN_MOE);
+    assert(model.weights.layers[0].moe.expert_map.expert_gate_bytes == 128 * 64 * sizeof(float));
+    assert(model.weights.layers[0].shared.shared_expert_gate != NULL);
+    assert(model.weights.layers[3].attn.wq.rows == 256);
     assert_forward_finite(&model);
 
     bn_model_free(&model);

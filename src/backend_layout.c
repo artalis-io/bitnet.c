@@ -134,16 +134,16 @@ static void prepared_qweight_size_one(const BnQWeight *w,
 
 static void prepared_qweight_size_layer(const BnLayerWeights *lw,
                                         BnBackendLayoutPreparedStats *stats) {
-    prepared_qweight_size_one(&lw->wq, stats);
-    prepared_qweight_size_one(&lw->wk, stats);
-    prepared_qweight_size_one(&lw->wv, stats);
-    prepared_qweight_size_one(&lw->wo, stats);
-    prepared_qweight_size_one(&lw->wqkv, stats);
-    prepared_qweight_size_one(&lw->wz, stats);
-    prepared_qweight_size_one(&lw->ssm_out, stats);
-    prepared_qweight_size_one(&lw->ffn_gate, stats);
-    prepared_qweight_size_one(&lw->ffn_up, stats);
-    prepared_qweight_size_one(&lw->ffn_down, stats);
+    prepared_qweight_size_one(&lw->attn.wq, stats);
+    prepared_qweight_size_one(&lw->attn.wk, stats);
+    prepared_qweight_size_one(&lw->attn.wv, stats);
+    prepared_qweight_size_one(&lw->attn.wo, stats);
+    prepared_qweight_size_one(&lw->ssm.wqkv, stats);
+    prepared_qweight_size_one(&lw->ssm.wz, stats);
+    prepared_qweight_size_one(&lw->ssm.ssm_out, stats);
+    prepared_qweight_size_one(&lw->ffn.ffn_gate, stats);
+    prepared_qweight_size_one(&lw->ffn.ffn_up, stats);
+    prepared_qweight_size_one(&lw->ffn.ffn_down, stats);
 }
 
 static void prepared_qweight_prepare_one(BnBackendModel *backend,
@@ -156,16 +156,16 @@ static void prepared_qweight_prepare_one(BnBackendModel *backend,
 static void prepared_qweight_prepare_layer(BnBackendModel *backend,
                                            const BnLayerWeights *lw,
                                            SHArena *arena) {
-    prepared_qweight_prepare_one(backend, &lw->wq, arena);
-    prepared_qweight_prepare_one(backend, &lw->wk, arena);
-    prepared_qweight_prepare_one(backend, &lw->wv, arena);
-    prepared_qweight_prepare_one(backend, &lw->wo, arena);
-    prepared_qweight_prepare_one(backend, &lw->wqkv, arena);
-    prepared_qweight_prepare_one(backend, &lw->wz, arena);
-    prepared_qweight_prepare_one(backend, &lw->ssm_out, arena);
-    prepared_qweight_prepare_one(backend, &lw->ffn_gate, arena);
-    prepared_qweight_prepare_one(backend, &lw->ffn_up, arena);
-    prepared_qweight_prepare_one(backend, &lw->ffn_down, arena);
+    prepared_qweight_prepare_one(backend, &lw->attn.wq, arena);
+    prepared_qweight_prepare_one(backend, &lw->attn.wk, arena);
+    prepared_qweight_prepare_one(backend, &lw->attn.wv, arena);
+    prepared_qweight_prepare_one(backend, &lw->attn.wo, arena);
+    prepared_qweight_prepare_one(backend, &lw->ssm.wqkv, arena);
+    prepared_qweight_prepare_one(backend, &lw->ssm.wz, arena);
+    prepared_qweight_prepare_one(backend, &lw->ssm.ssm_out, arena);
+    prepared_qweight_prepare_one(backend, &lw->ffn.ffn_gate, arena);
+    prepared_qweight_prepare_one(backend, &lw->ffn.ffn_up, arena);
+    prepared_qweight_prepare_one(backend, &lw->ffn.ffn_down, arena);
 }
 
 const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason) {

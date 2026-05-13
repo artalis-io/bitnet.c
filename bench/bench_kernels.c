@@ -552,18 +552,18 @@ int main(int argc, char **argv) {
     for (int l = 0; l < model.config.n_layers; l++) {
         BnLayerWeights *lw = &model.weights.layers[l];
         const BnQWeight *weights[] = {
-            &lw->wq, &lw->wk, &lw->wv, &lw->wo,
-            &lw->ffn_gate, &lw->ffn_up, &lw->ffn_down,
-            &lw->wqkv, &lw->wz, &lw->ssm_alpha, &lw->ssm_beta, &lw->ssm_out,
-            &lw->shared_gate, &lw->shared_up, &lw->shared_down,
+            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
+            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
+            &lw->ssm.wqkv, &lw->ssm.wz, &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta, &lw->ssm.ssm_out,
+            &lw->shared.shared_gate, &lw->shared.shared_up, &lw->shared.shared_down,
         };
         for (size_t i = 0; i < sizeof(weights) / sizeof(weights[0]); i++) {
             if (weights[i]->data && weights[i]->cols > buf_size)
                 buf_size = weights[i]->cols;
         }
-        if (lw->expert_map.gate_cols > buf_size) buf_size = lw->expert_map.gate_cols;
-        if (lw->expert_map.up_cols > buf_size) buf_size = lw->expert_map.up_cols;
-        if (lw->expert_map.down_cols > buf_size) buf_size = lw->expert_map.down_cols;
+        if (lw->moe.expert_map.gate_cols > buf_size) buf_size = lw->moe.expert_map.gate_cols;
+        if (lw->moe.expert_map.up_cols > buf_size) buf_size = lw->moe.expert_map.up_cols;
+        if (lw->moe.expert_map.down_cols > buf_size) buf_size = lw->moe.expert_map.down_cols;
     }
     if (model.weights.output_weight.data && model.weights.output_weight.cols > buf_size)
         buf_size = model.weights.output_weight.cols;
@@ -591,17 +591,17 @@ int main(int argc, char **argv) {
     BnLayerWeights *L = &model.weights.layers[0];
 
     BenchTarget targets[] = {
-        { "wq",   &L->wq },
-        { "wk",   &L->wk },
-        { "wv",   &L->wv },
-        { "wo",   &L->wo },
-        { "up",   &L->ffn_up },
-        { "down",  &L->ffn_down },
+        { "wq",   &L->attn.wq },
+        { "wk",   &L->attn.wk },
+        { "wv",   &L->attn.wv },
+        { "wo",   &L->attn.wo },
+        { "up",   &L->ffn.ffn_up },
+        { "down",  &L->ffn.ffn_down },
     };
     int n_targets = sizeof(targets) / sizeof(targets[0]);
 
     // Add gate if present
-    BenchTarget gate_target = { "gate", &L->ffn_gate };
+    BenchTarget gate_target = { "gate", &L->ffn.ffn_gate };
 
     for (int i = 0; i < n_targets; i++) {
         if (targets[i].W->data)

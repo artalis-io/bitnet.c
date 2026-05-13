@@ -61,19 +61,19 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      int tq_enabled) {
     memset(p, 0, sizeof(*p));
     p->layer = layer;
-    p->is_attn = bn_transformer_is_attn_layer(c, layer);
+    p->is_attn = lw->block_kind == BN_LAYER_BLOCK_ATTENTION;
     p->attn_idx = p->is_attn ? bn_transformer_attn_index(c, layer) : -1;
     p->ssm_idx = p->is_attn ? -1 : bn_transformer_ssm_index(c, layer);
-    p->head_size = lw->head_size > 0 ? lw->head_size : c->head_size;
-    p->kv_dim = lw->kv_dim > 0 ? lw->kv_dim : c->kv_dim;
-    p->n_kv_heads = lw->n_kv_heads > 0 ? lw->n_kv_heads : c->n_kv_heads;
-    p->kv_mul = lw->kv_mul > 0 ? lw->kv_mul : c->kv_mul;
+    p->head_size = lw->attn.head_size > 0 ? lw->attn.head_size : c->head_size;
+    p->kv_dim = lw->attn.kv_dim > 0 ? lw->attn.kv_dim : c->kv_dim;
+    p->n_kv_heads = lw->attn.n_kv_heads > 0 ? lw->attn.n_kv_heads : c->n_kv_heads;
+    p->kv_mul = lw->attn.kv_mul > 0 ? lw->attn.kv_mul : c->kv_mul;
     p->q_dim = c->n_heads * p->head_size;
-    p->q_gated = lw->wq.data && lw->wq.rows > p->q_dim;
-    p->q_wide = !p->q_gated && lw->wq.data && lw->wq.rows > c->dim;
+    p->q_gated = lw->attn.wq.data && lw->attn.wq.rows > p->q_dim;
+    p->q_wide = !p->q_gated && lw->attn.wq.data && lw->attn.wq.rows > c->dim;
     p->qk_stride = c->qk_norm_per_head ? p->head_size : 0;
-    p->has_qk_norm = (lw->q_norm || lw->k_norm) ? 1 : 0;
-    p->has_bias = (lw->q_bias || lw->k_bias || lw->v_bias) ? 1 : 0;
+    p->has_qk_norm = (lw->attn.q_norm || lw->attn.k_norm) ? 1 : 0;
+    p->has_bias = (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias) ? 1 : 0;
     p->kv_mode = bn_transformer_kv_mode(c, tq_enabled);
     p->kind = p->is_attn
         ? (p->q_gated ? BN_LAYER_ATTN_GATED_Q
@@ -147,14 +147,14 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
 
     p->use_flash = c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);
     p->use_packed_qkv = qkv_stacked && !p->shape.q_gated &&
-                        bn_backend_quant_can_gpu_native(lw->wq.type) &&
-                        bn_backend_quant_can_gpu_native(lw->wk.type) &&
-                        bn_backend_quant_can_gpu_native(lw->wv.type) &&
+                        bn_backend_quant_can_gpu_native(lw->attn.wq.type) &&
+                        bn_backend_quant_can_gpu_native(lw->attn.wk.type) &&
+                        bn_backend_quant_can_gpu_native(lw->attn.wv.type) &&
                         q_bias && k_bias && v_bias;
     p->use_qkv_split = qkv_stacked && !p->shape.q_gated &&
-                       bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
+                       bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
     p->qkv_split_op_code = p->use_qkv_split
-        ? bn_backend_quant_gpu_split_op_code(lw->wq.type)
+        ? bn_backend_quant_gpu_split_op_code(lw->attn.wq.type)
         : 0;
     if (p->use_qkv_split) p->fusion_flags |= BN_FUSION_QKV_SPLIT;
     if (p->use_flash) p->fusion_flags |= BN_FUSION_FLASH_ATTN;
@@ -173,12 +173,12 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->layer = layer;
     p->placement = bn_transformer_preferred_placement(gpu, prefer_gpu);
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
-    p->kind = lw->router_weight ? BN_FFN_MOE
+    p->kind = lw->ffn_kind == BN_LAYER_FFN_MOE ? BN_FFN_MOE
             : (c->has_ffn_gate ? BN_FFN_DENSE_GATE_UP : BN_FFN_DENSE_UP);
-    p->hidden_dim = lw->ffn_up.rows > 0 ? lw->ffn_up.rows : c->hidden_dim;
+    p->hidden_dim = lw->ffn.ffn_up.rows > 0 ? lw->ffn.ffn_up.rows : c->hidden_dim;
     p->activation = c->act_type;
     p->has_gate = c->has_ffn_gate;
-    p->has_sub_norm = lw->ffn_sub_norm ? 1 : 0;
+    p->has_sub_norm = lw->norm.ffn_sub_norm ? 1 : 0;
 
     void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
                                                             BN_BACKEND_HANDLE_GATEUP_STACKED);
@@ -186,19 +186,19 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->use_fused_gateup_silu =
         p->placement == BN_EXEC_GPU &&
         c->has_ffn_gate &&
-        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn_gate.type) != 0 &&
-        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn_up.type) ==
-            bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn_gate.type) &&
-        bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn_gate.type, c->act_type);
+        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) != 0 &&
+        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_up.type) ==
+            bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) &&
+        bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn.ffn_gate.type, c->act_type);
     p->use_gateup_split =
         p->placement == BN_EXEC_GPU &&
         c->has_ffn_gate &&
         gateup_stacked &&
-        lw->ffn_gate.rows == lw->ffn_up.rows &&
-        lw->ffn_gate.cols == lw->ffn_up.cols &&
-        bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type) &&
+        lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
+        lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
+        bn_transformer_gpu_can_matvec_split(gpu, lw->ffn.ffn_gate.type) &&
         (c->act_type != 1 ||
-         bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type) !=
+         bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type) !=
              BN_GPU_CODE_Q4K_MATVEC_SPLIT);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
     if (p->use_gateup_split) p->fusion_flags |= BN_FUSION_GATEUP_SPLIT;
@@ -248,9 +248,9 @@ void bn_transformer_plan_moe(BnMoEPlan *p,
     p->n_experts = c->n_experts;
     p->n_active = c->n_experts_active;
     p->hidden_dim = c->moe_intermediate_size;
-    p->has_shared_expert = c->has_shared_expert || lw->shared_expert_gate;
+    p->has_shared_expert = c->has_shared_expert || lw->shared.shared_expert_gate;
     p->shared_hidden_dim = c->shared_expert_intermediate_size;
-    if (p->placement == BN_EXEC_GPU && lw->router_weight) {
+    if (p->placement == BN_EXEC_GPU && lw->moe.router_weight) {
         p->needs_cpu_fallback = 1;
         p->placement = BN_EXEC_CPU_FALLBACK;
         p->backend = bn_transformer_backend_placement(gpu, p->placement);

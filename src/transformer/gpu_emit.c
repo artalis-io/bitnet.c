@@ -56,54 +56,54 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
     void *ffn_sub_norm = bn_transformer_backend_handle_or(
         backend, layer, BN_BACKEND_HANDLE_FFN_SUB_NORM);
 
-    if (ffn_plan->has_gate && lw->ffn_gate.data) {
+    if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
         int use_fused_gateup = gateup_stacked &&
-                               bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn_gate.type,
+                               bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn.ffn_gate.type,
                                                                          ffn_plan->activation);
         if (use_fused_gateup) {
-            int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
+            int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_FUSED_GATEUP_SILU), .type = lw->ffn_gate.type,
+                GPU_OP(BN_GPU_CODE_FUSED_GATEUP_SILU), .type = lw->ffn.ffn_gate.type,
                 .W_buf = gateup_stacked,
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB, .buf_aux = -1,
-                .rows = lw->ffn_gate.rows, .cols = lw->ffn_gate.cols,
-                .p = { (uint32_t)total_rows, (uint32_t)lw->ffn_gate.cols,
-                       (uint32_t)lw->ffn_gate.rows, 0, 0, 0, 0, 0 }
+                .rows = lw->ffn.ffn_gate.rows, .cols = lw->ffn.ffn_gate.cols,
+                .p = { (uint32_t)total_rows, (uint32_t)lw->ffn.ffn_gate.cols,
+                       (uint32_t)lw->ffn.ffn_gate.rows, 0, 0, 0, 0, 0 }
             };
         } else if (gateup_stacked &&
-                   lw->ffn_gate.rows == lw->ffn_up.rows &&
-                   lw->ffn_gate.cols == lw->ffn_up.cols &&
+                   lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
+                   lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
                    ffn_plan->activation != 1 &&
-                   bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type) ==
+                   bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type) ==
                        BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
-                   bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type)) {
-            int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
-            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type);
+                   bn_transformer_gpu_can_matvec_split(gpu, lw->ffn.ffn_gate.type)) {
+            int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
+            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type);
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(split_op_code),
-                .type = lw->ffn_gate.type,
+                .type = lw->ffn.ffn_gate.type,
                 .W_buf = gateup_stacked,
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB,
                 .buf_aux = BN_GPU_VALUE_HB2,
-                .rows = total_rows, .cols = lw->ffn_gate.cols,
-                .p = { (uint32_t)total_rows, (uint32_t)lw->ffn_gate.cols,
-                       (uint32_t)lw->ffn_gate.rows, 1, 0, 0, 0, 0 }
+                .rows = total_rows, .cols = lw->ffn.ffn_gate.cols,
+                .p = { (uint32_t)total_rows, (uint32_t)lw->ffn.ffn_gate.cols,
+                       (uint32_t)lw->ffn.ffn_gate.rows, 1, 0, 0, 0, 0 }
             };
         } else if (gateup_stacked &&
-                   lw->ffn_gate.rows == lw->ffn_up.rows &&
-                   lw->ffn_gate.cols == lw->ffn_up.cols &&
-                   bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type)) {
-            int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
-            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type);
+                   lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
+                   lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
+                   bn_transformer_gpu_can_matvec_split(gpu, lw->ffn.ffn_gate.type)) {
+            int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
+            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn.ffn_gate.type);
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(split_op_code),
-                .type = lw->ffn_gate.type,
+                .type = lw->ffn.ffn_gate.type,
                 .W_buf = gateup_stacked,
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB,
                 .buf_aux = BN_GPU_VALUE_HB2,
-                .rows = BN_GPU_VALUE_HB2, .cols = lw->ffn_gate.cols,
-                .p = { (uint32_t)total_rows, (uint32_t)lw->ffn_gate.cols,
-                       (uint32_t)lw->ffn_gate.rows, 0, 0, 0, 0, 0 }
+                .rows = BN_GPU_VALUE_HB2, .cols = lw->ffn.ffn_gate.cols,
+                .p = { (uint32_t)total_rows, (uint32_t)lw->ffn.ffn_gate.cols,
+                       (uint32_t)lw->ffn.ffn_gate.rows, 0, 0, 0, 0, 0 }
             };
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(BN_GPU_CODE_SILU_GATE), .type = -1, .W_buf = NULL,
@@ -114,19 +114,19 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
             };
         } else {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn_gate.type,
-                .W_buf = qweight_backend_buf(backend, &lw->ffn_gate),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn.ffn_gate.type,
+                .W_buf = qweight_backend_buf(backend, &lw->ffn.ffn_gate),
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB, .buf_aux = -1,
-                .rows = lw->ffn_gate.rows, .cols = lw->ffn_gate.cols,
-                .p = { (uint32_t)lw->ffn_gate.rows, (uint32_t)lw->ffn_gate.cols,
+                .rows = lw->ffn.ffn_gate.rows, .cols = lw->ffn.ffn_gate.cols,
+                .p = { (uint32_t)lw->ffn.ffn_gate.rows, (uint32_t)lw->ffn.ffn_gate.cols,
                        1, 0, 0, 0, 0, 0 }
             };
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn_up.type,
-                .W_buf = qweight_backend_buf(backend, &lw->ffn_up),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn.ffn_up.type,
+                .W_buf = qweight_backend_buf(backend, &lw->ffn.ffn_up),
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB2, .buf_aux = -1,
-                .rows = lw->ffn_up.rows, .cols = lw->ffn_up.cols,
-                .p = { (uint32_t)lw->ffn_up.rows, (uint32_t)lw->ffn_up.cols,
+                .rows = lw->ffn.ffn_up.rows, .cols = lw->ffn.ffn_up.cols,
+                .p = { (uint32_t)lw->ffn.ffn_up.rows, (uint32_t)lw->ffn.ffn_up.cols,
                        1, 0, 0, 0, 0, 0 }
             };
             int act_code = (ffn_plan->activation == 1) ? BN_GPU_CODE_RELU2_GATE
@@ -142,11 +142,11 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
         }
     } else {
         ops[(*n)++] = (BnGPUOp){
-            GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn_up.type,
-            .W_buf = qweight_backend_buf(backend, &lw->ffn_up),
+            GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn.ffn_up.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ffn.ffn_up),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB, .buf_aux = -1,
-            .rows = lw->ffn_up.rows, .cols = lw->ffn_up.cols,
-            .p = { (uint32_t)lw->ffn_up.rows, (uint32_t)lw->ffn_up.cols,
+            .rows = lw->ffn.ffn_up.rows, .cols = lw->ffn.ffn_up.cols,
+            .p = { (uint32_t)lw->ffn.ffn_up.rows, (uint32_t)lw->ffn.ffn_up.cols,
                    1, 0, 0, 0, 0, 0 }
         };
         int act_code = (ffn_plan->activation == 1) ? BN_GPU_CODE_RELU2_ACT
@@ -171,11 +171,11 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
     }
 
     ops[(*n)++] = (BnGPUOp){
-        GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn_down.type,
-        .W_buf = qweight_backend_buf(backend, &lw->ffn_down),
+        GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ffn.ffn_down.type,
+        .W_buf = qweight_backend_buf(backend, &lw->ffn.ffn_down),
         .buf_in = down_in_buf, .buf_out = BN_GPU_VALUE_XB2, .buf_aux = -1,
-        .rows = lw->ffn_down.rows, .cols = lw->ffn_down.cols,
-        .p = { (uint32_t)lw->ffn_down.rows, (uint32_t)lw->ffn_down.cols,
+        .rows = lw->ffn.ffn_down.rows, .cols = lw->ffn.ffn_down.cols,
+        .p = { (uint32_t)lw->ffn.ffn_down.rows, (uint32_t)lw->ffn.ffn_down.cols,
                1, 0, 0, 0, 0, 0 }
     };
 
@@ -218,53 +218,53 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
     void *qkv_stacked = bn_transformer_backend_handle_or(
         backend, layer, BN_BACKEND_HANDLE_QKV_STACKED);
 
-    int use_packed_qkv = lw->wqkv.data &&
-                         qweight_backend_buf(backend, &lw->wqkv) &&
+    int use_packed_qkv = lw->ssm.wqkv.data &&
+                         qweight_backend_buf(backend, &lw->ssm.wqkv) &&
                          !q_bias && !k_bias && !v_bias &&
-                         lw->wqkv.rows == q_dim + 2 * kv_dim;
+                         lw->ssm.wqkv.rows == q_dim + 2 * kv_dim;
     int q_gated = !use_packed_qkv && plan->q_gated;
-    int packed_split_op_code = bn_backend_quant_gpu_split_op_code(lw->wqkv.type);
+    int packed_split_op_code = bn_backend_quant_gpu_split_op_code(lw->ssm.wqkv.type);
     int use_packed_q5_split =
         use_packed_qkv &&
         packed_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
-        bn_transformer_gpu_can_matvec_split(gpu, lw->wqkv.type);
+        bn_transformer_gpu_can_matvec_split(gpu, lw->ssm.wqkv.type);
 
-    int qkv_split_op_code = bn_backend_quant_gpu_split_op_code(lw->wq.type);
+    int qkv_split_op_code = bn_backend_quant_gpu_split_op_code(lw->attn.wq.type);
     int use_split = qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     qkv_split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
-                    bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
+                    bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
     int use_q8_split = qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT &&
-                       bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
+                       bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
     int use_q5_split = qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
-                       bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
+                       bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
 
     if (use_packed_q5_split) {
         ops[(*n)++] = (BnGPUOp){
             .op_code = packed_split_op_code,
-            .type = lw->wqkv.type,
-            .W_buf = qweight_backend_buf(backend, &lw->wqkv),
+            .type = lw->ssm.wqkv.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ssm.wqkv),
             .buf_in = BN_GPU_VALUE_XB,
             .buf_out = BN_GPU_VALUE_Q,
             .buf_aux = BN_GPU_VALUE_KEY_CACHE,
-            .rows = BN_GPU_VALUE_VALUE_CACHE, .cols = lw->wqkv.cols,
-            .p = { (uint32_t)lw->wqkv.rows, (uint32_t)lw->wqkv.cols,
+            .rows = BN_GPU_VALUE_VALUE_CACHE, .cols = lw->ssm.wqkv.cols,
+            .p = { (uint32_t)lw->ssm.wqkv.rows, (uint32_t)lw->ssm.wqkv.cols,
                    (uint32_t)q_dim, (uint32_t)(q_dim + kv_dim),
                    0, 0, kv_cache_off, kv_cache_off }
         };
     } else if (use_packed_qkv) {
         ops[(*n)++] = (BnGPUOp){
-            GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wqkv.type,
-            .W_buf = qweight_backend_buf(backend, &lw->wqkv),
+            GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->ssm.wqkv.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ssm.wqkv),
             .buf_in = BN_GPU_VALUE_XB,
             .buf_out = BN_GPU_VALUE_QKV,
             .buf_aux = -1,
-            .rows = lw->wqkv.rows, .cols = lw->wqkv.cols,
-            .p = { (uint32_t)lw->wqkv.rows, (uint32_t)lw->wqkv.cols,
+            .rows = lw->ssm.wqkv.rows, .cols = lw->ssm.wqkv.cols,
+            .p = { (uint32_t)lw->ssm.wqkv.rows, (uint32_t)lw->ssm.wqkv.cols,
                    1, 0, 0, 0, 0, 0 }
         };
         ops[(*n)++] = (BnGPUOp){
@@ -288,27 +288,27 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
                    (uint32_t)kv_dim, 0, 0, 0, 0, 0 }
         };
     } else if (use_q5_split || use_q8_split || use_split) {
-        int total_rows = lw->wq.rows + lw->wk.rows + lw->wv.rows;
+        int total_rows = lw->attn.wq.rows + lw->attn.wk.rows + lw->attn.wv.rows;
         ops[(*n)++] = (BnGPUOp){
             .op_code = qkv_split_op_code,
-            .type = lw->wq.type,
+            .type = lw->attn.wq.type,
             .W_buf = qkv_stacked,
             .buf_in = BN_GPU_VALUE_XB,
             .buf_out = BN_GPU_VALUE_Q,
             .buf_aux = BN_GPU_VALUE_KEY_CACHE,
-            .rows = BN_GPU_VALUE_VALUE_CACHE, .cols = lw->wq.cols,
-            .p = { (uint32_t)total_rows, (uint32_t)lw->wq.cols,
+            .rows = BN_GPU_VALUE_VALUE_CACHE, .cols = lw->attn.wq.cols,
+            .p = { (uint32_t)total_rows, (uint32_t)lw->attn.wq.cols,
                    (uint32_t)q_dim, (uint32_t)(q_dim + kv_dim),
                    0, 0, kv_cache_off, kv_cache_off }
         };
     } else {
         if (q_gated) {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wq.type,
-                .W_buf = qweight_backend_buf(backend, &lw->wq),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wq.type,
+                .W_buf = qweight_backend_buf(backend, &lw->attn.wq),
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_QKV,
-                .buf_aux = -1, .rows = lw->wq.rows, .cols = lw->wq.cols,
-                .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols,
+                .buf_aux = -1, .rows = lw->attn.wq.rows, .cols = lw->attn.wq.cols,
+                .p = { (uint32_t)lw->attn.wq.rows, (uint32_t)lw->attn.wq.cols,
                        1, 0, 0, 0, 0, 0 } };
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(BN_GPU_CODE_DEINTERLEAVE_Q), .type = -1,
@@ -318,11 +318,11 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
                        0, 0, 0, 0, 0, 0 } };
         } else {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wq.type,
-                .W_buf = qweight_backend_buf(backend, &lw->wq),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wq.type,
+                .W_buf = qweight_backend_buf(backend, &lw->attn.wq),
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_Q,
-                .buf_aux = -1, .rows = lw->wq.rows, .cols = lw->wq.cols,
-                .p = { (uint32_t)lw->wq.rows, (uint32_t)lw->wq.cols,
+                .buf_aux = -1, .rows = lw->attn.wq.rows, .cols = lw->attn.wq.cols,
+                .p = { (uint32_t)lw->attn.wq.rows, (uint32_t)lw->attn.wq.cols,
                        1, 0, 0, 0, 0, 0 } };
         }
         if (q_bias) {
@@ -335,11 +335,11 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
 
         if (k_bias) {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wk.type,
-                .W_buf = qweight_backend_buf(backend, &lw->wk),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wk.type,
+                .W_buf = qweight_backend_buf(backend, &lw->attn.wk),
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SCRATCH,
-                .buf_aux = -1, .rows = lw->wk.rows, .cols = lw->wk.cols,
-                .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols,
+                .buf_aux = -1, .rows = lw->attn.wk.rows, .cols = lw->attn.wk.cols,
+                .p = { (uint32_t)lw->attn.wk.rows, (uint32_t)lw->attn.wk.cols,
                        1, 0, 0, 0, 0, 0 } };
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(BN_GPU_CODE_BIAS_ADD), .type = -1,
@@ -370,22 +370,22 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
                 .p = { 0, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 } };
         } else {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wk.type,
-                .W_buf = qweight_backend_buf(backend, &lw->wk),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wk.type,
+                .W_buf = qweight_backend_buf(backend, &lw->attn.wk),
                 .buf_in = BN_GPU_VALUE_XB,
                 .buf_out = BN_GPU_VALUE_KEY_CACHE, .buf_aux = -1,
-                .rows = lw->wk.rows, .cols = lw->wk.cols,
-                .p = { (uint32_t)lw->wk.rows, (uint32_t)lw->wk.cols,
+                .rows = lw->attn.wk.rows, .cols = lw->attn.wk.cols,
+                .p = { (uint32_t)lw->attn.wk.rows, (uint32_t)lw->attn.wk.cols,
                        1, 0, 0, kv_cache_off, 0, 0 } };
         }
 
         if (v_bias) {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wv.type,
-                .W_buf = qweight_backend_buf(backend, &lw->wv),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wv.type,
+                .W_buf = qweight_backend_buf(backend, &lw->attn.wv),
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SCRATCH,
-                .buf_aux = -1, .rows = lw->wv.rows, .cols = lw->wv.cols,
-                .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols,
+                .buf_aux = -1, .rows = lw->attn.wv.rows, .cols = lw->attn.wv.cols,
+                .p = { (uint32_t)lw->attn.wv.rows, (uint32_t)lw->attn.wv.cols,
                        1, 0, 0, 0, 0, 0 } };
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(BN_GPU_CODE_BIAS_ADD), .type = -1,
@@ -400,12 +400,12 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
                 .p = { 0, kv_cache_off, (uint32_t)kv_dim, 0, 0, 0, 0, 0 } };
         } else {
             ops[(*n)++] = (BnGPUOp){
-                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wv.type,
-                .W_buf = qweight_backend_buf(backend, &lw->wv),
+                GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wv.type,
+                .W_buf = qweight_backend_buf(backend, &lw->attn.wv),
                 .buf_in = BN_GPU_VALUE_XB,
                 .buf_out = BN_GPU_VALUE_VALUE_CACHE, .buf_aux = -1,
-                .rows = lw->wv.rows, .cols = lw->wv.cols,
-                .p = { (uint32_t)lw->wv.rows, (uint32_t)lw->wv.cols,
+                .rows = lw->attn.wv.rows, .cols = lw->attn.wv.cols,
+                .p = { (uint32_t)lw->attn.wv.rows, (uint32_t)lw->attn.wv.cols,
                        1, 0, 0, kv_cache_off, 0, 0 } };
         }
     }
@@ -514,7 +514,7 @@ void bn_transformer_gpu_emit_attention(BnGPUOp *ops, int *n,
         }
     }
 
-    if (lw->wq.rows > q_dim) {
+    if (lw->attn.wq.rows > q_dim) {
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_SIGMOID_GATE), .type = -1, .W_buf = NULL,
             .buf_in = BN_GPU_VALUE_XB, .buf_out = -1, .buf_aux = BN_GPU_VALUE_QKV,
             .p = { (uint32_t)q_dim, (uint32_t)head_size, 0, 0, 0, 0, 0, 0 } };
@@ -530,11 +530,11 @@ void bn_transformer_gpu_emit_attention(BnGPUOp *ops, int *n,
     }
 
     ops[(*n)++] = (BnGPUOp){
-        GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->wo.type,
-        .W_buf = qweight_backend_buf(backend, &lw->wo),
+        GPU_OP(BN_GPU_CODE_MATVEC), .type = lw->attn.wo.type,
+        .W_buf = qweight_backend_buf(backend, &lw->attn.wo),
         .buf_in = wo_in_buf, .buf_out = BN_GPU_VALUE_XB2, .buf_aux = -1,
-        .rows = lw->wo.rows, .cols = lw->wo.cols,
-        .p = { (uint32_t)lw->wo.rows, (uint32_t)lw->wo.cols, 1, 0, 0, 0, 0, 0 }
+        .rows = lw->attn.wo.rows, .cols = lw->attn.wo.cols,
+        .p = { (uint32_t)lw->attn.wo.rows, (uint32_t)lw->attn.wo.cols, 1, 0, 0, 0, 0, 0 }
     };
 
     ops[(*n)++] = (BnGPUOp){
@@ -588,32 +588,32 @@ void bn_transformer_gpu_emit_ssm(BnGPUOp *ops, int *n,
     void *ffn_norm = bn_transformer_backend_handle_or(
         backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
 
-    int ssm_split_op_code = bn_backend_quant_gpu_split_op_code(lw->wqkv.type);
+    int ssm_split_op_code = bn_backend_quant_gpu_split_op_code(lw->ssm.wqkv.type);
     if (ssm_qkvz_stacked &&
         ssm_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
-        bn_transformer_gpu_can_matvec_split(gpu, lw->wqkv.type)) {
-        int total_rows = lw->wqkv.rows + lw->wz.rows;
+        bn_transformer_gpu_can_matvec_split(gpu, lw->ssm.wqkv.type)) {
+        int total_rows = lw->ssm.wqkv.rows + lw->ssm.wz.rows;
         ops[(*n)++] = (BnGPUOp){ .op_code = ssm_split_op_code,
-            .type = lw->wqkv.type, .W_buf = ssm_qkvz_stacked,
+            .type = lw->ssm.wqkv.type, .W_buf = ssm_qkvz_stacked,
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SSM_QKV,
             .buf_aux = BN_GPU_VALUE_SSM_Z, .rows = BN_GPU_VALUE_SSM_Z,
-            .cols = lw->wqkv.cols,
-            .p = { (uint32_t)total_rows, (uint32_t)lw->wqkv.cols,
-                   (uint32_t)lw->wqkv.rows, 0, 0, 0, 0, 0 } };
+            .cols = lw->ssm.wqkv.cols,
+            .p = { (uint32_t)total_rows, (uint32_t)lw->ssm.wqkv.cols,
+                   (uint32_t)lw->ssm.wqkv.rows, 0, 0, 0, 0, 0 } };
     } else {
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->wqkv.type,
-            .W_buf = qweight_backend_buf(backend, &lw->wqkv),
+            .type = lw->ssm.wqkv.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ssm.wqkv),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SSM_QKV,
-            .buf_aux = -1, .rows = lw->wqkv.rows, .cols = lw->wqkv.cols,
-            .p = { (uint32_t)lw->wqkv.rows, (uint32_t)lw->wqkv.cols,
+            .buf_aux = -1, .rows = lw->ssm.wqkv.rows, .cols = lw->ssm.wqkv.cols,
+            .p = { (uint32_t)lw->ssm.wqkv.rows, (uint32_t)lw->ssm.wqkv.cols,
                    1, 0, 0, 0, 0, 0 } };
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->wz.type,
-            .W_buf = qweight_backend_buf(backend, &lw->wz),
+            .type = lw->ssm.wz.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ssm.wz),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SSM_Z,
-            .buf_aux = -1, .rows = lw->wz.rows, .cols = lw->wz.cols,
-            .p = { (uint32_t)lw->wz.rows, (uint32_t)lw->wz.cols,
+            .buf_aux = -1, .rows = lw->ssm.wz.rows, .cols = lw->ssm.wz.cols,
+            .p = { (uint32_t)lw->ssm.wz.rows, (uint32_t)lw->ssm.wz.cols,
                    1, 0, 0, 0, 0, 0 } };
     }
 
@@ -629,38 +629,38 @@ void bn_transformer_gpu_emit_ssm(BnGPUOp *ops, int *n,
         .p = { (uint32_t)head_k_dim, 0, (uint32_t)key_dim, 0, 0, 0, 0, 0 } };
 
     if (ssm_ab_stacked &&
-        lw->ssm_alpha.rows == lw->ssm_beta.rows &&
-        lw->ssm_alpha.cols == lw->ssm_beta.cols) {
-        int ab_rows = lw->ssm_alpha.rows + lw->ssm_beta.rows;
+        lw->ssm.ssm_alpha.rows == lw->ssm.ssm_beta.rows &&
+        lw->ssm.ssm_alpha.cols == lw->ssm.ssm_beta.cols) {
+        int ab_rows = lw->ssm.ssm_alpha.rows + lw->ssm.ssm_beta.rows;
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->ssm_alpha.type, .W_buf = ssm_ab_stacked,
+            .type = lw->ssm.ssm_alpha.type, .W_buf = ssm_ab_stacked,
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SSM_V,
-            .buf_aux = -1, .rows = ab_rows, .cols = lw->ssm_alpha.cols,
-            .p = { (uint32_t)ab_rows, (uint32_t)lw->ssm_alpha.cols,
+            .buf_aux = -1, .rows = ab_rows, .cols = lw->ssm.ssm_alpha.cols,
+            .p = { (uint32_t)ab_rows, (uint32_t)lw->ssm.ssm_alpha.cols,
                    1, 0, 0, 0, 0, 0 } };
         _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
         uintptr_t a_ptr = (uintptr_t)ssm_a_log;
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT),
             .type = -1, .W_buf = ssm_dt_bias, .buf_in = BN_GPU_VALUE_SSM_V,
             .buf_out = -1, .buf_aux = -1,
-            .p = { (uint32_t)num_v_heads, (uint32_t)lw->ssm_alpha.rows,
+            .p = { (uint32_t)num_v_heads, (uint32_t)lw->ssm.ssm_alpha.rows,
                    0, 0, 0, 0,
                    (uint32_t)(a_ptr & 0xFFFFFFFF),
                    (uint32_t)((uint64_t)a_ptr >> 32) } };
     } else {
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->ssm_alpha.type,
-            .W_buf = qweight_backend_buf(backend, &lw->ssm_alpha),
+            .type = lw->ssm.ssm_alpha.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ssm.ssm_alpha),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SSM_ALPHA,
-            .buf_aux = -1, .rows = lw->ssm_alpha.rows, .cols = lw->ssm_alpha.cols,
-            .p = { (uint32_t)lw->ssm_alpha.rows, (uint32_t)lw->ssm_alpha.cols,
+            .buf_aux = -1, .rows = lw->ssm.ssm_alpha.rows, .cols = lw->ssm.ssm_alpha.cols,
+            .p = { (uint32_t)lw->ssm.ssm_alpha.rows, (uint32_t)lw->ssm.ssm_alpha.cols,
                    1, 0, 0, 0, 0, 0 } };
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->ssm_beta.type,
-            .W_buf = qweight_backend_buf(backend, &lw->ssm_beta),
+            .type = lw->ssm.ssm_beta.type,
+            .W_buf = qweight_backend_buf(backend, &lw->ssm.ssm_beta),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_SSM_BETA,
-            .buf_aux = -1, .rows = lw->ssm_beta.rows, .cols = lw->ssm_beta.cols,
-            .p = { (uint32_t)lw->ssm_beta.rows, (uint32_t)lw->ssm_beta.cols,
+            .buf_aux = -1, .rows = lw->ssm.ssm_beta.rows, .cols = lw->ssm.ssm_beta.cols,
+            .p = { (uint32_t)lw->ssm.ssm_beta.rows, (uint32_t)lw->ssm.ssm_beta.cols,
                    1, 0, 0, 0, 0, 0 } };
         _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
         uintptr_t a_ptr = (uintptr_t)ssm_a_log;
@@ -688,11 +688,11 @@ void bn_transformer_gpu_emit_ssm(BnGPUOp *ops, int *n,
         .rows = num_v_heads,
         .p = { (uint32_t)head_v_dim, u_eps, 0, 0, 0, 0, 0, 0 } };
     ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-        .type = lw->ssm_out.type,
-        .W_buf = qweight_backend_buf(backend, &lw->ssm_out),
+        .type = lw->ssm.ssm_out.type,
+        .W_buf = qweight_backend_buf(backend, &lw->ssm.ssm_out),
         .buf_in = BN_GPU_VALUE_XB2, .buf_out = BN_GPU_VALUE_SCRATCH,
-        .buf_aux = -1, .rows = lw->ssm_out.rows, .cols = lw->ssm_out.cols,
-        .p = { (uint32_t)lw->ssm_out.rows, (uint32_t)lw->ssm_out.cols,
+        .buf_aux = -1, .rows = lw->ssm.ssm_out.rows, .cols = lw->ssm.ssm_out.cols,
+        .p = { (uint32_t)lw->ssm.ssm_out.rows, (uint32_t)lw->ssm.ssm_out.cols,
                1, 0, 0, 0, 0, 0 } };
     ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_RESIDUAL_RMSNORM),
         .type = -1, .W_buf = ffn_norm,
@@ -716,7 +716,7 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
     BnMoEState *ms = sess->moe_state;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    const BnMoEExpertMap *em = &lw->expert_map;
+    const BnMoEExpertMap *em = &lw->moe.expert_map;
     *n_uncached = 0;
 
     for (int k = 0; k < K; k++) {
@@ -771,35 +771,35 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
             .p = { (uint32_t)dim, u_ew, 0, 0, 0, 0, 0, 0 } };
     }
 
-    if (lw->shared_gate.data && qweight_backend_buf(backend, &lw->shared_gate)) {
+    if (lw->shared.shared_gate.data && qweight_backend_buf(backend, &lw->shared.shared_gate)) {
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->shared_gate.type,
-            .W_buf = qweight_backend_buf(backend, &lw->shared_gate),
+            .type = lw->shared.shared_gate.type,
+            .W_buf = qweight_backend_buf(backend, &lw->shared.shared_gate),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB,
-            .buf_aux = -1, .rows = lw->shared_gate.rows,
-            .cols = lw->shared_gate.cols,
-            .p = { (uint32_t)lw->shared_gate.rows,
-                   (uint32_t)lw->shared_gate.cols, 1, 0, 0, 0, 0, 0 } };
+            .buf_aux = -1, .rows = lw->shared.shared_gate.rows,
+            .cols = lw->shared.shared_gate.cols,
+            .p = { (uint32_t)lw->shared.shared_gate.rows,
+                   (uint32_t)lw->shared.shared_gate.cols, 1, 0, 0, 0, 0, 0 } };
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->shared_up.type,
-            .W_buf = qweight_backend_buf(backend, &lw->shared_up),
+            .type = lw->shared.shared_up.type,
+            .W_buf = qweight_backend_buf(backend, &lw->shared.shared_up),
             .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_HB2,
-            .buf_aux = -1, .rows = lw->shared_up.rows,
-            .cols = lw->shared_up.cols,
-            .p = { (uint32_t)lw->shared_up.rows,
-                   (uint32_t)lw->shared_up.cols, 1, 0, 0, 0, 0, 0 } };
+            .buf_aux = -1, .rows = lw->shared.shared_up.rows,
+            .cols = lw->shared.shared_up.cols,
+            .p = { (uint32_t)lw->shared.shared_up.rows,
+                   (uint32_t)lw->shared.shared_up.cols, 1, 0, 0, 0, 0, 0 } };
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_SILU_GATE),
             .type = -1, .W_buf = NULL, .buf_in = BN_GPU_VALUE_HB,
             .buf_out = -1, .buf_aux = BN_GPU_VALUE_HB2,
-            .p = { (uint32_t)lw->shared_gate.rows, 0, 0, 0, 0, 0, 0, 0 } };
+            .p = { (uint32_t)lw->shared.shared_gate.rows, 0, 0, 0, 0, 0, 0, 0 } };
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = lw->shared_down.type,
-            .W_buf = qweight_backend_buf(backend, &lw->shared_down),
+            .type = lw->shared.shared_down.type,
+            .W_buf = qweight_backend_buf(backend, &lw->shared.shared_down),
             .buf_in = BN_GPU_VALUE_HB, .buf_out = BN_GPU_VALUE_XB2,
-            .buf_aux = -1, .rows = lw->shared_down.rows,
-            .cols = lw->shared_down.cols,
-            .p = { (uint32_t)lw->shared_down.rows,
-                   (uint32_t)lw->shared_down.cols, 1, 0, 0, 0, 0, 0 } };
+            .buf_aux = -1, .rows = lw->shared.shared_down.rows,
+            .cols = lw->shared.shared_down.cols,
+            .p = { (uint32_t)lw->shared.shared_down.rows,
+                   (uint32_t)lw->shared.shared_down.cols, 1, 0, 0, 0, 0, 0 } };
         uint32_t u_one;
         { float one = 1.0f; memcpy(&u_one, &one, 4); }
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_WEIGHTED_ADD),

@@ -498,13 +498,15 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
         // Determine layer type for hybrid models
         int is_ssm = arch_ops->is_ssm_layer(c, i);
+        lw->block_kind = is_ssm ? BN_LAYER_BLOCK_SSM : BN_LAYER_BLOCK_ATTENTION;
+        lw->ffn_kind = c->n_experts > 0 ? BN_LAYER_FFN_MOE : BN_LAYER_FFN_DENSE;
 
         // #25: Attention norms — must exist
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                           BN_MODEL_TENSOR_ATTN_NORM) != 0)
             goto fail_layers;
-        lw->attn_norm = load_f32_tensor(f, wname);
-        if (!lw->attn_norm) {
+        lw->norm.attn_norm = load_f32_tensor(f, wname);
+        if (!lw->norm.attn_norm) {
             SH_LOG_ERROR("Tensor not found", "name", wname);
             goto fail_layers;
         }
@@ -512,7 +514,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                           BN_MODEL_TENSOR_ATTN_SUB_NORM) != 0)
             goto fail_layers;
-        lw->attn_sub_norm = load_f32_tensor(f, wname);  // optional
+        lw->norm.attn_sub_norm = load_f32_tensor(f, wname);  // optional
 
         if (is_ssm) {
             // --- SSM layer weights ---
@@ -521,55 +523,55 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_SSM_QKV) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->wqkv, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ssm.wqkv, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_GATE) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_SSM_GATE) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->wz, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ssm.wz, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_A) != 0)
                 goto fail_layers;
-            lw->ssm_a = load_f32_tensor(f, wname);
+            lw->ssm.ssm_a = load_f32_tensor(f, wname);
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_ALPHA) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_SSM_ALPHA) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->ssm_alpha, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ssm.ssm_alpha, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_BETA) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_SSM_BETA) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->ssm_beta, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ssm.ssm_beta, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_CONV1D) != 0)
                 goto fail_layers;
-            lw->ssm_conv1d = load_f32_tensor(f, wname);
+            lw->ssm.ssm_conv1d = load_f32_tensor(f, wname);
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_DT_BIAS) != 0)
                 goto fail_layers;
-            lw->ssm_dt_bias = load_f32_tensor(f, wname);
+            lw->ssm.ssm_dt_bias = load_f32_tensor(f, wname);
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_NORM) != 0)
                 goto fail_layers;
-            lw->ssm_norm = load_f32_tensor(f, wname);
+            lw->ssm.ssm_norm = load_f32_tensor(f, wname);
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_SSM_OUT) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_SSM_OUT) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->ssm_out, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ssm.ssm_out, f, wname, sname) != 0) goto fail_layers;
         } else {
             // --- Attention layer weights ---
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -577,14 +579,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_ATTN_Q) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->wq, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->attn.wq, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_K) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_ATTN_K) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->wk, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->attn.wk, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_V) != 0 ||
@@ -592,9 +594,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                                                     BN_MODEL_TENSOR_ATTN_V) != 0)
                 goto fail_layers;
             if (bn_gguf_find_tensor(f, wname) >= 0) {
-                if (load_qweight(&lw->wv, f, wname, sname) != 0) goto fail_layers;
+                if (load_qweight(&lw->attn.wv, f, wname, sname) != 0) goto fail_layers;
             } else if (arch_ops->attention_value_shares_key(arch)) {
-                lw->wv = lw->wk;
+                lw->attn.wv = lw->attn.wk;
             } else {
                 SH_LOG_ERROR("Tensor not found", "name", wname);
                 goto fail_layers;
@@ -605,34 +607,34 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_ATTN_OUTPUT) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->wo, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->attn.wo, f, wname, sname) != 0) goto fail_layers;
 
             // Attention biases (optional, used by Qwen2)
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_Q_BIAS) != 0)
                 goto fail_layers;
-            lw->q_bias = load_f32_tensor(f, wname);
+            lw->attn.q_bias = load_f32_tensor(f, wname);
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_K_BIAS) != 0)
                 goto fail_layers;
-            lw->k_bias = load_f32_tensor(f, wname);
+            lw->attn.k_bias = load_f32_tensor(f, wname);
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_V_BIAS) != 0)
                 goto fail_layers;
-            lw->v_bias = load_f32_tensor(f, wname);
+            lw->attn.v_bias = load_f32_tensor(f, wname);
 
             // Q/K norms (Qwen3.5 / OLMoE attention)
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
                 goto fail_layers;
-            lw->q_norm = load_f32_tensor(f, wname);
+            lw->attn.q_norm = load_f32_tensor(f, wname);
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_K_NORM) != 0)
                 goto fail_layers;
-            lw->k_norm = load_f32_tensor(f, wname);
+            lw->attn.k_norm = load_f32_tensor(f, wname);
 
             // Detect per-head vs shared norms (layer 0 only)
-            if (i == 0 && lw->q_norm) {
+            if (i == 0 && lw->attn.q_norm) {
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), 0,
                                                   BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
                     goto fail_layers;
@@ -641,48 +643,48 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     c->qk_norm_per_head = 1;
             }
 
-            lw->q_dim = lw->wq.rows;
-            lw->head_size = c->head_size;
-            if (lw->q_norm && !c->qk_norm_per_head) {
+            lw->attn.q_dim = lw->attn.wq.rows;
+            lw->attn.head_size = c->head_size;
+            if (lw->attn.q_norm && !c->qk_norm_per_head) {
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
                     goto fail_layers;
                 int hs = tensor_dim0(f, wname);
-                if (hs > 0) lw->head_size = hs;
-            } else if (!lw->q_norm && c->n_heads > 0 && lw->wq.rows > 0 &&
-                       lw->wq.rows % c->n_heads == 0) {
-                lw->head_size = lw->wq.rows / c->n_heads;
+                if (hs > 0) lw->attn.head_size = hs;
+            } else if (!lw->attn.q_norm && c->n_heads > 0 && lw->attn.wq.rows > 0 &&
+                       lw->attn.wq.rows % c->n_heads == 0) {
+                lw->attn.head_size = lw->attn.wq.rows / c->n_heads;
             }
             snprintf(key, sizeof(key), "%s.attention.head_count_kv", prefix);
-            lw->n_kv_heads = gguf_get_u32_or_i32_array(f, key, i);
-            if (lw->n_kv_heads <= 0 && lw->head_size > 0)
-                lw->n_kv_heads = lw->wk.rows / lw->head_size;
-            if (lw->n_kv_heads <= 0) lw->n_kv_heads = c->n_kv_heads;
-            lw->kv_dim = lw->wk.rows > 0 ? lw->wk.rows : lw->n_kv_heads * lw->head_size;
-            lw->kv_mul = (lw->n_kv_heads > 0) ? c->n_heads / lw->n_kv_heads : c->kv_mul;
-            if (lw->head_size <= 0 || lw->kv_dim <= 0 || lw->kv_mul <= 0 ||
-                c->n_heads % lw->n_kv_heads != 0) {
+            lw->attn.n_kv_heads = gguf_get_u32_or_i32_array(f, key, i);
+            if (lw->attn.n_kv_heads <= 0 && lw->attn.head_size > 0)
+                lw->attn.n_kv_heads = lw->attn.wk.rows / lw->attn.head_size;
+            if (lw->attn.n_kv_heads <= 0) lw->attn.n_kv_heads = c->n_kv_heads;
+            lw->attn.kv_dim = lw->attn.wk.rows > 0 ? lw->attn.wk.rows : lw->attn.n_kv_heads * lw->attn.head_size;
+            lw->attn.kv_mul = (lw->attn.n_kv_heads > 0) ? c->n_heads / lw->attn.n_kv_heads : c->kv_mul;
+            if (lw->attn.head_size <= 0 || lw->attn.kv_dim <= 0 || lw->attn.kv_mul <= 0 ||
+                c->n_heads % lw->attn.n_kv_heads != 0) {
                 SH_LOG_ERROR("Invalid per-layer attention dimensions");
                 goto fail_layers;
             }
-            if (lw->head_size > max_head_size) max_head_size = lw->head_size;
-            if (lw->kv_dim > max_kv_dim) max_kv_dim = lw->kv_dim;
-            if (lw->q_dim > max_q_dim) max_q_dim = lw->q_dim;
+            if (lw->attn.head_size > max_head_size) max_head_size = lw->attn.head_size;
+            if (lw->attn.kv_dim > max_kv_dim) max_kv_dim = lw->attn.kv_dim;
+            if (lw->attn.q_dim > max_q_dim) max_q_dim = lw->attn.q_dim;
         }
 
         // #25: FFN norms — must exist
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                           BN_MODEL_TENSOR_FFN_NORM) != 0)
             goto fail_layers;
-        lw->ffn_norm = load_f32_tensor(f, wname);
-        if (!lw->ffn_norm) {
+        lw->norm.ffn_norm = load_f32_tensor(f, wname);
+        if (!lw->norm.ffn_norm) {
             // Qwen3.5 uses post_attention_norm instead of ffn_norm
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_FFN_POST_ATTN_NORM) != 0)
                 goto fail_layers;
-            lw->ffn_norm = load_f32_tensor(f, wname);
+            lw->norm.ffn_norm = load_f32_tensor(f, wname);
         }
-        if (!lw->ffn_norm) {
+        if (!lw->norm.ffn_norm) {
             SH_LOG_ERROR("FFN norm not found for layer");
             goto fail_layers;
         }
@@ -690,7 +692,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                           BN_MODEL_TENSOR_FFN_SUB_NORM) != 0)
             goto fail_layers;
-        lw->ffn_sub_norm = load_f32_tensor(f, wname);  // optional
+        lw->norm.ffn_sub_norm = load_f32_tensor(f, wname);  // optional
 
         // FFN weights: MoE or dense
         if (c->n_experts > 0) {
@@ -700,8 +702,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_MOE_ROUTER) != 0)
                 goto fail_layers;
-            lw->router_weight = (float *)load_f32_tensor(f, wname);
-            if (!lw->router_weight) {
+            lw->moe.router_weight = (float *)load_f32_tensor(f, wname);
+            if (!lw->moe.router_weight) {
                 SH_LOG_ERROR("Router weight not found", "name", wname);
                 goto fail_layers;
             }
@@ -730,7 +732,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
             if (bn_moe_load_expert_map(f, &expert_names, c->n_experts,
                                        c->moe_intermediate_size,
-                                       &lw->expert_map) != 0)
+                                       &lw->moe.expert_map) != 0)
                 goto fail_layers;
 
             // Shared expert (optional, always resident)
@@ -740,27 +742,27 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                         BN_MODEL_TENSOR_SHARED_FFN_GATE) != 0)
                     goto fail_layers;
-                if (load_qweight(&lw->shared_gate, f, wname, sname) != 0) goto fail_layers;
+                if (load_qweight(&lw->shared.shared_gate, f, wname, sname) != 0) goto fail_layers;
 
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_SHARED_FFN_UP) != 0 ||
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                         BN_MODEL_TENSOR_SHARED_FFN_UP) != 0)
                     goto fail_layers;
-                if (load_qweight(&lw->shared_up, f, wname, sname) != 0) goto fail_layers;
+                if (load_qweight(&lw->shared.shared_up, f, wname, sname) != 0) goto fail_layers;
 
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_SHARED_FFN_DOWN) != 0 ||
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                         BN_MODEL_TENSOR_SHARED_FFN_DOWN) != 0)
                     goto fail_layers;
-                if (load_qweight(&lw->shared_down, f, wname, sname) != 0) goto fail_layers;
+                if (load_qweight(&lw->shared.shared_down, f, wname, sname) != 0) goto fail_layers;
 
                 // Shared expert sigmoid gate (optional, Qwen3.5 MoE)
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_SHARED_FFN_ROUTER) != 0)
                     goto fail_layers;
-                lw->shared_expert_gate = load_f32_tensor(f, wname);
+                lw->shared.shared_expert_gate = load_f32_tensor(f, wname);
             }
         } else {
             // --- Dense FFN ---
@@ -770,7 +772,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                         BN_MODEL_TENSOR_FFN_GATE) != 0)
                     goto fail_layers;
-                if (load_qweight(&lw->ffn_gate, f, wname, sname) != 0) goto fail_layers;
+                if (load_qweight(&lw->ffn.ffn_gate, f, wname, sname) != 0) goto fail_layers;
             }
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -778,14 +780,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_FFN_UP) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->ffn_up, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ffn.ffn_up, f, wname, sname) != 0) goto fail_layers;
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_FFN_DOWN) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_FFN_DOWN) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->ffn_down, f, wname, sname) != 0) goto fail_layers;
+            if (load_qweight(&lw->ffn.ffn_down, f, wname, sname) != 0) goto fail_layers;
         }
     }
 

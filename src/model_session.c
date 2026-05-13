@@ -107,7 +107,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     if (c->n_experts > 0 && c->n_layers > 0) {
         size_t moe_expert_buf_size = 0;
         if (w && w->layers) {
-            BnMoEExpertMap *em0 = &w->layers[0].expert_map;
+            BnMoEExpertMap *em0 = &w->layers[0].moe.expert_map;
             moe_expert_buf_size = em0->expert_gate_bytes;
             if (em0->expert_up_bytes > moe_expert_buf_size)
                 moe_expert_buf_size = em0->expert_up_bytes;
@@ -214,7 +214,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
 
 static void alloc_moe_pread_bufs(BnMoEState *ms, const BnWeights *w, SHArena *arena) {
     if (!ms || !w || !w->layers) return;
-    BnMoEExpertMap *em0 = &w->layers[0].expert_map;
+    BnMoEExpertMap *em0 = &w->layers[0].moe.expert_map;
     size_t buf_size = em0->expert_gate_bytes;
     if (em0->expert_up_bytes > buf_size) buf_size = em0->expert_up_bytes;
     if (em0->expert_down_bytes > buf_size) buf_size = em0->expert_down_bytes;

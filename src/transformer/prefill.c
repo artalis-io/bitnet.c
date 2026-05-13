@@ -201,32 +201,32 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
         int is_attn = plan.is_attn;
 
-        if (is_attn && lw->wq.data) {
+        if (is_attn && lw->attn.wq.data) {
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
-                                lw->attn_norm, dim, c->norm_eps);
+                                lw->norm.attn_norm, dim, c->norm_eps);
 
 #ifdef __AVX2__
             if (pf_xq && !bn_model_gpu(m) &&
-                prefill_quant_can_preq8k_triple(lw->wq.type, lw->wk.type, lw->wv.type)) {
+                prefill_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type)) {
                 int n_bpr = dim / BN_QK_K;
                 for (int t = 0; t < n_tokens; t++)
                     bn_quant_x_to_q8k(Xb + (size_t)t * dim,
                                       pf_xq + (size_t)t * dim,
                                       pf_xd + (size_t)t * n_bpr,
                                       pf_xbs + (size_t)t * n_bpr * 16, dim);
-                bn_quant_matmul_preq8k(Q_buf, &lw->wq, n_tokens,
+                bn_quant_matmul_preq8k(Q_buf, &lw->attn.wq, n_tokens,
                                        pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
-                bn_quant_matmul_preq8k(K_new, &lw->wk, n_tokens,
+                bn_quant_matmul_preq8k(K_new, &lw->attn.wk, n_tokens,
                                        pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
-                bn_quant_matmul_preq8k(V_new, &lw->wv, n_tokens,
+                bn_quant_matmul_preq8k(V_new, &lw->attn.wv, n_tokens,
                                        pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
             } else
 #endif
             {
-                prefill_quant_matmul_gpu(m, Q_buf, &lw->wq, Xb, n_tokens, s->x_q);
-                prefill_quant_matmul_gpu(m, K_new, &lw->wk, Xb, n_tokens, s->x_q);
-                prefill_quant_matmul_gpu(m, V_new, &lw->wv, Xb, n_tokens, s->x_q);
+                prefill_quant_matmul_gpu(m, Q_buf, &lw->attn.wq, Xb, n_tokens, s->x_q);
+                prefill_quant_matmul_gpu(m, K_new, &lw->attn.wk, Xb, n_tokens, s->x_q);
+                prefill_quant_matmul_gpu(m, V_new, &lw->attn.wv, Xb, n_tokens, s->x_q);
             }
 
             int attn_idx = plan.attn_idx;
@@ -237,7 +237,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             for (int t = 0; t < n_tokens; t++) {
                 int pos = pos0 + t;
                 int cache_pos = pos % c->seq_len;
-                float *q_t = Q_buf + (size_t)t * lw->wq.rows;
+                float *q_t = Q_buf + (size_t)t * lw->attn.wq.rows;
                 float *k_t = K_new + (size_t)t * kv_dim;
                 float *v_t = V_new + (size_t)t * kv_dim;
 
@@ -249,24 +249,24 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     memcpy(s->q, q_t, q_dim * sizeof(float));
                 }
 
-                if (lw->q_norm) {
+                if (lw->attn.q_norm) {
                     int qk_stride = c->qk_norm_per_head ? head_size : 0;
                     for (int h = 0; h < c->n_heads; h++)
                         prefill_rmsnorm(s->q + h * head_size, s->q + h * head_size,
-                                        lw->q_norm + h * qk_stride, head_size,
+                                        lw->attn.q_norm + h * qk_stride, head_size,
                                         c->norm_eps);
                 }
-                if (lw->k_norm) {
+                if (lw->attn.k_norm) {
                     int qk_stride = c->qk_norm_per_head ? head_size : 0;
                     for (int h = 0; h < c->n_kv_heads; h++)
                         prefill_rmsnorm(k_t + h * head_size, k_t + h * head_size,
-                                        lw->k_norm + h * qk_stride, head_size,
+                                        lw->attn.k_norm + h * qk_stride, head_size,
                                         c->norm_eps);
                 }
 
-                if (lw->q_bias) for (int i = 0; i < q_dim; i++) s->q[i] += lw->q_bias[i];
-                if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_t[i] += lw->k_bias[i];
-                if (lw->v_bias) for (int i = 0; i < kv_dim; i++) v_t[i] += lw->v_bias[i];
+                if (lw->attn.q_bias) for (int i = 0; i < q_dim; i++) s->q[i] += lw->attn.q_bias[i];
+                if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
+                if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
 
                 float rope_cos_t[half_rope], rope_sin_t[half_rope];
                 for (int i = 0; i < half_rope; i++) {
@@ -300,18 +300,18 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     }
                 }
 
-                int wo_cols = lw->wo.cols;
+                int wo_cols = lw->attn.wo.cols;
                 memcpy(Q_buf + (size_t)t * wo_cols, s->xb, wo_cols * sizeof(float));
             }
 
             {
-                int wo_cols = lw->wo.cols;
-                if (lw->attn_sub_norm)
+                int wo_cols = lw->attn.wo.cols;
+                if (lw->norm.attn_sub_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_rmsnorm(Q_buf + (size_t)t * wo_cols,
                                         Q_buf + (size_t)t * wo_cols,
-                                        lw->attn_sub_norm, wo_cols, c->norm_eps);
-                prefill_quant_matmul_gpu(m, Xb2, &lw->wo, Q_buf, n_tokens, s->x_q);
+                                        lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
+                prefill_quant_matmul_gpu(m, Xb2, &lw->attn.wo, Q_buf, n_tokens, s->x_q);
             }
 
             for (int t = 0; t < n_tokens; t++)
@@ -335,23 +335,23 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
-                                lw->attn_norm, dim, c->norm_eps);
+                                lw->norm.attn_norm, dim, c->norm_eps);
 
             if (q_buf_stride < qkv_dim_ssm) { sh_arena_free(pf_arena); return NULL; }
             float *QKV_all = Q_buf;
             float *Z_all = Xb2;
             float *Out_all = Hb;
 
-            prefill_quant_matmul_gpu(m, QKV_all, &lw->wqkv, Xb, n_tokens, s->x_q);
-            prefill_quant_matmul_gpu(m, Z_all, &lw->wz, Xb, n_tokens, s->x_q);
+            prefill_quant_matmul_gpu(m, QKV_all, &lw->ssm.wqkv, Xb, n_tokens, s->x_q);
+            prefill_quant_matmul_gpu(m, Z_all, &lw->ssm.wz, Xb, n_tokens, s->x_q);
 
             for (int t = 0; t < n_tokens; t++) {
-                float *qkv_t = QKV_all + (size_t)t * lw->wqkv.rows;
-                float *z_t = Z_all + (size_t)t * lw->wz.rows;
+                float *qkv_t = QKV_all + (size_t)t * lw->ssm.wqkv.rows;
+                float *z_t = Z_all + (size_t)t * lw->ssm.wz.rows;
                 float *out_t = Out_all + (size_t)t * value_dim;
                 float *xb_t = Xb + (size_t)t * dim;
 
-                BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm_conv1d,
+                BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm.ssm_conv1d,
                                           qkv_dim_ssm, kern_ssm };
                 BnTPTask conv_task = { prefill_ssm_conv_silu, &conv_ctx, qkv_dim_ssm };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -368,14 +368,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 float alpha_arr[num_v_heads > 0 ? num_v_heads : 1];
                 float beta_arr[num_v_heads > 0 ? num_v_heads : 1];
                 BnMatvecTask ab[2] = {
-                    { alpha_arr, &lw->ssm_alpha, NULL },
-                    { beta_arr,  &lw->ssm_beta, NULL },
+                    { alpha_arr, &lw->ssm.ssm_alpha, NULL },
+                    { beta_arr,  &lw->ssm.ssm_beta, NULL },
                 };
                 bn_quant_matvec_batch(ab, 2, xb_t, s->x_q, bn_model_pool(m));
                 for (int h = 0; h < num_v_heads; h++) {
-                    float dt = alpha_arr[h] + lw->ssm_dt_bias[h];
+                    float dt = alpha_arr[h] + lw->ssm.ssm_dt_bias[h];
                     float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt));
-                    alpha_arr[h] = expf(dt_sp * lw->ssm_a[h]);
+                    alpha_arr[h] = expf(dt_sp * lw->ssm.ssm_a[h]);
                     beta_arr[h] = 1.0f / (1.0f + expf(-beta_arr[h]));
                 }
 
@@ -388,48 +388,48 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnTPTask delta_task = { prefill_ssm_delta, &delta_ctx, num_v_heads };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
-                BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm_norm,
+                BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
                                           c->norm_eps, head_v_dim };
                 BnTPTask gate_task = { prefill_ssm_gate, &gate_ctx, num_v_heads };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
             }
 
-            prefill_quant_matmul_gpu(m, Xb, &lw->ssm_out, Out_all, n_tokens, s->x_q);
+            prefill_quant_matmul_gpu(m, Xb, &lw->ssm.ssm_out, Out_all, n_tokens, s->x_q);
 
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)
                     act[(size_t)t * dim + d] += Xb[(size_t)t * dim + d];
         }
 
-        if (lw->router_weight) {
+        if (lw->moe.router_weight) {
             if (bn_moe_forward_batch(m, sess, lw, l, act, Xb, n_tokens) != 0) {
                 sh_arena_free(pf_arena);
                 return NULL;
             }
-        } else if (lw->ffn_up.data) {
+        } else if (lw->ffn.ffn_up.data) {
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
-                                lw->ffn_norm, dim, c->norm_eps);
+                                lw->norm.ffn_norm, dim, c->norm_eps);
 
             if (c->has_ffn_gate) {
 #ifdef __AVX2__
                 if (pf_xq && !bn_model_gpu(m) &&
-                    prefill_quant_can_preq8k_pair(lw->ffn_gate.type, lw->ffn_up.type)) {
+                    prefill_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
                     int n_bpr = dim / BN_QK_K;
                     for (int t = 0; t < n_tokens; t++)
                         bn_quant_x_to_q8k(Xb + (size_t)t * dim,
                                           pf_xq + (size_t)t * dim,
                                           pf_xd + (size_t)t * n_bpr,
                                           pf_xbs + (size_t)t * n_bpr * 16, dim);
-                    bn_quant_matmul_preq8k(Hb, &lw->ffn_gate, n_tokens,
+                    bn_quant_matmul_preq8k(Hb, &lw->ffn.ffn_gate, n_tokens,
                                            pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
-                    bn_quant_matmul_preq8k(Hb2, &lw->ffn_up, n_tokens,
+                    bn_quant_matmul_preq8k(Hb2, &lw->ffn.ffn_up, n_tokens,
                                            pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
                 } else
 #endif
                 {
-                    prefill_quant_matmul_gpu(m, Hb, &lw->ffn_gate, Xb, n_tokens, s->x_q);
-                    prefill_quant_matmul_gpu(m, Hb2, &lw->ffn_up, Xb, n_tokens, s->x_q);
+                    prefill_quant_matmul_gpu(m, Hb, &lw->ffn.ffn_gate, Xb, n_tokens, s->x_q);
+                    prefill_quant_matmul_gpu(m, Hb2, &lw->ffn.ffn_up, Xb, n_tokens, s->x_q);
                 }
 
                 for (int t = 0; t < n_tokens; t++) {
@@ -448,7 +448,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     }
                 }
             } else {
-                prefill_quant_matmul_gpu(m, Hb, &lw->ffn_up, Xb, n_tokens, s->x_q);
+                prefill_quant_matmul_gpu(m, Hb, &lw->ffn.ffn_up, Xb, n_tokens, s->x_q);
                 for (int t = 0; t < n_tokens; t++) {
                     float *hb_t = Hb + (size_t)t * hidden_dim;
                     if (c->act_type == 1) {
@@ -465,13 +465,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
             }
 
-            if (lw->ffn_sub_norm)
+            if (lw->norm.ffn_sub_norm)
                 for (int t = 0; t < n_tokens; t++)
                     prefill_rmsnorm(Hb + (size_t)t * hidden_dim,
                                     Hb + (size_t)t * hidden_dim,
-                                    lw->ffn_sub_norm, hidden_dim, c->norm_eps);
+                                    lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
 
-            prefill_quant_matmul_gpu(m, Xb, &lw->ffn_down, Hb, n_tokens, s->x_q);
+            prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb, n_tokens, s->x_q);
 
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)

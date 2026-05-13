@@ -346,7 +346,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         /* Fused attn RMSNorm + Q8K: quantize s->xb once, reuse for Q and K+V */
         int attn_preq8k = 0;
 #ifdef __AVX2__
-        int attn_kquant = cpu_quant_can_preq8k_triple(lw->wq.type, lw->wk.type, lw->wv.type) &&
+        int attn_kquant = cpu_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
                           !bn_model_gpu(m) && dim % BN_QK_K == 0;
 #endif
         int n_sb_attn = dim / BN_QK_K;
@@ -354,13 +354,13 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         int16_t attn_q8k_bsums[n_sb_attn > 0 ? n_sb_attn * 16 : 1];
 #ifdef __AVX2__
         if (attn_kquant) {
-            bn_quant_rmsnorm_q8k_avx2(s->x, lw->attn_norm, dim, c->norm_eps,
+            bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.attn_norm, dim, c->norm_eps,
                                         s->xb, s->x_q, attn_q8k_d, attn_q8k_bsums);
             attn_preq8k = 1;
         } else
 #endif
         {
-            cpu_rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
+            cpu_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
         }
 
         /* no-op */
@@ -376,9 +376,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
                 BnMatvecTask qkv[3] = {
-                     { q_full,          &lw->wq, NULL },
-                     { key_cache_row,   &lw->wk, NULL },
-                     { value_cache_row, &lw->wv, NULL },
+                     { q_full,          &lw->attn.wq, NULL },
+                     { key_cache_row,   &lw->attn.wk, NULL },
+                     { value_cache_row, &lw->attn.wv, NULL },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -388,9 +388,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 v_tmp = value_cache_row;
             } else {
                 BnMatvecTask qkv[3] = {
-                     { q_full, &lw->wq, NULL },
-                     { k_tmp, &lw->wk, NULL },
-                     { v_tmp, &lw->wv, NULL },
+                     { q_full, &lw->attn.wq, NULL },
+                     { k_tmp, &lw->attn.wk, NULL },
+                     { v_tmp, &lw->attn.wv, NULL },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -401,21 +401,21 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             /* Extract Q from interleaved [Q, gate] and optionally apply Q norm.
              * Fused: copy from q_full stride-2hs directly into cpu_rmsnorm if norm exists,
              * avoiding a separate memcpy + reload. */
-            if (lw->q_norm) {
+            if (lw->attn.q_norm) {
                 for (int h = 0; h < n_heads; h++)
                     cpu_rmsnorm(s->q + h*head_size,
                             q_full + h * 2 * head_size,
-                            lw->q_norm + h*qk_stride, head_size, c->norm_eps);
+                            lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
             } else {
                 for (int h = 0; h < n_heads; h++)
                     memcpy(s->q + h * head_size,
                            q_full + h * 2 * head_size,
                            head_size * sizeof(float));
             }
-            if (lw->k_norm)
+            if (lw->attn.k_norm)
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
-                            lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+                            lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                              layer_rope_dims, rope_cos, rope_sin);
@@ -473,10 +473,10 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
 
             // wo projection + residual
-            if (lw->attn_sub_norm)
-                cpu_rmsnorm(s->xb, s->xb, lw->attn_sub_norm, dim, c->norm_eps);
+            if (lw->norm.attn_sub_norm)
+                cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
             {
-                BnMatvecTask wo[1] = {{ s->xb2, &lw->wo, NULL }};
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
@@ -487,36 +487,36 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
             // Q matvec: xb[dim] → q[q_dim]
             {
-                BnMatvecTask q_task[1] = {{ s->q, &lw->wq, NULL }};
+                BnMatvecTask q_task[1] = {{ s->q, &lw->attn.wq, NULL }};
                 cpu_quant_matvec_batch_prepared(m, q_task, 1, s->xb, s->x_q);
             }
             // K/V matvec: xb[dim] → kv_dim (always to temp buffers for TQ compat)
             if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
                 BnMatvecTask kv[2] = {
-                     { k_tmp, &lw->wk, NULL },
-                     { v_tmp, &lw->wv, NULL },
+                     { k_tmp, &lw->attn.wk, NULL },
+                     { v_tmp, &lw->attn.wv, NULL },
                 };
                 cpu_quant_matvec_batch_prepared(m, kv, 2, s->xb, s->x_q);
             } else {
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
                 BnMatvecTask kv[2] = {
-                     { key_cache_row,   &lw->wk, NULL },
-                     { value_cache_row, &lw->wv, NULL },
+                     { key_cache_row,   &lw->attn.wk, NULL },
+                     { value_cache_row, &lw->attn.wv, NULL },
                 };
                 cpu_quant_matvec_batch_prepared(m, kv, 2, s->xb, s->x_q);
                 k_tmp = key_cache_row;
                 v_tmp = value_cache_row;
             }
 
-            if (lw->q_norm)
+            if (lw->attn.q_norm)
                 for (int h = 0; h < n_heads; h++)
                     cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                            lw->q_norm + h*qk_stride, head_size, c->norm_eps);
-            if (lw->k_norm)
+                            lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
+            if (lw->attn.k_norm)
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
-                            lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+                            lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                              layer_rope_dims, rope_cos, rope_sin);
@@ -537,10 +537,10 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
 
             // wo projection (q_dim → dim) + residual
-            if (lw->attn_sub_norm)
-                cpu_rmsnorm(s->xb, s->xb, lw->attn_sub_norm, q_dim, c->norm_eps);
+            if (lw->norm.attn_sub_norm)
+                cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, q_dim, c->norm_eps);
             {
-                BnMatvecTask wo[1] = {{ s->xb2, &lw->wo, NULL }};
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
@@ -555,27 +555,27 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 // Use temp buffers for K/V, then quantize into TQ cache
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
                 BnMatvecTask qkv[3] = {
-                     { s->q,  &lw->wq, NULL },
-                     { k_tmp, &lw->wk, NULL },
-                     { v_tmp, &lw->wv, NULL },
+                     { s->q,  &lw->attn.wq, NULL },
+                     { k_tmp, &lw->attn.wk, NULL },
+                     { v_tmp, &lw->attn.wv, NULL },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
-                if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
-                if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->k_bias[i];
-                if (lw->v_bias) for (int i = 0; i < kv_dim; i++) v_tmp[i] += lw->v_bias[i];
+                if (lw->attn.q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->attn.q_bias[i];
+                if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->attn.k_bias[i];
+                if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) v_tmp[i] += lw->attn.v_bias[i];
 
-                if (lw->q_norm)
+                if (lw->attn.q_norm)
                     for (int h = 0; h < n_heads; h++)
                         cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
-                if (lw->k_norm)
+                                lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
+                if (lw->attn.k_norm)
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
-                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+                                lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
@@ -593,27 +593,27 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             } else if (c->kv_f16) {
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
                 BnMatvecTask qkv[3] = {
-                     { s->q,  &lw->wq, NULL },
-                     { k_tmp, &lw->wk, NULL },
-                     { v_tmp, &lw->wv, NULL },
+                     { s->q,  &lw->attn.wq, NULL },
+                     { k_tmp, &lw->attn.wk, NULL },
+                     { v_tmp, &lw->attn.wv, NULL },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
-                if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
-                if (lw->k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->k_bias[i];
-                if (lw->v_bias) for (int i = 0; i < kv_dim; i++) v_tmp[i] += lw->v_bias[i];
+                if (lw->attn.q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->attn.q_bias[i];
+                if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) k_tmp[i] += lw->attn.k_bias[i];
+                if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) v_tmp[i] += lw->attn.v_bias[i];
 
-                if (lw->q_norm)
+                if (lw->attn.q_norm)
                     for (int h = 0; h < n_heads; h++)
                         cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
-                if (lw->k_norm)
+                                lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
+                if (lw->attn.k_norm)
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
-                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+                                lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
@@ -644,27 +644,27 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 #endif
             } else {
                 BnMatvecTask qkv[3] = {
-                     { s->q,            &lw->wq, NULL },
-                     { key_cache_row,   &lw->wk, NULL },
-                     { value_cache_row, &lw->wv, NULL },
+                     { s->q,            &lw->attn.wq, NULL },
+                     { key_cache_row,   &lw->attn.wk, NULL },
+                     { value_cache_row, &lw->attn.wv, NULL },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
-                if (lw->q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->q_bias[i];
-                if (lw->k_bias) for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->k_bias[i];
-                if (lw->v_bias) for (int i = 0; i < kv_dim; i++) value_cache_row[i] += lw->v_bias[i];
+                if (lw->attn.q_bias) for (int i = 0; i < dim; i++) s->q[i] += lw->attn.q_bias[i];
+                if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->attn.k_bias[i];
+                if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) value_cache_row[i] += lw->attn.v_bias[i];
 
-                if (lw->q_norm)
+                if (lw->attn.q_norm)
                     for (int h = 0; h < n_heads; h++)
                         cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
-                                lw->q_norm + h*qk_stride, head_size, c->norm_eps);
-                if (lw->k_norm)
+                                lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
+                if (lw->attn.k_norm)
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
-                                lw->k_norm + h*qk_stride, head_size, c->norm_eps);
+                                lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
@@ -680,10 +680,10 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
 
             // Attention sub-norm + wo projection + residual
-            if (lw->attn_sub_norm)
-                cpu_rmsnorm(s->xb, s->xb, lw->attn_sub_norm, dim, c->norm_eps);
+            if (lw->norm.attn_sub_norm)
+                cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
             {
-                BnMatvecTask wo[1] = {{ s->xb2, &lw->wo, NULL }};
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
@@ -741,22 +741,22 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     int16_t ssm_q8k_bsums[n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
 #ifdef __AVX2__
     int ssm_kquant = !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
-                     cpu_quant_can_preq8k_pair(lw->wqkv.type, lw->wz.type);
+                     cpu_quant_can_preq8k_pair(lw->ssm.wqkv.type, lw->ssm.wz.type);
     if (ssm_kquant) {
-        bn_quant_rmsnorm_q8k_avx2(s->x, lw->attn_norm, dim, c->norm_eps,
+        bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.attn_norm, dim, c->norm_eps,
                                   s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
         ssm_preq8k = 1;
     } else
 #endif
     {
-        cpu_rmsnorm(s->xb, s->x, lw->attn_norm, dim, c->norm_eps);
+        cpu_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
     }
 
     float *qkv = s->hb;
     float *z = s->hb2;
     BnMatvecTask qz_tasks[2] = {
-         { qkv, &lw->wqkv, NULL },
-        { z,   &lw->wz, NULL },
+         { qkv, &lw->ssm.wqkv, NULL },
+        { z,   &lw->ssm.wz, NULL },
     };
     if (ssm_preq8k)
         cpu_quant_matvec_batch_preq8k(m, qz_tasks, 2, s->x_q,
@@ -764,7 +764,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
-    BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm_conv1d, qkv_dim, kern };
+    BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm.ssm_conv1d, qkv_dim, kern };
     BnTPTask conv_task = { cpu_ssm_conv_silu, &conv_ctx, qkv_dim };
     bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
@@ -782,11 +782,11 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     }
     float alpha_arr[num_v_heads], beta_arr[num_v_heads];
     BnMatvecTask ab[2] = {
-         { alpha_arr, &lw->ssm_alpha, NULL },
-        { beta_arr,  &lw->ssm_beta, NULL },
+         { alpha_arr, &lw->ssm.ssm_alpha, NULL },
+        { beta_arr,  &lw->ssm.ssm_beta, NULL },
     };
     if (ssm_preq8k &&
-        cpu_quant_can_preq8k_pair(lw->ssm_alpha.type, lw->ssm_beta.type)) {
+        cpu_quant_can_preq8k_pair(lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type)) {
         cpu_quant_matvec_batch_preq8k(m, ab, 2, s->x_q,
                                      ssm_q8k_d, ssm_q8k_bsums, s->xb);
     } else {
@@ -794,9 +794,9 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     }
 
     for (int h = 0; h < num_v_heads; h++) {
-        float dt = alpha_arr[h] + lw->ssm_dt_bias[h];
+        float dt = alpha_arr[h] + lw->ssm.ssm_dt_bias[h];
         float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt));
-        alpha_arr[h] = expf(dt_sp * lw->ssm_a[h]);
+        alpha_arr[h] = expf(dt_sp * lw->ssm.ssm_a[h]);
         beta_arr[h] = 1.0f / (1.0f + expf(-beta_arr[h]));
     }
 
@@ -810,11 +810,11 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     BnTPTask delta_task = { cpu_ssm_delta, &delta_ctx, num_v_heads };
     bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
-    BnSSMGateCtx gate_ctx = { out, z, lw->ssm_norm, c->norm_eps, head_v_dim };
+    BnSSMGateCtx gate_ctx = { out, z, lw->ssm.ssm_norm, c->norm_eps, head_v_dim };
     BnTPTask gate_task = { cpu_ssm_gate, &gate_ctx, num_v_heads };
     bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
 
-    BnMatvecTask proj[1] = {{ s->xb, &lw->ssm_out, NULL }};
+    BnMatvecTask proj[1] = {{ s->xb, &lw->ssm.ssm_out, NULL }};
     cpu_quant_matvec_batch_prepared(m, proj, 1, out, s->x_q);
 }
 
@@ -837,15 +837,15 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 
 #ifdef __AVX2__
     if (ffn_plan->has_gate && !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
-        cpu_quant_can_preq8k_pair(lw->ffn_gate.type, lw->ffn_up.type)) {
+        cpu_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
         int n_sb = dim / BN_QK_K;
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
-        bn_quant_rmsnorm_q8k_avx2(s->x, lw->ffn_norm, dim, c->norm_eps,
+        bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
                                   s->xb, s->x_q, q8k_d, q8k_bsums);
         BnMatvecTask ffn[2] = {
-             { s->hb,  &lw->ffn_gate, NULL },
-            { s->hb2, &lw->ffn_up, NULL },
+             { s->hb,  &lw->ffn.ffn_gate, NULL },
+            { s->hb2, &lw->ffn.ffn_up, NULL },
         };
         cpu_quant_matvec_batch_preq8k(m, ffn, 2, s->x_q, q8k_d, q8k_bsums,
                                      s->xb);
@@ -854,31 +854,31 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 #endif
 
     if (!fused_gate_up) {
-        cpu_rmsnorm(s->xb, s->x, lw->ffn_norm, dim, c->norm_eps);
+        cpu_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
 
         if (ffn_plan->has_gate) {
             const BnPreparedWeight *gate_prepared =
-                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn_gate);
+                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_gate);
             const BnPreparedWeight *up_prepared =
-                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn_up);
+                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
             if (!bn_model_gpu(m) && ffn_plan->activation != 1 &&
-                lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
-                lw->ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
+                lw->ffn.ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
+                lw->ffn.ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
                 dim % 32 == 0 &&
-                bn_quant_q4_gate_up_silu(s->hb, &lw->ffn_gate, gate_prepared,
-                                         &lw->ffn_up, up_prepared, s->xb,
+                bn_quant_q4_gate_up_silu(s->hb, &lw->ffn.ffn_gate, gate_prepared,
+                                         &lw->ffn.ffn_up, up_prepared, s->xb,
                                          s->x_q, bn_model_pool(m)) == 0) {
                 ffn_activated = 1;
             } else
             {
                 BnMatvecTask ffn[2] = {
-                     { s->hb,  &lw->ffn_gate, NULL },
-                    { s->hb2, &lw->ffn_up, NULL },
+                     { s->hb,  &lw->ffn.ffn_gate, NULL },
+                    { s->hb2, &lw->ffn.ffn_up, NULL },
                 };
                 cpu_quant_matvec_batch_prepared(m, ffn, 2, s->xb, s->x_q);
             }
         } else {
-            BnMatvecTask ffn[1] = {{ s->hb, &lw->ffn_up, NULL }};
+            BnMatvecTask ffn[1] = {{ s->hb, &lw->ffn.ffn_up, NULL }};
             cpu_quant_matvec_batch_prepared(m, ffn, 1, s->xb, s->x_q);
         }
     }
@@ -886,9 +886,9 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     bn_transformer_cpu_apply_ffn_activation(s, ffn_plan, hidden_dim, ffn_activated);
 
     if (ffn_plan->has_sub_norm)
-        cpu_rmsnorm(s->hb, s->hb, lw->ffn_sub_norm, hidden_dim, c->norm_eps);
+        cpu_rmsnorm(s->hb, s->hb, lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
 
-    BnMatvecTask down[1] = {{ s->xb, &lw->ffn_down, NULL }};
+    BnMatvecTask down[1] = {{ s->xb, &lw->ffn.ffn_down, NULL }};
     cpu_quant_matvec_batch_prepared(m, down, 1, s->hb, s->x_q);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);
 }

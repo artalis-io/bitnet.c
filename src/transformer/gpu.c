@@ -99,13 +99,13 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                                                BN_BACKEND_HANDLE_FFN_SUB_NORM);
         int is_attn = bn_transformer_is_attn_layer(c, l);
         if (!is_attn) { has_ssm = 1; continue; }
-        if (lw->router_weight) { has_moe = 1; }
-        if (!lw->wq.data && !lw->wqkv.data) GPU_REJECT("attention layer has no wq/wqkv data");
+        if (lw->moe.router_weight) { has_moe = 1; }
+        if (!lw->attn.wq.data && !lw->ssm.wqkv.data) GPU_REJECT("attention layer has no wq/wqkv data");
         // Q-gated attention is handled below via DEINTERLEAVE_Q + SIGMOID_GATE.
-        if (lw->q_norm && !q_norm) GPU_REJECT("q norm not uploaded");
-        if (lw->k_norm && !k_norm) GPU_REJECT("k norm not uploaded");
-        if (lw->attn_sub_norm && !attn_sub_norm) GPU_REJECT("attention sub norm not uploaded");
-        if (lw->ffn_sub_norm && !ffn_sub_norm) GPU_REJECT("ffn sub norm not uploaded");
+        if (lw->attn.q_norm && !q_norm) GPU_REJECT("q norm not uploaded");
+        if (lw->attn.k_norm && !k_norm) GPU_REJECT("k norm not uploaded");
+        if (lw->norm.attn_sub_norm && !attn_sub_norm) GPU_REJECT("attention sub norm not uploaded");
+        if (lw->norm.ffn_sub_norm && !ffn_sub_norm) GPU_REJECT("ffn sub norm not uploaded");
         if (!attn_norm || !ffn_norm) GPU_REJECT("layer norm not uploaded");
     }
     if (has_moe) GPU_REJECT("moe gpu-resident forward unsupported");
@@ -180,7 +180,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                     { return NULL; }
                 bn_transformer_cpu_forward_ssm_block(m, sess, lw, l);
                 bn_transformer_cpu_residual_add(s->x, s->xb, dim);
-                if (lw->router_weight)
+                if (lw->moe.router_weight)
                     bn_moe_forward(m, sess, lw, l);
                 else
                     bn_transformer_cpu_forward_ffn_block(m, sess, lw, NULL);
@@ -218,7 +218,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
 
         // ---- FFN (MoE or dense) ----
         ffn_block:;
-        if (lw->router_weight) {
+        if (lw->moe.router_weight) {
             // MoE FFN: CPU fallback until the WebGPU MoE path is token-coherent
             int use_cpu_moe_fallback = 1;
             if (use_cpu_moe_fallback) {

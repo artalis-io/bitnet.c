@@ -430,14 +430,16 @@ static void test_layer_shape_planning(void) {
     c.qk_norm_per_head = 1;
     c.kv_f16 = 0;
     c.kv_tq_bits = 0;
-    lw.wq.data = (void *)1;
-    lw.wq.rows = 2048;
-    lw.head_size = 0;
-    lw.kv_dim = 0;
-    lw.n_kv_heads = 0;
-    lw.kv_mul = 0;
-    lw.q_norm = (float *)1;
-    lw.k_bias = (float *)1;
+    lw.block_kind = BN_LAYER_BLOCK_ATTENTION;
+    lw.ffn_kind = BN_LAYER_FFN_DENSE;
+    lw.attn.wq.data = (void *)1;
+    lw.attn.wq.rows = 2048;
+    lw.attn.head_size = 0;
+    lw.attn.kv_dim = 0;
+    lw.attn.n_kv_heads = 0;
+    lw.attn.kv_mul = 0;
+    lw.attn.q_norm = (float *)1;
+    lw.attn.k_bias = (float *)1;
 
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(p.is_attn);
@@ -456,17 +458,17 @@ static void test_layer_shape_planning(void) {
     assert(p.has_bias);
     assert(p.kv_mode == BN_KV_FP32);
 
-    lw.wq.rows = 4096;
+    lw.attn.wq.rows = 4096;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(p.kind == BN_LAYER_ATTN_GATED_Q);
     assert(p.q_gated);
     assert(!p.q_wide);
 
-    lw.wq.rows = 3072;
-    lw.head_size = 192;
-    lw.kv_dim = 768;
-    lw.n_kv_heads = 4;
-    lw.kv_mul = 4;
+    lw.attn.wq.rows = 3072;
+    lw.attn.head_size = 192;
+    lw.attn.kv_dim = 768;
+    lw.attn.n_kv_heads = 4;
+    lw.attn.kv_mul = 4;
     c.kv_tq_bits = 3;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 1);
     assert(p.kind == BN_LAYER_ATTN_WIDE_Q);
@@ -480,6 +482,7 @@ static void test_layer_shape_planning(void) {
     c.full_attn_interval = 4;
     c.kv_tq_bits = 0;
     c.kv_f16 = 1;
+    lw.block_kind = BN_LAYER_BLOCK_SSM;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(!p.is_attn);
     assert(p.kind == BN_LAYER_SSM);
@@ -487,11 +490,13 @@ static void test_layer_shape_planning(void) {
     assert(p.ssm_idx == 0);
     assert(p.kv_mode == BN_KV_FP16);
 
+    lw.block_kind = BN_LAYER_BLOCK_ATTENTION;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 3, 0);
     assert(p.is_attn);
     assert(p.attn_idx == 0);
     assert(p.ssm_idx == -1);
 
+    lw.block_kind = BN_LAYER_BLOCK_SSM;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 4, 0);
     assert(!p.is_attn);
     assert(p.ssm_idx == 3);
@@ -546,11 +551,13 @@ static void test_block_planning(void) {
                BN_GPU_CAP_FLASH_ATTN;
     gpu.kind = BN_GPU_BACKEND_METAL;
 
-    lw.wq.data = (void *)1;
-    lw.wq.rows = 2048;
-    lw.wq.type = BN_GGUF_TENSOR_Q4_0;
-    lw.wk.type = BN_GGUF_TENSOR_Q4_0;
-    lw.wv.type = BN_GGUF_TENSOR_Q4_0;
+    lw.block_kind = BN_LAYER_BLOCK_ATTENTION;
+    lw.ffn_kind = BN_LAYER_FFN_DENSE;
+    lw.attn.wq.data = (void *)1;
+    lw.attn.wq.rows = 2048;
+    lw.attn.wq.type = BN_GGUF_TENSOR_Q4_0;
+    lw.attn.wk.type = BN_GGUF_TENSOR_Q4_0;
+    lw.attn.wv.type = BN_GGUF_TENSOR_Q4_0;
 
     BnBackendModel *backend = bn_backend_model_create();
     assert(backend != NULL);
@@ -588,20 +595,20 @@ static void test_block_planning(void) {
                                             BN_BACKEND_HANDLE_K_BIAS,
                                             (void *)3) == 0);
 
-    lw.wq.type = BN_GGUF_TENSOR_Q8_0;
+    lw.attn.wq.type = BN_GGUF_TENSOR_Q8_0;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.use_qkv_split);
     assert(attn.qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT);
     assert(attn.fusion_flags & BN_FUSION_QKV_SPLIT);
 
-    lw.wq.type = BN_GGUF_TENSOR_Q5_K;
+    lw.attn.wq.type = BN_GGUF_TENSOR_Q5_K;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.use_qkv_split);
     assert(attn.qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT);
     assert(attn.fusion_flags & BN_FUSION_QKV_SPLIT);
 
-    lw.wq.type = BN_GGUF_TENSOR_Q4_0;
-    lw.wq.rows = 4096;
+    lw.attn.wq.type = BN_GGUF_TENSOR_Q4_0;
+    lw.attn.wq.rows = 4096;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.shape.kind == BN_LAYER_ATTN_GATED_Q);
     assert(!attn.use_packed_qkv);
@@ -609,23 +616,25 @@ static void test_block_planning(void) {
     assert(!(attn.fusion_flags & BN_FUSION_QKV_SPLIT));
 
     c.full_attn_interval = 4;
+    lw.block_kind = BN_LAYER_BLOCK_SSM;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.placement == BN_EXEC_CPU_FALLBACK);
     assert(attn.backend == BN_BACKEND_CPU);
     assert(attn.needs_cpu_fallback);
     c.full_attn_interval = 0;
-    lw.wq.rows = 2048;
+    lw.block_kind = BN_LAYER_BLOCK_ATTENTION;
+    lw.attn.wq.rows = 2048;
 
-    lw.ffn_gate.type = BN_GGUF_TENSOR_Q4_0;
-    lw.ffn_up.type = BN_GGUF_TENSOR_Q4_0;
-    lw.ffn_gate.rows = 8192;
-    lw.ffn_up.rows = 8192;
-    lw.ffn_gate.cols = 2048;
-    lw.ffn_up.cols = 2048;
+    lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_0;
+    lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q4_0;
+    lw.ffn.ffn_gate.rows = 8192;
+    lw.ffn.ffn_up.rows = 8192;
+    lw.ffn.ffn_gate.cols = 2048;
+    lw.ffn.ffn_up.cols = 2048;
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_GATEUP_STACKED,
                                             (void *)5) == 0);
-    lw.ffn_sub_norm = (float *)1;
+    lw.norm.ffn_sub_norm = (float *)1;
 
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_DENSE_GATE_UP);
@@ -640,7 +649,8 @@ static void test_block_planning(void) {
     assert(ffn.fusion_flags & BN_FUSION_GATEUP_SPLIT);
     assert(ffn.fusion_flags & BN_FUSION_RESIDUAL_RMSNORM);
 
-    lw.router_weight = (float *)1;
+    lw.ffn_kind = BN_LAYER_FFN_MOE;
+    lw.moe.router_weight = (float *)1;
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_MOE);
     assert(ffn.placement == BN_EXEC_CPU_FALLBACK);
@@ -666,9 +676,10 @@ static void test_block_planning(void) {
     assert(ssm.use_qkvz_stack);
     assert(ssm.use_alpha_beta_stack);
 
-    lw.router_weight = NULL;
-    lw.wq.type = BN_GGUF_TENSOR_Q4_0;
-    lw.wq.rows = 2048;
+    lw.ffn_kind = BN_LAYER_FFN_DENSE;
+    lw.moe.router_weight = NULL;
+    lw.attn.wq.type = BN_GGUF_TENSOR_Q4_0;
+    lw.attn.wq.rows = 2048;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.use_packed_qkv);
     assert(attn.use_qkv_split);
@@ -680,7 +691,8 @@ static void test_block_planning(void) {
     assert(ssm.use_alpha_beta_stack);
     bn_backend_model_free(backend);
 
-    lw.router_weight = (float *)1;
+    lw.ffn_kind = BN_LAYER_FFN_MOE;
+    lw.moe.router_weight = (float *)1;
     bn_transformer_plan_moe(&moe, &c, &lw, &gpu, 0, 1);
     assert(moe.placement == BN_EXEC_CPU_FALLBACK);
     assert(moe.backend == BN_BACKEND_CPU);

@@ -402,7 +402,7 @@ int main(int argc, char **argv) {
         if (!moe_io->madvise_mode &&
             args.cache_mb > 0 && !moe_io->mmap_base && moe_io->fd >= 0
             && model.config.n_layers > 0) {
-            BnMoEExpertMap *em = &model.weights.layers[0].expert_map;
+            BnMoEExpertMap *em = &model.weights.layers[0].moe.expert_map;
             bn_model_set_moe_cache(&model, bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,
                 em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes));
@@ -440,7 +440,7 @@ int main(int argc, char **argv) {
                         // Create GPU expert buffer cache for MoE
                         if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
                             model.config.n_layers > 0) {
-                            BnMoEExpertMap *em0 = &model.weights.layers[0].expert_map;
+                            BnMoEExpertMap *em0 = &model.weights.layers[0].moe.expert_map;
                             size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
                                                + em0->expert_down_bytes;
                             if (entry_bytes > 0) {
@@ -488,7 +488,7 @@ int main(int argc, char **argv) {
                             bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
                             model.config.n_layers > 0) {
-                            BnMoEExpertMap *em0 = &model.weights.layers[0].expert_map;
+                            BnMoEExpertMap *em0 = &model.weights.layers[0].moe.expert_map;
                             size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
                                                + em0->expert_down_bytes;
                             if (entry_bytes > 0) {

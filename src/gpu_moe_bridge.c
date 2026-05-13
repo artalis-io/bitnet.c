@@ -44,7 +44,7 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     BnMoEState *ms = sess->moe_state;
     if (!gpu || !gpu->buffer_create || !ms) return -1;
 
-    const BnMoEExpertMap *em = &lw->expert_map;
+    const BnMoEExpertMap *em = &lw->moe.expert_map;
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     int split_op_code = bn_backend_quant_gpu_split_op_code(em->gate_type);
     int use_split = gpu_moe_can_gateup_split(gpu, em, split_op_code);
