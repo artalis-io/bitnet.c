@@ -7,7 +7,6 @@ typedef struct BnGPUBackend BnGPUBackend;
 #endif
 
 typedef struct BnBackendModel BnBackendModel;
-typedef struct BnBackendSession BnBackendSession;
 typedef struct BnQWeight BnQWeight;
 typedef struct BnPreparedWeight BnPreparedWeight;
 
@@ -59,12 +58,5 @@ int bn_backend_model_register_prepared_qweight(BnBackendModel *backend,
 const BnPreparedWeight *bn_backend_model_prepared_qweight(
     const BnBackendModel *backend,
     const BnQWeight *weight);
-
-BnBackendSession *bn_backend_session_create(void);
-void bn_backend_session_free(BnBackendSession *backend);
-void *bn_backend_session_gpu_graph(const BnBackendSession *backend);
-void *bn_backend_session_ensure_gpu_graph(BnBackendSession *backend, int cap_ops);
-void bn_backend_session_set_gpu_graph(BnBackendSession *backend, void *graph);
-void bn_backend_session_release_gpu_graph(BnBackendSession *backend);
 
 #endif // BN_BACKEND_MODEL_H

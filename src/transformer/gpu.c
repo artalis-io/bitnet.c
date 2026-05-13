@@ -1,6 +1,7 @@
 #include "transformer_gpu_internal.h"
 #include "transformer_cpu_internal.h"
 #include "model_arch.h"
+#include "backend_session.h"
 #include "quant.h"
 #include "moe.h"
 #include "session.h"
