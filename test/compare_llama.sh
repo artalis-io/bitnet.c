@@ -27,6 +27,8 @@ while [[ $# -gt 0 ]]; do
         --metal) BITNET_ARGS+=(--metal); shift ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
         --no-prefill) BITNET_ARGS+=(--no-prefill); shift ;;
+        --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
+        --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
         --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
         -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;
         -v) VERBOSE=1; shift ;;
@@ -110,7 +112,10 @@ echo "---"
 for prompt in "${PROMPTS[@]}"; do
     # Run bitnet.c (raw completion, temp=0, no repeat penalty)
     bitnet_stderr="/dev/null"
-    bitnet_run_args=("${BITNET_ARGS[@]}")
+    bitnet_run_args=()
+    if (( ${#BITNET_ARGS[@]} > 0 )); then
+        bitnet_run_args=("${BITNET_ARGS[@]}")
+    fi
     if (( STRICT )); then
         bitnet_stderr=$(mktemp)
         tmp_files+=("$bitnet_stderr")
@@ -215,14 +220,13 @@ echo "Punctuation-normalized first-word matches: $first_word_matches / $total_pr
 echo "Word prefix matches: $total_words_matched / $total_words_compared total words"
 echo ""
 
-# The strict correctness signal is first generated token ID parity across all
-# prompts. bitnet IDs come from the generation callback; llama.cpp IDs are
-# retokenized from decoded output until a llama token trace is available.
-if (( STRICT && first_token_matches == total_prompts )); then
-    echo -e "${GREEN}${BOLD}PASS${RESET} — first output-token ID parity with llama.cpp"
+# Strict mode requires decoded output-prefix parity. First-token ID parity is
+# reported, but it is not sufficient because many prompts first generate space.
+if (( STRICT && total_words_matched == total_words_compared && total_words_compared > 0 )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — decoded output prefix parity with llama.cpp"
     exit 0
 elif (( STRICT )); then
-    echo -e "${RED}${BOLD}FAIL${RESET} — first output-token ID parity required by --strict"
+    echo -e "${RED}${BOLD}FAIL${RESET} — decoded output prefix parity required by --strict"
     exit 1
 elif (( exact_first_output_word_matches == total_prompts )); then
     echo -e "${GREEN}${BOLD}PASS${RESET} — exact first output-word parity with llama.cpp"

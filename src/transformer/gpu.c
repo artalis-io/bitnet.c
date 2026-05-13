@@ -42,8 +42,11 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int cache_pos = pos % c->seq_len;
     int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
+    int cpu_fallback_attn_from_layer = -1;
     int cpu_fallback_ffn_from_layer = -1;
     int cpu_fallback_ffn_down_from_layer = -1;
+    int compare_attention_layer = -1;
+    int compare_attention_pos = -1;
     int compare_ffn_down_layer = -1;
     int compare_ffn_down_pos = -1;
     int q4_q8_from_layer = -1;
@@ -52,10 +55,16 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         if (env) cpu_fallback_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FALLBACK_LAYER");
         if (env) cpu_fallback_layer = atoi(env);
+        env = getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+        if (env) cpu_fallback_attn_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
         if (env) cpu_fallback_ffn_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
         if (env) cpu_fallback_ffn_down_from_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_ATTENTION_LAYER");
+        if (env) compare_attention_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
+        if (env) compare_attention_pos = atoi(env);
         env = getenv("BN_GPU_COMPARE_FFN_DOWN_LAYER");
         if (env) compare_ffn_down_layer = atoi(env);
         env = getenv("BN_GPU_COMPARE_FFN_DOWN_POS");
@@ -158,16 +167,42 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         BnTransformerGPUQKVResources qkv_res =
             bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
         int use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
-        bn_transformer_gpu_emit_context_qkv(
-            &emit, c, lw, &plan, &qkv_res, pos, q_dim,
-            head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
-            use_q4_q8);
         BnTransformerGPUAttentionResources attn_res =
             bn_transformer_gpu_resolve_attention_resources(gpu, backend, lw, l);
-        bn_transformer_gpu_emit_context_attention(
-            &emit, c, lw, &attn_res, pos, dim, q_dim,
-            head_size, n_heads, kv_dim, rope_dims, n_kv, loff, kv_cache_off,
-            has_moe, u_eps, use_q4_q8);
+        if (cpu_fallback_attn_from_layer >= 0 &&
+            l >= cpu_fallback_attn_from_layer) {
+            void *ffn_norm = attn_res.ffn_norm;
+            if (bn_transformer_gpu_fallback_cpu_attention(
+                    &emit, gpu, m, sess, lw, l, pos, cache_pos, rope_dims,
+                    rope_cos, rope_sin, dim, u_eps, ffn_norm) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu cpu-attention fallback failed");
+        } else {
+            int compare_attention = compare_attention_layer == l &&
+                (compare_attention_pos < 0 || compare_attention_pos == pos);
+            if (compare_attention) {
+                if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                    bn_transformer_gpu_read_x(gpu, sess->state.x,
+                                              (size_t)dim * sizeof(float)) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu attention pre-compare snapshot failed");
+            }
+            bn_transformer_gpu_emit_context_qkv(
+                &emit, c, lw, &plan, &qkv_res, pos, q_dim,
+                head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
+                use_q4_q8);
+            bn_transformer_gpu_emit_context_attention(
+                &emit, c, lw, &attn_res, pos, dim, q_dim,
+                head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
+                kv_cache_off, has_moe, u_eps, use_q4_q8);
+            if (compare_attention) {
+                if (bn_transformer_gpu_debug_compare_attention(
+                        &emit, gpu, m, sess, lw, l, pos, cache_pos,
+                        rope_dims, rope_cos, rope_sin, dim) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu attention compare failed");
+            }
+        }
 
         // ---- FFN (MoE or dense) ----
         ffn_block:;

@@ -197,6 +197,16 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
             args.metal_shader_dir = argv[++i];
+        } else if (strcmp(argv[i], "--gpu-cpu-fallback-layer") == 0 && i + 1 < argc) {
+            char layer_env[32];
+            snprintf(layer_env, sizeof(layer_env), "%d",
+                     parse_int(argv[++i], "--gpu-cpu-fallback-layer"));
+            setenv("BN_GPU_CPU_FALLBACK_LAYER", layer_env, 1);
+        } else if (strcmp(argv[i], "--gpu-cpu-fallback-from-layer") == 0 && i + 1 < argc) {
+            char layer_env[32];
+            snprintf(layer_env, sizeof(layer_env), "%d",
+                     parse_int(argv[++i], "--gpu-cpu-fallback-from-layer"));
+            setenv("BN_GPU_CPU_FALLBACK_FROM_LAYER", layer_env, 1);
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             print_usage(argv[0]);

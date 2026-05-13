@@ -17,6 +17,14 @@
 
 static int emit_context_reserve_lowering(BnTransformerGPUEmitContext *ctx,
                                          int needed);
+static int emit_context_utility(BnTransformerGPUEmitContext *ctx,
+                                BnGPUIRUtilityKind kind,
+                                int buf_in,
+                                int buf_aux,
+                                int buf_out,
+                                int aux_offset,
+                                void *weight,
+                                const uint32_t params[8]);
 
 void bn_transformer_gpu_finalize_op_kinds(void *ops, int n) {
     BnGPUOp *shader_ops = (BnGPUOp *)ops;
@@ -311,6 +319,29 @@ int bn_transformer_gpu_emit_context_residual_add(
         .tensor_type = -1,
     };
     return 0;
+}
+
+static void emit_context_residual_rmsnorm(BnTransformerGPUEmitContext *ctx,
+                                          int x_buf,
+                                          int residual_buf,
+                                          int out_buf,
+                                          int dim,
+                                          uint32_t u_eps,
+                                          void *norm_weight) {
+    if (getenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM")) {
+        bn_transformer_gpu_emit_context_residual_add(
+            ctx, x_buf, residual_buf, dim);
+        bn_transformer_gpu_emit_context_rmsnorm(
+            ctx, norm_weight, x_buf, out_buf, dim, u_eps);
+        return;
+    }
+
+    uint32_t residual_norm_params[8] = {
+        (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0
+    };
+    emit_context_utility(ctx, BN_GPU_IR_UTILITY_RESIDUAL_RMSNORM,
+                         x_buf, residual_buf, out_buf, 0, norm_weight,
+                         residual_norm_params);
 }
 
 int bn_transformer_gpu_emit_context_activation(
@@ -700,6 +731,16 @@ int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
     return gpu->read_activation(gpu->ctx, buf_idx, out, size_bytes, 0);
 }
 
+int bn_transformer_gpu_read_activation_buf_offset(const BnGPUBackend *gpu,
+                                                  int buf_idx,
+                                                  float *out,
+                                                  size_t size_bytes,
+                                                  size_t offset_bytes) {
+    if (!gpu || !gpu->read_activation || !out) return -1;
+    return gpu->read_activation(gpu->ctx, buf_idx, out, size_bytes,
+                                offset_bytes);
+}
+
 void bn_transformer_gpu_emit_context_dense_ffn(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -806,12 +847,9 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         BN_GPU_VALUE_XB2, lw->ffn.ffn_down.rows, lw->ffn.ffn_down.cols, 0,
         use_q4_q8 ? 1u : 0u);
 
-    uint32_t residual_norm_params[8] = {
-        (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0
-    };
-    emit_context_utility(ctx, BN_GPU_IR_UTILITY_RESIDUAL_RMSNORM,
-                         BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB,
-                         0, next_norm, residual_norm_params);
+    emit_context_residual_rmsnorm(
+        ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB, dim, u_eps,
+        next_norm);
 
     (void)c;
 }
@@ -849,15 +887,16 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
         bn_transformer_gpu_can_matvec_split(res->gpu, lw->ssm.wqkv.type);
 
     int qkv_split_op_code = bn_gpu_quant_split_op_code(lw->attn.wq.type);
-    int use_split = qkv_stacked && !q_gated &&
+    int qkv_split_disabled = getenv("BN_GPU_DISABLE_QKV_SPLIT") != NULL;
+    int use_split = !qkv_split_disabled && qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     qkv_split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
                     bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_q8_split = qkv_stacked && !q_gated &&
+    int use_q8_split = !qkv_split_disabled && qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_q5_split = qkv_stacked && !q_gated &&
+    int use_q5_split = !qkv_split_disabled && qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
@@ -1065,12 +1104,9 @@ void bn_transformer_gpu_emit_context_attention(
         wo_in_buf, BN_GPU_VALUE_XB2, lw->attn.wo.rows, lw->attn.wo.cols, 0,
         use_q4_q8 ? 1u : 0u);
 
-    uint32_t residual_norm_params[8] = {
-        (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0
-    };
-    emit_context_utility(ctx, BN_GPU_IR_UTILITY_RESIDUAL_RMSNORM,
-                         BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB,
-                         0, ffn_norm, residual_norm_params);
+    emit_context_residual_rmsnorm(
+        ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB, dim, u_eps,
+        ffn_norm);
 }
 
 void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,

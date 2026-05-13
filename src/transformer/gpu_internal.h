@@ -282,6 +282,21 @@ int bn_transformer_gpu_fallback_cpu_layer(
     int dim,
     uint32_t u_eps,
     void *next_norm);
+int bn_transformer_gpu_fallback_cpu_attention(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int pos,
+    int cache_pos,
+    int rope_dims,
+    const float *rope_cos,
+    const float *rope_sin,
+    int dim,
+    uint32_t u_eps,
+    void *next_norm);
 int bn_transformer_gpu_fallback_cpu_ffn(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -343,6 +358,24 @@ int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
                                            int buf_idx,
                                            float *out,
                                            size_t size_bytes);
+int bn_transformer_gpu_read_activation_buf_offset(const BnGPUBackend *gpu,
+                                                  int buf_idx,
+                                                  float *out,
+                                                  size_t size_bytes,
+                                                  size_t offset_bytes);
+int bn_transformer_gpu_debug_compare_attention(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int pos,
+    int cache_pos,
+    int rope_dims,
+    const float *rope_cos,
+    const float *rope_sin,
+    int dim);
 void bn_transformer_gpu_emit_context_dense_ffn(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
