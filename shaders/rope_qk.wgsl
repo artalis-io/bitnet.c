@@ -43,18 +43,19 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         let angle = f32(pos) * freq[i];
         let cos_a = cos(angle);
         let sin_a = sin(angle);
-        let idx = base + i * 2u;
+        let idx0 = base + i;
+        let idx1 = idx0 + half_rope;
 
         if (is_k) {
-            let v0 = k[idx];
-            let v1 = k[idx + 1u];
-            k[idx] = v0 * cos_a - v1 * sin_a;
-            k[idx + 1u] = v0 * sin_a + v1 * cos_a;
+            let v0 = k[idx0];
+            let v1 = k[idx1];
+            k[idx0] = v0 * cos_a - v1 * sin_a;
+            k[idx1] = v0 * sin_a + v1 * cos_a;
         } else {
-            let v0 = q[idx];
-            let v1 = q[idx + 1u];
-            q[idx] = v0 * cos_a - v1 * sin_a;
-            q[idx + 1u] = v0 * sin_a + v1 * cos_a;
+            let v0 = q[idx0];
+            let v1 = q[idx1];
+            q[idx0] = v0 * cos_a - v1 * sin_a;
+            q[idx1] = v0 * sin_a + v1 * cos_a;
         }
 
         i += 256u;

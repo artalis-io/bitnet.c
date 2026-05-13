@@ -170,31 +170,25 @@ void bn_transformer_cpu_apply_rope_heads(float *buf,
     if (rope_dims >= 8) {
         for (int h = 0; h < n_heads; h++) {
             float *hd = buf + h * head_size;
+            int half_rope = rope_dims / 2;
             int i = 0;
-            for (; i + 7 < rope_dims; i += 8) {
-                int fi = i / 2;
-                __m256 cos_v = _mm256_set_ps(rc[fi+3], rc[fi+3],
-                                              rc[fi+2], rc[fi+2],
-                                              rc[fi+1], rc[fi+1],
-                                              rc[fi],   rc[fi]);
-                __m256 sin_v = _mm256_set_ps(rs[fi+3], rs[fi+3],
-                                              rs[fi+2], rs[fi+2],
-                                              rs[fi+1], rs[fi+1],
-                                              rs[fi],   rs[fi]);
-                __m256 v = _mm256_loadu_ps(hd + i);
-                __m256 v_swap = _mm256_shuffle_ps(v, v, _MM_SHUFFLE(2,3,0,1));
-                __m256 sign_mask = _mm256_set_ps(1.0f, -1.0f, 1.0f, -1.0f,
-                                                  1.0f, -1.0f, 1.0f, -1.0f);
-                __m256 sin_neg = _mm256_mul_ps(sin_v, sign_mask);
-                __m256 result = _mm256_fmadd_ps(v, cos_v,
-                                                _mm256_mul_ps(v_swap, sin_neg));
-                _mm256_storeu_ps(hd + i, result);
+            for (; i + 7 < half_rope; i += 8) {
+                __m256 v0 = _mm256_loadu_ps(hd + i);
+                __m256 v1 = _mm256_loadu_ps(hd + half_rope + i);
+                __m256 cos_v = _mm256_loadu_ps(rc + i);
+                __m256 sin_v = _mm256_loadu_ps(rs + i);
+                __m256 out0 = _mm256_fmsub_ps(v0, cos_v,
+                                              _mm256_mul_ps(v1, sin_v));
+                __m256 out1 = _mm256_fmadd_ps(v0, sin_v,
+                                              _mm256_mul_ps(v1, cos_v));
+                _mm256_storeu_ps(hd + i, out0);
+                _mm256_storeu_ps(hd + half_rope + i, out1);
             }
-            for (; i < rope_dims; i += 2) {
-                int fi2 = i / 2;
-                float v0 = hd[i], v1 = hd[i + 1];
-                hd[i]     = v0 * rc[fi2] - v1 * rs[fi2];
-                hd[i + 1] = v0 * rs[fi2] + v1 * rc[fi2];
+            for (; i < half_rope; i++) {
+                int j = i + half_rope;
+                float v0 = hd[i], v1 = hd[j];
+                hd[i] = v0 * rc[i] - v1 * rs[i];
+                hd[j] = v0 * rs[i] + v1 * rc[i];
             }
         }
         return;
@@ -202,11 +196,12 @@ void bn_transformer_cpu_apply_rope_heads(float *buf,
 #endif
     for (int h = 0; h < n_heads; h++) {
         float *hd = buf + h * head_size;
-        for (int i = 0; i < rope_dims; i += 2) {
-            int fi = i / 2;
-            float v0 = hd[i], v1 = hd[i + 1];
-            hd[i]     = v0 * rc[fi] - v1 * rs[fi];
-            hd[i + 1] = v0 * rs[fi] + v1 * rc[fi];
+        int half_rope = rope_dims / 2;
+        for (int i = 0; i < half_rope; i++) {
+            int j = i + half_rope;
+            float v0 = hd[i], v1 = hd[j];
+            hd[i] = v0 * rc[i] - v1 * rs[i];
+            hd[j] = v0 * rs[i] + v1 * rc[i];
         }
     }
 }

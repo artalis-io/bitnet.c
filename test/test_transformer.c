@@ -37,16 +37,19 @@ static void softmax(float *x, int size) {
 }
 
 static void rope(float *vec, int dim, int head_size, int pos, float theta) {
-    for (int i = 0; i < dim; i += 2) {
-        int head_dim = i % head_size;
-        float freq = 1.0f / powf(theta, (float)head_dim / (float)head_size);
-        float angle = pos * freq;
-        float cos_a = cosf(angle);
-        float sin_a = sinf(angle);
-        float v0 = vec[i];
-        float v1 = vec[i + 1];
-        vec[i]     = v0 * cos_a - v1 * sin_a;
-        vec[i + 1] = v0 * sin_a + v1 * cos_a;
+    for (int h = 0; h < dim; h += head_size) {
+        int half_rope = head_size / 2;
+        for (int i = 0; i < half_rope; i++) {
+            float freq = 1.0f / powf(theta, (float)(2 * i) / (float)head_size);
+            float angle = pos * freq;
+            float cos_a = cosf(angle);
+            float sin_a = sinf(angle);
+            int j = i + half_rope;
+            float v0 = vec[h + i];
+            float v1 = vec[h + j];
+            vec[h + i] = v0 * cos_a - v1 * sin_a;
+            vec[h + j] = v0 * sin_a + v1 * cos_a;
+        }
     }
 }
 
@@ -193,7 +196,7 @@ static void test_cpu_execution_helpers(void) {
     float rc[2] = {0.0f, 1.0f};
     float rs[2] = {1.0f, 0.0f};
     bn_transformer_cpu_apply_rope_heads(rope_buf, 2, 4, 4, rc, rs);
-    float expected_rope[8] = {-2.0f, 1.0f, 3.0f, 4.0f, 2.0f, -1.0f, -3.0f, -4.0f};
+    float expected_rope[8] = {-3.0f, 2.0f, 1.0f, 4.0f, 3.0f, -2.0f, -1.0f, -4.0f};
     for (int i = 0; i < 8; i++)
         assert(fabsf(rope_buf[i] - expected_rope[i]) < 1e-6f);
 

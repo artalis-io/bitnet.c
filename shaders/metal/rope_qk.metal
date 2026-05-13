@@ -39,10 +39,11 @@ kernel void rope_qk(device float       *q      [[buffer(0)]],
         float angle = float(pos) * freq[i];
         float cos_a = cos(angle);
         float sin_a = sin(angle);
-        uint idx = base + i * 2;
-        float v0 = vec[idx];
-        float v1 = vec[idx + 1];
-        vec[idx]     = v0 * cos_a - v1 * sin_a;
-        vec[idx + 1] = v0 * sin_a + v1 * cos_a;
+        uint idx0 = base + i;
+        uint idx1 = idx0 + half_rope;
+        float v0 = vec[idx0];
+        float v1 = vec[idx1];
+        vec[idx0] = v0 * cos_a - v1 * sin_a;
+        vec[idx1] = v0 * sin_a + v1 * cos_a;
     }
 }
