@@ -794,9 +794,10 @@ static int metal_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
 
 /* ── Vtable: execute (forward-pass) ────────────────────────────────── */
 
-static int metal_execute(void *vctx, const BnGPUOp *ops, int n_ops,
-                          int readback_buf, float *out_host, int out_len)
+static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
+                         int readback_buf, float *out_host, int out_len)
 {
+    const BnGPUOp *ops = (const BnGPUOp *)ops_raw;
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !ops || n_ops <= 0) return -1;
 

@@ -3,9 +3,8 @@
 
 #include "backend_model.h"
 #include "gpu_backend.h"
-#include "gpu_graph_lowering_internal.h"
+#include "gpu_graph_ir.h"
 #include "gpu_moe_bridge.h"
-#include "gpu_shader_ir_internal.h"
 #include "model.h"
 #include "session.h"
 #include "transformer_plan_internal.h"
@@ -13,11 +12,11 @@
 #define BN_TRANSFORMER_GPU_MAX_VLA_ELEMS 8192
 
 typedef struct {
-    BnGPUOp *ops;
+    void *lowered_ops;
     int n;
     int cap;
     BnGPUValueGraph graph;
-    BnGPUIRLoweringValue *lowering_values;
+    void *lowering_values;
     int cap_lowering_values;
 } BnTransformerGPUEmitContext;
 
@@ -113,6 +112,9 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
 void bn_transformer_gpu_report_fallback(const char *reason);
+float *bn_transformer_gpu_reject_forward(
+    BnTransformerGPUEmitContext *emit,
+    const char *reason);
 void *bn_transformer_gpu_resolve_output_norm(
     const BnBackendModel *backend);
 void *bn_transformer_gpu_resolve_initial_norm(
@@ -158,9 +160,9 @@ bn_transformer_gpu_resolve_moe_shared_resources(
     const BnBackendModel *backend,
     const BnLayerWeights *lw);
 
-void bn_transformer_gpu_finalize_op_kinds(BnGPUOp *ops, int n);
+void bn_transformer_gpu_finalize_op_kinds(void *ops, int n);
 void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,
-                                          BnGPUOp *ops,
+                                          void *lowered_ops,
                                           int cap);
 void bn_transformer_gpu_emit_context_free(BnTransformerGPUEmitContext *ctx);
 int bn_transformer_gpu_emit_context_lower_pending(
@@ -171,6 +173,19 @@ int bn_transformer_gpu_emit_context_execute(
     int readback_buf,
     float *readback,
     int readback_count);
+int bn_transformer_gpu_emit_context_flush(
+    BnTransformerGPUEmitContext *ctx,
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+    BnTransformerGPUEmitContext *ctx,
+    void *norm_gpu,
+    int dim,
+    uint32_t u_eps);
+int bn_transformer_gpu_emit_context_execute_logits(
+    BnTransformerGPUEmitContext *ctx,
+    const BnGPUBackend *gpu,
+    float *logits,
+    int vocab_size);
 int bn_transformer_gpu_emit_context_rmsnorm(BnTransformerGPUEmitContext *ctx,
                                             void *norm_gpu,
                                             int buf_in,
@@ -245,7 +260,7 @@ int bn_transformer_gpu_fallback_logits(
     const BnTransformerGPULogitResources *logits,
     int dim);
 int bn_transformer_gpu_execute_ops(const BnGPUBackend *gpu,
-                                   BnGPUOp *ops,
+                                   void *ops,
                                    int n,
                                    int readback_buf,
                                    float *readback,

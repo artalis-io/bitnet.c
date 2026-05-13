@@ -35,6 +35,14 @@ void bn_transformer_gpu_report_fallback(const char *reason) {
     debug_printed = 1;
 }
 
+float *bn_transformer_gpu_reject_forward(
+    BnTransformerGPUEmitContext *emit,
+    const char *reason) {
+    bn_transformer_gpu_report_fallback(reason);
+    bn_transformer_gpu_emit_context_free(emit);
+    return NULL;
+}
+
 int bn_transformer_gpu_validate_forward(
     BnTransformerGPUForwardPolicy *out,
     const BnGPUBackend *gpu,

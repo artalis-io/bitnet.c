@@ -24,13 +24,17 @@ typedef struct {
     int moe_hidden;
 } BnGPUMoEResources;
 
+typedef struct {
+    void *buffers[BN_MAX_MOE_K * 3];
+    int n_buffers;
+} BnGPUMoETemporaryBuffers;
+
 int bn_gpu_moe_bridge_get_expert(BnModel *m,
                                   BnSession *sess,
                                   const BnLayerWeights *lw,
                                   int layer,
                                   int expert_idx,
-                                  void **uncached_bufs,
-                                  int *n_uncached,
+                                  BnGPUMoETemporaryBuffers *temporaries,
                                   BnGPUMoEExpertBuffers *out);
 
 int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
@@ -40,7 +44,10 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
                                          BnSession *sess,
                                          const BnLayerWeights *lw,
                                          int layer,
-                                         void **uncached_bufs,
-                                         int *n_uncached);
+                                         BnGPUMoETemporaryBuffers *temporaries);
+
+void bn_gpu_moe_bridge_release_temporaries(
+    BnModel *m,
+    BnGPUMoETemporaryBuffers *temporaries);
 
 #endif // BN_GPU_MOE_BRIDGE_H

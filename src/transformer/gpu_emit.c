@@ -1,7 +1,8 @@
 #include "gpu_internal.h"
 #include "backend_quant.h"
-#include "gpu_graph_lowering_internal.h"
-#include "gpu_quant_lowering_internal.h"
+#include "../gpu_graph_lowering_internal.h"
+#include "../gpu_quant_lowering_internal.h"
+#include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
@@ -14,19 +15,20 @@
 #define GPU_OP(code_) \
     .op_code = (code_)
 
-void bn_transformer_gpu_finalize_op_kinds(BnGPUOp *ops, int n) {
+void bn_transformer_gpu_finalize_op_kinds(void *ops, int n) {
+    BnGPUOp *shader_ops = (BnGPUOp *)ops;
     for (int i = 0; i < n; i++) {
-        if (ops[i].op_kind == BN_GPU_OP_UNKNOWN)
-            ops[i].op_kind = bn_gpu_op_kind(&ops[i]);
+        if (shader_ops[i].op_kind == BN_GPU_OP_UNKNOWN)
+            shader_ops[i].op_kind = bn_gpu_op_kind(&shader_ops[i]);
     }
 }
 
 void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,
-                                          BnGPUOp *ops,
+                                          void *lowered_ops,
                                           int cap) {
     if (!ctx) return;
     memset(ctx, 0, sizeof(*ctx));
-    ctx->ops = ops;
+    ctx->lowered_ops = lowered_ops;
     ctx->cap = cap;
     bn_gpu_value_graph_init(&ctx->graph);
 }
@@ -54,6 +56,11 @@ static int emit_context_reserve_lowering(BnTransformerGPUEmitContext *ctx,
     return 0;
 }
 
+static BnGPUIRLoweringValue *emit_context_lowering_values(
+    BnTransformerGPUEmitContext *ctx) {
+    return (BnGPUIRLoweringValue *)ctx->lowering_values;
+}
+
 static int emit_context_add_value(BnTransformerGPUEmitContext *ctx,
                                   BnGPUIRValueKind kind,
                                   int elem_type,
@@ -71,7 +78,9 @@ static int emit_context_add_value(BnTransformerGPUEmitContext *ctx,
     int id = bn_gpu_value_graph_add_value(&ctx->graph, kind, elem_type,
                                           rows, cols, flags, name);
     if (id != BN_GPU_IR_INVALID_VALUE) {
-        ctx->lowering_values[id] = (BnGPUIRLoweringValue){
+        BnGPUIRLoweringValue *lowering_values =
+            emit_context_lowering_values(ctx);
+        lowering_values[id] = (BnGPUIRLoweringValue){
             .shader_slot = shader_slot,
             .weight_buf = weight_buf,
             .tensor_type = tensor_type,
@@ -84,16 +93,16 @@ int bn_transformer_gpu_emit_context_lower_pending(
     BnTransformerGPUEmitContext *ctx) {
     if (!ctx) return -1;
     if (ctx->graph.n_ops == 0) return 0;
-    if (!ctx->ops || ctx->n < 0 || ctx->cap < ctx->n ||
+    if (!ctx->lowered_ops || ctx->n < 0 || ctx->cap < ctx->n ||
         ctx->cap - ctx->n < ctx->graph.n_ops)
         return -1;
     BnGPUIRLoweringMap map = {
-        .values = ctx->lowering_values,
+        .values = (BnGPUIRLoweringValue *)ctx->lowering_values,
         .n_values = ctx->graph.n_values,
     };
     int lowered = 0;
     if (bn_gpu_value_graph_lower_to_shader(&ctx->graph, &map,
-                                           &ctx->ops[ctx->n],
+                                           &((BnGPUOp *)ctx->lowered_ops)[ctx->n],
                                            ctx->cap - ctx->n,
                                            &lowered) != 0)
         return -1;
@@ -113,12 +122,39 @@ int bn_transformer_gpu_emit_context_execute(
         return -1;
     if (ctx->n == 0)
         return 0;
-    int rc = bn_transformer_gpu_execute_ops(gpu, ctx->ops, ctx->n,
+    int rc = bn_transformer_gpu_execute_ops(gpu, ctx->lowered_ops, ctx->n,
                                             readback_buf, readback,
                                             readback_count);
     if (rc == 0)
         ctx->n = 0;
     return rc;
+}
+
+int bn_transformer_gpu_emit_context_flush(
+    BnTransformerGPUEmitContext *ctx,
+    const BnGPUBackend *gpu) {
+    if (!ctx) return -1;
+    if (ctx->n == 0 && ctx->graph.n_ops == 0)
+        return 0;
+    return bn_transformer_gpu_emit_context_execute(ctx, gpu, -1, NULL, 0);
+}
+
+int bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+    BnTransformerGPUEmitContext *ctx,
+    void *norm_gpu,
+    int dim,
+    uint32_t u_eps) {
+    return bn_transformer_gpu_emit_context_rmsnorm(
+        ctx, norm_gpu, BN_GPU_VALUE_X, BN_GPU_VALUE_XB, dim, u_eps);
+}
+
+int bn_transformer_gpu_emit_context_execute_logits(
+    BnTransformerGPUEmitContext *ctx,
+    const BnGPUBackend *gpu,
+    float *logits,
+    int vocab_size) {
+    return bn_transformer_gpu_emit_context_execute(
+        ctx, gpu, BN_GPU_VALUE_LOGITS, logits, vocab_size);
 }
 
 int bn_transformer_gpu_emit_context_rmsnorm(BnTransformerGPUEmitContext *ctx,
@@ -140,7 +176,7 @@ int bn_transformer_gpu_emit_context_rmsnorm(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = buf_out,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -168,7 +204,7 @@ int bn_transformer_gpu_emit_context_logits(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = BN_GPU_VALUE_LOGITS,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -192,7 +228,7 @@ int bn_transformer_gpu_emit_context_copy(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = buf_out,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -219,7 +255,7 @@ int bn_transformer_gpu_emit_context_residual_add(
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = buf_in,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -253,7 +289,7 @@ int bn_transformer_gpu_emit_context_activation(
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = buf_in,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -284,7 +320,7 @@ int bn_transformer_gpu_emit_context_matvec(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = buf_out,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -316,7 +352,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output] = (BnGPUIRLoweringValue){
+    emit_context_lowering_values(ctx)[output] = (BnGPUIRLoweringValue){
         .shader_slot = buf_out,
         .weight_buf = NULL,
         .tensor_type = -1,
@@ -354,10 +390,11 @@ static int emit_context_matvec_split(BnTransformerGPUEmitContext *ctx,
         buf_out2 >= 0 ? "matvec_split.out2" : NULL);
     if (!op || emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[op->outputs[0]].shader_slot = buf_out0;
-    ctx->lowering_values[op->outputs[1]].shader_slot = buf_out1;
+    BnGPUIRLoweringValue *lowering_values = emit_context_lowering_values(ctx);
+    lowering_values[op->outputs[0]].shader_slot = buf_out0;
+    lowering_values[op->outputs[1]].shader_slot = buf_out1;
     if (op->n_outputs > 2)
-        ctx->lowering_values[op->outputs[2]].shader_slot = buf_out2;
+        lowering_values[op->outputs[2]].shader_slot = buf_out2;
     return 0;
 }
 
@@ -388,7 +425,7 @@ static int emit_context_rope(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output].shader_slot = buf_q;
+    emit_context_lowering_values(ctx)[output].shader_slot = buf_q;
     return 0;
 }
 
@@ -414,7 +451,7 @@ static int emit_context_flash_attention(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[output].shader_slot = buf_out;
+    emit_context_lowering_values(ctx)[output].shader_slot = buf_out;
     return 0;
 }
 
@@ -445,9 +482,10 @@ static int emit_context_gqa_attention(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[scores].shader_slot = BN_GPU_VALUE_ATT;
-    ctx->lowering_values[probs].shader_slot = BN_GPU_VALUE_ATT;
-    ctx->lowering_values[output].shader_slot = buf_out;
+    BnGPUIRLoweringValue *lowering_values = emit_context_lowering_values(ctx);
+    lowering_values[scores].shader_slot = BN_GPU_VALUE_ATT;
+    lowering_values[probs].shader_slot = BN_GPU_VALUE_ATT;
+    lowering_values[output].shader_slot = buf_out;
     return 0;
 }
 
@@ -494,7 +532,8 @@ static int emit_context_ssm(BnTransformerGPUEmitContext *ctx,
     if (result == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[result].shader_slot = buf_out >= 0 ? buf_out : buf_in;
+    emit_context_lowering_values(ctx)[result].shader_slot =
+        buf_out >= 0 ? buf_out : buf_in;
     return 0;
 }
 
@@ -539,12 +578,13 @@ static int emit_context_utility(BnTransformerGPUEmitContext *ctx,
     if (result == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph.n_values) != 0)
         return -1;
-    ctx->lowering_values[result].shader_slot = buf_out >= 0 ? buf_out : buf_in;
+    emit_context_lowering_values(ctx)[result].shader_slot =
+        buf_out >= 0 ? buf_out : buf_in;
     return 0;
 }
 
 int bn_transformer_gpu_execute_ops(const BnGPUBackend *gpu,
-                                   BnGPUOp *ops,
+                                   void *ops,
                                    int n,
                                    int readback_buf,
                                    float *readback,

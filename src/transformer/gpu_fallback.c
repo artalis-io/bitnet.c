@@ -3,13 +3,6 @@
 #include "moe.h"
 #include "quant.h"
 
-static int gpu_fallback_flush(BnTransformerGPUEmitContext *emit,
-                              const BnGPUBackend *gpu) {
-    if (emit->n == 0 && emit->graph.n_ops == 0)
-        return 0;
-    return bn_transformer_gpu_emit_context_execute(emit, gpu, -1, NULL, 0);
-}
-
 int bn_transformer_gpu_fallback_ssm_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -21,7 +14,7 @@ int bn_transformer_gpu_fallback_ssm_layer(
     uint32_t u_eps,
     void *next_norm) {
     BnRunState *s = &sess->state;
-    if (gpu_fallback_flush(emit, gpu) != 0)
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
         return -1;
     if (bn_transformer_gpu_read_x(gpu, s->x,
                                   (size_t)dim * sizeof(float)) != 0)
@@ -35,8 +28,8 @@ int bn_transformer_gpu_fallback_ssm_layer(
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;
-    return bn_transformer_gpu_emit_context_rmsnorm(
-        emit, next_norm, BN_GPU_VALUE_X, BN_GPU_VALUE_XB, dim, u_eps);
+    return bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+        emit, next_norm, dim, u_eps);
 }
 
 int bn_transformer_gpu_fallback_moe_layer(
@@ -50,7 +43,7 @@ int bn_transformer_gpu_fallback_moe_layer(
     uint32_t u_eps,
     void *next_norm) {
     BnRunState *s = &sess->state;
-    if (gpu_fallback_flush(emit, gpu) != 0)
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
         return -1;
     if (bn_transformer_gpu_read_x(gpu, s->x,
                                   (size_t)dim * sizeof(float)) != 0)
@@ -59,8 +52,8 @@ int bn_transformer_gpu_fallback_moe_layer(
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;
-    return bn_transformer_gpu_emit_context_rmsnorm(
-        emit, next_norm, BN_GPU_VALUE_X, BN_GPU_VALUE_XB, dim, u_eps);
+    return bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+        emit, next_norm, dim, u_eps);
 }
 
 int bn_transformer_gpu_fallback_logits(
@@ -71,7 +64,7 @@ int bn_transformer_gpu_fallback_logits(
     const BnTransformerGPULogitResources *logits,
     int dim) {
     BnRunState *s = &sess->state;
-    if (gpu_fallback_flush(emit, gpu) != 0)
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
         return -1;
     if (bn_transformer_gpu_read_xb(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)

@@ -53,6 +53,18 @@ void *bn_backend_session_ensure_gpu_graph(BnBackendSession *backend, int cap_ops
     return graph;
 }
 
+void *bn_backend_session_ensure_gpu_command_buffer(BnBackendSession *backend,
+                                                   int cap_ops,
+                                                   int *out_cap) {
+    BnGPUGraph *graph =
+        (BnGPUGraph *)bn_backend_session_ensure_gpu_graph(backend, cap_ops);
+    if (!graph)
+        return NULL;
+    if (out_cap)
+        *out_cap = graph->cap;
+    return graph->ops;
+}
+
 void bn_backend_session_set_gpu_graph(BnBackendSession *backend, void *graph) {
     if (!backend) return;
     backend->gpu_graph = graph;

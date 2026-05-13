@@ -1500,9 +1500,10 @@ static int wgpu_read_activation(void *vctx, int buf_idx, void *out,
 
 /* ── Vtable: execute ───────────────────────────────────────────────── */
 
-static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
-                         int readback_buf, float *out_host, int out_len)
+static int wgpu_execute(void *vctx, const void *ops_raw, int n_ops,
+                        int readback_buf, float *out_host, int out_len)
 {
+    const BnGPUOp *ops = (const BnGPUOp *)ops_raw;
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
     if (!ctx || !ops || n_ops <= 0) return -1;
 

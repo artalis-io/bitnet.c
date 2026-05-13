@@ -1,5 +1,5 @@
 #include "gpu_graph_ir.h"
-#include "gpu_graph_lowering_internal.h"
+#include "../src/gpu_graph_lowering_internal.h"
 #include <assert.h>
 #include <stdio.h>
 

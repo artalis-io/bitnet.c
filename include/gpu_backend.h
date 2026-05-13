@@ -11,8 +11,6 @@ typedef enum {
     BN_GPU_BACKEND_CUDA = 3,
 } BnGPUBackendKind;
 
-typedef struct BnGPUOp BnGPUOp;
-
 // Descriptor for one operation in a batched matvec submission.
 typedef struct {
     float *out;      // host output pointer
@@ -70,10 +68,11 @@ struct BnGPUBackend {
     int (*matvec_batch)(void *ctx, const BnGPUMatvecOp *ops, int n_ops,
                         const float *x, int x_cols);
 
-    // GPU-resident forward pass: execute a sequence of ops as a single submission.
-    // All intermediate buffers stay on GPU. Only readback_buf is copied to out_host.
+    // GPU-resident forward pass: execute a backend-private lowered command list
+    // as a single submission. All intermediate buffers stay on GPU. Only
+    // readback_buf is copied to out_host.
     // Returns 0 on success, -1 on error (caller should fall back to CPU).
-    int (*execute)(void *ctx, const BnGPUOp *ops, int n_ops,
+    int (*execute)(void *ctx, const void *ops, int n_ops,
                    int readback_buf, float *out_host, int out_len);
 
     // Initialize GPU-resident activation buffers for a given model config.

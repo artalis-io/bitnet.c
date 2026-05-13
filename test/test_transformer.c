@@ -3,7 +3,7 @@
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
-#include "gpu_quant_lowering_internal.h"
+#include "../src/gpu_quant_lowering_internal.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "simd_helpers.h"

@@ -32,13 +32,24 @@ static void gpu_moe_destroy_partial(BnGPUBackend *gpu,
     if (down) gpu->buffer_destroy(gpu->ctx, down);
 }
 
+static int gpu_moe_track_temporary(BnGPUMoETemporaryBuffers *temporaries,
+                                   void *buffer) {
+    if (!temporaries || !buffer)
+        return 0;
+    int cap = (int)(sizeof(temporaries->buffers) /
+                    sizeof(temporaries->buffers[0]));
+    if (temporaries->n_buffers < 0 || temporaries->n_buffers >= cap)
+        return -1;
+    temporaries->buffers[temporaries->n_buffers++] = buffer;
+    return 0;
+}
+
 int bn_gpu_moe_bridge_get_expert(BnModel *m,
                                   BnSession *sess,
                                   const BnLayerWeights *lw,
                                   int layer,
                                   int expert_idx,
-                                  void **uncached_bufs,
-                                  int *n_uncached,
+                                  BnGPUMoETemporaryBuffers *temporaries,
                                   BnGPUMoEExpertBuffers *out) {
     if (!m || !sess || !lw || !out) return -1;
     BnGPUBackend *gpu = bn_model_gpu(m);
@@ -117,10 +128,11 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     if (gpu_cache) {
         bn_gpu_moe_cache_insert(gpu_cache, layer, expert_idx,
                                 out->gate, out->up, out->down);
-    } else if (uncached_bufs && n_uncached) {
-        uncached_bufs[(*n_uncached)++] = out->gate;
-        if (out->up) uncached_bufs[(*n_uncached)++] = out->up;
-        uncached_bufs[(*n_uncached)++] = out->down;
+    } else if (temporaries) {
+        if (gpu_moe_track_temporary(temporaries, out->gate) != 0 ||
+            gpu_moe_track_temporary(temporaries, out->up) != 0 ||
+            gpu_moe_track_temporary(temporaries, out->down) != 0)
+            return -1;
     }
 
     return 0;
@@ -133,10 +145,9 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
                                          BnSession *sess,
                                          const BnLayerWeights *lw,
                                          int layer,
-                                         void **uncached_bufs,
-                                         int *n_uncached) {
+                                         BnGPUMoETemporaryBuffers *temporaries) {
     if (!out || !expert_storage || expert_cap < 0 || !m || !sess || !lw ||
-        !n_uncached)
+        !temporaries)
         return -1;
     BnConfig *c = &m->config;
     BnMoEState *ms = sess->moe_state;
@@ -146,7 +157,7 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
     out->expert_map = &lw->moe.expert_map;
     out->experts = expert_storage;
     out->moe_hidden = c->moe_intermediate_size;
-    *n_uncached = 0;
+    memset(temporaries, 0, sizeof(*temporaries));
 
     int K = c->n_experts_active;
     if (K > expert_cap) return -1;
@@ -155,11 +166,27 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
         if (eidx < 0 || eidx >= c->n_experts) continue;
         BnGPUMoEResolvedExpert *expert = &expert_storage[out->n_experts];
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
-                                         uncached_bufs, n_uncached,
-                                         &expert->buffers) != 0)
+                                         temporaries, &expert->buffers) != 0)
             continue;
         expert->weight = ms->expert_weights[k];
         out->n_experts++;
     }
     return 0;
+}
+
+void bn_gpu_moe_bridge_release_temporaries(
+    BnModel *m,
+    BnGPUMoETemporaryBuffers *temporaries) {
+    if (!m || !temporaries || temporaries->n_buffers <= 0)
+        return;
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    if (!gpu || !gpu->buffer_destroy)
+        return;
+
+    for (int i = 0; i < temporaries->n_buffers; i++) {
+        if (temporaries->buffers[i])
+            gpu->buffer_destroy(gpu->ctx, temporaries->buffers[i]);
+        temporaries->buffers[i] = NULL;
+    }
+    temporaries->n_buffers = 0;
 }
