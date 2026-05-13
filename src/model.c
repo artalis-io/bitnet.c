@@ -19,12 +19,6 @@
 #undef __wasm_simd128__
 #endif
 
-static int checked_mul_size(size_t a, size_t b, size_t *out) {
-    if (a != 0 && b > SIZE_MAX / a) return -1;
-    *out = a * b;
-    return 0;
-}
-
 static int model_ensure_runtime(BnModel *m) {
     if (!m) return -1;
     if (!m->runtime) {
@@ -235,95 +229,6 @@ static int tensor_dim0(BnGGUFFile *f, const char *name) {
     if (ti < 0 || f->tensors[ti].n_dims < 1 || f->tensors[ti].dims[0] > INT_MAX)
         return 0;
     return (int)f->tensors[ti].dims[0];
-}
-
-// --- Helper: compute expert map for one fused 3D tensor ---
-// Tensor shape: [n_experts, rows_per_expert, cols_per_expert]
-// Returns file offset of first expert's data and bytes per expert slice.
-static int load_expert_map_proj(BnGGUFFile *f, const char *name,
-                                int n_experts, int *type_out,
-                                int *rows_out, int *cols_out,
-                                size_t *base_offset_out, size_t *expert_bytes_out) {
-    int ti = bn_gguf_find_tensor(f, name);
-    if (ti < 0) return -1;
-
-    BnGGUFTensorInfo *info = &f->tensors[ti];
-    if (info->n_dims < 3) {
-        SH_LOG_ERROR("Expert tensor must be 3D", "name", name);
-        return -1;
-    }
-
-    // GGUF dims: [cols, rows, n_experts] (column-major convention)
-    if (info->dims[0] > INT_MAX || info->dims[1] > INT_MAX || info->dims[2] > INT_MAX) {
-        SH_LOG_ERROR("Expert tensor dimensions exceed INT_MAX", "name", name);
-        return -1;
-    }
-    int cols = (int)info->dims[0];
-    int rows = (int)info->dims[1];
-    int n_exp = (int)info->dims[2];
-    if (n_exp != n_experts) {
-        SH_LOG_ERROR("Expert count mismatch in tensor", "name", name);
-        return -1;
-    }
-
-    *type_out = (int)info->type;
-    *rows_out = rows;
-    *cols_out = cols;
-
-    // Compute file offset of tensor data
-    size_t tensor_offset = f->data_offset + info->offset;
-    *base_offset_out = tensor_offset;
-
-    // Bytes per single expert slice
-    size_t expert_elements = 0;
-    if (checked_mul_size((size_t)rows, (size_t)cols, &expert_elements) != 0 ||
-        !bn_gguf_tensor_size(info->type, (uint64_t)expert_elements, expert_bytes_out)) {
-        SH_LOG_ERROR("Unsupported expert tensor type", "name", name);
-        return -1;
-    }
-
-    return 0;
-}
-
-static int load_expert_map_gate_up_fused(BnGGUFFile *f, const char *name,
-                                         int n_experts, int expert_hidden,
-                                         BnMoEExpertMap *em) {
-    int ti = bn_gguf_find_tensor(f, name);
-    if (ti < 0) return -1;
-    BnGGUFTensorInfo *info = &f->tensors[ti];
-    if (info->n_dims < 3 || info->dims[0] > INT_MAX ||
-        info->dims[1] > INT_MAX || info->dims[2] > INT_MAX)
-        return -1;
-
-    int cols = (int)info->dims[0];
-    int rows = (int)info->dims[1];
-    int n_exp = (int)info->dims[2];
-    if (n_exp != n_experts || rows != expert_hidden * 2) {
-        SH_LOG_ERROR("Fused gate/up expert tensor shape mismatch", "name", name);
-        return -1;
-    }
-
-    size_t one_proj_elems = 0, fused_elems = 0;
-    size_t one_proj_bytes = 0, fused_bytes = 0;
-    if (checked_mul_size((size_t)expert_hidden, (size_t)cols, &one_proj_elems) != 0 ||
-        checked_mul_size((size_t)rows, (size_t)cols, &fused_elems) != 0 ||
-        !bn_gguf_tensor_size(info->type, (uint64_t)one_proj_elems, &one_proj_bytes) ||
-        !bn_gguf_tensor_size(info->type, (uint64_t)fused_elems, &fused_bytes))
-        return -1;
-
-    em->gate_type = (int)info->type;
-    em->up_type = (int)info->type;
-    em->gate_rows = expert_hidden;
-    em->up_rows = expert_hidden;
-    em->gate_cols = cols;
-    em->up_cols = cols;
-    em->expert_gate_bytes = one_proj_bytes;
-    em->expert_up_bytes = one_proj_bytes;
-    em->gate_stride = fused_bytes;
-    em->up_stride = fused_bytes;
-    em->gate_offset = f->data_offset + info->offset;
-    em->up_offset = em->gate_offset + one_proj_bytes;
-    return 0;
 }
 
 // --- Model loading ---
@@ -801,38 +706,32 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
             }
 
-            // Expert tensor offsets (NOT loaded into memory)
-            BnMoEExpertMap *em = &lw->expert_map;
-
-            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+            char gate_name[256], up_name[256], gate_up_name[256], down_name[256];
+            BnMoEExpertTensorNames expert_names = {0};
+            if (bn_model_arch_tensor_name_for(arch_ops, gate_name, sizeof(gate_name), i,
                                               BN_MODEL_TENSOR_MOE_GATE_EXPS) != 0)
                 goto fail_layers;
-            if (bn_gguf_find_tensor(f, wname) >= 0) {
-                if (load_expert_map_proj(f, wname, c->n_experts,
-                        &em->gate_type, &em->gate_rows, &em->gate_cols,
-                        &em->gate_offset, &em->expert_gate_bytes) != 0) goto fail_layers;
+            expert_names.gate = gate_name;
 
-                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
-                                                  BN_MODEL_TENSOR_MOE_UP_EXPS) != 0)
-                    goto fail_layers;
-                if (load_expert_map_proj(f, wname, c->n_experts,
-                        &em->up_type, &em->up_rows, &em->up_cols,
-                        &em->up_offset, &em->expert_up_bytes) != 0) goto fail_layers;
-            } else {
-                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
-                                                  BN_MODEL_TENSOR_MOE_GATE_UP_EXPS) != 0)
-                    goto fail_layers;
-                if (load_expert_map_gate_up_fused(f, wname, c->n_experts,
-                        c->moe_intermediate_size, em) != 0) goto fail_layers;
-            }
+            if (bn_model_arch_tensor_name_for(arch_ops, up_name, sizeof(up_name), i,
+                                              BN_MODEL_TENSOR_MOE_UP_EXPS) != 0)
+                goto fail_layers;
+            expert_names.up = up_name;
 
-            if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+            if (bn_model_arch_tensor_name_for(arch_ops, gate_up_name, sizeof(gate_up_name), i,
+                                              BN_MODEL_TENSOR_MOE_GATE_UP_EXPS) != 0)
+                goto fail_layers;
+            expert_names.gate_up = gate_up_name;
+
+            if (bn_model_arch_tensor_name_for(arch_ops, down_name, sizeof(down_name), i,
                                               BN_MODEL_TENSOR_MOE_DOWN_EXPS) != 0)
                 goto fail_layers;
-            if (load_expert_map_proj(f, wname, c->n_experts,
-                    &em->down_type, &em->down_rows, &em->down_cols,
-                    &em->down_offset, &em->expert_down_bytes) != 0) goto fail_layers;
-            em->down_stride = em->expert_down_bytes;
+            expert_names.down = down_name;
+
+            if (bn_moe_load_expert_map(f, &expert_names, c->n_experts,
+                                       c->moe_intermediate_size,
+                                       &lw->expert_map) != 0)
+                goto fail_layers;
 
             // Shared expert (optional, always resident)
             if (c->has_shared_expert) {

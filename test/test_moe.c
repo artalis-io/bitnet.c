@@ -58,29 +58,98 @@ static void test_moe_route(void) {
     printf("PASSED\n");
 }
 
-// --- Test: expert offset computation ---
+// --- Test: expert map loading from GGUF tensor metadata ---
 
-static void test_expert_offset(void) {
-    printf("test_expert_offset... ");
+static BnGGUFTensorInfo make_tensor(char *name, uint32_t type,
+                                    uint64_t cols, uint64_t rows,
+                                    uint64_t experts, uint64_t offset) {
+    BnGGUFTensorInfo info = {0};
+    info.name = name;
+    info.type = type;
+    info.n_dims = 3;
+    info.dims[0] = cols;
+    info.dims[1] = rows;
+    info.dims[2] = experts;
+    info.offset = offset;
+    return info;
+}
 
-    // Simulate a BnMoEExpertMap for 4 experts
-    // Gate proj: [4, 32, 16] Q4_0 → 32*16=512 elements per expert → 512/32*18 = 288 bytes
+static void test_expert_map_split(void) {
+    printf("test_expert_map_split... ");
+
+    BnGGUFTensorInfo tensors[3];
+    tensors[0] = make_tensor("blk.0.ffn_gate_exps.weight", BN_GGUF_TENSOR_Q4_0, 16, 32, 4, 10);
+    tensors[1] = make_tensor("blk.0.ffn_up_exps.weight", BN_GGUF_TENSOR_Q4_0, 16, 32, 4, 1000);
+    tensors[2] = make_tensor("blk.0.ffn_down_exps.weight", BN_GGUF_TENSOR_Q4_0, 32, 16, 4, 2000);
+
+    BnGGUFFile f = {0};
+    f.n_tensors = 3;
+    f.tensors = tensors;
+    f.data_offset = 4096;
+
+    BnMoEExpertTensorNames names = {
+        "blk.0.ffn_gate_exps.weight",
+        "blk.0.ffn_up_exps.weight",
+        "blk.0.ffn_gate_up_exps.weight",
+        "blk.0.ffn_down_exps.weight",
+    };
     BnMoEExpertMap em = {0};
-    em.gate_offset = 1000;  // base file offset
-    em.expert_gate_bytes = 288;
-    em.gate_type = BN_GGUF_TENSOR_Q4_0;
-    em.gate_rows = 32;
-    em.gate_cols = 16;
+    assert(bn_moe_load_expert_map(&f, &names, 4, 32, &em) == 0);
 
-    // Expert 0: offset 1000
-    // Expert 1: offset 1288
-    // Expert 2: offset 1576
-    // Expert 3: offset 1864
-    for (int e = 0; e < 4; e++) {
-        size_t expected = 1000 + (size_t)e * 288;
-        size_t actual = em.gate_offset + (size_t)e * em.expert_gate_bytes;
-        assert(actual == expected);
-    }
+    size_t gate_bytes = 0, down_bytes = 0;
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_Q4_0, 32 * 16, &gate_bytes));
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_Q4_0, 16 * 32, &down_bytes));
+    assert(em.gate_offset == 4096 + 10);
+    assert(em.up_offset == 4096 + 1000);
+    assert(em.down_offset == 4096 + 2000);
+    assert(em.expert_gate_bytes == gate_bytes);
+    assert(em.expert_up_bytes == gate_bytes);
+    assert(em.expert_down_bytes == down_bytes);
+    assert(em.gate_stride == gate_bytes);
+    assert(em.up_stride == gate_bytes);
+    assert(em.down_stride == down_bytes);
+    assert(em.gate_rows == 32 && em.gate_cols == 16);
+    assert(em.down_rows == 16 && em.down_cols == 32);
+
+    printf("PASSED\n");
+}
+
+static void test_expert_map_fused_gate_up(void) {
+    printf("test_expert_map_fused_gate_up... ");
+
+    BnGGUFTensorInfo tensors[2];
+    tensors[0] = make_tensor("blk.0.ffn_gate_up_exps.weight", BN_GGUF_TENSOR_F32, 16, 64, 4, 30);
+    tensors[1] = make_tensor("blk.0.ffn_down_exps.weight", BN_GGUF_TENSOR_F32, 32, 16, 4, 5000);
+
+    BnGGUFFile f = {0};
+    f.n_tensors = 2;
+    f.tensors = tensors;
+    f.data_offset = 8192;
+
+    BnMoEExpertTensorNames names = {
+        "blk.0.ffn_gate_exps.weight",
+        "blk.0.ffn_up_exps.weight",
+        "blk.0.ffn_gate_up_exps.weight",
+        "blk.0.ffn_down_exps.weight",
+    };
+    BnMoEExpertMap em = {0};
+    assert(bn_moe_load_expert_map(&f, &names, 4, 32, &em) == 0);
+
+    size_t one_proj_bytes = 0, fused_bytes = 0, down_bytes = 0;
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_F32, 32 * 16, &one_proj_bytes));
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_F32, 64 * 16, &fused_bytes));
+    assert(bn_gguf_tensor_size(BN_GGUF_TENSOR_F32, 16 * 32, &down_bytes));
+    assert(em.gate_offset == 8192 + 30);
+    assert(em.up_offset == em.gate_offset + one_proj_bytes);
+    assert(em.down_offset == 8192 + 5000);
+    assert(em.expert_gate_bytes == one_proj_bytes);
+    assert(em.expert_up_bytes == one_proj_bytes);
+    assert(em.expert_down_bytes == down_bytes);
+    assert(em.gate_stride == fused_bytes);
+    assert(em.up_stride == fused_bytes);
+    assert(em.down_stride == down_bytes);
+    assert(em.gate_rows == 32 && em.up_rows == 32);
+    assert(em.gate_cols == 16 && em.up_cols == 16);
 
     printf("PASSED\n");
 }
@@ -167,7 +236,8 @@ static void test_moe_cache(void) {
 int main(void) {
     printf("=== MoE Unit Tests ===\n");
     test_moe_route();
-    test_expert_offset();
+    test_expert_map_split();
+    test_expert_map_fused_gate_up();
     test_moe_config_compat();
     test_swiglu();
     test_route_uniform();

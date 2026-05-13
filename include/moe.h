@@ -1,6 +1,7 @@
 #ifndef BN_MOE_H
 #define BN_MOE_H
 
+#include "gguf.h"
 #include "moe_types.h"
 #include <stddef.h>
 
@@ -9,6 +10,19 @@ struct BnModel;
 struct BnThreadPool;
 // Forward declaration — full definition in session.h
 typedef struct BnSession BnSession;
+
+typedef struct {
+    const char *gate;
+    const char *up;
+    const char *gate_up;
+    const char *down;
+} BnMoEExpertTensorNames;
+
+int bn_moe_load_expert_map(BnGGUFFile *f,
+                           const BnMoEExpertTensorNames *names,
+                           int n_experts,
+                           int expert_hidden,
+                           BnMoEExpertMap *map);
 
 // Router: SIMD matvec + softmax + top-K selection.
 // Writes to ms->expert_indices and ms->expert_weights.
