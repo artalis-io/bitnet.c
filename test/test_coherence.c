@@ -193,15 +193,24 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
 
     int use_webgpu = 0, use_metal = 0;
+    const char *prompt = "Hello";
     for (int i = 2; i < argc; i++) {
-        if (strcmp(argv[i], "--webgpu") == 0) use_webgpu = 1;
-        if (strcmp(argv[i], "--metal") == 0) use_metal = 1;
+        if (strcmp(argv[i], "--webgpu") == 0) {
+            use_webgpu = 1;
+        } else if (strcmp(argv[i], "--metal") == 0) {
+            use_metal = 1;
+        } else if (strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
+            prompt = argv[++i];
+        } else {
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            return 1;
+        }
     }
 
     int total_pass = 0, total_fail = 0, total_skip = 0;
@@ -250,8 +259,8 @@ int main(int argc, char **argv) {
     /* ── Encode prompt ───────────────────────────────────────────── */
 
     int prompt_tokens[64];
-    int n_prompt = bn_tokenizer_encode(&tok, "Hello", 1, prompt_tokens, 64);
-    printf("Prompt: \"Hello\" -> %d token(s): ", n_prompt);
+    int n_prompt = bn_tokenizer_encode(&tok, prompt, tok.add_bos, prompt_tokens, 64);
+    printf("Prompt: \"%s\" -> %d token(s): ", prompt, n_prompt);
     for (int i = 0; i < n_prompt; i++) printf("%d ", prompt_tokens[i]);
     printf("\n\n");
 
@@ -278,11 +287,11 @@ int main(int argc, char **argv) {
 
         int token = prompt_tokens[0];
         int pos = 0;
+        float *logits = NULL;
 
         /* Prefill prompt tokens */
         for (int i = 0; i < n_prompt; i++) {
-            float *logits = bn_transformer_forward(&model, s, token, pos);
-            (void)logits;
+            logits = bn_transformer_forward(&model, s, token, pos);
             if (i < n_prompt - 1)
                 token = prompt_tokens[i + 1];
             pos++;
@@ -290,10 +299,12 @@ int main(int argc, char **argv) {
 
         /* Greedy decode N_DECODE_STEPS tokens */
         for (int i = 0; i < N_DECODE_STEPS; i++) {
-            float *logits = bn_transformer_forward(&model, s, token, pos);
             token = bn_sampler_sample(&sampler, logits);
             cpu_tokens[i] = token;
-            pos++;
+            if (i + 1 < N_DECODE_STEPS) {
+                logits = bn_transformer_forward(&model, s, token, pos);
+                pos++;
+            }
         }
 
         printf("  CPU tokens: ");
@@ -337,20 +348,22 @@ int main(int argc, char **argv) {
 
                 int token = prompt_tokens[0];
                 int pos = 0;
+                float *logits = NULL;
 
                 for (int i = 0; i < n_prompt; i++) {
-                    float *logits = bn_transformer_forward(&model, s, token, pos);
-                    (void)logits;
+                    logits = bn_transformer_forward(&model, s, token, pos);
                     if (i < n_prompt - 1)
                         token = prompt_tokens[i + 1];
                     pos++;
                 }
 
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
-                    float *logits = bn_transformer_forward(&model, s, token, pos);
                     token = bn_sampler_sample(&sampler, logits);
                     gpu_tokens[i] = token;
-                    pos++;
+                    if (i + 1 < N_DECODE_STEPS) {
+                        logits = bn_transformer_forward(&model, s, token, pos);
+                        pos++;
+                    }
                 }
 
                 printf("  GPU tokens: ");
@@ -419,20 +432,22 @@ int main(int argc, char **argv) {
 
                 int token = prompt_tokens[0];
                 int pos = 0;
+                float *logits = NULL;
 
                 for (int i = 0; i < n_prompt; i++) {
-                    float *logits = bn_transformer_forward(&model, s, token, pos);
-                    (void)logits;
+                    logits = bn_transformer_forward(&model, s, token, pos);
                     if (i < n_prompt - 1)
                         token = prompt_tokens[i + 1];
                     pos++;
                 }
 
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
-                    float *logits = bn_transformer_forward(&model, s, token, pos);
                     token = bn_sampler_sample(&sampler, logits);
                     gpu_tokens[i] = token;
-                    pos++;
+                    if (i + 1 < N_DECODE_STEPS) {
+                        logits = bn_transformer_forward(&model, s, token, pos);
+                        pos++;
+                    }
                 }
 
                 printf("  Metal tokens: ");

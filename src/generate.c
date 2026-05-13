@@ -44,6 +44,26 @@ static int check_stop_strings(const char *buf, int buf_len,
 #define LOOP_BUF_SIZE 32
 #define LOOP_NGRAM    4
 
+#ifdef DEBUG
+static void debug_dump_top_logits(const float *logits, int vocab_size,
+                                  const char *label, int step) {
+    int top[10];
+    for (int k = 0; k < 10; k++) top[k] = 0;
+    for (int v = 0; v < vocab_size; v++) {
+        for (int k = 0; k < 10; k++) {
+            if (logits[v] > logits[top[k]]) {
+                for (int j = 9; j > k; j--) top[j] = top[j - 1];
+                top[k] = v;
+                break;
+            }
+        }
+    }
+    fprintf(stderr, "DBG top10 %s step=%d:\n", label, step);
+    for (int k = 0; k < 10; k++)
+        fprintf(stderr, "  token %6d: %.4f\n", top[k], logits[top[k]]);
+}
+#endif
+
 int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampler,
                 int max_tokens, int *pos,
                 bn_token_callback cb, void *user_data,
@@ -72,6 +92,10 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
     if (!logits) return -2;
 
     for (int i = 0; i < max_tokens; i++) {
+#ifdef DEBUG
+        if (getenv("BN_DEBUG_TOP_LOGITS"))
+            debug_dump_top_logits(logits, model->config.vocab_size, "generate", i);
+#endif
         int next = bn_sampler_sample(sampler, logits);
 
         if (next == tok->eot_id || next == tok->eos_id ||

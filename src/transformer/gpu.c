@@ -1,7 +1,9 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
 #include "session.h"
+#include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
@@ -30,6 +32,25 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int n_heads = c->n_heads;
     int q_dim = n_heads * head_size;
     int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
+    int half_rope = rope_dims / 2;
+    float rope_cos[half_rope], rope_sin[half_rope];
+    for (int i = 0; i < half_rope; i++) {
+        float angle = pos * s->rope_freq[i];
+        rope_cos[i] = cosf(angle);
+        rope_sin[i] = sinf(angle);
+    }
+    int cache_pos = pos % c->seq_len;
+    int cpu_fallback_from_layer = -1;
+    int cpu_fallback_ffn_from_layer = -1;
+    int cpu_fallback_ffn_down_from_layer = -1;
+    {
+        const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
+        if (env) cpu_fallback_from_layer = atoi(env);
+        env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
+        if (env) cpu_fallback_ffn_from_layer = atoi(env);
+        env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
+        if (env) cpu_fallback_ffn_down_from_layer = atoi(env);
+    }
 
     // Embed token on CPU, upload to GPU x buffer
     float emb[dim];
@@ -104,8 +125,17 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         // KV cache addressing
         int attn_idx = plan.attn_idx;
         size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
-        int cache_pos = pos % c->seq_len;
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+        if (cpu_fallback_from_layer >= 0 && l >= cpu_fallback_from_layer) {
+            void *next_norm = bn_transformer_gpu_resolve_next_norm(
+                backend, l, c->n_layers, output_norm);
+            if (bn_transformer_gpu_fallback_cpu_layer(
+                    &emit, gpu, m, sess, l, pos, cache_pos, rope_dims,
+                    rope_cos, rope_sin, dim, u_eps, next_norm) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu cpu-layer fallback failed");
+            continue;
+        }
 
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
         BnTransformerGPUQKVResources qkv_res =
@@ -162,11 +192,30 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
             backend, l, c->n_layers, output_norm);
         BnFFNPlan ffn_plan;
         bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu, backend, l, 1);
+        if (cpu_fallback_ffn_from_layer >= 0 &&
+            l >= cpu_fallback_ffn_from_layer) {
+            if (bn_transformer_gpu_fallback_cpu_ffn(
+                    &emit, gpu, m, sess, lw, &ffn_plan, dim, u_eps,
+                    next_norm) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu cpu-ffn fallback failed");
+            continue;
+        }
         BnTransformerGPUDenseFFNResources ffn_res =
             bn_transformer_gpu_resolve_dense_ffn_resources(gpu, backend, lw, l);
+        int ffn_down_input_buf = -1;
+        int skip_ffn_down = cpu_fallback_ffn_down_from_layer >= 0 &&
+                            l >= cpu_fallback_ffn_down_from_layer;
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
-            next_norm);
+            next_norm, skip_ffn_down, &ffn_down_input_buf);
+        if (skip_ffn_down) {
+            if (bn_transformer_gpu_fallback_cpu_ffn_down(
+                    &emit, gpu, m, sess, lw, ffn_down_input_buf,
+                    ffn_plan.hidden_dim, dim, u_eps, next_norm) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu cpu-ffn-down fallback failed");
+        }
     }
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----

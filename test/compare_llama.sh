@@ -9,6 +9,7 @@
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --strict
 #
 # Requires: llama-completion (brew install llama.cpp)
+# Strict mode also uses llama-tokenize to compare retokenized first output IDs.
 
 set -euo pipefail
 
@@ -37,15 +38,32 @@ done
 # Check dependencies
 BITNET="./bitnet"
 LLAMA="llama-completion"
+LLAMA_TOKENIZE="llama-tokenize"
 if [[ ! -x "$BITNET" ]]; then
     echo "ERROR: $BITNET not found. Run 'make' first." >&2; exit 1
 fi
 if ! command -v "$LLAMA" &>/dev/null; then
     echo "ERROR: $LLAMA not found. Run 'brew install llama.cpp'." >&2; exit 1
 fi
+if (( STRICT )) && ! command -v "$LLAMA_TOKENIZE" &>/dev/null; then
+    echo "ERROR: $LLAMA_TOKENIZE not found. Run 'brew install llama.cpp'." >&2; exit 1
+fi
 if [[ ! -f "$MODEL" ]]; then
     echo "ERROR: Model not found: $MODEL" >&2; exit 1
 fi
+
+first_token_id() {
+    local text="$1"
+    local ids
+    ids=$("$LLAMA_TOKENIZE" -m "$MODEL" --ids --no-bos -p "$text" --log-disable 2>/dev/null) || return 1
+    ids="${ids#[}"
+    ids="${ids%]}"
+    ids="${ids//[[:space:]]/}"
+    if [[ -z "$ids" ]]; then
+        return 1
+    fi
+    printf '%s\n' "${ids%%,*}"
+}
 
 # Prompts: factual completions with strong first-token predictions
 PROMPTS=(
@@ -71,6 +89,14 @@ total_words_matched=0
 total_words_compared=0
 first_word_matches=0
 exact_first_output_word_matches=0
+first_token_matches=0
+tmp_files=()
+cleanup() {
+    if (( ${#tmp_files[@]} > 0 )); then
+        rm -f "${tmp_files[@]}"
+    fi
+}
+trap cleanup EXIT
 
 echo -e "${BOLD}Q4_0 output comparison: bitnet.c vs llama.cpp${RESET}"
 echo "Model:  $MODEL"
@@ -83,8 +109,15 @@ echo "---"
 
 for prompt in "${PROMPTS[@]}"; do
     # Run bitnet.c (raw completion, temp=0, no repeat penalty)
-    bitnet_out=$("$BITNET" "$MODEL" "${BITNET_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" \
-        --temp 0 --repeat-penalty 1 2>/dev/null) || true
+    bitnet_stderr="/dev/null"
+    bitnet_run_args=("${BITNET_ARGS[@]}")
+    if (( STRICT )); then
+        bitnet_stderr=$(mktemp)
+        tmp_files+=("$bitnet_stderr")
+        bitnet_run_args+=(--token-ids)
+    fi
+    bitnet_out=$("$BITNET" "$MODEL" "${bitnet_run_args[@]}" -p "$prompt" -n "$N_TOKENS" \
+        --temp 0 --repeat-penalty 1 2>"$bitnet_stderr") || true
 
     # Run llama.cpp (raw completion, no chat template, temp=0)
     llama_out=$("$LLAMA" -m "$MODEL" "${LLAMA_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" \
@@ -131,6 +164,16 @@ for prompt in "${PROMPTS[@]}"; do
         fi
     fi
 
+    bitnet_first_token=""
+    llama_first_token=""
+    if (( STRICT )); then
+        bitnet_first_token=$(sed -n 's/^token_id=//p' "$bitnet_stderr" | head -n 1) || bitnet_first_token=""
+        llama_first_token=$(first_token_id "$llama_out") || llama_first_token=""
+        if [[ -n "$bitnet_first_token" && "$bitnet_first_token" == "$llama_first_token" ]]; then
+            (( first_token_matches++ )) || true
+        fi
+    fi
+
     # Report
     prompt_short="${prompt:0:45}"
     if (( match == max_cmp && max_cmp > 0 )); then
@@ -155,24 +198,35 @@ for prompt in "${PROMPTS[@]}"; do
     if (( VERBOSE )); then
         echo -e "  ${DIM}[full bitnet] $bitnet_out${RESET}"
         echo -e "  ${DIM}[full llama]  $llama_out${RESET}"
+        if (( STRICT )); then
+            echo -e "  ${DIM}[first token IDs] bitnet=$bitnet_first_token llama=$llama_first_token${RESET}"
+        fi
+    elif (( STRICT )) && [[ "$bitnet_first_token" != "$llama_first_token" ]]; then
+        echo -e "  ${DIM}first token IDs:${RESET} bitnet=$bitnet_first_token llama=$llama_first_token"
     fi
 done
 
 echo "---"
+if (( STRICT )); then
+    echo "First output-token ID matches: $first_token_matches / $total_prompts prompts"
+fi
 echo "Exact first output-word matches: $exact_first_output_word_matches / $total_prompts prompts"
 echo "Punctuation-normalized first-word matches: $first_word_matches / $total_prompts prompts"
 echo "Word prefix matches: $total_words_matched / $total_words_compared total words"
 echo ""
 
-# The strict correctness signal for decoded-output parity is exact first output
-# word text across all prompts. The default majority gate remains useful as a
-# coarse smoke signal for local kernel work, but it is not a coherence proof.
-if (( exact_first_output_word_matches == total_prompts )); then
-    echo -e "${GREEN}${BOLD}PASS${RESET} — exact first output-word parity with llama.cpp"
+# The strict correctness signal is first generated token ID parity across all
+# prompts. bitnet IDs come from the generation callback; llama.cpp IDs are
+# retokenized from decoded output until a llama token trace is available.
+if (( STRICT && first_token_matches == total_prompts )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — first output-token ID parity with llama.cpp"
     exit 0
 elif (( STRICT )); then
-    echo -e "${RED}${BOLD}FAIL${RESET} — exact first output-word parity required by --strict"
+    echo -e "${RED}${BOLD}FAIL${RESET} — first output-token ID parity required by --strict"
     exit 1
+elif (( exact_first_output_word_matches == total_prompts )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — exact first output-word parity with llama.cpp"
+    exit 0
 elif (( first_word_matches >= (total_prompts + 1) / 2 )); then
     echo -e "${YELLOW}${BOLD}SMOKE PASS${RESET} — majority normalized first-word parity only; use --strict for coherence"
     exit 0

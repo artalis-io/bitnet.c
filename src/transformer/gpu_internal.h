@@ -267,6 +267,41 @@ int bn_transformer_gpu_fallback_moe_layer(
     int dim,
     uint32_t u_eps,
     void *next_norm);
+int bn_transformer_gpu_fallback_cpu_layer(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    int layer,
+    int pos,
+    int cache_pos,
+    int rope_dims,
+    const float *rope_cos,
+    const float *rope_sin,
+    int dim,
+    uint32_t u_eps,
+    void *next_norm);
+int bn_transformer_gpu_fallback_cpu_ffn(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    const BnFFNPlan *ffn_plan,
+    int dim,
+    uint32_t u_eps,
+    void *next_norm);
+int bn_transformer_gpu_fallback_cpu_ffn_down(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int down_input_buf,
+    int hidden_dim,
+    int dim,
+    uint32_t u_eps,
+    void *next_norm);
 int bn_transformer_gpu_fallback_logits(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -289,6 +324,10 @@ int bn_transformer_gpu_read_x(const BnGPUBackend *gpu,
 int bn_transformer_gpu_read_xb(const BnGPUBackend *gpu,
                                float *xb,
                                size_t size_bytes);
+int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
+                                           int buf_idx,
+                                           float *out,
+                                           size_t size_bytes);
 void bn_transformer_gpu_emit_context_dense_ffn(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -297,7 +336,9 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     const BnTransformerGPUDenseFFNResources *res,
     int dim,
     uint32_t u_eps,
-    void *next_norm);
+    void *next_norm,
+    int skip_down,
+    int *down_input_buf);
 void bn_transformer_gpu_emit_context_attention(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,

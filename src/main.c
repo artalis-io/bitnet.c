@@ -53,6 +53,7 @@ typedef struct {
     int force_madvise;  // madvise-guided mmap for low-RSS expert streaming
     int prefault_moe;   // touch all mmap'd MoE expert pages before generation
     int quiet;          // suppress generated token output
+    int token_ids;      // print generated token IDs to stderr
     const char *draft_path; // --draft <model.gguf> for speculative decoding
     int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
@@ -87,6 +88,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --madvise         madvise-guided mmap for MoE (low RSS, mmap speed)\n");
     fprintf(stderr, "  --prefault-moe    Fault all mmap'd MoE expert pages during startup\n");
     fprintf(stderr, "  --quiet           Suppress generated token output\n");
+    fprintf(stderr, "  --token-ids       Print generated token IDs to stderr\n");
     fprintf(stderr, "  --draft <path>  Draft model for speculative decoding\n");
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
     fprintf(stderr, "  --webgpu        Enable WebGPU backend (requires BN_ENABLE_WEBGPU=1)\n");
@@ -169,6 +171,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.prefault_moe = 1;
         } else if (strcmp(argv[i], "--quiet") == 0) {
             args.quiet = 1;
+        } else if (strcmp(argv[i], "--token-ids") == 0) {
+            args.token_ids = 1;
         } else if (strcmp(argv[i], "--draft") == 0 && i + 1 < argc) {
             args.draft_path = argv[++i];
         } else if (strcmp(argv[i], "--draft-k") == 0 && i + 1 < argc) {
@@ -219,6 +223,7 @@ typedef struct {
     int *history;
     int history_len;
     int history_cap;
+    int token_ids;
 } BnChatHistory;
 
 static int print_token(const char *piece, int token_id, void *user_data) {
@@ -226,6 +231,9 @@ static int print_token(const char *piece, int token_id, void *user_data) {
     BnChatHistory *h = (BnChatHistory *)user_data;
     if (h && h->history && h->history_len < h->history_cap) {
         h->history[h->history_len++] = token_id;
+    }
+    if (h && h->token_ids) {
+        fprintf(stderr, "token_id=%d\n", token_id);
     }
     printf("%s", piece);
     if (user_data || isatty(STDOUT_FILENO))
@@ -764,7 +772,7 @@ int main(int argc, char **argv) {
             if (remaining < max_gen) max_gen = remaining;
             if (max_gen < 1) max_gen = 1;
 
-            BnChatHistory hist_ctx = { history, history_len, seq_len };
+            BnChatHistory hist_ctx = { history, history_len, seq_len, args.token_ids };
             int gen_count = bn_generate(&model, session, &tokenizer, &sampler,
                                          max_gen, &pos,
                                          print_token, &hist_ctx, NULL, NULL);
@@ -876,10 +884,12 @@ int main(int argc, char **argv) {
                 if (n_generated < 0)
                     SH_LOG_ERROR("Speculative generation failed");
             } else {
+                BnChatHistory out_ctx = { NULL, 0, 0, args.token_ids };
                 n_generated = bn_generate(&model, session, &tokenizer, &sampler,
                                            args.n_tokens, &pos,
                                            args.quiet ? NULL : print_token,
-                                           NULL, NULL, NULL);
+                                           args.token_ids ? &out_ctx : NULL,
+                                           NULL, NULL);
             }
         }
 

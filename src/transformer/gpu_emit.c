@@ -666,6 +666,14 @@ int bn_transformer_gpu_read_xb(const BnGPUBackend *gpu,
     return gpu->read_activation(gpu->ctx, BN_GPU_VALUE_XB, xb, size_bytes, 0);
 }
 
+int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
+                                           int buf_idx,
+                                           float *out,
+                                           size_t size_bytes) {
+    if (!gpu || !gpu->read_activation || !out) return -1;
+    return gpu->read_activation(gpu->ctx, buf_idx, out, size_bytes, 0);
+}
+
 void bn_transformer_gpu_emit_context_dense_ffn(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -674,13 +682,16 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     const BnTransformerGPUDenseFFNResources *res,
     int dim,
     uint32_t u_eps,
-    void *next_norm) {
+    void *next_norm,
+    int skip_down,
+    int *down_input_buf) {
     int hidden_dim = ffn_plan->hidden_dim;
     void *gateup_stacked = res ? res->gateup_stacked : NULL;
     void *ffn_sub_norm = res ? res->ffn_sub_norm : NULL;
 
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
-        int use_fused_gateup = gateup_stacked &&
+        int use_fused_gateup = !getenv("BN_GPU_DISABLE_FUSED_GATEUP") &&
+                               gateup_stacked &&
                                bn_transformer_gpu_can_fused_gateup_silu(res->gpu, lw->ffn.ffn_gate.type,
                                                                          ffn_plan->activation);
         if (use_fused_gateup) {
@@ -688,7 +699,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
                 lw->ffn.ffn_up.rows, lw->ffn.ffn_gate.cols);
-        } else if (gateup_stacked &&
+        } else if (!getenv("BN_GPU_DISABLE_GATEUP_SPLIT") &&
+                   gateup_stacked &&
                    lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
                    lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
                    ffn_plan->activation != 1 &&
@@ -701,7 +713,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, -1,
                 total_rows, lw->ffn.ffn_gate.cols, lw->ffn.ffn_gate.rows, 1,
                 0, 0);
-        } else if (gateup_stacked &&
+        } else if (!getenv("BN_GPU_DISABLE_GATEUP_SPLIT") &&
+                   gateup_stacked &&
                    lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
                    lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
                    bn_transformer_gpu_can_matvec_split(res->gpu, lw->ffn.ffn_gate.type)) {
@@ -750,6 +763,13 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             ctx, ffn_sub_norm, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, hidden_dim,
             u_eps);
         down_in_buf = BN_GPU_VALUE_HB2;
+    }
+    if (down_input_buf)
+        *down_input_buf = down_in_buf;
+    if (skip_down) {
+        (void)next_norm;
+        (void)c;
+        return;
     }
 
     bn_transformer_gpu_emit_context_matvec(
