@@ -274,7 +274,13 @@ done:
 float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                   int pos0, int no_prefill) {
     float *logits = NULL;
-    if (!no_prefill && n_tokens > 1) {
+    int gpu_attached = bn_model_gpu(model) != NULL;
+    /* GPU decode reads backend-resident KV buffers. The batch prefill path only
+     * populates CPU session KV today, so keep GPU-attached generation on the
+     * token-by-token path unless the experimental backend prefill is requested.
+     */
+    if (!no_prefill && n_tokens > 1 &&
+        (!gpu_attached || getenv("BN_GPU_PREFILL_MATMUL"))) {
         logits = bn_transformer_prefill(model, s, tokens, n_tokens, pos0);
     } else {
         for (int i = 0; i < n_tokens; i++) {

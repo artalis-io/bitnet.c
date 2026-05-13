@@ -6,6 +6,7 @@
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -n 50
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -v    # verbose
+#   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --strict
 #
 # Requires: llama-completion (brew install llama.cpp)
 
@@ -15,6 +16,7 @@ MODEL="${1:?Usage: $0 <model.gguf> [-n tokens] [-v]}"
 shift
 N_TOKENS=30
 VERBOSE=0
+STRICT=0
 BITNET_ARGS=()
 LLAMA_ARGS=(-ngl 0 -dev none)
 LLAMA_THREADS=1
@@ -23,9 +25,11 @@ while [[ $# -gt 0 ]]; do
         -n) N_TOKENS="$2"; shift 2 ;;
         --metal) BITNET_ARGS+=(--metal); shift ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
+        --no-prefill) BITNET_ARGS+=(--no-prefill); shift ;;
         --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
         -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;
         -v) VERBOSE=1; shift ;;
+        --strict) STRICT=1; shift ;;
         *)  echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -66,6 +70,7 @@ total_prompts=${#PROMPTS[@]}
 total_words_matched=0
 total_words_compared=0
 first_word_matches=0
+exact_first_output_word_matches=0
 
 echo -e "${BOLD}Q4_0 output comparison: bitnet.c vs llama.cpp${RESET}"
 echo "Model:  $MODEL"
@@ -116,6 +121,9 @@ for prompt in "${PROMPTS[@]}"; do
     # Check first-word match (most important signal for kernel correctness)
     # Strip trailing punctuation for comparison (e.g. "blue." vs "blue,")
     if (( ${#bwords[@]} > 0 && ${#lwords[@]} > 0 )); then
+        if [[ "${bwords[0]}" == "${lwords[0]}" ]]; then
+            (( exact_first_output_word_matches++ )) || true
+        fi
         bw0="${bwords[0]%%[.,;:!?]}"
         lw0="${lwords[0]%%[.,;:!?]}"
         if [[ "$bw0" == "$lw0" ]]; then
@@ -151,15 +159,22 @@ for prompt in "${PROMPTS[@]}"; do
 done
 
 echo "---"
-echo "First-word matches: $first_word_matches / $total_prompts prompts"
+echo "Exact first output-word matches: $exact_first_output_word_matches / $total_prompts prompts"
+echo "Punctuation-normalized first-word matches: $first_word_matches / $total_prompts prompts"
 echo "Word prefix matches: $total_words_matched / $total_words_compared total words"
 echo ""
 
-# The key correctness signal: both engines pick the same top-1 token
-# from the first forward pass. Subsequent divergence is expected from
-# accumulating FP differences across 30+ transformer layers.
-if (( first_word_matches >= (total_prompts + 1) / 2 )); then
-    echo -e "${GREEN}${BOLD}PASS${RESET} — Q4_0 integer dot product produces correct top-1 tokens"
+# The strict correctness signal for decoded-output parity is exact first output
+# word text across all prompts. The default majority gate remains useful as a
+# coarse smoke signal for local kernel work, but it is not a coherence proof.
+if (( exact_first_output_word_matches == total_prompts )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — exact first output-word parity with llama.cpp"
+    exit 0
+elif (( STRICT )); then
+    echo -e "${RED}${BOLD}FAIL${RESET} — exact first output-word parity required by --strict"
+    exit 1
+elif (( first_word_matches >= (total_prompts + 1) / 2 )); then
+    echo -e "${YELLOW}${BOLD}SMOKE PASS${RESET} — majority normalized first-word parity only; use --strict for coherence"
     exit 0
 else
     echo -e "${RED}${BOLD}FAIL${RESET} — first-word divergence on most prompts, investigate kernel"
