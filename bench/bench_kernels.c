@@ -13,6 +13,9 @@
 #ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif
+#ifdef BN_ENABLE_METAL
+#include "gpu_metal.h"
+#endif
 #if defined(__wasm_relaxed_simd__)
 #include <wasm_simd128.h>
 #include "simd_helpers.h"
@@ -50,8 +53,9 @@ static const char *type_name(int type) {
     }
 }
 
-static const char *backend_name(int webgpu) {
+static const char *backend_name(int webgpu, int metal) {
     if (webgpu) return "WebGPU";
+    if (metal) return "Metal";
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     return "ARM NEON + SDOT";
 #elif defined(__ARM_NEON)
@@ -428,7 +432,7 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--q4-expand] [--webgpu] [--shader-dir DIR]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--q4-expand] [--webgpu] [--metal] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -438,8 +442,12 @@ int main(int argc, char **argv) {
     int n_toks = 32;
     int kv_f16 = 0;
     int use_webgpu = 0;
+    int use_metal = 0;
 #ifdef BN_ENABLE_WEBGPU
     const char *shader_dir = "shaders/";
+#endif
+#ifdef BN_ENABLE_METAL
+    const char *metal_shader_dir = "shaders/metal/";
 #endif
 
     for (int i = 2; i < argc; i++) {
@@ -455,25 +463,54 @@ int main(int argc, char **argv) {
             bench_q4_expand_enabled = 1;
         else if (strcmp(argv[i], "--webgpu") == 0)
             use_webgpu = 1;
+        else if (strcmp(argv[i], "--metal") == 0)
+            use_metal = 1;
         else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
+            const char *dir = argv[++i];
 #ifdef BN_ENABLE_WEBGPU
-            shader_dir = argv[++i];
-#else
-            i++;
+            shader_dir = dir;
+#endif
+#ifdef BN_ENABLE_METAL
+            metal_shader_dir = dir;
+#endif
+#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL)
+            (void)dir;
 #endif
         }
     }
+
+    if (use_webgpu && use_metal) {
+        fprintf(stderr, "--webgpu and --metal are mutually exclusive\n");
+        return 1;
+    }
+
+#ifdef BN_ENABLE_METAL
+    BnGPUBackend *metal_gpu = NULL;
+    if (use_metal) {
+        metal_gpu = bn_gpu_metal_create(metal_shader_dir);
+        if (!metal_gpu) {
+            fprintf(stderr, "Failed to create Metal backend\n");
+            return 1;
+        }
+    }
+#endif
 
     // Load model
     BnMappedFile mf = bn_platform_load_file(model_path);
     if (!mf.data) {
         fprintf(stderr, "Failed to load %s\n", model_path);
+#ifdef BN_ENABLE_METAL
+        if (metal_gpu) bn_gpu_metal_destroy(metal_gpu);
+#endif
         return 1;
     }
 
     BnGGUFFile *gf = bn_gguf_open(mf.data, mf.size);
     if (!gf) {
         fprintf(stderr, "Failed to parse GGUF\n");
+#ifdef BN_ENABLE_METAL
+        if (metal_gpu) bn_gpu_metal_destroy(metal_gpu);
+#endif
         bn_platform_unload_file(&mf);
         return 1;
     }
@@ -483,6 +520,9 @@ int main(int argc, char **argv) {
     if (bench_seq_len < 32) bench_seq_len = 32;
     if (bn_model_load(&model, gf, bench_seq_len, kv_f16, 0) != 0) {
         fprintf(stderr, "Failed to load model\n");
+#ifdef BN_ENABLE_METAL
+        if (metal_gpu) bn_gpu_metal_destroy(metal_gpu);
+#endif
         bn_gguf_free(gf);
         bn_platform_unload_file(&mf);
         return 1;
@@ -524,6 +564,35 @@ int main(int argc, char **argv) {
 #else
     if (use_webgpu) {
         fprintf(stderr, "--webgpu requires BN_ENABLE_WEBGPU=1 build\n");
+        bn_model_free(&model);
+        bn_gguf_free(gf);
+        return 1;
+    }
+#endif
+
+#ifdef BN_ENABLE_METAL
+    if (use_metal) {
+        if (mf.data)
+            bn_gpu_metal_set_mmap_range(metal_gpu, mf.data, mf.size);
+        if (bn_model_upload_weights(&model, metal_gpu) != 0) {
+            fprintf(stderr, "Failed to upload model weights to Metal\n");
+            bn_gpu_metal_destroy(metal_gpu);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        if (metal_gpu->init_activations &&
+            metal_gpu->init_activations(metal_gpu->ctx, &model.config) != 0) {
+            fprintf(stderr, "Failed to initialize Metal activations\n");
+            bn_gpu_metal_destroy(metal_gpu);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+    }
+#else
+    if (use_metal) {
+        fprintf(stderr, "--metal requires BN_ENABLE_METAL=1 build\n");
         bn_model_free(&model);
         bn_gguf_free(gf);
         return 1;
@@ -582,7 +651,7 @@ int main(int argc, char **argv) {
 
     // Print header
     printf("Backend: %-20s | Model: %-30s | Iters: %d | Threads: %d\n",
-           backend_name(use_webgpu), fname, n_iters, pool ? bn_tp_num_threads(pool) : 1);
+           backend_name(use_webgpu, use_metal), fname, n_iters, pool ? bn_tp_num_threads(pool) : 1);
     printf("%-8s | %-7s | %-13s | %8s | %s\n",
            "Matrix", "Format", "Dims", "us/call", "GB/s");
     printf("---------|---------|---------------|----------|------\n");
@@ -635,6 +704,9 @@ int main(int argc, char **argv) {
     bn_model_free(&model);
 #ifdef BN_ENABLE_WEBGPU
     if (gpu) bn_gpu_wgpu_destroy(gpu);
+#endif
+#ifdef BN_ENABLE_METAL
+    if (metal_gpu) bn_gpu_metal_destroy(metal_gpu);
 #endif
     bn_gguf_free(gf);
 

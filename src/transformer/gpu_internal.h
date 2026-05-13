@@ -1,6 +1,7 @@
 #ifndef BN_TRANSFORMER_GPU_INTERNAL_H
 #define BN_TRANSFORMER_GPU_INTERNAL_H
 
+#include "backend_session.h"
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_graph_ir.h"
@@ -15,9 +16,12 @@ typedef struct {
     void *lowered_ops;
     int n;
     int cap;
-    BnGPUValueGraph graph;
+    BnGPUValueGraph graph_storage;
+    BnGPUValueGraph *graph;
     void *lowering_values;
     int cap_lowering_values;
+    int owns_graph_storage;
+    int owns_lowering_values;
 } BnTransformerGPUEmitContext;
 
 typedef struct {
@@ -164,6 +168,13 @@ void bn_transformer_gpu_finalize_op_kinds(void *ops, int n);
 void bn_transformer_gpu_emit_context_init(BnTransformerGPUEmitContext *ctx,
                                           void *lowered_ops,
                                           int cap);
+int bn_transformer_gpu_emit_context_init_session(
+    BnTransformerGPUEmitContext *ctx,
+    BnBackendSession *backend,
+    void *lowered_ops,
+    int cap,
+    int cap_values,
+    int cap_ops);
 int bn_transformer_gpu_emit_context_reserve(
     BnTransformerGPUEmitContext *ctx,
     int cap_values,

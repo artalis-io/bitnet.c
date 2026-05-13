@@ -16,13 +16,15 @@ shift
 N_TOKENS=30
 VERBOSE=0
 BITNET_ARGS=()
+LLAMA_ARGS=(-ngl 0 -dev none)
+LLAMA_THREADS=1
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -n) N_TOKENS="$2"; shift 2 ;;
         --metal) BITNET_ARGS+=(--metal); shift ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
-        --maxseq) BITNET_ARGS+=(--maxseq "$2"); shift 2 ;;
-        -t) BITNET_ARGS+=(-t "$2"); shift 2 ;;
+        --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
+        -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;
         -v) VERBOSE=1; shift ;;
         *)  echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -71,16 +73,25 @@ echo "Tokens: $N_TOKENS per prompt"
 if (( ${#BITNET_ARGS[@]} > 0 )); then
     echo "bitnet args: ${BITNET_ARGS[*]}"
 fi
+echo "llama args:  ${LLAMA_ARGS[*]} -t $LLAMA_THREADS"
 echo "---"
 
 for prompt in "${PROMPTS[@]}"; do
-    # Run bitnet.c (raw completion, temp=0)
-    bitnet_out=$("$BITNET" "$MODEL" "${BITNET_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" --temp 0 2>/dev/null) || true
+    # Run bitnet.c (raw completion, temp=0, no repeat penalty)
+    bitnet_out=$("$BITNET" "$MODEL" "${BITNET_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" \
+        --temp 0 --repeat-penalty 1 2>/dev/null) || true
 
-    # Run llama.cpp (raw completion, no chat template, temp=0, single thread)
-    llama_out=$("$LLAMA" -m "$MODEL" -p "$prompt" -n "$N_TOKENS" --temp 0 \
-        --ignore-eos --no-display-prompt --in-prefix "" --in-suffix "" \
-        -t 1 2>/dev/null | sed 's/> EOF by user$//') || true
+    # Run llama.cpp (raw completion, no chat template, temp=0)
+    llama_out=$("$LLAMA" -m "$MODEL" "${LLAMA_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" \
+        --temp 0 --no-display-prompt -no-cnv --simple-io --verbosity 1 \
+        -t "$LLAMA_THREADS" 2>/dev/null | sed 's/> EOF by user$//') || true
+
+    if [[ -z "${bitnet_out//[[:space:]]/}" || -z "${llama_out//[[:space:]]/}" ]]; then
+        echo -e "${RED}ERROR${RESET}   \"$prompt\""
+        [[ -n "${bitnet_out//[[:space:]]/}" ]] || echo "  bitnet produced no completion"
+        [[ -n "${llama_out//[[:space:]]/}" ]] || echo "  llama.cpp produced no completion"
+        exit 1
+    fi
 
     # Collapse whitespace for word-level comparison
     read -ra bwords <<< "$bitnet_out" || bwords=()

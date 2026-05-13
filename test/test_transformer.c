@@ -380,14 +380,14 @@ static void test_gpu_op_kind_mapping(void) {
                &ctx, (void *)3, BN_GPU_VALUE_X, BN_GPU_VALUE_XB,
                32, 0) == 0);
     assert(ctx.n == 0);
-    assert(ctx.graph.n_ops == 1);
+    assert(ctx.graph->n_ops == 1);
     assert(bn_transformer_gpu_emit_context_logits(
                &ctx, (void *)4, BN_GGUF_TENSOR_Q8_0, 50, 32) == 0);
     assert(ctx.n == 0);
-    assert(ctx.graph.n_ops == 2);
+    assert(ctx.graph->n_ops == 2);
     assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
     assert(ctx.n == 2);
-    assert(ctx.graph.n_ops == 0);
+    assert(ctx.graph->n_ops == 0);
     assert(ctx_ops[0].op_kind == BN_GPU_OP_RMSNORM);
     assert(ctx_ops[0].op_code == BN_GPU_CODE_RMSNORM);
     assert(ctx_ops[0].W_buf == (void *)3);
@@ -413,7 +413,7 @@ static void test_gpu_op_kind_mapping(void) {
                &ctx, BN_GGUF_TENSOR_Q4_K, (void *)6, BN_GPU_VALUE_XB,
                BN_GPU_VALUE_HB, 64, 64, 32) == 0);
     assert(ctx.n == 0);
-    assert(ctx.graph.n_ops == 5);
+    assert(ctx.graph->n_ops == 5);
     assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
     assert(ctx.n == 5);
     assert(ctx_ops2[0].op_code == BN_GPU_CODE_COPY);

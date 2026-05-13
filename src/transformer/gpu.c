@@ -51,16 +51,16 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
 
     int max_ops = bn_transformer_gpu_graph_op_capacity(c);
 
-    // Reuse the session-owned op array to avoid per-token malloc.
+    // Reuse the session-owned GPU IR/lowering storage to avoid per-token malloc.
     int command_cap = 0;
     void *command_buffer = bn_backend_session_ensure_gpu_command_buffer(
         sess->backend, max_ops, &command_cap);
     if (!command_buffer)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
-    bn_transformer_gpu_emit_context_init(&emit, command_buffer, command_cap);
-    if (bn_transformer_gpu_emit_context_reserve(
-            &emit, max_ops * 4, max_ops) != 0)
+    if (bn_transformer_gpu_emit_context_init_session(
+            &emit, sess->backend, command_buffer, command_cap,
+            max_ops * 4, max_ops) != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph reserve failed");
 
@@ -186,7 +186,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     }
 
     // Safety: verify we didn't overflow the ops array
-    if (emit.n + emit.graph.n_ops > max_ops)
+    if (emit.n + emit.graph->n_ops > max_ops)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu op graph capacity exceeded");
 

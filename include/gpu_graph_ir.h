@@ -117,7 +117,7 @@ typedef struct {
     const char *label;
 } BnGPUIROp;
 
-typedef struct {
+typedef struct BnGPUValueGraph {
     BnGPUIRValue *values;
     int n_values;
     int cap_values;

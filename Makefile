@@ -189,7 +189,7 @@ src/%.o: src/%.m
 # --- Benchmark ---
 BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
 
-bench_kernels: $(BENCH_SRCS)
+bench_kernels: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Scalar benchmark (no -march=native, no SIMD)
@@ -235,11 +235,11 @@ bench_scalar_layers: $(SCALAR_BENCH_SRCS)
 bitnet_scalar: $(SCALAR_SRCS)
 	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
 
-bench_avx2: $(BENCH_SRCS)
+bench_avx2: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 ifeq ($(BN_ENABLE_WEBGPU),1)
-bench_webgpu: $(BENCH_SRCS)
+bench_webgpu: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 else
 bench_webgpu:
@@ -248,7 +248,7 @@ endif
 
 # Per-layer timing build (BN_BENCH_LAYERS)
 bench_layers: CFLAGS += -DBN_BENCH_LAYERS
-bench_layers: $(BENCH_SRCS)
+bench_layers: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 .PHONY: debug asan bench bench_suite bench_llama_compare bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
