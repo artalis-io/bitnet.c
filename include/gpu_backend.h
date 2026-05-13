@@ -85,13 +85,13 @@ struct BnGPUBackend {
     void (*free_activations)(void *ctx);
 
     // Write host data to a GPU-resident activation buffer.
-    // buf_idx: BN_GPU_VALUE_* graph value. offset/size in bytes.
+    // buf_idx: backend activation value slot. offset/size in bytes.
     // Returns 0 on success, -1 on error.  Optional (NULL = not supported).
     int (*write_activation)(void *ctx, int buf_idx, const void *data,
                             size_t size, size_t offset);
 
     // Read GPU-resident activation buffer to host.
-    // buf_idx: BN_GPU_VALUE_* graph value. out: host buffer, size in bytes.
+    // buf_idx: backend activation value slot. out: host buffer, size in bytes.
     // Returns 0 on success, -1 on error.  Optional (NULL = not supported).
     int (*read_activation)(void *ctx, int buf_idx, void *out,
                            size_t size, size_t offset);

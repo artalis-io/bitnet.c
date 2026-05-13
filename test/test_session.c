@@ -2,7 +2,7 @@
 #include "model.h"
 #include "backend_session.h"
 #include "gpu_backend.h"
-#include "gpu_shader_ir.h"
+#include "gpu_shader_ir_internal.h"
 #include "turboquant.h"
 #include <stdio.h>
 #include <stdlib.h>

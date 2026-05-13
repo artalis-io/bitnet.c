@@ -1,6 +1,7 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
-#include "transformer_gpu_internal.h"
+#include "../src/transformer/gpu_internal.h"
+#include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
 #include "gpu_quant_lowering_internal.h"
 #include "model_arch.h"
@@ -266,6 +267,43 @@ static void test_gpu_capability_routing(void) {
     printf("PASSED\n");
 }
 
+static void test_gpu_policy_helpers(void) {
+    printf("test_gpu_policy_helpers... ");
+
+    BnConfig c;
+    memset(&c, 0, sizeof(c));
+    c.n_layers = 4;
+    assert(bn_transformer_gpu_graph_op_capacity(&c) >
+           80 * c.n_layers);
+
+    BnGPUBackend gpu;
+    BnTransformerGPULogitResources logits;
+    BnQWeight W;
+    memset(&gpu, 0, sizeof(gpu));
+    memset(&logits, 0, sizeof(logits));
+    memset(&W, 0, sizeof(W));
+
+    W.type = BN_GGUF_TENSOR_Q4_0;
+    W.rows = 32;
+    W.cols = 32;
+    W.data = (void *)1;
+    logits.cpu_weight = &W;
+
+    gpu.max_storage_binding_size = 0;
+    assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
+
+    gpu.max_storage_binding_size = bn_qweight_data_size(&W);
+    assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
+
+    gpu.max_storage_binding_size = bn_qweight_data_size(&W) - 1;
+    assert(bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
+
+    logits.cpu_weight = NULL;
+    assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
+
+    printf("PASSED\n");
+}
+
 static void test_gpu_op_kind_mapping(void) {
     printf("test_gpu_op_kind_mapping... ");
 
@@ -301,23 +339,89 @@ static void test_gpu_op_kind_mapping(void) {
     op.op_code = BN_GPU_CODE_SSM_DELTA;
     assert(bn_gpu_op_kind(&op) == BN_GPU_OP_SSM);
 
-    BnGPUOp ops[2];
-    int n = 0;
-    bn_transformer_gpu_emit_rmsnorm(ops, &n, (void *)1,
-                                    BN_GPU_VALUE_X, BN_GPU_VALUE_XB,
-                                    64, 0);
-    bn_transformer_gpu_emit_logits(ops, &n, (void *)2,
-                                   BN_GGUF_TENSOR_Q4_0, 100, 64);
-    assert(n == 2);
-    assert(ops[0].op_kind == BN_GPU_OP_RMSNORM);
-    assert(ops[0].op_code == BN_GPU_CODE_RMSNORM);
-    assert(ops[1].op_kind == BN_GPU_OP_LOGITS);
-    assert(ops[1].op_code == BN_GPU_CODE_MATVEC);
+    uint32_t reads = 0;
+    uint32_t writes = 0;
+    BnGPUOp dep_op;
+    memset(&dep_op, 0, sizeof(dep_op));
+    dep_op.op_code = BN_GPU_CODE_FLASH_ATTN;
+    dep_op.buf_in = BN_GPU_VALUE_Q;
+    dep_op.buf_out = BN_GPU_VALUE_XB;
+    assert(bn_gpu_shader_access_masks(
+               &dep_op, bn_gpu_shader_from_op_code(dep_op.op_code),
+               &reads, &writes) == 0);
+    assert(reads == ((1u << BN_GPU_VALUE_Q) |
+                     (1u << BN_GPU_VALUE_KEY_CACHE) |
+                     (1u << BN_GPU_VALUE_VALUE_CACHE)));
+    assert(writes == (1u << BN_GPU_VALUE_XB));
+
+    memset(&dep_op, 0, sizeof(dep_op));
+    dep_op.op_code = BN_GPU_CODE_Q5K_MATVEC_SPLIT;
+    dep_op.buf_in = BN_GPU_VALUE_XB;
+    dep_op.buf_out = BN_GPU_VALUE_Q;
+    dep_op.buf_aux = BN_GPU_VALUE_KEY_CACHE;
+    dep_op.rows = BN_GPU_VALUE_VALUE_CACHE;
+    assert(bn_gpu_shader_access_masks(
+               &dep_op, bn_gpu_shader_from_op_code(dep_op.op_code),
+               &reads, &writes) == 0);
+    assert(reads == (1u << BN_GPU_VALUE_XB));
+    assert(writes == ((1u << BN_GPU_VALUE_Q) |
+                      (1u << BN_GPU_VALUE_KEY_CACHE) |
+                      (1u << BN_GPU_VALUE_VALUE_CACHE)));
 
     memset(&op, 0, sizeof(op));
     op.op_code = BN_GPU_CODE_ROPE_QK;
     bn_transformer_gpu_finalize_op_kinds(&op, 1);
     assert(op.op_kind == BN_GPU_OP_ROPE);
+
+    BnGPUOp ctx_ops[2];
+    BnTransformerGPUEmitContext ctx;
+    bn_transformer_gpu_emit_context_init(&ctx, ctx_ops, 2);
+    assert(bn_transformer_gpu_emit_context_rmsnorm(
+               &ctx, (void *)3, BN_GPU_VALUE_X, BN_GPU_VALUE_XB,
+               32, 0) == 0);
+    assert(ctx.n == 0);
+    assert(ctx.graph.n_ops == 1);
+    assert(bn_transformer_gpu_emit_context_logits(
+               &ctx, (void *)4, BN_GGUF_TENSOR_Q8_0, 50, 32) == 0);
+    assert(ctx.n == 0);
+    assert(ctx.graph.n_ops == 2);
+    assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+    assert(ctx.n == 2);
+    assert(ctx.graph.n_ops == 0);
+    assert(ctx_ops[0].op_kind == BN_GPU_OP_RMSNORM);
+    assert(ctx_ops[0].op_code == BN_GPU_CODE_RMSNORM);
+    assert(ctx_ops[0].W_buf == (void *)3);
+    assert(ctx_ops[1].op_kind == BN_GPU_OP_LOGITS);
+    assert(ctx_ops[1].op_code == BN_GPU_CODE_MATVEC);
+    assert(ctx_ops[1].type == BN_GGUF_TENSOR_Q8_0);
+    assert(ctx_ops[1].W_buf == (void *)4);
+    bn_transformer_gpu_emit_context_free(&ctx);
+
+    BnGPUOp ctx_ops2[5];
+    bn_transformer_gpu_emit_context_init(&ctx, ctx_ops2, 5);
+    assert(bn_transformer_gpu_emit_context_copy(
+               &ctx, BN_GPU_VALUE_QKV, BN_GPU_VALUE_Q, 0, 0, 16) == 0);
+    assert(bn_transformer_gpu_emit_context_residual_add(
+               &ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, 32) == 0);
+    assert(bn_transformer_gpu_emit_context_activation(
+               &ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, 32, 0,
+               BN_GPU_IR_ACTIVATION_SILU) == 0);
+    assert(bn_transformer_gpu_emit_context_matvec(
+               &ctx, BN_GGUF_TENSOR_Q4_0, (void *)5, BN_GPU_VALUE_XB,
+               BN_GPU_VALUE_HB, 64, 32, 0) == 0);
+    assert(bn_transformer_gpu_emit_context_fused_gateup_silu(
+               &ctx, BN_GGUF_TENSOR_Q4_K, (void *)6, BN_GPU_VALUE_XB,
+               BN_GPU_VALUE_HB, 64, 64, 32) == 0);
+    assert(ctx.n == 0);
+    assert(ctx.graph.n_ops == 5);
+    assert(bn_transformer_gpu_emit_context_lower_pending(&ctx) == 0);
+    assert(ctx.n == 5);
+    assert(ctx_ops2[0].op_code == BN_GPU_CODE_COPY);
+    assert(ctx_ops2[1].op_code == BN_GPU_CODE_RESIDUAL_ADD);
+    assert(ctx_ops2[2].op_code == BN_GPU_CODE_SILU_GATE);
+    assert(ctx_ops2[3].op_code == BN_GPU_CODE_MATVEC);
+    assert(ctx_ops2[4].op_code == BN_GPU_CODE_FUSED_GATEUP_SILU);
+    bn_transformer_gpu_emit_context_free(&ctx);
 
     printf("PASSED\n");
 }
@@ -760,6 +864,7 @@ int main(void) {
     test_fast_silu();
     test_cpu_execution_helpers();
     test_gpu_capability_routing();
+    test_gpu_policy_helpers();
     test_gpu_op_kind_mapping();
     test_model_arch_registry();
     test_layer_shape_planning();

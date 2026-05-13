@@ -313,6 +313,44 @@ capability reporting.
 - [ ] **Expand architecture registry coverage** — add fuller rules for MRoPE, local attention, tokenizer-family assumptions, DeepSeek/Nemotron-style tensor roles, and backend placement constraints.
 - [ ] **Keep `transformer.c` orchestration-only** — new model, quant, and backend support should not grow the top-level transformer loop.
 
+### GPU Graph IR Cleanup
+
+Goal: introduce an internal, backend-neutral GPU graph-value IR that models
+transformer GPU work as semantic values and ops before lowering to backend
+shader commands. `BnGPUOp` should become a backend-private command format, not
+the structure transformer GPU emission builds directly.
+
+- [x] **Add semantic graph IR types** — define graph values, aliases, multi-output ops, dependency metadata, and fallback reasons without shader IDs, fixed activation slots, or `p[8]` command parameters.
+- [x] **Build graph helpers for simple ops** — add builder helpers for RMSNorm, copy, residual add, activation, and logits so emitters can append semantic ops and return value IDs.
+- [x] **Lower graph IR to current shader commands** — add a compatibility lowerer from the graph IR to the existing `BnGPUOp` command array so behavior can stay unchanged during migration.
+- [x] **Move GPU emitters onto the graph IR incrementally** — GPU emitters now build semantic graph IR before lowering to `BnGPUOp` for the current command surface (RMSNorm, logits, copy, residual add, activation, matvec, dense fused gate/up, QKV/SSM/MoE split projections, RoPE, flash attention, GQA scores/softmax/combine, SSM conv/L2 norm/alpha-beta/delta/gate, bias add, weighted add, residual RMSNorm, per-head RMSNorm, deinterleave Q).
+- [x] **Make backend command ABI private** — `gpu_graph.h` now exposes the semantic graph IR instead of the shader command ABI, transformer GPU declarations moved out of `include/`, and project code uses `gpu_shader_ir_internal.h` only for backend lowering/execution compatibility.
+- [x] **Centralize lowered command submission** — transformer GPU orchestration now calls a submit helper for lowered command finalization/execution and named activation sync helpers for CPU fallback boundaries instead of invoking backend shader execution/read/write slots directly.
+- [x] **Start persistent graph emission** — transformer GPU orchestration now owns a `BnTransformerGPUEmitContext` with a pending `BnGPUValueGraph`; orchestration-level RMSNorm/logits append semantic graph ops and lower them together only at legacy boundaries or submit.
+- [x] **Route simple op emission through the persistent graph context** — copy, residual add, activation, matvec, and fused gate/up helpers now share context append logic, with legacy wrappers lowering through that context for compatibility during block-emitter migration.
+- [x] **Route complex helper emission through the persistent graph context** — split matvec, RoPE, flash/GQA attention, SSM, utility, and legacy RMSNorm/logits wrappers now use context append/lower logic; `gpu_emit.c` no longer creates stack-local value graphs for helper lowering.
+- [x] **Convert dense FFN block emission to the persistent graph context** — dense FFN now appends directly to `BnTransformerGPUEmitContext` from GPU orchestration.
+- [x] **Convert QKV and attention block emission to the persistent graph context** — attention-layer Q/K/V projection, RoPE, flash/GQA attention, gated-Q activation, output projection, and residual RMSNorm now append directly to the orchestration-owned graph context.
+- [x] **Convert SSM block emission to the persistent graph context** — SSM projection, conv/L2/alpha-beta/delta/gate, output projection, and residual RMSNorm now append directly to `BnTransformerGPUEmitContext`.
+- [x] **Convert MoE block emission to the persistent graph context** — expert gate/up/down projections, expert weighted accumulation, shared-expert accumulation, residual add, and next RMSNorm now append directly to `BnTransformerGPUEmitContext`; transformer GPU orchestration no longer has legacy graph-lowering boundaries.
+- [x] **Remove transformer emitter shim APIs** — transformer internals no longer expose `BnGPUOp *ops, int *n` block emitters; tests and orchestration use `BnTransformerGPUEmitContext` directly, with `BnGPUOp` retained only as the lowered backend command buffer.
+- [x] **Deduplicate backend dependency logic** — Metal and WebGPU now share backend-private shader access-mask metadata for pass/barrier decisions instead of duplicating read/write switch tables.
+- [x] **Reduce transformer GPU coupling** — block emitters now receive a compact `BnTransformerGPUEmitResources` for backend capabilities and handles instead of separate GPU/backend plumbing; MoE keeps explicit model/session inputs only where expert-cache bridge ownership still requires them.
+- [x] **Narrow MoE GPU emission inputs** — expert-buffer resolution now produces `BnGPUMoEResources`; the MoE graph emitter consumes routed expert buffers and weights without taking the full model/session pair.
+- [x] **Move MoE GPU resource resolution out of transformer emission** — the model/session-facing MoE bridge resolver now lives in `gpu_moe_bridge`, so `gpu_emit.c` stays focused on graph construction.
+- [x] **Narrow dense FFN GPU emit resources** — dense FFN emission now takes pre-resolved backend handles and weight buffers via `BnTransformerGPUDenseFFNResources` instead of doing backend lookups through `BnTransformerGPUEmitResources`.
+- [x] **Narrow QKV/attention/SSM GPU emit resources** — QKV, attention, and SSM block emitters now take pre-resolved resource structs for backend handles and weight buffers instead of doing backend lookups through `BnTransformerGPUEmitResources`.
+- [x] **Narrow MoE shared-expert emit resources** — MoE graph emission now takes `BnTransformerGPUMoESharedResources` alongside `BnGPUMoEResources`, and the generic `BnTransformerGPUEmitResources` wrapper is gone from transformer GPU code.
+- [x] **Move transformer GPU resource resolution out of orchestration** — QKV, attention, SSM, dense FFN, and MoE shared resource resolvers now live in `src/transformer/gpu_resources.c`, leaving `gpu.c` focused on control flow.
+- [x] **Narrow remaining transformer GPU handle lookups** — output/logit, next-norm, initial-norm, and per-layer validation handle resolution now lives behind focused resource helpers, so `gpu.c` no longer reaches directly into backend model handles.
+- [x] **Split transformer GPU orchestration fallback policy** — GPU-forward eligibility, request/model validation, top-level fallback reasons, and top-level resource preflight now live in `src/transformer/gpu_policy.c`; `gpu.c` keeps graph orchestration and CPU fallback sync boundaries.
+- [x] **Consolidate transformer GPU CPU fallback blocks** — repeated GPU flush/read CPU block/write/re-normalize sequences for SSM and MoE fallback now live in `src/transformer/gpu_fallback.c`, while `gpu.c` keeps the fallback placement decisions.
+- [x] **Move transformer GPU logits fallback mechanics out of orchestration** — the oversized-logits GPU flush/read/CPU matvec path now lives in `src/transformer/gpu_fallback.c`; `gpu.c` keeps only the size decision and result flow.
+- [x] **Move transformer GPU operation-budget policy out of orchestration** — graph capacity sizing now lives in `src/transformer/gpu_policy.c`, so `gpu.c` no longer owns approximate per-block op-count constants.
+- [x] **Move transformer GPU binding-limit policy out of orchestration** — the max storage binding default and oversized-logits decision now live in `src/transformer/gpu_policy.c`, so `gpu.c` only chooses between logits fallback and logits emit.
+- [x] **Move transformer GPU fallback debug reporting out of orchestration** — fallback debug gating and one-shot stderr reporting now live in `src/transformer/gpu_policy.c`; `gpu.c` only reports the reason and unwinds the emit context.
+- [ ] **Move transformer GPU flush mechanics out of orchestration** — replace the local `GPU_FLUSH` macro with an emit/fallback helper so `gpu.c` does not own pending-op execution details.
+
 ### Cohesion and Coupling Debt
 
 The latest architecture review found that the largest ownership leaks are fixed,

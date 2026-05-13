@@ -1,7 +1,7 @@
 #ifndef BN_GPU_SHADER_H
 #define BN_GPU_SHADER_H
 
-#include "gpu_shader_ir.h"
+#include "gpu_shader_ir_internal.h"
 
 // Backend-private shader pipeline IDs for current Metal/WGPU dispatch tables.
 #define BN_GPU_SHADER_MATVEC       0
@@ -98,6 +98,134 @@ static inline int bn_gpu_shader_from_op_code(int code) {
         case BN_GPU_CODE_RELU2_ACT: return BN_GPU_SHADER_RELU2_ACT;
         default: return -1;
     }
+}
+
+static inline uint32_t bn_gpu_shader_buf_bit(int idx) {
+    return (idx >= 0 && idx < 32) ? (1u << (uint32_t)idx) : 0u;
+}
+
+static inline int bn_gpu_shader_access_masks(const BnGPUOp *op,
+                                             int shader,
+                                             uint32_t *reads,
+                                             uint32_t *writes) {
+    if (!op || !reads || !writes) return -1;
+    uint32_t r = 0;
+    uint32_t w = 0;
+
+    switch (shader) {
+        case BN_GPU_SHADER_MATVEC:
+        case BN_GPU_SHADER_RMSNORM:
+        case BN_GPU_SHADER_FUSED_GATEUP_SILU:
+        case BN_GPU_SHADER_DEINTERLEAVE_Q:
+        case BN_GPU_SHADER_COPY:
+            r = bn_gpu_shader_buf_bit(op->buf_in);
+            w = bn_gpu_shader_buf_bit(op->buf_out);
+            break;
+        case BN_GPU_SHADER_ROPE:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_ROPE_FREQ);
+            w = bn_gpu_shader_buf_bit(op->buf_in);
+            break;
+        case BN_GPU_SHADER_ROPE_QK:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_ROPE_FREQ);
+            w = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux);
+            break;
+        case BN_GPU_SHADER_GQA_SCORES:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_KEY_CACHE);
+            w = bn_gpu_shader_buf_bit(BN_GPU_BUF_ATT);
+            break;
+        case BN_GPU_SHADER_SOFTMAX:
+            r = bn_gpu_shader_buf_bit(BN_GPU_BUF_ATT);
+            w = bn_gpu_shader_buf_bit(BN_GPU_BUF_ATT);
+            break;
+        case BN_GPU_SHADER_GQA_COMBINE:
+            r = bn_gpu_shader_buf_bit(BN_GPU_BUF_ATT) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_VALUE_CACHE);
+            w = bn_gpu_shader_buf_bit(op->buf_out);
+            break;
+        case BN_GPU_SHADER_FLASH_ATTN:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_KEY_CACHE) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_VALUE_CACHE);
+            w = bn_gpu_shader_buf_bit(op->buf_out);
+            break;
+        case BN_GPU_SHADER_SILU_GATE:
+        case BN_GPU_SHADER_RELU2_GATE:
+        case BN_GPU_SHADER_RESIDUAL_ADD:
+        case BN_GPU_SHADER_WEIGHTED_ADD:
+        case BN_GPU_SHADER_SSM_GATE:
+        case BN_GPU_SHADER_SIGMOID_GATE:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux);
+            w = bn_gpu_shader_buf_bit(op->buf_in);
+            break;
+        case BN_GPU_SHADER_BIAS_ADD:
+        case BN_GPU_SHADER_PER_HEAD_RMSNORM:
+        case BN_GPU_SHADER_SILU_ACT:
+        case BN_GPU_SHADER_RELU2_ACT:
+            r = bn_gpu_shader_buf_bit(op->buf_in);
+            w = bn_gpu_shader_buf_bit(op->buf_in);
+            break;
+        case BN_GPU_SHADER_RESIDUAL_RMSNORM:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux);
+            w = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_out);
+            break;
+        case BN_GPU_SHADER_SSM_CONV_SILU:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_CONV_STATE);
+            w = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_CONV_STATE);
+            break;
+        case BN_GPU_SHADER_SSM_L2NORM:
+            r = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux);
+            w = bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux);
+            break;
+        case BN_GPU_SHADER_SSM_ALPHA_BETA:
+            r = bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_ALPHA) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_BETA);
+            w = bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_ALPHA) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_BETA);
+            break;
+        case BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT:
+            r = bn_gpu_shader_buf_bit(op->buf_in);
+            w = bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_ALPHA) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_BETA);
+            break;
+        case BN_GPU_SHADER_SSM_DELTA:
+            r = bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_STATE) |
+                bn_gpu_shader_buf_bit(op->buf_in) |
+                bn_gpu_shader_buf_bit(op->buf_aux) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_ALPHA) |
+                bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_BETA);
+            if (op->p[7] == 0)
+                r |= bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_V);
+            w = bn_gpu_shader_buf_bit(BN_GPU_BUF_SSM_STATE) |
+                bn_gpu_shader_buf_bit(op->buf_out);
+            break;
+        case BN_GPU_SHADER_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
+        case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
+            r = bn_gpu_shader_buf_bit(op->buf_in);
+            w = bn_gpu_shader_buf_bit(op->buf_out) |
+                bn_gpu_shader_buf_bit(op->buf_aux) |
+                bn_gpu_shader_buf_bit(op->rows);
+            break;
+        default:
+            return -1;
+    }
+
+    *reads = r;
+    *writes = w;
+    return 0;
 }
 
 #endif

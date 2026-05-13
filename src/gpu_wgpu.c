@@ -1556,10 +1556,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
      * Only start a new pass when a dispatch has a RAW, WAR, or WAW conflict
      * with an earlier dispatch in the current pass. */
 
-    /* Helper: get read/write buffer masks for an op.
-     * Bit i set = buffer BN_GPU_BUF_i is accessed. */
-    #define BUF_BIT(idx) (1u << (idx))
-
     WGPUComputePassEncoder cur_pass = NULL;
     int n_passes = 0;
 
@@ -1592,121 +1588,10 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
             return -1;
         }
 
-        /* Compute this op's read/write buffer masks */
+        /* Compute this op's read/write buffer masks. */
         uint32_t op_reads = 0, op_writes = 0;
-        switch (shader) {
-        case BN_GPU_SHADER_MATVEC:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_RMSNORM:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_ROPE:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_ROPE_FREQ);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_ROPE_QK:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
-                     | BUF_BIT(BN_GPU_BUF_ROPE_FREQ);
-            op_writes = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            break;
-        case BN_GPU_SHADER_GQA_SCORES:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_KEY_CACHE);
-            op_writes = BUF_BIT(BN_GPU_BUF_ATT);
-            break;
-        case BN_GPU_SHADER_SOFTMAX:
-            op_reads = BUF_BIT(BN_GPU_BUF_ATT);
-            op_writes = BUF_BIT(BN_GPU_BUF_ATT);  /* in-place */
-            break;
-        case BN_GPU_SHADER_GQA_COMBINE:
-            op_reads = BUF_BIT(BN_GPU_BUF_ATT) | BUF_BIT(BN_GPU_BUF_VALUE_CACHE);
-            op_writes = BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_SILU_GATE:
-        case BN_GPU_SHADER_RELU2_GATE:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_RESIDUAL_ADD:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_BIAS_ADD:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_RESIDUAL_RMSNORM:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_WEIGHTED_ADD:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place: x += w*r */
-            break;
-        case BN_GPU_SHADER_SSM_CONV_SILU:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_SSM_CONV_STATE);
-            op_writes = BUF_BIT(op->buf_in) | BUF_BIT(BN_GPU_BUF_SSM_CONV_STATE);
-            break;
-        case BN_GPU_SHADER_SSM_L2NORM:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            break;
-        case BN_GPU_SHADER_SSM_ALPHA_BETA:
-            op_reads = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
-            op_writes = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
-            break;
-        case BN_GPU_SHADER_SSM_ALPHA_BETA_SPLIT:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
-            break;
-        case BN_GPU_SHADER_MATVEC_SPLIT:
-        case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
-        case BN_GPU_SHADER_Q8_MATVEC_SPLIT:
-        case BN_GPU_SHADER_Q5K_MATVEC_SPLIT:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_out) | BUF_BIT(op->buf_aux);
-            if (op->rows >= 0 && op->rows < BN_GPU_BUF_COUNT)
-                op_writes |= BUF_BIT(op->rows);
-            break;
-        case BN_GPU_SHADER_FUSED_GATEUP_SILU:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_SSM_DELTA:
-            op_reads = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux)
-                     | BUF_BIT(BN_GPU_BUF_SSM_ALPHA) | BUF_BIT(BN_GPU_BUF_SSM_BETA);
-            if (op->p[7] == 0) op_reads |= BUF_BIT(BN_GPU_BUF_SSM_V);
-            op_writes = BUF_BIT(BN_GPU_BUF_SSM_STATE) | BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_SSM_GATE:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_PER_HEAD_RMSNORM:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_DEINTERLEAVE_Q:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_out);
-            break;
-        case BN_GPU_SHADER_SIGMOID_GATE:
-            op_reads = BUF_BIT(op->buf_in) | BUF_BIT(op->buf_aux);
-            op_writes = BUF_BIT(op->buf_in);  /* in-place */
-            break;
-        case BN_GPU_SHADER_SILU_ACT:
-        case BN_GPU_SHADER_RELU2_ACT:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_in);
-            break;
-        case BN_GPU_SHADER_COPY:
-            op_reads = BUF_BIT(op->buf_in);
-            op_writes = BUF_BIT(op->buf_out);
-            break;
-        default: continue;
-        }
+        if (bn_gpu_shader_access_masks(op, shader, &op_reads, &op_writes) != 0)
+            continue;
 
         /* Dispatches inside a compute pass are encoded in order. Keep the
          * forward graph in one pass to avoid hundreds of pass boundaries per
@@ -2314,8 +2199,6 @@ static int wgpu_execute(void *vctx, const BnGPUOp *ops, int n_ops,
         wgpuComputePassEncoderRelease(cur_pass);
         n_passes++;
     }
-
-    #undef BUF_BIT
 
     /* 4. Copy readback buffer to staging */
     size_t readback_size = (size_t)out_len * sizeof(float);

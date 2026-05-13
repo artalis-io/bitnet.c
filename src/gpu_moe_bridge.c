@@ -125,3 +125,41 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
 
     return 0;
 }
+
+int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
+                                         BnGPUMoEResolvedExpert *expert_storage,
+                                         int expert_cap,
+                                         BnModel *m,
+                                         BnSession *sess,
+                                         const BnLayerWeights *lw,
+                                         int layer,
+                                         void **uncached_bufs,
+                                         int *n_uncached) {
+    if (!out || !expert_storage || expert_cap < 0 || !m || !sess || !lw ||
+        !n_uncached)
+        return -1;
+    BnConfig *c = &m->config;
+    BnMoEState *ms = sess->moe_state;
+    if (!ms) return -1;
+
+    memset(out, 0, sizeof(*out));
+    out->expert_map = &lw->moe.expert_map;
+    out->experts = expert_storage;
+    out->moe_hidden = c->moe_intermediate_size;
+    *n_uncached = 0;
+
+    int K = c->n_experts_active;
+    if (K > expert_cap) return -1;
+    for (int k = 0; k < K; k++) {
+        int eidx = ms->expert_indices[k];
+        if (eidx < 0 || eidx >= c->n_experts) continue;
+        BnGPUMoEResolvedExpert *expert = &expert_storage[out->n_experts];
+        if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
+                                         uncached_bufs, n_uncached,
+                                         &expert->buffers) != 0)
+            continue;
+        expert->weight = ms->expert_weights[k];
+        out->n_experts++;
+    }
+    return 0;
+}

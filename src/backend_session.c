@@ -1,5 +1,5 @@
 #include "backend_session.h"
-#include "gpu_shader_ir.h"
+#include "gpu_shader_ir_internal.h"
 #include <stdlib.h>
 
 struct BnBackendSession {

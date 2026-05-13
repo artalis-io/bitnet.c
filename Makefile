@@ -51,7 +51,10 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/gqa_tq_scalar.c src/transformer/gqa_tq_neon.c \
     src/transformer/logits_neon.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
-    src/transformer/plan.c src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/plan.c src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_resources.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv.c src/transformer/prefill.c \
     src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
@@ -86,7 +89,10 @@ else
     src/transformer/gqa_tq_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
-    src/transformer/plan.c src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/plan.c src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_resources.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv.c src/transformer/prefill.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 endif
@@ -204,7 +210,10 @@ SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
 SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_scalar.c src/transformer/gqa_tq_scalar.c \
     src/transformer/logits_scalar.c src/transformer/logits.c src/transformer/cpu.c \
-    src/transformer/plan.c src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/plan.c src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_resources.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv.c src/transformer/prefill.c \
     src/transformer/ssm_scalar.c
 
@@ -242,7 +251,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_llama_compare bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -255,7 +264,7 @@ bench_llama_compare: bench_avx2
 
 bench_kernels_run: bench_kernels
 
-test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend
+test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend
 
 test_architecture: test_backend_matrix test_model_matrix
 
@@ -353,6 +362,9 @@ test_prompt_cache: test/test_prompt_cache.c src/prompt_cache.c src/session.c src
 test_turboquant: test/test_turboquant.c src/turboquant.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
+test_gpu_graph_ir: test/test_gpu_graph_ir.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
 test_gpu_backend: test/test_gpu_backend.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                   src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                   src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
@@ -434,7 +446,10 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnor
     src/transformer/gqa_tq_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
-    src/transformer/plan.c src/transformer/gpu_emit.c src/transformer/gpu.c \
+    src/transformer/plan.c src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_resources.c \
+    src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv.c src/transformer/prefill.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 
@@ -541,4 +556,4 @@ test_coherence: $(COHERENCE_SRCS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)

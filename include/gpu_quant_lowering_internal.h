@@ -2,7 +2,7 @@
 #define BN_GPU_QUANT_LOWERING_INTERNAL_H
 
 #include "gguf.h"
-#include "gpu_shader_ir.h"
+#include "gpu_shader_ir_internal.h"
 
 static inline int bn_gpu_quant_split_op_code(int type) {
     switch (type) {
