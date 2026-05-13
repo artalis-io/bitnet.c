@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Failed to load model\n");
         return 1;
     }
-    model.file = mf;
+    bn_model_set_file(&model, mf);
 
     BnSession *sess = bn_session_create(&model, NULL);
     if (!sess) {

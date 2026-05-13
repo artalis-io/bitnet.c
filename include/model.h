@@ -13,23 +13,39 @@ typedef struct BnBackendModel BnBackendModel;
 typedef struct BnGPUBackend BnGPUBackend;
 typedef struct BnThreadPool BnThreadPool;
 typedef struct BnTQState BnTQState;
+typedef struct BnModelRuntime BnModelRuntime;
+typedef struct BnModelIO BnModelIO;
+typedef struct BnModelBackendState BnModelBackendState;
 
 typedef struct BnModel {
     BnConfig config;
     BnWeights weights;
-    BnMappedFile file;       // keeps mmap/buffer alive
-    BnThreadPool *pool;      // thread pool for parallel dispatch
-    SHArena *weight_arena;   // arena for weight transforms (INT8 embeddings, Q4_0 repacking)
-    // MoE shared I/O (zero for dense models)
-    BnMoEIO moe_io;
-    int expert_fd;           // file descriptor for expert pread, -1 if unused
-    BnBackendModel *backend; // backend-resident model state/control
-    BnTQState *tq_state;     // TurboQuant state (NULL = no TQ compression)
+    BnModelRuntime *runtime;
+    BnModelIO *io;
+    BnModelBackendState *backend_state;
 } BnModel;
 
 int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits);
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
+void bn_model_set_file(BnModel *model, BnMappedFile file);
+BnThreadPool *bn_model_pool(const BnModel *model);
+void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned);
+SHArena *bn_model_weight_arena(const BnModel *model);
+BnBackendModel *bn_model_backend(const BnModel *model);
+int bn_model_ensure_backend(BnModel *model);
+BnTQState *bn_model_tq_state(const BnModel *model);
+void bn_model_set_tq_state(BnModel *model, BnTQState *state, int owned);
+int bn_model_has_tq(const BnModel *model);
+BnMoEIO *bn_model_moe_io(BnModel *model);
+const BnMoEIO *bn_model_moe_io_const(const BnModel *model);
+void bn_model_set_moe_mmap_base(BnModel *model, const uint8_t *base);
+void bn_model_set_moe_fd(BnModel *model, int fd);
+void bn_model_set_moe_madvise(BnModel *model, int enabled);
+void bn_model_set_moe_cache(BnModel *model, void *cache);
+void *bn_model_moe_cache(const BnModel *model);
+void bn_model_set_gpu_moe_cache(BnModel *model, void *cache);
+void *bn_model_gpu_moe_cache(const BnModel *model);
 BnGPUBackend *bn_model_gpu(const BnModel *model);
 void bn_model_set_gpu_disabled(BnModel *model, int disabled);
 

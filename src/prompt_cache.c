@@ -133,10 +133,10 @@ int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
 
     // Compute per-cache byte sizes
     size_t key_bytes, val_bytes;
-    if (tq_bits > 0 && model->tq_state) {
+    if (tq_bits > 0 && bn_model_tq_state(model)) {
         // TQ path: packed bytes per head, n_kv_heads heads per position
-        int kb = bn_tq_key_bytes(model->tq_state);
-        int vb = bn_tq_value_bytes(model->tq_state);
+        int kb = bn_tq_key_bytes(bn_model_tq_state(model));
+        int vb = bn_tq_value_bytes(bn_model_tq_state(model));
         key_bytes = (size_t)n_attn * (size_t)n_tokens * (size_t)cfg->n_kv_heads * (size_t)kb;
         val_bytes = (size_t)n_attn * (size_t)n_tokens * (size_t)cfg->n_kv_heads * (size_t)vb;
     } else {
@@ -175,10 +175,10 @@ int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
     // Copy token sequence
     memcpy(tok_copy, tokens, tok_bytes);
 
-    if (tq_bits > 0 && model->tq_state) {
+    if (tq_bits > 0 && bn_model_tq_state(model)) {
         // TQ path: copy from session's TQ packed caches
-        int kb = bn_tq_key_bytes(model->tq_state);
-        int vb = bn_tq_value_bytes(model->tq_state);
+        int kb = bn_tq_key_bytes(bn_model_tq_state(model));
+        int vb = bn_tq_value_bytes(bn_model_tq_state(model));
         size_t pos_stride_k = (size_t)cfg->n_kv_heads * kb;
         size_t pos_stride_v = (size_t)cfg->n_kv_heads * vb;
         size_t layer_stride_src_k = (size_t)cfg->seq_len * pos_stride_k;
@@ -287,10 +287,10 @@ int bn_prompt_cache_restore(BnPromptCache *cache, const BnModel *model,
     // Copy KV prefix from cache entry into session
     BnPromptCacheEntry *e = &cache->entries[best_idx];
 
-    if (tq_bits > 0 && model->tq_state) {
+    if (tq_bits > 0 && bn_model_tq_state(model)) {
         // TQ path: copy packed bytes into session's TQ caches
-        int kb = bn_tq_key_bytes(model->tq_state);
-        int vb = bn_tq_value_bytes(model->tq_state);
+        int kb = bn_tq_key_bytes(bn_model_tq_state(model));
+        int vb = bn_tq_value_bytes(bn_model_tq_state(model));
         size_t pos_stride_k = (size_t)cfg->n_kv_heads * kb;
         size_t pos_stride_v = (size_t)cfg->n_kv_heads * vb;
         size_t layer_stride_src_k = (size_t)e->n_tokens * pos_stride_k;

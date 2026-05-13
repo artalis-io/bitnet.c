@@ -45,7 +45,7 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     if (!gpu || !gpu->buffer_create || !ms) return -1;
 
     const BnMoEExpertMap *em = &lw->expert_map;
-    BnGPUMoECache *gpu_cache = (BnGPUMoECache *)m->moe_io.gpu_moe_cache;
+    BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     int split_op_code = bn_backend_quant_gpu_split_op_code(em->gate_type);
     int use_split = gpu_moe_can_gateup_split(gpu, em, split_op_code);
 
@@ -57,9 +57,9 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
                                 &out->gate, &out->up, &out->down))
         return 0;
 
-    const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms, em,
+    const void *gate_data = bn_moe_get_expert_proj(bn_model_moe_io(m), ms, em,
                                                    expert_idx, 0);
-    const void *up_data = bn_moe_get_expert_proj(&m->moe_io, ms, em,
+    const void *up_data = bn_moe_get_expert_proj(bn_model_moe_io(m), ms, em,
                                                  expert_idx, 1);
     if (!gate_data || !up_data) return -1;
 
@@ -97,7 +97,7 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
         }
     }
 
-    const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms, em,
+    const void *down_data = bn_moe_get_expert_proj(bn_model_moe_io(m), ms, em,
                                                    expert_idx, 2);
     if (!down_data) {
         gpu_moe_destroy_partial(gpu, out->gate, out->up, NULL);

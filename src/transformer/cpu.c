@@ -36,7 +36,7 @@ static BnMatvecTask *cpu_prepare_matvec_tasks(const BnModel *m,
     }
     for (int i = 0; i < n_tasks; i++) {
         prepared[i] = tasks[i];
-        prepared[i].prepared = cpu_qweight_prepared(m->backend, tasks[i].W);
+        prepared[i].prepared = cpu_qweight_prepared(bn_model_backend(m), tasks[i].W);
     }
     return prepared;
 }
@@ -50,10 +50,10 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
     BnMatvecTask *prepared_tasks =
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
     if (!prepared_tasks) {
-        bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, m->pool);
+        bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
         return;
     }
-    bn_quant_matvec_batch(prepared_tasks, n_tasks, x, x_q_buf, m->pool);
+    bn_quant_matvec_batch(prepared_tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
 
@@ -69,11 +69,11 @@ static void cpu_quant_matvec_batch_preq8k(const BnModel *m,
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
     if (!prepared_tasks) {
         bn_quant_matvec_batch_preq8k(tasks, n_tasks, x_q, x_d, x_bsums,
-                                     x_float, m->pool);
+                                     x_float, bn_model_pool(m));
         return;
     }
     bn_quant_matvec_batch_preq8k(prepared_tasks, n_tasks, x_q, x_d, x_bsums,
-                                 x_float, m->pool);
+                                 x_float, bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
 
@@ -135,7 +135,7 @@ void bn_transformer_cpu_gqa_dispatch(BnModel *m,
     bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
 #endif
     BnTPTask gqa = { attn_fn, gctx, n_heads };
-    bn_tp_dispatch(m->pool, &gqa, 1);
+    bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
 }
 
 void bn_transformer_cpu_residual_add(float *x, const float *r, int dim) {
@@ -311,12 +311,12 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
     BnMoEPlan moe_plan;
     BnSSMPlan ssm_plan;
     bn_transformer_plan_attention(&attn_plan, c, lw, bn_model_gpu(m),
-                                  m->backend, l, m->tq_state != NULL, 0);
+                                  bn_model_backend(m), l, bn_model_tq_state(m) != NULL, 0);
     bn_transformer_plan_ffn(&ffn_plan, c, lw, bn_model_gpu(m),
-                            m->backend, l, 0);
+                            bn_model_backend(m), l, 0);
     bn_transformer_plan_moe(&moe_plan, c, lw, bn_model_gpu(m), l, 0);
     bn_transformer_plan_ssm(&ssm_plan, c, lw, l, 0, bn_model_gpu(m),
-                            m->backend);
+                            bn_model_backend(m));
     const BnLayerShapePlan *shape = &attn_plan.shape;
     int head_size = shape->head_size;
     int kv_dim = shape->kv_dim;
@@ -372,7 +372,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             float *v_tmp = s->hb2 + kv_dim;
 
             // Q+K+V matvecs (reuse cached Q8K if available)
-            if (!(c->kv_tq_bits > 0 && m->tq_state) && !c->kv_f16) {
+            if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m)) && !c->kv_f16) {
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
                 BnMatvecTask qkv[3] = {
@@ -423,8 +423,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                              layer_rope_dims, rope_cos, rope_sin);
 
             // Write KV + GQA
-            if (c->kv_tq_bits > 0 && m->tq_state) {
-                bn_transformer_tq_write_kv(m->tq_state, s, k_tmp, v_tmp,
+            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
+                bn_transformer_tq_write_kv(bn_model_tq_state(m), s, k_tmp, v_tmp,
                             n_kv_heads, head_size, attn_idx, cache_pos, c->seq_len);
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
@@ -450,7 +450,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
             // FP32 path already wrote to cache directly
 
-            if (!(c->kv_tq_bits > 0 && m->tq_state)) {
+            if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m))) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride, c->seq_len };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
@@ -491,7 +491,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 cpu_quant_matvec_batch_prepared(m, q_task, 1, s->xb, s->x_q);
             }
             // K/V matvec: xb[dim] → kv_dim (always to temp buffers for TQ compat)
-            if (c->kv_tq_bits > 0 && m->tq_state) {
+            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
                 BnMatvecTask kv[2] = {
                      { k_tmp, &lw->wk, NULL },
                      { v_tmp, &lw->wv, NULL },
@@ -523,9 +523,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             bn_transformer_cpu_apply_rope_heads(k_tmp, n_kv_heads, head_size,
                              layer_rope_dims, rope_cos, rope_sin);
 
-            if (c->kv_tq_bits > 0 && m->tq_state) {
+            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
                 // TQ write + GQA
-                bn_transformer_tq_write_kv(m->tq_state, s, k_tmp, v_tmp,
+                bn_transformer_tq_write_kv(bn_model_tq_state(m), s, k_tmp, v_tmp,
                             n_kv_heads, head_size, attn_idx, cache_pos, c->seq_len);
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
@@ -550,7 +550,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
             float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
 
-            if (c->kv_tq_bits > 0 && m->tq_state) {
+            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
                 // --- TurboQuant KV path ---
                 // Use temp buffers for K/V, then quantize into TQ cache
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
@@ -583,7 +583,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                                  layer_rope_dims, rope_cos, rope_sin);
 
                 // Write TQ compressed KV
-                bn_transformer_tq_write_kv(m->tq_state, s, k_tmp, v_tmp,
+                bn_transformer_tq_write_kv(bn_model_tq_state(m), s, k_tmp, v_tmp,
                             n_kv_heads, head_size, attn_idx, cache_pos, c->seq_len);
 
                 // TQ GQA
@@ -673,7 +673,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
 
             // GQA attention (standard path — TQ handled above)
-            if (!(c->kv_tq_bits > 0 && m->tq_state)) {
+            if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m))) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride, c->seq_len };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
@@ -766,7 +766,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
 
     BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm_conv1d, qkv_dim, kern };
     BnTPTask conv_task = { cpu_ssm_conv_silu, &conv_ctx, qkv_dim };
-    bn_tp_dispatch(m->pool, &conv_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
     float *q_raw = qkv;
     float *k_raw = qkv + key_dim;
@@ -774,7 +774,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
 
     BnSSML2NormCtx norm_ctx = { q_raw, k_raw, head_k_dim };
     BnTPTask norm_task = { cpu_ssm_l2norm, &norm_ctx, num_k_heads };
-    bn_tp_dispatch(m->pool, &norm_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
 
     if (num_v_heads > 8192 || head_v_dim > 8192) {
         SH_LOG_ERROR("SSM dimensions too large for stack VLAs");
@@ -808,11 +808,11 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
         num_k_heads, head_k_dim, head_v_dim, q_scale
     };
     BnTPTask delta_task = { cpu_ssm_delta, &delta_ctx, num_v_heads };
-    bn_tp_dispatch(m->pool, &delta_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
     BnSSMGateCtx gate_ctx = { out, z, lw->ssm_norm, c->norm_eps, head_v_dim };
     BnTPTask gate_task = { cpu_ssm_gate, &gate_ctx, num_v_heads };
-    bn_tp_dispatch(m->pool, &gate_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
 
     BnMatvecTask proj[1] = {{ s->xb, &lw->ssm_out, NULL }};
     cpu_quant_matvec_batch_prepared(m, proj, 1, out, s->x_q);
@@ -827,7 +827,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     BnFFNPlan local_plan;
     if (!ffn_plan) {
         bn_transformer_plan_ffn(&local_plan, c, lw, bn_model_gpu(m),
-                                m->backend, 0, bn_model_gpu(m) != NULL);
+                                bn_model_backend(m), 0, bn_model_gpu(m) != NULL);
         ffn_plan = &local_plan;
     }
     int dim = c->dim;
@@ -858,16 +858,16 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 
         if (ffn_plan->has_gate) {
             const BnPreparedWeight *gate_prepared =
-                cpu_qweight_prepared(m->backend, &lw->ffn_gate);
+                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn_gate);
             const BnPreparedWeight *up_prepared =
-                cpu_qweight_prepared(m->backend, &lw->ffn_up);
+                cpu_qweight_prepared(bn_model_backend(m), &lw->ffn_up);
             if (!bn_model_gpu(m) && ffn_plan->activation != 1 &&
                 lw->ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
                 lw->ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
                 dim % 32 == 0 &&
                 bn_quant_q4_gate_up_silu(s->hb, &lw->ffn_gate, gate_prepared,
                                          &lw->ffn_up, up_prepared, s->xb,
-                                         s->x_q, m->pool) == 0) {
+                                         s->x_q, bn_model_pool(m)) == 0) {
                 ffn_activated = 1;
             } else
             {

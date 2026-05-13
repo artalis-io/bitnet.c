@@ -36,11 +36,11 @@ int main(int argc, char **argv) {
     }
 
     BnModel model;
-    if (bn_model_load(&model, gf, 2048, 0) != 0) {
+    if (bn_model_load(&model, gf, 2048, 0, 0) != 0) {
         fprintf(stderr, "Failed to load model\n");
         return 1;
     }
-    model.file = mf;
+    bn_model_set_file(&model, mf);
 
     BnTokenizer tok;
     if (bn_tokenizer_init(&tok, gf) != 0) {

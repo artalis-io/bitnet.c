@@ -1,4 +1,4 @@
-#include "model.h"
+#include "model_internal.h"
 #include "backend_model.h"
 #include "model_arch.h"
 #include "moe.h"
@@ -22,6 +22,125 @@ static int checked_mul_size(size_t a, size_t b, size_t *out) {
     if (a != 0 && b > SIZE_MAX / a) return -1;
     *out = a * b;
     return 0;
+}
+
+static int model_ensure_runtime(BnModel *m) {
+    if (!m) return -1;
+    if (!m->runtime) {
+        m->runtime = (BnModelRuntime *)calloc(1, sizeof(BnModelRuntime));
+        if (!m->runtime) return -1;
+    }
+    return 0;
+}
+
+static int model_ensure_io(BnModel *m) {
+    if (!m) return -1;
+    if (!m->io) {
+        m->io = (BnModelIO *)calloc(1, sizeof(BnModelIO));
+        if (!m->io) return -1;
+        m->io->moe_io.fd = -1;
+        m->io->file.fd = -1;
+    }
+    return 0;
+}
+
+static int model_ensure_backend_state(BnModel *m) {
+    if (!m) return -1;
+    if (!m->backend_state) {
+        m->backend_state = (BnModelBackendState *)calloc(1, sizeof(BnModelBackendState));
+        if (!m->backend_state) return -1;
+    }
+    return 0;
+}
+
+void bn_model_set_file(BnModel *model, BnMappedFile file) {
+    if (model_ensure_io(model) != 0) return;
+    model->io->file = file;
+}
+
+BnThreadPool *bn_model_pool(const BnModel *model) {
+    return (model && model->runtime) ? model->runtime->pool : NULL;
+}
+
+void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned) {
+    if (model_ensure_runtime(model) != 0) return;
+    model->runtime->pool = pool;
+    model->runtime->owns_pool = owned;
+}
+
+SHArena *bn_model_weight_arena(const BnModel *model) {
+    return (model && model->runtime) ? model->runtime->weight_arena : NULL;
+}
+
+BnBackendModel *bn_model_backend(const BnModel *model) {
+    return (model && model->backend_state) ? model->backend_state->backend : NULL;
+}
+
+int bn_model_ensure_backend(BnModel *model) {
+    if (model_ensure_backend_state(model) != 0) return -1;
+    if (!model->backend_state->backend) {
+        model->backend_state->backend = bn_backend_model_create();
+        if (!model->backend_state->backend) return -1;
+    }
+    return 0;
+}
+
+BnTQState *bn_model_tq_state(const BnModel *model) {
+    return (model && model->runtime) ? model->runtime->tq_state : NULL;
+}
+
+void bn_model_set_tq_state(BnModel *model, BnTQState *state, int owned) {
+    if (model_ensure_runtime(model) != 0) return;
+    model->runtime->tq_state = state;
+    model->runtime->owns_tq_state = owned;
+}
+
+int bn_model_has_tq(const BnModel *model) {
+    return bn_model_tq_state(model) != NULL;
+}
+
+BnMoEIO *bn_model_moe_io(BnModel *model) {
+    if (model_ensure_io(model) != 0) return NULL;
+    return &model->io->moe_io;
+}
+
+const BnMoEIO *bn_model_moe_io_const(const BnModel *model) {
+    return (model && model->io) ? &model->io->moe_io : NULL;
+}
+
+void bn_model_set_moe_mmap_base(BnModel *model, const uint8_t *base) {
+    BnMoEIO *io = bn_model_moe_io(model);
+    if (io) io->mmap_base = base;
+}
+
+void bn_model_set_moe_fd(BnModel *model, int fd) {
+    BnMoEIO *io = bn_model_moe_io(model);
+    if (io) io->fd = fd;
+}
+
+void bn_model_set_moe_madvise(BnModel *model, int enabled) {
+    BnMoEIO *io = bn_model_moe_io(model);
+    if (io) io->madvise_mode = enabled;
+}
+
+void bn_model_set_moe_cache(BnModel *model, void *cache) {
+    BnMoEIO *io = bn_model_moe_io(model);
+    if (io) io->cache = cache;
+}
+
+void *bn_model_moe_cache(const BnModel *model) {
+    const BnMoEIO *io = bn_model_moe_io_const(model);
+    return io ? io->cache : NULL;
+}
+
+void bn_model_set_gpu_moe_cache(BnModel *model, void *cache) {
+    BnMoEIO *io = bn_model_moe_io(model);
+    if (io) io->gpu_moe_cache = cache;
+}
+
+void *bn_model_gpu_moe_cache(const BnModel *model) {
+    const BnMoEIO *io = bn_model_moe_io_const(model);
+    return io ? io->gpu_moe_cache : NULL;
 }
 
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
@@ -310,8 +429,10 @@ static int load_expert_map_gate_up_fused(BnGGUFFile *f, const char *name,
 
 int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits) {
     memset(m, 0, sizeof(BnModel));
-    m->backend = bn_backend_model_create();
-    if (!m->backend) return -1;
+    if (model_ensure_runtime(m) != 0 ||
+        model_ensure_io(m) != 0 ||
+        bn_model_ensure_backend(m) != 0)
+        return -1;
     BnConfig *c = &m->config;
     c->kv_f16 = kv_f16;
     c->kv_tq_bits = kv_tq_bits;
@@ -927,14 +1048,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     size_t weight_arena_size = emb_i8_bytes + emb_i8_scales_bytes + q4_repack_total + q8_scale_total
                               + 4 * SH_ARENA_ALIGN;
-    m->weight_arena = NULL;
-    m->expert_fd = -1;
-    memset(&m->moe_io, 0, sizeof(m->moe_io));
-    m->moe_io.fd = -1;
+    m->runtime->weight_arena = NULL;
+    memset(&m->io->moe_io, 0, sizeof(m->io->moe_io));
+    m->io->moe_io.fd = -1;
 
     if (weight_arena_size > 4 * SH_ARENA_ALIGN) {
-        m->weight_arena = sh_arena_create(weight_arena_size);
-        if (!m->weight_arena) {
+        m->runtime->weight_arena = sh_arena_create(weight_arena_size);
+        if (!m->runtime->weight_arena) {
             SH_LOG_ERROR("Failed to allocate weight arena");
             goto fail_state;
         }
@@ -942,8 +1062,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         // Quantize F16 embeddings to INT8 for fast SDOT logits kernel
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
         if (want_i8_emb) {
-            w->emb_out_i8 = (int8_t *)sh_arena_alloc(m->weight_arena, emb_i8_bytes);
-            w->emb_out_scales = (float *)sh_arena_alloc(m->weight_arena, emb_i8_scales_bytes);
+            w->emb_out_i8 = (int8_t *)sh_arena_alloc(m->runtime->weight_arena, emb_i8_bytes);
+            w->emb_out_scales = (float *)sh_arena_alloc(m->runtime->weight_arena, emb_i8_scales_bytes);
             if (w->emb_out_i8 && w->emb_out_scales) {
                 const uint16_t *src = (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16)
                                       ? (const uint16_t *)w->output_weight.data
@@ -965,18 +1085,18 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         if (q4_repack_total > 0) {
             for (int i = 0; i < c->n_layers; i++) {
                 BnLayerWeights *lw = &w->layers[i];
-                q4_repack(m->backend, &lw->wq, m->weight_arena);
-                q4_repack(m->backend, &lw->wk, m->weight_arena);
-                q4_repack(m->backend, &lw->wv, m->weight_arena);
-                q4_repack(m->backend, &lw->wo, m->weight_arena);
-                q4_repack(m->backend, &lw->wqkv, m->weight_arena);
-                q4_repack(m->backend, &lw->wz, m->weight_arena);
-                q4_repack(m->backend, &lw->ssm_out, m->weight_arena);
-                q4_repack(m->backend, &lw->ffn_gate, m->weight_arena);
-                q4_repack(m->backend, &lw->ffn_up, m->weight_arena);
-                q4_repack(m->backend, &lw->ffn_down, m->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->wq, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->wk, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->wv, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->wo, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->wqkv, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->wz, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->ssm_out, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->ffn_gate, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->ffn_up, m->runtime->weight_arena);
+                q4_repack(m->backend_state->backend, &lw->ffn_down, m->runtime->weight_arena);
             }
-            q4_repack(m->backend, &w->output_weight, m->weight_arena);
+            q4_repack(m->backend_state->backend, &w->output_weight, m->runtime->weight_arena);
             char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f", (double)q4_repack_total / (1024*1024));
             SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
         }
@@ -986,18 +1106,18 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         if (q8_scale_total > 0) {
             for (int i = 0; i < c->n_layers; i++) {
                 BnLayerWeights *lw = &w->layers[i];
-                q8_prepare_f32_scales(m->backend, &lw->wq, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->wk, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->wv, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->wo, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->wqkv, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->wz, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->ssm_out, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->ffn_gate, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->ffn_up, m->weight_arena);
-                q8_prepare_f32_scales(m->backend, &lw->ffn_down, m->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->wq, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->wk, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->wv, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->wo, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->wqkv, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->wz, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->ssm_out, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->ffn_gate, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->ffn_up, m->runtime->weight_arena);
+                q8_prepare_f32_scales(m->backend_state->backend, &lw->ffn_down, m->runtime->weight_arena);
             }
-            q8_prepare_f32_scales(m->backend, &w->output_weight, m->weight_arena);
+            q8_prepare_f32_scales(m->backend_state->backend, &w->output_weight, m->runtime->weight_arena);
             char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f", (double)q8_scale_total / (1024*1024));
             SH_LOG_INFO("Q8_0 FP32 scales ready", "MB", q8_mb);
         }
@@ -1006,17 +1126,18 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // Initialize TurboQuant state if KV compression is enabled
     if (c->kv_tq_bits > 0) {
-        m->tq_state = (BnTQState *)malloc(sizeof(BnTQState));
-        if (!m->tq_state) goto fail_state;
-        if (bn_tq_init(m->tq_state, c->head_size, c->kv_tq_bits, 0x5451303042ULL) != 0) {
-            free(m->tq_state);
-            m->tq_state = NULL;
+        m->runtime->tq_state = (BnTQState *)malloc(sizeof(BnTQState));
+        if (!m->runtime->tq_state) goto fail_state;
+        if (bn_tq_init(m->runtime->tq_state, c->head_size, c->kv_tq_bits, 0x5451303042ULL) != 0) {
+            free(m->runtime->tq_state);
+            m->runtime->tq_state = NULL;
             goto fail_state;
         }
+        m->runtime->owns_tq_state = 1;
         char tq_bits[4], tq_kb[16], tq_vb[16];
         snprintf(tq_bits, sizeof(tq_bits), "%d", c->kv_tq_bits);
-        snprintf(tq_kb, sizeof(tq_kb), "%d", bn_tq_key_bytes(m->tq_state));
-        snprintf(tq_vb, sizeof(tq_vb), "%d", bn_tq_value_bytes(m->tq_state));
+        snprintf(tq_kb, sizeof(tq_kb), "%d", bn_tq_key_bytes(m->runtime->tq_state));
+        snprintf(tq_vb, sizeof(tq_vb), "%d", bn_tq_value_bytes(m->runtime->tq_state));
         SH_LOG_INFO("TurboQuant KV", "bits", tq_bits, "key_bytes", tq_kb, "val_bytes", tq_vb);
     }
 
@@ -1034,16 +1155,23 @@ fail_layers:
 void bn_model_free(BnModel *m) {
     if (!m) return;
     bn_model_release_gpu(m);
-    bn_moe_prefetch_destroy(&m->moe_io);
-    bn_tp_free(m->pool);
-    if (m->tq_state) {
-        bn_tq_free(m->tq_state);
-        free(m->tq_state);
-        m->tq_state = NULL;
+    if (m->io)
+        bn_moe_prefetch_destroy(&m->io->moe_io);
+    if (m->runtime && m->runtime->owns_pool)
+        bn_tp_free(m->runtime->pool);
+    if (m->runtime && m->runtime->tq_state && m->runtime->owns_tq_state) {
+        bn_tq_free(m->runtime->tq_state);
+        free(m->runtime->tq_state);
     }
     free(m->weights.layers);
-    sh_arena_free(m->weight_arena);
-    bn_backend_model_free(m->backend);
-    bn_platform_unload_file(&m->file);
+    if (m->runtime)
+        sh_arena_free(m->runtime->weight_arena);
+    if (m->backend_state)
+        bn_backend_model_free(m->backend_state->backend);
+    if (m->io)
+        bn_platform_unload_file(&m->io->file);
+    free(m->runtime);
+    free(m->io);
+    free(m->backend_state);
     memset(m, 0, sizeof(BnModel));
 }

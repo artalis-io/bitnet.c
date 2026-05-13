@@ -93,7 +93,7 @@ static void test_gpu_upload_weights(void) {
     model.config.n_layers = 1;
     model.config.dim = 128;
     model.config.hidden_dim = 256;
-    assert(model.backend == NULL);
+    assert(bn_model_backend(&model) == NULL);
     assert(bn_model_gpu(&model) == NULL);
 
     model.weights.layers = calloc(1, sizeof(BnLayerWeights));
@@ -136,7 +136,7 @@ static void test_gpu_upload_weights(void) {
     int rc = bn_model_upload_weights(&model, &mock_gpu);
     assert(rc == 0);
     assert(bn_model_gpu(&model) == &mock_gpu);
-    assert(model.backend != NULL);
+    assert(bn_model_backend(&model) != NULL);
     assert(model.weights.layers[0].wq.data == wq_cpu_data);
     assert(model.weights.layers[0].ffn_up.data == up_cpu_data);
     assert(model.weights.layers[0].wq.type == wq_type);
@@ -149,25 +149,23 @@ static void test_gpu_upload_weights(void) {
     assert(bn_model_gpu(&model) == NULL);
     bn_model_set_gpu_disabled(&model, 0);
     assert(bn_model_gpu(&model) == &mock_gpu);
-    assert(bn_backend_model_handle(model.backend, 0,
+    assert(bn_backend_model_handle(bn_model_backend(&model), 0,
                                    BN_BACKEND_HANDLE_ATTN_NORM) != NULL);
-    assert(bn_backend_model_handle(model.backend, 0,
+    assert(bn_backend_model_handle(bn_model_backend(&model), 0,
                                    BN_BACKEND_HANDLE_FFN_NORM) != NULL);
-    assert(bn_backend_model_qweight_buf(model.backend,
+    assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
                                         &model.weights.layers[0].wq) != NULL);
-    assert(bn_backend_model_qweight_buf(model.backend,
+    assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
                                         &model.weights.layers[0].ffn_up) != NULL);
-    assert(bn_backend_model_handle(model.backend, 0,
+    assert(bn_backend_model_handle(bn_model_backend(&model), 0,
                                    BN_BACKEND_HANDLE_QKV_STACKED) == NULL);
-    assert(bn_backend_model_qweight_buf(model.backend,
+    assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
                                         &model.weights.layers[0].wk) == NULL);
 
     bn_model_release_gpu(&model);
-    assert(model.backend != NULL);
+    assert(bn_model_backend(&model) != NULL);
     assert(bn_model_gpu(&model) == NULL);
-    bn_backend_model_free(model.backend);
-    model.backend = NULL;
-    free(model.weights.layers);
+    bn_model_free(&model);
     free(wq_data);
     free(up_data);
 
@@ -267,19 +265,16 @@ static void test_gpu_release(void) {
 
     int rc = bn_model_upload_weights(&model, &mock_gpu);
     assert(rc == 0);
-    assert(bn_backend_model_qweight_buf(model.backend,
+    assert(bn_backend_model_qweight_buf(bn_model_backend(&model),
                                         &model.weights.layers[0].wq) != NULL);
 
     bn_model_release_gpu(&model);
     assert(bn_model_gpu(&model) == NULL);
-    assert(model.backend != NULL);
+    assert(bn_model_backend(&model) != NULL);
 
     // Safe to call again
     bn_model_release_gpu(&model);
-    bn_backend_model_free(model.backend);
-    model.backend = NULL;
-
-    free(model.weights.layers);
+    bn_model_free(&model);
     free(data);
 
     printf("PASSED\n");

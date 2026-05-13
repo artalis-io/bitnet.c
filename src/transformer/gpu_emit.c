@@ -712,7 +712,7 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
                                  void **uncached_bufs,
                                  int *n_uncached) {
     BnConfig *c = &m->config;
-    const BnBackendModel *backend = m->backend;
+    const BnBackendModel *backend = bn_model_backend(m);
     BnMoEState *ms = sess->moe_state;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;

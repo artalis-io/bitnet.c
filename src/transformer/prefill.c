@@ -33,8 +33,8 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      int n_tokens,
                                      int8_t *x_q_buf) {
     bn_backend_quant_matmul_gpu_buf(out, W,
-                                    prefill_qweight_backend_buf(m->backend, W),
-                                    X, n_tokens, x_q_buf, m->pool,
+                                    prefill_qweight_backend_buf(bn_model_backend(m), W),
+                                    X, n_tokens, x_q_buf, bn_model_pool(m),
                                     bn_model_gpu(m));
 }
 
@@ -198,7 +198,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
         BnLayerShapePlan plan;
-        bn_transformer_plan_layer_shape(&plan, c, lw, l, m->tq_state != NULL);
+        bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
         int is_attn = plan.is_attn;
 
         if (is_attn && lw->wq.data) {
@@ -216,11 +216,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       pf_xd + (size_t)t * n_bpr,
                                       pf_xbs + (size_t)t * n_bpr * 16, dim);
                 bn_quant_matmul_preq8k(Q_buf, &lw->wq, n_tokens,
-                                       pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                                       pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
                 bn_quant_matmul_preq8k(K_new, &lw->wk, n_tokens,
-                                       pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                                       pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
                 bn_quant_matmul_preq8k(V_new, &lw->wv, n_tokens,
-                                       pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                                       pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
             } else
 #endif
             {
@@ -354,7 +354,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm_conv1d,
                                           qkv_dim_ssm, kern_ssm };
                 BnTPTask conv_task = { prefill_ssm_conv_silu, &conv_ctx, qkv_dim_ssm };
-                bn_tp_dispatch(m->pool, &conv_task, 1);
+                bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
                 float *q_raw = qkv_t;
                 float *k_raw = qkv_t + key_dim_ssm;
@@ -362,7 +362,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                 BnSSML2NormCtx norm_ctx = { q_raw, k_raw, head_k_dim };
                 BnTPTask norm_task = { prefill_ssm_l2norm, &norm_ctx, num_k_heads };
-                bn_tp_dispatch(m->pool, &norm_task, 1);
+                bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
 
                 if (num_v_heads > BN_MAX_VLA_ELEMS) continue;
                 float alpha_arr[num_v_heads > 0 ? num_v_heads : 1];
@@ -371,7 +371,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     { alpha_arr, &lw->ssm_alpha, NULL },
                     { beta_arr,  &lw->ssm_beta, NULL },
                 };
-                bn_quant_matvec_batch(ab, 2, xb_t, s->x_q, m->pool);
+                bn_quant_matvec_batch(ab, 2, xb_t, s->x_q, bn_model_pool(m));
                 for (int h = 0; h < num_v_heads; h++) {
                     float dt = alpha_arr[h] + lw->ssm_dt_bias[h];
                     float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt));
@@ -386,12 +386,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     num_k_heads, head_k_dim, head_v_dim, q_scale
                 };
                 BnTPTask delta_task = { prefill_ssm_delta, &delta_ctx, num_v_heads };
-                bn_tp_dispatch(m->pool, &delta_task, 1);
+                bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm_norm,
                                           c->norm_eps, head_v_dim };
                 BnTPTask gate_task = { prefill_ssm_gate, &gate_ctx, num_v_heads };
-                bn_tp_dispatch(m->pool, &gate_task, 1);
+                bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
             }
 
             prefill_quant_matmul_gpu(m, Xb, &lw->ssm_out, Out_all, n_tokens, s->x_q);
@@ -422,9 +422,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                           pf_xd + (size_t)t * n_bpr,
                                           pf_xbs + (size_t)t * n_bpr * 16, dim);
                     bn_quant_matmul_preq8k(Hb, &lw->ffn_gate, n_tokens,
-                                           pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                                           pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
                     bn_quant_matmul_preq8k(Hb2, &lw->ffn_up, n_tokens,
-                                           pf_xq, pf_xd, pf_xbs, Xb, m->pool);
+                                           pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
                 } else
 #endif
                 {

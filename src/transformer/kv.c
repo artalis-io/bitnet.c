@@ -45,7 +45,7 @@ void bn_transformer_tq_gqa_dispatch(BnModel *m,
                                     int head_size,
                                     int kv_mul) {
     const BnConfig *c = &m->config;
-    const BnTQState *tq = m->tq_state;
+    const BnTQState *tq = bn_model_tq_state(m);
     int key_bytes = bn_tq_key_bytes(tq);
     int val_bytes = bn_tq_value_bytes(tq);
     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
@@ -71,7 +71,7 @@ void bn_transformer_tq_gqa_dispatch(BnModel *m,
     bn_tp_fn attn_fn = bn_transformer_gqa_tq_scalar_range;
 #endif
     BnTPTask gqa = { attn_fn, &tctx, n_heads };
-    bn_tp_dispatch(m->pool, &gqa, 1);
+    bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
 }
 
 void bn_transformer_write_kv_fp16(BnRunState *s,

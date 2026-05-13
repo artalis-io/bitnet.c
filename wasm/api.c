@@ -35,9 +35,9 @@ int bitnet_init(const uint8_t *data, size_t size) {
         bn_gguf_free(g_gguf);
         return -1;
     }
-    g_model.file = mf;
+    bn_model_set_file(&g_model, mf);
     if (g_model.config.n_experts > 0 && mf.data)
-        g_model.moe_io.mmap_base = mf.data;
+        bn_model_set_moe_mmap_base(&g_model, mf.data);
 
     g_session = bn_session_create(&g_model, NULL);
     if (!g_session) {

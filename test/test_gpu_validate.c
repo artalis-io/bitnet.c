@@ -804,22 +804,33 @@ static void free_synthetic_model(BnModel *m) {
     if (!m) return;
     BnWeights *w = &m->weights;
     free((void *)w->token_embedding);
+    w->token_embedding = NULL;
     free(w->output_norm);
+    w->output_norm = NULL;
     free((void *)w->output_weight.data);
+    w->output_weight.data = NULL;
     for (int l = 0; l < m->config.n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
         free(lw->attn_norm);
+        lw->attn_norm = NULL;
         free(lw->ffn_norm);
+        lw->ffn_norm = NULL;
         free((void *)lw->wq.data);
+        lw->wq.data = NULL;
         free((void *)lw->wk.data);
+        lw->wk.data = NULL;
         free((void *)lw->wv.data);
+        lw->wv.data = NULL;
         free((void *)lw->wo.data);
+        lw->wo.data = NULL;
         free((void *)lw->ffn_gate.data);
+        lw->ffn_gate.data = NULL;
         free((void *)lw->ffn_up.data);
+        lw->ffn_up.data = NULL;
         free((void *)lw->ffn_down.data);
+        lw->ffn_down.data = NULL;
     }
-    free(w->layers);
-    memset(m, 0, sizeof(*m));
+    bn_model_free(m);
 }
 
 static int build_synthetic_model(BnModel *m, int type, int dim, int hidden_dim,
@@ -867,7 +878,7 @@ static int build_synthetic_model(BnModel *m, int type, int dim, int hidden_dim,
             return -1;
     }
 
-    m->pool = bn_tp_create(n_threads);
+    bn_model_set_thread_pool(m, bn_tp_create(n_threads), 1);
     return 0;
 }
 
@@ -961,8 +972,6 @@ cleanup:
         bn_model_release_gpu(&gpu_model);
     }
     if (gpu->free_activations) gpu->free_activations(gpu->ctx);
-    if (cpu_model.pool) bn_tp_free(cpu_model.pool);
-    if (gpu_model.pool) bn_tp_free(gpu_model.pool);
     free_synthetic_model(&cpu_model);
     free_synthetic_model(&gpu_model);
     return rc;

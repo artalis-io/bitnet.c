@@ -32,7 +32,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
     BnGPUBackend *gpu = bn_model_gpu(m);
-    const BnBackendModel *backend = m->backend;
+    const BnBackendModel *backend = bn_model_backend(m);
     int debug_fallback = getenv("BN_GPU_DEBUG_FALLBACK") != NULL;
     static int debug_printed = 0;
 
@@ -167,7 +167,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
         BnLayerShapePlan plan;
-        bn_transformer_plan_layer_shape(&plan, c, lw, l, m->tq_state != NULL);
+        bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
         int is_attn = plan.is_attn;
 
         // ---- SSM layer: CPU fallback until the WebGPU SSM path is token-coherent ----
@@ -195,7 +195,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
             }
 
             bn_transformer_gpu_emit_ssm(ops, &n, c, lw, &plan, gpu,
-                                        m->backend, l, dim, u_eps);
+                                        bn_model_backend(m), l, dim, u_eps);
 
             // SSM layer's FFN (dense or MoE) — same as attention layer below
             goto ffn_block;
@@ -208,10 +208,10 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
 
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
-        bn_transformer_gpu_emit_qkv(ops, &n, c, lw, &plan, gpu, m->backend,
+        bn_transformer_gpu_emit_qkv(ops, &n, c, lw, &plan, gpu, bn_model_backend(m),
                                     l, pos, q_dim, head_size, n_heads,
                                     kv_dim, rope_dims, kv_cache_off, u_eps);
-        bn_transformer_gpu_emit_attention(ops, &n, c, lw, gpu, m->backend,
+        bn_transformer_gpu_emit_attention(ops, &n, c, lw, gpu, bn_model_backend(m),
                                           l, pos, dim, q_dim, head_size,
                                           n_heads, kv_dim, rope_dims, n_kv,
                                           loff, kv_cache_off, has_moe, u_eps);
@@ -260,7 +260,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         BnFFNPlan ffn_plan;
         bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu, backend, l, 1);
         bn_transformer_gpu_emit_dense_ffn(ops, &n, c, lw, &ffn_plan, gpu,
-                                          m->backend, l, dim, u_eps, next_norm);
+                                          bn_model_backend(m), l, dim, u_eps, next_norm);
     }
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
@@ -283,7 +283,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
             if (gpu->read_activation(gpu->ctx, BN_GPU_VALUE_XB, s->x,
                                       (size_t)dim * sizeof(float), 0) != 0)
                 GPU_REJECT("read logits input failed");
-            bn_quant_matvec(s->logits, logit_cpu_w, s->x, s->x_q, m->pool);
+            bn_quant_matvec(s->logits, logit_cpu_w, s->x, s->x_q, bn_model_pool(m));
             return s->logits;
         }
         bn_transformer_gpu_emit_logits(ops, &n, logit_gpu_buf, logit_type, logit_rows, logit_cols);

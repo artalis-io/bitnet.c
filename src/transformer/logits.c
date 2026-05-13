@@ -38,8 +38,8 @@ static void logits_quant_matvec_gpu(const BnModel *m,
                                     const BnQWeight *W,
                                     const float *x,
                                     int8_t *x_q_buf) {
-    bn_backend_quant_matvec_gpu_buf(out, W, qweight_backend_buf(m->backend, W),
-                                    x, x_q_buf, m->pool, bn_model_gpu(m));
+    bn_backend_quant_matvec_gpu_buf(out, W, qweight_backend_buf(bn_model_backend(m), W),
+                                    x, x_q_buf, bn_model_pool(m), bn_model_gpu(m));
 }
 
 static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
@@ -63,7 +63,7 @@ static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
     BnLogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
                            s->x_q, x_scale, dim };
     BnTPTask logits_task = { fn, &lctx, rows };
-    bn_tp_dispatch(m->pool, &logits_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
     return 1;
 #endif
 }
@@ -82,23 +82,23 @@ static void logits_f16_dispatch(BnModel *m,
     }
     BnLogitsCtx lctx = { s->logits, (const float *)(void *)x_f16, emb, dim };
     BnTPTask logits_task = { bn_transformer_logits_f16_native_neon_range, &lctx, rows };
-    bn_tp_dispatch(m->pool, &logits_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 #elif defined(__ARM_NEON)
     BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
     BnTPTask logits_task = { bn_transformer_logits_f16_neon_range, &lctx, rows };
-    bn_tp_dispatch(m->pool, &logits_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 #elif defined(__AVX2__)
     BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
     BnTPTask logits_task = { bn_transformer_logits_f16_avx2_range, &lctx, rows };
-    bn_tp_dispatch(m->pool, &logits_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 #elif defined(__wasm_simd128__)
     BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
     BnTPTask logits_task = { bn_transformer_logits_f16_wasm_range, &lctx, rows };
-    bn_tp_dispatch(m->pool, &logits_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 #else
     BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
     BnTPTask logits_task = { bn_transformer_logits_f16_scalar_range, &lctx, rows };
-    bn_tp_dispatch(m->pool, &logits_task, 1);
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 #endif
 }
 
@@ -127,9 +127,9 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         BnQWeight tied = { w->token_embedding, w->emb_type, c->vocab_size, dim, 1.0f };
         bn_backend_quant_matvec_gpu_buf(
             s->logits, &tied,
-            bn_transformer_backend_handle_or(m->backend, -1,
+            bn_transformer_backend_handle_or(bn_model_backend(m), -1,
                                              BN_BACKEND_HANDLE_TIED_EMBEDDING),
-            s->x, s->x_q, m->pool, bn_model_gpu(m));
+            s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
     } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
         if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
             logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,
@@ -138,7 +138,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         const float *emb = (const float *)w->token_embedding;
         BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
         BnTPTask logits_task = { bn_transformer_logits_f32_range, &lctx, c->vocab_size };
-        bn_tp_dispatch(m->pool, &logits_task, 1);
+        bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
     }
 
     return s->logits;

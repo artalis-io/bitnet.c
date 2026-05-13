@@ -11,12 +11,12 @@ static int checked_mul_size(size_t a, size_t b, size_t *out) {
 }
 
 BnGPUBackend *bn_model_gpu(const BnModel *model) {
-    return model ? bn_backend_model_gpu(model->backend) : NULL;
+    return model ? bn_backend_model_gpu(bn_model_backend(model)) : NULL;
 }
 
 void bn_model_set_gpu_disabled(BnModel *model, int disabled) {
     if (!model) return;
-    bn_backend_model_set_gpu_disabled(model->backend, disabled);
+    bn_backend_model_set_gpu_disabled(bn_model_backend(model), disabled);
 }
 
 static void *upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
@@ -46,22 +46,20 @@ static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
 static int register_gpu_handle(BnModel *model, int layer,
                                BnBackendHandleRole role, void *handle) {
     if (!handle) return 0;
-    return bn_backend_model_register_handle(model->backend, layer, role, handle);
+    return bn_backend_model_register_handle(bn_model_backend(model), layer, role, handle);
 }
 
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     if (!model || !gpu || !gpu->buffer_create) return -1;
-    if (!model->backend) {
-        model->backend = bn_backend_model_create();
-        if (!model->backend) return -1;
-    }
-    bn_backend_model_bind_gpu(model->backend, gpu);
+    if (bn_model_ensure_backend(model) != 0) return -1;
+    BnBackendModel *backend = bn_model_backend(model);
+    bn_backend_model_bind_gpu(backend, gpu);
 
     BnWeights *w = &model->weights;
     BnConfig *c = &model->config;
     int n_layers = c->n_layers;
 
-    if (upload_qweight_owned(model->backend, gpu, &w->output_weight) != 0) {
+    if (upload_qweight_owned(backend, gpu, &w->output_weight) != 0) {
         bn_model_release_gpu(model);
         return -1;
     }
@@ -101,7 +99,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (upload_qweight_owned(model->backend, gpu, weights[i]) != 0) {
+            if (upload_qweight_owned(backend, gpu, weights[i]) != 0) {
                 bn_model_release_gpu(model);
                 return -1;
             }
@@ -129,13 +127,13 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 { &lw->wv, lw->v_bias, &v_bias_gpu },
             };
             for (int i = 0; i < 3; i++) {
-                void *old_handle = bn_backend_model_qweight_buf(model->backend, qkv_bias[i].w);
+                void *old_handle = bn_backend_model_qweight_buf(backend, qkv_bias[i].w);
                 if (!qkv_bias[i].bias || !old_handle) continue;
                 void *fused = bn_backend_layout_upload_biased_qweight(
                     gpu, qkv_bias[i].w, qkv_bias[i].bias);
                 if (fused) {
                     gpu->buffer_destroy(gpu->ctx, old_handle);
-                    if (bn_backend_model_register_qweight(model->backend,
+                    if (bn_backend_model_register_qweight(backend,
                                                           qkv_bias[i].w,
                                                           fused) != 0) {
                         bn_model_release_gpu(model);
@@ -295,7 +293,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
 void bn_model_release_gpu(BnModel *model) {
     if (!model) return;
-    BnBackendModel *backend = model->backend;
+    BnBackendModel *backend = bn_model_backend(model);
 
     if (backend)
         bn_backend_model_release_gpu(backend);

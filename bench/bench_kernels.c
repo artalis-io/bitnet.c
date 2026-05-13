@@ -479,7 +479,6 @@ int main(int argc, char **argv) {
     }
 
     BnModel model = {0};
-    model.file = mf;
     int bench_seq_len = n_toks + 8;
     if (bench_seq_len < 32) bench_seq_len = 32;
     if (bn_model_load(&model, gf, bench_seq_len, kv_f16, 0) != 0) {
@@ -488,14 +487,12 @@ int main(int argc, char **argv) {
         bn_platform_unload_file(&mf);
         return 1;
     }
-    model.file = mf;
+    bn_model_set_file(&model, mf);
     if (model.config.n_experts > 0) {
         if ((mf.is_mmap == 1 || mf.is_mmap == 0) && mf.data)
-            model.moe_io.mmap_base = mf.data;
-        if (mf.fd >= 0) {
-            model.moe_io.fd = mf.fd;
-            model.expert_fd = mf.fd;
-        }
+            bn_model_set_moe_mmap_base(&model, mf.data);
+        if (mf.fd >= 0)
+            bn_model_set_moe_fd(&model, mf.fd);
     }
 
 #ifdef BN_ENABLE_WEBGPU
@@ -621,7 +618,7 @@ int main(int argc, char **argv) {
     }
 
     // Tok/s benchmark (forward pass)
-    model.pool = pool;
+    bn_model_set_thread_pool(&model, pool, 0);
     BnSession *session = bn_session_create(&model, NULL);
     if (session) {
         bench_toks(&model, session, n_toks);
@@ -629,7 +626,7 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Failed to create session for tok/s benchmark\n");
     }
-    model.pool = NULL;  // don't double-free
+    bn_model_set_thread_pool(&model, NULL, 0);
 
     // Cleanup
     free(x);

@@ -356,38 +356,38 @@ int main(int argc, char **argv) {
         bn_platform_unload_file(&mf);
         return 1;
     }
-    model.file = mf;  // keep mmap alive
+    bn_model_set_file(&model, mf);  // keep mmap/buffer alive
     model.config.flash_attn = args.flash_attn;
 
     // Set expert I/O for MoE: prefer mmap, fallback to pread
     if (model.config.n_experts > 0) {
+        BnMoEIO *moe_io = bn_model_moe_io(&model);
         if (!args.force_pread && mf.is_mmap == 1 && mf.data) {
-            model.moe_io.mmap_base = mf.data;
+            bn_model_set_moe_mmap_base(&model, mf.data);
         }
         if (mf.fd >= 0) {
-            model.moe_io.fd = mf.fd;
-            model.expert_fd = mf.fd;
+            bn_model_set_moe_fd(&model, mf.fd);
         }
 
         // madvise-guided mmap: use WILLNEED prefetch hints
         if (args.force_madvise && args.force_pread) {
             SH_LOG_WARN("--madvise and --pread are mutually exclusive, ignoring --madvise");
-        } else if (args.force_madvise && !model.moe_io.mmap_base) {
+        } else if (args.force_madvise && !moe_io->mmap_base) {
             SH_LOG_WARN("--madvise requires mmap (file not mmap'd), falling back to pread");
-        } else if (args.force_madvise && model.moe_io.mmap_base) {
+        } else if (args.force_madvise && moe_io->mmap_base) {
 #if !defined(__EMSCRIPTEN__)
             // Only suppress readahead — don't evict. Let page cache manage eviction.
-            model.moe_io.madvise_mode = 1;
+            bn_model_set_moe_madvise(&model, 1);
             SH_LOG_INFO("Expert I/O mode", "mode", "madvise");
 #endif
         } else if (args.force_pread) {
             SH_LOG_INFO("Expert I/O mode", "mode", "pread (forced)");
-        } else if (model.moe_io.mmap_base) {
+        } else if (moe_io->mmap_base) {
             SH_LOG_INFO("Expert I/O mode", "mode", "mmap");
         }
 
         if (args.prefault_moe) {
-            if (args.force_pread || !model.moe_io.mmap_base) {
+            if (args.force_pread || !moe_io->mmap_base) {
                 SH_LOG_WARN("--prefault-moe requires mmap, ignoring");
             } else {
                 bn_moe_prefault_mmap(&model);
@@ -395,25 +395,25 @@ int main(int argc, char **argv) {
         }
 
         // Create I/O prefetch thread for pread pipeline (not needed for madvise)
-        if (!model.moe_io.madvise_mode)
-            bn_moe_prefetch_create(&model.moe_io);
+        if (!moe_io->madvise_mode)
+            bn_moe_prefetch_create(moe_io);
 
         // Create expert LRU cache (pread only, not needed for madvise)
-        if (!model.moe_io.madvise_mode &&
-            args.cache_mb > 0 && !model.moe_io.mmap_base && model.moe_io.fd >= 0
+        if (!moe_io->madvise_mode &&
+            args.cache_mb > 0 && !moe_io->mmap_base && moe_io->fd >= 0
             && model.config.n_layers > 0) {
             BnMoEExpertMap *em = &model.weights.layers[0].expert_map;
-            model.moe_io.cache = bn_moe_cache_create(
+            bn_model_set_moe_cache(&model, bn_moe_cache_create(
                 (size_t)args.cache_mb * 1024 * 1024,
-                em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes);
+                em->expert_gate_bytes, em->expert_up_bytes, em->expert_down_bytes));
         }
     }
 
     // Create thread pool
-    model.pool = bn_tp_create(n_workers);
-    if (model.pool) {
+    bn_model_set_thread_pool(&model, bn_tp_create(n_workers), 1);
+    if (bn_model_pool(&model)) {
         char nt[8];
-        snprintf(nt, sizeof(nt), "%d", bn_tp_num_threads(model.pool));
+        snprintf(nt, sizeof(nt), "%d", bn_tp_num_threads(bn_model_pool(&model)));
         SH_LOG_INFO("Thread pool created", "threads", nt);
     } else if (n_workers > 0) {
         SH_LOG_WARN("Failed to create thread pool, running single-threaded");
@@ -444,8 +444,11 @@ int main(int argc, char **argv) {
                             size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
                                                + em0->expert_down_bytes;
                             if (entry_bytes > 0) {
-                                model.moe_io.gpu_moe_cache = bn_gpu_moe_cache_create(
-                                    (size_t)args.gpu_cache_mb * 1024 * 1024, entry_bytes, gpu);
+                                bn_model_set_gpu_moe_cache(
+                                    &model,
+                                    bn_gpu_moe_cache_create(
+                                        (size_t)args.gpu_cache_mb * 1024 * 1024,
+                                        entry_bytes, gpu));
                             }
                         }
                     }
@@ -489,8 +492,11 @@ int main(int argc, char **argv) {
                             size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
                                                + em0->expert_down_bytes;
                             if (entry_bytes > 0) {
-                                model.moe_io.gpu_moe_cache = bn_gpu_moe_cache_create(
-                                    (size_t)args.gpu_cache_mb * 1024 * 1024, entry_bytes, gpu);
+                                bn_model_set_gpu_moe_cache(
+                                    &model,
+                                    bn_gpu_moe_cache_create(
+                                        (size_t)args.gpu_cache_mb * 1024 * 1024,
+                                        entry_bytes, gpu));
                             }
                         }
                     }
@@ -597,15 +603,14 @@ int main(int argc, char **argv) {
             bn_gguf_free(gf);
             return 1;
         }
-        draft_model.file = draft_mf;
+        bn_model_set_file(&draft_model, draft_mf);
         draft_model.config.flash_attn = args.flash_attn;
         // Share thread pool (never run concurrently)
-        draft_model.pool = model.pool;
+        bn_model_set_thread_pool(&draft_model, bn_model_pool(&model), 0);
 
         // Validate vocab compatibility
         if (draft_model.config.vocab_size != cfg->vocab_size) {
             SH_LOG_ERROR("Draft model vocab size mismatch");
-            draft_model.pool = NULL;  // don't double-free pool
             bn_model_free(&draft_model);
             bn_gguf_free(draft_gf);
             bn_sampler_free(&sampler);
@@ -630,7 +635,6 @@ int main(int argc, char **argv) {
         draft_session = bn_session_create(&draft_model, NULL);
         if (!draft_session) {
             SH_LOG_ERROR("Failed to create draft session");
-            draft_model.pool = NULL;
             bn_model_free(&draft_model);
             bn_gguf_free(draft_gf);
             bn_session_free(session, NULL);
@@ -903,19 +907,18 @@ int main(int argc, char **argv) {
     // Cleanup
     if (has_draft) {
         bn_session_free(draft_session, NULL);
-        draft_model.pool = NULL;  // shared, don't double-free
         bn_model_free(&draft_model);
         bn_gguf_free(draft_gf);
     }
-    if (model.moe_io.cache) {
-        bn_moe_cache_free(model.moe_io.cache);
-        model.moe_io.cache = NULL;
+    if (bn_model_moe_cache(&model)) {
+        bn_moe_cache_free(bn_model_moe_cache(&model));
+        bn_model_set_moe_cache(&model, NULL);
     }
 #if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
-    if (model.moe_io.gpu_moe_cache) {
-        bn_gpu_moe_cache_print_stats(model.moe_io.gpu_moe_cache);
-        bn_gpu_moe_cache_free(model.moe_io.gpu_moe_cache);
-        model.moe_io.gpu_moe_cache = NULL;
+    if (bn_model_gpu_moe_cache(&model)) {
+        bn_gpu_moe_cache_print_stats(bn_model_gpu_moe_cache(&model));
+        bn_gpu_moe_cache_free(bn_model_gpu_moe_cache(&model));
+        bn_model_set_gpu_moe_cache(&model, NULL);
     }
 #endif
     bn_session_free(session, NULL);

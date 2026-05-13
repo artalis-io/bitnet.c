@@ -290,7 +290,7 @@ void bn_moe_cache_print_stats(const BnMoEState *ms) {
 }
 
 int bn_moe_prefault_mmap(struct BnModel *m) {
-    if (!m || !m->moe_io.mmap_base || m->config.n_experts <= 0)
+    if (!m || !bn_model_moe_io(m)->mmap_base || m->config.n_experts <= 0)
         return -1;
 
 #if defined(__EMSCRIPTEN__)
@@ -318,7 +318,7 @@ int bn_moe_prefault_mmap(struct BnModel *m) {
             if (proj_bytes == 0) continue;
 
             for (int e = 0; e < m->config.n_experts; e++) {
-                const uint8_t *ptr = m->moe_io.mmap_base + bases[p] +
+                const uint8_t *ptr = bn_model_moe_io(m)->mmap_base + bases[p] +
                                      (size_t)e * proj_bytes;
                 for (size_t off = 0; off < proj_bytes; off += page) {
                     sink ^= ptr[off];
@@ -842,7 +842,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
     // 2. Route: select top-K experts (SIMD + threaded)
     t0 = moe_time_ms();
-    bn_moe_route(ms, s->xb, lw->router_weight, dim, c->n_experts, K, m->pool);
+    bn_moe_route(ms, s->xb, lw->router_weight, dim, c->n_experts, K, bn_model_pool(m));
     ms->stats.route_time_ms += moe_time_ms() - t0;
 
     // 3. Zero output accumulator
@@ -852,7 +852,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     double t_compute = moe_time_ms();
     int shared_gu_ready = 0;
 
-    if (m->moe_io.mmap_base && K <= BN_MAX_MOE_K) {
+    if (bn_model_moe_io(m)->mmap_base && K <= BN_MAX_MOE_K) {
         // --- Cross-expert batched dispatch (mmap path) ---
         int valid_k = 0;
         int valid_indices[BN_MAX_MOE_K];
@@ -861,9 +861,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
         // Prefetch gate+up pages for all K experts (madvise mode)
 #if !defined(__EMSCRIPTEN__)
-        if (m->moe_io.madvise_mode) {
+        if (bn_model_moe_io(m)->madvise_mode) {
             double ta = moe_time_ms();
-            moe_madvise_experts(&m->moe_io, &lw->expert_map, ms->expert_indices, K,
+            moe_madvise_experts(bn_model_moe_io(m), &lw->expert_map, ms->expert_indices, K,
                                 MADV_WILLNEED, 0x3 /* gate+up */);
             ms->stats.madvise_time_ms += moe_time_ms() - ta;
         }
@@ -872,8 +872,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
             if (eidx < 0) continue;
-            const void *gate_data = moe_load_expert_proj(&m->moe_io, ms, &lw->expert_map, eidx, 0);
-            const void *up_data   = moe_load_expert_proj(&m->moe_io, ms, &lw->expert_map, eidx, 1);
+            const void *gate_data = moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->expert_map, eidx, 0);
+            const void *up_data   = moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->expert_map, eidx, 1);
             if (!gate_data || !up_data) {
                 SH_LOG_ERROR("Failed to load expert gate/up projection");
                 continue;
@@ -919,7 +919,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     shared_gu_ready = 1;
                 }
             }
-            bn_quant_matvec_batch(gu_tasks, n_gu, s->xb, s->x_q, m->pool);
+            bn_quant_matvec_batch(gu_tasks, n_gu, s->xb, s->x_q, bn_model_pool(m));
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
 
             // Parallel SwiGLU
@@ -934,14 +934,14 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 };
                 swiglu_tasks[k] = (BnTPTask){ moe_swiglu_range, &swiglu_ctxs[k], moe_hidden };
             }
-            bn_tp_dispatch(m->pool, swiglu_tasks, valid_k);
+            bn_tp_dispatch(bn_model_pool(m), swiglu_tasks, valid_k);
             ms->stats.swiglu_time_ms += moe_time_ms() - t0;
 
             // Prefetch down projection pages (madvise mode)
 #if !defined(__EMSCRIPTEN__)
-            if (m->moe_io.madvise_mode) {
+            if (bn_model_moe_io(m)->madvise_mode) {
                 double ta = moe_time_ms();
-                moe_madvise_experts(&m->moe_io, &lw->expert_map, valid_indices, valid_k,
+                moe_madvise_experts(bn_model_moe_io(m), &lw->expert_map, valid_indices, valid_k,
                                     MADV_WILLNEED, 0x4 /* down */);
                 ms->stats.madvise_time_ms += moe_time_ms() - ta;
             }
@@ -951,7 +951,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             t0 = moe_time_ms();
             BnQWeight wdowns[BN_MAX_MOE_K];
             for (int k = 0; k < valid_k; k++) {
-                const void *down_data = moe_load_expert_proj(&m->moe_io, ms, &lw->expert_map, valid_indices[k], 2);
+                const void *down_data = moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->expert_map, valid_indices[k], 2);
                 if (!down_data) {
                     SH_LOG_ERROR("Failed to load expert down projection");
                     valid_weights[k] = 0.0f;
@@ -972,7 +972,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                         ms->expert_down_batch[k], &wdowns[k], ms->expert_hb_batch[k], NULL
                     };
                 }
-                bn_quant_matvec_multi(down_tasks, n_down, ms->down_x_q_bufs, m->pool);
+                bn_quant_matvec_multi(down_tasks, n_down, ms->down_x_q_bufs, bn_model_pool(m));
             }
             ms->stats.down_time_ms += moe_time_ms() - t0;
 
@@ -988,11 +988,11 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         }
     }
 #if !defined(__EMSCRIPTEN__)
-    else if (m->moe_io.fd >= 0 && !m->moe_io.mmap_base) {
+    else if (bn_model_moe_io(m)->fd >= 0 && !bn_model_moe_io(m)->mmap_base) {
         // --- Pipelined pread path with LRU cache ---
-        BnMoEPrefetch *pf_gu = (BnMoEPrefetch *)m->moe_io.prefetch;
-        BnMoEPrefetch *pf_dn = (BnMoEPrefetch *)m->moe_io.prefetch_down;
-        BnMoECache *cache = (BnMoECache *)m->moe_io.cache;
+        BnMoEPrefetch *pf_gu = (BnMoEPrefetch *)bn_model_moe_io(m)->prefetch;
+        BnMoEPrefetch *pf_dn = (BnMoEPrefetch *)bn_model_moe_io(m)->prefetch_down;
+        BnMoECache *cache = (BnMoECache *)bn_model_moe_io(m)->cache;
         const BnMoEExpertMap *map = &lw->expert_map;
 
         // Sort expert indices ascending (insertion sort, K is small)
@@ -1088,7 +1088,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h], NULL };
                 gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]  , NULL };
             }
-            bn_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q, m->pool);
+            bn_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q, bn_model_pool(m));
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
 
             // Parallel SwiGLU for hits
@@ -1103,7 +1103,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 };
                 swiglu_tasks[h] = (BnTPTask){ moe_swiglu_range, &swiglu_ctxs[h], moe_hidden };
             }
-            bn_tp_dispatch(m->pool, swiglu_tasks, n_hits);
+            bn_tp_dispatch(bn_model_pool(m), swiglu_tasks, n_hits);
             ms->stats.swiglu_time_ms += moe_time_ms() - t0;
 
             // Down projections for hits (data already in cache)
@@ -1113,7 +1113,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 BnQWeight wdown = moe_make_qweight(dp, map->down_type,
                                                     map->down_rows, map->down_cols);
                 bn_quant_matvec(ms->expert_down_batch[h], &wdown,
-                                ms->expert_hb_batch[h], s->x_q, m->pool);
+                                ms->expert_hb_batch[h], s->x_q, bn_model_pool(m));
             }
             ms->stats.down_time_ms += moe_time_ms() - t0;
 
@@ -1140,18 +1140,18 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->stats.prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        if (pread(m->moe_io.fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
+                        if (pread(bn_model_moe_io(m)->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
                             SH_LOG_ERROR("Fallback gate pread failed");
-                        if (pread(m->moe_io.fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
+                        if (pread(bn_model_moe_io(m)->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
                             SH_LOG_ERROR("Fallback up pread failed");
                     }
                 } else {
-                    if (pread(m->moe_io.fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
+                    if (pread(bn_model_moe_io(m)->fd, miss_g_dst, miss_g_sz, (off_t)miss_g_off) != (ssize_t)miss_g_sz)
                         SH_LOG_ERROR("Sync gate pread failed");
-                    if (pread(m->moe_io.fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
+                    if (pread(bn_model_moe_io(m)->fd, miss_u_dst, miss_u_sz, (off_t)miss_u_off) != (ssize_t)miss_u_sz)
                         SH_LOG_ERROR("Sync up pread failed");
                     if (!pf_dn)
-                        if (pread(m->moe_io.fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off) != (ssize_t)miss_d_sz)
+                        if (pread(bn_model_moe_io(m)->fd, miss_d_dst, miss_d_sz, (off_t)miss_d_off) != (ssize_t)miss_d_sz)
                             SH_LOG_ERROR("Sync down pread failed");
                 }
                 gate_ptr = miss_g_dst;
@@ -1183,17 +1183,17 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->stats.prefetch_wait_ms += moe_time_ms() - tw;
                     COLLECT_PF_STATS(pf_gu);
                     if (!ok) {
-                        if (pread(m->moe_io.fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
+                        if (pread(bn_model_moe_io(m)->fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
                             SH_LOG_ERROR("Fallback gate pread failed");
-                        if (pread(m->moe_io.fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
+                        if (pread(bn_model_moe_io(m)->fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
                             SH_LOG_ERROR("Fallback up pread failed");
                     }
                 } else {
-                    if (pread(m->moe_io.fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
+                    if (pread(bn_model_moe_io(m)->fd, g_dst, g_sz, (off_t)g_off) != (ssize_t)g_sz)
                         SH_LOG_ERROR("Sync gate pread failed");
-                    if (pread(m->moe_io.fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
+                    if (pread(bn_model_moe_io(m)->fd, u_dst, u_sz, (off_t)u_off) != (ssize_t)u_sz)
                         SH_LOG_ERROR("Sync up pread failed");
-                    if (pread(m->moe_io.fd, d_dst, d_sz, (off_t)d_off) != (ssize_t)d_sz)
+                    if (pread(bn_model_moe_io(m)->fd, d_dst, d_sz, (off_t)d_off) != (ssize_t)d_sz)
                         SH_LOG_ERROR("Sync down pread failed");
                 }
 
@@ -1213,7 +1213,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                      { ms->expert_hb,  &wgate, NULL },
                      { ms->expert_hb2, &wup  , NULL },
                 };
-                bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
+                bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
             }
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
 
@@ -1232,7 +1232,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 if (!ok) {
                     size_t d_off, d_sz;
                     moe_proj_info(map, eidx, 2, &d_off, &d_sz);
-                    if (pread(m->moe_io.fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off) != (ssize_t)d_sz)
+                    if (pread(bn_model_moe_io(m)->fd, (void *)(uintptr_t)down_ptr, d_sz, (off_t)d_off) != (ssize_t)d_sz)
                         SH_LOG_ERROR("Fallback down pread failed");
                 }
             }
@@ -1241,7 +1241,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             {
                 BnQWeight wdown = moe_make_qweight(down_ptr, map->down_type,
                                                     map->down_rows, map->down_cols);
-                bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
+                bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, bn_model_pool(m));
             }
             ms->stats.down_time_ms += moe_time_ms() - t0;
 
@@ -1262,8 +1262,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             if (eidx < 0) continue;
 
             t0 = moe_time_ms();
-            const void *gate_data = moe_load_expert_proj(&m->moe_io, ms, &lw->expert_map, eidx, 0);
-            const void *up_data = moe_load_expert_proj(&m->moe_io, ms, &lw->expert_map, eidx, 1);
+            const void *gate_data = moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->expert_map, eidx, 0);
+            const void *up_data = moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->expert_map, eidx, 1);
             if (!gate_data || !up_data) {
                 SH_LOG_ERROR("Failed to load expert gate/up projection");
                 continue;
@@ -1276,7 +1276,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                  { ms->expert_hb,  &wgate, NULL },
                  { ms->expert_hb2, &wup  , NULL },
             };
-            bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
+            bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
 
             // SwiGLU activation
@@ -1286,14 +1286,14 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
             // Down projection
             t0 = moe_time_ms();
-            const void *down_data = moe_load_expert_proj(&m->moe_io, ms, &lw->expert_map, eidx, 2);
+            const void *down_data = moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->expert_map, eidx, 2);
             if (!down_data) {
                 SH_LOG_ERROR("Failed to load expert down projection");
                 continue;
             }
             BnQWeight wdown = moe_make_qweight(down_data, lw->expert_map.down_type,
                                                 lw->expert_map.down_rows, lw->expert_map.down_cols);
-            bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, m->pool);
+            bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, bn_model_pool(m));
             ms->stats.down_time_ms += moe_time_ms() - t0;
 
             // Weighted accumulation
@@ -1313,10 +1313,10 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                  { s->hb,  &lw->shared_gate, NULL },
                  { s->hb2, &lw->shared_up  , NULL },
             };
-            bn_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q, m->pool);
+            bn_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q, bn_model_pool(m));
         }
         moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden);
-        bn_quant_matvec(s->xb2, &lw->shared_down, s->hb, s->x_q, m->pool);
+        bn_quant_matvec(s->xb2, &lw->shared_down, s->hb, s->x_q, bn_model_pool(m));
 
         // Apply shared expert sigmoid gate if present (Qwen3.5 MoE):
         // gate = sigmoid(dot(input, gate_weight)) — scalar per token
@@ -1377,7 +1377,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
     for (int t = 0; t < n_tokens; t++) {
         bn_moe_route(ms, Xb + (size_t)t * dim, lw->router_weight,
-                     dim, n_experts, K, m->pool);
+                     dim, n_experts, K, bn_model_pool(m));
         memcpy(all_indices + (size_t)t * K, ms->expert_indices, (size_t)K * sizeof(int));
         memcpy(all_weights + (size_t)t * K, ms->expert_weights, (size_t)K * sizeof(float));
     }
@@ -1484,9 +1484,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                    dim * sizeof(float));
 
         // Load expert weights (mmap: zero-copy pointer)
-        const void *gate_data = moe_load_expert_proj(&m->moe_io, ms, map, e, 0);
-        const void *up_data   = moe_load_expert_proj(&m->moe_io, ms, map, e, 1);
-        const void *down_data = moe_load_expert_proj(&m->moe_io, ms, map, e, 2);
+        const void *gate_data = moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 0);
+        const void *up_data   = moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 1);
+        const void *down_data = moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 2);
         if (!gate_data || !up_data || !down_data) continue;
 
         BnQWeight wgate = moe_make_qweight(gate_data, map->gate_type,
@@ -1503,10 +1503,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                  { gate_buf, &wgate, NULL },
                  { up_buf,   &wup  , NULL },
             };
-            bn_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch, m->pool);
+            bn_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch, bn_model_pool(m));
         } else {
-            bn_quant_matmul(gate_buf, &wgate, gather_buf, T, x_q_scratch, m->pool);
-            bn_quant_matmul(up_buf, &wup, gather_buf, T, x_q_scratch, m->pool);
+            bn_quant_matmul(gate_buf, &wgate, gather_buf, T, x_q_scratch, bn_model_pool(m));
+            bn_quant_matmul(up_buf, &wup, gather_buf, T, x_q_scratch, bn_model_pool(m));
         }
 
         // SwiGLU activation across T * moe_hidden
@@ -1520,9 +1520,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
         // Down matmul
         if (T == 1) {
-            bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch, m->pool);
+            bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch, bn_model_pool(m));
         } else {
-            bn_quant_matmul(down_buf, &wdown, gate_buf, T, x_q_scratch, m->pool);
+            bn_quant_matmul(down_buf, &wdown, gate_buf, T, x_q_scratch, bn_model_pool(m));
         }
 
         // Scatter-add with routing weights
@@ -1554,8 +1554,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         float *sh_d = need_sh ? (float *)bn_malloc(&a, sz_shd) : sh_down;
 
         if (sh_g && sh_u && sh_d) {
-            bn_quant_matmul(sh_g, &lw->shared_gate, Xb, n_tokens, x_q_scratch, m->pool);
-            bn_quant_matmul(sh_u, &lw->shared_up, Xb, n_tokens, x_q_scratch, m->pool);
+            bn_quant_matmul(sh_g, &lw->shared_gate, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
+            bn_quant_matmul(sh_u, &lw->shared_up, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
 
             size_t sh_total = (size_t)n_tokens * shared_hidden;
             for (size_t i = 0; i < sh_total; i++) {
@@ -1563,7 +1563,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 sh_g[i] = (g / (1.0f + expf(-g))) * sh_u[i];
             }
 
-            bn_quant_matmul(sh_d, &lw->shared_down, sh_g, n_tokens, x_q_scratch, m->pool);
+            bn_quant_matmul(sh_d, &lw->shared_down, sh_g, n_tokens, x_q_scratch, bn_model_pool(m));
 
             // Apply shared expert sigmoid gate if present (Qwen3.5 MoE)
             if (lw->shared_expert_gate) {

@@ -434,7 +434,7 @@ static void test_tq_roundtrip(void) {
     // Initialize TQ state on the model
     BnTQState tq;
     assert(bn_tq_init(&tq, model.config.head_size, 3, 0x5451303042ULL) == 0);
-    model.tq_state = &tq;
+    bn_model_set_tq_state(&model, &tq, 0);
 
     BnSession *s1 = bn_session_create(&model, NULL);
     assert(s1);

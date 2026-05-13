@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Failed to load model (F32)\n");
         return 1;
     }
-    model_f32.file = mf;
+    bn_model_set_file(&model_f32, mf);
     BnSession *sess_f32 = bn_session_create(&model_f32, NULL);
     assert(sess_f32);
 
@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Failed to load model (F16)\n");
         return 1;
     }
-    model_f16.file = mf;
+    bn_model_set_file(&model_f16, mf);
     BnSession *sess_f16 = bn_session_create(&model_f16, NULL);
     assert(sess_f16);
 

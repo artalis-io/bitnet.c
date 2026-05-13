@@ -109,9 +109,9 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
     memset(rs->value_cache, 0, kv_bytes);
 
     // TQ compressed KV cache
-    if (rs->key_cache_tq && rs->value_cache_tq && c->kv_tq_bits > 0 && model->tq_state) {
-        int kb = bn_tq_key_bytes(model->tq_state);
-        int vb = bn_tq_value_bytes(model->tq_state);
+    if (rs->key_cache_tq && rs->value_cache_tq && c->kv_tq_bits > 0 && bn_model_tq_state(model)) {
+        int kb = bn_tq_key_bytes(bn_model_tq_state(model));
+        int vb = bn_tq_value_bytes(bn_model_tq_state(model));
         size_t tq_key_total = 0, tq_val_total = 0;
         if (checked_mul4_size((size_t)n_attn, (size_t)c->seq_len,
                               (size_t)c->n_kv_heads, (size_t)kb, &tq_key_total) != 0 ||

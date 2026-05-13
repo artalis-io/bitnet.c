@@ -33,11 +33,11 @@ static void test_session_create_free(void) {
     BnModel model;
     memset(&model, 0, sizeof(model));
     init_test_config(&model.config);
-    assert(model.backend == NULL);
+    assert(bn_model_backend(&model) == NULL);
 
     BnSession *s1 = bn_session_create(&model, NULL);
     assert(s1 != NULL);
-    assert(model.backend == NULL);
+    assert(bn_model_backend(&model) == NULL);
     assert(s1->backend != NULL);
     assert(s1->state.x != NULL);
     assert(s1->state.logits != NULL);
@@ -46,7 +46,7 @@ static void test_session_create_free(void) {
 
     BnSession *s2 = bn_session_create(&model, NULL);
     assert(s2 != NULL);
-    assert(model.backend == NULL);
+    assert(bn_model_backend(&model) == NULL);
     assert(s2->backend != NULL);
     assert(s2->state.x != NULL);
 
@@ -205,7 +205,7 @@ static void test_session_reset_tq(void) {
 
     BnTQState tq;
     assert(bn_tq_init(&tq, model.config.head_size, 3, 0x5451303042ULL) == 0);
-    model.tq_state = &tq;
+    bn_model_set_tq_state(&model, &tq, 0);
 
     BnSession *s = bn_session_create(&model, NULL);
     assert(s);

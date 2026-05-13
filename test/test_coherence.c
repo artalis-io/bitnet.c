@@ -232,15 +232,13 @@ int main(int argc, char **argv) {
         bn_platform_unload_file(&mf);
         return 1;
     }
-    model.file = mf;
+    bn_model_set_file(&model, mf);
     if (model.config.n_experts > 0) {
         if (mf.is_mmap == 1 && mf.data)
-            model.moe_io.mmap_base = mf.data;
-        if (mf.fd >= 0) {
-            model.moe_io.fd = mf.fd;
-            model.expert_fd = mf.fd;
-        }
-        bn_moe_prefetch_create(&model.moe_io);
+            bn_model_set_moe_mmap_base(&model, mf.data);
+        if (mf.fd >= 0)
+            bn_model_set_moe_fd(&model, mf.fd);
+        bn_moe_prefetch_create(bn_model_moe_io(&model));
     }
 
     BnTokenizer tok;
@@ -504,7 +502,7 @@ int main(int argc, char **argv) {
     int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
 
     for (int i = 0; i < n_weights; i++) {
-        int r = test_matvec_weight(weights[i].name, weights[i].W, model.pool);
+        int r = test_matvec_weight(weights[i].name, weights[i].W, bn_model_pool(&model));
         if (r == 1) total_pass++;
         else if (r == -1) total_fail++;
         else total_skip++;

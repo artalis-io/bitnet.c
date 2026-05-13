@@ -306,7 +306,7 @@ static void test_qwen36_dense(void) {
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
-    assert(model.backend != NULL);
+    assert(bn_model_backend(&model) != NULL);
     assert(bn_model_gpu(&model) == NULL);
     assert(model.config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN);
     assert(!bn_model_arch_requires_large_gpu_graph_fallback(&model.config));
@@ -342,11 +342,11 @@ static void test_qwen36_moe(void) {
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
-    assert(model.backend != NULL);
+    assert(bn_model_backend(&model) != NULL);
     assert(bn_model_gpu(&model) == NULL);
     assert(model.config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN);
     assert(!bn_model_arch_requires_large_gpu_graph_fallback(&model.config));
-    model.moe_io.mmap_base = gf->raw;
+    bn_model_set_moe_mmap_base(&model, gf->raw);
     assert(model.config.n_experts == 4);
     assert(model.config.n_experts_active == 2);
     assert(model.config.moe_intermediate_size == 64);
