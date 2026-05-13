@@ -371,7 +371,8 @@ void bn_transformer_gpu_emit_context_attention(
     size_t loff,
     uint32_t kv_cache_off,
     int has_moe,
-    uint32_t u_eps);
+    uint32_t u_eps,
+    int use_q4_q8);
 void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          const BnConfig *c,
                                          const BnLayerWeights *lw,
@@ -384,7 +385,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          int kv_dim,
                                          int rope_dims,
                                          uint32_t kv_cache_off,
-                                         uint32_t u_eps);
+                                         uint32_t u_eps,
+                                         int use_q4_q8);
 void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                                          const BnConfig *c,
                                          const BnLayerWeights *lw,

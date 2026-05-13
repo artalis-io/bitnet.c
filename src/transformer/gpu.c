@@ -40,6 +40,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         rope_sin[i] = sinf(angle);
     }
     int cache_pos = pos % c->seq_len;
+    int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
     int cpu_fallback_ffn_from_layer = -1;
     int cpu_fallback_ffn_down_from_layer = -1;
@@ -49,6 +50,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     {
         const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
         if (env) cpu_fallback_from_layer = atoi(env);
+        env = getenv("BN_GPU_CPU_FALLBACK_LAYER");
+        if (env) cpu_fallback_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
         if (env) cpu_fallback_ffn_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
@@ -139,7 +142,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         int attn_idx = plan.attn_idx;
         size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-        if (cpu_fallback_from_layer >= 0 && l >= cpu_fallback_from_layer) {
+        if ((cpu_fallback_layer >= 0 && l == cpu_fallback_layer) ||
+            (cpu_fallback_from_layer >= 0 && l >= cpu_fallback_from_layer)) {
             void *next_norm = bn_transformer_gpu_resolve_next_norm(
                 backend, l, c->n_layers, output_norm);
             if (bn_transformer_gpu_fallback_cpu_layer(
@@ -153,15 +157,17 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
         BnTransformerGPUQKVResources qkv_res =
             bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
+        int use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
         bn_transformer_gpu_emit_context_qkv(
             &emit, c, lw, &plan, &qkv_res, pos, q_dim,
-            head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps);
+            head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
+            use_q4_q8);
         BnTransformerGPUAttentionResources attn_res =
             bn_transformer_gpu_resolve_attention_resources(gpu, backend, lw, l);
         bn_transformer_gpu_emit_context_attention(
             &emit, c, lw, &attn_res, pos, dim, q_dim,
             head_size, n_heads, kv_dim, rope_dims, n_kv, loff, kv_cache_off,
-            has_moe, u_eps);
+            has_moe, u_eps, use_q4_q8);
 
         // ---- FFN (MoE or dense) ----
         ffn_block:;
@@ -219,7 +225,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         int ffn_down_input_buf = -1;
         int skip_ffn_down = cpu_fallback_ffn_down_from_layer >= 0 &&
                             l >= cpu_fallback_ffn_down_from_layer;
-        int use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
+        use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
             next_norm, skip_ffn_down, &ffn_down_input_buf, use_q4_q8);

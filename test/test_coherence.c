@@ -189,16 +189,109 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
     return pass ? 1 : -1;
 }
 
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+static int test_gpu_matvec_weight(const char *backend_name,
+                                  BnGPUBackend *gpu,
+                                  const char *name,
+                                  const BnQWeight *W,
+                                  const float *bias) {
+    if (!gpu || !W || !W->data || W->rows == 0 || W->cols == 0) {
+        printf("  %-12s SKIP (no data)\n", name);
+        return 0;
+    }
+
+    int rows = W->rows;
+    int cols = W->cols;
+    size_t sz = bn_qweight_data_size(W);
+    void *gpu_buf = NULL;
+    if (bias && gpu->buffer_create_biased) {
+        gpu_buf = gpu->buffer_create_biased(
+            gpu->ctx, W->data, sz, W->type, rows, cols,
+            bias, (size_t)rows * sizeof(float));
+    }
+    if (!gpu_buf)
+        gpu_buf = gpu->buffer_create(gpu->ctx, W->data, sz,
+                                     W->type, rows, cols);
+    if (!gpu_buf) {
+        printf("  %-12s SKIP (%s buffer_create failed)\n",
+               name, backend_name);
+        return 0;
+    }
+
+    float *x = malloc((size_t)cols * sizeof(float));
+    float *out_cpu = calloc((size_t)rows, sizeof(float));
+    float *out_gpu = calloc((size_t)rows, sizeof(float));
+    int max_dim = cols > rows ? cols : rows;
+    int8_t *x_q = calloc((size_t)max_dim, 1);
+    if (!x || !out_cpu || !out_gpu || !x_q) {
+        printf("  %-12s SKIP (alloc failed)\n", name);
+        free(x); free(out_cpu); free(out_gpu); free(x_q);
+        gpu->buffer_destroy(gpu->ctx, gpu_buf);
+        return 0;
+    }
+
+    uint64_t rng = 99999;
+    for (int j = 0; j < cols; j++)
+        x[j] = rand_float(&rng);
+
+    bn_quant_matvec(out_cpu, W, x, x_q, NULL);
+    if (bias) {
+        for (int i = 0; i < rows; i++)
+            out_cpu[i] += bias[i];
+    }
+
+    int rc = gpu->matvec(gpu->ctx, out_gpu, gpu_buf, x,
+                         rows, cols, W->type);
+    int result = 0;
+    if (rc != 0) {
+        printf("  %-12s SKIP (%s matvec dispatch error %d)\n",
+               name, backend_name, rc);
+    } else {
+        float max_diff = 0.0f;
+        for (int i = 0; i < rows; i++) {
+            float diff = fabsf(out_gpu[i] - out_cpu[i]);
+            if (diff > max_diff) max_diff = diff;
+        }
+
+        int pass = max_diff < MATVEC_TOL;
+        printf("  %-12s %s vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
+               name, backend_name, pass ? "PASS" : "FAIL",
+               max_diff, rows, cols, type_name(W->type));
+        if (pass) {
+            result = 1;
+        } else {
+            result = -1;
+            for (int i = 0; i < rows && i < 8; i++) {
+                printf("    [%d] cpu=%.6f %s=%.6f diff=%.6f\n",
+                       i, out_cpu[i], backend_name, out_gpu[i],
+                       fabsf(out_gpu[i] - out_cpu[i]));
+            }
+        }
+    }
+
+    free(x); free(out_cpu); free(out_gpu); free(x_q);
+    gpu->buffer_destroy(gpu->ctx, gpu_buf);
+    return result;
+}
+#endif
+
 /* ── Main ─────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--q4-q8-from-layer N] [--disable-fused-gateup] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
 
     int use_webgpu = 0, use_metal = 0;
+    int cpu_fallback_layer = -1;
+    int cpu_fallback_from_layer = -1;
+    int cpu_ffn_from_layer = -1;
+    int cpu_ffn_down_from_layer = -1;
+    int q4_q8_from_layer = -1;
+    int use_flash = 0;
+    int disable_fused_gateup = 0;
     const char *prompt = "Hello";
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--webgpu") == 0) {
@@ -207,11 +300,53 @@ int main(int argc, char **argv) {
             use_metal = 1;
         } else if (strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
             prompt = argv[++i];
+        } else if (strcmp(argv[i], "--cpu-fallback-layer") == 0 && i + 1 < argc) {
+            cpu_fallback_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--cpu-fallback-from-layer") == 0 && i + 1 < argc) {
+            cpu_fallback_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--cpu-ffn-from-layer") == 0 && i + 1 < argc) {
+            cpu_ffn_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--cpu-ffn-down-from-layer") == 0 && i + 1 < argc) {
+            cpu_ffn_down_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
+            q4_q8_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--flash") == 0) {
+            use_flash = 1;
+        } else if (strcmp(argv[i], "--disable-fused-gateup") == 0) {
+            disable_fused_gateup = 1;
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             return 1;
         }
     }
+    if (cpu_fallback_from_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", cpu_fallback_from_layer);
+        setenv("BN_GPU_CPU_FALLBACK_FROM_LAYER", layer_env, 1);
+    }
+    if (cpu_fallback_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", cpu_fallback_layer);
+        setenv("BN_GPU_CPU_FALLBACK_LAYER", layer_env, 1);
+    }
+    if (cpu_ffn_from_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", cpu_ffn_from_layer);
+        setenv("BN_GPU_CPU_FFN_FROM_LAYER", layer_env, 1);
+    }
+    if (cpu_ffn_down_from_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", cpu_ffn_down_from_layer);
+        setenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER", layer_env, 1);
+    }
+    if (q4_q8_from_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", q4_q8_from_layer);
+        setenv("BN_METAL_Q4_Q8", "1", 1);
+        setenv("BN_METAL_Q4_Q8_FROM_LAYER", layer_env, 1);
+    }
+    if (disable_fused_gateup)
+        setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
 
     int total_pass = 0, total_fail = 0, total_skip = 0;
 
@@ -241,6 +376,8 @@ int main(int argc, char **argv) {
         bn_platform_unload_file(&mf);
         return 1;
     }
+    if (use_flash)
+        model.config.flash_attn = 1;
     bn_model_set_file(&model, mf);
     if (model.config.n_experts > 0) {
         if (mf.is_mmap == 1 && mf.data)
@@ -269,6 +406,14 @@ int main(int argc, char **argv) {
      * ════════════════════════════════════════════════════════════════ */
 
     printf("--- Phase 1: Forward pass coherence (greedy decode) ---\n");
+
+    int vocab_size = model.config.vocab_size;
+    float *cpu_step_logits = calloc((size_t)N_DECODE_STEPS * (size_t)vocab_size,
+                                    sizeof(float));
+    if (!cpu_step_logits) {
+        fprintf(stderr, "Failed to allocate CPU step logits\n");
+        return 1;
+    }
 
     /* CPU decode */
     int cpu_tokens[N_DECODE_STEPS];
@@ -299,6 +444,8 @@ int main(int argc, char **argv) {
 
         /* Greedy decode N_DECODE_STEPS tokens */
         for (int i = 0; i < N_DECODE_STEPS; i++) {
+            memcpy(cpu_step_logits + (size_t)i * (size_t)vocab_size,
+                   logits, (size_t)vocab_size * sizeof(float));
             token = bn_sampler_sample(&sampler, logits);
             cpu_tokens[i] = token;
             if (i + 1 < N_DECODE_STEPS) {
@@ -345,6 +492,13 @@ int main(int argc, char **argv) {
 
                 BnSampler sampler;
                 bn_sampler_init(&sampler, model.config.vocab_size, 0.0f, 0.0f, 42);
+                float *gpu_step_logits = calloc((size_t)N_DECODE_STEPS *
+                                                (size_t)vocab_size,
+                                                sizeof(float));
+                if (!gpu_step_logits) {
+                    fprintf(stderr, "Failed to allocate GPU step logits\n");
+                    return 1;
+                }
 
                 int token = prompt_tokens[0];
                 int pos = 0;
@@ -358,6 +512,8 @@ int main(int argc, char **argv) {
                 }
 
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
+                    memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
+                           logits, (size_t)vocab_size * sizeof(float));
                     token = bn_sampler_sample(&sampler, logits);
                     gpu_tokens[i] = token;
                     if (i + 1 < N_DECODE_STEPS) {
@@ -384,6 +540,11 @@ int main(int argc, char **argv) {
                     } else if (required) {
                         printf("  token[%d]: FAIL (cpu=%d gpu=%d) [REQUIRED]\n",
                                i, cpu_tokens[i], gpu_tokens[i]);
+                        printf("    logits: cpu[cpu]=%.6f cpu[gpu]=%.6f gpu[cpu]=%.6f gpu[gpu]=%.6f\n",
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]]);
                         total_fail++;
                     } else {
                         printf("  token[%d]: DRIFT (cpu=%d gpu=%d) [allowed]\n",
@@ -393,6 +554,7 @@ int main(int argc, char **argv) {
                 }
 
                 bn_sampler_free(&sampler);
+                free(gpu_step_logits);
                 bn_session_free(s, NULL);
 
                 /* Clean up GPU for Phase 3 reuse */
@@ -429,6 +591,13 @@ int main(int argc, char **argv) {
 
                 BnSampler sampler;
                 bn_sampler_init(&sampler, model.config.vocab_size, 0.0f, 0.0f, 42);
+                float *gpu_step_logits = calloc((size_t)N_DECODE_STEPS *
+                                                (size_t)vocab_size,
+                                                sizeof(float));
+                if (!gpu_step_logits) {
+                    fprintf(stderr, "Failed to allocate Metal step logits\n");
+                    return 1;
+                }
 
                 int token = prompt_tokens[0];
                 int pos = 0;
@@ -442,6 +611,8 @@ int main(int argc, char **argv) {
                 }
 
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
+                    memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
+                           logits, (size_t)vocab_size * sizeof(float));
                     token = bn_sampler_sample(&sampler, logits);
                     gpu_tokens[i] = token;
                     if (i + 1 < N_DECODE_STEPS) {
@@ -467,6 +638,11 @@ int main(int argc, char **argv) {
                     } else if (required) {
                         printf("  token[%d]: FAIL (cpu=%d metal=%d) [REQUIRED]\n",
                                i, cpu_tokens[i], gpu_tokens[i]);
+                        printf("    logits: cpu[cpu]=%.6f cpu[metal]=%.6f metal[cpu]=%.6f metal[metal]=%.6f\n",
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]]);
                         total_fail++;
                     } else {
                         printf("  token[%d]: DRIFT (cpu=%d metal=%d) [allowed]\n",
@@ -476,6 +652,7 @@ int main(int argc, char **argv) {
                 }
 
                 bn_sampler_free(&sampler);
+                free(gpu_step_logits);
                 bn_session_free(s, NULL);
 
                 if (gpu->free_activations)
@@ -495,6 +672,7 @@ int main(int argc, char **argv) {
     }
 
     printf("\n");
+    free(cpu_step_logits);
 
     /* ════════════════════════════════════════════════════════════════
      * Phase 2: Matvec backend comparison (SIMD vs scalar)
@@ -614,6 +792,36 @@ int main(int argc, char **argv) {
                     gpu->buffer_destroy(gpu->ctx, gpu_buf);
                 }
             }
+
+            const BnQWeight *logits_W = NULL;
+            BnQWeight tied_logits;
+            if (model.weights.output_weight.data) {
+                logits_W = &model.weights.output_weight;
+            } else if (bn_quant_format_supported(model.weights.emb_type) &&
+                       model.weights.emb_type != BN_GGUF_TENSOR_F16 &&
+                       model.weights.emb_type != BN_GGUF_TENSOR_F32) {
+                tied_logits = (BnQWeight){
+                    model.weights.token_embedding,
+                    model.weights.emb_type,
+                    model.config.vocab_size,
+                    model.config.dim,
+                    1.0f
+                };
+                logits_W = &tied_logits;
+            }
+            if (logits_W && logits_W != W) {
+                int r = test_gpu_matvec_weight("GPU", gpu, "logits", logits_W, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("GPU", gpu, "wq+bias",
+                                               &L0->attn.wq, L0->attn.q_bias);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
             bn_gpu_wgpu_destroy(gpu);
         }
     } else
@@ -681,6 +889,36 @@ int main(int argc, char **argv) {
                     free(x); free(out_cpu); free(out_gpu); free(x_q);
                     gpu->buffer_destroy(gpu->ctx, gpu_buf);
                 }
+            }
+
+            const BnQWeight *logits_W = NULL;
+            BnQWeight tied_logits;
+            if (model.weights.output_weight.data) {
+                logits_W = &model.weights.output_weight;
+            } else if (bn_quant_format_supported(model.weights.emb_type) &&
+                       model.weights.emb_type != BN_GGUF_TENSOR_F16 &&
+                       model.weights.emb_type != BN_GGUF_TENSOR_F32) {
+                tied_logits = (BnQWeight){
+                    model.weights.token_embedding,
+                    model.weights.emb_type,
+                    model.config.vocab_size,
+                    model.config.dim,
+                    1.0f
+                };
+                logits_W = &tied_logits;
+            }
+            if (logits_W && logits_W != W) {
+                int r = test_gpu_matvec_weight("Metal", gpu, "logits", logits_W, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("Metal", gpu, "wq+bias",
+                                               &L0->attn.wq, L0->attn.q_bias);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
             }
             bn_gpu_metal_destroy(gpu);
         }

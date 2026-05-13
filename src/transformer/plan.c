@@ -2,6 +2,7 @@
 #include "backend_quant.h"
 #include "gpu_backend.h"
 #include "transformer_backend_internal.h"
+#include <stdlib.h>
 #include <string.h>
 
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
@@ -16,6 +17,8 @@ int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type
 int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,
                                              int act_type) {
+    if (getenv("BN_GPU_DISABLE_FUSED_GATEUP"))
+        return 0;
     uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
     return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);
 }
