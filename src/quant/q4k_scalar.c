@@ -1,4 +1,5 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include "kquant_helpers.h"
 #include <string.h>
 
 void bn_quant_q4k_scalar_sdot_range(void *ctx, int row_start, int row_end) {

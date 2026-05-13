@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 
 void bn_quant_iq2xs_scalar_range(void *ctx, int row_start, int row_end) {
     BnIQ2XSCtx *c = (BnIQ2XSCtx *)ctx;

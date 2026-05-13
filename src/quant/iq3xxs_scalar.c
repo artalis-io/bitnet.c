@@ -1,5 +1,6 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include "iq_tables.h"
+#include <string.h>
 
 void bn_quant_iq3xxs_scalar_range(void *ctx, int row_start, int row_end) {
     BnIQ3XXSCtx *c = (BnIQ3XXSCtx *)ctx;

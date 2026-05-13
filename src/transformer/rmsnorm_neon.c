@@ -1,4 +1,6 @@
-#include "transformer_internal.h"
+#include "transformer_rmsnorm_internal.h"
+#include "transformer_simd_internal.h"
+#include <math.h>
 
 #ifdef __ARM_NEON
 

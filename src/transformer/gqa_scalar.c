@@ -1,4 +1,4 @@
-#include "transformer_internal.h"
+#include "transformer_gqa_internal.h"
 
 void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
     BnGQACtx *g = (BnGQACtx *)ctx;

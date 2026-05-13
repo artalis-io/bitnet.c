@@ -1,7 +1,12 @@
-#include "transformer_internal.h"
+#include "transformer_logits_internal.h"
+#include "transformer_plan_internal.h"
+#include "transformer_rmsnorm_internal.h"
+#include "backend_model.h"
 #include "backend_quant.h"
+#include "model.h"
 #include "session.h"
 #include "sh_log.h"
+#include "transformer_backend_internal.h"
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON

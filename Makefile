@@ -17,7 +17,7 @@ CFLAGS += -D_GNU_SOURCE
 LDFLAGS += -lpthread
 endif
 
-QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/dispatch.c
+QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/kernel_select.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c
 
 UNAME_M := $(shell uname -m)
 ifneq ($(filter arm% aarch%,$(UNAME_M)),)
@@ -92,7 +92,7 @@ else
 endif
 
 QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
-MODEL_SRCS = src/model.c src/backend_layout.c src/backend_model.c src/backend_quant.c
+MODEL_SRCS = src/model.c src/model_arch.c src/model_session.c src/model_gpu.c src/model_embed.c src/backend_layout.c src/backend_model.c src/backend_session.c src/backend_quant.c
 TRANSFORMER_SRCS = src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND)
 
 # --- WebGPU (optional: BN_ENABLE_WEBGPU=1; BN_ENABLE_GPU=1 is a compatibility alias) ---

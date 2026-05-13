@@ -1,4 +1,5 @@
 #include "prompt_cache.h"
+#include "model.h"
 #include "session.h"
 #include "turboquant.h"
 #include <stdio.h>

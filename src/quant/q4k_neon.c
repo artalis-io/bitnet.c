@@ -1,4 +1,5 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include "kquant_helpers.h"
 #include "quant_neon_helpers.h"
 #include <arm_neon.h>
 

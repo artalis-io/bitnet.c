@@ -1,10 +1,12 @@
-#include "transformer_internal.h"
+#include "transformer_gpu_internal.h"
+#include "transformer_cpu_internal.h"
 #include "model_arch.h"
-#include "quant_internal.h"
+#include "quant.h"
 #include "moe.h"
 #include "session.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define BN_MAX_VLA_ELEMS 8192
 
@@ -299,4 +301,3 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     #undef GPU_REJECT
     return s->logits;
 }
-

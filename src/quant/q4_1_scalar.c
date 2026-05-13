@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 
 void bn_quant_q4_1_scalar_range(void *ctx, int row_start, int row_end) {
     BnQ4_1Ctx *c = (BnQ4_1Ctx *)ctx;

@@ -1,8 +1,13 @@
 #ifndef BN_SESSION_H
 #define BN_SESSION_H
 
-#include "model.h"
+#include "model_run_state.h"
+#include "moe_types.h"
+#include "sh_arena.h"
 #include "bn_alloc.h"
+
+typedef struct BnModel BnModel;
+typedef struct BnBackendSession BnBackendSession;
 
 // Per-request mutable state. Multiple sessions can share one BnModel.
 struct BnSession {

@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include <arm_neon.h>
 #include <string.h>
 

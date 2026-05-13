@@ -1,11 +1,11 @@
 #ifndef BN_GENERATE_H
 #define BN_GENERATE_H
 
-#include "model.h"
 #include "tokenizer.h"
 #include "sampler.h"
 #include "bn_alloc.h"
 
+typedef struct BnModel BnModel;
 // Forward declaration — full definition in session.h
 typedef struct BnSession BnSession;
 

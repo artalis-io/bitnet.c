@@ -1,4 +1,4 @@
-#include "transformer_internal.h"
+#include "transformer_gqa_internal.h"
 #include "turboquant.h"
 
 // TurboQuant GQA: attention directly from packed compressed keys/values.

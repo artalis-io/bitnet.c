@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include <string.h>
 
 void bn_quant_bf16_scalar_range(void *ctx, int row_start, int row_end) {

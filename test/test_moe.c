@@ -1,4 +1,5 @@
 #include "moe.h"
+#include "model.h"
 #include "quant.h"
 #include <stdio.h>
 #include <stdlib.h>

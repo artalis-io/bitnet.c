@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include <arm_neon.h>
 
 #define TQ1_DECODE(qx) vreinterpretq_s8_u8( \

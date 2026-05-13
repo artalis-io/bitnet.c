@@ -1,5 +1,7 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include "kquant_helpers.h"
 #include "quant_neon_helpers.h"
+#include <string.h>
 #include <arm_neon.h>
 
 // Extract high bits for 16 consecutive l-positions from qh, testing bit `bit_pos`.

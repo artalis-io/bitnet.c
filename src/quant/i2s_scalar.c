@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 
 void bn_quant_i2s_scalar_range(void *ctx, int row_start, int row_end) {
     BnI2SFloatCtx *c = (BnI2SFloatCtx *)ctx;

@@ -1,19 +1,24 @@
 #ifndef BN_MOE_H
 #define BN_MOE_H
 
-#include "model.h"
+#include "moe_types.h"
+#include <stddef.h>
 
+struct BnLayerWeights;
+struct BnModel;
+struct BnThreadPool;
 // Forward declaration — full definition in session.h
 typedef struct BnSession BnSession;
 
 // Router: SIMD matvec + softmax + top-K selection.
 // Writes to ms->expert_indices and ms->expert_weights.
 void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
-                  int dim, int n_experts, int k, BnThreadPool *pool);
+                  int dim, int n_experts, int k, struct BnThreadPool *pool);
 
 // Full MoE FFN block: route -> load -> compute -> combine.
 // Reads from s->x (after norm), writes result to s->xb for residual add.
-void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l);
+void bn_moe_forward(struct BnModel *m, BnSession *sess,
+                    struct BnLayerWeights *lw, int l);
 
 // Print accumulated MoE stats (I/O, routing, compute breakdown).
 void bn_moe_print_stats(const BnMoEState *ms, int n_tokens);
@@ -36,7 +41,7 @@ void bn_moe_cache_print_stats(const BnMoEState *ms);
 // Fault all mmap-backed MoE expert projection pages into memory.
 // This is a benchmark/server warmup helper: it increases startup time and RSS
 // so generation does not block on expert page faults.
-int bn_moe_prefault_mmap(BnModel *m);
+int bn_moe_prefault_mmap(struct BnModel *m);
 
 // Create I/O prefetch thread for pread pipeline (no-op on EMSCRIPTEN).
 // Call after moe_io.fd is set. Safe to call if mmap_base is set (returns immediately).
@@ -49,7 +54,8 @@ void bn_moe_prefetch_destroy(BnMoEIO *io);
 // act[n_tokens * dim]: input/output activations (residual add applied in-place).
 // xb_scratch[n_tokens * dim]: scratch for RMSNorm'd values.
 // Returns 0 on success, -1 on error.
-int bn_moe_forward_batch(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l,
+int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
+                          struct BnLayerWeights *lw, int l,
                           float *act, float *xb_scratch, int n_tokens);
 
 // Get host pointer to expert projection data (gate=0, up=1, down=2).

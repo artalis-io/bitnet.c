@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 
 void bn_quant_q6k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
     BnKQuantSdotCtx *c = (BnKQuantSdotCtx *)ctx;

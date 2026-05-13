@@ -1,4 +1,4 @@
-#include "transformer_internal.h"
+#include "transformer_ssm_internal.h"
 
 // Conv1d + SiLU over channel range [start, end)
 void bn_transformer_ssm_conv_silu_scalar_range(void *ctx, int start, int end) {

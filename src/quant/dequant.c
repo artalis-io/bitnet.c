@@ -1,4 +1,5 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include "kquant_helpers.h"
 #include "iq_tables.h"
 #include <assert.h>
 #include <string.h>

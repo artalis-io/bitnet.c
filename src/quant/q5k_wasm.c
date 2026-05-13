@@ -1,4 +1,5 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include "kquant_helpers.h"
 #include "simd_helpers.h"
 #include <wasm_simd128.h>
 

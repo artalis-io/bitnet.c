@@ -1,4 +1,5 @@
-#include "transformer_internal.h"
+#include "transformer_rmsnorm_internal.h"
+#include <math.h>
 
 void bn_transformer_rmsnorm_scalar(float *out, const float *x, const float *w, int size, float eps) {
     float ss = 0.0f;

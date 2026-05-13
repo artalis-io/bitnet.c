@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include "quant_neon_helpers.h"
 
 void bn_quant_q8_neon_range(void *ctx, int row_start, int row_end) {

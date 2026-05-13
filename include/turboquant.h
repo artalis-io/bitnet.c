@@ -11,7 +11,7 @@
 // Compresses KV cache to 3-bit via random rotation + Lloyd-Max scalar
 // quantization + 1-bit QJL residual correction for keys.
 
-typedef struct {
+typedef struct BnTQState {
     int head_dim;       // d (e.g. 128)
     int bits;           // quantization bits (2, 3, or 4)
     int n_centroids;    // 2^bits

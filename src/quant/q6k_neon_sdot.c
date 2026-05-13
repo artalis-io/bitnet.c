@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include <arm_neon.h>
 
 static inline float q6k_fp16_to_f32(uint16_t h) {

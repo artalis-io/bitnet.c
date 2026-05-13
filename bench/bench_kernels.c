@@ -10,7 +10,6 @@
 #include "transformer.h"
 #include "sampler.h"
 #include "threadpool.h"
-#include "quant_internal.h"
 #ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif

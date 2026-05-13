@@ -1,4 +1,5 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include "kquant_helpers.h"
 
 void bn_quant_q5k_scalar_range(void *ctx, int row_start, int row_end) {
     BnQ5KCtx *c = (BnQ5KCtx *)ctx;

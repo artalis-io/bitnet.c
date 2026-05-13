@@ -1,4 +1,7 @@
-#include "transformer_internal.h"
+#include "transformer_cpu_internal.h"
+#include "transformer_gqa_internal.h"
+#include "transformer_gpu_internal.h"
+#include "transformer_plan_internal.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "simd_helpers.h"

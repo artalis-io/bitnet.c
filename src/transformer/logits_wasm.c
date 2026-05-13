@@ -1,4 +1,4 @@
-#include "transformer_internal.h"
+#include "transformer_logits_internal.h"
 
 #ifdef __wasm_simd128__
 

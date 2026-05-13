@@ -1,4 +1,7 @@
-#include "transformer_internal.h"
+#include "transformer_kv_internal.h"
+#include "transformer_gqa_internal.h"
+#include "model.h"
+#include "turboquant.h"
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON

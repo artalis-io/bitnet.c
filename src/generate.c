@@ -1,4 +1,5 @@
 #include "generate.h"
+#include "model.h"
 #include "session.h"
 #include "transformer.h"
 

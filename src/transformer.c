@@ -1,12 +1,13 @@
 #include "transformer_internal.h"
+#include "transformer_cpu_internal.h"
 #include "model_arch.h"
 #include "turboquant.h"
-#include "quant_internal.h"
 #include "gpu_backend.h"
 #include "moe.h"
 #include "session.h"
 #include "platform.h"
 #include "sh_log.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 

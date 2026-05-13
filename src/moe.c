@@ -1,3 +1,4 @@
+#include "model.h"
 #include "moe.h"
 #include "session.h"
 #include "platform.h"
@@ -288,7 +289,7 @@ void bn_moe_cache_print_stats(const BnMoEState *ms) {
     SH_LOG_INFO("MoE cache", "hits", hits_s, "misses", misses_s, "hit_rate", rate_s);
 }
 
-int bn_moe_prefault_mmap(BnModel *m) {
+int bn_moe_prefault_mmap(struct BnModel *m) {
     if (!m || !m->moe_io.mmap_base || m->config.n_experts <= 0)
         return -1;
 
@@ -821,7 +822,8 @@ static inline void moe_residual_add(float *x, const float *r, int n) {
 }
 
 // Full MoE FFN block
-void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
+void bn_moe_forward(struct BnModel *m, BnSession *sess,
+                    struct BnLayerWeights *lw, int l) {
 #if defined(__EMSCRIPTEN__)
     (void)l;
 #endif
@@ -1341,7 +1343,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 
 // --- Batch MoE FFN for prefill ---
 // Route all n_tokens, group by expert, batch matmul per expert.
-int bn_moe_forward_batch(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l,
+int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
+                          struct BnLayerWeights *lw, int l,
                           float *act, float *Xb, int n_tokens) {
     (void)l;  // reserved for pread cache keying in future
     BnConfig *c = &m->config;

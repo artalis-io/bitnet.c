@@ -1,5 +1,9 @@
-#include "transformer_internal.h"
+#include "transformer_plan_internal.h"
 #include "backend_quant.h"
+#include "gpu_backend.h"
+#include "gpu_shader_ir.h"
+#include "transformer_backend_internal.h"
+#include <string.h>
 
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
     return gpu && ((gpu->caps & cap) != 0);

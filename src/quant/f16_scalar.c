@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 
 void bn_quant_f16_scalar_range(void *ctx, int row_start, int row_end) {
     BnF16Ctx *c = (BnF16Ctx *)ctx;

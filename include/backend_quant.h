@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "gguf.h"
 #include "gpu_backend.h"
-#include "gpu_graph.h"
+#include "gpu_shader_ir.h"
 #include "quant.h"
 
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {

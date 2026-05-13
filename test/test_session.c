@@ -1,7 +1,8 @@
 #include "session.h"
 #include "model.h"
+#include "backend_model.h"
 #include "gpu_backend.h"
-#include "gpu_graph.h"
+#include "gpu_shader_ir.h"
 #include "turboquant.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,4 +1,5 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
+#include <string.h>
 #include <wasm_simd128.h>
 #include <math.h>
 #include <assert.h>

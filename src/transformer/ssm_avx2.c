@@ -1,4 +1,4 @@
-#include "transformer_internal.h"
+#include "transformer_ssm_internal.h"
 
 #ifdef __AVX2__
 

@@ -1,4 +1,4 @@
-#include "transformer_internal.h"
+#include "transformer_logits_internal.h"
 
 void bn_transformer_logits_f16_scalar_range(void *ctx, int v_start, int v_end) {
     BnLogitsCtx *lc = (BnLogitsCtx *)ctx;

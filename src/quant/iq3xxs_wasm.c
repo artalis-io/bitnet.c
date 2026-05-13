@@ -1,6 +1,7 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include "simd_helpers.h"
 #include "iq_tables.h"
+#include <string.h>
 #include <wasm_simd128.h>
 
 void bn_quant_iq3xxs_wasm_range(void *ctx, int row_start, int row_end) {

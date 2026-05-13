@@ -1,9 +1,8 @@
 #ifndef BN_TRANSFORMER_H
 #define BN_TRANSFORMER_H
 
-#include "model.h"
-
-// Forward declaration — full definition in session.h
+typedef struct BnModel BnModel;
+// Forward declaration - full definition in session.h
 typedef struct BnSession BnSession;
 
 // Run one token through the transformer, returns pointer to logits

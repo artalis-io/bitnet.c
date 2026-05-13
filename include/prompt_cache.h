@@ -1,9 +1,10 @@
 #ifndef BN_PROMPT_CACHE_H
 #define BN_PROMPT_CACHE_H
 
-#include "model.h"
 #include "bn_alloc.h"
+#include <stdint.h>
 
+typedef struct BnModel BnModel;
 // Forward declaration — full definition in session.h
 typedef struct BnSession BnSession;
 

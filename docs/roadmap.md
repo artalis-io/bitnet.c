@@ -313,6 +313,23 @@ capability reporting.
 - [ ] **Expand architecture registry coverage** — add fuller rules for MRoPE, local attention, tokenizer-family assumptions, DeepSeek/Nemotron-style tensor roles, and backend placement constraints.
 - [ ] **Keep `transformer.c` orchestration-only** — new model, quant, and backend support should not grow the top-level transformer loop.
 
+### Cohesion and Coupling Debt
+
+The latest architecture review found that the largest ownership leaks are fixed,
+but several internal seams still violate high-cohesion/low-coupling goals. These
+items should be addressed before adding substantial new backend, model-family,
+or quant-format surface area.
+
+- [x] **Split `transformer_internal.h` into narrower internal boundaries** — it still includes model, quant, math, SIMD, GPU planning, CPU execution, KV/TurboQuant helpers, logits, plan structs, and RMSNorm backend symbols. Split into focused headers such as `transformer_plan_internal.h`, `transformer_kv_internal.h`, `transformer_cpu_internal.h`, and a tiny RMSNorm backend header.
+- [x] **Split `quant_internal.h` by quant concern and backend** — it still centralizes all context structs, every scalar/NEON/AVX2/WASM kernel prototype, dispatcher helpers, and inline unpack helpers. Split into `quant_ctx.h`, `quant_kernels_scalar.h`, `quant_kernels_neon.h`, `quant_kernels_avx2.h`, `quant_kernels_wasm.h`, and `kquant_helpers.h` or equivalent.
+- [ ] **Hide model runtime/backend strategy behind opaque subobjects** — `BnModel` is smaller but still exposes mapped file lifetime, thread pool, weight arena, MoE I/O, expert fd, backend state, and TurboQuant state. Move these into opaque `BnModelRuntime` / `BnModelIO` style subobjects or make `BnModel` opaque to public consumers.
+- [ ] **Move CPU prepared-layout generation out of `model.c`** — Q4/Q8 repacking and related prepared-weight registration are backend/quant layout concerns, not canonical GGUF model loading. Move them under backend layout or quant preparation.
+- [ ] **Move MoE expert map loading out of `model.c`** — expert tensor offset/stride derivation and fused gate/up expert mapping are MoE loader concerns. Keep `model.c` focused on architecture config, tensor role lookup, and immutable weight references.
+- [ ] **Split `BnLayerWeights` into tagged substructures** — the current layer struct carries attention, SSM, dense FFN, MoE, and shared-expert fields at once. Introduce `BnAttentionWeights`, `BnSSMWeights`, `BnFFNWeights`, and `BnMoEWeights` or a similar tagged layout to reduce accidental cross-family coupling.
+- [ ] **Decompose `src/moe.c` by responsibility** — routing, expert I/O, LRU cache, madvise/pread, per-token execution, prefill batching, shared experts, and stats are still in one large module. Split into `moe_route`, `moe_io`, `moe_cache`, `moe_execute`, and `moe_prefill`.
+- [ ] **Split backend model and backend session headers** — implementation is split, but `backend_model.h` still declares both immutable backend model resources and per-session graph state APIs. Introduce `backend_session.h` so session graph users do not couple to model handle storage.
+- [ ] **Move backend quant shader-op mapping out of public inline helpers** — `backend_quant.h` maps tensor types directly to GPU shader IR op codes. Keep public/backend-quant helpers semantic and move concrete op-code selection into GPU emission or backend lowering.
+
 ### GPU Optimization
 
 - [ ] Improve GPU forward-pass precision where backend reductions diverge too early.

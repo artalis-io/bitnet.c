@@ -1,10 +1,13 @@
-#include "transformer_internal.h"
+#include "transformer_gpu_internal.h"
 #include "backend_quant.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
+#include "transformer_backend_internal.h"
 #include "session.h"
+#include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 static void *qweight_backend_buf(const BnBackendModel *backend,
                                  const BnQWeight *w) {

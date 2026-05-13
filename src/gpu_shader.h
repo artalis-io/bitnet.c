@@ -1,7 +1,7 @@
 #ifndef BN_GPU_SHADER_H
 #define BN_GPU_SHADER_H
 
-#include "gpu_graph.h"
+#include "gpu_shader_ir.h"
 
 // Backend-private shader pipeline IDs for current Metal/WGPU dispatch tables.
 #define BN_GPU_SHADER_MATVEC       0

@@ -1,4 +1,4 @@
-#include "quant_internal.h"
+#include "quant_ctx.h"
 #include <arm_neon.h>
 
 void bn_quant_f32_neon_range(void *ctx, int row_start, int row_end) {
