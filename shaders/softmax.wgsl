@@ -49,11 +49,15 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 
     // Phase 2: exp(x - max) and sum
     var local_sum = 0.0;
+    var comp = 0.0;
     i = tid;
     while (i < n_kv) {
         let e = exp(att[base + i] - max_val);
         att[base + i] = e;
-        local_sum += e;
+        let y = e - comp;
+        let t = local_sum + y;
+        comp = (t - local_sum) - y;
+        local_sum = t;
         i += 256u;
     }
 

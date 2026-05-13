@@ -21,9 +21,13 @@ kernel void gqa_combine(device const float *att         [[buffer(0)]],
 
     for (uint d = tid; d < head_size; d += 256) {
         float acc = 0.0f;
+        float comp = 0.0f;
         for (uint i = 0; i < n_kv; i++) {
             uint v_base = loff + i * kv_dim + kv_h * head_size;
-            acc += att[h * seq_len + i] * value_cache[v_base + d];
+            float y = att[h * seq_len + i] * value_cache[v_base + d] - comp;
+            float t = acc + y;
+            comp = (t - acc) - y;
+            acc = t;
         }
         xb[out_base + d] = acc;
     }

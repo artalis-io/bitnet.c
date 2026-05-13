@@ -27,12 +27,17 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let x_base = input_offset + head * hs;
     let w_base = select(0u, head * hs, per_head != 0u);
 
-    // Accumulate sum of squares
+    // Accumulate sum of squares with compensation; per-head norms are small,
+    // but this keeps GPU reduction drift predictable for Q/K-normalized models.
     var ss: f32 = 0.0;
+    var comp: f32 = 0.0;
     var d = tid;
     while (d < hs) {
         let v = x[x_base + d];
-        ss += v * v;
+        let y = v * v - comp;
+        let t = ss + y;
+        comp = (t - ss) - y;
+        ss = t;
         d += 256u;
     }
     shared_sum[tid] = ss;

@@ -25,8 +25,13 @@ kernel void gqa_scores(device const float *q         [[buffer(0)]],
     uint k_base = loff + i * kv_dim + kv_h * head_size;
 
     float dot = 0.0f;
-    for (uint d = lane; d < head_size; d += 32)
-        dot += q[q_base + d] * key_cache[k_base + d];
+    float comp = 0.0f;
+    for (uint d = lane; d < head_size; d += 32) {
+        float y = q[q_base + d] * key_cache[k_base + d] - comp;
+        float t = dot + y;
+        comp = (t - dot) - y;
+        dot = t;
+    }
 
     dot = simd_sum(dot);
     if (lane == 0)

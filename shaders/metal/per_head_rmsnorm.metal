@@ -21,9 +21,13 @@ kernel void per_head_rmsnorm(device float       *x      [[buffer(0)]],
     uint simd_lane = tid % 32;
 
     float ss = 0.0f;
+    float comp = 0.0f;
     for (uint d = tid; d < hs; d += 256) {
         float v = x[x_base + d];
-        ss += v * v;
+        float y = v * v - comp;
+        float t = ss + y;
+        comp = (t - ss) - y;
+        ss = t;
     }
 
     // Simdgroup reduction: 256 threads → 8 partial sums → 1 total

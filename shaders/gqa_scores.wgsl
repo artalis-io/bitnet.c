@@ -53,8 +53,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         let k_base = loff + t * kv_dim + kv_h * head_size;
 
         var dot = 0.0;
+        var comp = 0.0;
         for (var d = 0u; d < head_size; d++) {
-            dot += q[q_base + d] * key_cache[k_base + d];
+            let y = q[q_base + d] * key_cache[k_base + d] - comp;
+            let t_sum = dot + y;
+            comp = (t_sum - dot) - y;
+            dot = t_sum;
         }
         att[h * seq_len + i] = dot * scale;
 

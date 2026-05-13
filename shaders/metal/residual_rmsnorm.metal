@@ -15,10 +15,14 @@ kernel void residual_rmsnorm(device float       *x      [[buffer(0)]],
     float eps = as_type<float>(p[1]);
 
     float sum_sq = 0.0f;
+    float comp = 0.0f;
     for (uint i = tid; i < dim; i += 256) {
         float xr = x[i] + r[i];
         x[i] = xr;
-        sum_sq += xr * xr;
+        float y = xr * xr - comp;
+        float t = sum_sq + y;
+        comp = (t - sum_sq) - y;
+        sum_sq = t;
     }
 
     // Simdgroup reduction: 256 threads → 8 partial sums → 1 total

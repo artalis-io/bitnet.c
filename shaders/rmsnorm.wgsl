@@ -21,12 +21,17 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let dim = u.p0;
     let eps = bitcast<f32>(u.p1);
 
-    // Phase 1: partial sum of x[i]²
+    // Phase 1: partial sum of x[i]². Use compensated local accumulation so
+    // per-thread strided reductions track the CPU reference more closely.
     var sum_sq = 0.0;
+    var comp = 0.0;
     var i = tid;
     while (i < dim) {
         let v = x[i];
-        sum_sq += v * v;
+        let y = v * v - comp;
+        let t = sum_sq + y;
+        comp = (t - sum_sq) - y;
+        sum_sq = t;
         i += 256u;
     }
 

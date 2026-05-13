@@ -25,13 +25,18 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let dim = u.p0;
     let eps = bitcast<f32>(u.p1);
 
-    // Phase 1: x[i] += r[i], accumulate sum of squares
+    // Phase 1: x[i] += r[i], accumulate sum of squares. Use compensated local
+    // accumulation to limit early CPU/GPU drift from strided reduction order.
     var sum_sq = 0.0;
+    var comp = 0.0;
     var i = tid;
     while (i < dim) {
         let xr = x[i] + r[i];
         x[i] = xr;
-        sum_sq += xr * xr;
+        let y = xr * xr - comp;
+        let t = sum_sq + y;
+        comp = (t - sum_sq) - y;
+        sum_sq = t;
         i += 256u;
     }
 

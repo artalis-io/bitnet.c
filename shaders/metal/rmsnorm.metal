@@ -14,8 +14,14 @@ kernel void rmsnorm(device const float *x      [[buffer(0)]],
     float eps = as_type<float>(p[1]);
 
     float sum_sq = 0.0f;
-    for (uint i = tid; i < dim; i += 256)
-        sum_sq += x[i] * x[i];
+    float comp = 0.0f;
+    for (uint i = tid; i < dim; i += 256) {
+        float v = x[i];
+        float y = v * v - comp;
+        float t = sum_sq + y;
+        comp = (t - sum_sq) - y;
+        sum_sq = t;
+    }
 
     // Simdgroup reduction: 256 threads → 8 partial sums → 1 total
     float partial = simd_sum(sum_sq);

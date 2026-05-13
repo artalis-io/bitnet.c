@@ -332,7 +332,7 @@ or quant-format surface area.
 
 ### GPU Optimization
 
-- [ ] Improve GPU forward-pass precision where backend reductions diverge too early.
+- [x] Improve GPU forward-pass precision where backend reductions diverge too early.
 - [ ] Add FP16 KV cache support on GPU.
 - [ ] Broaden GPU-native SSM and MoE execution to reduce CPU fallback.
 - [ ] Finish native-layout Q4_0 and related low-bit matvec kernels.

@@ -37,10 +37,14 @@ kernel void softmax(device float  *att [[buffer(0)]],
 
     // Phase 2: exp and sum
     float local_sum = 0.0f;
+    float comp = 0.0f;
     for (uint i = tid; i < n_kv; i += 256) {
         float e = exp(att[base + i] - max_val);
         att[base + i] = e;
-        local_sum += e;
+        float y = e - comp;
+        float t = local_sum + y;
+        comp = (t - local_sum) - y;
+        local_sum = t;
     }
 
     float partial_sum = simd_sum(local_sum);

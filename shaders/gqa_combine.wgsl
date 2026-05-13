@@ -38,11 +38,15 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     var d = tid;
     while (d < head_size) {
         var acc = 0.0;
+        var comp = 0.0;
         for (var i = 0u; i < n_kv; i++) {
             let t = i;  // linear index into cache slots
             let v_base = loff + t * kv_dim + kv_h * head_size;
             let a = att[h * seq_len + i];
-            acc += a * value_cache[v_base + d];
+            let y = a * value_cache[v_base + d] - comp;
+            let t_sum = acc + y;
+            comp = (t_sum - acc) - y;
+            acc = t_sum;
         }
         xb[out_base + d] = acc;
         d += 256u;

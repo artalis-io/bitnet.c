@@ -39,6 +39,12 @@ Exact token equality is expected on many small and medium models. Larger models
 can diverge after a few tokens from harmless FP32 reduction-order drift, even
 when standalone matvec checks pass.
 
+Forward-pass GPU reductions use compensated local accumulation in RMSNorm,
+residual RMSNorm, per-head RMSNorm, softmax sums, GQA score dots, GQA combine,
+and SSM delta paths. The final workgroup or simdgroup reduction order can still
+vary by backend, but local compensation keeps the main accumulation paths closer
+to the CPU reference before that final backend-specific reduction.
+
 MoE and hybrid models may use CPU fallback for unsupported GPU blocks. That is
 acceptable only when the fallback is deterministic and visible in tests or debug
 output.
