@@ -1,4 +1,5 @@
 #include "gpu_backend.h"
+#include "backend_quant.h"
 #include "backend_layout.h"
 #include "backend_model.h"
 #include "quant.h"
@@ -162,7 +163,10 @@ static void test_gpu_upload_weights(void) {
                                         &model.weights.layers[0].wk) == NULL);
 
     bn_model_release_gpu(&model);
-    assert(model.backend == NULL);
+    assert(model.backend != NULL);
+    assert(bn_model_gpu(&model) == NULL);
+    bn_backend_model_free(model.backend);
+    model.backend = NULL;
     free(model.weights.layers);
     free(wq_data);
     free(up_data);
@@ -198,14 +202,14 @@ static void test_gpu_matvec(void) {
     // GPU path
     float out_gpu = 0;
     int8_t scratch[128];
-    bn_quant_matvec_gpu(&out_gpu, &W, x, scratch, NULL, &mock_gpu);
+    bn_backend_quant_matvec_gpu(&out_gpu, &W, x, scratch, NULL, &mock_gpu);
     float out_gpu_buf = 0;
-    bn_quant_matvec_gpu_buf(&out_gpu_buf, &W, W_buf, x, scratch, NULL,
+    bn_backend_quant_matvec_gpu_buf(&out_gpu_buf, &W, W_buf, x, scratch, NULL,
                             &mock_gpu);
 
     // CPU path
     float out_cpu = 0;
-    bn_quant_matvec_gpu(&out_cpu, &W, x, scratch, NULL, &mock_gpu);
+    bn_backend_quant_matvec_gpu(&out_cpu, &W, x, scratch, NULL, &mock_gpu);
 
     assert(fabsf(out_gpu - out_cpu) < 1e-3f);
     assert(fabsf(out_gpu_buf - out_cpu) < 1e-3f);
@@ -233,7 +237,7 @@ static void test_gpu_fallback(void) {
 
     float out = 0;
     int8_t scratch[128];
-    bn_quant_matvec_gpu(&out, &W, x, scratch, NULL, &mock_gpu);
+    bn_backend_quant_matvec_gpu(&out, &W, x, scratch, NULL, &mock_gpu);
 
     // All +1 weights dot all 1.0 inputs = 128 * scale
     assert(fabsf(out - 128.0f) < 1.0f);
@@ -268,10 +272,12 @@ static void test_gpu_release(void) {
 
     bn_model_release_gpu(&model);
     assert(bn_model_gpu(&model) == NULL);
-    assert(model.backend == NULL);
+    assert(model.backend != NULL);
 
     // Safe to call again
     bn_model_release_gpu(&model);
+    bn_backend_model_free(model.backend);
+    model.backend = NULL;
 
     free(model.weights.layers);
     free(data);
@@ -358,17 +364,17 @@ static void test_gpu_batch(void) {
     float out1_gpu = 0, out2_gpu = 0;
     int8_t scratch[128];
     BnMatvecTask tasks[2] = {
-        { &out1_gpu, &W1 },
-        { &out2_gpu, &W2 },
+         { &out1_gpu, &W1, NULL },
+         { &out2_gpu, &W2, NULL },
     };
-    bn_quant_matvec_batch_gpu(tasks, 2, x, scratch, NULL, &mock_gpu);
+    bn_backend_quant_matvec_batch_gpu(tasks, 2, x, scratch, NULL, &mock_gpu);
     float out1_gpu_buf = 0, out2_gpu_buf = 0;
     BnMatvecTask buf_tasks[2] = {
-        { &out1_gpu_buf, &W1 },
-        { &out2_gpu_buf, &W2 },
+         { &out1_gpu_buf, &W1, NULL },
+         { &out2_gpu_buf, &W2, NULL },
     };
     const void *bufs[2] = { W1_buf, W2_buf };
-    bn_quant_matvec_batch_gpu_buf(buf_tasks, bufs, 2, x, scratch, NULL,
+    bn_backend_quant_matvec_batch_gpu_buf(buf_tasks, bufs, 2, x, scratch, NULL,
                                   &mock_gpu);
 
     // CPU reference
@@ -376,8 +382,8 @@ static void test_gpu_batch(void) {
     BnQWeight W1c = W1;
     BnQWeight W2c = W2;
     BnMatvecTask cpu_tasks[2] = {
-        { &out1_cpu, &W1c },
-        { &out2_cpu, &W2c },
+         { &out1_cpu, &W1c, NULL },
+         { &out2_cpu, &W2c, NULL },
     };
     bn_quant_matvec_batch(cpu_tasks, 2, x, scratch, NULL);
 
@@ -443,15 +449,15 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_matvec(BN_GGUF_TENSOR_Q4_0) == bn_quant_matvec);
     assert(bn_quant_format_matmul(BN_GGUF_TENSOR_Q4_0) == bn_quant_matmul);
     assert(bn_quant_format_uses_embedded_scale(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_quant_format_can_gpu_split(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_backend_quant_can_gpu_native(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_backend_quant_can_gpu_repack(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_Q4_0) ==
+    assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CAP_Q4_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
+    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CODE_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q4_0) ==
+    assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q4_0, 1, 32) == 18);
 
@@ -463,13 +469,13 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_has_cpu_batch(BN_GGUF_TENSOR_I2_S));
     assert(bn_quant_format_has_cpu_matmul(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_uses_embedded_scale(BN_GGUF_TENSOR_I2_S));
-    assert(!bn_quant_format_can_gpu_split(BN_GGUF_TENSOR_I2_S));
-    assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_I2_S));
-    assert(!bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_I2_S));
+    assert(!bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_I2_S));
+    assert(!bn_backend_quant_can_gpu_native(BN_GGUF_TENSOR_I2_S));
+    assert(!bn_backend_quant_can_gpu_repack(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_I2_S));
-    assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_I2_S) == 0);
-    assert(bn_quant_format_gpu_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
-    assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_I2_S) == 0);
+    assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_I2_S) == 0);
+    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
+    assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_I2_S) == 0);
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_I2_S, 1, 128) == 36);
 
     assert(bn_quant_format_supported(BN_GGUF_TENSOR_Q5_1));
@@ -478,25 +484,25 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_matvec(BN_GGUF_TENSOR_Q5_0) == NULL);
     assert(bn_quant_format_matmul(BN_GGUF_TENSOR_Q5_0) == NULL);
     assert(!bn_quant_format_has_cap(99999, BN_QUANT_CAP_LOADABLE));
-    assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_Q8_0) ==
+    assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CAP_Q8_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_split_op_code(BN_GGUF_TENSOR_Q8_0) ==
+    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CODE_Q8_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_Q5_K) ==
+    assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_split_op_code(BN_GGUF_TENSOR_Q5_K) ==
+    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CODE_Q5K_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) == 0);
+    assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) == 0);
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_can_gpu_split(BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_Q4_K) ==
+    assert(bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CAP_Q4K_MATVEC_SPLIT);
-    assert(bn_quant_format_gpu_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
+    assert(bn_backend_quant_gpu_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CODE_Q4K_MATVEC_SPLIT);
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_can_gpu_native(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_can_gpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q5_0, 1, 32) == 22);
     assert(bn_quant_format_data_size(99999, 1, 32) == 0);

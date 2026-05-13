@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "gpu_backend.h"
 #include "threadpool.h"
 
 #define BN_QK_K 256
@@ -179,15 +178,19 @@ typedef struct {
 // Single per-tensor scale stored at offset nelements/4 in the data
 // Encoding: 0=-1, 1=0, 2=+1
 
+// Backend/runtime-prepared layout for a quantized weight tensor.
+typedef struct BnPreparedWeight {
+    uint16_t *scales;
+    uint8_t *qs;
+    float *f32_scales;
+} BnPreparedWeight;
+
 // Quantized weight tensor descriptor (zero-copy into GGUF buffer)
 typedef struct BnQWeight {
     const void *data;   // packed weight data
     int type;           // BN_GGUF_TENSOR_TQ1_0, TQ2_0, or I2_S
     int rows, cols;
     float scale;        // per-tensor scale (from .scale tensor or embedded in data)
-    uint16_t *rp_scales; // repacked: FP16 per-block scales (NULL if not repacked)
-    uint8_t *rp_qs;     // repacked: contiguous quant data (NULL if not repacked)
-    float *rp_f32_scales; // optional repacked FP32 scales for backends without fast FP16 conversion
 } BnQWeight;
 
 typedef enum {
@@ -200,14 +203,11 @@ typedef enum {
 typedef enum {
     BN_QUANT_CAP_LOADABLE       = 1u << 0,
     BN_QUANT_CAP_EMBEDDED_SCALE = 1u << 1,
-    BN_QUANT_CAP_GPU_SPLIT      = 1u << 2,
-    BN_QUANT_CAP_GPU_NATIVE     = 1u << 3,
     BN_QUANT_CAP_CPU_MATVEC     = 1u << 4,
     BN_QUANT_CAP_CPU_BATCH      = 1u << 5,
     BN_QUANT_CAP_CPU_MATMUL     = 1u << 6,
     BN_QUANT_CAP_CPU_PREQ8K     = 1u << 7,
     BN_QUANT_CAP_CPU_REPACKED   = 1u << 8,
-    BN_QUANT_CAP_GPU_REPACKED   = 1u << 9,
 } BnQuantCapability;
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,
@@ -223,9 +223,6 @@ typedef struct {
     int block_elems;
     size_t bytes_per_block;
     uint32_t caps;
-    uint32_t gpu_split_cap;
-    int gpu_split_op_code;
-    uint32_t gpu_fused_gateup_silu_cap;
     BnQuantMatvecFn matvec;
     BnQuantMatmulFn matmul;
 } BnQuantFormatOps;
@@ -234,19 +231,13 @@ const BnQuantFormatOps *bn_quant_format_ops(int type);
 int      bn_quant_format_has_cap(int type, uint32_t cap);
 int      bn_quant_format_supported(int type);
 int      bn_quant_format_uses_embedded_scale(int type);
-int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_has_cpu_matvec(int type);
 int      bn_quant_format_has_cpu_batch(int type);
 int      bn_quant_format_has_cpu_matmul(int type);
 int      bn_quant_format_can_preq8k(int type);
 int      bn_quant_format_can_cpu_repack(int type);
-int      bn_quant_format_can_gpu_native(int type);
-int      bn_quant_format_can_gpu_repack(int type);
 BnQuantMatvecFn bn_quant_format_matvec(int type);
 BnQuantMatmulFn bn_quant_format_matmul(int type);
-uint32_t bn_quant_format_gpu_split_cap(int type);
-int      bn_quant_format_gpu_split_op_code(int type);
-uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type);
 size_t   bn_quant_format_data_size(int type, int rows, int cols);
 
 // Compute raw data size in bytes for a quantized weight tensor.
@@ -282,6 +273,7 @@ void     bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
 typedef struct {
     float *out;
     const BnQWeight *W;
+    const BnPreparedWeight *prepared;
 } BnMatvecTask;
 
 void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
@@ -301,10 +293,21 @@ typedef struct {
     float *out;
     const BnQWeight *W;
     const float *x;
+    const BnPreparedWeight *prepared;
 } BnMatvecMultiTask;
 
 void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                             int8_t *x_q_bufs, BnThreadPool *pool);
+
+// Fused Q4_0 gate/up SiLU fast path. Returns 0 if dispatched, -1 if unsupported.
+int bn_quant_q4_gate_up_silu(float *out,
+                             const BnQWeight *gate,
+                             const BnPreparedWeight *gate_prepared,
+                             const BnQWeight *up,
+                             const BnPreparedWeight *up_prepared,
+                             const float *x,
+                             int8_t *x_q_buf,
+                             BnThreadPool *pool);
 
 // Matrix-matrix multiply: Out[n_tokens][rows] = W[rows][cols] @ X[n_tokens][cols]^T
 // Processes n_tokens input vectors against the same weight matrix.
@@ -344,32 +347,6 @@ void bn_quant_rmsnorm_q8k_avx2(const float *x, const float *w, int dim, float ep
                                   float *xb_out, int8_t *x_q, float *x_d,
                                   int16_t *x_bsums);
 #endif
-
 #endif
-
-// GPU-accelerated matvec with CPU fallback
-#include "gpu_backend.h"
-
-void bn_quant_matvec_gpu(float *out, const BnQWeight *W, const float *x,
-                         int8_t *x_q_buf, BnThreadPool *pool,
-                         BnGPUBackend *gpu);
-void bn_quant_matvec_gpu_buf(float *out, const BnQWeight *W, void *W_buf,
-                             const float *x, int8_t *x_q_buf,
-                             BnThreadPool *pool, BnGPUBackend *gpu);
-void bn_quant_matvec_batch_gpu(const BnMatvecTask *tasks, int n_tasks,
-                                const float *x, int8_t *x_q_buf,
-                                BnThreadPool *pool, BnGPUBackend *gpu);
-void bn_quant_matvec_batch_gpu_buf(const BnMatvecTask *tasks,
-                                   const void *const *W_bufs,
-                                   int n_tasks, const float *x,
-                                   int8_t *x_q_buf, BnThreadPool *pool,
-                                   BnGPUBackend *gpu);
-void bn_quant_matmul_gpu(float *out, const BnQWeight *W, const float *X,
-                          int n_tokens, int8_t *x_q_buf, BnThreadPool *pool,
-                          BnGPUBackend *gpu);
-void bn_quant_matmul_gpu_buf(float *out, const BnQWeight *W, void *W_buf,
-                             const float *X, int n_tokens,
-                             int8_t *x_q_buf, BnThreadPool *pool,
-                             BnGPUBackend *gpu);
 
 #endif // BN_QUANT_H

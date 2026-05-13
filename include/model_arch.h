@@ -1,9 +1,9 @@
 #ifndef BN_MODEL_ARCH_H
 #define BN_MODEL_ARCH_H
 
-#include "model.h"
+#include "model_config.h"
+#include "gguf.h"
 #include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -18,11 +18,6 @@ typedef struct {
     int (*tensor_name)(char *out, size_t out_size, int layer, int role);
     void (*apply_shapes)(BnConfig *c, int max_head_size, int max_kv_dim);
 } BnModelArchOps;
-
-#define BN_MODEL_ARCH_FLAG_GEMMA4 1u
-#define BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK 2u
-#define BN_MODEL_ARCH_FLAG_QWEN 4u
-#define BN_MODEL_ARCH_FLAG_BITNET 8u
 
 typedef enum {
     BN_MODEL_TENSOR_ATTN_NORM = 0,

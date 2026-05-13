@@ -1,5 +1,4 @@
 #include "quant_internal.h"
-#include "gpu_backend.h"
 #include "threadpool.h"
 #include "gguf.h"
 #include <stdlib.h>
@@ -77,8 +76,9 @@ static void quant_x_to_q8k_scalar(const float *x, int8_t *x_q, float *x_d,
 // --- Quantized matrix-vector multiply ---
 // out[rows] = W[rows x cols] @ x[cols]
 
-void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
-                     int8_t *x_q_buf, BnThreadPool *pool) {
+static void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
+                                 int8_t *x_q_buf, BnThreadPool *pool,
+                                 const BnPreparedWeight *prepared) {
 
     if (W->type == BN_GGUF_TENSOR_I2_S) {
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
@@ -123,21 +123,21 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
         BnTPTask task = { bn_quant_q8_neon_sdot_range, &ctx, W->rows };
 #elif defined(__AVX2__)
         int n_blocks = W->cols / 32;
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
         int n_groups = (W->rows + 3) / 4;
         BnTPTask task = { bn_quant_q8_avx2_4row_range, &ctx, n_groups };
 #elif defined(__wasm_relaxed_simd__)
         int n_blocks = W->cols / 32;
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
         int n_groups = (W->rows + 3) / 4;
         BnTPTask task = { bn_quant_q8_wasm_sdot_4row_range, &ctx, n_groups };
 #else
@@ -154,7 +154,7 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
         float x_scales[n_blocks];
         quant_x_to_q8_blocks_scalar(x, x_q_buf, x_scales, W->cols);
-        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnQ8SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
         BnTPTask task = { bn_quant_q8_scalar_sdot_range, &ctx, W->rows };
 #endif
 #endif
@@ -168,8 +168,8 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales };
-        void (*fn)(void *, int, int) = W->rp_scales
+        BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
+        void (*fn)(void *, int, int) = (prepared && prepared->scales)
             ? bn_quant_q4_repacked_neon_sdot_range
             : bn_quant_q4_neon_sdot_range;
         BnTPTask task = { fn, &ctx, W->rows };
@@ -179,7 +179,7 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
         int n_groups = (W->rows + 3) / 4;
         BnTPTask task = { bn_quant_q4_avx2_4row_range, &ctx, n_groups };
         bn_tp_dispatch(pool, &task, 1);
@@ -188,12 +188,12 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
         if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
-        BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales };
+        BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
         if (getenv("BN_WASM_Q4_CANONICAL4")) {
             int n_groups = (W->rows + 3) / 4;
             BnTPTask task = { bn_quant_q4_wasm_sdot_4row_range, &ctx, n_groups };
             bn_tp_dispatch(pool, &task, 1);
-        } else if (W->rp_qs) {
+        } else if (prepared && prepared->qs) {
             int n_groups = (W->rows + 7) / 8;
             BnTPTask task = { bn_quant_q4_repacked_wasm_sdot_8row_range, &ctx, n_groups };
             bn_tp_dispatch(pool, &task, 1);
@@ -627,6 +627,11 @@ void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
     }
 }
 
+void bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
+                     int8_t *x_q_buf, BnThreadPool *pool) {
+    bn_quant_matvec_impl(out, W, x, x_q_buf, pool, NULL);
+}
+
 // --- Float-x kernel selection ---
 // Returns platform-optimal kernel for types that use float x (no int8 quantization).
 
@@ -741,7 +746,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     if (all_i2s) {
         if (n_tasks > 4) {
             for (int t = 0; t < n_tasks; t++)
-                bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
+                bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared);
             return;
         }
 
@@ -770,10 +775,10 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         BnTPTask tp_tasks[4];
 
         for (int t = 0; t < n_tasks; t++) {
-            void (*fn)(void *, int, int) = tasks[t].W->rp_scales
+            void (*fn)(void *, int, int) = (tasks[t].prepared && tasks[t].prepared->scales)
                 ? bn_quant_q4_repacked_neon_sdot_range
                 : bn_quant_q4_neon_sdot_range;
-            ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
             tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
         }
 
@@ -823,7 +828,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         BnTPTask tp_tasks[4];
 
         for (int t = 0; t < n_tasks; t++) {
-            ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
             tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
         }
 
@@ -833,7 +838,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     if (all_q6k && n_tasks <= BN_MAX_BATCH) {
         int n_sb = cols / BN_QK_K;
-        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared); return; }
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
         bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
@@ -852,7 +857,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     if (all_q4k && n_tasks <= BN_MAX_BATCH) {
         int n_sb = cols / BN_QK_K;
-        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared); return; }
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
         bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
@@ -871,7 +876,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     if (all_q5k && n_tasks <= BN_MAX_BATCH) {
         int n_sb = cols / BN_QK_K;
-        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared); return; }
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
         bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
@@ -905,7 +910,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     if (all_i2s) {
         if (n_tasks > 4) {
             for (int t = 0; t < n_tasks; t++)
-                bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
+                bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared);
             return;
         }
 
@@ -935,7 +940,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         BnTPTask tp_tasks[4];
 
         for (int t = 0; t < n_tasks; t++) {
-            ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
             int n_groups = (tasks[t].W->rows + 3) / 4;
             tp_tasks[t] = (BnTPTask){ bn_quant_q4_avx2_4row_range, &ctxs[t], n_groups };
         }
@@ -954,7 +959,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         BnTPTask tp_tasks[BN_MAX_BATCH];
 
         for (int t = 0; t < n_tasks; t++) {
-            ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            ctxs[t] = (BnQ8SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
             int n_groups = (tasks[t].W->rows + 3) / 4;
             tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx2_4row_range, &ctxs[t], n_groups };
         }
@@ -1059,11 +1064,11 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         BnTPTask tp_tasks[4];
 
         for (int t = 0; t < n_tasks; t++) {
-            ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales };
+            ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
             if (getenv("BN_WASM_Q4_CANONICAL4")) {
                 int n_groups = (tasks[t].W->rows + 3) / 4;
                 tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_4row_range, &ctxs[t], n_groups };
-            } else if (tasks[t].W->rp_qs) {
+            } else if (tasks[t].prepared && tasks[t].prepared->qs) {
                 int n_groups = (tasks[t].W->rows + 7) / 8;
                 tp_tasks[t] = (BnTPTask){ bn_quant_q4_repacked_wasm_sdot_8row_range, &ctxs[t], n_groups };
             } else {
@@ -1109,7 +1114,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     if (all_q6k && n_tasks <= BN_MAX_BATCH) {
         int n_sb = cols / BN_QK_K;
-        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared); return; }
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
         bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
@@ -1128,7 +1133,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     if (all_q4k && n_tasks <= BN_MAX_BATCH) {
         int n_sb = cols / BN_QK_K;
-        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool); return; }
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) { for (int t = 0; t < n_tasks; t++) bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared); return; }
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
         bn_quant_x_to_q8k(x, x_q_buf, q8k_d, q8k_bsums, cols);
@@ -1233,7 +1238,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
     // Fallback: use existing per-task matvec
     for (int t = 0; t < n_tasks; t++) {
-        bn_quant_matvec(tasks[t].out, tasks[t].W, x, x_q_buf, pool);
+        bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x, x_q_buf, pool, tasks[t].prepared);
     }
 }
 
@@ -1278,7 +1283,7 @@ void bn_quant_matvec_batch_preq8k(const BnMatvecTask *tasks, int n_tasks,
     // Fallback: use float path (x_float must be provided)
     if (x_float) {
         for (int t = 0; t < n_tasks; t++)
-            bn_quant_matvec(tasks[t].out, tasks[t].W, x_float, (int8_t *)x_q, pool);
+            bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x_float, (int8_t *)x_q, pool, tasks[t].prepared);
     }
 }
 
@@ -1440,10 +1445,11 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     ctxs[t] = (BnQ4SdotCtx){
                         tasks[t].out, tasks[t].W,
                         x_q_bufs + (size_t)t * cols,
-                        x_scales_all + t * n_blocks
+                        x_scales_all + t * n_blocks,
+                        tasks[t].prepared
                     };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-                    void (*fn)(void *, int, int) = tasks[t].W->rp_scales
+                    void (*fn)(void *, int, int) = (tasks[t].prepared && tasks[t].prepared->scales)
                         ? bn_quant_q4_repacked_neon_sdot_range
                         : bn_quant_q4_neon_sdot_range;
 #elif defined(__AVX2__)
@@ -1451,7 +1457,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 #elif defined(__wasm_relaxed_simd__)
                     void (*fn)(void *, int, int) = getenv("BN_WASM_Q4_CANONICAL4")
                         ? bn_quant_q4_wasm_sdot_4row_range
-                        : (tasks[t].W->rp_qs
+                        : (tasks[t].prepared && tasks[t].prepared->qs
                            ? bn_quant_q4_repacked_wasm_sdot_8row_range
                            : bn_quant_q4_wasm_sdot_range);
 #else
@@ -1463,7 +1469,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 #elif defined(__wasm_relaxed_simd__)
                     if (getenv("BN_WASM_Q4_CANONICAL4"))
                         n_items = (tasks[t].W->rows + 3) / 4;
-                    else if (tasks[t].W->rp_qs)
+                    else if (tasks[t].prepared && tasks[t].prepared->qs)
                         n_items = (tasks[t].W->rows + 7) / 8;
 #endif
                     tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_items };
@@ -1479,7 +1485,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     ctxs[t] = (BnQ8SdotCtx){
                         tasks[t].out, tasks[t].W,
                         x_q_bufs + (size_t)t * cols,
-                        x_scales_all + t * n_blocks
+                        x_scales_all + t * n_blocks,
+                        tasks[t].prepared
                     };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
                     tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
@@ -1565,8 +1572,64 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 
     // Fallback: sequential matvec
     for (int t = 0; t < n_tasks; t++)
-        bn_quant_matvec(tasks[t].out, tasks[t].W, tasks[t].x,
-                        x_q_bufs + (size_t)t * cols, pool);
+        bn_quant_matvec_impl(tasks[t].out, tasks[t].W, tasks[t].x,
+                             x_q_bufs + (size_t)t * cols, pool,
+                             tasks[t].prepared);
+}
+
+int bn_quant_q4_gate_up_silu(float *out,
+                             const BnQWeight *gate,
+                             const BnPreparedWeight *gate_prepared,
+                             const BnQWeight *up,
+                             const BnPreparedWeight *up_prepared,
+                             const float *x,
+                             int8_t *x_q_buf,
+                             BnThreadPool *pool) {
+    if (!out || !gate || !up || !x || !x_q_buf) return -1;
+    if (gate->type != BN_GGUF_TENSOR_Q4_0 ||
+        up->type != BN_GGUF_TENSOR_Q4_0 ||
+        gate->cols != up->cols ||
+        gate->rows != up->rows ||
+        gate->cols % 32 != 0)
+        return -1;
+    int n_blocks = gate->cols / 32;
+    if (n_blocks <= 0 || n_blocks > BN_MAX_SCALE_BLOCKS) return -1;
+
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+    if (!gate_prepared || !gate_prepared->scales ||
+        !up_prepared || !up_prepared->scales)
+        return -1;
+    float x_scales[n_blocks];
+    bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, gate->cols);
+    BnQ4GateUpCtx ctx = {
+        out, gate, up, x_q_buf, x_scales, gate_prepared, up_prepared
+    };
+    BnTPTask task = {
+        bn_quant_q4_repacked_gate_up_silu_neon_range,
+        &ctx,
+        gate->rows
+    };
+    bn_tp_dispatch(pool, &task, 1);
+    return 0;
+#elif defined(__wasm_relaxed_simd__)
+    int use_canonical4 = getenv("BN_WASM_Q4_CANONICAL4") != NULL;
+    if (!use_canonical4 &&
+        (!gate_prepared || !gate_prepared->qs ||
+         !up_prepared || !up_prepared->qs))
+        return -1;
+    float x_scales[n_blocks];
+    bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, gate->cols);
+    BnQ4GateUpCtx ctx = {
+        out, gate, up, x_q_buf, x_scales, gate_prepared, up_prepared
+    };
+    BnTPTask task = use_canonical4
+        ? (BnTPTask){ bn_quant_q4_wasm_gate_up_silu_4row_range, &ctx, (gate->rows + 3) / 4 }
+        : (BnTPTask){ bn_quant_q4_repacked_gate_up_silu_wasm_range, &ctx, gate->rows };
+    bn_tp_dispatch(pool, &task, 1);
+    return 0;
+#else
+    return -1;
+#endif
 }
 
 // Matrix-matrix multiply: process n_tokens input vectors against same weight matrix.
@@ -1716,7 +1779,7 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
 
     if (n_tokens <= 1) {
         /* Single token: use pre-quantized matvec */
-        BnMatvecTask task = { out, W };
+        BnMatvecTask task = { out, W, NULL };
         bn_quant_matvec_batch_preq8k(&task, 1, x_q, x_d, x_bsums, x_float, pool);
         return;
     }
@@ -1741,115 +1804,9 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
                         (int8_t *)x_q, pool);
 }
 
-// GPU-accelerated matmul with CPU fallback
-void bn_quant_matmul_gpu_buf(float *out, const BnQWeight *W, void *W_buf,
-                             const float *X, int n_tokens,
-                             int8_t *x_q_buf, BnThreadPool *pool,
-                             BnGPUBackend *gpu) {
-    // GPU fast path: use GPU matmul if weight has a GPU buffer
-    if (gpu && gpu->matmul && W_buf && n_tokens > 1) {
-        if (gpu->matmul(gpu->ctx, out, W_buf, X,
-                         W->rows, W->cols, n_tokens, W->type) == 0)
-            return;
-        // GPU failed, fall through to CPU
-    }
-    bn_quant_matmul(out, W, X, n_tokens, x_q_buf, pool);
-}
-
-void bn_quant_matmul_gpu(float *out, const BnQWeight *W, const float *X,
-                          int n_tokens, int8_t *x_q_buf, BnThreadPool *pool,
-                          BnGPUBackend *gpu) {
-    bn_quant_matmul_gpu_buf(out, W, NULL, X, n_tokens, x_q_buf, pool, gpu);
-}
-
 // --- Data size computation ---
 
 size_t bn_qweight_data_size(const BnQWeight *w) {
     if (!w || !w->data) return 0;
     return bn_quant_format_data_size(w->type, w->rows, w->cols);
-}
-
-// --- GPU-accelerated matvec with CPU fallback ---
-
-void bn_quant_matvec_gpu_buf(float *out, const BnQWeight *W, void *W_buf,
-                             const float *x, int8_t *x_q_buf,
-                             BnThreadPool *pool, BnGPUBackend *gpu) {
-    // GPU fast path
-    if (gpu && W_buf && gpu->matvec) {
-        if (gpu->matvec(gpu->ctx, out, W_buf, x, W->rows, W->cols, W->type) == 0)
-            return;
-        // GPU failed, fall through to CPU
-    }
-    bn_quant_matvec(out, W, x, x_q_buf, pool);
-}
-
-void bn_quant_matvec_gpu(float *out, const BnQWeight *W, const float *x,
-                         int8_t *x_q_buf, BnThreadPool *pool,
-                         BnGPUBackend *gpu) {
-    bn_quant_matvec_gpu_buf(out, W, NULL, x, x_q_buf, pool, gpu);
-}
-
-void bn_quant_matvec_batch_gpu_buf(const BnMatvecTask *tasks,
-                                   const void *const *W_bufs,
-                                   int n_tasks, const float *x,
-                                   int8_t *x_q_buf, BnThreadPool *pool,
-                                   BnGPUBackend *gpu) {
-    if (gpu) {
-        // Check all tasks have backend-owned GPU buffers.
-        int all_gpu = 1;
-        for (int t = 0; t < n_tasks; t++) {
-            if (!W_bufs || !W_bufs[t]) { all_gpu = 0; break; }
-        }
-        if (all_gpu) {
-            // Prefer batched submission if available
-            if (gpu->matvec_batch && n_tasks <= 16) {
-                BnGPUMatvecOp ops[16];
-                for (int t = 0; t < n_tasks; t++) {
-                    ops[t] = (BnGPUMatvecOp){
-                        .out   = tasks[t].out,
-                        .W_buf = (void *)W_bufs[t],
-                        .rows  = tasks[t].W->rows,
-                        .cols  = tasks[t].W->cols,
-                        .type  = tasks[t].W->type,
-                    };
-                }
-                if (gpu->matvec_batch(gpu->ctx, ops, n_tasks, x,
-                                       tasks[0].W->cols) == 0)
-                    return;
-                // Fall through to individual or CPU on failure
-            }
-            // Fall back to individual GPU matvec calls
-            if (gpu->matvec) {
-                for (int t = 0; t < n_tasks; t++) {
-                    const BnQWeight *W = tasks[t].W;
-                    if (gpu->matvec(gpu->ctx, tasks[t].out, (void *)W_bufs[t], x,
-                                    W->rows, W->cols, W->type) != 0) {
-                        // GPU failed, fall back to CPU for all
-                        bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, pool);
-                        return;
-                    }
-                }
-                return;
-            }
-        }
-    }
-    bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, pool);
-}
-
-void bn_quant_matvec_batch_gpu(const BnMatvecTask *tasks, int n_tasks,
-                                const float *x, int8_t *x_q_buf,
-                                BnThreadPool *pool, BnGPUBackend *gpu) {
-    const void *bufs_inline[16];
-    const void **bufs = bufs_inline;
-    const void **heap_bufs = NULL;
-    if (n_tasks > 16) {
-        heap_bufs = (const void **)malloc((size_t)n_tasks * sizeof(void *));
-        bufs = heap_bufs;
-    }
-    if (bufs) {
-        for (int t = 0; t < n_tasks; t++)
-            bufs[t] = NULL;
-    }
-    bn_quant_matvec_batch_gpu_buf(tasks, bufs, n_tasks, x, x_q_buf, pool, gpu);
-    free(heap_bufs);
 }

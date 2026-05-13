@@ -3,10 +3,12 @@
 #include <wasm_simd128.h>
 
 static inline float q8_wasm_block_scale(const BnQWeight *W,
+                                        const BnPreparedWeight *prepared,
                                         const BnBlockQ8_0 *blocks,
                                         size_t block_index) {
-    return W->rp_f32_scales ? W->rp_f32_scales[block_index]
-                            : bn_fp16_to_fp32(blocks[block_index].d);
+    return (prepared && prepared->f32_scales)
+        ? prepared->f32_scales[block_index]
+        : bn_fp16_to_fp32(blocks[block_index].d);
 }
 
 void bn_quant_q8_wasm_range(void *ctx, int row_start, int row_end) {
@@ -20,7 +22,7 @@ void bn_quant_q8_wasm_range(void *ctx, int row_start, int row_end) {
         for (int b = 0; b < n_blocks_per_row; b++) {
             size_t block_index = (size_t)row * n_blocks_per_row + b;
             const BnBlockQ8_0 *blk = &blocks[block_index];
-            float d = q8_wasm_block_scale(c->W, blocks, block_index);
+            float d = q8_wasm_block_scale(c->W, NULL, blocks, block_index);
             const float *xb = x + b * 32;
             v128_t acc0 = wasm_f32x4_splat(0), acc1 = wasm_f32x4_splat(0);
             v128_t acc2 = wasm_f32x4_splat(0), acc3 = wasm_f32x4_splat(0);
@@ -96,15 +98,15 @@ void bn_quant_q8_wasm_sdot_range(void *ctx, int row_start, int row_end) {
             int32_t s3 = wasm_i32x4_extract_lane(a3, 0) + wasm_i32x4_extract_lane(a3, 1) +
                          wasm_i32x4_extract_lane(a3, 2) + wasm_i32x4_extract_lane(a3, 3);
 
-            row_sum += q8_wasm_block_scale(c->W, blocks, (size_t)base + b) * x_scales[b] * (float)s0
-                     + q8_wasm_block_scale(c->W, blocks, (size_t)base + b + 1) * x_scales[b + 1] * (float)s1
-                     + q8_wasm_block_scale(c->W, blocks, (size_t)base + b + 2) * x_scales[b + 2] * (float)s2
-                     + q8_wasm_block_scale(c->W, blocks, (size_t)base + b + 3) * x_scales[b + 3] * (float)s3;
+            row_sum += q8_wasm_block_scale(c->W, c->prepared, blocks, (size_t)base + b) * x_scales[b] * (float)s0
+                     + q8_wasm_block_scale(c->W, c->prepared, blocks, (size_t)base + b + 1) * x_scales[b + 1] * (float)s1
+                     + q8_wasm_block_scale(c->W, c->prepared, blocks, (size_t)base + b + 2) * x_scales[b + 2] * (float)s2
+                     + q8_wasm_block_scale(c->W, c->prepared, blocks, (size_t)base + b + 3) * x_scales[b + 3] * (float)s3;
         }
 
         for (; b < n_blocks_per_row; b++) {
             const BnBlockQ8_0 *blk = &blocks[base + b];
-            float d_w = q8_wasm_block_scale(c->W, blocks, (size_t)base + b);
+            float d_w = q8_wasm_block_scale(c->W, c->prepared, blocks, (size_t)base + b);
             float d_x = x_scales[b];
             const int8_t *xb = x_q + b * 32;
 
@@ -124,7 +126,7 @@ void bn_quant_q8_wasm_sdot_range(void *ctx, int row_start, int row_end) {
 void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end) {
     BnQ8SdotCtx *c = (BnQ8SdotCtx *)ctx;
     const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)c->W->data;
-    const float *w_scales = c->W->rp_f32_scales;
+    const float *w_scales = c->prepared ? c->prepared->f32_scales : NULL;
     int n_blocks_per_row = c->W->cols / 32;
     const int8_t *x_q = c->x_q;
     const float *x_scales = c->x_scales;
@@ -155,7 +157,7 @@ void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end)
                     wasm_v128_load(blk0->qs), x0, wasm_i32x4_splat(0));
                 acc0 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(blk0->qs + 16), x1, acc0);
-                v128_t scale0 = wasm_f32x4_splat((w_scales ? w_scales[idx0] : q8_wasm_block_scale(c->W, blocks, idx0)) * dx);
+                v128_t scale0 = wasm_f32x4_splat((w_scales ? w_scales[idx0] : q8_wasm_block_scale(c->W, c->prepared, blocks, idx0)) * dx);
                 sum0 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(acc0), scale0, sum0);
 
                 const BnBlockQ8_0 *blk1 = &row_blocks1[b];
@@ -164,7 +166,7 @@ void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end)
                     wasm_v128_load(blk1->qs), x0, wasm_i32x4_splat(0));
                 acc1 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(blk1->qs + 16), x1, acc1);
-                v128_t scale1 = wasm_f32x4_splat((w_scales ? w_scales[idx1] : q8_wasm_block_scale(c->W, blocks, idx1)) * dx);
+                v128_t scale1 = wasm_f32x4_splat((w_scales ? w_scales[idx1] : q8_wasm_block_scale(c->W, c->prepared, blocks, idx1)) * dx);
                 sum1 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(acc1), scale1, sum1);
 
                 const BnBlockQ8_0 *blk2 = &row_blocks2[b];
@@ -173,7 +175,7 @@ void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end)
                     wasm_v128_load(blk2->qs), x0, wasm_i32x4_splat(0));
                 acc2 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(blk2->qs + 16), x1, acc2);
-                v128_t scale2 = wasm_f32x4_splat((w_scales ? w_scales[idx2] : q8_wasm_block_scale(c->W, blocks, idx2)) * dx);
+                v128_t scale2 = wasm_f32x4_splat((w_scales ? w_scales[idx2] : q8_wasm_block_scale(c->W, c->prepared, blocks, idx2)) * dx);
                 sum2 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(acc2), scale2, sum2);
 
                 const BnBlockQ8_0 *blk3 = &row_blocks3[b];
@@ -182,7 +184,7 @@ void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end)
                     wasm_v128_load(blk3->qs), x0, wasm_i32x4_splat(0));
                 acc3 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(
                     wasm_v128_load(blk3->qs + 16), x1, acc3);
-                v128_t scale3 = wasm_f32x4_splat((w_scales ? w_scales[idx3] : q8_wasm_block_scale(c->W, blocks, idx3)) * dx);
+                v128_t scale3 = wasm_f32x4_splat((w_scales ? w_scales[idx3] : q8_wasm_block_scale(c->W, c->prepared, blocks, idx3)) * dx);
                 sum3 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(acc3), scale3, sum3);
             }
 
@@ -205,7 +207,7 @@ void bn_quant_q8_wasm_sdot_4row_range(void *ctx, int group_start, int group_end)
                         wasm_v128_load(blk->qs + 16), wasm_v128_load(xb + 16), acc);
                     int32_t total = wasm_i32x4_extract_lane(acc, 0) + wasm_i32x4_extract_lane(acc, 1) +
                                     wasm_i32x4_extract_lane(acc, 2) + wasm_i32x4_extract_lane(acc, 3);
-                    sum += (w_scales ? w_scales[block_index] : q8_wasm_block_scale(c->W, blocks, block_index)) * dx * (float)total;
+                    sum += (w_scales ? w_scales[block_index] : q8_wasm_block_scale(c->W, c->prepared, blocks, block_index)) * dx * (float)total;
                 }
                 c->out[row0 + r] = sum;
             }

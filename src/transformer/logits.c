@@ -1,4 +1,5 @@
 #include "transformer_internal.h"
+#include "backend_quant.h"
 #include "session.h"
 #include "sh_log.h"
 
@@ -32,8 +33,8 @@ static void logits_quant_matvec_gpu(const BnModel *m,
                                     const BnQWeight *W,
                                     const float *x,
                                     int8_t *x_q_buf) {
-    bn_quant_matvec_gpu_buf(out, W, qweight_backend_buf(m->backend, W),
-                            x, x_q_buf, m->pool, bn_model_gpu(m));
+    bn_backend_quant_matvec_gpu_buf(out, W, qweight_backend_buf(m->backend, W),
+                                    x, x_q_buf, m->pool, bn_model_gpu(m));
 }
 
 static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
@@ -118,11 +119,12 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     } else if (bn_quant_format_supported(w->emb_type) &&
                w->emb_type != BN_GGUF_TENSOR_F16 &&
                w->emb_type != BN_GGUF_TENSOR_F32) {
-        BnQWeight tied = { w->token_embedding, w->emb_type, c->vocab_size, dim, 1.0f, NULL, NULL, NULL };
-        bn_quant_matvec_gpu_buf(s->logits, &tied,
-                                bn_transformer_backend_handle_or(m->backend, -1,
-                                                                  BN_BACKEND_HANDLE_TIED_EMBEDDING),
-                                s->x, s->x_q, m->pool, bn_model_gpu(m));
+        BnQWeight tied = { w->token_embedding, w->emb_type, c->vocab_size, dim, 1.0f };
+        bn_backend_quant_matvec_gpu_buf(
+            s->logits, &tied,
+            bn_transformer_backend_handle_or(m->backend, -1,
+                                             BN_BACKEND_HANDLE_TIED_EMBEDDING),
+            s->x, s->x_q, m->pool, bn_model_gpu(m));
     } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
         if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
             logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,

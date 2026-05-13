@@ -65,6 +65,7 @@ typedef struct {
     const BnQWeight *W;
     const int8_t *x_q;
     const float *x_scales;
+    const BnPreparedWeight *prepared;
 } BnQ8SdotCtx;
 
 // Q4_0 float context
@@ -80,6 +81,7 @@ typedef struct {
     const BnQWeight *W;
     const int8_t *x_q;
     const float *x_scales;
+    const BnPreparedWeight *prepared;
 } BnQ4SdotCtx;
 
 typedef struct {
@@ -88,6 +90,8 @@ typedef struct {
     const BnQWeight *up;
     const int8_t *x_q;
     const float *x_scales;
+    const BnPreparedWeight *gate_prepared;
+    const BnPreparedWeight *up_prepared;
 } BnQ4GateUpCtx;
 
 // Q6_K context

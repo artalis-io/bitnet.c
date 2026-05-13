@@ -1,10 +1,14 @@
 #include "backend_model.h"
+#include "gpu_graph.h"
 #include "gpu_backend.h"
+#include "quant.h"
 #include <stdlib.h>
 
 typedef struct {
     const BnQWeight *weight;
     void *gpu_buf;
+    BnPreparedWeight prepared;
+    int has_prepared;
 } BnBackendQWeightBuf;
 
 typedef struct {
@@ -168,7 +172,8 @@ int bn_backend_model_register_qweight(BnBackendModel *backend,
         backend->qweights = new_items;
         backend->cap_qweights = new_cap;
     }
-    backend->qweights[backend->n_qweights++] = (BnBackendQWeightBuf){ weight, gpu_buf };
+    backend->qweights[backend->n_qweights++] =
+        (BnBackendQWeightBuf){ weight, gpu_buf, { 0 }, 0 };
     return 0;
 }
 
@@ -178,6 +183,41 @@ void *bn_backend_model_qweight_buf(const BnBackendModel *backend,
     for (int i = 0; i < backend->n_qweights; i++) {
         if (backend->qweights[i].weight == weight)
             return backend->qweights[i].gpu_buf;
+    }
+    return NULL;
+}
+
+int bn_backend_model_register_prepared_qweight(BnBackendModel *backend,
+                                               const BnQWeight *weight,
+                                               const BnPreparedWeight *prepared) {
+    if (!backend || !weight || !prepared) return -1;
+    for (int i = 0; i < backend->n_qweights; i++) {
+        if (backend->qweights[i].weight == weight) {
+            backend->qweights[i].prepared = *prepared;
+            backend->qweights[i].has_prepared = 1;
+            return 0;
+        }
+    }
+    if (backend->n_qweights == backend->cap_qweights) {
+        int new_cap = backend->cap_qweights ? backend->cap_qweights * 2 : 64;
+        BnBackendQWeightBuf *new_items = (BnBackendQWeightBuf *)realloc(
+            backend->qweights, (size_t)new_cap * sizeof(BnBackendQWeightBuf));
+        if (!new_items) return -1;
+        backend->qweights = new_items;
+        backend->cap_qweights = new_cap;
+    }
+    backend->qweights[backend->n_qweights++] =
+        (BnBackendQWeightBuf){ weight, NULL, *prepared, 1 };
+    return 0;
+}
+
+const BnPreparedWeight *bn_backend_model_prepared_qweight(
+    const BnBackendModel *backend,
+    const BnQWeight *weight) {
+    if (!backend || !weight) return NULL;
+    for (int i = 0; i < backend->n_qweights; i++) {
+        if (backend->qweights[i].weight == weight)
+            return backend->qweights[i].has_prepared ? &backend->qweights[i].prepared : NULL;
     }
     return NULL;
 }

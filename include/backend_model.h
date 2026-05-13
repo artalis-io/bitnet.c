@@ -9,6 +9,7 @@ typedef struct BnGPUBackend BnGPUBackend;
 typedef struct BnBackendModel BnBackendModel;
 typedef struct BnBackendSession BnBackendSession;
 typedef struct BnQWeight BnQWeight;
+typedef struct BnPreparedWeight BnPreparedWeight;
 
 typedef enum {
     BN_BACKEND_HANDLE_OUTPUT_NORM = 1,
@@ -52,6 +53,12 @@ int bn_backend_model_register_qweight(BnBackendModel *backend,
                                       void *gpu_buf);
 void *bn_backend_model_qweight_buf(const BnBackendModel *backend,
                                    const BnQWeight *weight);
+int bn_backend_model_register_prepared_qweight(BnBackendModel *backend,
+                                               const BnQWeight *weight,
+                                               const BnPreparedWeight *prepared);
+const BnPreparedWeight *bn_backend_model_prepared_qweight(
+    const BnBackendModel *backend,
+    const BnQWeight *weight);
 
 BnBackendSession *bn_backend_session_create(void);
 void bn_backend_session_free(BnBackendSession *backend);

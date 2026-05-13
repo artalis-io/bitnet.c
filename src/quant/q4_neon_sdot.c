@@ -151,8 +151,8 @@ void bn_quant_q4_neon_sdot_range(void *ctx, int row_start, int row_end) {
 
 void bn_quant_q4_repacked_neon_sdot_range(void *ctx, int row_start, int row_end) {
     BnQ4SdotCtx *c = (BnQ4SdotCtx *)ctx;
-    const uint16_t *rp_scales = c->W->rp_scales;
-    const uint8_t *rp_qs = c->W->rp_qs;
+    const uint16_t *rp_scales = c->prepared ? c->prepared->scales : NULL;
+    const uint8_t *rp_qs = c->prepared ? c->prepared->qs : NULL;
     const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)c->W->data;
     int n_blocks_per_row = c->W->cols / 32;
     const int8_t *x_q = c->x_q;
@@ -236,10 +236,10 @@ void bn_quant_q4_repacked_gate_up_silu_neon_range(void *ctx, int row_start, int 
     BnQ4GateUpCtx *c = (BnQ4GateUpCtx *)ctx;
     const BnQWeight *gate = c->gate;
     const BnQWeight *up = c->up;
-    const uint16_t *gate_scales = gate->rp_scales;
-    const uint16_t *up_scales = up->rp_scales;
-    const uint8_t *gate_qs = gate->rp_qs;
-    const uint8_t *up_qs = up->rp_qs;
+    const uint16_t *gate_scales = c->gate_prepared ? c->gate_prepared->scales : NULL;
+    const uint16_t *up_scales = c->up_prepared ? c->up_prepared->scales : NULL;
+    const uint8_t *gate_qs = c->gate_prepared ? c->gate_prepared->qs : NULL;
+    const uint8_t *up_qs = c->up_prepared ? c->up_prepared->qs : NULL;
     int n_blocks_per_row = gate->cols / 32;
     const int8_t *x_q = c->x_q;
     const float *x_scales = c->x_scales;

@@ -891,8 +891,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
             BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K + 2];
             int n_gu = 0;
             for (int k = 0; k < valid_k; k++) {
-                gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k] };
-                gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]   };
+                gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k], NULL };
+                gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]  , NULL };
             }
             if (c->has_shared_expert && lw->shared_gate.data) {
                 int batch_type = gu_tasks[0].W->type;
@@ -912,8 +912,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
                 }
 #endif
                 if (can_batch_shared) {
-                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb,  &lw->shared_gate };
-                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb2, &lw->shared_up   };
+                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb,  &lw->shared_gate, NULL };
+                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb2, &lw->shared_up  , NULL };
                     shared_gu_ready = 1;
                 }
             }
@@ -967,7 +967,7 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
                 for (int k = 0; k < valid_k; k++) {
                     if (valid_weights[k] == 0.0f) continue;
                     down_tasks[n_down++] = (BnMatvecMultiTask){
-                        ms->expert_down_batch[k], &wdowns[k], ms->expert_hb_batch[k]
+                        ms->expert_down_batch[k], &wdowns[k], ms->expert_hb_batch[k], NULL
                     };
                 }
                 bn_quant_matvec_multi(down_tasks, n_down, ms->down_x_q_bufs, m->pool);
@@ -1083,8 +1083,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
                                               map->gate_rows, map->gate_cols);
                 wups[h]   = moe_make_qweight(cp + cache->gate_bytes, map->up_type,
                                               map->up_rows, map->up_cols);
-                gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h] };
-                gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]   };
+                gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h], NULL };
+                gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]  , NULL };
             }
             bn_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q, m->pool);
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
@@ -1208,8 +1208,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
                 BnQWeight wup = moe_make_qweight(up_ptr, map->up_type,
                                                   map->up_rows, map->up_cols);
                 BnMatvecTask gu[2] = {
-                    { ms->expert_hb,  &wgate },
-                    { ms->expert_hb2, &wup   },
+                     { ms->expert_hb,  &wgate, NULL },
+                     { ms->expert_hb2, &wup  , NULL },
                 };
                 bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
             }
@@ -1271,8 +1271,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
             BnQWeight wup = moe_make_qweight(up_data, lw->expert_map.up_type,
                                               lw->expert_map.up_rows, lw->expert_map.up_cols);
             BnMatvecTask gu[2] = {
-                { ms->expert_hb,  &wgate },
-                { ms->expert_hb2, &wup   },
+                 { ms->expert_hb,  &wgate, NULL },
+                 { ms->expert_hb2, &wup  , NULL },
             };
             bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, m->pool);
             ms->stats.gate_up_time_ms += moe_time_ms() - t0;
@@ -1308,8 +1308,8 @@ void bn_moe_forward(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l) {
 
         if (!shared_gu_ready) {
             BnMatvecTask shared_gu[2] = {
-                { s->hb,  &lw->shared_gate },
-                { s->hb2, &lw->shared_up   },
+                 { s->hb,  &lw->shared_gate, NULL },
+                 { s->hb2, &lw->shared_up  , NULL },
             };
             bn_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q, m->pool);
         }
@@ -1497,8 +1497,8 @@ int bn_moe_forward_batch(BnModel *m, BnSession *sess, BnLayerWeights *lw, int l,
         if (T == 1) {
             // Single token: use matvec (less overhead)
             BnMatvecTask gu[2] = {
-                { gate_buf, &wgate },
-                { up_buf,   &wup   },
+                 { gate_buf, &wgate, NULL },
+                 { up_buf,   &wup  , NULL },
             };
             bn_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch, m->pool);
         } else {

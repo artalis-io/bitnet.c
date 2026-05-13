@@ -125,13 +125,14 @@ static inline v128_t q4_repacked_wasm_dot4_xor(const uint8_t *qbase,
 }
 
 static inline float q4_wasm_block_scale(const BnQWeight *W,
+                                        const BnPreparedWeight *prepared,
                                         const BnBlockQ4_0 *blocks,
                                         int row,
                                         int block) {
-    if (W->rp_f32_scales) {
+    if (prepared && prepared->f32_scales) {
         int n_blocks_per_row = W->cols / 32;
         size_t gb = (size_t)(row >> 2) * n_blocks_per_row + block;
-        return W->rp_f32_scales[gb * 4 + (row & 3)];
+        return prepared->f32_scales[gb * 4 + (row & 3)];
     }
     return bn_fp16_to_fp32(blocks[(size_t)row * (W->cols / 32) + block].d);
 }
@@ -208,7 +209,7 @@ void bn_quant_q4_wasm_sdot_range(void *ctx, int row_start, int row_end) {
         float row_sum = 0.0f;
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ4_0 *blk = &blocks[row * n_blocks_per_row + b];
-            float d_q4 = q4_wasm_block_scale(c->W, blocks, row, b);
+            float d_q4 = q4_wasm_block_scale(c->W, c->prepared, blocks, row, b);
             float d_q8 = x_scales[b];
 
             v128_t raw = wasm_v128_load(blk->qs);
@@ -270,10 +271,10 @@ void bn_quant_q4_wasm_sdot_4row_range(void *ctx, int group_start, int group_end)
             const int8_t *xb = x_q + b * 32;
             float dx = x_scales[b];
 
-            v128_t d0 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, blocks, row + 0, b) * dx);
-            v128_t d1 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, blocks, row + 1, b) * dx);
-            v128_t d2 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, blocks, row + 2, b) * dx);
-            v128_t d3 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, blocks, row + 3, b) * dx);
+            v128_t d0 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, c->prepared, blocks, row + 0, b) * dx);
+            v128_t d1 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, c->prepared, blocks, row + 1, b) * dx);
+            v128_t d2 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, c->prepared, blocks, row + 2, b) * dx);
+            v128_t d3 = wasm_f32x4_splat(q4_wasm_block_scale(c->W, c->prepared, blocks, row + 3, b) * dx);
 
             sum0 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(q4_wasm_canonical_dot_vec(row0 + b, xb)), d0, sum0);
             sum1 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(q4_wasm_canonical_dot_vec(row1 + b, xb)), d1, sum1);
@@ -336,14 +337,14 @@ void bn_quant_q4_wasm_gate_up_silu_4row_range(void *ctx, int group_start, int gr
             const int8_t *xb = x_q + b * 32;
             float dx = x_scales[b];
 
-            v128_t gd0 = wasm_f32x4_splat(q4_wasm_block_scale(gate, gate_blocks, row + 0, b) * dx);
-            v128_t gd1 = wasm_f32x4_splat(q4_wasm_block_scale(gate, gate_blocks, row + 1, b) * dx);
-            v128_t gd2 = wasm_f32x4_splat(q4_wasm_block_scale(gate, gate_blocks, row + 2, b) * dx);
-            v128_t gd3 = wasm_f32x4_splat(q4_wasm_block_scale(gate, gate_blocks, row + 3, b) * dx);
-            v128_t ud0 = wasm_f32x4_splat(q4_wasm_block_scale(up, up_blocks, row + 0, b) * dx);
-            v128_t ud1 = wasm_f32x4_splat(q4_wasm_block_scale(up, up_blocks, row + 1, b) * dx);
-            v128_t ud2 = wasm_f32x4_splat(q4_wasm_block_scale(up, up_blocks, row + 2, b) * dx);
-            v128_t ud3 = wasm_f32x4_splat(q4_wasm_block_scale(up, up_blocks, row + 3, b) * dx);
+            v128_t gd0 = wasm_f32x4_splat(q4_wasm_block_scale(gate, c->gate_prepared, gate_blocks, row + 0, b) * dx);
+            v128_t gd1 = wasm_f32x4_splat(q4_wasm_block_scale(gate, c->gate_prepared, gate_blocks, row + 1, b) * dx);
+            v128_t gd2 = wasm_f32x4_splat(q4_wasm_block_scale(gate, c->gate_prepared, gate_blocks, row + 2, b) * dx);
+            v128_t gd3 = wasm_f32x4_splat(q4_wasm_block_scale(gate, c->gate_prepared, gate_blocks, row + 3, b) * dx);
+            v128_t ud0 = wasm_f32x4_splat(q4_wasm_block_scale(up, c->up_prepared, up_blocks, row + 0, b) * dx);
+            v128_t ud1 = wasm_f32x4_splat(q4_wasm_block_scale(up, c->up_prepared, up_blocks, row + 1, b) * dx);
+            v128_t ud2 = wasm_f32x4_splat(q4_wasm_block_scale(up, c->up_prepared, up_blocks, row + 2, b) * dx);
+            v128_t ud3 = wasm_f32x4_splat(q4_wasm_block_scale(up, c->up_prepared, up_blocks, row + 3, b) * dx);
 
             gsum0 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(q4_wasm_canonical_dot_vec(g0 + b, xb)), gd0, gsum0);
             gsum1 = wasm_f32x4_relaxed_madd(wasm_f32x4_convert_i32x4(q4_wasm_canonical_dot_vec(g1 + b, xb)), gd1, gsum1);
@@ -370,8 +371,8 @@ void bn_quant_q4_wasm_gate_up_silu_4row_range(void *ctx, int group_start, int gr
 
 void bn_quant_q4_repacked_wasm_sdot_range(void *ctx, int row_start, int row_end) {
     BnQ4SdotCtx *c = (BnQ4SdotCtx *)ctx;
-    const uint8_t *rp_qs = c->W->rp_qs;
-    const float *rp_f32_scales = c->W->rp_f32_scales;
+    const uint8_t *rp_qs = c->prepared ? c->prepared->qs : NULL;
+    const float *rp_f32_scales = c->prepared ? c->prepared->f32_scales : NULL;
     const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)c->W->data;
     int n_blocks_per_row = c->W->cols / 32;
     const int8_t *x_q = c->x_q;
@@ -382,7 +383,7 @@ void bn_quant_q4_repacked_wasm_sdot_range(void *ctx, int row_start, int row_end)
         float row_sum = 0.0f;
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
-            float d_q4 = q4_wasm_block_scale(c->W, blocks, row, b);
+            float d_q4 = q4_wasm_block_scale(c->W, c->prepared, blocks, row, b);
             float d_q8 = x_scales[b];
 
             v128_t raw = wasm_v128_load(blk->qs);
@@ -421,7 +422,7 @@ void bn_quant_q4_repacked_wasm_sdot_range(void *ctx, int row_start, int row_end)
         float row_sum = 0.0f;
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
-            float d_q4 = q4_wasm_block_scale(c->W, blocks, row, b);
+            float d_q4 = q4_wasm_block_scale(c->W, c->prepared, blocks, row, b);
             float d_q8 = x_scales[b];
 
             v128_t raw = wasm_v128_load(blk->qs);
@@ -440,8 +441,8 @@ void bn_quant_q4_repacked_wasm_sdot_range(void *ctx, int row_start, int row_end)
 
 void bn_quant_q4_repacked_wasm_sdot_8row_range(void *ctx, int group_start, int group_end) {
     BnQ4SdotCtx *c = (BnQ4SdotCtx *)ctx;
-    const uint8_t *rp_qs = c->W->rp_qs;
-    const float *rp_f32_scales = c->W->rp_f32_scales;
+    const uint8_t *rp_qs = c->prepared ? c->prepared->qs : NULL;
+    const float *rp_f32_scales = c->prepared ? c->prepared->f32_scales : NULL;
     int n_blocks_per_row = c->W->cols / 32;
     const int8_t *x_q = c->x_q;
     const float *x_scales = c->x_scales;
@@ -524,7 +525,7 @@ static float q4_wasm_native_row_dot(const BnQWeight *W, int row,
         acc = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(hi, wasm_v128_load(xb + 16), acc);
         int32_t total = wasm_i32x4_extract_lane(acc, 0) + wasm_i32x4_extract_lane(acc, 1) +
                         wasm_i32x4_extract_lane(acc, 2) + wasm_i32x4_extract_lane(acc, 3);
-        row_sum += q4_wasm_block_scale(W, blocks, row, b) * x_scales[b] * (float)total;
+        row_sum += q4_wasm_block_scale(W, NULL, blocks, row, b) * x_scales[b] * (float)total;
     }
     return row_sum;
 }
@@ -533,10 +534,10 @@ void bn_quant_q4_repacked_gate_up_silu_wasm_range(void *ctx, int row_start, int 
     BnQ4GateUpCtx *c = (BnQ4GateUpCtx *)ctx;
     const BnQWeight *gate = c->gate;
     const BnQWeight *up = c->up;
-    const float *gate_f32_scales = gate->rp_f32_scales;
-    const float *up_f32_scales = up->rp_f32_scales;
-    const uint8_t *gate_qs = gate->rp_qs;
-    const uint8_t *up_qs = up->rp_qs;
+    const float *gate_f32_scales = c->gate_prepared ? c->gate_prepared->f32_scales : NULL;
+    const float *up_f32_scales = c->up_prepared ? c->up_prepared->f32_scales : NULL;
+    const uint8_t *gate_qs = c->gate_prepared ? c->gate_prepared->qs : NULL;
+    const uint8_t *up_qs = c->up_prepared ? c->up_prepared->qs : NULL;
     int n_blocks_per_row = gate->cols / 32;
     const int8_t *x_q = c->x_q;
     const float *x_scales = c->x_scales;

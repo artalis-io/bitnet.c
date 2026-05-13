@@ -198,7 +198,7 @@ static void test_gemma4_dense(void) {
     assert(bn_model_arch_attention_value_shares_key("gemma4") == 1);
     assert(bn_model_arch_rope_text_dims(64, sections, 3) == 32);
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
-    assert(m.backend == NULL);
+    assert(m.backend != NULL);
     assert(bn_model_gpu(&m) == NULL);
     assert(m.config.arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4);
     assert(bn_model_arch_requires_large_gpu_graph_fallback(&m.config));
@@ -221,7 +221,7 @@ static void test_gemma4_moe_fused_gate_up(void) {
     assert(bn_model_arch_infer_moe_hidden(gf, ops) == 32);
     assert(bn_model_arch_has_shared_expert(gf, ops) == 0);
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
-    assert(m.backend == NULL);
+    assert(m.backend != NULL);
     assert(bn_model_gpu(&m) == NULL);
     m.moe_io.mmap_base = gf->raw;
     BnMoEExpertMap *em = &m.weights.layers[0].expert_map;

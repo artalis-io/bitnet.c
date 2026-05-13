@@ -1,18 +1,19 @@
 #include "transformer_internal.h"
+#include "backend_quant.h"
 
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
     return gpu && ((gpu->caps & cap) != 0);
 }
 
 int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type) {
-    uint32_t cap = bn_quant_format_gpu_split_cap(tensor_type);
+    uint32_t cap = bn_backend_quant_gpu_split_cap(tensor_type);
     return cap != 0 && bn_transformer_gpu_has_cap(gpu, cap);
 }
 
 int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,
                                              int act_type) {
-    uint32_t cap = bn_quant_format_gpu_fused_gateup_silu_cap(tensor_type);
+    uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
     return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);
 }
 
@@ -142,14 +143,14 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
 
     p->use_flash = c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);
     p->use_packed_qkv = qkv_stacked && !p->shape.q_gated &&
-                        bn_quant_format_can_gpu_native(lw->wq.type) &&
-                        bn_quant_format_can_gpu_native(lw->wk.type) &&
-                        bn_quant_format_can_gpu_native(lw->wv.type) &&
+                        bn_backend_quant_can_gpu_native(lw->wq.type) &&
+                        bn_backend_quant_can_gpu_native(lw->wk.type) &&
+                        bn_backend_quant_can_gpu_native(lw->wv.type) &&
                         q_bias && k_bias && v_bias;
     p->use_qkv_split = qkv_stacked && !p->shape.q_gated &&
                        bn_transformer_gpu_can_matvec_split(gpu, lw->wq.type);
     p->qkv_split_op_code = p->use_qkv_split
-        ? bn_quant_format_gpu_split_op_code(lw->wq.type)
+        ? bn_backend_quant_gpu_split_op_code(lw->wq.type)
         : 0;
     if (p->use_qkv_split) p->fusion_flags |= BN_FUSION_QKV_SPLIT;
     if (p->use_flash) p->fusion_flags |= BN_FUSION_FLASH_ATTN;
@@ -181,9 +182,9 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->use_fused_gateup_silu =
         p->placement == BN_EXEC_GPU &&
         c->has_ffn_gate &&
-        bn_quant_format_gpu_fused_gateup_silu_cap(lw->ffn_gate.type) != 0 &&
-        bn_quant_format_gpu_fused_gateup_silu_cap(lw->ffn_up.type) ==
-            bn_quant_format_gpu_fused_gateup_silu_cap(lw->ffn_gate.type) &&
+        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn_gate.type) != 0 &&
+        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn_up.type) ==
+            bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn_gate.type) &&
         bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn_gate.type, c->act_type);
     p->use_gateup_split =
         p->placement == BN_EXEC_GPU &&
@@ -193,7 +194,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
         lw->ffn_gate.cols == lw->ffn_up.cols &&
         bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type) &&
         (c->act_type != 1 ||
-         bn_quant_format_gpu_split_op_code(lw->ffn_gate.type) !=
+         bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type) !=
              BN_GPU_CODE_Q4K_MATVEC_SPLIT);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
     if (p->use_gateup_split) p->fusion_flags |= BN_FUSION_GATEUP_SPLIT;

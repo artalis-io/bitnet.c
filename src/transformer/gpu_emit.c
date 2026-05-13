@@ -1,4 +1,6 @@
 #include "transformer_internal.h"
+#include "backend_quant.h"
+#include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
 #include "session.h"
@@ -69,11 +71,11 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
                    lw->ffn_gate.rows == lw->ffn_up.rows &&
                    lw->ffn_gate.cols == lw->ffn_up.cols &&
                    ffn_plan->activation != 1 &&
-                   bn_quant_format_gpu_split_op_code(lw->ffn_gate.type) ==
+                   bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type) ==
                        BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
                    bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type)) {
             int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
-            int split_op_code = bn_quant_format_gpu_split_op_code(lw->ffn_gate.type);
+            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type);
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(split_op_code),
                 .type = lw->ffn_gate.type,
@@ -89,7 +91,7 @@ void bn_transformer_gpu_emit_dense_ffn(BnGPUOp *ops, int *n,
                    lw->ffn_gate.cols == lw->ffn_up.cols &&
                    bn_transformer_gpu_can_matvec_split(gpu, lw->ffn_gate.type)) {
             int total_rows = lw->ffn_gate.rows + lw->ffn_up.rows;
-            int split_op_code = bn_quant_format_gpu_split_op_code(lw->ffn_gate.type);
+            int split_op_code = bn_backend_quant_gpu_split_op_code(lw->ffn_gate.type);
             ops[(*n)++] = (BnGPUOp){
                 GPU_OP(split_op_code),
                 .type = lw->ffn_gate.type,
@@ -218,13 +220,13 @@ void bn_transformer_gpu_emit_qkv(BnGPUOp *ops, int *n,
                          !q_bias && !k_bias && !v_bias &&
                          lw->wqkv.rows == q_dim + 2 * kv_dim;
     int q_gated = !use_packed_qkv && plan->q_gated;
-    int packed_split_op_code = bn_quant_format_gpu_split_op_code(lw->wqkv.type);
+    int packed_split_op_code = bn_backend_quant_gpu_split_op_code(lw->wqkv.type);
     int use_packed_q5_split =
         use_packed_qkv &&
         packed_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
         bn_transformer_gpu_can_matvec_split(gpu, lw->wqkv.type);
 
-    int qkv_split_op_code = bn_quant_format_gpu_split_op_code(lw->wq.type);
+    int qkv_split_op_code = bn_backend_quant_gpu_split_op_code(lw->wq.type);
     int use_split = qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     qkv_split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
@@ -583,7 +585,7 @@ void bn_transformer_gpu_emit_ssm(BnGPUOp *ops, int *n,
     void *ffn_norm = bn_transformer_backend_handle_or(
         backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
 
-    int ssm_split_op_code = bn_quant_format_gpu_split_op_code(lw->wqkv.type);
+    int ssm_split_op_code = bn_backend_quant_gpu_split_op_code(lw->wqkv.type);
     if (ssm_qkvz_stacked &&
         ssm_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
         bn_transformer_gpu_can_matvec_split(gpu, lw->wqkv.type)) {
@@ -707,20 +709,11 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
                                  void **uncached_bufs,
                                  int *n_uncached) {
     BnConfig *c = &m->config;
-    BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = m->backend;
     BnMoEState *ms = sess->moe_state;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
     const BnMoEExpertMap *em = &lw->expert_map;
-    BnGPUMoECache *gpu_cache = (BnGPUMoECache *)m->moe_io.gpu_moe_cache;
-    int expert_split_op_code = bn_quant_format_gpu_split_op_code(em->gate_type);
-    int use_q4k_expert_split =
-                               expert_split_op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
-                               bn_transformer_gpu_can_matvec_split(gpu, em->gate_type) &&
-                               em->up_type == em->gate_type &&
-                               em->gate_rows == em->up_rows &&
-                               em->gate_cols == em->up_cols;
     *n_uncached = 0;
 
     for (int k = 0; k < K; k++) {
@@ -730,80 +723,15 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
         uint32_t u_ew;
         memcpy(&u_ew, &ew, 4);
 
-        void *gate_gpu, *up_gpu, *down_gpu;
-        int cached = bn_gpu_moe_cache_lookup(gpu_cache, layer, eidx,
-                                             &gate_gpu, &up_gpu, &down_gpu);
-        if (!cached) {
-            const void *gate_data = bn_moe_get_expert_proj(&m->moe_io, ms,
-                                                           em, eidx, 0);
-            if (!gate_data) continue;
-            const void *up_data = bn_moe_get_expert_proj(&m->moe_io, ms,
-                                                         em, eidx, 1);
-            if (!up_data) continue;
+        BnGPUMoEExpertBuffers expert;
+        if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
+                                         uncached_bufs, n_uncached,
+                                         &expert) != 0)
+            continue;
 
-            if (use_q4k_expert_split) {
-                size_t gateup_bytes = em->expert_gate_bytes + em->expert_up_bytes;
-                if (gpu->buffer_create_stacked2) {
-                    gate_gpu = gpu->buffer_create_stacked2(
-                        gpu->ctx, gate_data, em->expert_gate_bytes,
-                        up_data, em->expert_up_bytes, em->gate_type,
-                        em->gate_rows + em->up_rows, em->gate_cols);
-                } else {
-                    uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
-                    if (!gateup_data) continue;
-                    memcpy(gateup_data, gate_data, em->expert_gate_bytes);
-                    memcpy(gateup_data + em->expert_gate_bytes, up_data,
-                           em->expert_up_bytes);
-                    gate_gpu = gpu->buffer_create(
-                        gpu->ctx, gateup_data, gateup_bytes, em->gate_type,
-                        em->gate_rows + em->up_rows, em->gate_cols);
-                    free(gateup_data);
-                }
-                if (!gate_gpu) continue;
-                up_gpu = NULL;
-            } else {
-                gate_gpu = gpu->buffer_create(gpu->ctx, gate_data,
-                    em->expert_gate_bytes, em->gate_type,
-                    em->gate_rows, em->gate_cols);
-                if (!gate_gpu) continue;
-                up_gpu = gpu->buffer_create(gpu->ctx, up_data,
-                    em->expert_up_bytes, em->up_type,
-                    em->up_rows, em->up_cols);
-                if (!up_gpu) {
-                    gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                    continue;
-                }
-            }
-
-            const void *down_data = bn_moe_get_expert_proj(&m->moe_io, ms,
-                                                           em, eidx, 2);
-            if (!down_data) {
-                gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
-                continue;
-            }
-            down_gpu = gpu->buffer_create(gpu->ctx, down_data,
-                em->expert_down_bytes, em->down_type,
-                em->down_rows, em->down_cols);
-            if (!down_gpu) {
-                gpu->buffer_destroy(gpu->ctx, gate_gpu);
-                if (up_gpu) gpu->buffer_destroy(gpu->ctx, up_gpu);
-                continue;
-            }
-
-            if (gpu_cache) {
-                bn_gpu_moe_cache_insert(gpu_cache, layer, eidx,
-                                        gate_gpu, up_gpu, down_gpu);
-            } else {
-                uncached_bufs[(*n_uncached)++] = gate_gpu;
-                if (up_gpu) uncached_bufs[(*n_uncached)++] = up_gpu;
-                uncached_bufs[(*n_uncached)++] = down_gpu;
-            }
-        }
-
-        if (use_q4k_expert_split) {
-            ops[(*n)++] = (BnGPUOp){ .op_code = expert_split_op_code,
-                .type = em->gate_type, .W_buf = gate_gpu,
+        if (expert.use_gateup_split) {
+            ops[(*n)++] = (BnGPUOp){ .op_code = expert.gateup_split_op_code,
+                .type = em->gate_type, .W_buf = expert.gate,
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_MOE_HB,
                 .buf_aux = BN_GPU_VALUE_MOE_HB2,
                 .rows = em->gate_rows + em->up_rows, .cols = em->gate_cols,
@@ -812,13 +740,13 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
                        0, 0, 0, 0, 0 } };
         } else {
             ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-                .type = em->gate_type, .W_buf = gate_gpu,
+                .type = em->gate_type, .W_buf = expert.gate,
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_MOE_HB,
                 .buf_aux = -1, .rows = em->gate_rows, .cols = em->gate_cols,
                 .p = { (uint32_t)em->gate_rows, (uint32_t)em->gate_cols,
                        1, 0, 0, 0, 0, 0 } };
             ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-                .type = em->up_type, .W_buf = up_gpu,
+                .type = em->up_type, .W_buf = expert.up,
                 .buf_in = BN_GPU_VALUE_XB, .buf_out = BN_GPU_VALUE_MOE_HB2,
                 .buf_aux = -1, .rows = em->up_rows, .cols = em->up_cols,
                 .p = { (uint32_t)em->up_rows, (uint32_t)em->up_cols,
@@ -829,7 +757,7 @@ void bn_transformer_gpu_emit_moe(BnGPUOp *ops, int *n,
             .buf_out = -1, .buf_aux = BN_GPU_VALUE_MOE_HB2,
             .p = { (uint32_t)moe_hidden, 0, 0, 0, 0, 0, 0, 0 } };
         ops[(*n)++] = (BnGPUOp){ GPU_OP(BN_GPU_CODE_MATVEC),
-            .type = em->down_type, .W_buf = down_gpu,
+            .type = em->down_type, .W_buf = expert.down,
             .buf_in = BN_GPU_VALUE_MOE_HB, .buf_out = BN_GPU_VALUE_XB2,
             .buf_aux = -1, .rows = em->down_rows, .cols = em->down_cols,
             .p = { (uint32_t)em->down_rows, (uint32_t)em->down_cols,

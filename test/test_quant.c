@@ -121,8 +121,8 @@ static void test_matvec_batch(void) {
     float out1[2], out2[2];
     int8_t x_q[256];
     BnMatvecTask tasks[2] = {
-        { out1, &W1 },
-        { out2, &W2 },
+         { out1, &W1, NULL },
+         { out2, &W2, NULL },
     };
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
 
@@ -303,8 +303,8 @@ static void test_q5k_matvec_multi_correctness(void) {
     bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
 
     BnMatvecMultiTask tasks[2] = {
-        { out1, &W1, X1 },
-        { out2, &W2, X2 },
+         { out1, &W1, X1, NULL },
+         { out2, &W2, X2, NULL },
     };
     int8_t x_q_bufs[2 * 256];
     bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
@@ -361,8 +361,8 @@ static void test_q5k_matvec_batch_correctness(void) {
     bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-        { out1, &W1 },
-        { out2, &W2 },
+         { out1, &W1, NULL },
+         { out2, &W2, NULL },
     };
     int8_t x_q[256];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -419,9 +419,9 @@ static void test_i2s_matvec_multi_correctness(void) {
     bn_quant_matvec(ref3, &W3, X3, x_q_ref, NULL);
 
     BnMatvecMultiTask tasks[3] = {
-        { out1, &W1, X1 },
-        { out2, &W2, X2 },
-        { out3, &W3, X3 },
+         { out1, &W1, X1, NULL },
+         { out2, &W2, X2, NULL },
+         { out3, &W3, X3, NULL },
     };
     int8_t x_q_bufs[3 * 256];
     bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
@@ -474,8 +474,8 @@ static void test_q4_matvec_multi_correctness(void) {
     bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
 
     BnMatvecMultiTask tasks[2] = {
-        { out1, &W1, X1 },
-        { out2, &W2, X2 },
+         { out1, &W1, X1, NULL },
+         { out2, &W2, X2, NULL },
     };
     int8_t x_q_bufs[2 * 64];
     bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
@@ -524,8 +524,8 @@ static void test_q8_matvec_batch_correctness(void) {
     bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-        { out1, &W1 },
-        { out2, &W2 },
+         { out1, &W1, NULL },
+         { out2, &W2, NULL },
     };
     int8_t x_q[64];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -576,8 +576,8 @@ static void test_q8_matvec_multi_correctness(void) {
     bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
 
     BnMatvecMultiTask tasks[2] = {
-        { out1, &W1, X1 },
-        { out2, &W2, X2 },
+         { out1, &W1, X1, NULL },
+         { out2, &W2, X2, NULL },
     };
     int8_t x_q_bufs[2 * 64];
     bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
@@ -621,8 +621,8 @@ static void test_bf16_matvec_batch_correctness(void) {
     bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-        { out1, &W1 },
-        { out2, &W2 },
+         { out1, &W1, NULL },
+         { out2, &W2, NULL },
     };
     int8_t x_q[33];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -706,8 +706,8 @@ static void test_bf16_matvec_multi_correctness(void) {
     bn_quant_matvec(ref2, &W2, X2, x_q_ref, NULL);
 
     BnMatvecMultiTask tasks[2] = {
-        { out1, &W1, X1 },
-        { out2, &W2, X2 },
+         { out1, &W1, X1, NULL },
+         { out2, &W2, X2, NULL },
     };
     int8_t x_q_bufs[2 * 33];
     bn_quant_matvec_multi(tasks, n_tasks, x_q_bufs, NULL);
@@ -754,8 +754,8 @@ static void test_mixed_kquant_matvec_batch_correctness(void) {
     bn_quant_matvec(ref6, &W6, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-        { out4, &W4 },
-        { out6, &W6 },
+         { out4, &W4, NULL },
+         { out6, &W6, NULL },
     };
     int8_t x_q[256];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -804,8 +804,8 @@ static void test_mixed_kquant_matvec_multi_correctness(void) {
     bn_quant_matvec(ref6, &W6, x6, x_q_ref, NULL);
 
     BnMatvecMultiTask tasks[2] = {
-        { out4, &W4, x4 },
-        { out6, &W6, x6 },
+         { out4, &W4, x4, NULL },
+         { out6, &W6, x6, NULL },
     };
     int8_t x_q_bufs[2 * 256];
     bn_quant_matvec_multi(tasks, 2, x_q_bufs, NULL);

@@ -1,4 +1,5 @@
 #include "transformer_internal.h"
+#include "backend_quant.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"
@@ -25,8 +26,10 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      const float *X,
                                      int n_tokens,
                                      int8_t *x_q_buf) {
-    bn_quant_matmul_gpu_buf(out, W, prefill_qweight_backend_buf(m->backend, W),
-                            X, n_tokens, x_q_buf, m->pool, bn_model_gpu(m));
+    bn_backend_quant_matmul_gpu_buf(out, W,
+                                    prefill_qweight_backend_buf(m->backend, W),
+                                    X, n_tokens, x_q_buf, m->pool,
+                                    bn_model_gpu(m));
 }
 
 #ifdef __AVX2__
@@ -359,8 +362,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 float alpha_arr[num_v_heads > 0 ? num_v_heads : 1];
                 float beta_arr[num_v_heads > 0 ? num_v_heads : 1];
                 BnMatvecTask ab[2] = {
-                    { alpha_arr, &lw->ssm_alpha },
-                    { beta_arr,  &lw->ssm_beta  },
+                    { alpha_arr, &lw->ssm_alpha, NULL },
+                    { beta_arr,  &lw->ssm_beta, NULL },
                 };
                 bn_quant_matvec_batch(ab, 2, xb_t, s->x_q, m->pool);
                 for (int h = 0; h < num_v_heads; h++) {

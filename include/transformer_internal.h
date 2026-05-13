@@ -6,6 +6,7 @@
 
 #include "transformer.h"
 #include "gpu_backend.h"
+#include "gpu_graph.h"
 #include "backend_model.h"
 #include "simd_helpers.h"
 #include "quant.h"
