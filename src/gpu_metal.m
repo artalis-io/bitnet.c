@@ -1070,6 +1070,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
                     !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline;
     int use_q6_q8k = type == BN_GGUF_TENSOR_Q6_K &&
+                     !getenv("BN_METAL_DISABLE_Q6_Q8K") &&
                      ctx->q8k_quant_pipeline && ctx->q6_q8k_matvec_pipeline &&
                      (cols % 256) == 0;
     if (wbuf->q4_prepared && !use_q4_prepared_q8) return -1;
@@ -1496,6 +1497,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->type == BN_GGUF_TENSOR_Q6_K &&
+                           !getenv("BN_METAL_DISABLE_Q6_Q8K") &&
                            ctx->q8k_quant_pipeline &&
                            ctx->q6_q8k_matvec_pipeline &&
                            (op->cols % 256) == 0) {
