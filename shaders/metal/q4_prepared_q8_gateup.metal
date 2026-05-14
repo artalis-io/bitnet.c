@@ -11,7 +11,8 @@ static inline int q4_byte_dot(uchar stored, device const char *x0,
 static inline float q4_prepared_row_dot(device const uchar *weights,
                                         device const char *x_q,
                                         device const float *x_scales,
-                                        uint rows, uint cols, uint row) {
+                                        uint rows, uint cols, uint row,
+                                        uint row_lane) {
     uint blocks_per_row = cols >> 5;
     uint n_groups = rows >> 2;
     uint n_group_blocks = n_groups * blocks_per_row;
@@ -21,7 +22,7 @@ static inline float q4_prepared_row_dot(device const uchar *weights,
     uint group = row >> 2;
     uint row_in_group = row & 3u;
     float row_sum = 0.0f;
-    for (uint b = 0; b < blocks_per_row; b++) {
+    for (uint b = row_lane; b < blocks_per_row; b += 8u) {
         uint gb = group * blocks_per_row + b;
         float d = float(as_type<half>(scales[gb * 4u + row_in_group]));
         float dx = x_scales[b];
@@ -68,18 +69,30 @@ kernel void q4_prepared_q8_gateup(
     constant uint      *p        [[buffer(4)]],
     uint3 wid [[threadgroup_position_in_grid]],
     uint3 lid [[thread_position_in_threadgroup]]) {
-    if (lid.x >= 32) return;
+    uint row_lane = lid.x & 7u;
+    uint local_row = lid.x >> 3;
     uint total_rows = p[0], cols = p[1], gate_rows = p[2];
-    uint row = wid.x * 32u + lid.x;
-    if (row >= gate_rows) return;
-    float gate = q4_prepared_row_dot(weights, x_q, x_scales,
-                                     total_rows, cols, row);
-    float up = q4_prepared_row_dot(weights, x_q, x_scales,
-                                   total_rows, cols, row + gate_rows);
-    uint bias_offset = p[4];
-    if (bias_offset > 0) {
-        gate += as_type<float>(((device const uint *)weights)[bias_offset + row]);
-        up += as_type<float>(((device const uint *)weights)[bias_offset + row + gate_rows]);
+    uint row = wid.x * 32u + local_row;
+    float gate = 0.0f;
+    float up = 0.0f;
+    if (row < gate_rows) {
+        gate = q4_prepared_row_dot(weights, x_q, x_scales,
+                                   total_rows, cols, row, row_lane);
+        up = q4_prepared_row_dot(weights, x_q, x_scales,
+                                 total_rows, cols, row + gate_rows, row_lane);
     }
-    out[row] = bn_fast_silu(gate) * up;
+    gate += simd_shuffle_xor(gate, 1);
+    gate += simd_shuffle_xor(gate, 2);
+    gate += simd_shuffle_xor(gate, 4);
+    up += simd_shuffle_xor(up, 1);
+    up += simd_shuffle_xor(up, 2);
+    up += simd_shuffle_xor(up, 4);
+    uint bias_offset = p[4];
+    if (row_lane == 0 && row < gate_rows) {
+        if (bias_offset > 0) {
+            gate += as_type<float>(((device const uint *)weights)[bias_offset + row]);
+            up += as_type<float>(((device const uint *)weights)[bias_offset + row + gate_rows]);
+        }
+        out[row] = bn_fast_silu(gate) * up;
+    }
 }
