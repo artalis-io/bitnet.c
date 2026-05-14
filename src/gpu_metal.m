@@ -1289,8 +1289,9 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
-    BnMetalProfileShape q8_shapes[16], q4_shapes[16];
-    int n_q8_shapes = 0, n_q4_shapes = 0;
+    BnMetalProfileShape matvec_shapes[32], q8_shapes[16], q4_shapes[16];
+    int n_matvec_shapes = 0, n_q8_shapes = 0, n_q4_shapes = 0;
+    memset(matvec_shapes, 0, sizeof(matvec_shapes));
     memset(q8_shapes, 0, sizeof(q8_shapes));
     memset(q4_shapes, 0, sizeof(q4_shapes));
     ctx->q8_quant_dispatches = 0;
@@ -1365,6 +1366,23 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 pipeline = ctx->fwd_pipelines[shader];
             }
             if (!pipeline) continue;
+
+            if (ctx->gpu_profile >= 2 &&
+                (shader == BN_GPU_SHADER_MATVEC ||
+                 shader == BN_GPU_SHADER_MATVEC_SPLIT ||
+                 shader == BN_GPU_SHADER_FUSED_GATEUP_SILU)) {
+                uint32_t n_tokens = shader == BN_GPU_SHADER_MATVEC && op->p[2]
+                    ? op->p[2]
+                    : 1;
+                uint32_t rows = shader == BN_GPU_SHADER_MATVEC_SPLIT
+                    ? op->p[0]
+                    : (uint32_t)op->rows;
+                if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU && op->p[0])
+                    rows = op->p[0];
+                metal_profile_add_shape(matvec_shapes, &n_matvec_shapes, 32,
+                                        shader, rows, (uint32_t)op->cols,
+                                        n_tokens);
+            }
 
             /* Compute this op's read/write buffer masks. */
             uint32_t op_reads = 0, op_writes = 0;
@@ -1960,6 +1978,15 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         metal_shader_profile_name(q4_shapes[i].shader),
                         q4_shapes[i].count, q4_shapes[i].rows,
                         q4_shapes[i].cols, q4_shapes[i].aux);
+            }
+        }
+        if (n_matvec_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- matvec shapes ---\n");
+            for (int i = 0; i < n_matvec_shapes; i++) {
+                fprintf(stderr, "  %-16s: %3d ops rows=%u cols=%u tokens=%u\n",
+                        metal_shader_profile_name(matvec_shapes[i].shader),
+                        matvec_shapes[i].count, matvec_shapes[i].rows,
+                        matvec_shapes[i].cols, matvec_shapes[i].aux);
             }
         }
     }
