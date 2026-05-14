@@ -9,14 +9,13 @@ using namespace metal;
     char(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
     char(int(((w) >> ((sh) + 12))& 0xF) - 8))
 
-static inline int dot_char4(char4 a, char4 b) {
-    int4 p = int4(a) * int4(b);
-    return p.x + p.y + p.z + p.w;
+static inline float dot_char4(char4 a, char4 b) {
+    return dot(float4(a), float4(b));
 }
 
-static inline int q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
-                            device const char4 *xq) {
-    int acc = 0;
+static inline float q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
+                              device const char4 *xq) {
+    float acc = 0.0f;
     acc += dot_char4(DQ4(w0,  0), xq[0]);
     acc += dot_char4(DQ4(w0, 16), xq[1]);
     acc += dot_char4(DQ4(w1,  0), xq[2]);
@@ -80,14 +79,14 @@ kernel void q4_fused_gateup_silu_q8_prequant(
             uint up_nib = total_blocks + up_block * 4;
             device const char4 *xqb = (device const char4 *)(x_q + b * 32);
 
-            int gate_dot = q4_q8_dot(weights[gate_nib], weights[gate_nib + 1],
-                                     weights[gate_nib + 2], weights[gate_nib + 3],
+            float gate_dot = q4_q8_dot(weights[gate_nib], weights[gate_nib + 1],
+                                       weights[gate_nib + 2], weights[gate_nib + 3],
+                                       xqb);
+            float up_dot = q4_q8_dot(weights[up_nib], weights[up_nib + 1],
+                                     weights[up_nib + 2], weights[up_nib + 3],
                                      xqb);
-            int up_dot = q4_q8_dot(weights[up_nib], weights[up_nib + 1],
-                                   weights[up_nib + 2], weights[up_nib + 3],
-                                   xqb);
-            gate_acc += gate_d * dx * float(gate_dot);
-            up_acc += up_d * dx * float(up_dot);
+            gate_acc += gate_d * dx * gate_dot;
+            up_acc += up_d * dx * up_dot;
         }
     }
 

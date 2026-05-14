@@ -1217,7 +1217,10 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     ctx->q8_split_dispatches = 0;
     ctx->q8_gateup_dispatches = 0;
     int full_barriers = getenv("BN_METAL_FULL_BARRIERS") != NULL;
-    int disable_barriers = getenv("BN_METAL_DISABLE_BARRIERS") != NULL;
+    int enable_barriers = getenv("BN_METAL_ENABLE_BARRIERS") != NULL ||
+                          full_barriers;
+    int disable_barriers = getenv("BN_METAL_DISABLE_BARRIERS") != NULL ||
+                           !enable_barriers;
 
     @autoreleasepool {
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];

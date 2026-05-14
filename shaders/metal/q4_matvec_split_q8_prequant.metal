@@ -9,14 +9,13 @@ using namespace metal;
     char(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
     char(int(((w) >> ((sh) + 12))& 0xF) - 8))
 
-static inline int dot_char4(char4 a, char4 b) {
-    int4 p = int4(a) * int4(b);
-    return p.x + p.y + p.z + p.w;
+static inline float dot_char4(char4 a, char4 b) {
+    return dot(float4(a), float4(b));
 }
 
-static inline int q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
-                            device const char4 *xq) {
-    int acc = 0;
+static inline float q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
+                              device const char4 *xq) {
+    float acc = 0.0f;
     acc += dot_char4(DQ4(w0,  0), xq[0]);
     acc += dot_char4(DQ4(w0, 16), xq[1]);
     acc += dot_char4(DQ4(w1,  0), xq[2]);
@@ -62,10 +61,10 @@ kernel void q4_matvec_split_q8_prequant(
                 continue;
             uint nib_base = total_blocks + block_idx * 4;
             device const char4 *xqb = (device const char4 *)(x_q + b * 32);
-            int idot = q4_q8_dot(weights[nib_base], weights[nib_base + 1],
-                                 weights[nib_base + 2], weights[nib_base + 3],
-                                 xqb);
-            acc += d * dx * float(idot);
+            float idot = q4_q8_dot(weights[nib_base], weights[nib_base + 1],
+                                   weights[nib_base + 2], weights[nib_base + 3],
+                                   xqb);
+            acc += d * dx * idot;
         }
     }
 
