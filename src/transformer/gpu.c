@@ -201,6 +201,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                     if (q4_q8_to_layer < -1)
                         q4_q8_to_layer = -1;
                 }
+            } else if (getenv("BN_GPU_Q4_Q8") && c->n_layers >= 32) {
+                q4_q8_to_layer = c->n_layers - 16 - 1;
             }
         }
         q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
