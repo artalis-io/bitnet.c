@@ -60,7 +60,7 @@ kernel void q4_prepared_q8_matvec(
             idot += q4_byte_dot(qrow[2], xb + xlo + 2u, xb + xhi + 2u);
             idot += q4_byte_dot(qrow[3], xb + xlo + 3u, xb + xhi + 3u);
         }
-        row_sum += d * dx * float(idot);
+        row_sum = fma(d * dx, float(idot), row_sum);
     }
 
     if (bias_offset > 0)

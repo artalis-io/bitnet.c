@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
-#include "../gpu_shader_ir_internal.h"
+#include "../gpu_shader.h"
+#include "backend_model.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_rmsnorm_internal.h"
@@ -322,7 +323,97 @@ static void debug_compare_vec(const char *label,
             "max_abs=%.9g max_i=%d cpu=%.9g gpu=%.9g "
             "mean_abs=%.9g rms=%.9g\n",
             label, layer, pos, max_abs, max_i, cpu[max_i], gpu[max_i],
-            sum_abs / (double)n, sqrt(sum_sq / (double)n));
+           sum_abs / (double)n, sqrt(sum_sq / (double)n));
+}
+
+static const BnPreparedWeight *debug_prepared_qweight(BnModel *m,
+                                                      const BnQWeight *w) {
+    if (!m || !w || getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS"))
+        return NULL;
+    return bn_backend_model_prepared_qweight(bn_model_backend(m), w);
+}
+
+static void debug_quant_matvec_prepared(BnModel *m,
+                                        float *out,
+                                        const BnQWeight *W,
+                                        const float *x,
+                                        int8_t *x_q) {
+    BnMatvecTask task = {
+        out, W, debug_prepared_qweight(m, W)
+    };
+    bn_quant_matvec_batch(&task, 1, x, x_q, bn_model_pool(m));
+}
+
+static void debug_compare_q8_activation(const BnGPUBackend *gpu,
+                                        int layer,
+                                        int pos,
+                                        const float *x,
+                                        int cols) {
+    if (!gpu || !gpu->read_activation || !x || cols <= 0 ||
+        (cols % 32) != 0)
+        return;
+    int n_blocks = cols / 32;
+    int8_t *cpu_q = (int8_t *)malloc((size_t)cols);
+    int8_t *gpu_q = (int8_t *)malloc((size_t)cols);
+    float *cpu_scales = (float *)malloc((size_t)n_blocks * sizeof(float));
+    float *gpu_scales = (float *)malloc((size_t)n_blocks * sizeof(float));
+    if (!cpu_q || !gpu_q || !cpu_scales || !gpu_scales) {
+        free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
+        return;
+    }
+
+    bn_quant_x_to_q8_blocks(x, cpu_q, cpu_scales, cols);
+    if (gpu->read_activation(gpu->ctx, BN_GPU_DEBUG_BUF_Q8_ACT, gpu_q,
+                             (size_t)cols, 0) != 0 ||
+        gpu->read_activation(gpu->ctx, BN_GPU_DEBUG_BUF_Q8_SCALE, gpu_scales,
+                             (size_t)n_blocks * sizeof(float), 0) != 0) {
+        free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
+        return;
+    }
+
+    int max_q_abs = 0;
+    int max_q_i = 0;
+    long long sum_q_abs = 0;
+    int n_q_diff = 0;
+    for (int i = 0; i < cols; i++) {
+        int diff = (int)gpu_q[i] - (int)cpu_q[i];
+        int ad = diff < 0 ? -diff : diff;
+        if (ad > max_q_abs) {
+            max_q_abs = ad;
+            max_q_i = i;
+        }
+        if (ad) n_q_diff++;
+        sum_q_abs += ad;
+    }
+
+    double sum_scale_abs = 0.0;
+    double sum_scale_sq = 0.0;
+    float max_scale_abs = 0.0f;
+    int max_scale_i = 0;
+    for (int i = 0; i < n_blocks; i++) {
+        float diff = fabsf(gpu_scales[i] - cpu_scales[i]);
+        sum_scale_abs += (double)diff;
+        sum_scale_sq += (double)diff * (double)diff;
+        if (diff > max_scale_abs) {
+            max_scale_abs = diff;
+            max_scale_i = i;
+        }
+    }
+
+    fprintf(stderr,
+            "[bn:gpu:debug] q8_act_compare layer=%d pos=%d "
+            "q_max_abs=%d q_max_i=%d cpu_q=%d gpu_q=%d "
+            "q_diff_count=%d q_mean_abs=%.9g "
+            "scale_max_abs=%.9g scale_max_i=%d cpu_scale=%.9g "
+            "gpu_scale=%.9g scale_mean_abs=%.9g scale_rms=%.9g\n",
+            layer, pos, max_q_abs, max_q_i, (int)cpu_q[max_q_i],
+            (int)gpu_q[max_q_i], n_q_diff,
+            (double)sum_q_abs / (double)cols, max_scale_abs, max_scale_i,
+            cpu_scales[max_scale_i], gpu_scales[max_scale_i],
+            sum_scale_abs / (double)n_blocks,
+            sqrt(sum_scale_sq / (double)n_blocks));
+
+    free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
 }
 
 int bn_transformer_gpu_debug_compare_ffn_state(
@@ -645,18 +736,21 @@ int bn_transformer_gpu_debug_compare_qkv(
     float *cpu_q = (float *)malloc((size_t)q_dim * sizeof(float));
     float *cpu_k = (float *)malloc((size_t)kv_dim * sizeof(float));
     float *cpu_v = (float *)malloc((size_t)kv_dim * sizeof(float));
+    float *gpu_xb = (float *)malloc((size_t)dim * sizeof(float));
     float *gpu_q = (float *)malloc((size_t)q_dim * sizeof(float));
     float *gpu_k = (float *)malloc((size_t)kv_dim * sizeof(float));
     float *gpu_v = (float *)malloc((size_t)kv_dim * sizeof(float));
-    if (!cpu_q || !cpu_k || !cpu_v || !gpu_q || !gpu_k || !gpu_v) {
+    if (!cpu_q || !cpu_k || !cpu_v || !gpu_xb || !gpu_q || !gpu_k || !gpu_v) {
         free(cpu_q); free(cpu_k); free(cpu_v);
-        free(gpu_q); free(gpu_k); free(gpu_v);
+        free(gpu_xb); free(gpu_q); free(gpu_k); free(gpu_v);
         return -1;
     }
 
     if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
         bn_transformer_gpu_read_x(gpu, s->x,
                                   (size_t)dim * sizeof(float)) != 0 ||
+        bn_transformer_gpu_read_xb(gpu, gpu_xb,
+                                   (size_t)dim * sizeof(float)) != 0 ||
         bn_transformer_gpu_read_activation_buf(gpu, BN_GPU_VALUE_Q, gpu_q,
                                                (size_t)q_dim * sizeof(float)) != 0 ||
         bn_transformer_gpu_read_activation_buf_offset(
@@ -668,14 +762,16 @@ int bn_transformer_gpu_debug_compare_qkv(
             (size_t)kv_dim * sizeof(float),
             (size_t)kv_cache_off * sizeof(float)) != 0) {
         free(cpu_q); free(cpu_k); free(cpu_v);
-        free(gpu_q); free(gpu_k); free(gpu_v);
+        free(gpu_xb); free(gpu_q); free(gpu_k); free(gpu_v);
         return -1;
     }
 
     fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, m->config.norm_eps);
-    bn_quant_matvec(cpu_q, &lw->attn.wq, s->xb, s->x_q, bn_model_pool(m));
-    bn_quant_matvec(cpu_k, &lw->attn.wk, s->xb, s->x_q, bn_model_pool(m));
-    bn_quant_matvec(cpu_v, &lw->attn.wv, s->xb, s->x_q, bn_model_pool(m));
+    debug_compare_vec("attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
+    debug_compare_q8_activation(gpu, layer, pos, s->xb, dim);
+    debug_quant_matvec_prepared(m, cpu_q, &lw->attn.wq, s->xb, s->x_q);
+    debug_quant_matvec_prepared(m, cpu_k, &lw->attn.wk, s->xb, s->x_q);
+    debug_quant_matvec_prepared(m, cpu_v, &lw->attn.wv, s->xb, s->x_q);
     if (lw->attn.q_bias) {
         for (int i = 0; i < q_dim; i++) cpu_q[i] += lw->attn.q_bias[i];
     }
@@ -691,7 +787,7 @@ int bn_transformer_gpu_debug_compare_qkv(
     debug_compare_vec("qkv_v_compare", layer, pos, cpu_v, gpu_v, kv_dim);
 
     free(cpu_q); free(cpu_k); free(cpu_v);
-    free(gpu_q); free(gpu_k); free(gpu_v);
+    free(gpu_xb); free(gpu_q); free(gpu_k); free(gpu_v);
     return 0;
 }
 

@@ -43,6 +43,7 @@ typedef struct {
     id<MTLComputePipelineState> q4_prepared_q8_matvec_pipeline;
     id<MTLComputePipelineState> q4_q8_split_pipeline;
     id<MTLComputePipelineState> q4_q8_gateup_pipeline;
+    id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
     id<MTLComputePipelineState> q6_q8k_matvec_pipeline;
     int q4_q8_enabled;
 
@@ -95,6 +96,16 @@ typedef struct {
     int           q4_repacked;
     int           q4_prepared;
 } BnMetalBuf;
+
+static int metal_q4_prepared_upload_enabled(void)
+{
+    const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
+    return getenv("BN_METAL_Q4_PREPARED") &&
+           getenv("BN_GPU_Q4_Q8") &&
+           (!from_layer || atoi(from_layer) <= 0) &&
+           !getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
+           !getenv("BN_GPU_Q4_Q8_FFN_ONLY");
+}
 
 /* ── Shader type name mapping (same as wgpu) ──────────────────────── */
 
@@ -273,8 +284,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
 
     int blocks_per_row = cols / 32;
     int n_blocks = rows * blocks_per_row;
-    if (getenv("BN_METAL_Q4_PREPARED") && !getenv("BN_METAL_STANDALONE_MATVEC") &&
-        (rows % 4) == 0) {
+    if (metal_q4_prepared_upload_enabled() && (rows % 4) == 0) {
         int n_groups = rows / 4;
         size_t n_group_blocks = (size_t)n_groups * (size_t)blocks_per_row;
         size_t scale_bytes = n_group_blocks * 4 * sizeof(uint16_t);
@@ -707,6 +717,9 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
     }
     fprintf(stderr, "[bn:gpu:metal] compiled %d/%d forward-pass shaders\n",
             compiled, n_fwd);
+    ctx->cpu_order_rmsnorm_pipeline = compile_shader(
+        ctx, ctx->shader_dir, "rmsnorm_cpu_order.metal",
+        "rmsnorm_cpu_order");
 
     return 0;
 }
@@ -741,7 +754,19 @@ static int metal_read_activation(void *vctx, int buf_idx, void *out,
                                   size_t size, size_t offset)
 {
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
-    if (!ctx || !out || buf_idx < 0 || buf_idx >= BN_GPU_BUF_COUNT) return -1;
+    if (!ctx || !out) return -1;
+    if (buf_idx == BN_GPU_DEBUG_BUF_Q8_ACT) {
+        if (!ctx->q8_buf || offset + size > ctx->q8_buf_size) return -1;
+        memcpy(out, (uint8_t *)[ctx->q8_buf contents] + offset, size);
+        return 0;
+    }
+    if (buf_idx == BN_GPU_DEBUG_BUF_Q8_SCALE) {
+        if (!ctx->q8_scales_buf ||
+            offset + size > ctx->q8_scales_buf_size) return -1;
+        memcpy(out, (uint8_t *)[ctx->q8_scales_buf contents] + offset, size);
+        return 0;
+    }
+    if (buf_idx < 0 || buf_idx >= BN_GPU_BUF_COUNT) return -1;
     if (!ctx->act_bufs[buf_idx]) return -1;
     if (offset + size > ctx->act_sizes[buf_idx]) return -1;
     memcpy(out, (uint8_t *)[ctx->act_bufs[buf_idx] contents] + offset, size);
@@ -865,12 +890,19 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t x_size = (size_t)cols * sizeof(float);
     size_t out_size = (size_t)rows * sizeof(float);
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
+    int use_q4_prepared_q8 = ctx->q4_q8_enabled && type == BN_GGUF_TENSOR_Q4_0 &&
+                    wbuf->q4_prepared &&
+                    ctx->q8_quant_pipeline &&
+                    ctx->q4_prepared_q8_matvec_pipeline;
     int use_q4_q8 = ctx->q4_q8_enabled && type == BN_GGUF_TENSOR_Q4_0 &&
+                    !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline;
     int use_q6_q8k = type == BN_GGUF_TENSOR_Q6_K &&
                      ctx->q8k_quant_pipeline && ctx->q6_q8k_matvec_pipeline &&
                      (cols % 256) == 0;
-    if (use_q4_q8 && ensure_q8_scratch(ctx, cols, 1) != 0) return -1;
+    if (wbuf->q4_prepared && !use_q4_prepared_q8) return -1;
+    if ((use_q4_prepared_q8 || use_q4_q8) &&
+        ensure_q8_scratch(ctx, cols, 1) != 0) return -1;
     if (use_q6_q8k && ensure_q8k_scratch(ctx, cols, 1) != 0) return -1;
 
     memcpy([ctx->x_buf contents], x, x_size);
@@ -885,7 +917,15 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
         id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
-        if (use_q4_q8) {
+        if (use_q4_prepared_q8) {
+            metal_encode_q8_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
+            [enc setComputePipelineState:ctx->q4_prepared_q8_matvec_pipeline];
+            [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+            [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+            [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+            [enc setBuffer:ctx->out_buf offset:0 atIndex:3];
+            [enc setBytes:params length:sizeof(params) atIndex:4];
+        } else if (use_q4_q8) {
             metal_encode_q8_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
             [enc setComputePipelineState:ctx->q4_q8_matvec_pipeline];
             [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -930,6 +970,7 @@ static int metal_matmul(void *vctx, float *out, void *W_buf, const float *X,
     BnMetalBuf *wbuf = (BnMetalBuf *)W_buf;
     if (!ctx || !wbuf || !X || !out) return -1;
     if (type < 0 || type >= BN_METAL_MAX_TYPES || !ctx->pipelines[type]) return -1;
+    if (wbuf->q4_prepared) return -1;
 
     size_t x_size = (size_t)n_tokens * cols * sizeof(float);
     size_t out_size = (size_t)n_tokens * rows * sizeof(float);
@@ -973,8 +1014,12 @@ static int metal_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
 
     size_t x_size = (size_t)x_cols * sizeof(float);
     int max_rows = 0;
-    for (int i = 0; i < n_ops; i++)
+    for (int i = 0; i < n_ops; i++) {
+        BnMetalBuf *wbuf = (BnMetalBuf *)ops[i].W_buf;
+        if (wbuf && wbuf->q4_prepared)
+            return -1;
         if (ops[i].rows > max_rows) max_rows = ops[i].rows;
+    }
     size_t out_size = (size_t)max_rows * sizeof(float);
 
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
@@ -1067,6 +1112,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
+    int full_barriers = getenv("BN_METAL_FULL_BARRIERS") != NULL;
 
     @autoreleasepool {
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
@@ -1102,11 +1148,16 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES) {
                     pipeline = ctx->pipelines[op->type];
                 }
+            } else if (shader == BN_GPU_SHADER_RMSNORM &&
+                       getenv("BN_METAL_CPU_ORDER_RMSNORM") &&
+                       ctx->cpu_order_rmsnorm_pipeline) {
+                pipeline = ctx->cpu_order_rmsnorm_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                        ctx->q4_q8_enabled &&
                        op->p[6] &&
                        op->type == BN_GGUF_TENSOR_Q4_0 &&
                        op->W_buf &&
+                       !((BnMetalBuf *)op->W_buf)->q4_prepared &&
                        ctx->q8_quant_pipeline &&
                        ctx->q4_q8_gateup_pipeline) {
                 pipeline = ctx->q4_q8_gateup_pipeline;
@@ -1114,6 +1165,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                        ctx->q4_q8_enabled &&
                        (op->flags & 1u) &&
                        op->type == BN_GGUF_TENSOR_Q4_0 &&
+                       op->W_buf &&
+                       !((BnMetalBuf *)op->W_buf)->q4_prepared &&
                        ctx->q8_quant_pipeline &&
                        ctx->q4_q8_split_pipeline) {
                 pipeline = ctx->q4_q8_split_pipeline;
@@ -1132,7 +1185,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
              * WAR and WAW don't need barriers — Metal dispatches execute in
              * submission order within a compute command encoder, so reads
              * always complete before subsequent writes to the same buffer. */
-            int conflict = (op_reads & since_barrier_writes);
+            int conflict = full_barriers ? (since_barrier_writes != 0)
+                                         : (op_reads & since_barrier_writes);
             if (conflict && enc) {
                 /* Use resource-specific barriers for less stalling */
                 /* Collect MTLBuffer pointers for written buffers that this op reads */
@@ -1199,6 +1253,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (ctx->q4_q8_enabled && op->p[6] &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
@@ -1230,6 +1285,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:4];
                     [enc setBytes:params length:sizeof(params) atIndex:5];
                 } else {
+                    if (wbuf->q4_prepared)
+                        return -1;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];
@@ -1239,6 +1296,11 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             case BN_GPU_SHADER_RMSNORM: {
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
+                if (getenv("BN_METAL_CPU_ORDER_RMSNORM") &&
+                    ctx->cpu_order_rmsnorm_pipeline) {
+                    [enc setComputePipelineState:ctx->cpu_order_rmsnorm_pipeline];
+                    current_pso = ctx->cpu_order_rmsnorm_pipeline;
+                }
                 [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:0];
                 if (wbuf)
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:1];
@@ -1415,6 +1477,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (ctx->q4_q8_enabled &&
                     (op->flags & 1u) &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline &&
                     ctx->q4_q8_split_pipeline) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
@@ -1431,6 +1494,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->rows] offset:0 atIndex:5];
                     [enc setBytes:params length:sizeof(params) atIndex:6];
                 } else {
+                    if (wbuf->q4_prepared)
+                        return -1;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];  // out0
@@ -1454,6 +1519,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (ctx->q4_q8_enabled &&
                     op->p[6] &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline &&
                     ctx->q4_q8_gateup_pipeline) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
@@ -1468,6 +1534,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else {
+                    if (wbuf->q4_prepared)
+                        return -1;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:2];

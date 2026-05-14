@@ -318,7 +318,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
         }
 
         int pass = max_diff < MATVEC_TOL;
-        printf("  %-12s %s vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
+        printf("  %-12s %s vs CPU: %-6s max_diff=%.9g (rows=%d cols=%d type=%s)\n",
                name, backend_name, pass ? "PASS" : "FAIL",
                max_diff, rows, cols, type_name(W->type));
         if (pass) {
@@ -343,7 +343,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -351,6 +351,7 @@ int main(int argc, char **argv) {
     int use_webgpu = 0, use_metal = 0;
     int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
+    int cpu_attn_layer = -1;
     int cpu_attn_from_layer = -1;
     int cpu_ffn_layer = -1;
     int cpu_ffn_from_layer = -1;
@@ -370,6 +371,8 @@ int main(int argc, char **argv) {
     int compare_kv_cache = 0;
     int cpu_disable_prepared_qweights = 0;
     int metal_q4_prepared = 0;
+    int metal_full_barriers = 0;
+    int metal_cpu_rmsnorm = 0;
     int q4_q8_from_layer = -1;
     int q4_q8_attn_only = 0;
     int q4_q8_ffn_only = 0;
@@ -390,6 +393,8 @@ int main(int argc, char **argv) {
             cpu_fallback_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cpu-fallback-from-layer") == 0 && i + 1 < argc) {
             cpu_fallback_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--cpu-attn-layer") == 0 && i + 1 < argc) {
+            cpu_attn_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cpu-attn-from-layer") == 0 && i + 1 < argc) {
             cpu_attn_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cpu-ffn-layer") == 0 && i + 1 < argc) {
@@ -428,6 +433,10 @@ int main(int argc, char **argv) {
             cpu_disable_prepared_qweights = 1;
         } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
             metal_q4_prepared = 1;
+        } else if (strcmp(argv[i], "--metal-full-barriers") == 0) {
+            metal_full_barriers = 1;
+        } else if (strcmp(argv[i], "--metal-cpu-rmsnorm") == 0) {
+            metal_cpu_rmsnorm = 1;
         } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
             q4_q8_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
@@ -458,6 +467,11 @@ int main(int argc, char **argv) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", cpu_fallback_layer);
         setenv("BN_GPU_CPU_FALLBACK_LAYER", layer_env, 1);
+    }
+    if (cpu_attn_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", cpu_attn_layer);
+        setenv("BN_GPU_CPU_ATTN_LAYER", layer_env, 1);
     }
     if (cpu_attn_from_layer >= 0) {
         char layer_env[32];
@@ -553,6 +567,10 @@ int main(int argc, char **argv) {
         setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
     if (metal_q4_prepared)
         setenv("BN_METAL_Q4_PREPARED", "1", 1);
+    if (metal_full_barriers)
+        setenv("BN_METAL_FULL_BARRIERS", "1", 1);
+    if (metal_cpu_rmsnorm)
+        setenv("BN_METAL_CPU_ORDER_RMSNORM", "1", 1);
 
     int total_pass = 0, total_fail = 0, total_skip = 0;
 
@@ -1206,6 +1224,20 @@ int main(int argc, char **argv) {
             }
             if (logits_W && logits_W != W) {
                 int r = test_gpu_matvec_weight("Metal", gpu, "logits", logits_W, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("Metal", gpu, "wk",
+                                               &L0->attn.wk, L0->attn.k_bias);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("Metal", gpu, "wv",
+                                               &L0->attn.wv, L0->attn.v_bias);
                 if (r == 1) total_pass++;
                 else if (r == -1) total_fail++;
                 else total_skip++;

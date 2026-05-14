@@ -43,6 +43,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int cache_pos = pos % c->seq_len;
     int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
+    int cpu_fallback_attn_layer = -1;
     int cpu_fallback_attn_from_layer = -1;
     int cpu_fallback_ffn_layer = -1;
     int cpu_fallback_ffn_from_layer = -1;
@@ -65,6 +66,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         if (env) cpu_fallback_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FALLBACK_LAYER");
         if (env) cpu_fallback_layer = atoi(env);
+        env = getenv("BN_GPU_CPU_ATTN_LAYER");
+        if (env) cpu_fallback_attn_layer = atoi(env);
         env = getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
         if (env) cpu_fallback_attn_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_LAYER");
@@ -197,8 +200,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
         BnTransformerGPUAttentionResources attn_res =
             bn_transformer_gpu_resolve_attention_resources(gpu, backend, lw, l);
-        if (cpu_fallback_attn_from_layer >= 0 &&
-            l >= cpu_fallback_attn_from_layer) {
+        if (cpu_fallback_attn_layer == l ||
+            (cpu_fallback_attn_from_layer >= 0 &&
+             l >= cpu_fallback_attn_from_layer)) {
             void *ffn_norm = attn_res.ffn_norm;
             if (bn_transformer_gpu_fallback_cpu_attention(
                     &emit, gpu, m, sess, lw, l, pos, cache_pos, rope_dims,

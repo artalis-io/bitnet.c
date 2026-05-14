@@ -63,6 +63,9 @@
 #define BN_GPU_BUF_SSM_V          BN_GPU_VALUE_SSM_V
 #define BN_GPU_BUF_COUNT          BN_GPU_VALUE_COUNT
 
+#define BN_GPU_DEBUG_BUF_Q8_ACT    -100
+#define BN_GPU_DEBUG_BUF_Q8_SCALE  -101
+
 static inline int bn_gpu_shader_from_op_code(int code) {
     switch (code) {
         case BN_GPU_CODE_MATVEC: return BN_GPU_SHADER_MATVEC;
