@@ -9,20 +9,22 @@ using namespace metal;
     char(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
     char(int(((w) >> ((sh) + 12))& 0xF) - 8))
 
+static inline int dot_char4(char4 a, char4 b) {
+    int4 p = int4(a) * int4(b);
+    return p.x + p.y + p.z + p.w;
+}
+
 static inline int q4_q8_dot(uint w0, uint w1, uint w2, uint w3,
                             device const char4 *xq) {
-    #define DOT4(a, b) (int((a).x) * int((b).x) + int((a).y) * int((b).y) + \
-                       int((a).z) * int((b).z) + int((a).w) * int((b).w))
     int acc = 0;
-    acc += DOT4(DQ4(w0,  0), xq[0]);
-    acc += DOT4(DQ4(w0, 16), xq[1]);
-    acc += DOT4(DQ4(w1,  0), xq[2]);
-    acc += DOT4(DQ4(w1, 16), xq[3]);
-    acc += DOT4(DQ4(w2,  0), xq[4]);
-    acc += DOT4(DQ4(w2, 16), xq[5]);
-    acc += DOT4(DQ4(w3,  0), xq[6]);
-    acc += DOT4(DQ4(w3, 16), xq[7]);
-    #undef DOT4
+    acc += dot_char4(DQ4(w0,  0), xq[0]);
+    acc += dot_char4(DQ4(w0, 16), xq[1]);
+    acc += dot_char4(DQ4(w1,  0), xq[2]);
+    acc += dot_char4(DQ4(w1, 16), xq[3]);
+    acc += dot_char4(DQ4(w2,  0), xq[4]);
+    acc += dot_char4(DQ4(w2, 16), xq[5]);
+    acc += dot_char4(DQ4(w3,  0), xq[6]);
+    acc += dot_char4(DQ4(w3, 16), xq[7]);
     return acc;
 }
 

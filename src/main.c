@@ -64,6 +64,10 @@ typedef struct {
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
+    int gpu_disable_qkv_split; // hidden diagnostic: disable stacked QKV split
+    int gpu_disable_gateup_split; // hidden diagnostic: disable gate/up split
+    int gpu_disable_fused_gateup; // hidden diagnostic: disable fused gate/up
+    int gpu_split_residual_rmsnorm; // hidden diagnostic: split residual+rmsnorm
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -101,6 +105,10 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
     fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
     fprintf(stderr, "  --gpu-debug-qkv-split  Print QKV split diagnostic\n");
+    fprintf(stderr, "  --gpu-disable-qkv-split  Disable stacked QKV split diagnostic path\n");
+    fprintf(stderr, "  --gpu-disable-gateup-split  Disable gate/up split diagnostic path\n");
+    fprintf(stderr, "  --gpu-disable-fused-gateup  Disable fused gate/up diagnostic path\n");
+    fprintf(stderr, "  --gpu-split-residual-rmsnorm  Split residual+rmsnorm diagnostic path\n");
     fprintf(stderr, "  --shader-dir <path>        WebGPU shader directory (default: shaders/)\n");
     fprintf(stderr, "  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
@@ -211,6 +219,14 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.metal_disable_barriers = 1;
         } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
             args.gpu_debug_qkv_split = 1;
+        } else if (strcmp(argv[i], "--gpu-disable-qkv-split") == 0) {
+            args.gpu_disable_qkv_split = 1;
+        } else if (strcmp(argv[i], "--gpu-disable-gateup-split") == 0) {
+            args.gpu_disable_gateup_split = 1;
+        } else if (strcmp(argv[i], "--gpu-disable-fused-gateup") == 0) {
+            args.gpu_disable_fused_gateup = 1;
+        } else if (strcmp(argv[i], "--gpu-split-residual-rmsnorm") == 0) {
+            args.gpu_split_residual_rmsnorm = 1;
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -281,6 +297,14 @@ int main(int argc, char **argv) {
         setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
     if (args.gpu_debug_qkv_split)
         setenv("BN_GPU_DEBUG_QKV_SPLIT", "1", 1);
+    if (args.gpu_disable_qkv_split)
+        setenv("BN_GPU_DISABLE_QKV_SPLIT", "1", 1);
+    if (args.gpu_disable_gateup_split)
+        setenv("BN_GPU_DISABLE_GATEUP_SPLIT", "1", 1);
+    if (args.gpu_disable_fused_gateup)
+        setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
+    if (args.gpu_split_residual_rmsnorm)
+        setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
 
     // Validate --kv-tq
     if (args.kv_tq_bits > 0) {

@@ -62,7 +62,6 @@ typedef struct {
     size_t        q8_scales_buf_size;
     id<MTLBuffer> q8_bsums_buf;
     size_t        q8_bsums_buf_size;
-
     /* Shader directory path */
     char shader_dir[256];
 
@@ -71,6 +70,9 @@ typedef struct {
     int gpu_profile;
     int q8_quant_dispatches;
     int q8k_quant_dispatches;
+    int q8_matvec_dispatches;
+    int q8_split_dispatches;
+    int q8_gateup_dispatches;
 
     /* Slab allocator for MoE weight suballocation */
     id<MTLBuffer> slab_buf;
@@ -1211,6 +1213,9 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     int n_barriers = 0;
     ctx->q8_quant_dispatches = 0;
     ctx->q8k_quant_dispatches = 0;
+    ctx->q8_matvec_dispatches = 0;
+    ctx->q8_split_dispatches = 0;
+    ctx->q8_gateup_dispatches = 0;
     int full_barriers = getenv("BN_METAL_FULL_BARRIERS") != NULL;
     int disable_barriers = getenv("BN_METAL_DISABLE_BARRIERS") != NULL;
 
@@ -1345,6 +1350,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
+                    ctx->q8_matvec_dispatches++;
                     [enc setComputePipelineState:ctx->q4_prepared_q8_matvec_pipeline];
                     current_pso = ctx->q4_prepared_q8_matvec_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1361,6 +1367,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
+                    ctx->q8_matvec_dispatches++;
                     [enc setComputePipelineState:ctx->q4_q8_matvec_pipeline];
                     current_pso = ctx->q4_q8_matvec_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1579,12 +1586,13 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     (op->flags & 1u) &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
                     !wbuf->q4_prepared &&
-                    ctx->q8_quant_pipeline &&
-                    ctx->q4_q8_split_pipeline) {
+                       ctx->q8_quant_pipeline &&
+                       ctx->q4_q8_split_pipeline) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
+                    ctx->q8_split_dispatches++;
                     [enc setComputePipelineState:ctx->q4_q8_split_pipeline];
                     current_pso = ctx->q4_q8_split_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1627,6 +1635,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
+                    ctx->q8_gateup_dispatches++;
                     [enc setComputePipelineState:ctx->q4_q8_gateup_pipeline];
                     current_pso = ctx->q4_q8_gateup_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1760,9 +1769,11 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
         ctx->gpu_profile = env ? atoi(env) : 0;
     }
     if (ctx->gpu_profile >= 1 && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
-        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d q8=%d q8k=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
+        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d q8=%d q8m=%d q8s=%d q8g=%d q8k=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
                 ctx->gpu_frame, n_ops, ctx->q8_quant_dispatches,
-                ctx->q8k_quant_dispatches, n_barriers,
+                ctx->q8_matvec_dispatches, ctx->q8_split_dispatches,
+                ctx->q8_gateup_dispatches, ctx->q8k_quant_dispatches,
+                n_barriers,
                 t_encode - t0, t_gpu - t_encode, t1 - t_gpu, t1 - t0);
     }
     /* Per-op-type breakdown (BN_GPU_PROFILE>=2, frame 1 only) */

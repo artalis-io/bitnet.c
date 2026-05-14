@@ -343,7 +343,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -372,6 +372,7 @@ int main(int argc, char **argv) {
     int cpu_disable_prepared_qweights = 0;
     int metal_q4_prepared = 0;
     int metal_full_barriers = 0;
+    int metal_disable_barriers = 0;
     int metal_cpu_rmsnorm = 0;
     int q4_q8_from_layer = -1;
     int q4_q8_attn_only = 0;
@@ -435,6 +436,8 @@ int main(int argc, char **argv) {
             metal_q4_prepared = 1;
         } else if (strcmp(argv[i], "--metal-full-barriers") == 0) {
             metal_full_barriers = 1;
+        } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
+            metal_disable_barriers = 1;
         } else if (strcmp(argv[i], "--metal-cpu-rmsnorm") == 0) {
             metal_cpu_rmsnorm = 1;
         } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
@@ -569,6 +572,8 @@ int main(int argc, char **argv) {
         setenv("BN_METAL_Q4_PREPARED", "1", 1);
     if (metal_full_barriers)
         setenv("BN_METAL_FULL_BARRIERS", "1", 1);
+    if (metal_disable_barriers)
+        setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
     if (metal_cpu_rmsnorm)
         setenv("BN_METAL_CPU_ORDER_RMSNORM", "1", 1);
 
