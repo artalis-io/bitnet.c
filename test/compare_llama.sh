@@ -7,6 +7,7 @@
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --prompt "The sum of 2 + 2 ="
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --flash
+#   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-gpu-layers 12
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --llama-flash-off
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -v    # verbose
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --strict
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
         --prompt) CUSTOM_PROMPTS+=("$2"); shift 2 ;;
         --metal) BITNET_ARGS+=(--metal); shift ;;
         --llama-metal) LLAMA_ARGS=(-ngl 99); shift ;;
+        --llama-gpu-layers) LLAMA_ARGS=(-ngl "$2"); shift 2 ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
         --no-prefill) BITNET_ARGS+=(--no-prefill); shift ;;
         --flash) BITNET_ARGS+=(--flash); LLAMA_FLASH=(-fa on); shift ;;
