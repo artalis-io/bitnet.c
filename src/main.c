@@ -54,6 +54,7 @@ typedef struct {
     int prefault_moe;   // touch all mmap'd MoE expert pages before generation
     int quiet;          // suppress generated token output
     int token_ids;      // print generated token IDs to stderr
+    int top_logits;     // hidden diagnostic: print top-K logits before sampling
     const char *draft_path; // --draft <model.gguf> for speculative decoding
     int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
@@ -64,7 +65,7 @@ typedef struct {
     int gpu_max_storage_binding_mb; // hidden diagnostic: allow large GPU logits
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
-    int metal_disable_q6_q8k; // hidden diagnostic: use native Q6_K Metal path
+    int metal_enable_q6_q8k; // hidden diagnostic: use Q6_K x Q8_K Metal path
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
     int gpu_disable_qkv_split; // hidden diagnostic: disable stacked QKV split
     int gpu_disable_gateup_split; // hidden diagnostic: disable gate/up split
@@ -199,6 +200,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.quiet = 1;
         } else if (strcmp(argv[i], "--token-ids") == 0) {
             args.token_ids = 1;
+        } else if (strcmp(argv[i], "--top-logits") == 0 && i + 1 < argc) {
+            args.top_logits = parse_int(argv[++i], "--top-logits");
         } else if (strcmp(argv[i], "--draft") == 0 && i + 1 < argc) {
             args.draft_path = argv[++i];
         } else if (strcmp(argv[i], "--draft-k") == 0 && i + 1 < argc) {
@@ -229,8 +232,10 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_profile = parse_int(argv[++i], "--gpu-profile");
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
             args.metal_disable_barriers = 1;
+        } else if (strcmp(argv[i], "--metal-enable-q6-q8k") == 0) {
+            args.metal_enable_q6_q8k = 1;
         } else if (strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
-            args.metal_disable_q6_q8k = 1;
+            /* Q6_K x Q8_K is now opt-in; keep the old diagnostic flag harmless. */
         } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
             args.gpu_debug_qkv_split = 1;
         } else if (strcmp(argv[i], "--gpu-disable-qkv-split") == 0) {
@@ -317,8 +322,13 @@ int main(int argc, char **argv) {
     }
     if (args.metal_disable_barriers)
         setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
-    if (args.metal_disable_q6_q8k)
-        setenv("BN_METAL_DISABLE_Q6_Q8K", "1", 1);
+    if (args.metal_enable_q6_q8k)
+        setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+    if (args.top_logits > 0) {
+        char top_env[16];
+        snprintf(top_env, sizeof(top_env), "%d", args.top_logits);
+        setenv("BN_TOP_LOGITS", top_env, 1);
+    }
     if (args.gpu_debug_qkv_split)
         setenv("BN_GPU_DEBUG_QKV_SPLIT", "1", 1);
     if (args.gpu_disable_qkv_split)
