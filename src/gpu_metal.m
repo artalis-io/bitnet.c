@@ -46,6 +46,8 @@ typedef struct {
     id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
     id<MTLComputePipelineState> q6_q8k_matvec_pipeline;
     int q4_q8_enabled;
+    int q8_barriers_enabled;
+    int cpu_order_rmsnorm_enabled;
 
     /* GPU-resident activation buffers (storageModeShared) */
     id<MTLBuffer> act_bufs[BN_GPU_BUF_COUNT];
@@ -973,7 +975,7 @@ static void metal_encode_q8_quant(id<MTLComputeCommandEncoder> enc,
     MTLSize tpg = MTLSizeMake(32, 1, 1);
     MTLSize grid = MTLSizeMake((cols + 31) / 32, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    if (getenv("BN_METAL_Q8_BARRIERS")) {
+    if (ctx->q8_barriers_enabled) {
         id<MTLBuffer> bufs[2] = { ctx->q8_buf, ctx->q8_scales_buf };
         [enc memoryBarrierWithResources:bufs count:2];
     }
@@ -996,7 +998,7 @@ static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
     MTLSize tpg = MTLSizeMake(1, 1, 1);
     MTLSize grid = MTLSizeMake(cols / 256, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    if (getenv("BN_METAL_Q8_BARRIERS")) {
+    if (ctx->q8_barriers_enabled) {
         [enc memoryBarrierWithResources:&ctx->q8_buf count:1];
         id<MTLBuffer> bufs[2] = { ctx->q8_scales_buf, ctx->q8_bsums_buf };
         [enc memoryBarrierWithResources:bufs count:2];
@@ -1283,7 +1285,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     pipeline = ctx->pipelines[op->type];
                 }
             } else if (shader == BN_GPU_SHADER_RMSNORM &&
-                       getenv("BN_METAL_CPU_ORDER_RMSNORM") &&
+                       ctx->cpu_order_rmsnorm_enabled &&
                        ctx->cpu_order_rmsnorm_pipeline) {
                 pipeline = ctx->cpu_order_rmsnorm_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
@@ -1452,7 +1454,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             case BN_GPU_SHADER_RMSNORM: {
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
-                if (getenv("BN_METAL_CPU_ORDER_RMSNORM") &&
+                if (ctx->cpu_order_rmsnorm_enabled &&
                     ctx->cpu_order_rmsnorm_pipeline) {
                     [enc setComputePipelineState:ctx->cpu_order_rmsnorm_pipeline];
                     current_pso = ctx->cpu_order_rmsnorm_pipeline;
@@ -1920,11 +1922,15 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
         }
         ctx->q4_q8_enabled = getenv("BN_GPU_Q4_Q8") ? 1 : 0;
-	        ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
-	            "q8k_quantize.metal", "q8k_quantize");
-	        ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,
-	            "q6k_q8k_matvec.metal", "q6k_q8k_matvec");
-	        if (ctx->q4_q8_enabled) {
+        ctx->q8_barriers_enabled = getenv("BN_METAL_Q8_BARRIERS") ? 1 : 0;
+        ctx->cpu_order_rmsnorm_enabled =
+            getenv("BN_METAL_CPU_ORDER_RMSNORM") ? 1 : 0;
+
+        ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
+            "q8k_quantize.metal", "q8k_quantize");
+        ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,
+            "q6k_q8k_matvec.metal", "q6k_q8k_matvec");
+        if (ctx->q4_q8_enabled) {
             ctx->q8_quant_pipeline = compile_shader(ctx, dir,
                 "q8_quantize.metal", "q8_quantize");
             ctx->q4_q8_matvec_pipeline = compile_shader(ctx, dir,
