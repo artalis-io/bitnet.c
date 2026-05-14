@@ -10,12 +10,16 @@ using namespace metal;
     float(((w) >> ((sh) + 8))  & 0xF), \
     float(((w) >> ((sh) + 12)) & 0xF))
 
-static inline float q4_block_dot(uint w0, uint w1, uint w2, uint w3,
-                                 float s, device const float4 *xp) {
+static inline float q4_block_sumx(device const float4 *xp) {
     float4 sx0 = xp[0] + xp[1] + xp[2] + xp[3];
     float4 sx1 = xp[4] + xp[5] + xp[6] + xp[7];
     float4 sx = sx0 + sx1;
-    float sumx = (sx.x + sx.y) + (sx.z + sx.w);
+    return (sx.x + sx.y) + (sx.z + sx.w);
+}
+
+static inline float q4_block_dot_sumx(uint w0, uint w1, uint w2, uint w3,
+                                      float s, float sumx,
+                                      device const float4 *xp) {
     float acc = 0.0f;
     acc += dot(UQ4(w0,  0), xp[0]);
     acc += dot(UQ4(w0, 16), xp[1]);
@@ -84,8 +88,9 @@ kernel void q4_fused_gateup_silu(device const uint  *weights [[buffer(0)]],
             uint uw3 = weights[up_nib + 3];
 
             device const float4 *xp = (device const float4 *)(x + b * 32);
-            gate_acc += q4_block_dot(gw0, gw1, gw2, gw3, gate_s, xp);
-            up_acc += q4_block_dot(uw0, uw1, uw2, uw3, up_s, xp);
+            float sumx = q4_block_sumx(xp);
+            gate_acc += q4_block_dot_sumx(gw0, gw1, gw2, gw3, gate_s, sumx, xp);
+            up_acc += q4_block_dot_sumx(uw0, uw1, uw2, uw3, up_s, sumx, xp);
         }
     }
 
