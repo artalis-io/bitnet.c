@@ -6,6 +6,7 @@
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -n 50
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --flash
+#   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --llama-flash-off
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -v    # verbose
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --strict
 #
@@ -21,6 +22,7 @@ VERBOSE=0
 STRICT=0
 BITNET_ARGS=()
 LLAMA_ARGS=(-ngl 0 -dev none)
+LLAMA_FLASH=()
 LLAMA_THREADS=1
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,7 +31,9 @@ while [[ $# -gt 0 ]]; do
         --llama-metal) LLAMA_ARGS=(-ngl 99); shift ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
         --no-prefill) BITNET_ARGS+=(--no-prefill); shift ;;
-        --flash) BITNET_ARGS+=(--flash); LLAMA_ARGS+=(-fa on); shift ;;
+        --flash) BITNET_ARGS+=(--flash); LLAMA_FLASH=(-fa on); shift ;;
+        --llama-flash-off) LLAMA_FLASH=(-fa off); shift ;;
+        --metal-disable-q4-q8) BITNET_ARGS+=(--metal-disable-q4-q8); shift ;;
         --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
         --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
         --q4-q8-to-layer) BITNET_ARGS+=(--q4-q8-to-layer "$2"); shift 2 ;;
@@ -124,7 +128,11 @@ echo "Tokens: $N_TOKENS per prompt"
 if (( ${#BITNET_ARGS[@]} > 0 )); then
     echo "bitnet args: ${BITNET_ARGS[*]}"
 fi
-echo "llama args:  ${LLAMA_ARGS[*]} -t $LLAMA_THREADS"
+if (( ${#LLAMA_FLASH[@]} > 0 )); then
+    echo "llama args:  ${LLAMA_ARGS[*]} ${LLAMA_FLASH[*]} -t $LLAMA_THREADS"
+else
+    echo "llama args:  ${LLAMA_ARGS[*]} -t $LLAMA_THREADS"
+fi
 echo "---"
 
 for prompt in "${PROMPTS[@]}"; do
@@ -143,7 +151,11 @@ for prompt in "${PROMPTS[@]}"; do
         --temp 0 --repeat-penalty 1 2>"$bitnet_stderr") || true
 
     # Run llama.cpp (raw completion, no chat template, temp=0)
-    llama_out=$("$LLAMA" -m "$MODEL" "${LLAMA_ARGS[@]}" -p "$prompt" -n "$N_TOKENS" \
+    llama_run_args=("${LLAMA_ARGS[@]}")
+    if (( ${#LLAMA_FLASH[@]} > 0 )); then
+        llama_run_args+=("${LLAMA_FLASH[@]}")
+    fi
+    llama_out=$("$LLAMA" -m "$MODEL" "${llama_run_args[@]}" -p "$prompt" -n "$N_TOKENS" \
         --temp 0 --no-display-prompt -no-cnv --simple-io --verbosity 1 \
         -t "$LLAMA_THREADS" 2>/dev/null | sed 's/> EOF by user$//') || true
 
