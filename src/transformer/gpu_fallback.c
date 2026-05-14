@@ -5,6 +5,7 @@
 #include "transformer_gqa_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "moe.h"
+#include "platform.h"
 #include "quant.h"
 
 #include <math.h>
@@ -799,12 +800,23 @@ int bn_transformer_gpu_fallback_logits(
     const BnTransformerGPULogitResources *logits,
     int dim) {
     BnRunState *s = &sess->state;
+    double t0 = bn_platform_time_ms();
     if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
         return -1;
+    double t_flush = bn_platform_time_ms();
     if (bn_transformer_gpu_read_xb(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;
+    double t_read = bn_platform_time_ms();
     bn_quant_matvec(s->logits, logits->cpu_weight, s->x, s->x_q,
                     bn_model_pool(m));
+    double t_logits = bn_platform_time_ms();
+    const char *profile = getenv("BN_GPU_PROFILE");
+    if (profile && atoi(profile) >= 3) {
+        fprintf(stderr,
+                "[gpu:fallback:logits] flush=%.3fms read=%.3fms cpu=%.3fms total=%.3fms\n",
+                t_flush - t0, t_read - t_flush, t_logits - t_read,
+                t_logits - t0);
+    }
     return 0;
 }
