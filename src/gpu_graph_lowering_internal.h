@@ -109,6 +109,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
     memset(shader_op, 0, sizeof(*shader_op));
     shader_op->type = -1;
     shader_op->buf_aux = -1;
+    shader_op->flags = ir_op->flags;
 
     int in0 = ir_op->n_inputs > 0
         ? bn_gpu_ir_lowering_slot(map, ir_op->inputs[0])

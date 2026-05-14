@@ -76,6 +76,29 @@ static float rand_float(uint64_t *state) {
     return (float)((int32_t)(*state & 0xFFFFFF) - (1 << 23)) / (float)(1 << 23);
 }
 
+static void print_vec_delta(const char *label,
+                            int step,
+                            const float *a,
+                            const float *b,
+                            int n) {
+    double sum_abs = 0.0;
+    double sum_sq = 0.0;
+    float max_abs = 0.0f;
+    int max_i = 0;
+    for (int i = 0; i < n; i++) {
+        float diff = fabsf(a[i] - b[i]);
+        sum_abs += (double)diff;
+        sum_sq += (double)diff * (double)diff;
+        if (diff > max_abs) {
+            max_abs = diff;
+            max_i = i;
+        }
+    }
+    printf("    %s[%d]: max_abs=%.9g max_i=%d cpu=%.9g other=%.9g mean_abs=%.9g rms=%.9g\n",
+           label, step, max_abs, max_i, a[max_i], b[max_i],
+           sum_abs / (double)n, sqrt(sum_sq / (double)n));
+}
+
 /* ── Phase 2: compare SIMD vs scalar matvec for a single weight ──── */
 
 /* Get the explicit scalar range function for a given type.
@@ -279,7 +302,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--q4-q8-from-layer N] [--disable-qkv-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -288,10 +311,13 @@ int main(int argc, char **argv) {
     int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
     int cpu_attn_from_layer = -1;
+    int cpu_ffn_layer = -1;
     int cpu_ffn_from_layer = -1;
     int cpu_ffn_down_from_layer = -1;
     int compare_attention_layer = -1;
     int compare_attention_pos = -1;
+    int compare_gqa_layer = -1;
+    int compare_gqa_pos = -1;
     int compare_qkv_layer = -1;
     int compare_qkv_pos = -1;
     int compare_ffn_down_layer = -1;
@@ -299,7 +325,10 @@ int main(int argc, char **argv) {
     int compare_ffn_state_layer = -1;
     int compare_ffn_state_pos = -1;
     int compare_logits = 0;
+    int compare_hidden = 0;
     int q4_q8_from_layer = -1;
+    int q4_q8_attn_only = 0;
+    int q4_q8_ffn_only = 0;
     int use_flash = 0;
     int disable_qkv_split = 0;
     int disable_fused_gateup = 0;
@@ -318,6 +347,8 @@ int main(int argc, char **argv) {
             cpu_fallback_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cpu-attn-from-layer") == 0 && i + 1 < argc) {
             cpu_attn_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--cpu-ffn-layer") == 0 && i + 1 < argc) {
+            cpu_ffn_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cpu-ffn-from-layer") == 0 && i + 1 < argc) {
             cpu_ffn_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cpu-ffn-down-from-layer") == 0 && i + 1 < argc) {
@@ -326,6 +357,10 @@ int main(int argc, char **argv) {
             compare_attention_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-attention-pos") == 0 && i + 1 < argc) {
             compare_attention_pos = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-gqa-layer") == 0 && i + 1 < argc) {
+            compare_gqa_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--compare-gqa-pos") == 0 && i + 1 < argc) {
+            compare_gqa_pos = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-qkv-layer") == 0 && i + 1 < argc) {
             compare_qkv_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-qkv-pos") == 0 && i + 1 < argc) {
@@ -340,8 +375,14 @@ int main(int argc, char **argv) {
             compare_ffn_state_pos = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--compare-logits") == 0) {
             compare_logits = 1;
+        } else if (strcmp(argv[i], "--compare-hidden") == 0) {
+            compare_hidden = 1;
         } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
             q4_q8_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
+            q4_q8_attn_only = 1;
+        } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
+            q4_q8_ffn_only = 1;
         } else if (strcmp(argv[i], "--flash") == 0) {
             use_flash = 1;
         } else if (strcmp(argv[i], "--disable-qkv-split") == 0) {
@@ -370,6 +411,11 @@ int main(int argc, char **argv) {
         snprintf(layer_env, sizeof(layer_env), "%d", cpu_attn_from_layer);
         setenv("BN_GPU_CPU_ATTN_FROM_LAYER", layer_env, 1);
     }
+    if (cpu_ffn_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", cpu_ffn_layer);
+        setenv("BN_GPU_CPU_FFN_LAYER", layer_env, 1);
+    }
     if (cpu_ffn_from_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", cpu_ffn_from_layer);
@@ -389,6 +435,16 @@ int main(int argc, char **argv) {
         char pos_env[32];
         snprintf(pos_env, sizeof(pos_env), "%d", compare_attention_pos);
         setenv("BN_GPU_COMPARE_ATTENTION_POS", pos_env, 1);
+    }
+    if (compare_gqa_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", compare_gqa_layer);
+        setenv("BN_GPU_COMPARE_GQA_LAYER", layer_env, 1);
+    }
+    if (compare_gqa_pos >= 0) {
+        char pos_env[32];
+        snprintf(pos_env, sizeof(pos_env), "%d", compare_gqa_pos);
+        setenv("BN_GPU_COMPARE_GQA_POS", pos_env, 1);
     }
     if (compare_qkv_layer >= 0) {
         char layer_env[32];
@@ -426,6 +482,10 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_Q4_Q8", "1", 1);
         setenv("BN_GPU_Q4_Q8_FROM_LAYER", layer_env, 1);
     }
+    if (q4_q8_attn_only)
+        setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
+    if (q4_q8_ffn_only)
+        setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
     if (disable_fused_gateup)
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     if (disable_qkv_split)
@@ -497,8 +557,12 @@ int main(int argc, char **argv) {
     int vocab_size = model.config.vocab_size;
     float *cpu_step_logits = calloc((size_t)N_DECODE_STEPS * (size_t)vocab_size,
                                     sizeof(float));
-    if (!cpu_step_logits) {
+    float *cpu_step_hidden = calloc((size_t)N_DECODE_STEPS *
+                                    (size_t)model.config.dim, sizeof(float));
+    if (!cpu_step_logits || !cpu_step_hidden) {
         fprintf(stderr, "Failed to allocate CPU step logits\n");
+        free(cpu_step_logits);
+        free(cpu_step_hidden);
         return 1;
     }
 
@@ -533,6 +597,8 @@ int main(int argc, char **argv) {
         for (int i = 0; i < N_DECODE_STEPS; i++) {
             memcpy(cpu_step_logits + (size_t)i * (size_t)vocab_size,
                    logits, (size_t)vocab_size * sizeof(float));
+            memcpy(cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                   s->state.x, (size_t)model.config.dim * sizeof(float));
             token = bn_sampler_sample(&sampler, logits);
             cpu_tokens[i] = token;
             if (i + 1 < N_DECODE_STEPS) {
@@ -582,8 +648,13 @@ int main(int argc, char **argv) {
                 float *gpu_step_logits = calloc((size_t)N_DECODE_STEPS *
                                                 (size_t)vocab_size,
                                                 sizeof(float));
-                if (!gpu_step_logits) {
+                float *gpu_step_hidden = calloc((size_t)N_DECODE_STEPS *
+                                                (size_t)model.config.dim,
+                                                sizeof(float));
+                if (!gpu_step_logits || !gpu_step_hidden) {
                     fprintf(stderr, "Failed to allocate GPU step logits\n");
+                    free(gpu_step_logits);
+                    free(gpu_step_hidden);
                     return 1;
                 }
 
@@ -601,6 +672,8 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
                     memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
                            logits, (size_t)vocab_size * sizeof(float));
+                    memcpy(gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                           s->state.x, (size_t)model.config.dim * sizeof(float));
                     token = bn_sampler_sample(&sampler, logits);
                     gpu_tokens[i] = token;
                     if (i + 1 < N_DECODE_STEPS) {
@@ -623,6 +696,13 @@ int main(int argc, char **argv) {
                     if (match) {
                         printf("  token[%d]: PASS (cpu=%d gpu=%d)\n",
                                i, cpu_tokens[i], gpu_tokens[i]);
+                        if (compare_hidden) {
+                            print_vec_delta(
+                                "hidden", i,
+                                cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                model.config.dim);
+                        }
                         total_pass++;
                     } else if (required) {
                         printf("  token[%d]: FAIL (cpu=%d gpu=%d) [REQUIRED]\n",
@@ -632,6 +712,11 @@ int main(int argc, char **argv) {
                                cpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]],
                                gpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
                                gpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]]);
+                        print_vec_delta(
+                            "hidden", i,
+                            cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                            gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                            model.config.dim);
                         total_fail++;
                     } else {
                         printf("  token[%d]: DRIFT (cpu=%d gpu=%d) [allowed]\n",
@@ -642,6 +727,7 @@ int main(int argc, char **argv) {
 
                 bn_sampler_free(&sampler);
                 free(gpu_step_logits);
+                free(gpu_step_hidden);
                 bn_session_free(s, NULL);
 
                 /* Clean up GPU for Phase 3 reuse */
@@ -681,8 +767,13 @@ int main(int argc, char **argv) {
                 float *gpu_step_logits = calloc((size_t)N_DECODE_STEPS *
                                                 (size_t)vocab_size,
                                                 sizeof(float));
-                if (!gpu_step_logits) {
+                float *gpu_step_hidden = calloc((size_t)N_DECODE_STEPS *
+                                                (size_t)model.config.dim,
+                                                sizeof(float));
+                if (!gpu_step_logits || !gpu_step_hidden) {
                     fprintf(stderr, "Failed to allocate Metal step logits\n");
+                    free(gpu_step_logits);
+                    free(gpu_step_hidden);
                     return 1;
                 }
 
@@ -700,6 +791,8 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
                     memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
                            logits, (size_t)vocab_size * sizeof(float));
+                    memcpy(gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                           s->state.x, (size_t)model.config.dim * sizeof(float));
                     token = bn_sampler_sample(&sampler, logits);
                     gpu_tokens[i] = token;
                     if (i + 1 < N_DECODE_STEPS) {
@@ -721,6 +814,13 @@ int main(int argc, char **argv) {
                     if (match) {
                         printf("  token[%d]: PASS (cpu=%d metal=%d)\n",
                                i, cpu_tokens[i], gpu_tokens[i]);
+                        if (compare_hidden) {
+                            print_vec_delta(
+                                "hidden", i,
+                                cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                model.config.dim);
+                        }
                         total_pass++;
                     } else if (required) {
                         printf("  token[%d]: FAIL (cpu=%d metal=%d) [REQUIRED]\n",
@@ -730,6 +830,11 @@ int main(int argc, char **argv) {
                                cpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]],
                                gpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
                                gpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]]);
+                        print_vec_delta(
+                            "hidden", i,
+                            cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                            gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                            model.config.dim);
                         total_fail++;
                     } else {
                         printf("  token[%d]: DRIFT (cpu=%d metal=%d) [allowed]\n",
@@ -740,6 +845,7 @@ int main(int argc, char **argv) {
 
                 bn_sampler_free(&sampler);
                 free(gpu_step_logits);
+                free(gpu_step_hidden);
                 bn_session_free(s, NULL);
 
                 if (gpu->free_activations)
@@ -760,6 +866,7 @@ int main(int argc, char **argv) {
 
     printf("\n");
     free(cpu_step_logits);
+    free(cpu_step_hidden);
 
     /* ════════════════════════════════════════════════════════════════
      * Phase 2: Matvec backend comparison (SIMD vs scalar)

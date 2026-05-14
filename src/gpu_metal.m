@@ -1034,6 +1034,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 pipeline = ctx->q4_q8_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        ctx->q4_q8_enabled &&
+                       (op->flags & 1u) &&
                        op->type == BN_GGUF_TENSOR_Q4_0 &&
                        ctx->q8_quant_pipeline &&
                        ctx->q4_q8_split_pipeline) {
@@ -1317,6 +1318,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (!wbuf) continue;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
                 if (ctx->q4_q8_enabled &&
+                    (op->flags & 1u) &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
                     ctx->q8_quant_pipeline &&
                     ctx->q4_q8_split_pipeline) {

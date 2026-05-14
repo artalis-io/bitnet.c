@@ -44,10 +44,13 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
     int cpu_fallback_attn_from_layer = -1;
+    int cpu_fallback_ffn_layer = -1;
     int cpu_fallback_ffn_from_layer = -1;
     int cpu_fallback_ffn_down_from_layer = -1;
     int compare_attention_layer = -1;
     int compare_attention_pos = -1;
+    int compare_gqa_layer = -1;
+    int compare_gqa_pos = -1;
     int compare_qkv_layer = -1;
     int compare_qkv_pos = -1;
     int compare_ffn_down_layer = -1;
@@ -55,6 +58,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int compare_ffn_state_layer = -1;
     int compare_ffn_state_pos = -1;
     int q4_q8_from_layer = -1;
+    int q4_q8_attn_only = 0;
+    int q4_q8_ffn_only = 0;
     {
         const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
         if (env) cpu_fallback_from_layer = atoi(env);
@@ -62,6 +67,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         if (env) cpu_fallback_layer = atoi(env);
         env = getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
         if (env) cpu_fallback_attn_from_layer = atoi(env);
+        env = getenv("BN_GPU_CPU_FFN_LAYER");
+        if (env) cpu_fallback_ffn_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
         if (env) cpu_fallback_ffn_from_layer = atoi(env);
         env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
@@ -70,6 +77,10 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         if (env) compare_attention_layer = atoi(env);
         env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
         if (env) compare_attention_pos = atoi(env);
+        env = getenv("BN_GPU_COMPARE_GQA_LAYER");
+        if (env) compare_gqa_layer = atoi(env);
+        env = getenv("BN_GPU_COMPARE_GQA_POS");
+        if (env) compare_gqa_pos = atoi(env);
         env = getenv("BN_GPU_COMPARE_QKV_LAYER");
         if (env) compare_qkv_layer = atoi(env);
         env = getenv("BN_GPU_COMPARE_QKV_POS");
@@ -88,6 +99,8 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         } else if (getenv("BN_GPU_Q4_Q8")) {
             q4_q8_from_layer = c->n_layers - 1;
         }
+        q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
+        q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
     }
 
     // Embed token on CPU, upload to GPU x buffer
@@ -179,7 +192,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
         BnTransformerGPUQKVResources qkv_res =
             bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
-        int use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
+        int use_q4_q8_layer = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
+        int use_q4_q8_attn = use_q4_q8_layer && !q4_q8_ffn_only;
+        int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
         BnTransformerGPUAttentionResources attn_res =
             bn_transformer_gpu_resolve_attention_resources(gpu, backend, lw, l);
         if (cpu_fallback_attn_from_layer >= 0 &&
@@ -193,7 +208,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         } else {
             int compare_attention = compare_attention_layer == l &&
                 (compare_attention_pos < 0 || compare_attention_pos == pos);
-            if (compare_attention) {
+            int compare_gqa = compare_gqa_layer == l &&
+                (compare_gqa_pos < 0 || compare_gqa_pos == pos);
+            if (compare_attention || compare_gqa) {
                 if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                     bn_transformer_gpu_read_x(gpu, sess->state.x,
                                               (size_t)dim * sizeof(float)) != 0)
@@ -203,7 +220,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
             bn_transformer_gpu_emit_context_qkv(
                 &emit, c, lw, &plan, &qkv_res, pos, q_dim,
                 head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
-                use_q4_q8);
+                use_q4_q8_attn);
             if (compare_qkv_layer == l &&
                 (compare_qkv_pos < 0 || compare_qkv_pos == pos)) {
                 if (bn_transformer_gpu_debug_compare_qkv(
@@ -212,10 +229,25 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu qkv compare failed");
             }
-            bn_transformer_gpu_emit_context_attention(
-                &emit, c, lw, &attn_res, pos, dim, q_dim,
-                head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
-                kv_cache_off, has_moe, u_eps, use_q4_q8);
+            if (compare_gqa) {
+                bn_transformer_gpu_emit_context_attention_gqa(
+                    &emit, c, lw, &attn_res, pos, q_dim,
+                    head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
+                    kv_cache_off, has_moe);
+                if (bn_transformer_gpu_debug_compare_gqa(
+                        &emit, gpu, m, sess, lw, l, pos, cache_pos,
+                        rope_dims, rope_cos, rope_sin, dim) != 0)
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu gqa compare failed");
+                bn_transformer_gpu_emit_context_attention_finish(
+                    &emit, c, lw, &attn_res, dim, q_dim, head_size, u_eps,
+                    use_q4_q8_attn);
+            } else {
+                bn_transformer_gpu_emit_context_attention(
+                    &emit, c, lw, &attn_res, pos, dim, q_dim,
+                    head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
+                    kv_cache_off, has_moe, u_eps, use_q4_q8_attn);
+            }
             if (compare_attention) {
                 if (bn_transformer_gpu_debug_compare_attention(
                         &emit, gpu, m, sess, lw, l, pos, cache_pos,
@@ -267,8 +299,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
             backend, l, c->n_layers, output_norm);
         BnFFNPlan ffn_plan;
         bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu, backend, l, 1);
-        if (cpu_fallback_ffn_from_layer >= 0 &&
-            l >= cpu_fallback_ffn_from_layer) {
+        if ((cpu_fallback_ffn_layer >= 0 && l == cpu_fallback_ffn_layer) ||
+            (cpu_fallback_ffn_from_layer >= 0 &&
+             l >= cpu_fallback_ffn_from_layer)) {
             if (bn_transformer_gpu_fallback_cpu_ffn(
                     &emit, gpu, m, sess, lw, &ffn_plan, dim, u_eps,
                     next_norm) != 0)
@@ -292,10 +325,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu ffn-state pre-compare snapshot failed");
         }
-        use_q4_q8 = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
-            next_norm, skip_ffn_down, &ffn_down_input_buf, use_q4_q8);
+            next_norm, skip_ffn_down, &ffn_down_input_buf, use_q4_q8_ffn);
         if (!skip_ffn_down &&
             compare_ffn_down_layer == l &&
             (compare_ffn_down_pos < 0 || compare_ffn_down_pos == pos)) {

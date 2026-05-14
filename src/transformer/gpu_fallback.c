@@ -527,6 +527,108 @@ int bn_transformer_gpu_debug_compare_attention(
     return 0;
 }
 
+int bn_transformer_gpu_debug_compare_gqa(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int pos,
+    int cache_pos,
+    int rope_dims,
+    const float *rope_cos,
+    const float *rope_sin,
+    int dim) {
+    BnConfig *c = &m->config;
+    BnRunState *s = &sess->state;
+    BnLayerShapePlan shape;
+    bn_transformer_plan_layer_shape(&shape, c, lw, layer,
+                                    bn_model_tq_state(m) != NULL);
+    if (!shape.is_attn || shape.q_gated || shape.q_wide ||
+        c->kv_tq_bits > 0 || c->kv_f16 ||
+        lw->attn.q_norm || lw->attn.k_norm || lw->norm.attn_sub_norm)
+        return -1;
+
+    float *cpu_in = (float *)malloc((size_t)dim * sizeof(float));
+    float *gpu_xb = (float *)malloc((size_t)dim * sizeof(float));
+    if (!cpu_in || !gpu_xb) {
+        free(cpu_in);
+        free(gpu_xb);
+        return -1;
+    }
+    memcpy(cpu_in, s->x, (size_t)dim * sizeof(float));
+
+    if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0 ||
+        bn_transformer_gpu_read_xb(gpu, gpu_xb,
+                                   (size_t)dim * sizeof(float)) != 0) {
+        free(cpu_in);
+        free(gpu_xb);
+        return -1;
+    }
+
+    int head_size = shape.head_size;
+    int kv_dim = shape.kv_dim;
+    int n_kv_heads = shape.n_kv_heads;
+    int kv_mul = shape.kv_mul;
+    int layer_rope_dims = rope_dims > head_size ? head_size : rope_dims;
+    int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+    size_t loff = (size_t)shape.attn_idx * c->seq_len * c->kv_dim;
+    size_t kv_bytes = (size_t)n_kv * c->kv_dim * sizeof(float);
+    size_t kv_off = loff * sizeof(float);
+
+    if (bn_transformer_gpu_read_activation_buf_offset(
+            gpu, BN_GPU_VALUE_KEY_CACHE, s->key_cache + loff, kv_bytes,
+            kv_off) != 0 ||
+        bn_transformer_gpu_read_activation_buf_offset(
+            gpu, BN_GPU_VALUE_VALUE_CACHE, s->value_cache + loff, kv_bytes,
+            kv_off) != 0) {
+        free(cpu_in);
+        free(gpu_xb);
+        return -1;
+    }
+
+    memcpy(s->x, cpu_in, (size_t)dim * sizeof(float));
+    float *key_cache_row =
+        s->key_cache + loff + (size_t)cache_pos * c->kv_dim;
+    float *value_cache_row =
+        s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
+
+    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
+    bn_quant_matvec(s->q, &lw->attn.wq, s->xb, s->x_q, bn_model_pool(m));
+    bn_quant_matvec(key_cache_row, &lw->attn.wk, s->xb, s->x_q,
+                    bn_model_pool(m));
+    bn_quant_matvec(value_cache_row, &lw->attn.wv, s->xb, s->x_q,
+                    bn_model_pool(m));
+
+    if (lw->attn.q_bias) {
+        for (int i = 0; i < dim; i++) s->q[i] += lw->attn.q_bias[i];
+    }
+    if (lw->attn.k_bias) {
+        for (int i = 0; i < kv_dim; i++) key_cache_row[i] += lw->attn.k_bias[i];
+    }
+    if (lw->attn.v_bias) {
+        for (int i = 0; i < kv_dim; i++)
+            value_cache_row[i] += lw->attn.v_bias[i];
+    }
+
+    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
+                                        layer_rope_dims, rope_cos, rope_sin);
+    bn_transformer_cpu_apply_rope_heads(key_cache_row, n_kv_heads, head_size,
+                                        layer_rope_dims, rope_cos, rope_sin);
+
+    BnGQACtx gctx = {
+        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len
+    };
+    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
+
+    debug_compare_vec("gqa_compare", layer, pos, s->xb, gpu_xb, dim);
+
+    free(cpu_in);
+    free(gpu_xb);
+    return 0;
+}
+
 int bn_transformer_gpu_debug_compare_qkv(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,

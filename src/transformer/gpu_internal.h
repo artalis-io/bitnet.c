@@ -387,6 +387,19 @@ int bn_transformer_gpu_debug_compare_attention(
     const float *rope_cos,
     const float *rope_sin,
     int dim);
+int bn_transformer_gpu_debug_compare_gqa(
+    BnTransformerGPUEmitContext *emit,
+    const BnGPUBackend *gpu,
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int pos,
+    int cache_pos,
+    int rope_dims,
+    const float *rope_cos,
+    const float *rope_sin,
+    int dim);
 int bn_transformer_gpu_debug_compare_qkv(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -427,6 +440,31 @@ void bn_transformer_gpu_emit_context_attention(
     size_t loff,
     uint32_t kv_cache_off,
     int has_moe,
+    uint32_t u_eps,
+    int use_q4_q8);
+void bn_transformer_gpu_emit_context_attention_gqa(
+    BnTransformerGPUEmitContext *ctx,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnTransformerGPUAttentionResources *res,
+    int pos,
+    int q_dim,
+    int head_size,
+    int n_heads,
+    int kv_dim,
+    int rope_dims,
+    int n_kv,
+    size_t loff,
+    uint32_t kv_cache_off,
+    int has_moe);
+void bn_transformer_gpu_emit_context_attention_finish(
+    BnTransformerGPUEmitContext *ctx,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnTransformerGPUAttentionResources *res,
+    int dim,
+    int q_dim,
+    int head_size,
     uint32_t u_eps,
     int use_q4_q8);
 void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,

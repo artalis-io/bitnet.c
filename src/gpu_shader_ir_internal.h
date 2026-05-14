@@ -92,6 +92,7 @@ typedef struct BnGPUOp {
     int buf_out;         // BN_GPU_VALUE_* output
     int buf_aux;         // secondary BN_GPU_VALUE_* (-1 if unused)
     int rows, cols;      // dimensions (matvec: weight dims; others: element count in p0)
+    uint32_t flags;      // backend-private lowered flags
     uint32_t p[BN_GPU_OP_PARAMS]; // shader-specific parameters (32 bytes)
 } BnGPUOp;
 
