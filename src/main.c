@@ -61,6 +61,7 @@ typedef struct {
     int metal;          // use Metal backend (requires BN_ENABLE_METAL)
     int gpu_cpu_logits; // hidden diagnostic: run final logits on CPU
     int gpu_compare_logits; // hidden diagnostic: compare GPU logits to CPU
+    int gpu_max_storage_binding_mb; // hidden diagnostic: allow large GPU logits
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
@@ -153,6 +154,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.draft_k = 5;
     args.q4_q8_to_layer = -1;
     args.q4_q8_tail_native = -1;
+    args.gpu_max_storage_binding_mb = -1;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -220,6 +222,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_cpu_logits = 1;
         } else if (strcmp(argv[i], "--gpu-compare-logits") == 0) {
             args.gpu_compare_logits = 1;
+        } else if (strcmp(argv[i], "--gpu-max-storage-binding-mb") == 0 && i + 1 < argc) {
+            args.gpu_max_storage_binding_mb = parse_int(argv[++i], "--gpu-max-storage-binding-mb");
         } else if (strcmp(argv[i], "--gpu-profile") == 0 && i + 1 < argc) {
             args.gpu_profile = parse_int(argv[++i], "--gpu-profile");
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
@@ -333,6 +337,11 @@ int main(int argc, char **argv) {
         char tail_env[32];
         snprintf(tail_env, sizeof(tail_env), "%d", args.q4_q8_tail_native);
         setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", tail_env, 1);
+    }
+    if (args.gpu_max_storage_binding_mb >= 0) {
+        char mb_env[32];
+        snprintf(mb_env, sizeof(mb_env), "%d", args.gpu_max_storage_binding_mb);
+        setenv("BN_GPU_MAX_STORAGE_BINDING_MB", mb_env, 1);
     }
 
     // Validate --kv-tq

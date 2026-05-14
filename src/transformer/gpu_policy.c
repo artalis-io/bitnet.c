@@ -22,6 +22,12 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
     size_t max_storage_binding = gpu->max_storage_binding_size;
     if (max_storage_binding == 0)
         max_storage_binding = 128ull * 1024ull * 1024ull;
+    const char *override_mb = getenv("BN_GPU_MAX_STORAGE_BINDING_MB");
+    if (override_mb) {
+        long mb = strtol(override_mb, NULL, 10);
+        if (mb >= 0)
+            max_storage_binding = (size_t)mb * 1024ull * 1024ull;
+    }
 
     return bn_qweight_data_size(logits->cpu_weight) > max_storage_binding;
 }

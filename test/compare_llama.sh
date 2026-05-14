@@ -39,6 +39,7 @@ while [[ $# -gt 0 ]]; do
         --metal-disable-q4-q8) BITNET_ARGS+=(--metal-disable-q4-q8); shift ;;
         --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
         --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
+        --gpu-max-storage-binding-mb) BITNET_ARGS+=(--gpu-max-storage-binding-mb "$2"); shift 2 ;;
         --q4-q8-to-layer) BITNET_ARGS+=(--q4-q8-to-layer "$2"); shift 2 ;;
         --q4-q8-tail-native) BITNET_ARGS+=(--q4-q8-tail-native "$2"); shift 2 ;;
         --metal-private-weights) BITNET_ARGS+=(--metal-private-weights); shift ;;
