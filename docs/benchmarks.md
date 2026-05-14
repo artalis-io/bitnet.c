@@ -28,26 +28,42 @@ GPU/coherence-adjacent checks:
 make BN_ENABLE_METAL=1 test_coherence
 ./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal
 
+llama-server -m models/qwen2.5-3b-instruct-q4_0.gguf \
+  -ngl 99 -fa on -c 512 -np 1 --host 127.0.0.1 --port 8027
+python3 test/compare_llama_topk.py models/qwen2.5-3b-instruct-q4_0.gguf \
+  --metal --llama-metal --flash --maxseq 512 \
+  --gpu-max-storage-binding-mb 4096 \
+  --top-k 10 --min-overlap 3 \
+  --llama-server-url http://127.0.0.1:8027 \
+  --benchmark
+
 make fetch-wgpu
 make BN_ENABLE_WEBGPU=1 test_gpu_wgpu
 ```
 
 ## Current Local Checkpoint
 
-The most recent llama.cpp comparison gate used
-`qwen2.5-3b-instruct-q4_0.gguf`, 32 generated tokens, 8 threads, and three
-trials. It reported:
+The active Metal acceptance gate is top-logit coherence plus token throughput
+against llama.cpp served with Metal and flash attention enabled (`llama-server
+-fa on -np 1`). The comparator defaults `--min-throughput-ratio` to `1.0`, so
+`--benchmark` fails until bitnet.c is at least on par with the llama.cpp server
+sample.
 
-| Engine | Median tok/s |
+The latest local strict server-mode sample used `qwen2.5-3b-instruct-q4_0.gguf`,
+`--maxseq 512`, `--flash`, deterministic sampling, 128 generated tokens, and
+Qwen2.5 top-logit prompts:
+
+| Engine | tok/s |
 |---|---:|
-| bitnet.c | 39.30 |
-| llama.cpp | 17.59 |
+| bitnet.c Metal | 91.58 |
+| llama.cpp Metal `-fa on -np 1` | 102.20 |
 
-Median ratio: 2.2347. Mean ratio: 2.1997.
+Ratio: 0.896. Top-1 matched `8/8` prompts and mean top-10 overlap was `9.62`.
+This is good coherence evidence, but it is not yet throughput parity.
 
-This is a short local gate and is noisy. It is useful as a regression check for
-this machine and model, not as a durable statement that bitnet.c is faster in all
-dense Q4_0 settings.
+An older 32-token `make bench_llama_compare` checkpoint measured median bitnet.c
+at 39.30 tok/s versus median llama.cpp at 17.59 tok/s. Treat that as historical
+only; the current acceptance bar is the top-k plus llama-server gate above.
 
 ## MoE Notes
 

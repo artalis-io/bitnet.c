@@ -250,11 +250,17 @@ followed by `make bitnet`, `make BN_ENABLE_METAL=1 test_coherence`,
 `./test/backend_matrix.sh` passed after the shader/buffer contract cleanup.
 `make BN_ENABLE_WEBGPU=1 test_gpu_wgpu` compiled the WebGPU backend but skipped
 runtime GPU checks on this machine because wgpu-native reported no suitable
-adapter. The llama.cpp comparison gate runs three trials and reports median plus
-mean. On `qwen2.5-3b-instruct-q4_0.gguf` with 32 tokens and 8 threads, that run
-measured median bitnet.c at 39.30 tok/s versus median llama.cpp at 17.59 tok/s
-(median ratio 2.2347; mean ratio 2.1997). This short 32-token benchmark remains
-noisy and should be treated as a gate/check, not a durable performance claim.
+adapter.
+
+The current strict Metal acceptance gate is `test/compare_llama_topk.py` against
+`llama-server -fa on -np 1`. It requires top-1/top-k coherence and, when
+`--benchmark` is used, defaults `--min-throughput-ratio` to `1.0`. The latest
+local Qwen2.5 sample matched top-1 on `8/8` prompts with mean top-10 overlap
+`9.62`, but measured bitnet.c at 91.58 tok/s versus llama.cpp at 102.20 tok/s
+(ratio 0.896), so this gate is intentionally still not satisfied. The older
+32-token `make bench_llama_compare` result, median bitnet.c 39.30 tok/s versus
+llama.cpp 17.59 tok/s, is historical and should not be used as the active
+parity claim.
 
 ### Backend Expansion Plan
 
