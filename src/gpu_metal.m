@@ -1255,6 +1255,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if (ctx->q4_q8_enabled && op->p[6] &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
                     wbuf &&
+                    !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline) {
                     pipeline = ctx->q4_q8_matvec_pipeline;
                 } else if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES) {
