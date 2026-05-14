@@ -1291,9 +1291,16 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     int n_barriers = 0;
     BnMetalProfileShape matvec_shapes[32], q8_shapes[16], q4_shapes[16];
     int n_matvec_shapes = 0, n_q8_shapes = 0, n_q4_shapes = 0;
+    int profile_each_op = ctx->gpu_profile >= 4;
+    double shader_gpu_ms[BN_GPU_SHADER_COUNT];
+    double shader_wall_ms[BN_GPU_SHADER_COUNT];
+    int shader_profile_counts[BN_GPU_SHADER_COUNT];
     memset(matvec_shapes, 0, sizeof(matvec_shapes));
     memset(q8_shapes, 0, sizeof(q8_shapes));
     memset(q4_shapes, 0, sizeof(q4_shapes));
+    memset(shader_gpu_ms, 0, sizeof(shader_gpu_ms));
+    memset(shader_wall_ms, 0, sizeof(shader_wall_ms));
+    memset(shader_profile_counts, 0, sizeof(shader_profile_counts));
     ctx->q8_quant_dispatches = 0;
     ctx->q8k_quant_dispatches = 0;
     ctx->q8_matvec_dispatches = 0;
@@ -1420,6 +1427,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             since_barrier_writes |= op_writes;
 
             /* Start compute encoder if needed */
+            if (!cmd)
+                cmd = [ctx->queue commandBuffer];
             if (!enc) {
                 enc = [cmd computeCommandEncoder];
                 current_pso = nil;
@@ -1919,14 +1928,36 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             MTLSize tpg = MTLSizeMake(threads_per_tg, 1, 1);
             MTLSize grid = MTLSizeMake(wg_x, wg_y, 1);
             [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
+
+            if (profile_each_op && shader >= 0 && shader < BN_GPU_SHADER_COUNT) {
+                double op_wall0 = bn_platform_time_ms();
+                [enc endEncoding];
+                enc = nil;
+                id<MTLCommandBuffer> done_cmd = cmd;
+                [done_cmd commit];
+                [done_cmd waitUntilCompleted];
+                double op_wall1 = bn_platform_time_ms();
+                double gpu_ms = 0.0;
+                double gpu_start = done_cmd.GPUStartTime;
+                double gpu_end = done_cmd.GPUEndTime;
+                if (gpu_end > gpu_start)
+                    gpu_ms = (gpu_end - gpu_start) * 1000.0;
+                shader_gpu_ms[shader] += gpu_ms;
+                shader_wall_ms[shader] += op_wall1 - op_wall0;
+                shader_profile_counts[shader]++;
+                cmd = nil;
+                current_pso = nil;
+            }
         }
 
         if (enc) [enc endEncoding];
 
         t_encode = bn_platform_time_ms();
 
-        [cmd commit];
-        [cmd waitUntilCompleted];
+        if (cmd) {
+            [cmd commit];
+            [cmd waitUntilCompleted];
+        }
 
         t_gpu = bn_platform_time_ms();
     }
@@ -1987,6 +2018,24 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         metal_shader_profile_name(matvec_shapes[i].shader),
                         matvec_shapes[i].count, matvec_shapes[i].rows,
                         matvec_shapes[i].cols, matvec_shapes[i].aux);
+            }
+        }
+    }
+    /* Per-op command-buffer timing (BN_GPU_PROFILE>=4, frame 1 only).
+     * This intentionally changes submission granularity and is diagnostic-only. */
+    if (ctx->gpu_profile >= 4 && ctx->gpu_frame == 1) {
+        fprintf(stderr, "[gpu:metal:breakdown] --- per-op shader timing ---\n");
+        for (int s = 0; s < BN_GPU_SHADER_COUNT; s++) {
+            if (shader_profile_counts[s] > 0) {
+                double shown_gpu = shader_gpu_ms[s] > 0.0
+                    ? shader_gpu_ms[s]
+                    : shader_wall_ms[s];
+                fprintf(stderr, "  %-16s: %3d ops gpu=%.3fms wall=%.3fms avg=%.3fms\n",
+                        metal_shader_profile_name(s),
+                        shader_profile_counts[s],
+                        shown_gpu,
+                        shader_wall_ms[s],
+                        shown_gpu / (double)shader_profile_counts[s]);
             }
         }
     }
