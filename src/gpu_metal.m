@@ -88,6 +88,52 @@ typedef struct {
     size_t        mmap_size;
 } BnMetalCtx;
 
+typedef struct {
+    int shader;
+    uint32_t rows;
+    uint32_t cols;
+    uint32_t aux;
+    int count;
+} BnMetalProfileShape;
+
+static const char *metal_shader_profile_name(int shader)
+{
+    static const char *names[] = {
+        "matvec","rmsnorm","rope","gqa_scores","softmax","gqa_combine",
+        "silu_gate","relu2_gate","resid_add","copy","bias_add","resid_rmsnorm",
+        "weighted_add","ssm_conv","ssm_l2norm","ssm_ab","ssm_delta","ssm_gate",
+        "per_head_norm","deinterleave_q","sigmoid_gate","flash_attn",
+        "matvec_split","rope_qk","fused_gateup","ssm_ab_split","q4k_split"
+    };
+    if (shader >= 0 && shader < (int)(sizeof(names) / sizeof(names[0])))
+        return names[shader];
+    return "?";
+}
+
+static void metal_profile_add_shape(BnMetalProfileShape *shapes,
+                                    int *n_shapes,
+                                    int max_shapes,
+                                    int shader,
+                                    uint32_t rows,
+                                    uint32_t cols,
+                                    uint32_t aux)
+{
+    for (int i = 0; i < *n_shapes; i++) {
+        if (shapes[i].shader == shader && shapes[i].rows == rows &&
+            shapes[i].cols == cols && shapes[i].aux == aux) {
+            shapes[i].count++;
+            return;
+        }
+    }
+    if (*n_shapes >= max_shapes) return;
+    shapes[*n_shapes].shader = shader;
+    shapes[*n_shapes].rows = rows;
+    shapes[*n_shapes].cols = cols;
+    shapes[*n_shapes].aux = aux;
+    shapes[*n_shapes].count = 1;
+    (*n_shapes)++;
+}
+
 /* ── GPU buffer handle ─────────────────────────────────────────────── */
 
 typedef struct {
@@ -1234,10 +1280,18 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     const BnGPUOp *ops = (const BnGPUOp *)ops_raw;
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !ops || n_ops <= 0) return -1;
+    if (ctx->gpu_profile < 0) {
+        const char *env = getenv("BN_GPU_PROFILE");
+        ctx->gpu_profile = env ? atoi(env) : 0;
+    }
 
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
+    BnMetalProfileShape q8_shapes[16], q4_shapes[16];
+    int n_q8_shapes = 0, n_q4_shapes = 0;
+    memset(q8_shapes, 0, sizeof(q8_shapes));
+    memset(q4_shapes, 0, sizeof(q4_shapes));
     ctx->q8_quant_dispatches = 0;
     ctx->q8k_quant_dispatches = 0;
     ctx->q8_matvec_dispatches = 0;
@@ -1398,6 +1452,14 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
                         return -1;
+                    if (ctx->gpu_profile >= 2) {
+                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                                                shader, 0, (uint32_t)op->cols,
+                                                n_tokens);
+                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                                                shader, (uint32_t)op->rows,
+                                                (uint32_t)op->cols, n_tokens);
+                    }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
                     ctx->q8_matvec_dispatches++;
@@ -1415,6 +1477,14 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
                         return -1;
+                    if (ctx->gpu_profile >= 2) {
+                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                                                shader, 0, (uint32_t)op->cols,
+                                                n_tokens);
+                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                                                shader, (uint32_t)op->rows,
+                                                (uint32_t)op->cols, n_tokens);
+                    }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
                     ctx->q8_matvec_dispatches++;
@@ -1640,6 +1710,14 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                        ctx->q4_q8_split_pipeline) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
+                    if (ctx->gpu_profile >= 2) {
+                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                                                shader, 0, (uint32_t)op->cols,
+                                                1);
+                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                                                shader, op->p[0],
+                                                (uint32_t)op->cols, 1);
+                    }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
                     ctx->q8_split_dispatches++;
@@ -1683,6 +1761,14 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     ctx->q4_q8_gateup_pipeline) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
+                    if (ctx->gpu_profile >= 2) {
+                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                                                shader, 0, (uint32_t)op->cols,
+                                                1);
+                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                                                shader, op->p[2],
+                                                (uint32_t)op->cols, 1);
+                    }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
                     ctx->q8_gateup_dispatches++;
@@ -1835,10 +1921,6 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t1 = bn_platform_time_ms();
 
     /* GPU profiling */
-    if (ctx->gpu_profile < 0) {
-        const char *env = getenv("BN_GPU_PROFILE");
-        ctx->gpu_profile = env ? atoi(env) : 0;
-    }
     if (ctx->gpu_profile >= 1 && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
         fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d q8=%d q8m=%d q8s=%d q8g=%d q8k=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
                 ctx->gpu_frame, n_ops, ctx->q8_quant_dispatches,
@@ -1849,14 +1931,6 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     }
     /* Per-op-type breakdown (BN_GPU_PROFILE>=2, frame 1 only) */
     if (ctx->gpu_profile >= 2 && ctx->gpu_frame == 1) {
-        /* Re-execute ops by category, timing each category separately */
-        static const char *cat_names[] = {
-            "matvec","rmsnorm","rope","gqa_scores","softmax","gqa_combine",
-            "silu_gate","relu2_gate","resid_add","copy","bias_add","resid_rmsnorm",
-            "weighted_add","ssm_conv","ssm_l2norm","ssm_ab","ssm_delta","ssm_gate",
-            "per_head_norm","deinterleave_q","sigmoid_gate","flash_attn",
-            "matvec_split","rope_qk","fused_gateup","ssm_ab_split","q4k_split"
-        };
         int cat_count[BN_GPU_SHADER_COUNT]; memset(cat_count, 0, sizeof(cat_count));
         for (int i = 0; i < n_ops; i++) {
             int s = bn_gpu_shader_from_op_code(ops[i].op_code);
@@ -1866,7 +1940,25 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
         for (int s = 0; s < BN_GPU_SHADER_COUNT; s++) {
             if (cat_count[s] > 0)
                 fprintf(stderr, "  %-16s: %3d ops\n",
-                        s < (int)(sizeof(cat_names)/sizeof(cat_names[0])) ? cat_names[s] : "?", cat_count[s]);
+                        metal_shader_profile_name(s), cat_count[s]);
+        }
+        if (n_q8_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- q8 activation quant shapes ---\n");
+            for (int i = 0; i < n_q8_shapes; i++) {
+                fprintf(stderr, "  %-16s: %3d dispatches cols=%u tokens=%u\n",
+                        metal_shader_profile_name(q8_shapes[i].shader),
+                        q8_shapes[i].count, q8_shapes[i].cols,
+                        q8_shapes[i].aux);
+            }
+        }
+        if (n_q4_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- q4/q8 matvec shapes ---\n");
+            for (int i = 0; i < n_q4_shapes; i++) {
+                fprintf(stderr, "  %-16s: %3d dispatches rows=%u cols=%u tokens=%u\n",
+                        metal_shader_profile_name(q4_shapes[i].shader),
+                        q4_shapes[i].count, q4_shapes[i].rows,
+                        q4_shapes[i].cols, q4_shapes[i].aux);
+            }
         }
     }
     ctx->gpu_frame++;
