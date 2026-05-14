@@ -4,6 +4,7 @@
 # Usage:
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -n 50
+#   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --prompt "The sum of 2 + 2 ="
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --flash
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --llama-flash-off
@@ -24,9 +25,11 @@ BITNET_ARGS=()
 LLAMA_ARGS=(-ngl 0 -dev none)
 LLAMA_FLASH=()
 LLAMA_THREADS=1
+CUSTOM_PROMPTS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -n) N_TOKENS="$2"; shift 2 ;;
+        --prompt) CUSTOM_PROMPTS+=("$2"); shift 2 ;;
         --metal) BITNET_ARGS+=(--metal); shift ;;
         --llama-metal) LLAMA_ARGS=(-ngl 99); shift ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
@@ -98,6 +101,9 @@ PROMPTS=(
     "The color of the sky is"
     "Python is a programming language created by"
 )
+if (( ${#CUSTOM_PROMPTS[@]} > 0 )); then
+    PROMPTS=("${CUSTOM_PROMPTS[@]}")
+fi
 
 GREEN='\033[32m'
 RED='\033[31m'
