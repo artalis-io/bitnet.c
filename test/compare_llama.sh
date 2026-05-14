@@ -5,6 +5,7 @@
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -n 50
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal
+#   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --metal --llama-metal --flash
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf -v    # verbose
 #   ./test/compare_llama.sh models/qwen2.5-3b-instruct-q4_0.gguf --strict
 #
@@ -25,8 +26,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -n) N_TOKENS="$2"; shift 2 ;;
         --metal) BITNET_ARGS+=(--metal); shift ;;
+        --llama-metal) LLAMA_ARGS=(-ngl 99); shift ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;
         --no-prefill) BITNET_ARGS+=(--no-prefill); shift ;;
+        --flash) BITNET_ARGS+=(--flash); LLAMA_ARGS+=(-fa on); shift ;;
         --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
         --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
         --q4-q8-to-layer) BITNET_ARGS+=(--q4-q8-to-layer "$2"); shift 2 ;;
@@ -70,6 +73,16 @@ first_token_id() {
     printf '%s\n' "${ids%%,*}"
 }
 
+token_ids_csv() {
+    local text="$1"
+    local ids
+    ids=$("$LLAMA_TOKENIZE" -m "$MODEL" --ids --no-bos -p "$text" --log-disable 2>/dev/null) || return 1
+    ids="${ids#[}"
+    ids="${ids%]}"
+    ids="${ids//[[:space:]]/}"
+    printf '%s\n' "$ids"
+}
+
 # Prompts: factual completions with strong first-token predictions
 PROMPTS=(
     "The capital of France is"
@@ -95,6 +108,8 @@ total_words_compared=0
 first_word_matches=0
 exact_first_output_word_matches=0
 first_token_matches=0
+total_token_ids_matched=0
+total_token_ids_compared=0
 tmp_files=()
 cleanup() {
     if (( ${#tmp_files[@]} > 0 )); then
@@ -174,12 +189,29 @@ for prompt in "${PROMPTS[@]}"; do
 
     bitnet_first_token=""
     llama_first_token=""
+    token_id_match=0
+    token_id_cmp=0
     if (( STRICT )); then
         bitnet_first_token=$(sed -n 's/^token_id=//p' "$bitnet_stderr" | head -n 1) || bitnet_first_token=""
         llama_first_token=$(first_token_id "$llama_out") || llama_first_token=""
         if [[ -n "$bitnet_first_token" && "$bitnet_first_token" == "$llama_first_token" ]]; then
             (( first_token_matches++ )) || true
         fi
+        bitnet_ids_csv=$(sed -n 's/^token_id=//p' "$bitnet_stderr" | paste -sd, -) || bitnet_ids_csv=""
+        llama_ids_csv=$(token_ids_csv "$llama_out") || llama_ids_csv=""
+        IFS=, read -ra bitnet_ids <<< "$bitnet_ids_csv"
+        IFS=, read -ra llama_ids <<< "$llama_ids_csv"
+        token_id_cmp=${#bitnet_ids[@]}
+        if (( ${#llama_ids[@]} < token_id_cmp )); then token_id_cmp=${#llama_ids[@]}; fi
+        for (( i=0; i<token_id_cmp; i++ )); do
+            if [[ "${bitnet_ids[$i]}" == "${llama_ids[$i]}" ]]; then
+                (( token_id_match++ )) || true
+            else
+                break
+            fi
+        done
+        total_token_ids_matched=$((total_token_ids_matched + token_id_match))
+        total_token_ids_compared=$((total_token_ids_compared + token_id_cmp))
     fi
 
     # Report
@@ -208,15 +240,19 @@ for prompt in "${PROMPTS[@]}"; do
         echo -e "  ${DIM}[full llama]  $llama_out${RESET}"
         if (( STRICT )); then
             echo -e "  ${DIM}[first token IDs] bitnet=$bitnet_first_token llama=$llama_first_token${RESET}"
+            echo -e "  ${DIM}[token ID prefix] $token_id_match/$token_id_cmp${RESET}"
         fi
     elif (( STRICT )) && [[ "$bitnet_first_token" != "$llama_first_token" ]]; then
         echo -e "  ${DIM}first token IDs:${RESET} bitnet=$bitnet_first_token llama=$llama_first_token"
+    elif (( STRICT )) && (( token_id_match < token_id_cmp )); then
+        echo -e "  ${DIM}token ID prefix:${RESET} $token_id_match/$token_id_cmp"
     fi
 done
 
 echo "---"
 if (( STRICT )); then
     echo "First output-token ID matches: $first_token_matches / $total_prompts prompts"
+    echo "Generated token-ID prefix matches: $total_token_ids_matched / $total_token_ids_compared tokens"
 fi
 echo "Exact first output-word matches: $exact_first_output_word_matches / $total_prompts prompts"
 echo "Punctuation-normalized first-word matches: $first_word_matches / $total_prompts prompts"
