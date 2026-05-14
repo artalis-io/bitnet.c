@@ -952,8 +952,10 @@ static void metal_encode_q8_quant(id<MTLComputeCommandEncoder> enc,
     MTLSize tpg = MTLSizeMake(32, 1, 1);
     MTLSize grid = MTLSizeMake((cols + 31) / 32, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    id<MTLBuffer> bufs[2] = { ctx->q8_buf, ctx->q8_scales_buf };
-    [enc memoryBarrierWithResources:bufs count:2];
+    if (getenv("BN_METAL_Q8_BARRIERS")) {
+        id<MTLBuffer> bufs[2] = { ctx->q8_buf, ctx->q8_scales_buf };
+        [enc memoryBarrierWithResources:bufs count:2];
+    }
 }
 
 static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
@@ -973,9 +975,11 @@ static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
     MTLSize tpg = MTLSizeMake(1, 1, 1);
     MTLSize grid = MTLSizeMake(cols / 256, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    [enc memoryBarrierWithResources:&ctx->q8_buf count:1];
-    id<MTLBuffer> bufs[2] = { ctx->q8_scales_buf, ctx->q8_bsums_buf };
-    [enc memoryBarrierWithResources:bufs count:2];
+    if (getenv("BN_METAL_Q8_BARRIERS")) {
+        [enc memoryBarrierWithResources:&ctx->q8_buf count:1];
+        id<MTLBuffer> bufs[2] = { ctx->q8_scales_buf, ctx->q8_bsums_buf };
+        [enc memoryBarrierWithResources:bufs count:2];
+    }
 }
 
 static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
