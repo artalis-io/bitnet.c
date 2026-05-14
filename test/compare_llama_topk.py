@@ -106,6 +106,7 @@ def llama_topk(server_url, prompt, top_k):
         "prompt": prompt,
         "n_predict": 1,
         "temperature": 0,
+        "repeat_penalty": 1.0,
         "cache_prompt": False,
         "n_probs": top_k,
     }
