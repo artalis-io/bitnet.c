@@ -30,6 +30,7 @@ while [[ $# -gt 0 ]]; do
         --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
         --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
         --q4-q8-to-layer) BITNET_ARGS+=(--q4-q8-to-layer "$2"); shift 2 ;;
+        --metal-private-weights) BITNET_ARGS+=(--metal-private-weights); shift ;;
         --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
         -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;
         -v) VERBOSE=1; shift ;;

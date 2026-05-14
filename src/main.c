@@ -69,6 +69,7 @@ typedef struct {
     int gpu_disable_fused_gateup; // hidden diagnostic: disable fused gate/up
     int gpu_split_residual_rmsnorm; // hidden diagnostic: split residual+rmsnorm
     int metal_disable_q4_q8; // hidden diagnostic: use baseline Q4_0 Metal path
+    int metal_private_weights; // hidden diagnostic: upload weights to private Metal buffers
     int q4_q8_to_layer; // hidden diagnostic: last Q4 x Q8 layer
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
@@ -232,6 +233,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_split_residual_rmsnorm = 1;
         } else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
             args.metal_disable_q4_q8 = 1;
+        } else if (strcmp(argv[i], "--metal-private-weights") == 0) {
+            args.metal_private_weights = 1;
         } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
             args.q4_q8_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
@@ -314,6 +317,8 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
     if (args.metal_disable_q4_q8)
         setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
+    if (args.metal_private_weights)
+        setenv("BN_METAL_PRIVATE_WEIGHTS", "1", 1);
     if (args.q4_q8_to_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", args.q4_q8_to_layer);

@@ -224,6 +224,34 @@ static int compile_matvec_pipeline(BnMetalCtx *ctx, int type, const char *dir)
     return 0;
 }
 
+static id<MTLBuffer> metal_new_weight_buffer(BnMetalCtx *ctx,
+                                             const void *data,
+                                             size_t size)
+{
+    if (!ctx || !data || size == 0) return nil;
+    if (!getenv("BN_METAL_PRIVATE_WEIGHTS")) {
+        return [ctx->device newBufferWithBytes:data
+                                        length:size
+                                       options:MTLResourceStorageModeShared];
+    }
+
+    id<MTLBuffer> dst = [ctx->device newBufferWithLength:size
+                                                  options:MTLResourceStorageModePrivate];
+    id<MTLBuffer> staging = [ctx->device newBufferWithBytes:data
+                                                     length:size
+                                                    options:MTLResourceStorageModeShared];
+    if (!dst || !staging) return nil;
+
+    id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
+    id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+    [blit copyFromBuffer:staging sourceOffset:0 toBuffer:dst destinationOffset:0 size:size];
+    [blit endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+    if ([cmd status] == MTLCommandBufferStatusError) return nil;
+    return dst;
+}
+
 /* ── Slab allocator ────────────────────────────────────────────────── */
 
 static int slab_init(BnMetalCtx *ctx, size_t size)
@@ -338,9 +366,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
             free(prepared_data);
             return NULL;
         }
-        buf->buf = [ctx->device newBufferWithBytes:prepared_data
-                                            length:prepared_size
-                                           options:MTLResourceStorageModeShared];
+        buf->buf = metal_new_weight_buffer(ctx, prepared_data, prepared_size);
         free(prepared_data);
         if (!buf->buf) {
             free(buf);
@@ -406,9 +432,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
         free(repacked);
         return NULL;
     }
-    buf->buf = [ctx->device newBufferWithBytes:repacked
-                                        length:repacked_size
-                                       options:MTLResourceStorageModeShared];
+    buf->buf = metal_new_weight_buffer(ctx, repacked, repacked_size);
     free(repacked);
     if (!buf->buf) {
         free(buf);
@@ -482,10 +506,7 @@ static void *metal_buffer_create(void *vctx, const void *data, size_t size,
         }
     }
 
-    /* Standalone buffer — storageModeShared for zero-copy on Apple Silicon */
-    buf->buf = [ctx->device newBufferWithBytes:data
-                                        length:size
-                                       options:MTLResourceStorageModeShared];
+    buf->buf = metal_new_weight_buffer(ctx, data, size);
     if (!buf->buf) {
         free(buf);
         return NULL;
