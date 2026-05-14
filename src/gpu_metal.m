@@ -277,7 +277,7 @@ static id<MTLBuffer> metal_new_weight_buffer(BnMetalCtx *ctx,
                                              size_t size)
 {
     if (!ctx || !data || size == 0) return nil;
-    if (!getenv("BN_METAL_PRIVATE_WEIGHTS")) {
+    if (getenv("BN_METAL_SHARED_WEIGHTS")) {
         return [ctx->device newBufferWithBytes:data
                                         length:size
                                        options:MTLResourceStorageModeShared];
