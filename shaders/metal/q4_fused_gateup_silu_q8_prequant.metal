@@ -70,8 +70,6 @@ kernel void q4_fused_gateup_silu_q8_prequant(
         uint up_row_base = (global_row + gate_rows) * blocks_per_row;
         for (uint b = row_lane; b < blocks_per_row; b += 8) {
             float dx = x_scales[b];
-            if (dx == 0.0f)
-                continue;
 
             uint gate_block = gate_row_base + b;
             uint up_block = up_row_base + b;

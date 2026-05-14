@@ -59,8 +59,6 @@ kernel void q4_native_q8_prequant_matvec(
             uint block_idx = row_block_base + b;
             float d = as_type<float>(weights[block_idx]);
             float dx = x_scales[scale_base + b];
-            if (dx == 0.0f)
-                continue;
             uint nib_base = total_blocks + block_idx * 4;
             device const char4 *xqb = (device const char4 *)(x_q + x_base + b * 32);
             float idot = q4_q8_dot(weights[nib_base], weights[nib_base + 1],
