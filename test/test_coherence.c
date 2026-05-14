@@ -343,7 +343,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-tail-native N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -377,6 +377,7 @@ int main(int argc, char **argv) {
     int metal_cpu_rmsnorm = 0;
     int q4_q8_from_layer = -1;
     int q4_q8_to_layer = -1;
+    int q4_q8_tail_native = -1;
     int q4_q8_attn_only = 0;
     int q4_q8_ffn_only = 0;
     int use_flash = 0;
@@ -448,6 +449,8 @@ int main(int argc, char **argv) {
             q4_q8_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
             q4_q8_to_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--q4-q8-tail-native") == 0 && i + 1 < argc) {
+            q4_q8_tail_native = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
             q4_q8_attn_only = 1;
         } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
@@ -562,6 +565,11 @@ int main(int argc, char **argv) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", q4_q8_to_layer);
         setenv("BN_GPU_Q4_Q8_TO_LAYER", layer_env, 1);
+    }
+    if (q4_q8_tail_native >= 0) {
+        char tail_env[32];
+        snprintf(tail_env, sizeof(tail_env), "%d", q4_q8_tail_native);
+        setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", tail_env, 1);
     }
     if (q4_q8_attn_only)
         setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);

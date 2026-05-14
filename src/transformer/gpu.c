@@ -104,8 +104,19 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
             q4_q8_from_layer = c->n_layers - 1;
         }
         env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
-        if (env)
+        if (env) {
             q4_q8_to_layer = atoi(env);
+        } else {
+            env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
+            if (env) {
+                int tail_native = atoi(env);
+                if (tail_native > 0) {
+                    q4_q8_to_layer = c->n_layers - tail_native - 1;
+                    if (q4_q8_to_layer < -1)
+                        q4_q8_to_layer = -1;
+                }
+            }
+        }
         q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
         q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
     }

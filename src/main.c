@@ -71,6 +71,7 @@ typedef struct {
     int metal_disable_q4_q8; // hidden diagnostic: use baseline Q4_0 Metal path
     int metal_private_weights; // hidden diagnostic: upload weights to private Metal buffers
     int q4_q8_to_layer; // hidden diagnostic: last Q4 x Q8 layer
+    int q4_q8_tail_native; // hidden diagnostic: final layers to leave on native Q4
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -112,6 +113,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --gpu-disable-gateup-split  Disable gate/up split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-fused-gateup  Disable fused gate/up diagnostic path\n");
     fprintf(stderr, "  --gpu-split-residual-rmsnorm  Split residual+rmsnorm diagnostic path\n");
+    fprintf(stderr, "  --q4-q8-tail-native <int>  Leave final N layers on native Q4 path\n");
     fprintf(stderr, "  --shader-dir <path>        WebGPU shader directory (default: shaders/)\n");
     fprintf(stderr, "  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
@@ -150,6 +152,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.gpu_cache_mb = 4096;
     args.draft_k = 5;
     args.q4_q8_to_layer = -1;
+    args.q4_q8_tail_native = -1;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -237,6 +240,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.metal_private_weights = 1;
         } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
             args.q4_q8_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
+        } else if (strcmp(argv[i], "--q4-q8-tail-native") == 0 && i + 1 < argc) {
+            args.q4_q8_tail_native = parse_int(argv[++i], "--q4-q8-tail-native");
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -323,6 +328,11 @@ int main(int argc, char **argv) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", args.q4_q8_to_layer);
         setenv("BN_GPU_Q4_Q8_TO_LAYER", layer_env, 1);
+    }
+    if (args.q4_q8_tail_native >= 0) {
+        char tail_env[32];
+        snprintf(tail_env, sizeof(tail_env), "%d", args.q4_q8_tail_native);
+        setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", tail_env, 1);
     }
 
     // Validate --kv-tq
