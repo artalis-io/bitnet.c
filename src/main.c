@@ -61,6 +61,9 @@ typedef struct {
     int metal;          // use Metal backend (requires BN_ENABLE_METAL)
     int gpu_cpu_logits; // hidden diagnostic: run final logits on CPU
     int gpu_compare_logits; // hidden diagnostic: compare GPU logits to CPU
+    int gpu_profile;    // hidden diagnostic: enable GPU timing logs
+    int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
+    int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -95,6 +98,9 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
     fprintf(stderr, "  --webgpu        Enable WebGPU backend (requires BN_ENABLE_WEBGPU=1)\n");
     fprintf(stderr, "  --metal         Enable Metal backend (requires BN_ENABLE_METAL=1)\n");
+    fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
+    fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
+    fprintf(stderr, "  --gpu-debug-qkv-split  Print QKV split diagnostic\n");
     fprintf(stderr, "  --shader-dir <path>        WebGPU shader directory (default: shaders/)\n");
     fprintf(stderr, "  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
@@ -199,6 +205,12 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_cpu_logits = 1;
         } else if (strcmp(argv[i], "--gpu-compare-logits") == 0) {
             args.gpu_compare_logits = 1;
+        } else if (strcmp(argv[i], "--gpu-profile") == 0 && i + 1 < argc) {
+            args.gpu_profile = parse_int(argv[++i], "--gpu-profile");
+        } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
+            args.metal_disable_barriers = 1;
+        } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
+            args.gpu_debug_qkv_split = 1;
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -260,6 +272,15 @@ static int print_token(const char *piece, int token_id, void *user_data) {
 int main(int argc, char **argv) {
     sh_log_init(NULL);
     CLIArgs args = parse_args(argc, argv);
+    if (args.gpu_profile > 0) {
+        char profile_env[16];
+        snprintf(profile_env, sizeof(profile_env), "%d", args.gpu_profile);
+        setenv("BN_GPU_PROFILE", profile_env, 1);
+    }
+    if (args.metal_disable_barriers)
+        setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
+    if (args.gpu_debug_qkv_split)
+        setenv("BN_GPU_DEBUG_QKV_SPLIT", "1", 1);
 
     // Validate --kv-tq
     if (args.kv_tq_bits > 0) {
@@ -501,8 +522,8 @@ int main(int argc, char **argv) {
         const char *sd = args.metal_shader_dir ? args.metal_shader_dir : "shaders/metal/";
         BnGPUBackend *gpu = bn_gpu_metal_create(sd);
         if (gpu) {
-            // Zero-copy: let Metal wrap mmap'd weight data (Phase 5)
-            if (mf.is_mmap && mf.data)
+            // Zero-copy: let Metal wrap mmap'd weight data when explicitly enabled.
+            if (getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") && mf.is_mmap && mf.data)
                 bn_gpu_metal_set_mmap_range(gpu, mf.data, mf.size);
             double gpu_t0 = bn_platform_time_ms();
             if (bn_model_upload_weights(&model, gpu) == 0) {

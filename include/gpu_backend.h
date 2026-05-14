@@ -48,6 +48,18 @@ struct BnGPUBackend {
                                     const void *data0, size_t size0,
                                     const void *data1, size_t size1,
                                     int type, int rows, int cols);
+    void *(*buffer_create_stacked3)(void *ctx,
+                                    const void *data0, size_t size0,
+                                    const void *data1, size_t size1,
+                                    const void *data2, size_t size2,
+                                    int type, int rows, int cols);
+    void *(*buffer_create_stacked3_biased)(void *ctx,
+                                           const void *data0, size_t size0,
+                                           const void *data1, size_t size1,
+                                           const void *data2, size_t size2,
+                                           int type, int rows, int cols,
+                                           const void *bias,
+                                           size_t bias_size);
 
     // Quantized matvec: out[rows] = W[rows, cols] @ x[cols]
     // W_buf: opaque handle from buffer_create.

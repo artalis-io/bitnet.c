@@ -8,37 +8,28 @@ kernel void rmsnorm(device const float *x      [[buffer(0)]],
                     device float       *out     [[buffer(2)]],
                     constant uint      *p       [[buffer(3)]],
                     uint3 lid [[thread_position_in_threadgroup]]) {
-    threadgroup float simd_sums[8];
+    threadgroup float inv_rms;
     uint tid = lid.x;
     uint dim = p[0];
     float eps = as_type<float>(p[1]);
 
-    float sum_sq = 0.0f;
-    float comp = 0.0f;
-    for (uint i = tid; i < dim; i += 256) {
-        float v = x[i];
-        float y = v * v - comp;
-        float t = sum_sq + y;
-        comp = (t - sum_sq) - y;
-        sum_sq = t;
-    }
-
-    // Simdgroup reduction: 256 threads → 8 partial sums → 1 total
-    float partial = simd_sum(sum_sq);
-    uint simd_id = tid / 32;
-    uint simd_lane = tid % 32;
-    if (simd_lane == 0) simd_sums[simd_id] = partial;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (tid < 8) {
-        float v = simd_sums[tid];
-        v += simd_shuffle_xor(v, 4);
-        v += simd_shuffle_xor(v, 2);
-        v += simd_shuffle_xor(v, 1);
-        if (tid == 0) simd_sums[0] = 1.0f / sqrt(v / float(dim) + eps);
+    if (tid == 0) {
+        float4 sum_sq = float4(0.0f);
+        uint i = 0;
+        for (; i + 3 < dim; i += 4) {
+            float4 v = *(device const float4 *)(x + i);
+            sum_sq = fma(v, v, sum_sq);
+        }
+        float low = sum_sq.x + sum_sq.z;
+        float high = sum_sq.y + sum_sq.w;
+        float ss = low + high;
+        for (; i < dim; i++)
+            ss += x[i] * x[i];
+        inv_rms = 1.0f / sqrt(ss / float(dim) + eps);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    float scale = simd_sums[0];
+    float scale = inv_rms;
     for (uint i = tid; i < dim; i += 256)
         out[i] = x[i] * weight[i] * scale;
 }

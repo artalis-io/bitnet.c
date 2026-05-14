@@ -9,6 +9,7 @@
 #include "transformer_backend_internal.h"
 #include "session.h"
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -903,6 +904,17 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
+    static int qkv_debug_printed = 0;
+    if (!qkv_debug_printed && getenv("BN_GPU_DEBUG_QKV_SPLIT")) {
+        fprintf(stderr,
+                "[bn:gpu:debug] qkv_split disabled=%d stacked=%p q_gated=%d "
+                "q_bias=%p k_bias=%p v_bias=%p op=%d can=%d use=%d\n",
+                qkv_split_disabled, qkv_stacked, q_gated, q_bias, k_bias,
+                v_bias, qkv_split_op_code,
+                bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type),
+                use_split || use_q8_split || use_q5_split);
+        qkv_debug_printed = 1;
+    }
 
     if (use_packed_q5_split) {
         emit_context_matvec_split(

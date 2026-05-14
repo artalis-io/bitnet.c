@@ -258,6 +258,12 @@ void *bn_backend_layout_upload_stacked2(BnGPUBackend *gpu,
     size_t a_sz = bn_qweight_data_size(a);
     size_t b_sz = bn_qweight_data_size(b);
 
+    if (gpu->buffer_create_stacked2) {
+        return gpu->buffer_create_stacked2(gpu->ctx, a->data, a_sz,
+                                           b->data, b_sz, a->type,
+                                           a->rows + b->rows, a->cols);
+    }
+
     size_t combined_sz = a_sz + b_sz;
     uint8_t *combined = (uint8_t *)malloc(combined_sz);
     if (!combined) return NULL;
@@ -323,14 +329,30 @@ void *bn_backend_layout_upload_stacked3_qkv(BnGPUBackend *gpu,
             memcpy(cbias, q_bias, (size_t)q->rows * sizeof(float));
             memcpy(cbias + q->rows, k_bias, (size_t)k->rows * sizeof(float));
             memcpy(cbias + q->rows + k->rows, v_bias, (size_t)v->rows * sizeof(float));
-            buf = gpu->buffer_create_biased(gpu->ctx, combined, combined_sz,
-                                            q->type, total_rows, q->cols,
-                                            cbias, (size_t)total_rows * sizeof(float));
+            if (gpu->buffer_create_stacked3_biased) {
+                buf = gpu->buffer_create_stacked3_biased(
+                    gpu->ctx, q->data, q_sz, k->data, k_sz, v->data, v_sz,
+                    q->type, total_rows, q->cols, cbias,
+                    (size_t)total_rows * sizeof(float));
+            } else {
+                buf = gpu->buffer_create_biased(gpu->ctx, combined,
+                                                combined_sz, q->type,
+                                                total_rows, q->cols, cbias,
+                                                (size_t)total_rows * sizeof(float));
+            }
             free(cbias);
         }
     } else if (no_bias) {
-        buf = gpu->buffer_create(gpu->ctx, combined, combined_sz,
-                                 q->type, total_rows, q->cols);
+        if (gpu->buffer_create_stacked3) {
+            buf = gpu->buffer_create_stacked3(gpu->ctx,
+                                              q->data, q_sz,
+                                              k->data, k_sz,
+                                              v->data, v_sz,
+                                              q->type, total_rows, q->cols);
+        } else {
+            buf = gpu->buffer_create(gpu->ctx, combined, combined_sz,
+                                     q->type, total_rows, q->cols);
+        }
     }
 
     free(combined);

@@ -10,6 +10,24 @@ using namespace metal;
     float(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
     float(int(((w) >> ((sh) + 12))& 0xF) - 8)))
 
+static inline float bn_fast_exp(float x) {
+    const float log2e = 1.4426950409f;
+    const float ln2 = 0.6931471806f;
+    x = clamp(x, -87.3f, 88.7f);
+    float n = floor(fma(x, log2e, 0.5f));
+    float r = fma(-n, ln2, x);
+    float poly = fma(0.04166664f, r, 0.16666667f);
+    poly = fma(poly, r, 0.49999994f);
+    poly = fma(poly, r, 1.0f);
+    poly = fma(poly, r, 1.0f);
+    int e = (int(n) + 127) << 23;
+    return poly * as_type<float>(e);
+}
+
+static inline float bn_fast_silu(float x) {
+    return x / (1.0f + bn_fast_exp(-x));
+}
+
 kernel void q4_fused_gateup_silu(device const uint  *weights [[buffer(0)]],
                                  device const float *x       [[buffer(1)]],
                                  device float       *out     [[buffer(2)]],
@@ -82,7 +100,7 @@ kernel void q4_fused_gateup_silu(device const uint  *weights [[buffer(0)]],
             gate += as_type<float>(weights[bias_offset + global_row]);
             up += as_type<float>(weights[bias_offset + global_row + gate_rows]);
         }
-        out[global_row] = (gate / (1.0f + fast::exp(-gate))) * up;
+        out[global_row] = bn_fast_silu(gate) * up;
     }
 }
 

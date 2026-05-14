@@ -276,7 +276,8 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
                                              int rows,
                                              int cols,
                                              const float *bias,
-                                             int bias_len)
+                                             int bias_len,
+                                             int allow_prepared)
 {
     (void)size;
     if (!ctx || !data || rows <= 0 || cols <= 0 || (cols % 32) != 0)
@@ -284,7 +285,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
 
     int blocks_per_row = cols / 32;
     int n_blocks = rows * blocks_per_row;
-    if (metal_q4_prepared_upload_enabled() && (rows % 4) == 0) {
+    if (allow_prepared && metal_q4_prepared_upload_enabled() && (rows % 4) == 0) {
         int n_groups = rows / 4;
         size_t n_group_blocks = (size_t)n_groups * (size_t)blocks_per_row;
         size_t scale_bytes = n_group_blocks * 4 * sizeof(uint16_t);
@@ -426,7 +427,7 @@ static void *metal_buffer_create(void *vctx, const void *data, size_t size,
     if (!ctx || !data || size == 0) return NULL;
 
     if (type == BN_GGUF_TENSOR_Q4_0)
-        return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols, NULL, 0);
+        return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols, NULL, 0, 1);
 
     BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
     if (!buf) return NULL;
@@ -504,7 +505,7 @@ static void *metal_buffer_create_biased(void *vctx, const void *data, size_t siz
     if (type == BN_GGUF_TENSOR_Q4_0) {
         int bias_len = (int)(bias_size / sizeof(float));
         return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols,
-                                         (const float *)bias, bias_len);
+                                         (const float *)bias, bias_len, 1);
     }
 
     /* Other types: combine weight data + bias into one buffer */
@@ -532,6 +533,17 @@ static void *metal_buffer_create_stacked2(void *vctx,
     if (!ctx || !data0 || !data1 || size0 == 0 || size1 == 0) return NULL;
 
     size_t total = size0 + size1;
+    if (type == BN_GGUF_TENSOR_Q4_0) {
+        uint8_t *combined = (uint8_t *)malloc(total);
+        if (!combined) return NULL;
+        memcpy(combined, data0, size0);
+        memcpy(combined + size0, data1, size1);
+        BnMetalBuf *buf = metal_repack_q4_0_for_gpu(
+            ctx, combined, total, rows, cols, NULL, 0, 0);
+        free(combined);
+        return buf;
+    }
+
     BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
     if (!buf) return NULL;
 
@@ -567,6 +579,88 @@ static void *metal_buffer_create_stacked2(void *vctx,
     buf->type = type;
     buf->rows = rows;
     buf->cols = cols;
+    return buf;
+}
+
+static void *metal_buffer_create_stacked3(void *vctx,
+                                          const void *data0, size_t size0,
+                                          const void *data1, size_t size1,
+                                          const void *data2, size_t size2,
+                                          int type, int rows, int cols)
+{
+    BnMetalCtx *ctx = (BnMetalCtx *)vctx;
+    if (!ctx || !data0 || !data1 || !data2 ||
+        size0 == 0 || size1 == 0 || size2 == 0)
+        return NULL;
+    if (type == BN_GGUF_TENSOR_Q4_0 && metal_q4_prepared_upload_enabled())
+        return NULL;
+
+    size_t total = size0 + size1 + size2;
+    uint8_t *combined = (uint8_t *)malloc(total);
+    if (!combined) return NULL;
+    memcpy(combined, data0, size0);
+    memcpy(combined + size0, data1, size1);
+    memcpy(combined + size0 + size1, data2, size2);
+
+    BnMetalBuf *buf = NULL;
+    if (type == BN_GGUF_TENSOR_Q4_0) {
+        buf = metal_repack_q4_0_for_gpu(
+            ctx, combined, total, rows, cols, NULL, 0, 0);
+    } else {
+        buf = (BnMetalBuf *)metal_buffer_create(
+            vctx, combined, total, type, rows, cols);
+    }
+    free(combined);
+    return buf;
+}
+
+static void *metal_buffer_create_stacked3_biased(void *vctx,
+                                                 const void *data0,
+                                                 size_t size0,
+                                                 const void *data1,
+                                                 size_t size1,
+                                                 const void *data2,
+                                                 size_t size2,
+                                                 int type,
+                                                 int rows,
+                                                 int cols,
+                                                 const void *bias,
+                                                 size_t bias_size)
+{
+    BnMetalCtx *ctx = (BnMetalCtx *)vctx;
+    if (!ctx || !data0 || !data1 || !data2 || !bias ||
+        size0 == 0 || size1 == 0 || size2 == 0 || bias_size == 0)
+        return NULL;
+    if (type == BN_GGUF_TENSOR_Q4_0 && metal_q4_prepared_upload_enabled())
+        return NULL;
+
+    size_t total = size0 + size1 + size2;
+    uint8_t *combined = (uint8_t *)malloc(total);
+    if (!combined) return NULL;
+    memcpy(combined, data0, size0);
+    memcpy(combined + size0, data1, size1);
+    memcpy(combined + size0 + size1, data2, size2);
+
+    BnMetalBuf *buf = NULL;
+    if (type == BN_GGUF_TENSOR_Q4_0) {
+        int bias_len = (int)(bias_size / sizeof(float));
+        buf = metal_repack_q4_0_for_gpu(
+            ctx, combined, total, rows, cols, (const float *)bias,
+            bias_len, 0);
+    } else {
+        size_t combined_biased_size = total + bias_size;
+        uint8_t *combined_biased = (uint8_t *)malloc(combined_biased_size);
+        if (combined_biased) {
+            memcpy(combined_biased, combined, total);
+            memcpy(combined_biased + total, bias, bias_size);
+            buf = (BnMetalBuf *)metal_buffer_create(
+                vctx, combined_biased, combined_biased_size, type, rows, cols);
+            if (buf)
+                buf->bias_offset = (uint32_t)(total / sizeof(uint32_t));
+            free(combined_biased);
+        }
+    }
+    free(combined);
     return buf;
 }
 
@@ -1113,6 +1207,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
     int full_barriers = getenv("BN_METAL_FULL_BARRIERS") != NULL;
+    int disable_barriers = getenv("BN_METAL_DISABLE_BARRIERS") != NULL;
 
     @autoreleasepool {
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
@@ -1185,8 +1280,9 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
              * WAR and WAW don't need barriers — Metal dispatches execute in
              * submission order within a compute command encoder, so reads
              * always complete before subsequent writes to the same buffer. */
-            int conflict = full_barriers ? (since_barrier_writes != 0)
-                                         : (op_reads & since_barrier_writes);
+            int conflict = disable_barriers ? 0
+                : (full_barriers ? (since_barrier_writes != 0)
+                                 : (op_reads & since_barrier_writes));
             if (conflict && enc) {
                 /* Use resource-specific barriers for less stalling */
                 /* Collect MTLBuffer pointers for written buffers that this op reads */
@@ -1731,7 +1827,13 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
                 compiled, N_SUPPORTED_TYPES);
 
-	        ctx->q4_q8_enabled = getenv("BN_GPU_Q4_Q8") ? 1 : 0;
+        if (!getenv("BN_GPU_Q4_Q8") &&
+            !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {
+            setenv("BN_GPU_Q4_Q8", "1", 1);
+            if (!getenv("BN_GPU_Q4_Q8_FROM_LAYER"))
+                setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
+        }
+        ctx->q4_q8_enabled = getenv("BN_GPU_Q4_Q8") ? 1 : 0;
 	        ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
 	            "q8k_quantize.metal", "q8k_quantize");
 	        ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,
@@ -1762,6 +1864,8 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         gpu->buffer_create        = metal_buffer_create;
         gpu->buffer_create_biased = metal_buffer_create_biased;
         gpu->buffer_create_stacked2 = metal_buffer_create_stacked2;
+        gpu->buffer_create_stacked3 = metal_buffer_create_stacked3;
+        gpu->buffer_create_stacked3_biased = metal_buffer_create_stacked3_biased;
         gpu->buffer_destroy       = metal_buffer_destroy;
         gpu->matvec               = metal_matvec;
         gpu->matmul               = metal_matmul;
