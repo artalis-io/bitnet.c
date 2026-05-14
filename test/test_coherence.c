@@ -22,6 +22,7 @@
 #include "quant.h"
 #include "quant_internal.h"
 #include "gpu_backend.h"
+#include "../src/gpu_shader.h"
 #ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif
@@ -98,6 +99,46 @@ static void print_vec_delta(const char *label,
            label, step, max_abs, max_i, a[max_i], b[max_i],
            sum_abs / (double)n, sqrt(sum_sq / (double)n));
 }
+
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+static int compare_prefill_kv_cache(BnGPUBackend *gpu,
+                                    const BnConfig *config,
+                                    const float *cpu_key,
+                                    const float *cpu_value,
+                                    int n_attn,
+                                    int n_prompt) {
+    if (!gpu || !gpu->read_activation || !cpu_key || !cpu_value)
+        return 0;
+    if (config->kv_tq_bits > 0 || config->kv_f16)
+        return 0;
+
+    size_t used_layer = (size_t)n_prompt * (size_t)config->kv_dim;
+    size_t full_layer = (size_t)config->seq_len * (size_t)config->kv_dim;
+    float *gpu_kv = malloc(used_layer * sizeof(float));
+    if (!gpu_kv) {
+        fprintf(stderr, "Failed to allocate GPU KV scratch\n");
+        return -1;
+    }
+
+    for (int a = 0; a < n_attn; a++) {
+        size_t packed_off = (size_t)a * used_layer;
+        size_t gpu_off = (size_t)a * full_layer * sizeof(float);
+        if (gpu->read_activation(gpu->ctx, BN_GPU_BUF_KEY_CACHE, gpu_kv,
+                                 used_layer * sizeof(float), gpu_off) == 0) {
+            print_vec_delta("prefill_key", a, cpu_key + packed_off, gpu_kv,
+                            (int)used_layer);
+        }
+        if (gpu->read_activation(gpu->ctx, BN_GPU_BUF_VALUE_CACHE, gpu_kv,
+                                 used_layer * sizeof(float), gpu_off) == 0) {
+            print_vec_delta("prefill_value", a, cpu_value + packed_off, gpu_kv,
+                            (int)used_layer);
+        }
+    }
+
+    free(gpu_kv);
+    return 0;
+}
+#endif
 
 /* ── Phase 2: compare SIMD vs scalar matvec for a single weight ──── */
 
@@ -302,7 +343,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -326,11 +367,15 @@ int main(int argc, char **argv) {
     int compare_ffn_state_pos = -1;
     int compare_logits = 0;
     int compare_hidden = 0;
+    int compare_kv_cache = 0;
+    int cpu_disable_prepared_qweights = 0;
+    int metal_q4_prepared = 0;
     int q4_q8_from_layer = -1;
     int q4_q8_attn_only = 0;
     int q4_q8_ffn_only = 0;
     int use_flash = 0;
     int disable_qkv_split = 0;
+    int disable_gateup_split = 0;
     int disable_fused_gateup = 0;
     int split_residual_rmsnorm = 0;
     const char *prompt = "Hello";
@@ -377,6 +422,12 @@ int main(int argc, char **argv) {
             compare_logits = 1;
         } else if (strcmp(argv[i], "--compare-hidden") == 0) {
             compare_hidden = 1;
+        } else if (strcmp(argv[i], "--compare-kv-cache") == 0) {
+            compare_kv_cache = 1;
+        } else if (strcmp(argv[i], "--cpu-disable-prepared-qweights") == 0) {
+            cpu_disable_prepared_qweights = 1;
+        } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
+            metal_q4_prepared = 1;
         } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
             q4_q8_from_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
@@ -387,6 +438,8 @@ int main(int argc, char **argv) {
             use_flash = 1;
         } else if (strcmp(argv[i], "--disable-qkv-split") == 0) {
             disable_qkv_split = 1;
+        } else if (strcmp(argv[i], "--disable-gateup-split") == 0) {
+            disable_gateup_split = 1;
         } else if (strcmp(argv[i], "--disable-fused-gateup") == 0) {
             disable_fused_gateup = 1;
         } else if (strcmp(argv[i], "--split-residual-rmsnorm") == 0) {
@@ -490,10 +543,16 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     if (disable_qkv_split)
         setenv("BN_GPU_DISABLE_QKV_SPLIT", "1", 1);
+    if (disable_gateup_split)
+        setenv("BN_GPU_DISABLE_GATEUP_SPLIT", "1", 1);
     if (split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
     if (compare_logits)
         setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
+    if (cpu_disable_prepared_qweights)
+        setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
+    if (metal_q4_prepared)
+        setenv("BN_METAL_Q4_PREPARED", "1", 1);
 
     int total_pass = 0, total_fail = 0, total_skip = 0;
 
@@ -555,14 +614,26 @@ int main(int argc, char **argv) {
     printf("--- Phase 1: Forward pass coherence (greedy decode) ---\n");
 
     int vocab_size = model.config.vocab_size;
+    int n_attn = (model.config.full_attn_interval > 0)
+        ? model.config.n_layers / model.config.full_attn_interval
+        : model.config.n_layers;
+    size_t kv_used_count = (size_t)n_attn * (size_t)n_prompt *
+                           (size_t)model.config.kv_dim;
     float *cpu_step_logits = calloc((size_t)N_DECODE_STEPS * (size_t)vocab_size,
                                     sizeof(float));
     float *cpu_step_hidden = calloc((size_t)N_DECODE_STEPS *
                                     (size_t)model.config.dim, sizeof(float));
-    if (!cpu_step_logits || !cpu_step_hidden) {
+    float *cpu_prefill_key = compare_kv_cache
+        ? calloc(kv_used_count, sizeof(float)) : NULL;
+    float *cpu_prefill_value = compare_kv_cache
+        ? calloc(kv_used_count, sizeof(float)) : NULL;
+    if (!cpu_step_logits || !cpu_step_hidden ||
+        (compare_kv_cache && (!cpu_prefill_key || !cpu_prefill_value))) {
         fprintf(stderr, "Failed to allocate CPU step logits\n");
         free(cpu_step_logits);
         free(cpu_step_hidden);
+        free(cpu_prefill_key);
+        free(cpu_prefill_value);
         return 1;
     }
 
@@ -591,6 +662,22 @@ int main(int argc, char **argv) {
             if (i < n_prompt - 1)
                 token = prompt_tokens[i + 1];
             pos++;
+        }
+
+        if (compare_kv_cache && model.config.kv_tq_bits == 0 &&
+            !model.config.kv_f16) {
+            size_t used_layer = (size_t)n_prompt *
+                                (size_t)model.config.kv_dim;
+            size_t full_layer = (size_t)model.config.seq_len *
+                                (size_t)model.config.kv_dim;
+            for (int a = 0; a < n_attn; a++) {
+                memcpy(cpu_prefill_key + (size_t)a * used_layer,
+                       s->state.key_cache + (size_t)a * full_layer,
+                       used_layer * sizeof(float));
+                memcpy(cpu_prefill_value + (size_t)a * used_layer,
+                       s->state.value_cache + (size_t)a * full_layer,
+                       used_layer * sizeof(float));
+            }
         }
 
         /* Greedy decode N_DECODE_STEPS tokens */
@@ -668,6 +755,13 @@ int main(int argc, char **argv) {
                         token = prompt_tokens[i + 1];
                     pos++;
                 }
+
+                if (compare_kv_cache &&
+                    compare_prefill_kv_cache(gpu, &model.config,
+                                             cpu_prefill_key,
+                                             cpu_prefill_value,
+                                             n_attn, n_prompt) != 0)
+                    return 1;
 
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
                     memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
@@ -788,6 +882,13 @@ int main(int argc, char **argv) {
                     pos++;
                 }
 
+                if (compare_kv_cache &&
+                    compare_prefill_kv_cache(gpu, &model.config,
+                                             cpu_prefill_key,
+                                             cpu_prefill_value,
+                                             n_attn, n_prompt) != 0)
+                    return 1;
+
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
                     memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
                            logits, (size_t)vocab_size * sizeof(float));
@@ -867,6 +968,8 @@ int main(int argc, char **argv) {
     printf("\n");
     free(cpu_step_logits);
     free(cpu_step_hidden);
+    free(cpu_prefill_key);
+    free(cpu_prefill_value);
 
     /* ════════════════════════════════════════════════════════════════
      * Phase 2: Matvec backend comparison (SIMD vs scalar)
