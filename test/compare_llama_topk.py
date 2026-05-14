@@ -45,6 +45,8 @@ def parse_args():
     p.add_argument("--metal-enable-q6-q8k", action="store_true")
     p.add_argument("--benchmark", action="store_true")
     p.add_argument("--bench-tokens", type=int, default=128)
+    p.add_argument("--llama-throughput", choices=("server", "bench"),
+                   default="server")
     p.add_argument("--min-throughput-ratio", type=float, default=1.0)
     return p.parse_args()
 
@@ -129,7 +131,8 @@ def llama_topk(server_url, prompt, top_k):
 def run_bitnet_bench(args, prompt):
     cmd = [
         "./bitnet", args.model, "-p", prompt, "-n", str(args.bench_tokens),
-        "--quiet", "--maxseq", str(args.maxseq),
+        "--quiet", "--temp", "0", "--repeat-penalty", "1",
+        "--maxseq", str(args.maxseq),
     ]
     if args.metal:
         cmd.append("--metal")
@@ -170,6 +173,35 @@ def run_llama_bench(args):
     if not matches:
         raise RuntimeError("llama-bench throughput not found")
     return float(matches[-1])
+
+
+def run_llama_server_bench(args, prompt):
+    body = {
+        "prompt": prompt,
+        "n_predict": args.bench_tokens,
+        "temperature": 0,
+        "repeat_penalty": 1.0,
+        "cache_prompt": False,
+    }
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(
+        args.llama_server_url.rstrip("/") + "/completion",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    timings = payload.get("timings") or {}
+    tps = timings.get("predicted_per_second")
+    if tps is None:
+        predicted_n = timings.get("predicted_n")
+        predicted_ms = timings.get("predicted_ms")
+        if predicted_n is not None and predicted_ms:
+            tps = float(predicted_n) / (float(predicted_ms) / 1000.0)
+    if tps is None:
+        raise RuntimeError("llama-server throughput not found")
+    return float(tps)
 
 
 def main():
@@ -215,11 +247,15 @@ def main():
 
     if args.benchmark:
         bitnet_tps = run_bitnet_bench(args, prompts[0])
-        llama_tps = run_llama_bench(args)
+        if args.llama_throughput == "bench":
+            llama_tps = run_llama_bench(args)
+        else:
+            llama_tps = run_llama_server_bench(args, prompts[0])
         ratio = bitnet_tps / llama_tps if llama_tps > 0.0 else 0.0
         print("---")
         print(f"Throughput bitnet={bitnet_tps:.2f} tok/s "
-              f"llama={llama_tps:.2f} tok/s ratio={ratio:.3f}")
+              f"llama={llama_tps:.2f} tok/s "
+              f"mode={args.llama_throughput} ratio={ratio:.3f}")
         if ratio < args.min_throughput_ratio:
             failed += 1
 
