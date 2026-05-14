@@ -149,6 +149,10 @@ def run_bitnet_bench(args, prompt):
     if args.gpu_max_storage_binding_mb is not None:
         cmd += ["--gpu-max-storage-binding-mb",
                 str(args.gpu_max_storage_binding_mb)]
+    if args.metal_disable_q4_q8:
+        cmd.append("--metal-disable-q4-q8")
+    if args.metal_enable_q6_q8k:
+        cmd.append("--metal-enable-q6-q8k")
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
     if proc.returncode != 0:
