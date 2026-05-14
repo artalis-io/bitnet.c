@@ -1349,8 +1349,27 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 enc = [cmd computeCommandEncoder];
                 current_pso = nil;
             }
+            BnMetalBuf *pre_wbuf = (BnMetalBuf *)op->W_buf;
+            int q4_q8_deferred_pso =
+                ctx->q4_q8_enabled &&
+                op->type == BN_GGUF_TENSOR_Q4_0 &&
+                ctx->q8_quant_pipeline &&
+                ((shader == BN_GPU_SHADER_MATVEC && op->p[6] &&
+                  pre_wbuf &&
+                  ((pre_wbuf->q4_prepared &&
+                    ctx->q4_prepared_q8_matvec_pipeline) ||
+                   (!pre_wbuf->q4_prepared &&
+                    ctx->q4_q8_matvec_pipeline))) ||
+                 (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
+                  (op->flags & 1u) &&
+                  pre_wbuf && !pre_wbuf->q4_prepared &&
+                  ctx->q4_q8_split_pipeline) ||
+                 (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
+                  op->p[6] &&
+                  pre_wbuf && !pre_wbuf->q4_prepared &&
+                  ctx->q4_q8_gateup_pipeline));
             /* Skip redundant PSO switch — avoids GPU instruction cache flush */
-            if (pipeline != current_pso) {
+            if (!q4_q8_deferred_pso && pipeline != current_pso) {
                 [enc setComputePipelineState:pipeline];
                 current_pso = pipeline;
             }
