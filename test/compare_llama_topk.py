@@ -37,6 +37,8 @@ def parse_args():
     p.add_argument("--llama-server-url", default="http://127.0.0.1:8027")
     p.add_argument("--flash", action="store_true")
     p.add_argument("--q4-q8-tail-native", type=int)
+    p.add_argument("--q4-q8-attn-only", action="store_true")
+    p.add_argument("--q4-q8-ffn-only", action="store_true")
     p.add_argument("--gpu-max-storage-binding-mb", type=int)
     p.add_argument("--metal-disable-q4-q8", action="store_true")
     p.add_argument("--metal-enable-q6-q8k", action="store_true")
@@ -64,6 +66,10 @@ def run_bitnet_topk(args, prompt):
         cmd.append("--flash")
     if args.q4_q8_tail_native is not None:
         cmd += ["--q4-q8-tail-native", str(args.q4_q8_tail_native)]
+    if args.q4_q8_attn_only:
+        cmd.append("--q4-q8-attn-only")
+    if args.q4_q8_ffn_only:
+        cmd.append("--q4-q8-ffn-only")
     if args.gpu_max_storage_binding_mb is not None:
         cmd += ["--gpu-max-storage-binding-mb",
                 str(args.gpu_max_storage_binding_mb)]
@@ -128,6 +134,10 @@ def run_bitnet_bench(args, prompt):
         cmd.append("--flash")
     if args.q4_q8_tail_native is not None:
         cmd += ["--q4-q8-tail-native", str(args.q4_q8_tail_native)]
+    if args.q4_q8_attn_only:
+        cmd.append("--q4-q8-attn-only")
+    if args.q4_q8_ffn_only:
+        cmd.append("--q4-q8-ffn-only")
     if args.gpu_max_storage_binding_mb is not None:
         cmd += ["--gpu-max-storage-binding-mb",
                 str(args.gpu_max_storage_binding_mb)]

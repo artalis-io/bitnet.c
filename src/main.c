@@ -75,6 +75,8 @@ typedef struct {
     int metal_private_weights; // hidden diagnostic: upload weights to private Metal buffers
     int q4_q8_to_layer; // hidden diagnostic: last Q4 x Q8 layer
     int q4_q8_tail_native; // hidden diagnostic: final layers to leave on native Q4
+    int q4_q8_attn_only; // hidden diagnostic: use Q4 x Q8 only for attention
+    int q4_q8_ffn_only; // hidden diagnostic: use Q4 x Q8 only for FFN
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -254,6 +256,10 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.q4_q8_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
         } else if (strcmp(argv[i], "--q4-q8-tail-native") == 0 && i + 1 < argc) {
             args.q4_q8_tail_native = parse_int(argv[++i], "--q4-q8-tail-native");
+        } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
+            args.q4_q8_attn_only = 1;
+        } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
+            args.q4_q8_ffn_only = 1;
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -353,6 +359,10 @@ int main(int argc, char **argv) {
         snprintf(tail_env, sizeof(tail_env), "%d", args.q4_q8_tail_native);
         setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", tail_env, 1);
     }
+    if (args.q4_q8_attn_only)
+        setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
+    if (args.q4_q8_ffn_only)
+        setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
     if (args.gpu_max_storage_binding_mb >= 0) {
         char mb_env[32];
         snprintf(mb_env, sizeof(mb_env), "%d", args.gpu_max_storage_binding_mb);

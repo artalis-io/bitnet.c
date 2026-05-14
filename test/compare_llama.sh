@@ -46,6 +46,8 @@ while [[ $# -gt 0 ]]; do
         --gpu-max-storage-binding-mb) BITNET_ARGS+=(--gpu-max-storage-binding-mb "$2"); shift 2 ;;
         --q4-q8-to-layer) BITNET_ARGS+=(--q4-q8-to-layer "$2"); shift 2 ;;
         --q4-q8-tail-native) BITNET_ARGS+=(--q4-q8-tail-native "$2"); shift 2 ;;
+        --q4-q8-attn-only) BITNET_ARGS+=(--q4-q8-attn-only); shift ;;
+        --q4-q8-ffn-only) BITNET_ARGS+=(--q4-q8-ffn-only); shift ;;
         --metal-private-weights) BITNET_ARGS+=(--metal-private-weights); shift ;;
         --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
         -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;
