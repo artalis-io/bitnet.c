@@ -68,6 +68,8 @@ typedef struct {
     int gpu_disable_gateup_split; // hidden diagnostic: disable gate/up split
     int gpu_disable_fused_gateup; // hidden diagnostic: disable fused gate/up
     int gpu_split_residual_rmsnorm; // hidden diagnostic: split residual+rmsnorm
+    int metal_disable_q4_q8; // hidden diagnostic: use baseline Q4_0 Metal path
+    int q4_q8_to_layer; // hidden diagnostic: last Q4 x Q8 layer
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -146,6 +148,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.cache_mb = 4096;
     args.gpu_cache_mb = 4096;
     args.draft_k = 5;
+    args.q4_q8_to_layer = -1;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -227,6 +230,10 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_disable_fused_gateup = 1;
         } else if (strcmp(argv[i], "--gpu-split-residual-rmsnorm") == 0) {
             args.gpu_split_residual_rmsnorm = 1;
+        } else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
+            args.metal_disable_q4_q8 = 1;
+        } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
+            args.q4_q8_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -305,6 +312,13 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     if (args.gpu_split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
+    if (args.metal_disable_q4_q8)
+        setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
+    if (args.q4_q8_to_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", args.q4_q8_to_layer);
+        setenv("BN_GPU_Q4_Q8_TO_LAYER", layer_env, 1);
+    }
 
     // Validate --kv-tq
     if (args.kv_tq_bits > 0) {

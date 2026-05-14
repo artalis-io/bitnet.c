@@ -59,6 +59,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int compare_ffn_state_layer = -1;
     int compare_ffn_state_pos = -1;
     int q4_q8_from_layer = -1;
+    int q4_q8_to_layer = -1;
     int q4_q8_attn_only = 0;
     int q4_q8_ffn_only = 0;
     {
@@ -102,6 +103,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         } else if (getenv("BN_GPU_Q4_Q8")) {
             q4_q8_from_layer = c->n_layers - 1;
         }
+        env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
+        if (env)
+            q4_q8_to_layer = atoi(env);
         q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
         q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
     }
@@ -195,7 +199,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
         BnTransformerGPUQKVResources qkv_res =
             bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
-        int use_q4_q8_layer = q4_q8_from_layer >= 0 && l >= q4_q8_from_layer;
+        int use_q4_q8_layer = q4_q8_from_layer >= 0 &&
+                               l >= q4_q8_from_layer &&
+                               (q4_q8_to_layer < 0 || l <= q4_q8_to_layer);
         int use_q4_q8_attn = use_q4_q8_layer && !q4_q8_ffn_only;
         int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
         BnTransformerGPUAttentionResources attn_res =

@@ -343,7 +343,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -373,8 +373,10 @@ int main(int argc, char **argv) {
     int metal_q4_prepared = 0;
     int metal_full_barriers = 0;
     int metal_disable_barriers = 0;
+    int metal_disable_q4_q8 = 0;
     int metal_cpu_rmsnorm = 0;
     int q4_q8_from_layer = -1;
+    int q4_q8_to_layer = -1;
     int q4_q8_attn_only = 0;
     int q4_q8_ffn_only = 0;
     int use_flash = 0;
@@ -438,10 +440,14 @@ int main(int argc, char **argv) {
             metal_full_barriers = 1;
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
             metal_disable_barriers = 1;
+        } else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
+            metal_disable_q4_q8 = 1;
         } else if (strcmp(argv[i], "--metal-cpu-rmsnorm") == 0) {
             metal_cpu_rmsnorm = 1;
         } else if (strcmp(argv[i], "--q4-q8-from-layer") == 0 && i + 1 < argc) {
             q4_q8_from_layer = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
+            q4_q8_to_layer = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
             q4_q8_attn_only = 1;
         } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
@@ -552,6 +558,11 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_Q4_Q8", "1", 1);
         setenv("BN_GPU_Q4_Q8_FROM_LAYER", layer_env, 1);
     }
+    if (q4_q8_to_layer >= 0) {
+        char layer_env[32];
+        snprintf(layer_env, sizeof(layer_env), "%d", q4_q8_to_layer);
+        setenv("BN_GPU_Q4_Q8_TO_LAYER", layer_env, 1);
+    }
     if (q4_q8_attn_only)
         setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
     if (q4_q8_ffn_only)
@@ -574,6 +585,8 @@ int main(int argc, char **argv) {
         setenv("BN_METAL_FULL_BARRIERS", "1", 1);
     if (metal_disable_barriers)
         setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
+    if (metal_disable_q4_q8)
+        setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
     if (metal_cpu_rmsnorm)
         setenv("BN_METAL_CPU_ORDER_RMSNORM", "1", 1);
 
