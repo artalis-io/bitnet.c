@@ -2,7 +2,9 @@
 """Compare bitnet.c top-logit coherence and throughput against llama.cpp.
 
 Start a matching llama-server first, for example:
-  llama-server -m model.gguf -ngl 99 -fa on -c 512 --host 127.0.0.1 --port 8027
+  llama-server -m model.gguf -ngl 99 -fa on -c 512 -np 1 --host 127.0.0.1 --port 8027
+
+With --benchmark, the default --min-throughput-ratio is 1.0.
 """
 
 import argparse
