@@ -159,10 +159,10 @@ for prompt in "${PROMPTS[@]}"; do
         --temp 0 --no-display-prompt -no-cnv --simple-io --verbosity 1 \
         -t "$LLAMA_THREADS" 2>/dev/null | sed 's/> EOF by user$//') || true
 
-    if [[ -z "${bitnet_out//[[:space:]]/}" || -z "${llama_out//[[:space:]]/}" ]]; then
+    if [[ -z "$bitnet_out" || -z "$llama_out" ]]; then
         echo -e "${RED}ERROR${RESET}   \"$prompt\""
-        [[ -n "${bitnet_out//[[:space:]]/}" ]] || echo "  bitnet produced no completion"
-        [[ -n "${llama_out//[[:space:]]/}" ]] || echo "  llama.cpp produced no completion"
+        [[ -n "$bitnet_out" ]] || echo "  bitnet produced no completion"
+        [[ -n "$llama_out" ]] || echo "  llama.cpp produced no completion"
         exit 1
     fi
 
