@@ -289,6 +289,9 @@ echo ""
 if (( STRICT && total_words_matched == total_words_compared && total_words_compared > 0 )); then
     echo -e "${GREEN}${BOLD}PASS${RESET} — decoded output prefix parity with llama.cpp"
     exit 0
+elif (( STRICT && total_words_compared == 0 && total_token_ids_compared > 0 && total_token_ids_matched == total_token_ids_compared )); then
+    echo -e "${GREEN}${BOLD}PASS${RESET} — token ID parity with llama.cpp"
+    exit 0
 elif (( STRICT )); then
     echo -e "${RED}${BOLD}FAIL${RESET} — decoded output prefix parity required by --strict"
     exit 1
