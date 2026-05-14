@@ -146,6 +146,7 @@ SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(
 CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS)
 LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS)
 OBJS = $(SRCS:.c=.o) $(METAL_OBJS)
+HEADERS = $(wildcard include/*.h src/*.h src/transformer/*.h)
 BUILD_CONFIG := webgpu=$(if $(BN_ENABLE_WEBGPU),1,0) metal=$(if $(BN_ENABLE_METAL),1,0) cc=$(CC) cflags=$(CFLAGS)
 BUILD_CONFIG_STAMP := .build-config
 
@@ -172,17 +173,17 @@ asan: LDFLAGS += -fsanitize=address,undefined
 asan: bitnet
 
 # Pattern rules for object files
-src/%.o: src/%.c
+src/%.o: src/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/quant/%.o: src/quant/%.c
+src/quant/%.o: src/quant/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/transformer/%.o: src/transformer/%.c
+src/transformer/%.o: src/transformer/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Objective-C pattern rule for Metal backend
-src/%.o: src/%.m
+src/%.o: src/%.m $(HEADERS)
 	$(CC) $(CFLAGS) -fobjc-arc -c -o $@ $<
 
 # --- Tests ---

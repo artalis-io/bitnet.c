@@ -69,6 +69,8 @@ typedef struct {
     /* Profiling */
     int gpu_frame;
     int gpu_profile;
+    int q8_quant_dispatches;
+    int q8k_quant_dispatches;
 
     /* Slab allocator for MoE weight suballocation */
     id<MTLBuffer> slab_buf;
@@ -892,13 +894,13 @@ static int ensure_q8_scratch(BnMetalCtx *ctx, int cols, int n_tokens)
     size_t scales_need = (size_t)(cols >> 5) * (size_t)n_tokens * sizeof(float);
     if (!ctx->q8_buf || ctx->q8_buf_size < q8_need) {
         ctx->q8_buf = [ctx->device newBufferWithLength:q8_need
-                                                options:MTLResourceStorageModeShared];
+                                                options:MTLResourceStorageModePrivate];
         if (!ctx->q8_buf) return -1;
         ctx->q8_buf_size = q8_need;
     }
     if (!ctx->q8_scales_buf || ctx->q8_scales_buf_size < scales_need) {
         ctx->q8_scales_buf = [ctx->device newBufferWithLength:scales_need
-                                                      options:MTLResourceStorageModeShared];
+                                                      options:MTLResourceStorageModePrivate];
         if (!ctx->q8_scales_buf) return -1;
         ctx->q8_scales_buf_size = scales_need;
     }
@@ -913,19 +915,19 @@ static int ensure_q8k_scratch(BnMetalCtx *ctx, int cols, int n_tokens)
     size_t bsums_need = n_blocks * 16 * sizeof(int16_t);
     if (!ctx->q8_buf || ctx->q8_buf_size < q8_need) {
         ctx->q8_buf = [ctx->device newBufferWithLength:q8_need
-                                                options:MTLResourceStorageModeShared];
+                                                options:MTLResourceStorageModePrivate];
         if (!ctx->q8_buf) return -1;
         ctx->q8_buf_size = q8_need;
     }
     if (!ctx->q8_scales_buf || ctx->q8_scales_buf_size < scales_need) {
         ctx->q8_scales_buf = [ctx->device newBufferWithLength:scales_need
-                                                      options:MTLResourceStorageModeShared];
+                                                      options:MTLResourceStorageModePrivate];
         if (!ctx->q8_scales_buf) return -1;
         ctx->q8_scales_buf_size = scales_need;
     }
     if (!ctx->q8_bsums_buf || ctx->q8_bsums_buf_size < bsums_need) {
         ctx->q8_bsums_buf = [ctx->device newBufferWithLength:bsums_need
-                                                     options:MTLResourceStorageModeShared];
+                                                     options:MTLResourceStorageModePrivate];
         if (!ctx->q8_bsums_buf) return -1;
         ctx->q8_bsums_buf_size = bsums_need;
     }
@@ -938,18 +940,18 @@ static void metal_encode_q8_quant(id<MTLComputeCommandEncoder> enc,
                                   uint32_t cols,
                                   uint32_t n_tokens)
 {
+    ctx->q8_quant_dispatches++;
     uint32_t params[8] = { cols, n_tokens, 0, 0, 0, 0, 0, 0 };
     [enc setComputePipelineState:ctx->q8_quant_pipeline];
     [enc setBuffer:x_buf offset:0 atIndex:0];
     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
     [enc setBytes:params length:sizeof(params) atIndex:3];
-    MTLSize tpg = MTLSizeMake(1, 1, 1);
+    MTLSize tpg = MTLSizeMake(32, 1, 1);
     MTLSize grid = MTLSizeMake((cols + 31) / 32, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    [enc memoryBarrierWithResources:&ctx->q8_buf count:1];
-    id<MTLBuffer> scale_buf = ctx->q8_scales_buf;
-    [enc memoryBarrierWithResources:&scale_buf count:1];
+    id<MTLBuffer> bufs[2] = { ctx->q8_buf, ctx->q8_scales_buf };
+    [enc memoryBarrierWithResources:bufs count:2];
 }
 
 static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
@@ -958,6 +960,7 @@ static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
                                    uint32_t cols,
                                    uint32_t n_tokens)
 {
+    ctx->q8k_quant_dispatches++;
     uint32_t params[8] = { cols, n_tokens, 0, 0, 0, 0, 0, 0 };
     [enc setComputePipelineState:ctx->q8k_quant_pipeline];
     [enc setBuffer:x_buf offset:0 atIndex:0];
@@ -1206,6 +1209,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
+    ctx->q8_quant_dispatches = 0;
+    ctx->q8k_quant_dispatches = 0;
     int full_barriers = getenv("BN_METAL_FULL_BARRIERS") != NULL;
     int disable_barriers = getenv("BN_METAL_DISABLE_BARRIERS") != NULL;
 
@@ -1755,8 +1760,9 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
         ctx->gpu_profile = env ? atoi(env) : 0;
     }
     if (ctx->gpu_profile >= 1 && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
-        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
-                ctx->gpu_frame, n_ops, n_barriers,
+        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d q8=%d q8k=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
+                ctx->gpu_frame, n_ops, ctx->q8_quant_dispatches,
+                ctx->q8k_quant_dispatches, n_barriers,
                 t_encode - t0, t_gpu - t_encode, t1 - t_gpu, t1 - t0);
     }
     /* Per-op-type breakdown (BN_GPU_PROFILE>=2, frame 1 only) */
