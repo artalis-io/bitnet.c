@@ -201,7 +201,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                     if (q4_q8_to_layer < -1)
                         q4_q8_to_layer = -1;
                 }
-            } else if (getenv("BN_GPU_Q4_Q8") && c->n_layers > 33) {
+            } else if (getenv("BN_GPU_Q4_Q8") &&
+                       !getenv("BN_METAL_Q4_PREPARED") &&
+                       c->n_layers > 33) {
                 q4_q8_to_layer = c->n_layers - 33 - 1;
             }
         }
