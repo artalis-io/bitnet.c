@@ -1108,8 +1108,12 @@ void bn_transformer_gpu_emit_context_attention_gqa(
         float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
         uint32_t u_inv_sqrt_hs;
         memcpy(&u_inv_sqrt_hs, &inv_sqrt_hs, 4);
+        int flash_min_kv = 0;
+        const char *flash_min_env = getenv("BN_GPU_FLASH_MIN_KV");
+        if (flash_min_env) flash_min_kv = atoi(flash_min_env);
         if (bn_transformer_gpu_can_flash_attn(res->gpu) &&
-            (has_moe || c->flash_attn)) {
+            (has_moe || c->flash_attn) &&
+            n_kv >= flash_min_kv) {
             emit_context_flash_attention(
                 ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_XB, n_heads,
                 head_size, n_kv, c->kv_mul, kv_dim, c->seq_len, loff,

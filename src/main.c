@@ -77,6 +77,7 @@ typedef struct {
     int q4_q8_tail_native; // hidden diagnostic: final layers to leave on native Q4
     int q4_q8_attn_only; // hidden diagnostic: use Q4 x Q8 only for attention
     int q4_q8_ffn_only; // hidden diagnostic: use Q4 x Q8 only for FFN
+    int gpu_flash_min_kv; // hidden diagnostic: minimum KV length for GPU flash attention
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -159,6 +160,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.q4_q8_to_layer = -1;
     args.q4_q8_tail_native = -1;
     args.gpu_max_storage_binding_mb = -1;
+    args.gpu_flash_min_kv = -1;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -260,6 +262,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.q4_q8_attn_only = 1;
         } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
             args.q4_q8_ffn_only = 1;
+        } else if (strcmp(argv[i], "--gpu-flash-min-kv") == 0 && i + 1 < argc) {
+            args.gpu_flash_min_kv = parse_int(argv[++i], "--gpu-flash-min-kv");
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -363,6 +367,13 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
     if (args.q4_q8_ffn_only)
         setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
+    if (args.gpu_flash_min_kv >= 0) {
+        char min_kv_env[32];
+        snprintf(min_kv_env, sizeof(min_kv_env), "%d", args.gpu_flash_min_kv);
+        setenv("BN_GPU_FLASH_MIN_KV", min_kv_env, 1);
+    } else if (args.metal && args.flash_attn) {
+        setenv("BN_GPU_FLASH_MIN_KV", "256", 0);
+    }
     if (args.gpu_max_storage_binding_mb >= 0) {
         char mb_env[32];
         snprintf(mb_env, sizeof(mb_env), "%d", args.gpu_max_storage_binding_mb);
