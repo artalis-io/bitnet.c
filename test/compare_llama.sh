@@ -151,18 +151,24 @@ for prompt in "${PROMPTS[@]}"; do
         --temp 0 --repeat-penalty 1 2>"$bitnet_stderr") || true
 
     # Run llama.cpp (raw completion, no chat template, temp=0)
+    llama_stderr=$(mktemp)
+    tmp_files+=("$llama_stderr")
     llama_run_args=("${LLAMA_ARGS[@]}")
     if (( ${#LLAMA_FLASH[@]} > 0 )); then
         llama_run_args+=("${LLAMA_FLASH[@]}")
     fi
     llama_out=$("$LLAMA" -m "$MODEL" "${llama_run_args[@]}" -p "$prompt" -n "$N_TOKENS" \
         --temp 0 --no-display-prompt -no-cnv --simple-io --verbosity 1 \
-        -t "$LLAMA_THREADS" 2>/dev/null | sed 's/> EOF by user$//') || true
+        -t "$LLAMA_THREADS" 2>"$llama_stderr" | sed 's/> EOF by user$//') || true
 
     if [[ -z "$bitnet_out" || -z "$llama_out" ]]; then
         echo -e "${RED}ERROR${RESET}   \"$prompt\""
         [[ -n "$bitnet_out" ]] || echo "  bitnet produced no completion"
         [[ -n "$llama_out" ]] || echo "  llama.cpp produced no completion"
+        if [[ -s "$llama_stderr" ]]; then
+            echo "  llama.cpp stderr:"
+            sed 's/^/    /' "$llama_stderr" | head -20
+        fi
         exit 1
     fi
 
