@@ -1013,7 +1013,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     uint32_t params[8] = { (uint32_t)rows, (uint32_t)cols, 1, 0, 0, 0, 0, 0 };
     if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
 
-    uint32_t tile_rows = 32;
+    uint32_t tile_rows = (use_q4_q8 && !use_q4_prepared_q8) ? 16 : 32;
     uint32_t wg_x = ((uint32_t)rows + tile_rows - 1) / tile_rows;
 
     @autoreleasepool {
@@ -1053,7 +1053,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
             [enc setBytes:params length:sizeof(params) atIndex:3];
         }
 
-        MTLSize tpg = MTLSizeMake(256, 1, 1);
+        MTLSize tpg = MTLSizeMake(tile_rows * 8, 1, 1);
         MTLSize grid = MTLSizeMake(wg_x, 1, 1);
         [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
         [enc endEncoding];
@@ -1675,14 +1675,35 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
 
             /* Compute workgroup count (same logic as wgpu) */
             uint32_t wg_x = 1, wg_y = 1;
+            uint32_t tile_rows = 32;
+            uint32_t threads_per_tg = 256;
+            BnMetalBuf *grid_wbuf = (BnMetalBuf *)op->W_buf;
+            int q4_q8_tile =
+                grid_wbuf &&
+                ctx->q4_q8_enabled &&
+                op->type == BN_GGUF_TENSOR_Q4_0 &&
+                !grid_wbuf->q4_prepared &&
+                ((shader == BN_GPU_SHADER_MATVEC &&
+                  op->p[6] && ctx->q8_quant_pipeline &&
+                  ctx->q4_q8_matvec_pipeline) ||
+                 (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
+                  (op->flags & 1u) && ctx->q8_quant_pipeline &&
+                  ctx->q4_q8_split_pipeline) ||
+                 (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
+                  op->p[6] && ctx->q8_quant_pipeline &&
+                  ctx->q4_q8_gateup_pipeline));
+            if (q4_q8_tile) {
+                tile_rows = 16;
+                threads_per_tg = 128;
+            }
             switch (shader) {
             case BN_GPU_SHADER_MATVEC: {
                 if (op->p[3] > 0) {
-                    uint32_t tiled_rows = ((uint32_t)op->rows + 31) / 32;
+                    uint32_t tiled_rows = ((uint32_t)op->rows + tile_rows - 1) / tile_rows;
                     wg_x = op->p[3];
                     wg_y = (tiled_rows + op->p[3] - 1) / op->p[3];
                 } else {
-                    wg_x = ((uint32_t)op->rows + 31) / 32;
+                    wg_x = ((uint32_t)op->rows + tile_rows - 1) / tile_rows;
                     wg_y = op->p[2];
                     if (wg_y == 0) wg_y = 1;
                 }
@@ -1732,13 +1753,13 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 wg_x = (op->p[2] + 255) / 256;
                 break;
             case BN_GPU_SHADER_MATVEC_SPLIT:
-                wg_x = (op->p[0] + 31) / 32;  // total_rows / 32
+                wg_x = (op->p[0] + tile_rows - 1) / tile_rows;
                 break;
             case BN_GPU_SHADER_ROPE_QK:
                 wg_x = op->p[0] + op->p[4];   // n_q_heads + n_kv_heads
                 break;
             case BN_GPU_SHADER_FUSED_GATEUP_SILU:
-                wg_x = (op->p[2] + 31) / 32;  // gate_rows / 32
+                wg_x = (op->p[2] + tile_rows - 1) / tile_rows;
                 break;
             case BN_GPU_SHADER_Q4K_MATVEC_SPLIT:
                 wg_x = (op->p[0] + 31) / 32;  // total_rows / 32
@@ -1746,7 +1767,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             }
 
             if (wg_x == 0) wg_x = 1;
-            MTLSize tpg = MTLSizeMake(256, 1, 1);
+            MTLSize tpg = MTLSizeMake(threads_per_tg, 1, 1);
             MTLSize grid = MTLSizeMake(wg_x, wg_y, 1);
             [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
         }

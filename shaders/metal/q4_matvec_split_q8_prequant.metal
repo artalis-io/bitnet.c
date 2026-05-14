@@ -3,6 +3,8 @@ using namespace metal;
 
 // Q4_0 repacked split matvec using prequantized Q8 activation blocks.
 
+#define TILE_ROWS 16u
+
 #define DQ4(w, sh) char4( \
     char(int(((w) >> (sh))       & 0xF) - 8), \
     char(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
@@ -42,7 +44,7 @@ kernel void q4_matvec_split_q8_prequant(
     uint bias_offset = p[4];
     uint off1 = p[6], off2 = p[7];
 
-    uint tile_start = wid.x * 32;
+    uint tile_start = wid.x * TILE_ROWS;
     uint row_lane = lid.x & 7;
     uint local_row = lid.x >> 3;
     uint global_row = tile_start + local_row;
@@ -86,3 +88,4 @@ kernel void q4_matvec_split_q8_prequant(
 }
 
 #undef DQ4
+#undef TILE_ROWS

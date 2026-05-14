@@ -3,6 +3,8 @@ using namespace metal;
 
 // Q4_0 repacked matvec using prequantized Q8 activation blocks.
 
+#define TILE_ROWS 16u
+
 #define DQ4(w, sh) char4( \
     char(int(((w) >> (sh))       & 0xF) - 8), \
     char(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
@@ -37,7 +39,7 @@ kernel void q4_native_q8_prequant_matvec(
     uint3 lid [[thread_position_in_threadgroup]])
 {
     uint rows = p[0], cols = p[1], extra = p[3], out_offset = p[5];
-    uint tile_start = (extra > 0) ? (wid.x + wid.y * extra) * 32 : wid.x * 32;
+    uint tile_start = (extra > 0) ? (wid.x + wid.y * extra) * TILE_ROWS : wid.x * TILE_ROWS;
     uint token = (extra > 0) ? 0 : wid.y;
 
     uint row_lane = lid.x & 7;
@@ -81,3 +83,4 @@ kernel void q4_native_q8_prequant_matvec(
 }
 
 #undef DQ4
+#undef TILE_ROWS
