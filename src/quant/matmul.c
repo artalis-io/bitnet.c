@@ -56,12 +56,16 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
 #ifdef __AVX2__
         BnTPTask task = { bn_quant_q4_avx2_matmul_range, &ctx, rows };
 #else
+        int use_group_range = prepared && prepared->qs && prepared->scales &&
+                              (rows % 4) == 0;
         BnTPTask task = {
-            (prepared && prepared->qs && prepared->scales)
-                ? bn_quant_q4_repacked_neon_sdot_matmul_range
-                : bn_quant_q4_neon_sdot_matmul_range,
+            use_group_range
+                ? bn_quant_q4_repacked_neon_sdot_matmul_group_range
+                : ((prepared && prepared->qs && prepared->scales)
+                    ? bn_quant_q4_repacked_neon_sdot_matmul_range
+                    : bn_quant_q4_neon_sdot_matmul_range),
             &ctx,
-            rows
+            use_group_range ? rows / 4 : rows
         };
 #endif
         bn_tp_dispatch(pool, &task, 1);
@@ -317,13 +321,18 @@ void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                 tasks[i] = (BnTPTask){ bn_quant_q4_avx2_matmul_range,
                                        &ctxs[i], W[i]->rows };
 #else
+                int use_group_range = prepared && prepared[i] &&
+                                      prepared[i]->qs && prepared[i]->scales &&
+                                      (W[i]->rows % 4) == 0;
                 tasks[i] = (BnTPTask){
-                    (prepared && prepared[i] &&
-                     prepared[i]->qs && prepared[i]->scales)
-                        ? bn_quant_q4_repacked_neon_sdot_matmul_range
-                        : bn_quant_q4_neon_sdot_matmul_range,
+                    use_group_range
+                        ? bn_quant_q4_repacked_neon_sdot_matmul_group_range
+                        : ((prepared && prepared[i] &&
+                            prepared[i]->qs && prepared[i]->scales)
+                            ? bn_quant_q4_repacked_neon_sdot_matmul_range
+                            : bn_quant_q4_neon_sdot_matmul_range),
                     &ctxs[i],
-                    W[i]->rows
+                    use_group_range ? W[i]->rows / 4 : W[i]->rows
                 };
 #endif
             }

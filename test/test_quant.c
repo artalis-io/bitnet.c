@@ -234,7 +234,7 @@ static void test_matmul_correctness(void) {
 static void test_q4_matmul_correctness(void) {
     printf("test_q4_matmul_correctness... ");
 
-    int rows = 7, cols = 96, n_tokens = 5;
+    int rows = 8, cols = 96, n_tokens = 5;
     int n_bpr = cols / 32;
     BnBlockQ4_0 *blocks = (BnBlockQ4_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ4_0));
     assert(blocks);
