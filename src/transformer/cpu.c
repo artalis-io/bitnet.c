@@ -1,5 +1,6 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_batched_attn_internal.h"
 #include "transformer_kv_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
@@ -138,6 +139,26 @@ void bn_transformer_cpu_gqa_dispatch(BnModel *m,
 #endif
     BnTPTask gqa = { attn_fn, gctx, n_heads };
     bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
+}
+
+void bn_transformer_batched_attn_dispatch(BnModel *m,
+                                          BnBatchedAttnCtx *ctx) {
+    bn_tp_fn fn;
+    if (m->config.flash_attn) {
+#ifdef __AVX2__
+        fn = bn_transformer_batched_attn_flash_avx2_range;
+#else
+        fn = bn_transformer_batched_attn_flash_scalar_range;
+#endif
+    } else {
+#ifdef __AVX2__
+        fn = bn_transformer_batched_attn_naive_avx2_range;
+#else
+        fn = bn_transformer_batched_attn_naive_scalar_range;
+#endif
+    }
+    BnTPTask task = { fn, ctx, ctx->n_heads };
+    bn_tp_dispatch(bn_model_pool(m), &task, 1);
 }
 
 void bn_transformer_cpu_residual_add(float *x, const float *r, int dim) {

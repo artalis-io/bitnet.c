@@ -77,10 +77,16 @@ void bn_quant_q4k_avx2_4row_range(void *ctx, int group_start, int group_end) {
                 memcpy(mins, &m_lo, 4);
                 memcpy(mins + 4, &m_hi, 4);
 
-                /* Min correction via bsums */
-                int32_t bsum_corr = 0;
-                for (int j = 0; j < 8; j++)
-                    bsum_corr += (int32_t)mins[j] * ((int32_t)bsums[2*j] + (int32_t)bsums[2*j + 1]);
+                /* Vectorized min correction via bsums */
+                __m256i q8sums_r = _mm256_loadu_si256((const __m256i *)bsums);
+                __m128i bsl = _mm256_castsi256_si128(q8sums_r);
+                __m128i bsh = _mm256_extracti128_si256(q8sums_r, 1);
+                __m128i bs_paired = _mm_hadd_epi16(bsl, bsh);
+                __m128i mins_v = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)mins));
+                __m128i corr128 = _mm_madd_epi16(mins_v, bs_paired);
+                __m128i ch1 = _mm_hadd_epi32(corr128, corr128);
+                __m128i ch2 = _mm_hadd_epi32(ch1, ch1);
+                int32_t bsum_corr = _mm_cvtsi128_si32(ch2);
 
                 __m256i sumi_v = _mm256_setzero_si256();
                 const uint8_t *qs = blk->qs;

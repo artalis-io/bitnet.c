@@ -323,6 +323,14 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
                               const int16_t *x_bsums, const float *x_float,
                               BnThreadPool *pool);
 
+// Dispatch up to n matmuls in a single threadpool cycle.
+// All weight matrices must share the same pre-quantized input.
+// out/W arrays must have n entries. Falls back to sequential if types differ.
+void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
+                                  int n_tokens, const int8_t *x_q,
+                                  const float *x_d, const int16_t *x_bsums,
+                                  const float *x_float, BnThreadPool *pool);
+
 // Get platform-optimal kernel for float-x quant types (K-quants, BF16, IQ*, Q4_1, Q8_K).
 // Returns NULL if the type requires int8 quantized x (I2_S, Q4_0, Q8_0, TQ1, TQ2).
 bn_tp_fn bn_quant_get_float_kernel(int type);

@@ -49,6 +49,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_neon.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_neon.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c src/transformer/gqa_tq_neon.c \
+    src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_neon.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
@@ -87,6 +88,7 @@ else
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
+    src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
@@ -210,6 +212,7 @@ SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
 
 SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_scalar.c src/transformer/gqa_tq_scalar.c \
+    src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_scalar.c src/transformer/logits.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
@@ -445,6 +448,7 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
+    src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \

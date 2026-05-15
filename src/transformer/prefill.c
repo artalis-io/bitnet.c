@@ -1,5 +1,7 @@
 #include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
+#include "transformer_batched_attn_internal.h"
+#include "simd_helpers.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_kv_internal.h"
 #include "transformer_rmsnorm_internal.h"
@@ -151,7 +153,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         + nt * (size_t)hb_stride
                         + nt * (size_t)hb2_stride;
     size_t arena_size = act_elems * sizeof(float)
-                      + batch_floats * sizeof(float);
+                      + batch_floats * sizeof(float)
+                      + nt * half_rope * 2 * sizeof(float)
+                      + 512;
 #ifdef __AVX2__
     int n_bpr_pf = (dim % BN_QK_K == 0) ? dim / BN_QK_K : 0;
     if (n_bpr_pf > 0)
@@ -193,6 +197,19 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     float *Hb = Xb2 + nt * xb2_stride;
     float *Hb2 = Hb + nt * hb_stride;
 
+    float *rope_cos_buf = (float *)sh_arena_alloc(pf_arena, nt * half_rope * sizeof(float));
+    float *rope_sin_buf = (float *)sh_arena_alloc(pf_arena, nt * half_rope * sizeof(float));
+    if (!rope_cos_buf || !rope_sin_buf) { sh_arena_free(pf_arena); return NULL; }
+
+    for (int t = 0; t < n_tokens; t++) {
+        int pos = pos0 + t;
+        for (int i = 0; i < half_rope; i++) {
+            float angle = pos * s->rope_freq[i];
+            rope_cos_buf[t * half_rope + i] = cosf(angle);
+            rope_sin_buf[t * half_rope + i] = sinf(angle);
+        }
+    }
+
     BnWeights *w = &m->weights;
 
     for (int l = 0; l < c->n_layers; l++) {
@@ -215,12 +232,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       pf_xq + (size_t)t * dim,
                                       pf_xd + (size_t)t * n_bpr,
                                       pf_xbs + (size_t)t * n_bpr * 16, dim);
-                bn_quant_matmul_preq8k(Q_buf, &lw->attn.wq, n_tokens,
-                                       pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
-                bn_quant_matmul_preq8k(K_new, &lw->attn.wk, n_tokens,
-                                       pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
-                bn_quant_matmul_preq8k(V_new, &lw->attn.wv, n_tokens,
-                                       pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
+                {
+                    float *qkv_out[3] = { Q_buf, K_new, V_new };
+                    const BnQWeight *qkv_w[3] = { &lw->attn.wq, &lw->attn.wk, &lw->attn.wv };
+                    bn_quant_matmul_preq8k_multi(qkv_out, qkv_w, 3, n_tokens,
+                                                 pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
+                }
             } else
 #endif
             {
@@ -233,75 +250,127 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
             int kv_mul = plan.kv_mul;
             int q_gated = plan.q_gated;
+            int wo_cols_attn = lw->attn.wo.cols;
 
-            for (int t = 0; t < n_tokens; t++) {
-                int pos = pos0 + t;
-                int cache_pos = pos % c->seq_len;
-                float *q_t = Q_buf + (size_t)t * lw->attn.wq.rows;
-                float *k_t = K_new + (size_t)t * kv_dim;
-                float *v_t = V_new + (size_t)t * kv_dim;
+            if (!bn_model_gpu(m) && bn_model_tq_state(m) == NULL) {
+                // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
+                for (int t = 0; t < n_tokens; t++) {
+                    int pos = pos0 + t;
+                    int cache_pos = pos % c->seq_len;
+                    float *k_t = K_new + (size_t)t * kv_dim;
+                    float *v_t = V_new + (size_t)t * kv_dim;
+                    float *rc = rope_cos_buf + t * half_rope;
+                    float *rs = rope_sin_buf + t * half_rope;
 
-                if (q_gated) {
-                    for (int h = 0; h < c->n_heads; h++)
-                        memcpy(s->q + h * head_size, q_t + h * 2 * head_size,
-                               head_size * sizeof(float));
-                } else {
-                    memcpy(s->q, q_t, q_dim * sizeof(float));
-                }
-
-                if (lw->attn.q_norm) {
-                    int qk_stride = c->qk_norm_per_head ? head_size : 0;
-                    for (int h = 0; h < c->n_heads; h++)
-                        prefill_rmsnorm(s->q + h * head_size, s->q + h * head_size,
-                                        lw->attn.q_norm + h * qk_stride, head_size,
-                                        c->norm_eps);
-                }
-                if (lw->attn.k_norm) {
-                    int qk_stride = c->qk_norm_per_head ? head_size : 0;
-                    for (int h = 0; h < c->n_kv_heads; h++)
-                        prefill_rmsnorm(k_t + h * head_size, k_t + h * head_size,
-                                        lw->attn.k_norm + h * qk_stride, head_size,
-                                        c->norm_eps);
-                }
-
-                if (lw->attn.q_bias) for (int i = 0; i < q_dim; i++) s->q[i] += lw->attn.q_bias[i];
-                if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
-                if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
-
-                float rope_cos_t[half_rope], rope_sin_t[half_rope];
-                for (int i = 0; i < half_rope; i++) {
-                    float angle = pos * s->rope_freq[i];
-                    rope_cos_t[i] = cosf(angle);
-                    rope_sin_t[i] = sinf(angle);
-                }
-                bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
-                                                    rope_dims, rope_cos_t, rope_sin_t);
-                bn_transformer_cpu_apply_rope_heads(k_t, c->n_kv_heads, head_size,
-                                                    rope_dims, rope_cos_t, rope_sin_t);
-
-                if (c->kv_f16)
-                    bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                 k_t, v_t, kv_dim);
-                else
-                    bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                 k_t, v_t, kv_dim);
-
-                int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul,
-                                  head_size, kv_dim, c->seq_len };
-                bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
-
-                if (q_gated) {
-                    for (int h = 0; h < c->n_heads; h++) {
-                        float *gate_h = q_t + h * 2 * head_size + head_size;
-                        float *xb_h = s->xb + h * head_size;
-                        for (int d = 0; d < head_size; d++)
-                            xb_h[d] *= 1.0f / (1.0f + expf(-gate_h[d]));
+                    if (lw->attn.k_bias)
+                        for (int i = 0; i < kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
+                    if (lw->attn.v_bias)
+                        for (int i = 0; i < kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
+                    if (lw->attn.k_norm) {
+                        int qk_stride = c->qk_norm_per_head ? head_size : 0;
+                        for (int h = 0; h < c->n_kv_heads; h++)
+                            prefill_rmsnorm(k_t + h * head_size, k_t + h * head_size,
+                                            lw->attn.k_norm + h * qk_stride,
+                                            head_size, c->norm_eps);
                     }
+                    bn_transformer_cpu_apply_rope_heads(k_t, c->n_kv_heads, head_size,
+                                                        rope_dims, rc, rs);
+
+                    if (c->kv_f16)
+                        bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
+                                                     k_t, v_t, kv_dim);
+                    else
+                        bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
+                                                     k_t, v_t, kv_dim);
                 }
 
-                int wo_cols = lw->attn.wo.cols;
-                memcpy(Q_buf + (size_t)t * wo_cols, s->xb, wo_cols * sizeof(float));
+                // Phase 2: batched attention (Q processing + attention, parallel over heads)
+                BnBatchedAttnCtx bctx = {
+                    .c = c, .s = s,
+                    .Q_buf = Q_buf, .K_new = K_new, .V_new = V_new,
+                    .out = Q_buf,
+                    .loff = loff, .pos0 = pos0, .n_tokens = n_tokens,
+                    .n_heads = c->n_heads, .n_kv_heads = c->n_kv_heads,
+                    .head_size = head_size, .kv_dim = kv_dim,
+                    .kv_mul = kv_mul, .seq_len = c->seq_len,
+                    .rope_dims = rope_dims, .rope_freq = s->rope_freq,
+                    .rope_cos = rope_cos_buf, .rope_sin = rope_sin_buf,
+                    .q_norm = lw->attn.q_norm, .k_norm = lw->attn.k_norm,
+                    .q_bias = lw->attn.q_bias, .k_bias = lw->attn.k_bias,
+                    .v_bias = lw->attn.v_bias,
+                    .qk_norm_per_head = c->qk_norm_per_head,
+                    .norm_eps = c->norm_eps,
+                    .q_gated = q_gated,
+                    .wq_rows = lw->attn.wq.rows,
+                    .wo_cols = wo_cols_attn,
+                };
+                bn_transformer_batched_attn_dispatch(m, &bctx);
+            } else {
+                for (int t = 0; t < n_tokens; t++) {
+                    int pos = pos0 + t;
+                    int cache_pos = pos % c->seq_len;
+                    float *q_t = Q_buf + (size_t)t * lw->attn.wq.rows;
+                    float *k_t = K_new + (size_t)t * kv_dim;
+                    float *v_t = V_new + (size_t)t * kv_dim;
+
+                    if (q_gated) {
+                        for (int h = 0; h < c->n_heads; h++)
+                            memcpy(s->q + h * head_size, q_t + h * 2 * head_size,
+                                   head_size * sizeof(float));
+                    } else {
+                        memcpy(s->q, q_t, q_dim * sizeof(float));
+                    }
+
+                    if (lw->attn.q_norm) {
+                        int qk_stride = c->qk_norm_per_head ? head_size : 0;
+                        for (int h = 0; h < c->n_heads; h++)
+                            prefill_rmsnorm(s->q + h * head_size, s->q + h * head_size,
+                                            lw->attn.q_norm + h * qk_stride, head_size,
+                                            c->norm_eps);
+                    }
+                    if (lw->attn.k_norm) {
+                        int qk_stride = c->qk_norm_per_head ? head_size : 0;
+                        for (int h = 0; h < c->n_kv_heads; h++)
+                            prefill_rmsnorm(k_t + h * head_size, k_t + h * head_size,
+                                            lw->attn.k_norm + h * qk_stride, head_size,
+                                            c->norm_eps);
+                    }
+
+                    if (lw->attn.q_bias) for (int i = 0; i < q_dim; i++) s->q[i] += lw->attn.q_bias[i];
+                    if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
+                    if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
+
+                    float *rc = rope_cos_buf + t * half_rope;
+                    float *rs = rope_sin_buf + t * half_rope;
+                    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
+                                                        rope_dims, rc, rs);
+                    bn_transformer_cpu_apply_rope_heads(k_t, c->n_kv_heads, head_size,
+                                                        rope_dims, rc, rs);
+
+                    if (c->kv_f16)
+                        bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
+                                                     k_t, v_t, kv_dim);
+                    else
+                        bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
+                                                     k_t, v_t, kv_dim);
+
+                    int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+                    BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul,
+                                      head_size, kv_dim, c->seq_len };
+                    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
+
+                    if (q_gated) {
+                        for (int h = 0; h < c->n_heads; h++) {
+                            float *gate_h = q_t + h * 2 * head_size + head_size;
+                            float *xb_h = s->xb + h * head_size;
+                            for (int d = 0; d < head_size; d++)
+                                xb_h[d] *= 1.0f / (1.0f + expf(-gate_h[d]));
+                        }
+                    }
+
+                    memcpy(Q_buf + (size_t)t * wo_cols_attn, s->xb,
+                           wo_cols_attn * sizeof(float));
+                }
             }
 
             {
@@ -421,10 +490,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                           pf_xq + (size_t)t * dim,
                                           pf_xd + (size_t)t * n_bpr,
                                           pf_xbs + (size_t)t * n_bpr * 16, dim);
-                    bn_quant_matmul_preq8k(Hb, &lw->ffn.ffn_gate, n_tokens,
-                                           pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
-                    bn_quant_matmul_preq8k(Hb2, &lw->ffn.ffn_up, n_tokens,
-                                           pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
+                    {
+                        float *gu_out[2] = { Hb, Hb2 };
+                        const BnQWeight *gu_w[2] = { &lw->ffn.ffn_gate, &lw->ffn.ffn_up };
+                        bn_quant_matmul_preq8k_multi(gu_out, gu_w, 2, n_tokens,
+                                                     pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
+                    }
                 } else
 #endif
                 {
@@ -436,12 +507,29 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     float *hb_t = Hb + (size_t)t * hidden_dim;
                     float *hb2_t = Hb2 + (size_t)t * hidden_dim;
                     if (c->act_type == 1) {
-                        for (int i = 0; i < hidden_dim; i++) {
+                        int i = 0;
+#ifdef __AVX2__
+                        __m256 zero_v = _mm256_setzero_ps();
+                        for (; i + 7 < hidden_dim; i += 8) {
+                            __m256 g = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
+                            __m256 u = _mm256_loadu_ps(hb2_t + i);
+                            _mm256_storeu_ps(hb_t + i, _mm256_mul_ps(_mm256_mul_ps(g, g), u));
+                        }
+#endif
+                        for (; i < hidden_dim; i++) {
                             float g = hb_t[i] > 0 ? hb_t[i] : 0;
                             hb_t[i] = g * g * hb2_t[i];
                         }
                     } else {
-                        for (int i = 0; i < hidden_dim; i++) {
+                        int i = 0;
+#ifdef __AVX2__
+                        for (; i + 7 < hidden_dim; i += 8) {
+                            __m256 g = _mm256_loadu_ps(hb_t + i);
+                            __m256 u = _mm256_loadu_ps(hb2_t + i);
+                            _mm256_storeu_ps(hb_t + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+                        }
+#endif
+                        for (; i < hidden_dim; i++) {
                             float g = hb_t[i];
                             hb_t[i] = (g / (1.0f + expf(-g))) * hb2_t[i];
                         }
@@ -452,12 +540,27 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 for (int t = 0; t < n_tokens; t++) {
                     float *hb_t = Hb + (size_t)t * hidden_dim;
                     if (c->act_type == 1) {
-                        for (int i = 0; i < hidden_dim; i++) {
+                        int i = 0;
+#ifdef __AVX2__
+                        __m256 zero_v = _mm256_setzero_ps();
+                        for (; i + 7 < hidden_dim; i += 8) {
+                            __m256 v = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
+                            _mm256_storeu_ps(hb_t + i, _mm256_mul_ps(v, v));
+                        }
+#endif
+                        for (; i < hidden_dim; i++) {
                             float v = hb_t[i] > 0 ? hb_t[i] : 0;
                             hb_t[i] = v * v;
                         }
                     } else {
-                        for (int i = 0; i < hidden_dim; i++) {
+                        int i = 0;
+#ifdef __AVX2__
+                        for (; i + 7 < hidden_dim; i += 8) {
+                            __m256 v = _mm256_loadu_ps(hb_t + i);
+                            _mm256_storeu_ps(hb_t + i, bn_avx2_fast_silu_ps(v));
+                        }
+#endif
+                        for (; i < hidden_dim; i++) {
                             float v = hb_t[i];
                             hb_t[i] = v / (1.0f + expf(-v));
                         }

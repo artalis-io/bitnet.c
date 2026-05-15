@@ -191,3 +191,61 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
         bn_quant_matvec(out + (size_t)t * rows, W, x_float + (size_t)t * cols,
                         (int8_t *)x_q, pool);
 }
+
+#define BN_MAX_MULTI_MATMUL 4
+
+void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
+                                  int n_tokens, const int8_t *x_q,
+                                  const float *x_d, const int16_t *x_bsums,
+                                  const float *x_float, BnThreadPool *pool) {
+    if (n <= 0 || n > BN_MAX_MULTI_MATMUL) {
+        for (int i = 0; i < n; i++)
+            bn_quant_matmul_preq8k(out[i], W[i], n_tokens, x_q, x_d, x_bsums,
+                                   x_float, pool);
+        return;
+    }
+
+    if (n_tokens <= 1) {
+        for (int i = 0; i < n; i++)
+            bn_quant_matmul_preq8k(out[i], W[i], n_tokens, x_q, x_d, x_bsums,
+                                   x_float, pool);
+        return;
+    }
+
+#ifdef __AVX2__
+    {
+        int all_kquant = 1;
+        for (int i = 0; i < n; i++) {
+            if (W[i]->type != BN_GGUF_TENSOR_Q4_K &&
+                W[i]->type != BN_GGUF_TENSOR_Q6_K) {
+                all_kquant = 0;
+                break;
+            }
+        }
+
+        if (all_kquant) {
+            BnKQuantMatmulCtx ctxs[BN_MAX_MULTI_MATMUL];
+            BnTPTask tasks[BN_MAX_MULTI_MATMUL];
+            int cols = W[0]->cols;
+
+            for (int i = 0; i < n; i++) {
+                memset(out[i], 0, (size_t)n_tokens * W[i]->rows * sizeof(float));
+                ctxs[i] = (BnKQuantMatmulCtx){
+                    out[i], W[i], (int8_t *)x_q, (float *)x_d,
+                    (int16_t *)x_bsums, n_tokens, cols
+                };
+                bn_tp_fn fn = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
+                    ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_range
+                    : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
+                tasks[i] = (BnTPTask){ fn, &ctxs[i], W[i]->rows };
+            }
+            bn_tp_dispatch(pool, tasks, n);
+            return;
+        }
+    }
+#endif
+
+    for (int i = 0; i < n; i++)
+        bn_quant_matmul_preq8k(out[i], W[i], n_tokens, x_q, x_d, x_bsums,
+                               x_float, pool);
+}
