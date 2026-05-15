@@ -590,7 +590,7 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--prefill-toks N] [--prefill-iters N] [--kv16] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--prefill-toks N] [--prefill-iters N] [--kv16] [--flash] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -601,6 +601,7 @@ int main(int argc, char **argv) {
     int n_prefill = 512;
     int n_prefill_iters = 3;
     int kv_f16 = 0;
+    int flash_attn = 0;
     int use_webgpu = 0;
     int use_metal = 0;
     int metal_enable_q6_q8k = 0;
@@ -625,6 +626,8 @@ int main(int argc, char **argv) {
             n_prefill_iters = (int)strtol(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--kv16") == 0)
             kv_f16 = 1;
+        else if (strcmp(argv[i], "--flash") == 0)
+            flash_attn = 1;
         else if (strcmp(argv[i], "--q4-expand") == 0)
             bench_q4_expand_enabled = 1;
         else if (strcmp(argv[i], "--webgpu") == 0)
@@ -714,6 +717,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     bn_model_set_file(&model, mf);
+    model.config.flash_attn = flash_attn;
     if (model.config.n_experts > 0) {
         if ((mf.is_mmap == 1 || mf.is_mmap == 0) && mf.data)
             bn_model_set_moe_mmap_base(&model, mf.data);

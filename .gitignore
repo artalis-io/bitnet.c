@@ -35,6 +35,7 @@ test_*
 
 # Bench binaries
 bench_kernels
+bench_prefill
 bench_scalar
 bench_scalar_layers
 bench_avx2
