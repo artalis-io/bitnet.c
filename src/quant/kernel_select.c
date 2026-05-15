@@ -5,6 +5,11 @@
 #include "quant_kernels_wasm.h"
 #include "gguf.h"
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#endif
+
 bn_tp_fn bn_quant_get_float_kernel(int type) {
     switch (type) {
 #ifdef __ARM_NEON

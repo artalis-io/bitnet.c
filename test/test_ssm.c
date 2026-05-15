@@ -1,6 +1,7 @@
 #include "transformer_ssm_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <assert.h>
 #include <math.h>
