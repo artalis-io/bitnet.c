@@ -20,7 +20,7 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
         float *q_h = s->q + h * head_size;
         float *att = s->att + h * seq_len;
         int kv_h = h / kv_mul;
-        float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+        float attn_scale = g->attention_scale;
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
@@ -44,7 +44,7 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
                 }
             }
             float32x4_t sum = vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3));
-            att[i] = bn_transformer_neon_hsum_f32(sum) * inv_sqrt_hs;
+            att[i] = bn_transformer_neon_hsum_f32(sum) * attn_scale;
         }
 
         bn_transformer_softmax(att, n_kv);
@@ -92,7 +92,7 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
     int kv_f16 = c->kv_f16;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 4 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -142,7 +142,7 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
                     a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
                     a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
                 }
-                float score = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3))) * inv_sqrt_hs;
+                float score = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3))) * attn_scale;
 
                 // Online softmax update
                 float v_buf[head_size];

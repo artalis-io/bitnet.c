@@ -2,6 +2,7 @@
 #include "quant_dispatch_internal.h"
 #include "quant_kernels_scalar.h"
 #include "quant_kernels_neon.h"
+#include "quant_kernels_avx512.h"
 #include "quant_kernels_avx2.h"
 #include "quant_kernels_wasm.h"
 #include "threadpool.h"
@@ -11,6 +12,9 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #undef __AVX2__
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
@@ -31,7 +35,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 
     int cols = tasks[0].W->cols;
 
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX512F__) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     // Determine common type (all tasks should have same type for efficient batching)
     int type0 = tasks[0].W->type;
 
@@ -67,7 +71,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
     }
 
     // K-quant SDOT: quantize to Q8_K per task
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX512F__) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     if (all_same_type && (type0 == BN_GGUF_TENSOR_Q4_K ||
                           type0 == BN_GGUF_TENSOR_Q6_K
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
@@ -100,6 +104,9 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     fn = bn_quant_q5k_neon_sdot_range;
                 else
                     fn = bn_quant_q6k_neon_sdot_range;
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
+                    ? bn_quant_q4k_avx512_vnni_4row_range : bn_quant_q6k_avx512_vnni_4row_range;
 #elif defined(__AVX2__)
                 void (*fn)(void *, int, int) = (type0 == BN_GGUF_TENSOR_Q4_K)
                     ? bn_quant_q4k_avx2_4row_range : bn_quant_q6k_avx2_4row_range;
@@ -108,7 +115,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     ? bn_quant_q4k_wasm_sdot_range : bn_quant_q6k_wasm_sdot_range;
 #endif
                 int n_items = tasks[t].W->rows;
-#ifdef __AVX2__
+#if defined(__AVX512F__) || defined(__AVX2__)
                 n_items = (tasks[t].W->rows + 3) / 4;
 #endif
                 tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_items };
@@ -118,7 +125,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
         }
     }
 
-#if defined(__AVX2__)
+#if defined(__AVX512F__) || defined(__AVX2__)
     int all_kquant = 1;
     for (int t = 0; t < n_tasks; t++) {
         int ty = tasks[t].W->type;
@@ -146,10 +153,16 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     q8k_d + t * n_bpr,
                     q8k_bsums + t * n_bpr * 16
                 };
-                void (*fn)(void *, int, int) =
-                    (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
+                void (*fn)(void *, int, int);
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
+                    ? bn_quant_q4k_avx512_vnni_4row_range
+                    : bn_quant_q6k_avx512_vnni_4row_range;
+#else
+                fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
                     ? bn_quant_q4k_avx2_4row_range
                     : bn_quant_q6k_avx2_4row_range;
+#endif
                 int n_groups = (tasks[t].W->rows + 3) / 4;
                 tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_groups };
             }
@@ -184,6 +197,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     void (*fn)(void *, int, int) = (tasks[t].prepared && tasks[t].prepared->scales)
                         ? bn_quant_q4_repacked_neon_sdot_range
                         : bn_quant_q4_neon_sdot_range;
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                    void (*fn)(void *, int, int) = bn_quant_q4_avx512_vnni_4row_range;
 #elif defined(__AVX2__)
                     void (*fn)(void *, int, int) = bn_quant_q4_avx2_4row_range;
 #elif defined(__wasm_relaxed_simd__)
@@ -196,7 +211,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     void (*fn)(void *, int, int) = bn_quant_q4_scalar_range;
 #endif
                     int n_items = tasks[t].W->rows;
-#if defined(__AVX2__)
+#if defined(__AVX512F__) || defined(__AVX2__)
                     n_items = (tasks[t].W->rows + 3) / 4;
 #elif defined(__wasm_relaxed_simd__)
                     if (getenv("BN_WASM_Q4_CANONICAL4"))
@@ -209,7 +224,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
                 return;
             }
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX512F__) || defined(__AVX2__)
             if (type0 == BN_GGUF_TENSOR_Q8_0) {
                 BnQ8SdotCtx ctxs[BN_MAX_BATCH];
                 BnTPTask tp_tasks[BN_MAX_BATCH];
@@ -222,6 +237,9 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                     };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
                     tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_sdot_range, &ctxs[t], tasks[t].W->rows };
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                    int n_groups = (tasks[t].W->rows + 3) / 4;
+                    tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx512_vnni_4row_range, &ctxs[t], n_groups };
 #else
                     int n_groups = (tasks[t].W->rows + 3) / 4;
                     tp_tasks[t] = (BnTPTask){ bn_quant_q8_avx2_4row_range, &ctxs[t], n_groups };

@@ -27,6 +27,10 @@ static inline const BnPreparedWeight *cpu_qweight_prepared(
     return bn_backend_model_prepared_qweight(backend, w);
 }
 
+static inline int cpu_force_float_kquant(const BnModel *m) {
+    return m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3);
+}
+
 static BnMatvecTask *cpu_prepare_matvec_tasks(const BnModel *m,
                                               const BnMatvecTask *tasks,
                                               int n_tasks,
@@ -40,6 +44,8 @@ static BnMatvecTask *cpu_prepare_matvec_tasks(const BnModel *m,
     for (int i = 0; i < n_tasks; i++) {
         prepared[i] = tasks[i];
         prepared[i].prepared = cpu_qweight_prepared(bn_model_backend(m), tasks[i].W);
+        if (cpu_force_float_kquant(m))
+            prepared[i].flags |= BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
     }
     return prepared;
 }
@@ -67,6 +73,12 @@ static void cpu_quant_matvec_batch_preq8k(const BnModel *m,
                                           const float *x_d,
                                           const int16_t *x_bsums,
                                           const float *x_float) {
+    if (cpu_force_float_kquant(m)) {
+        cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
+                                        (int8_t *)x_q);
+        return;
+    }
+
     BnMatvecTask inline_tasks[8];
     BnMatvecTask *prepared_tasks =
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
@@ -123,11 +135,33 @@ static int cpu_quant_can_preq8k_triple(int a, int b, int c) {
 #define cpu_ssm_gate      bn_transformer_ssm_gate_scalar_range
 #endif
 
+static float cpu_attention_scale(const BnConfig *c, int head_size) {
+    return (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+        ? 1.0f
+        : 1.0f / sqrtf((float)head_size);
+}
+
+static void cpu_rmsnorm_unit(float *out, const float *x, int size, float eps) {
+    float ss = 0.0f;
+    for (int i = 0; i < size; i++)
+        ss += x[i] * x[i];
+    ss = 1.0f / sqrtf(ss / (float)size + eps);
+    for (int i = 0; i < size; i++)
+        out[i] = x[i] * ss;
+}
+
+static void cpu_rmsnorm_unit_heads(float *x, int n_heads, int head_size, float eps) {
+    for (int h = 0; h < n_heads; h++)
+        cpu_rmsnorm_unit(x + h * head_size, x + h * head_size, head_size, eps);
+}
+
 void bn_transformer_cpu_gqa_dispatch(BnModel *m,
                                      BnGQACtx *gctx,
                                      int n_heads,
                                      int kv_mul) {
     (void)kv_mul;
+    if (gctx->attention_scale == 0.0f)
+        gctx->attention_scale = cpu_attention_scale(&m->config, gctx->head_size);
 #ifdef __ARM_NEON
     bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
 #elif defined(__AVX2__)
@@ -143,6 +177,8 @@ void bn_transformer_cpu_gqa_dispatch(BnModel *m,
 
 void bn_transformer_batched_attn_dispatch(BnModel *m,
                                           BnBatchedAttnCtx *ctx) {
+    if (ctx->attention_scale == 0.0f)
+        ctx->attention_scale = cpu_attention_scale(&m->config, ctx->head_size);
     bn_tp_fn fn;
     if (m->config.flash_attn) {
 #ifdef __AVX2__
@@ -265,6 +301,29 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
                 s->hb[i] = g * g * s->hb2[i];
             }
 #endif
+        } else if (ffn_plan->activation == 2) {
+#ifdef __ARM_NEON
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t g = vld1q_f32(s->hb + i);
+                float32x4_t u = vld1q_f32(s->hb2 + i);
+                vst1q_f32(s->hb + i, vmulq_f32(bn_neon_fast_gelu_f32(g), u));
+            }
+#elif defined(__AVX2__)
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 g = _mm256_loadu_ps(s->hb + i);
+                __m256 u = _mm256_loadu_ps(s->hb2 + i);
+                _mm256_storeu_ps(s->hb + i,
+                                 _mm256_mul_ps(bn_avx2_fast_gelu_ps(g), u));
+            }
+#else
+            for (int i = 0; i < hidden_dim; i++) {
+                float x = s->hb[i];
+                float g = 0.5f * x *
+                          (1.0f + tanhf(0.7978845608028654f * x *
+                                        (1.0f + 0.044715f * x * x)));
+                s->hb[i] = g * s->hb2[i];
+            }
+#endif
         } else {
 #ifdef __ARM_NEON
             for (int i = 0; i < hidden_dim; i += 4) {
@@ -292,6 +351,23 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
                 float v = s->hb[i] > 0 ? s->hb[i] : 0;
                 s->hb[i] = v * v;
             }
+        } else if (ffn_plan->activation == 2) {
+#ifdef __ARM_NEON
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t v = vld1q_f32(s->hb + i);
+                vst1q_f32(s->hb + i, bn_neon_fast_gelu_f32(v));
+            }
+#elif defined(__AVX2__)
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 v = _mm256_loadu_ps(s->hb + i);
+                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_gelu_ps(v));
+            }
+#else
+            for (int i = 0; i < hidden_dim; i++)
+                s->hb[i] = 0.5f * s->hb[i] *
+                           (1.0f + tanhf(0.7978845608028654f * s->hb[i] *
+                                         (1.0f + 0.044715f * s->hb[i] * s->hb[i])));
+#endif
         } else {
 #ifdef __ARM_NEON
             for (int i = 0; i < hidden_dim; i += 4) {
@@ -394,9 +470,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
                 BnMatvecTask qkv[3] = {
-                     { q_full,          &lw->attn.wq, NULL },
-                     { key_cache_row,   &lw->attn.wk, NULL },
-                     { value_cache_row, &lw->attn.wv, NULL },
+                     { q_full,          &lw->attn.wq, NULL, 0 },
+                     { key_cache_row,   &lw->attn.wk, NULL, 0 },
+                     { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -406,9 +482,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 v_tmp = value_cache_row;
             } else {
                 BnMatvecTask qkv[3] = {
-                     { q_full, &lw->attn.wq, NULL },
-                     { k_tmp, &lw->attn.wk, NULL },
-                     { v_tmp, &lw->attn.wv, NULL },
+                     { q_full, &lw->attn.wq, NULL, 0 },
+                     { k_tmp, &lw->attn.wk, NULL, 0 },
+                     { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -434,6 +510,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
+            if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                              layer_rope_dims, rope_cos, rope_sin);
@@ -470,7 +548,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
             if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m))) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride, c->seq_len };
+                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
+                                  c->seq_len, cpu_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
@@ -494,9 +573,11 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             if (lw->norm.attn_sub_norm)
                 cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
             {
-                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL }};
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
+            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
+                cpu_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
         } else if (q_wide) {
@@ -505,22 +586,22 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
             // Q matvec: xb[dim] → q[q_dim]
             {
-                BnMatvecTask q_task[1] = {{ s->q, &lw->attn.wq, NULL }};
+                BnMatvecTask q_task[1] = {{ s->q, &lw->attn.wq, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, q_task, 1, s->xb, s->x_q);
             }
             // K/V matvec: xb[dim] → kv_dim (always to temp buffers for TQ compat)
             if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
                 BnMatvecTask kv[2] = {
-                     { k_tmp, &lw->attn.wk, NULL },
-                     { v_tmp, &lw->attn.wv, NULL },
+                     { k_tmp, &lw->attn.wk, NULL, 0 },
+                     { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 cpu_quant_matvec_batch_prepared(m, kv, 2, s->xb, s->x_q);
             } else {
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
                 BnMatvecTask kv[2] = {
-                     { key_cache_row,   &lw->attn.wk, NULL },
-                     { value_cache_row, &lw->attn.wv, NULL },
+                     { key_cache_row,   &lw->attn.wk, NULL, 0 },
+                     { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 cpu_quant_matvec_batch_prepared(m, kv, 2, s->xb, s->x_q);
                 k_tmp = key_cache_row;
@@ -535,6 +616,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
+            if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                              layer_rope_dims, rope_cos, rope_sin);
@@ -550,7 +633,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             } else {
                 // Standard GQA
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride, c->seq_len };
+                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
+                                  c->seq_len, cpu_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
@@ -558,9 +642,11 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             if (lw->norm.attn_sub_norm)
                 cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, q_dim, c->norm_eps);
             {
-                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL }};
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
+            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
+                cpu_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
         } else {
@@ -573,9 +659,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 // Use temp buffers for K/V, then quantize into TQ cache
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
                 BnMatvecTask qkv[3] = {
-                     { s->q,  &lw->attn.wq, NULL },
-                     { k_tmp, &lw->attn.wk, NULL },
-                     { v_tmp, &lw->attn.wv, NULL },
+                     { s->q,  &lw->attn.wq, NULL, 0 },
+                     { k_tmp, &lw->attn.wk, NULL, 0 },
+                     { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -594,6 +680,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
+                if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                    cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
@@ -611,9 +699,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             } else if (c->kv_f16) {
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
                 BnMatvecTask qkv[3] = {
-                     { s->q,  &lw->attn.wq, NULL },
-                     { k_tmp, &lw->attn.wk, NULL },
-                     { v_tmp, &lw->attn.wv, NULL },
+                     { s->q,  &lw->attn.wq, NULL, 0 },
+                     { k_tmp, &lw->attn.wk, NULL, 0 },
+                     { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -632,6 +720,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
+                if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                    cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
@@ -662,9 +752,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 #endif
             } else {
                 BnMatvecTask qkv[3] = {
-                     { s->q,            &lw->attn.wq, NULL },
-                     { key_cache_row,   &lw->attn.wk, NULL },
-                     { value_cache_row, &lw->attn.wv, NULL },
+                     { s->q,            &lw->attn.wq, NULL, 0 },
+                     { key_cache_row,   &lw->attn.wk, NULL, 0 },
+                     { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_preq8k)
                     cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
@@ -683,6 +773,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
+                if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                    cpu_rmsnorm_unit_heads(value_cache_row, n_kv_heads, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
@@ -693,7 +785,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             // GQA attention (standard path — TQ handled above)
             if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m))) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride, c->seq_len };
+                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
+                                  c->seq_len, cpu_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
@@ -701,9 +794,11 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             if (lw->norm.attn_sub_norm)
                 cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
             {
-                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL }};
+                BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
+            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
+                cpu_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
         }
 
@@ -723,6 +818,12 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
     } else {
         // Dense FFN
         bn_transformer_cpu_forward_ffn_block(m, sess, lw, &ffn_plan);
+    }
+
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.layer_output_scale) {
+        float scale = lw->norm.layer_output_scale[0];
+        for (int i = 0; i < dim; i++)
+            s->x[i] *= scale;
     }
 
     (void)is_attn; // used only in debug builds
@@ -773,8 +874,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     float *qkv = s->hb;
     float *z = s->hb2;
     BnMatvecTask qz_tasks[2] = {
-         { qkv, &lw->ssm.wqkv, NULL },
-        { z,   &lw->ssm.wz, NULL },
+         { qkv, &lw->ssm.wqkv, NULL, 0 },
+        { z,   &lw->ssm.wz, NULL, 0 },
     };
     if (ssm_preq8k)
         cpu_quant_matvec_batch_preq8k(m, qz_tasks, 2, s->x_q,
@@ -800,8 +901,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     }
     float alpha_arr[num_v_heads], beta_arr[num_v_heads];
     BnMatvecTask ab[2] = {
-         { alpha_arr, &lw->ssm.ssm_alpha, NULL },
-        { beta_arr,  &lw->ssm.ssm_beta, NULL },
+         { alpha_arr, &lw->ssm.ssm_alpha, NULL, 0 },
+        { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
     };
     if (ssm_preq8k &&
         cpu_quant_can_preq8k_pair(lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type)) {
@@ -832,7 +933,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     BnTPTask gate_task = { cpu_ssm_gate, &gate_ctx, num_v_heads };
     bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
 
-    BnMatvecTask proj[1] = {{ s->xb, &lw->ssm.ssm_out, NULL }};
+    BnMatvecTask proj[1] = {{ s->xb, &lw->ssm.ssm_out, NULL, 0 }};
     cpu_quant_matvec_batch_prepared(m, proj, 1, out, s->x_q);
 }
 
@@ -862,8 +963,8 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
                                   s->xb, s->x_q, q8k_d, q8k_bsums);
         BnMatvecTask ffn[2] = {
-             { s->hb,  &lw->ffn.ffn_gate, NULL },
-            { s->hb2, &lw->ffn.ffn_up, NULL },
+             { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
+            { s->hb2, &lw->ffn.ffn_up, NULL, 0 },
         };
         cpu_quant_matvec_batch_preq8k(m, ffn, 2, s->x_q, q8k_d, q8k_bsums,
                                      s->xb);
@@ -879,7 +980,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_gate);
             const BnPreparedWeight *up_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
-            if (!bn_model_gpu(m) && ffn_plan->activation != 1 &&
+            if (!bn_model_gpu(m) && ffn_plan->activation == 0 &&
                 lw->ffn.ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
                 lw->ffn.ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
                 dim % 32 == 0 &&
@@ -890,13 +991,13 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
             } else
             {
                 BnMatvecTask ffn[2] = {
-                     { s->hb,  &lw->ffn.ffn_gate, NULL },
-                    { s->hb2, &lw->ffn.ffn_up, NULL },
+                     { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
+                    { s->hb2, &lw->ffn.ffn_up, NULL, 0 },
                 };
                 cpu_quant_matvec_batch_prepared(m, ffn, 2, s->xb, s->x_q);
             }
         } else {
-            BnMatvecTask ffn[1] = {{ s->hb, &lw->ffn.ffn_up, NULL }};
+            BnMatvecTask ffn[1] = {{ s->hb, &lw->ffn.ffn_up, NULL, 0 }};
             cpu_quant_matvec_batch_prepared(m, ffn, 1, s->xb, s->x_q);
         }
     }
@@ -906,7 +1007,9 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     if (ffn_plan->has_sub_norm)
         cpu_rmsnorm(s->hb, s->hb, lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
 
-    BnMatvecTask down[1] = {{ s->xb, &lw->ffn.ffn_down, NULL }};
+    BnMatvecTask down[1] = {{ s->xb, &lw->ffn.ffn_down, NULL, 0 }};
     cpu_quant_matvec_batch_prepared(m, down, 1, s->hb, s->x_q);
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.ffn_post_norm)
+        cpu_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm, dim, c->norm_eps);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);
 }

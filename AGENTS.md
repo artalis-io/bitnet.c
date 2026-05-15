@@ -22,7 +22,10 @@ Architecture ownership rules:
 
 - `BnModel` is shared and immutable after load. It owns model anatomy, CPU-visible weights, config, file state, pool, and shared MoE I/O.
 - `BnSession` owns request-local mutable state: KV cache, activation buffers, MoE compute buffers, SSM state, and position.
-- `BnBackendModel` / backend session state own GPU/backend-resident buffers, packed layouts, stacked/fused tensors, activation buffers, and future CUDA/AVX-512 backend state.
+- `BnBackendModel` / backend session state own GPU/backend-resident buffers,
+  packed layouts, stacked/fused tensors, activation buffers, and future CUDA
+  backend state. CPU SIMD kernels, including AVX512, stay in `src/quant/` and
+  do not attach handles to model weights.
 - `BnQuantFormatOps` in `include/quant.h` / `src/quant/registry.c` owns quant metadata and capability declarations. Add quant behavior there before adding backend-specific branches.
 - `BnModelArchOps` in `include/model_arch.h` owns model-family shape, tensor-role, activation, norm, SSM, MoE, and naming rules.
 - Public GPU graph code uses `BnGPUOpKind`, `BnGPUOpCode`, and `BN_GPU_VALUE_*`. Backend-private shader IDs stay in `src/gpu_shader.h` and backend implementations.
@@ -63,6 +66,8 @@ Architecture ownership rules:
   - Phase 1: GPU vs CPU forward pass — 5 greedy tokens, first 3 must match
   - Phase 2: SIMD vs scalar matvec — layer 0 weights, max_diff < 2.0
   - Phase 3: GPU standalone matvec vs CPU scalar — layer 0 wq when available, max_diff < 2.0
+  - Run CPU SIMD: `make test_coherence && ./test_coherence model.gguf`
+  - Run AVX512 kernels: `make test_avx512_quant avx512-check`
   - Run Metal: `make BN_ENABLE_METAL=1 test_coherence && ./test_coherence model.gguf --metal`
   - Run WebGPU: `make BN_ENABLE_WEBGPU=1 test_coherence && ./test_coherence model.gguf --webgpu`
 
@@ -82,7 +87,13 @@ Architecture ownership rules:
 
 ## Performance Considerations
 
-- CPU backends: NEON SDOT, AVX2, WASM SIMD128, scalar fallback. Optional GPU backends: Metal and WebGPU.
+- CPU backends: NEON SDOT, AVX2, AVX512 BW/VNNI, WASM SIMD128, scalar fallback. Optional GPU backends: Metal and WebGPU.
+- AVX512 quant kernels live beside AVX2/scalar kernels in `src/quant/` and are
+  dispatched from quant routing only. Keep them format-local and compare against
+  scalar plus AVX2 references.
+- On high-core x86 machines, LLM inference is often memory-bandwidth limited
+  before all physical cores are useful. Prefer measured thread counts over
+  blindly using every core.
 - Q8_K x quantization for Q4_K/Q6_K: integer accumulation, unsigned nibbles, bsums correction
 - MoE expert LRU cache with open-addressing hash + intrusive LRU list (pread mode)
 - Atomic work-stealing thread dispatch for load balancing

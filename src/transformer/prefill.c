@@ -86,6 +86,62 @@ static float *prefill_logits(BnModel *m, BnSession *sess) {
     return bn_transformer_forward_logits(m, sess);
 }
 
+static int prefill_layer_rope_dims(const BnConfig *c, int layer_head_size) {
+    int use_swa_rope = c->rope_theta_swa > 0.0f && layer_head_size < c->head_size;
+    int rope_dims = use_swa_rope && c->rope_dim_count_swa > 0
+        ? c->rope_dim_count_swa
+        : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
+    return rope_dims > layer_head_size ? layer_head_size : rope_dims;
+}
+
+static float prefill_layer_rope_theta(const BnConfig *c, int layer_head_size) {
+    return (c->rope_theta_swa > 0.0f && layer_head_size < c->head_size)
+        ? c->rope_theta_swa : c->rope_theta;
+}
+
+static float prefill_attention_scale(const BnConfig *c, int head_size) {
+    return (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+        ? 1.0f
+        : 1.0f / sqrtf((float)head_size);
+}
+
+static void prefill_rmsnorm_unit(float *out, const float *x, int size, float eps) {
+    float ss = 0.0f;
+    for (int i = 0; i < size; i++)
+        ss += x[i] * x[i];
+    ss = 1.0f / sqrtf(ss / (float)size + eps);
+    for (int i = 0; i < size; i++)
+        out[i] = x[i] * ss;
+}
+
+static void prefill_rmsnorm_unit_heads(float *x, int n_heads,
+                                       int head_size, float eps) {
+    for (int h = 0; h < n_heads; h++)
+        prefill_rmsnorm_unit(x + h * head_size, x + h * head_size,
+                             head_size, eps);
+}
+
+static float prefill_gelu(float x) {
+    return 0.5f * x *
+           (1.0f + tanhf(0.7978845608028654f * x *
+                         (1.0f + 0.044715f * x * x)));
+}
+
+static void prefill_fill_rope(float *rope_cos_buf, float *rope_sin_buf,
+                              int rope_stride, int n_tokens, int pos0,
+                              int rope_dims, float theta) {
+    int half_rope = rope_dims / 2;
+    for (int t = 0; t < n_tokens; t++) {
+        int pos = pos0 + t;
+        for (int i = 0; i < half_rope; i++) {
+            float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
+            float angle = pos * freq;
+            rope_cos_buf[(size_t)t * rope_stride + i] = cosf(angle);
+            rope_sin_buf[(size_t)t * rope_stride + i] = sinf(angle);
+        }
+    }
+}
+
 static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                int n_tokens, int pos0, float *all_logits) {
     if (n_tokens <= 0) return NULL;
@@ -201,15 +257,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     float *rope_sin_buf = (float *)sh_arena_alloc(pf_arena, nt * half_rope * sizeof(float));
     if (!rope_cos_buf || !rope_sin_buf) { sh_arena_free(pf_arena); return NULL; }
 
-    for (int t = 0; t < n_tokens; t++) {
-        int pos = pos0 + t;
-        for (int i = 0; i < half_rope; i++) {
-            float angle = pos * s->rope_freq[i];
-            rope_cos_buf[t * half_rope + i] = cosf(angle);
-            rope_sin_buf[t * half_rope + i] = sinf(angle);
-        }
-    }
-
     BnWeights *w = &m->weights;
 
     for (int l = 0; l < c->n_layers; l++) {
@@ -219,6 +266,15 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         int is_attn = plan.is_attn;
 
         if (is_attn && lw->attn.wq.data) {
+            int layer_head_size = plan.head_size;
+            int layer_kv_dim = plan.kv_dim;
+            int layer_n_kv_heads = plan.n_kv_heads;
+            int layer_kv_mul = plan.kv_mul;
+            int layer_q_dim = plan.q_dim;
+            int layer_rope_dims = prefill_layer_rope_dims(c, layer_head_size);
+            prefill_fill_rope(rope_cos_buf, rope_sin_buf, half_rope, n_tokens, pos0,
+                              layer_rope_dims,
+                              prefill_layer_rope_theta(c, layer_head_size));
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
                                 lw->norm.attn_norm, dim, c->norm_eps);
@@ -248,7 +304,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
             int attn_idx = plan.attn_idx;
             size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
-            int kv_mul = plan.kv_mul;
             int q_gated = plan.q_gated;
             int wo_cols_attn = lw->attn.wo.cols;
 
@@ -257,31 +312,35 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 for (int t = 0; t < n_tokens; t++) {
                     int pos = pos0 + t;
                     int cache_pos = pos % c->seq_len;
-                    float *k_t = K_new + (size_t)t * kv_dim;
-                    float *v_t = V_new + (size_t)t * kv_dim;
+                    float *k_t = K_new + (size_t)t * layer_kv_dim;
+                    float *v_t = V_new + (size_t)t * layer_kv_dim;
                     float *rc = rope_cos_buf + t * half_rope;
                     float *rs = rope_sin_buf + t * half_rope;
 
                     if (lw->attn.k_bias)
-                        for (int i = 0; i < kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
+                        for (int i = 0; i < layer_kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
                     if (lw->attn.v_bias)
-                        for (int i = 0; i < kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
+                        for (int i = 0; i < layer_kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
                     if (lw->attn.k_norm) {
-                        int qk_stride = c->qk_norm_per_head ? head_size : 0;
-                        for (int h = 0; h < c->n_kv_heads; h++)
-                            prefill_rmsnorm(k_t + h * head_size, k_t + h * head_size,
+                        int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
+                        for (int h = 0; h < layer_n_kv_heads; h++)
+                            prefill_rmsnorm(k_t + h * layer_head_size, k_t + h * layer_head_size,
                                             lw->attn.k_norm + h * qk_stride,
-                                            head_size, c->norm_eps);
+                                            layer_head_size, c->norm_eps);
                     }
-                    bn_transformer_cpu_apply_rope_heads(k_t, c->n_kv_heads, head_size,
-                                                        rope_dims, rc, rs);
+                    if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                        prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
+                                                   layer_head_size, c->norm_eps);
+                    bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
+                                                        layer_head_size,
+                                                        layer_rope_dims, rc, rs);
 
                     if (c->kv_f16)
                         bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, kv_dim);
+                                                     k_t, v_t, layer_kv_dim);
                     else
                         bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, kv_dim);
+                                                     k_t, v_t, layer_kv_dim);
                 }
 
                 // Phase 2: batched attention (Q processing + attention, parallel over heads)
@@ -290,11 +349,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .Q_buf = Q_buf, .K_new = K_new, .V_new = V_new,
                     .out = Q_buf,
                     .loff = loff, .pos0 = pos0, .n_tokens = n_tokens,
-                    .n_heads = c->n_heads, .n_kv_heads = c->n_kv_heads,
-                    .head_size = head_size, .kv_dim = kv_dim,
-                    .kv_mul = kv_mul, .seq_len = c->seq_len,
-                    .rope_dims = rope_dims, .rope_freq = s->rope_freq,
+                    .n_heads = c->n_heads, .n_kv_heads = layer_n_kv_heads,
+                    .head_size = layer_head_size, .kv_dim = kv_dim,
+                    .kv_mul = layer_kv_mul, .seq_len = c->seq_len,
+                    .rope_dims = layer_rope_dims, .rope_freq = s->rope_freq,
                     .rope_cos = rope_cos_buf, .rope_sin = rope_sin_buf,
+                    .rope_stride = half_rope,
+                    .attention_scale = prefill_attention_scale(c, layer_head_size),
                     .q_norm = lw->attn.q_norm, .k_norm = lw->attn.k_norm,
                     .q_bias = lw->attn.q_bias, .k_bias = lw->attn.k_bias,
                     .v_bias = lw->attn.v_bias,
@@ -310,60 +371,69 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int pos = pos0 + t;
                     int cache_pos = pos % c->seq_len;
                     float *q_t = Q_buf + (size_t)t * lw->attn.wq.rows;
-                    float *k_t = K_new + (size_t)t * kv_dim;
-                    float *v_t = V_new + (size_t)t * kv_dim;
+                    float *k_t = K_new + (size_t)t * layer_kv_dim;
+                    float *v_t = V_new + (size_t)t * layer_kv_dim;
 
                     if (q_gated) {
                         for (int h = 0; h < c->n_heads; h++)
-                            memcpy(s->q + h * head_size, q_t + h * 2 * head_size,
-                                   head_size * sizeof(float));
+                            memcpy(s->q + h * layer_head_size,
+                                   q_t + h * 2 * layer_head_size,
+                                   layer_head_size * sizeof(float));
                     } else {
-                        memcpy(s->q, q_t, q_dim * sizeof(float));
+                        memcpy(s->q, q_t, layer_q_dim * sizeof(float));
                     }
 
                     if (lw->attn.q_norm) {
-                        int qk_stride = c->qk_norm_per_head ? head_size : 0;
+                        int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
                         for (int h = 0; h < c->n_heads; h++)
-                            prefill_rmsnorm(s->q + h * head_size, s->q + h * head_size,
-                                            lw->attn.q_norm + h * qk_stride, head_size,
-                                            c->norm_eps);
+                            prefill_rmsnorm(s->q + h * layer_head_size,
+                                            s->q + h * layer_head_size,
+                                            lw->attn.q_norm + h * qk_stride,
+                                            layer_head_size, c->norm_eps);
                     }
                     if (lw->attn.k_norm) {
-                        int qk_stride = c->qk_norm_per_head ? head_size : 0;
-                        for (int h = 0; h < c->n_kv_heads; h++)
-                            prefill_rmsnorm(k_t + h * head_size, k_t + h * head_size,
-                                            lw->attn.k_norm + h * qk_stride, head_size,
-                                            c->norm_eps);
+                        int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
+                        for (int h = 0; h < layer_n_kv_heads; h++)
+                            prefill_rmsnorm(k_t + h * layer_head_size,
+                                            k_t + h * layer_head_size,
+                                            lw->attn.k_norm + h * qk_stride,
+                                            layer_head_size, c->norm_eps);
                     }
+                    if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                        prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
+                                                   layer_head_size, c->norm_eps);
 
-                    if (lw->attn.q_bias) for (int i = 0; i < q_dim; i++) s->q[i] += lw->attn.q_bias[i];
-                    if (lw->attn.k_bias) for (int i = 0; i < kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
-                    if (lw->attn.v_bias) for (int i = 0; i < kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
+                    if (lw->attn.q_bias) for (int i = 0; i < layer_q_dim; i++) s->q[i] += lw->attn.q_bias[i];
+                    if (lw->attn.k_bias) for (int i = 0; i < layer_kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
+                    if (lw->attn.v_bias) for (int i = 0; i < layer_kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
 
                     float *rc = rope_cos_buf + t * half_rope;
                     float *rs = rope_sin_buf + t * half_rope;
-                    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
-                                                        rope_dims, rc, rs);
-                    bn_transformer_cpu_apply_rope_heads(k_t, c->n_kv_heads, head_size,
-                                                        rope_dims, rc, rs);
+                    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads,
+                                                        layer_head_size,
+                                                        layer_rope_dims, rc, rs);
+                    bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
+                                                        layer_head_size,
+                                                        layer_rope_dims, rc, rs);
 
                     if (c->kv_f16)
                         bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, kv_dim);
+                                                     k_t, v_t, layer_kv_dim);
                     else
                         bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, kv_dim);
+                                                     k_t, v_t, layer_kv_dim);
 
                     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-                    BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul,
-                                      head_size, kv_dim, c->seq_len };
-                    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
+                    BnGQACtx gctx = { c, s, loff, pos, n_kv, layer_kv_mul,
+                                      layer_head_size, kv_dim, c->seq_len,
+                                      prefill_attention_scale(c, layer_head_size) };
+                    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, layer_kv_mul);
 
                     if (q_gated) {
                         for (int h = 0; h < c->n_heads; h++) {
-                            float *gate_h = q_t + h * 2 * head_size + head_size;
-                            float *xb_h = s->xb + h * head_size;
-                            for (int d = 0; d < head_size; d++)
+                            float *gate_h = q_t + h * 2 * layer_head_size + layer_head_size;
+                            float *xb_h = s->xb + h * layer_head_size;
+                            for (int d = 0; d < layer_head_size; d++)
                                 xb_h[d] *= 1.0f / (1.0f + expf(-gate_h[d]));
                         }
                     }
@@ -381,6 +451,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                         Q_buf + (size_t)t * wo_cols,
                                         lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
                 prefill_quant_matmul_gpu(m, Xb2, &lw->attn.wo, Q_buf, n_tokens, s->x_q);
+                if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
+                    for (int t = 0; t < n_tokens; t++)
+                        prefill_rmsnorm(Xb2 + (size_t)t * dim,
+                                        Xb2 + (size_t)t * dim,
+                                        lw->norm.attn_post_norm, dim, c->norm_eps);
             }
 
             for (int t = 0; t < n_tokens; t++)
@@ -437,8 +512,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 float alpha_arr[num_v_heads > 0 ? num_v_heads : 1];
                 float beta_arr[num_v_heads > 0 ? num_v_heads : 1];
                 BnMatvecTask ab[2] = {
-                    { alpha_arr, &lw->ssm.ssm_alpha, NULL },
-                    { beta_arr,  &lw->ssm.ssm_beta, NULL },
+                    { alpha_arr, &lw->ssm.ssm_alpha, NULL, 0 },
+                    { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
                 };
                 bn_quant_matvec_batch(ab, 2, xb_t, s->x_q, bn_model_pool(m));
                 for (int h = 0; h < num_v_heads; h++) {
@@ -520,6 +595,21 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             float g = hb_t[i] > 0 ? hb_t[i] : 0;
                             hb_t[i] = g * g * hb2_t[i];
                         }
+                    } else if (c->act_type == 2) {
+#ifdef __AVX2__
+                        int i = 0;
+                        for (; i + 7 < hidden_dim; i += 8) {
+                            __m256 g = _mm256_loadu_ps(hb_t + i);
+                            __m256 u = _mm256_loadu_ps(hb2_t + i);
+                            _mm256_storeu_ps(hb_t + i,
+                                             _mm256_mul_ps(bn_avx2_fast_gelu_ps(g), u));
+                        }
+                        for (; i < hidden_dim; i++)
+                            hb_t[i] = prefill_gelu(hb_t[i]) * hb2_t[i];
+#else
+                        for (int i = 0; i < hidden_dim; i++)
+                            hb_t[i] = prefill_gelu(hb_t[i]) * hb2_t[i];
+#endif
                     } else {
                         int i = 0;
 #ifdef __AVX2__
@@ -552,6 +642,19 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             float v = hb_t[i] > 0 ? hb_t[i] : 0;
                             hb_t[i] = v * v;
                         }
+                    } else if (c->act_type == 2) {
+#ifdef __AVX2__
+                        int i = 0;
+                        for (; i + 7 < hidden_dim; i += 8) {
+                            __m256 v = _mm256_loadu_ps(hb_t + i);
+                            _mm256_storeu_ps(hb_t + i, bn_avx2_fast_gelu_ps(v));
+                        }
+                        for (; i < hidden_dim; i++)
+                            hb_t[i] = prefill_gelu(hb_t[i]);
+#else
+                        for (int i = 0; i < hidden_dim; i++)
+                            hb_t[i] = prefill_gelu(hb_t[i]);
+#endif
                     } else {
                         int i = 0;
 #ifdef __AVX2__
@@ -575,10 +678,22 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                     lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
 
             prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb, n_tokens, s->x_q);
+            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.ffn_post_norm)
+                for (int t = 0; t < n_tokens; t++)
+                    prefill_rmsnorm(Xb + (size_t)t * dim,
+                                    Xb + (size_t)t * dim,
+                                    lw->norm.ffn_post_norm, dim, c->norm_eps);
 
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)
                     act[(size_t)t * dim + d] += Xb[(size_t)t * dim + d];
+        }
+
+        if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.layer_output_scale) {
+            float scale = lw->norm.layer_output_scale[0];
+            for (int t = 0; t < n_tokens; t++)
+                for (int d = 0; d < dim; d++)
+                    act[(size_t)t * dim + d] *= scale;
         }
     }
 

@@ -18,7 +18,10 @@ typedef enum {
 
 typedef struct {
     float *attn_norm, *attn_sub_norm;       // RMSNorm weights [dim]
+    float *attn_post_norm;                  // post-attention RMSNorm weights [dim]
     float *ffn_norm, *ffn_sub_norm;         // RMSNorm weights
+    float *ffn_post_norm;                   // post-FFN RMSNorm weights [dim]
+    float *layer_output_scale;              // optional scalar [1]
 } BnLayerNormWeights;
 
 typedef struct {

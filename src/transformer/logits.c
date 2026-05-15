@@ -28,6 +28,25 @@
 
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
 
+#if !((defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__))
+static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
+    float amax = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float ax = x[i] < 0.0f ? -x[i] : x[i];
+        if (ax > amax) amax = ax;
+    }
+    float scale = amax / 127.0f;
+    float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
+    for (int i = 0; i < n; i++) {
+        int q = (int)(x[i] * inv + (x[i] >= 0.0f ? 0.5f : -0.5f));
+        if (q > 127) q = 127;
+        if (q < -128) q = -128;
+        x_q[i] = (int8_t)q;
+    }
+    return scale;
+}
+#endif
+
 static inline void *qweight_backend_buf(const BnBackendModel *backend,
                                         const BnQWeight *w) {
     return bn_backend_model_qweight_buf(backend, w);
@@ -43,29 +62,28 @@ static void logits_quant_matvec_gpu(const BnModel *m,
 }
 
 static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
+    float x_scale;
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     bn_tp_fn fn = bn_transformer_logits_i8_neon_range;
 #elif defined(__AVX2__)
     bn_tp_fn fn = bn_transformer_logits_i8_avx2_range;
 #elif defined(__wasm_relaxed_simd__)
     bn_tp_fn fn = bn_transformer_logits_i8_wasm_range;
+    x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
 #else
-    (void)m;
-    (void)s;
-    (void)rows;
-    (void)dim;
-    return 0;
+    bn_tp_fn fn = bn_transformer_logits_i8_scalar_range;
+    x_scale = logits_quant_x_to_i8_scalar(s->x, s->x_q, dim);
 #endif
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     BnWeights *w = &m->weights;
     if (!w->emb_out_i8) return 0;
-    float x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__)
+    x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
+#endif
     BnLogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
                            s->x_q, x_scale, dim };
     BnTPTask logits_task = { fn, &lctx, rows };
     bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
     return 1;
-#endif
 }
 
 static void logits_f16_dispatch(BnModel *m,

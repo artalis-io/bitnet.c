@@ -42,6 +42,24 @@ static inline float32x4_t bn_neon_fast_sigmoid_f32(float32x4_t x) {
 static inline float32x4_t bn_neon_fast_silu_f32(float32x4_t x) {
     return vmulq_f32(x, bn_neon_fast_sigmoid_f32(x));
 }
+
+static inline float32x4_t bn_neon_fast_tanh_f32(float32x4_t x) {
+    float32x4_t two = vdupq_n_f32(2.0f);
+    float32x4_t one = vdupq_n_f32(1.0f);
+    return vsubq_f32(vmulq_f32(two, bn_neon_fast_sigmoid_f32(vmulq_f32(two, x))), one);
+}
+
+static inline float32x4_t bn_neon_fast_gelu_f32(float32x4_t x) {
+    float32x4_t half = vdupq_n_f32(0.5f);
+    float32x4_t one = vdupq_n_f32(1.0f);
+    float32x4_t coef = vdupq_n_f32(0.044715f);
+    float32x4_t sqrt_2_over_pi = vdupq_n_f32(0.7978845608028654f);
+    float32x4_t x2 = vmulq_f32(x, x);
+    float32x4_t inner = vmulq_f32(sqrt_2_over_pi,
+                                  vmulq_f32(x, vmlaq_f32(one, coef, x2)));
+    return vmulq_f32(vmulq_f32(half, x),
+                     vaddq_f32(one, bn_neon_fast_tanh_f32(inner)));
+}
 #endif // __ARM_NEON
 
 #ifdef __AVX2__
@@ -142,7 +160,38 @@ static inline __m256 bn_avx2_fast_silu_ps(__m256 x) {
     return _mm256_mul_ps(x, bn_avx2_fast_sigmoid_ps(x));
 }
 
+static inline __m256 bn_avx2_fast_tanh_ps(__m256 x) {
+    __m256 two = _mm256_set1_ps(2.0f);
+    __m256 one = _mm256_set1_ps(1.0f);
+    return _mm256_sub_ps(_mm256_mul_ps(two, bn_avx2_fast_sigmoid_ps(_mm256_mul_ps(two, x))), one);
+}
+
+static inline __m256 bn_avx2_fast_gelu_ps(__m256 x) {
+    __m256 half = _mm256_set1_ps(0.5f);
+    __m256 one = _mm256_set1_ps(1.0f);
+    __m256 coef = _mm256_set1_ps(0.044715f);
+    __m256 sqrt_2_over_pi = _mm256_set1_ps(0.7978845608028654f);
+    __m256 x2 = _mm256_mul_ps(x, x);
+    __m256 inner = _mm256_mul_ps(sqrt_2_over_pi,
+        _mm256_mul_ps(x, _mm256_fmadd_ps(coef, x2, one)));
+    return _mm256_mul_ps(_mm256_mul_ps(half, x),
+                         _mm256_add_ps(one, bn_avx2_fast_tanh_ps(inner)));
+}
+
 #endif // __AVX2__
+
+#ifdef __AVX512F__
+#include <immintrin.h>
+
+static inline float bn_avx512_hsum_ps(__m512 v) {
+    return _mm512_reduce_add_ps(v);
+}
+
+static inline int32_t bn_avx512_hsum_epi32(__m512i v) {
+    return _mm512_reduce_add_epi32(v);
+}
+
+#endif // __AVX512F__
 
 #ifdef __wasm_simd128__
 #include <wasm_simd128.h>

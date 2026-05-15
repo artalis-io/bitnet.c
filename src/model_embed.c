@@ -1,5 +1,6 @@
 #include "model.h"
 #include "sh_log.h"
+#include <math.h>
 #include <string.h>
 
 void bn_model_embed_token(const BnModel *m, float *out, int token) {
@@ -148,5 +149,12 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
     } else {
         SH_LOG_ERROR("Unsupported embedding type");
         memset(out, 0, dim * sizeof(float));
+        return;
+    }
+
+    if (m->config.arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) {
+        float scale = sqrtf((float)dim);
+        for (int i = 0; i < dim; i++)
+            out[i] *= scale;
     }
 }

@@ -360,14 +360,14 @@ static void test_gpu_batch(void) {
     float out1_gpu = 0, out2_gpu = 0;
     int8_t scratch[128];
     BnMatvecTask tasks[2] = {
-         { &out1_gpu, &W1, NULL },
-         { &out2_gpu, &W2, NULL },
+         { &out1_gpu, &W1, NULL, 0 },
+         { &out2_gpu, &W2, NULL, 0 },
     };
     bn_backend_quant_matvec_batch_gpu(tasks, 2, x, scratch, NULL, &mock_gpu);
     float out1_gpu_buf = 0, out2_gpu_buf = 0;
     BnMatvecTask buf_tasks[2] = {
-         { &out1_gpu_buf, &W1, NULL },
-         { &out2_gpu_buf, &W2, NULL },
+         { &out1_gpu_buf, &W1, NULL, 0 },
+         { &out2_gpu_buf, &W2, NULL, 0 },
     };
     const void *bufs[2] = { W1_buf, W2_buf };
     bn_backend_quant_matvec_batch_gpu_buf(buf_tasks, bufs, 2, x, scratch, NULL,
@@ -378,8 +378,8 @@ static void test_gpu_batch(void) {
     BnQWeight W1c = W1;
     BnQWeight W2c = W2;
     BnMatvecTask cpu_tasks[2] = {
-         { &out1_cpu, &W1c, NULL },
-         { &out2_cpu, &W2c, NULL },
+         { &out1_cpu, &W1c, NULL, 0 },
+         { &out2_cpu, &W2c, NULL, 0 },
     };
     bn_quant_matvec_batch(cpu_tasks, 2, x, scratch, NULL);
 

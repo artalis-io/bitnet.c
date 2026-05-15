@@ -121,8 +121,8 @@ static void test_matvec_batch(void) {
     float out1[2], out2[2];
     int8_t x_q[256];
     BnMatvecTask tasks[2] = {
-         { out1, &W1, NULL },
-         { out2, &W2, NULL },
+         { out1, &W1, NULL, 0 },
+         { out2, &W2, NULL, 0 },
     };
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
 
@@ -361,8 +361,8 @@ static void test_q5k_matvec_batch_correctness(void) {
     bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-         { out1, &W1, NULL },
-         { out2, &W2, NULL },
+         { out1, &W1, NULL, 0 },
+         { out2, &W2, NULL, 0 },
     };
     int8_t x_q[256];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -524,8 +524,8 @@ static void test_q8_matvec_batch_correctness(void) {
     bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-         { out1, &W1, NULL },
-         { out2, &W2, NULL },
+         { out1, &W1, NULL, 0 },
+         { out2, &W2, NULL, 0 },
     };
     int8_t x_q[64];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -621,8 +621,8 @@ static void test_bf16_matvec_batch_correctness(void) {
     bn_quant_matvec(ref2, &W2, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-         { out1, &W1, NULL },
-         { out2, &W2, NULL },
+         { out1, &W1, NULL, 0 },
+         { out2, &W2, NULL, 0 },
     };
     int8_t x_q[33];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -754,8 +754,8 @@ static void test_mixed_kquant_matvec_batch_correctness(void) {
     bn_quant_matvec(ref6, &W6, x, x_q_ref, NULL);
 
     BnMatvecTask tasks[2] = {
-         { out4, &W4, NULL },
-         { out6, &W6, NULL },
+         { out4, &W4, NULL, 0 },
+         { out6, &W6, NULL, 0 },
     };
     int8_t x_q[256];
     bn_quant_matvec_batch(tasks, 2, x, x_q, NULL);
@@ -820,6 +820,96 @@ static void test_mixed_kquant_matvec_multi_correctness(void) {
     printf("PASSED\n");
 }
 
+static void fill_q4k_blocks(BnBlockQ4K *q4, int rows, int n_bpr, int seed) {
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ4K *blk = &q4[(size_t)r * n_bpr + b];
+            blk->d = bn_fp32_to_fp16(0.03125f * (float)(1 + ((r + b + seed) % 5)));
+            blk->dmin = bn_fp32_to_fp16(0.015625f * (float)(1 + ((2 * r + b + seed) % 7)));
+            for (int i = 0; i < 12; i++)
+                blk->scales[i] = (uint8_t)((r * 13 + b * 17 + i * 5 + seed) & 0x3f);
+            for (int i = 0; i < 128; i++)
+                blk->qs[i] = (uint8_t)(r * 19 + b * 23 + i * 7 + seed);
+        }
+    }
+}
+
+static void fill_q6k_blocks(BnBlockQ6K *q6, int rows, int n_bpr, int seed) {
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ6K *blk = &q6[(size_t)r * n_bpr + b];
+            blk->d = bn_fp32_to_fp16(0.03125f * (float)(1 + ((r + 2 * b + seed) % 5)));
+            for (int i = 0; i < 16; i++)
+                blk->scales[i] = (int8_t)((r * 7 + b * 11 + i * 3 + seed) % 31 - 15);
+            for (int i = 0; i < 128; i++)
+                blk->ql[i] = (uint8_t)(r * 11 + b * 13 + i * 5 + seed);
+            for (int i = 0; i < 64; i++)
+                blk->qh[i] = (uint8_t)(r * 17 + b * 19 + i * 9 + seed);
+        }
+    }
+}
+
+static void test_kquant_preq8k_matmul_correctness(void) {
+    printf("test_kquant_preq8k_matmul_correctness... ");
+
+    int rows = 7, cols = 512, n_tokens = 5;
+    int n_bpr = cols / BN_QK_K;
+    BnBlockQ4K *q4a = (BnBlockQ4K *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ4K));
+    BnBlockQ4K *q4b = (BnBlockQ4K *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ4K));
+    BnBlockQ6K *q6 = (BnBlockQ6K *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ6K));
+    assert(q4a && q4b && q6);
+
+    fill_q4k_blocks(q4a, rows, n_bpr, 3);
+    fill_q4k_blocks(q4b, rows, n_bpr, 29);
+    fill_q6k_blocks(q6, rows, n_bpr, 7);
+
+    BnQWeight W4a = { .data = q4a, .type = BN_GGUF_TENSOR_Q4_K, .rows = rows, .cols = cols, .scale = 1.0f };
+    BnQWeight W4b = { .data = q4b, .type = BN_GGUF_TENSOR_Q4_K, .rows = rows, .cols = cols, .scale = 1.0f };
+    BnQWeight W6 = { .data = q6, .type = BN_GGUF_TENSOR_Q6_K, .rows = rows, .cols = cols, .scale = 1.0f };
+
+    float *X = (float *)malloc((size_t)n_tokens * cols * sizeof(float));
+    int8_t *x_q = (int8_t *)malloc((size_t)n_tokens * cols);
+    float *x_d = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+    int16_t *x_bsums = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+    float *ref4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *ref6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out4b = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    assert(X && x_q && x_d && x_bsums && ref4 && ref6 && out4 && out4b && out6);
+
+    for (int t = 0; t < n_tokens; t++) {
+        for (int i = 0; i < cols; i++)
+            X[(size_t)t * cols + i] = 0.0275f * (float)((t * 17 + i * 11 + 5) % 43) - 0.55f;
+        bn_quant_x_to_q8k(X + (size_t)t * cols,
+                          x_q + (size_t)t * cols,
+                          x_d + (size_t)t * n_bpr,
+                          x_bsums + (size_t)t * n_bpr * 16, cols);
+        bn_quant_matvec(ref4 + (size_t)t * rows, &W4a, X + (size_t)t * cols,
+                        x_q + (size_t)t * cols, NULL);
+        bn_quant_matvec(ref6 + (size_t)t * rows, &W6, X + (size_t)t * cols,
+                        x_q + (size_t)t * cols, NULL);
+    }
+
+    bn_quant_matmul_preq8k(out4, &W4a, n_tokens, x_q, x_d, x_bsums, X, NULL);
+    bn_quant_matmul_preq8k(out6, &W6, n_tokens, x_q, x_d, x_bsums, X, NULL);
+
+    float *multi_out[3] = { out4, out4b, out6 };
+    const BnQWeight *multi_w[3] = { &W4a, &W4b, &W6 };
+    bn_quant_matmul_preq8k_multi(multi_out, multi_w, 3, n_tokens,
+                                 x_q, x_d, x_bsums, X, NULL);
+
+    for (int i = 0; i < rows * n_tokens; i++) {
+        assert(fabsf(out4[i] - ref4[i]) < 1e-3f);
+        assert(fabsf(out6[i] - ref6[i]) < 1e-3f);
+    }
+
+    free(q4a); free(q4b); free(q6);
+    free(X); free(x_q); free(x_d); free(x_bsums);
+    free(ref4); free(ref6); free(out4); free(out4b); free(out6);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
     test_dispatch_routing();
@@ -838,6 +928,7 @@ int main(void) {
     test_bf16_matvec_multi_correctness();
     test_mixed_kquant_matvec_batch_correctness();
     test_mixed_kquant_matvec_multi_correctness();
+    test_kquant_preq8k_matmul_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }

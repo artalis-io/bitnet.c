@@ -10,19 +10,22 @@
 #define BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK 2u
 #define BN_MODEL_ARCH_FLAG_QWEN 4u
 #define BN_MODEL_ARCH_FLAG_BITNET 8u
+#define BN_MODEL_ARCH_FLAG_QWEN3 16u
 
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
     int vocab_size, seq_len;
     float rope_theta, norm_eps;
+    float rope_theta_swa;
     int head_size, kv_dim, kv_mul;  // derived
-    int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU²
+    int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU², 2=GELU
     uint32_t arch_flags;            // BnModelArchOps flags for planner/backend constraints
     int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)
     int kv_f16;                     // store KV cache in FP16 (halves attention DRAM bandwidth)
     // Hybrid SSM + Attention (all zero = pure attention, backward compatible)
     int rope_dim_count;             // partial RoPE dim count (0 = full head_size)
+    int rope_dim_count_swa;         // sliding-window/local-attention RoPE dim count
     int rope_text_dims;             // MROPE: dims for text section only (0 = use rope_dim_count)
     int full_attn_interval;         // 0 = all attention, N = every Nth layer is attention
     int ssm_state_size;             // head_k_dim (128)

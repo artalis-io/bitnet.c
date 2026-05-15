@@ -11,6 +11,7 @@ int bn_model_arch_is_gemma4(const char *arch) {
 }
 
 int bn_model_arch_activation(const char *arch) {
+    if (bn_model_arch_is_gemma4(arch)) return 2;
     return (arch && strncmp(arch, "bitnet", 6) == 0) ? 1 : 0;
 }
 
@@ -31,6 +32,7 @@ const char *bn_model_arch_tensor_suffix(BnModelTensorRole role) {
         case BN_MODEL_TENSOR_ATTN_Q_NORM: return "attn_q_norm.weight";
         case BN_MODEL_TENSOR_ATTN_K_NORM: return "attn_k_norm.weight";
         case BN_MODEL_TENSOR_ATTN_SUB_NORM: return "attn_sub_norm.weight";
+        case BN_MODEL_TENSOR_ATTN_POST_NORM: return "post_attention_norm.weight";
         case BN_MODEL_TENSOR_SSM_QKV:     return "attn_qkv.weight";
         case BN_MODEL_TENSOR_SSM_GATE:    return "attn_gate.weight";
         case BN_MODEL_TENSOR_SSM_A:       return "ssm_a";
@@ -43,6 +45,7 @@ const char *bn_model_arch_tensor_suffix(BnModelTensorRole role) {
         case BN_MODEL_TENSOR_FFN_NORM:    return "ffn_norm.weight";
         case BN_MODEL_TENSOR_FFN_POST_ATTN_NORM: return "post_attention_norm.weight";
         case BN_MODEL_TENSOR_FFN_SUB_NORM: return "ffn_sub_norm.weight";
+        case BN_MODEL_TENSOR_FFN_POST_NORM: return "post_ffw_norm.weight";
         case BN_MODEL_TENSOR_FFN_GATE:    return "ffn_gate.weight";
         case BN_MODEL_TENSOR_FFN_UP:      return "ffn_up.weight";
         case BN_MODEL_TENSOR_FFN_DOWN:    return "ffn_down.weight";
@@ -55,6 +58,7 @@ const char *bn_model_arch_tensor_suffix(BnModelTensorRole role) {
         case BN_MODEL_TENSOR_SHARED_FFN_UP: return "ffn_up_shexp.weight";
         case BN_MODEL_TENSOR_SHARED_FFN_DOWN: return "ffn_down_shexp.weight";
         case BN_MODEL_TENSOR_SHARED_FFN_ROUTER: return "ffn_gate_inp_shexp.weight";
+        case BN_MODEL_TENSOR_LAYER_OUTPUT_SCALE: return "layer_output_scale.weight";
         default:                          return NULL;
     }
 }
@@ -209,6 +213,10 @@ static int bn_model_arch_match_qwen(const char *arch) {
     return arch && strncmp(arch, "qwen", 4) == 0;
 }
 
+static int bn_model_arch_match_qwen3(const char *arch) {
+    return arch && strcmp(arch, "qwen3") == 0;
+}
+
 static int bn_model_arch_match_bitnet(const char *arch) {
     return arch && strncmp(arch, "bitnet", 6) == 0;
 }
@@ -230,6 +238,17 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_gemma4_shapes,
+        },
+        {
+            "qwen3",
+            BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3,
+            bn_model_arch_match_qwen3,
+            bn_model_arch_prefix,
+            bn_model_arch_activation,
+            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_is_ssm_layer,
+            bn_model_arch_default_tensor_name,
+            bn_model_arch_apply_default_shapes,
         },
         {
             "qwen",

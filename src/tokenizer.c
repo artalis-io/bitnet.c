@@ -5,6 +5,8 @@
 #include <string.h>
 #include <float.h>
 
+static const char *BN_TOKENIZER_METASPACE = "\xE2\x96\x81";
+
 // --- Internal: sorted vocab for binary search ---
 
 // #6: Use qsort_r (or compatible) to avoid global mutable state.
@@ -116,6 +118,9 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
         memcpy(t->scores, scores_data, t->vocab_size * sizeof(float));
     }
 
+    const char *model_name = bn_gguf_get_str(f, "tokenizer.ggml.model");
+    t->metaspace = (model_name && strcmp(model_name, "gemma4") == 0) ? 1 : 0;
+
     // Special token IDs
     int idx;
     int has_bos = (bn_gguf_find_key(f, "tokenizer.ggml.bos_token_id") >= 0);
@@ -168,6 +173,54 @@ void bn_tokenizer_free(BnTokenizer *t) {
     free(t->sorted_indices);
 }
 
+static int tokenizer_init_metaspace_work(const BnTokenizer *t, const char *text,
+                                         int *work, int max_work) {
+    int n_work = 0;
+    int text_len = (int)strlen(text);
+
+    for (int i = 0; i < text_len && n_work < max_work; ) {
+        char piece[8];
+        int piece_len = 1;
+        unsigned char c = (unsigned char)text[i];
+
+        if (c == ' ') {
+            memcpy(piece, BN_TOKENIZER_METASPACE, 3);
+            piece[3] = '\0';
+        } else if (c < 0x80) {
+            piece[0] = (char)c;
+            piece[1] = '\0';
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < text_len) {
+            piece[0] = text[i];
+            piece[1] = text[i + 1];
+            piece[2] = '\0';
+            piece_len = 2;
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < text_len) {
+            piece[0] = text[i];
+            piece[1] = text[i + 1];
+            piece[2] = text[i + 2];
+            piece[3] = '\0';
+            piece_len = 3;
+        } else if ((c & 0xF8) == 0xF0 && i + 3 < text_len) {
+            piece[0] = text[i];
+            piece[1] = text[i + 1];
+            piece[2] = text[i + 2];
+            piece[3] = text[i + 3];
+            piece[4] = '\0';
+            piece_len = 4;
+        } else {
+            piece[0] = (char)c;
+            piece[1] = '\0';
+        }
+
+        int tok = vocab_lookup(t, piece);
+        if (tok >= 0)
+            work[n_work++] = tok;
+        i += piece_len;
+    }
+
+    return n_work;
+}
+
 // Encode text using BPE merge algorithm
 int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
                      int *tokens, int max_tokens) {
@@ -191,7 +244,9 @@ int bn_tokenizer_encode(const BnTokenizer *t, const char *text, int add_bos,
     if (!work) return n_tokens;
     int n_work = 0;
 
-    for (int i = 0; i < text_len; ) {
+    if (t->metaspace) {
+        n_work = tokenizer_init_metaspace_work(t, text, work, text_len + 1);
+    } else for (int i = 0; i < text_len; ) {
         unsigned char byte = (unsigned char)text[i];
         char bpe_char[4];
         int bpe_len;
@@ -363,6 +418,21 @@ static _Thread_local char tl_decode_buf[1024];
 const char *bn_tokenizer_decode(const BnTokenizer *t, int token) {
     if (token < 0 || token >= t->vocab_size) return "";
     const char *raw = t->vocab[token];
+
+    if (t->metaspace) {
+        int out_pos = 0;
+        for (const unsigned char *p = (const unsigned char *)raw;
+             *p && out_pos < (int)sizeof(tl_decode_buf) - 4; ) {
+            if (p[0] == 0xE2 && p[1] == 0x96 && p[2] == 0x81) {
+                tl_decode_buf[out_pos++] = ' ';
+                p += 3;
+            } else {
+                tl_decode_buf[out_pos++] = (char)*p++;
+            }
+        }
+        tl_decode_buf[out_pos] = '\0';
+        return tl_decode_buf;
+    }
 
     // Check if this token contains any high bytes (BPE encoded)
     int has_high = 0;

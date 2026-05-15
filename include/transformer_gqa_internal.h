@@ -20,6 +20,7 @@ typedef struct {
     int head_size;
     int kv_dim;
     int seq_len;    // cache size for modular indexing
+    float attention_scale;
 } BnGQACtx;
 
 void bn_transformer_cpu_gqa_dispatch(BnModel *m,

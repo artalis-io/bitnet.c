@@ -173,7 +173,7 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
     int cols = W->cols;
 
     if (n_tokens <= 1) {
-        BnMatvecTask task = { out, W, NULL };
+        BnMatvecTask task = { out, W, NULL, 0 };
         bn_quant_matvec_batch_preq8k(&task, 1, x_q, x_d, x_bsums, x_float, pool);
         return;
     }

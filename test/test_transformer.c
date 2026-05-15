@@ -1,5 +1,6 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_rmsnorm_internal.h"
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
@@ -75,6 +76,27 @@ static void test_rmsnorm(void) {
         float expected = x[i] * scale;
         assert(fabsf(out[i] - expected) < 1e-5f);
     }
+
+    printf("PASSED\n");
+}
+
+static void test_rmsnorm_scalar_matches_avx2_order(void) {
+    printf("test_rmsnorm_scalar_matches_avx2_order... ");
+
+#ifdef __AVX2__
+    enum { N = 2560 };
+    float x[N], w[N], out_scalar[N], out_avx2[N];
+    for (int i = 0; i < N; i++) {
+        x[i] = sinf((float)i * 0.017f) * 3.0f + cosf((float)i * 0.031f);
+        w[i] = 0.75f + 0.25f * sinf((float)i * 0.013f);
+    }
+
+    bn_transformer_rmsnorm_scalar(out_scalar, x, w, N, 1e-6f);
+    bn_transformer_rmsnorm_avx2(out_avx2, x, w, N, 1e-6f);
+
+    for (int i = 0; i < N; i++)
+        assert(fabsf(out_scalar[i] - out_avx2[i]) < 1e-6f);
+#endif
 
     printf("PASSED\n");
 }
@@ -444,7 +466,7 @@ static void test_model_arch_registry(void) {
     assert(gemma->flags & BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK);
     assert(strcmp(gemma->prefix("gemma4"), "gemma4") == 0);
     assert(gemma->attention_value_shares_key("gemma4"));
-    assert(gemma->activation("gemma4") == 0);
+    assert(gemma->activation("gemma4") == 2);
 
     BnConfig c = {0};
     c.arch_flags = gemma->flags;
@@ -861,6 +883,7 @@ static void test_block_planning(void) {
 int main(void) {
     printf("=== Transformer Tests ===\n");
     test_rmsnorm();
+    test_rmsnorm_scalar_matches_avx2_order();
     test_softmax();
     test_rope();
     test_fp16_embed();

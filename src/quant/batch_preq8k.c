@@ -2,12 +2,16 @@
 #include "quant_dispatch_internal.h"
 #include "quant_kernels_scalar.h"
 #include "quant_kernels_neon.h"
+#include "quant_kernels_avx512.h"
 #include "quant_kernels_avx2.h"
 #include "quant_kernels_wasm.h"
 #include "threadpool.h"
 #include "gguf.h"
 
 #ifdef BN_FORCE_SCALAR
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #undef __AVX2__
 #endif
 
@@ -21,7 +25,7 @@ void bn_quant_matvec_batch_preq8k(const BnMatvecTask *tasks, int n_tasks,
                                   BnThreadPool *pool) {
     if (n_tasks <= 0) return;
 
-#ifdef __AVX2__
+#if (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)) || defined(__AVX2__)
     if (n_tasks <= BN_MAX_BATCH) {
         int all_kquant = 1;
         for (int t = 0; t < n_tasks; t++) {
@@ -39,9 +43,16 @@ void bn_quant_matvec_batch_preq8k(const BnMatvecTask *tasks, int n_tasks,
                     tasks[t].out, tasks[t].W,
                     (int8_t *)x_q, (float *)x_d, (int16_t *)x_bsums
                 };
-                bn_tp_fn fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
+                bn_tp_fn fn;
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
+                    ? (bn_tp_fn)bn_quant_q4k_avx512_vnni_4row_range
+                    : (bn_tp_fn)bn_quant_q6k_avx512_vnni_4row_range;
+#else
+                fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
                     ? (bn_tp_fn)bn_quant_q4k_avx2_4row_range
                     : (bn_tp_fn)bn_quant_q6k_avx2_4row_range;
+#endif
                 int n_groups = (tasks[t].W->rows + 3) / 4;
                 tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], n_groups };
             }

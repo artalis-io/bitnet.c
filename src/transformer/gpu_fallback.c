@@ -184,7 +184,8 @@ int bn_transformer_gpu_fallback_cpu_attention(
 
     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
     BnGQACtx gctx = {
-        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len
+        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
+        (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) ? 1.0f : 1.0f / sqrtf((float)head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
@@ -345,7 +346,7 @@ static void debug_quant_matvec_prepared(BnModel *m,
                                         const float *x,
                                         int8_t *x_q) {
     BnMatvecTask task = {
-        out, W, debug_prepared_qweight(m, W)
+        out, W, debug_prepared_qweight(m, W), 0
     };
     bn_quant_matvec_batch(&task, 1, x, x_q, bn_model_pool(m));
 }
@@ -601,7 +602,8 @@ int bn_transformer_gpu_debug_compare_attention(
                                         layer_rope_dims, rope_cos, rope_sin);
 
     BnGQACtx gctx = {
-        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len
+        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
+        (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) ? 1.0f : 1.0f / sqrtf((float)head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
@@ -724,7 +726,8 @@ int bn_transformer_gpu_debug_compare_gqa(
                                         layer_rope_dims, rope_cos, rope_sin);
 
     BnGQACtx gctx = {
-        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len
+        c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
+        (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) ? 1.0f : 1.0f / sqrtf((float)head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 

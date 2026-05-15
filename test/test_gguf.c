@@ -14,12 +14,6 @@ typedef struct {
     size_t   cap;
 } WriteBuffer;
 
-static void wb_init(WriteBuffer *wb, size_t cap) {
-    wb->data = (uint8_t *)malloc(cap);
-    wb->pos = 0;
-    wb->cap = cap;
-}
-
 static void wb_write(WriteBuffer *wb, const void *data, size_t size) {
     assert(wb->pos + size <= wb->cap);
     memcpy(wb->data + wb->pos, data, size);
@@ -28,7 +22,6 @@ static void wb_write(WriteBuffer *wb, const void *data, size_t size) {
 
 static void wb_u32(WriteBuffer *wb, uint32_t v) { wb_write(wb, &v, 4); }
 static void wb_u64(WriteBuffer *wb, uint64_t v) { wb_write(wb, &v, 8); }
-static void wb_f32(WriteBuffer *wb, float v)    { wb_write(wb, &v, 4); }
 
 static void wb_str(WriteBuffer *wb, const char *s) {
     uint64_t len = strlen(s);

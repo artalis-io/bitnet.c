@@ -18,7 +18,7 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
         float *q_h = s->q + h * head_size;
         float *att = s->att + h * seq_len;
         int kv_h = h / kv_mul;
-        float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+        float attn_scale = g->attention_scale;
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
@@ -33,7 +33,7 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
             }
             float score = 0.0f;
             for (int d = 0; d < head_size; d++) score += q_h[d] * k_t[d];
-            att[i] = score * inv_sqrt_hs;
+            att[i] = score * attn_scale;
         }
 
         bn_transformer_softmax(att, n_kv);
@@ -73,7 +73,7 @@ void bn_transformer_flash_gqa_scalar_range(void *ctx, int h_start, int h_end) {
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
     int kv_f16 = c->kv_f16;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -106,7 +106,7 @@ void bn_transformer_flash_gqa_scalar_range(void *ctx, int h_start, int h_end) {
                 // Score: dot(Q, K) * scale
                 float score = 0.0f;
                 for (int d = 0; d < head_size; d++) score += q_h[d] * k_t[d];
-                score *= inv_sqrt_hs;
+                score *= attn_scale;
 
                 // Online softmax update
                 float v_buf[head_size];

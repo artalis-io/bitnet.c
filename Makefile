@@ -59,22 +59,22 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/kv.c src/transformer/prefill.c \
     src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
-  # x86: AVX2 + scalar
+  # x86: AVX512 VNNI where available, plus AVX2 + scalar fallback
   CFLAGS += -mprefer-vector-width=256
   QUANT_BACKEND = src/quant/x_quant_avx2.c src/quant/rmsnorm_q8k_avx2.c \
     src/quant/i2s_avx2.c src/quant/i2s_avx2_4row.c src/quant/i2s_scalar.c \
     src/quant/tq2_avx2.c src/quant/tq2_scalar.c \
     src/quant/tq1_avx2.c src/quant/tq1_scalar.c \
-    src/quant/q8_avx2.c src/quant/q8_scalar.c \
-    src/quant/q4_avx2.c src/quant/q4_avx2_4row.c src/quant/q4_avx2_matmul.c src/quant/q4_scalar.c \
+    src/quant/q8_avx512_vnni.c src/quant/q8_avx2.c src/quant/q8_scalar.c \
+    src/quant/q4_avx512_vnni.c src/quant/q4_avx2.c src/quant/q4_avx2_4row.c src/quant/q4_avx2_matmul.c src/quant/q4_scalar.c \
     src/quant/q4_1_avx2.c src/quant/q4_1_scalar.c \
     src/quant/f32_avx2.c src/quant/f32_scalar.c \
     src/quant/f16_avx2.c src/quant/f16_scalar.c \
     src/quant/bf16_avx2.c src/quant/bf16_scalar.c \
-    src/quant/q6k_avx2.c src/quant/q6k_avx2_sdot.c src/quant/q6k_avx2_4row.c src/quant/q6k_scalar.c \
+    src/quant/q6k_avx512_vnni.c src/quant/q6k_avx2.c src/quant/q6k_avx2_sdot.c src/quant/q6k_avx2_4row.c src/quant/q6k_scalar.c \
     src/quant/q8k_avx2.c src/quant/q8k_scalar.c \
-    src/quant/q4k_avx2.c src/quant/q4k_avx2_sdot.c src/quant/q4k_avx2_4row.c src/quant/q4k_scalar.c \
-    src/quant/q5k_avx2.c src/quant/q5k_scalar.c \
+    src/quant/q4k_avx512_vnni.c src/quant/q4k_avx2.c src/quant/q4k_avx2_sdot.c src/quant/q4k_avx2_4row.c src/quant/q4k_scalar.c \
+    src/quant/q5k_avx512.c src/quant/q5k_avx2.c src/quant/q5k_scalar.c \
     src/quant/q3k_avx2.c src/quant/q3k_scalar.c \
     src/quant/q2k_avx2.c src/quant/q2k_scalar.c \
     src/quant/iq4nl_avx2.c src/quant/iq4nl_scalar.c \
@@ -255,7 +255,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -292,6 +292,17 @@ test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 
 test_quant: test/test_quant.c $(QUANT_SRCS) src/threadpool.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+test_avx512_quant: test/test_avx512_quant.c src/quant/q8_avx512_vnni.c src/quant/q4_avx512_vnni.c \
+                   src/quant/q4k_avx512_vnni.c src/quant/q5k_avx512.c src/quant/q6k_avx512_vnni.c \
+                   src/quant/q8_avx2.c src/quant/q4_avx2_4row.c \
+                   src/quant/q4k_avx2_4row.c src/quant/q5k_avx2.c src/quant/q6k_avx2_4row.c \
+                   src/quant/q8_scalar.c src/quant/q4k_scalar.c src/quant/q5k_scalar.c src/quant/q6k_scalar.c src/quant/fp16.c
+ifeq ($(UNAME_M),x86_64)
+	$(CC) $(CFLAGS) -mavx512f -mavx512bw -mavx512vl -mavx512dq -mavx512vnni -mavx512vbmi -mavx2 -mfma -mf16c -o $@ $^ $(LDFLAGS) && ./$@
+else
+	@echo "test_avx512_quant skipped: x86_64 only"
+endif
 
 test_tokenizer: test/test_tokenizer.c src/tokenizer.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
@@ -454,6 +465,11 @@ AVX2_QUANT_SRCS = $(QUANT_COMMON) \
     src/quant/iq2xs_avx2.c src/quant/iq2xs_scalar.c \
     src/quant/iq2s_avx2.c src/quant/iq2s_scalar.c
 
+AVX512_QUANT_SRCS = $(AVX2_QUANT_SRCS) \
+    src/quant/q8_avx512_vnni.c src/quant/q4_avx512_vnni.c \
+    src/quant/q4k_avx512_vnni.c src/quant/q5k_avx512.c \
+    src/quant/q6k_avx512_vnni.c
+
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
@@ -481,6 +497,23 @@ ifeq ($(UNAME_M),x86_64)
 	$(CC) $(AVX2_CHECK_FLAGS) $(AVX2_SRCS)
 else
 	$(CC) -target x86_64-apple-darwin $(AVX2_CHECK_FLAGS) $(AVX2_SRCS)
+endif
+
+AVX512_CHECK_FLAGS = -mavx512f -mavx512bw -mavx512vl -mavx512dq -mavx512vnni -mavx512vbmi \
+    -mavx2 -mfma -mf16c -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -fsyntax-only
+ifeq ($(UNAME_S),Linux)
+AVX512_CHECK_FLAGS += -D_GNU_SOURCE
+endif
+
+AVX512_SRCS = src/platform.c src/gguf.c $(AVX512_QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
+            src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
+            src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/generate.c
+
+avx512-check:
+ifeq ($(UNAME_M),x86_64)
+	$(CC) $(AVX512_CHECK_FLAGS) $(AVX512_SRCS)
+else
+	@echo "avx512-check skipped: x86_64 only"
 endif
 
 # --- wgpu-native vendoring ---

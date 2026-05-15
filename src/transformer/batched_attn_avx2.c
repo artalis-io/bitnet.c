@@ -65,6 +65,7 @@ static inline void batched_acc_v_fp16(float *out, float w, const uint16_t *v, in
 static void batched_apply_rope_token(float *q, int n_heads, int head_size,
                                      int rope_dims, const float *rc, const float *rs,
                                      int q_stride) {
+    (void)head_size;
     int half_rope = rope_dims / 2;
     for (int h = 0; h < n_heads; h++) {
         float *hd = q + h * q_stride;
@@ -98,8 +99,9 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
     int kv_f16 = b->c->kv_f16;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
+    int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -107,8 +109,8 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
 
         for (int t = 0; t < n_tokens; t++) {
             int pos = pos0 + t;
-            float *rc = b->rope_cos + (size_t)t * half_rope;
-            float *rs = b->rope_sin + (size_t)t * half_rope;
+            float *rc = b->rope_cos + (size_t)t * rope_stride;
+            float *rs = b->rope_sin + (size_t)t * rope_stride;
 
             float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
             float q_local[head_size];
@@ -134,13 +136,13 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
                 const uint16_t *kc_base = (const uint16_t *)s->key_cache + loff;
                 for (int i = 0; i < n_kv; i++) {
                     int ki = (kv_start + i) % seq_len;
-                    att[i] = batched_dot_fp16(q_local, kc_base + (size_t)ki * kv_dim + kv_h * head_size, head_size) * inv_sqrt_hs;
+                    att[i] = batched_dot_fp16(q_local, kc_base + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
                 }
             } else {
                 const float *kc_base = s->key_cache + loff;
                 for (int i = 0; i < n_kv; i++) {
                     int ki = (kv_start + i) % seq_len;
-                    att[i] = batched_dot_fp32(q_local, kc_base + (size_t)ki * kv_dim + kv_h * head_size, head_size) * inv_sqrt_hs;
+                    att[i] = batched_dot_fp32(q_local, kc_base + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
                 }
             }
 
@@ -187,8 +189,9 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
     int kv_f16 = b->c->kv_f16;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
+    int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -196,8 +199,8 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
 
         for (int t = 0; t < n_tokens; t++) {
             int pos = pos0 + t;
-            float *rc = b->rope_cos + (size_t)t * half_rope;
-            float *rs = b->rope_sin + (size_t)t * half_rope;
+            float *rc = b->rope_cos + (size_t)t * rope_stride;
+            float *rs = b->rope_sin + (size_t)t * rope_stride;
 
             float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
             float q_local[head_size];
@@ -238,9 +241,9 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
 
                     float score;
                     if (kv_f16)
-                        score = batched_dot_fp16(q_local, (const uint16_t *)s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * inv_sqrt_hs;
+                        score = batched_dot_fp16(q_local, (const uint16_t *)s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
                     else
-                        score = batched_dot_fp32(q_local, s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * inv_sqrt_hs;
+                        score = batched_dot_fp32(q_local, s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
 
                     float old_max = running_max;
                     if (score > old_max) {

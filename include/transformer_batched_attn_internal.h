@@ -29,6 +29,8 @@ typedef struct {
 
     float *rope_cos;    // [n_tokens * half_rope] pre-allocated by caller
     float *rope_sin;    // [n_tokens * half_rope] pre-allocated by caller
+    int rope_stride;    // stride between token RoPE rows, in half-rotary elements
+    float attention_scale;
 
     const float *q_norm;
     const float *k_norm;

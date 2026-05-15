@@ -77,6 +77,7 @@ static float rand_float(uint64_t *state) {
     return (float)((int32_t)(*state & 0xFFFFFF) - (1 << 23)) / (float)(1 << 23);
 }
 
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
 static void print_vec_delta(const char *label,
                             int step,
                             const float *a,
@@ -100,7 +101,6 @@ static void print_vec_delta(const char *label,
            sum_abs / (double)n, sqrt(sum_sq / (double)n));
 }
 
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
 static int compare_prefill_kv_cache(BnGPUBackend *gpu,
                                     const BnConfig *config,
                                     const float *cpu_key,
@@ -178,6 +178,8 @@ static const char *simd_backend_name(void) {
     return "NEON SDOT";
 #elif defined(__ARM_NEON)
     return "NEON";
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+    return "AVX512 BW/VNNI";
 #elif defined(__AVX2__)
     return "AVX2";
 #elif defined(__wasm_relaxed_simd__)
@@ -470,6 +472,9 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
+#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL)
+    (void)compare_hidden;
+#endif
     if (cpu_fallback_from_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", cpu_fallback_from_layer);

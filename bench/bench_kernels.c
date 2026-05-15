@@ -64,6 +64,8 @@ static const char *backend_name(int webgpu, int metal) {
     return "ARM NEON + SDOT";
 #elif defined(__ARM_NEON)
     return "ARM NEON";
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+    return "AVX512 BW/VNNI";
 #elif defined(__AVX2__)
     return "AVX2";
 #elif defined(__wasm_simd128__)

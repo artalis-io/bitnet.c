@@ -14,6 +14,7 @@ typedef struct {
     int     im_start_id, im_end_id; // ChatML tokens (-1 if absent)
     int     add_bos;                // whether to prepend BOS (from GGUF metadata)
     int     chatml;                 // 1 if model uses ChatML template
+    int     metaspace;              // 1 for tokenizers that encode spaces as U+2581
     int     max_token_length;
     // internal: sorted index for binary search during encoding
     int    *sorted_indices;

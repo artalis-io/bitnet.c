@@ -159,8 +159,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         if (T == 1) {
             // Single token: use matvec (less overhead)
             BnMatvecTask gu[2] = {
-                 { gate_buf, &wgate, NULL },
-                 { up_buf,   &wup  , NULL },
+                 { gate_buf, &wgate, NULL, 0 },
+                 { up_buf,   &wup  , NULL, 0 },
             };
             bn_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch, bn_model_pool(m));
         } else {

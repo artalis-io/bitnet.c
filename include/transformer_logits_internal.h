@@ -25,6 +25,7 @@ typedef struct {
 
 void bn_transformer_logits_i8_neon_range(void *ctx, int start, int end);
 void bn_transformer_logits_i8_avx2_range(void *ctx, int start, int end);
+void bn_transformer_logits_i8_scalar_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_native_neon_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_neon_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_avx2_range(void *ctx, int start, int end);

@@ -5,10 +5,11 @@ Instructions for Claude Code when working on this project.
 ## Project Overview
 
 bitnet.c is a C11 GGUF inference engine for dense, MoE, and hybrid
-SSM/attention LLMs. It is CPU-first, with optional Metal and wgpu-native WebGPU
-backends. The current architecture separates model anatomy, quant formats,
-backend-resident state, transformer planning, CPU execution, GPU op emission,
-KV/logits helpers, and generation APIs.
+SSM/attention LLMs. It is CPU-first, with scalar, ARM NEON/SDOT, x86 AVX2,
+x86 AVX512 BW/VNNI, and WASM SIMD CPU paths plus optional Metal and
+wgpu-native WebGPU backends. The current architecture separates model anatomy,
+quant formats, backend-resident state, transformer planning, CPU execution, GPU
+op emission, KV/logits helpers, and generation APIs.
 
 ## Build And Test
 
@@ -20,6 +21,8 @@ make test
 make debug
 make asan
 make avx2-check
+make avx512-check
+make test_avx512_quant
 
 make fetch-wgpu
 make BN_ENABLE_WEBGPU=1 bitnet test_gpu_wgpu
@@ -111,7 +114,8 @@ Key transformer files:
   scratch, and generation position.
 - `BnBackendModel` and backend session state own GPU/backend-resident buffers,
   stacked QKV/gate-up/SSM layouts, fused buffers, activation buffers, and future
-  CUDA/AVX-512 backend state.
+  CUDA backend state. CPU SIMD kernels, including AVX512, stay in `src/quant/`
+  and do not attach handles to model weights.
 - `BnQWeight`, `BnLayerWeights`, and `BnWeights` must not expose backend handles.
 - `BnQuantFormatOps` owns quant block geometry, sizing, CPU hooks, repack/native
   layout support, split/fused capability, and backend capability metadata.
@@ -139,6 +143,10 @@ Key transformer files:
   architecture tests.
 - Add a quant format: update `include/quant.h`, `src/quant/registry.c`, format
   kernels in `src/quant/`, Makefile sources, and quant capability tests.
+- Add a CPU SIMD kernel: keep it orthogonal under `src/quant/`, declare it in
+  the matching `include/quant_kernels_*.h`, route it from dispatch/batch/multi
+  code with feature guards, and compare it against scalar and existing SIMD
+  references.
 - Add backend layout behavior: update `include/backend_layout.h` and
   `src/backend_layout.c`; keep model load backend-neutral.
 - Modify transformer behavior: update the relevant plan/execution module under
@@ -164,7 +172,9 @@ Key transformer files:
 - `--draft PATH` enables speculative decoding with a same-tokenizer draft model.
 - WebGPU depends on wgpu-native adapter availability. Runtime checks may skip on
   machines with no suitable adapter.
-- Metal is macOS-only and uses system Metal/Foundation frameworks.
+- Metal is macOS-only and uses system Metal/Foundation frameworks. It is
+  functional but can lag the CPU SIMD paths on local benchmarks; keep CPU
+  fallback boundaries explicit when adding GPU coverage.
 
 ## WASM
 

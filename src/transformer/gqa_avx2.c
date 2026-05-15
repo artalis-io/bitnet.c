@@ -20,7 +20,7 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
         float *q_h = s->q + h * head_size;
         float *att = s->att + h * seq_len;
         int kv_h = h / kv_mul;
-        float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+        float attn_scale = g->attention_scale;
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
@@ -62,7 +62,7 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                     a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_loadu_ps(k_t + d + 8), a1);
                 }
             }
-            att[i] = bn_avx2_hsum_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))) * inv_sqrt_hs;
+            att[i] = bn_avx2_hsum_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))) * attn_scale;
         }
 
         bn_transformer_softmax(att, n_kv);
@@ -110,7 +110,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
     int kv_f16 = c->kv_f16;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -170,7 +170,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                         a1 = _mm256_fmadd_ps(_mm256_loadu_ps(q_h + d + 8), _mm256_loadu_ps(k_t + d + 8), a1);
                     }
                 }
-                float score = bn_avx2_hsum_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))) * inv_sqrt_hs;
+                float score = bn_avx2_hsum_ps(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))) * attn_scale;
 
                 // Online softmax update
                 float old_max = running_max;

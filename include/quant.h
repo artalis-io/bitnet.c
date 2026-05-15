@@ -270,10 +270,13 @@ void     bn_quant_matvec(float *out, const BnQWeight *W, const float *x,
                          int8_t *x_q_buf, BnThreadPool *pool);
 
 // Batch matvec: run multiple independent matvecs with a single dispatch
+#define BN_MATVEC_TASK_FORCE_FLOAT_KQUANT 1u
+
 typedef struct {
     float *out;
     const BnQWeight *W;
     const BnPreparedWeight *prepared;
+    uint32_t flags;
 } BnMatvecTask;
 
 void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,

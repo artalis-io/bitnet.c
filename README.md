@@ -14,7 +14,8 @@ op emission, KV helpers, logits, and prefill now live in separate modules.
   current Qwen, BitNet, Llama-style, Gemma-family, and related GGUF exports.
 - Quantized CPU inference for `I2_S`, `TQ1_0`, `TQ2_0`, `Q4_0`, `Q4_1`,
   `Q8_0`, `Q2_K` through `Q8_K`, `IQ2` through `IQ4`, `F16`, `BF16`, and `F32`.
-- CPU backends for scalar, ARM NEON, x86 AVX2, and WASM SIMD where kernels exist.
+- CPU backends for scalar, ARM NEON/SDOT, x86 AVX2, x86 AVX512 BW/VNNI,
+  and WASM SIMD where kernels exist.
 - Optional native Metal and wgpu-native WebGPU backends.
 - MoE expert routing with mmap, pread, and expert LRU cache modes.
 - Hybrid SSM/attention execution, including CPU fallback for backend gaps.
@@ -22,7 +23,7 @@ op emission, KV helpers, logits, and prefill now live in separate modules.
 - Prompt cache, stop strings, logprobs, chat formatting, SSE formatting, batch
   prefill, FP16 KV, and TurboQuant KV compression.
 
-CUDA and AVX-512 are architectural targets, not implemented backends yet.
+CUDA is an architectural target, not an implemented backend yet.
 
 ## Build
 
@@ -79,7 +80,7 @@ quant registry    -> format sizing, kernels, layout capabilities
 backend model     -> uploaded weights and backend-specific packed layouts
 backend session   -> activation/KV buffers and per-request backend state
 transformer plan  -> backend-neutral layer/block decisions
-backend lowerer   -> CPU, Metal, WebGPU, future CUDA/AVX-512 execution
+backend lowerer   -> CPU, Metal, WebGPU, future CUDA execution
 ```
 
 Key modules:
@@ -142,6 +143,8 @@ Common gates:
 make test
 make clean
 make bitnet
+make avx2-check
+make avx512-check
 make BN_ENABLE_METAL=1 test_coherence
 ./test_coherence models/qwen2.5-3b-instruct-q4_0.gguf --metal
 make BN_ENABLE_WEBGPU=1 test_gpu_wgpu
@@ -152,6 +155,10 @@ make BN_ENABLE_WEBGPU=1 test_gpu_wgpu
 matvecs, and standalone GPU matvecs versus scalar CPU where the selected model
 has the needed tensors.
 
+`test_avx512_quant` compares the AVX512 BW/VNNI kernels against scalar and AVX2
+references for the supported quantized formats. `make avx512-check` builds the
+CPU path with explicit AVX512 feature flags enabled.
+
 ## Performance Notes
 
 Performance is model, quant, backend, page-cache, and context dependent. Treat
@@ -161,14 +168,16 @@ Current strongest areas:
 
 - CPU MoE serving with warm expert working sets.
 - Quantized CPU matvecs for the formats used by tested GGUF models.
+- ARM NEON/SDOT, x86 AVX2, and x86 AVX512 BW/VNNI CPU paths on the tested dense
+  and sparse GGUF models.
 - Metal/WebGPU graph execution for supported dense and hybrid paths, with clear
   CPU fallback for unsupported blocks.
 
 Current weak or unfinished areas:
 
 - CUDA is not implemented.
-- AVX-512 placement exists in architecture tests, but kernels and benchmarks are
-  still future work.
+- Metal is still behind the CPU paths on some local benchmark cases; treat it as
+  functional but not yet the strongest performance backend.
 - WebGPU availability depends on the adapter and wgpu-native platform support.
 - Some hybrid SSM/MoE GPU paths still fall back to CPU when a backend capability
   is missing.

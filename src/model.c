@@ -39,6 +39,35 @@ static int model_ensure_io(BnModel *m) {
     return 0;
 }
 
+#if !((defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__))
+static void model_quant_f16_rows_to_i8_scalar(const uint16_t *f16,
+                                              int8_t *i8_out,
+                                              float *scales,
+                                              int rows,
+                                              int cols) {
+    for (int r = 0; r < rows; r++) {
+        const uint16_t *src = f16 + (size_t)r * cols;
+        int8_t *dst = i8_out + (size_t)r * cols;
+        float amax = 0.0f;
+        for (int c = 0; c < cols; c++) {
+            float v = bn_fp16_to_fp32(src[c]);
+            float av = v < 0.0f ? -v : v;
+            if (av > amax) amax = av;
+        }
+        float scale = amax / 127.0f;
+        float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
+        scales[r] = scale;
+        for (int c = 0; c < cols; c++) {
+            float v = bn_fp16_to_fp32(src[c]) * inv;
+            int q = (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
+            if (q > 127) q = 127;
+            if (q < -128) q = -128;
+            dst[c] = (int8_t)q;
+        }
+    }
+}
+#endif
+
 static int model_ensure_backend_state(BnModel *m) {
     if (!m) return -1;
     if (!m->backend_state) {
@@ -286,6 +315,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     snprintf(key, sizeof(key), "%s.rope.freq_base", prefix);
     c->rope_theta = bn_gguf_get_f32(f, key);
     if (c->rope_theta == 0.0f) c->rope_theta = BN_DEFAULT_ROPE_THETA;
+    snprintf(key, sizeof(key), "%s.rope.freq_base_swa", prefix);
+    c->rope_theta_swa = bn_gguf_get_f32(f, key);
 
     snprintf(key, sizeof(key), "%s.attention.layer_norm_rms_epsilon", prefix);
     c->norm_eps = bn_gguf_get_f32(f, key);
@@ -339,6 +370,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     // Hybrid SSM + Attention config (all default to 0 for pure attention models)
     snprintf(key, sizeof(key), "%s.rope.dimension_count", prefix);
     c->rope_dim_count = (int)bn_gguf_get_u32(f, key);
+    snprintf(key, sizeof(key), "%s.rope.dimension_count_swa", prefix);
+    c->rope_dim_count_swa = (int)bn_gguf_get_u32(f, key);
 
     // MROPE: dimension_sections[0] = text-only RoPE pairs (sections 1,2 are vision)
     // For text-only inference, only apply RoPE to the first section's dimensions.
@@ -522,6 +555,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             goto fail_layers;
         lw->norm.attn_sub_norm = load_f32_tensor(f, wname);  // optional
 
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_ATTN_POST_NORM) != 0)
+            goto fail_layers;
+        lw->norm.attn_post_norm = load_f32_tensor(f, wname);  // optional
+
         if (is_ssm) {
             // --- SSM layer weights ---
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -700,6 +738,16 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             goto fail_layers;
         lw->norm.ffn_sub_norm = load_f32_tensor(f, wname);  // optional
 
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_FFN_POST_NORM) != 0)
+            goto fail_layers;
+        lw->norm.ffn_post_norm = load_f32_tensor(f, wname);  // optional
+
+        if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                          BN_MODEL_TENSOR_LAYER_OUTPUT_SCALE) != 0)
+            goto fail_layers;
+        lw->norm.layer_output_scale = load_f32_tensor(f, wname);  // optional
+
         // FFN weights: MoE or dense
         if (c->n_experts > 0) {
             // --- MoE layer: router + expert offsets + shared expert ---
@@ -802,10 +850,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // --- Weight arena: INT8 embeddings + backend-prepared CPU layouts ---
 
-    // INT8 embedding size (DOTPROD + F16 only)
+    // INT8 embedding size (F16 only)
     size_t emb_i8_bytes = 0;
     size_t emb_i8_scales_bytes = 0;
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     int want_i8_emb = (w->emb_type == BN_GGUF_TENSOR_F16) ||
                        (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16);
     int i8_emb_rows = 0;
@@ -815,7 +862,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         emb_i8_bytes = (size_t)i8_emb_rows * c->dim;
         emb_i8_scales_bytes = (size_t)i8_emb_rows * sizeof(float);
     }
-#endif
 
     BnBackendLayoutPreparedStats prepared_stats = { 0 };
     size_t prepared_weight_bytes =
@@ -835,7 +881,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 
         // Quantize F16 embeddings to INT8 for fast SDOT logits kernel
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
         if (want_i8_emb) {
             w->emb_out_i8 = (int8_t *)sh_arena_alloc(m->runtime->weight_arena, emb_i8_bytes);
             w->emb_out_scales = (float *)sh_arena_alloc(m->runtime->weight_arena, emb_i8_scales_bytes);
@@ -843,8 +888,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 const uint16_t *src = (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16)
                                       ? (const uint16_t *)w->output_weight.data
                                       : (const uint16_t *)w->token_embedding;
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
                 bn_quant_f16_rows_to_i8(src, w->emb_out_i8, w->emb_out_scales,
                                         i8_emb_rows, c->dim);
+#else
+                model_quant_f16_rows_to_i8_scalar(src, w->emb_out_i8,
+                                                  w->emb_out_scales,
+                                                  i8_emb_rows, c->dim);
+#endif
                 char i8_mb[16]; snprintf(i8_mb, sizeof(i8_mb), "%.0f", (double)emb_i8_bytes / (1024*1024));
                 SH_LOG_INFO("INT8 output embeddings ready", "MB", i8_mb);
             } else {
@@ -853,7 +904,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 SH_LOG_DEBUG("INT8 embedding arena alloc failed, using F16 fallback");
             }
         }
-#endif
 
         if (prepared_weight_bytes > 0) {
             BnBackendLayoutPreparedStats built_stats = { 0 };

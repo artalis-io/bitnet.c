@@ -174,6 +174,30 @@ static void assert_forward_finite(BnModel *model) {
     bn_session_free(s, NULL);
 }
 
+static void assert_prefill_matches_sequential(BnModel *model) {
+    int tokens[3] = {0, 1, 2};
+    BnSession *prefill = bn_session_create(model, NULL);
+    BnSession *sequential = bn_session_create(model, NULL);
+    assert(prefill && sequential);
+
+    float *prefill_logits = bn_transformer_prefill(model, prefill, tokens, 3, 0);
+    assert(prefill_logits);
+
+    float *seq_logits = NULL;
+    for (int i = 0; i < 3; i++)
+        seq_logits = bn_transformer_forward(model, sequential, tokens[i], i);
+    assert(seq_logits);
+
+    for (int i = 0; i < model->config.vocab_size; i++) {
+        assert(isfinite(prefill_logits[i]));
+        assert(isfinite(seq_logits[i]));
+        assert(fabsf(prefill_logits[i] - seq_logits[i]) < 1e-4f);
+    }
+
+    bn_session_free(prefill, NULL);
+    bn_session_free(sequential, NULL);
+}
+
 #if defined(BN_GEMMA4_TEST_WEBGPU) && defined(BN_ENABLE_WEBGPU)
 static int assert_forward_finite_webgpu(BnModel *model) {
     BnGPUBackend *gpu = bn_gpu_wgpu_create("shaders");
@@ -210,6 +234,7 @@ static void test_gemma4_dense(void) {
     assert(m.weights.layers[1].attn.head_size == 32);
     assert(m.weights.layers[1].attn.kv_dim == 32);
     assert_forward_finite(&m);
+    assert_prefill_matches_sequential(&m);
     bn_model_free(&m); bn_gguf_free(gf); free(buf);
     printf("PASSED\n");
 }
@@ -236,6 +261,7 @@ static void test_gemma4_moe_fused_gate_up(void) {
     assert(em->up_offset == em->gate_offset + em->expert_gate_bytes);
     assert(em->gate_stride == 128 * 64 * sizeof(float));
     assert_forward_finite(&m);
+    assert_prefill_matches_sequential(&m);
     bn_model_free(&m); bn_gguf_free(gf); free(buf);
     printf("PASSED\n");
 }

@@ -462,9 +462,14 @@ int main(int argc, char **argv) {
             }
         }
         /* LLM inference is DRAM-bandwidth-bound: using all cores causes
-         * memory bus contention. Half the physical cores is the sweet spot
-         * for DDR4/DDR5 systems (verified: 16-core Ryzen peaks at 8 threads). */
+         * memory bus contention. Client CPUs tend to peak around half the
+         * physical cores; high-core HEDT parts have more memory channels and
+         * tolerate a larger fraction, but still flatten before all cores. */
         int target = phys_cores / 2;
+        if (phys_cores >= 64) {
+            target = (phys_cores * 3) / 4;
+            if (target > 48) target = 48;
+        }
         if (target < 4) target = (phys_cores > 4) ? 4 : phys_cores;
         if (target > 1) n_workers = target - 1;
 #endif

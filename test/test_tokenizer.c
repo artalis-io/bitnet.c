@@ -73,6 +73,63 @@ static size_t build_tokenizer_gguf(uint8_t *buf, size_t buf_size) {
     return build_tokenizer_gguf_scores(buf, buf_size, BN_GGUF_TYPE_FLOAT32);
 }
 
+static size_t build_gemma4_tokenizer_gguf(uint8_t *buf, size_t buf_size) {
+    typedef struct { uint8_t *data; size_t pos; size_t cap; } WB;
+    WB wb = { buf, 0, buf_size };
+
+    #define WB_WRITE(wb, d, sz) do { memcpy((wb).data + (wb).pos, d, sz); (wb).pos += sz; } while(0)
+    #define WB_U32(wb, v) do { uint32_t _v = v; WB_WRITE(wb, &_v, 4); } while(0)
+    #define WB_U64(wb, v) do { uint64_t _v = v; WB_WRITE(wb, &_v, 8); } while(0)
+    #define WB_F32(wb, v) do { float _v = v; WB_WRITE(wb, &_v, 4); } while(0)
+    #define WB_STR(wb, s) do { uint64_t _l = strlen(s); WB_U64(wb, _l); WB_WRITE(wb, s, _l); } while(0)
+
+    const char *tokens[] = {
+        "<pad>", "<eos>", "<bos>", "T", "h", "e", "Th", "The",
+        "▁", "i", "s", "▁i", "▁is"
+    };
+    float scores[] = {
+        -1000, -1000, -1000, 0, 0, 0, 10, 20, 0, 0, 0, 30, 40
+    };
+    uint64_t n_vocab = sizeof(tokens) / sizeof(tokens[0]);
+
+    WB_U32(wb, 0x46554747);
+    WB_U32(wb, 3);
+    WB_U64(wb, 0);
+    WB_U64(wb, 5);
+
+    WB_STR(wb, "tokenizer.ggml.model");
+    WB_U32(wb, BN_GGUF_TYPE_STRING);
+    WB_STR(wb, "gemma4");
+
+    WB_STR(wb, "tokenizer.ggml.tokens");
+    WB_U32(wb, BN_GGUF_TYPE_ARRAY);
+    WB_U32(wb, BN_GGUF_TYPE_STRING);
+    WB_U64(wb, n_vocab);
+    for (uint64_t i = 0; i < n_vocab; i++) WB_STR(wb, tokens[i]);
+
+    WB_STR(wb, "tokenizer.ggml.scores");
+    WB_U32(wb, BN_GGUF_TYPE_ARRAY);
+    WB_U32(wb, BN_GGUF_TYPE_FLOAT32);
+    WB_U64(wb, n_vocab);
+    WB_WRITE(wb, scores, sizeof(scores));
+
+    WB_STR(wb, "tokenizer.ggml.bos_token_id");
+    WB_U32(wb, BN_GGUF_TYPE_UINT32);
+    WB_U32(wb, 2);
+
+    WB_STR(wb, "tokenizer.ggml.eos_token_id");
+    WB_U32(wb, BN_GGUF_TYPE_UINT32);
+    WB_U32(wb, 1);
+
+    #undef WB_WRITE
+    #undef WB_U32
+    #undef WB_U64
+    #undef WB_F32
+    #undef WB_STR
+
+    return wb.pos;
+}
+
 static void test_tokenizer_init(void) {
     printf("test_tokenizer_init... ");
 
@@ -233,6 +290,32 @@ static void test_tokenizer_scores_wrong_type(void) {
     printf("PASSED\n");
 }
 
+static void test_tokenizer_gemma4_metaspace(void) {
+    printf("test_tokenizer_gemma4_metaspace... ");
+
+    uint8_t buf[8192];
+    size_t size = build_gemma4_tokenizer_gguf(buf, sizeof(buf));
+    BnGGUFFile *gf = bn_gguf_open(buf, size);
+    assert(gf != NULL);
+
+    BnTokenizer t;
+    int rc = bn_tokenizer_init(&t, gf);
+    assert(rc == 0);
+    assert(t.metaspace == 1);
+
+    int tokens[8];
+    int n = bn_tokenizer_encode(&t, "The is", 1, tokens, 8);
+    assert(n == 3);
+    assert(tokens[0] == 2);
+    assert(tokens[1] == 7);
+    assert(tokens[2] == 12);
+    assert(strcmp(bn_tokenizer_decode(&t, 12), " is") == 0);
+
+    bn_tokenizer_free(&t);
+    bn_gguf_free(gf);
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Tokenizer Tests ===\n");
     test_tokenizer_init();
@@ -242,6 +325,7 @@ int main(void) {
     test_tokenizer_encode_max_tokens();
     test_tokenizer_decode_oob();
     test_tokenizer_scores_wrong_type();
+    test_tokenizer_gemma4_metaspace();
     printf("All tokenizer tests passed!\n");
     return 0;
 }

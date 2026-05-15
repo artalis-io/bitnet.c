@@ -20,6 +20,7 @@ static inline float batched_dot(const float *a, const float *b, int n) {
 static void batched_rope_token(float *v, int n_heads, int head_size,
                                int rope_dims, const float *rc, const float *rs,
                                int stride) {
+    (void)head_size;
     int half = rope_dims / 2;
     for (int h = 0; h < n_heads; h++) {
         float *hd = v + h * stride;
@@ -38,16 +39,17 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
     int seq_len = b->seq_len, n_tokens = b->n_tokens, pos0 = b->pos0;
     size_t loff = b->loff;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
+    int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_stride = b->q_gated ? 2 * hs : hs;
-    float inv_sqrt = 1.0f / sqrtf((float)hs);
+    float attn_scale = b->attention_scale;
     if (hs > BN_MAX_VLA_ELEMS) return;
 
     for (int h = h_start; h < h_end; h++) {
         int kv_h = h / kv_mul;
         for (int t = 0; t < n_tokens; t++) {
             int pos = pos0 + t;
-            float *rc = b->rope_cos + (size_t)t * half_rope;
-            float *rs = b->rope_sin + (size_t)t * half_rope;
+            float *rc = b->rope_cos + (size_t)t * rope_stride;
+            float *rs = b->rope_sin + (size_t)t * rope_stride;
             float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_stride;
             float q[hs];
             memcpy(q, q_src, hs * sizeof(float));
@@ -65,7 +67,7 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
 
             const float *kc = s->key_cache + loff;
             for (int i = 0; i < n_kv; i++)
-                att[i] = batched_dot(q, kc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs, hs) * inv_sqrt;
+                att[i] = batched_dot(q, kc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs, hs) * attn_scale;
             bn_transformer_softmax(att, n_kv);
 
             float xb[hs];
@@ -94,16 +96,17 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
     int seq_len = b->seq_len, n_tokens = b->n_tokens, pos0 = b->pos0;
     size_t loff = b->loff;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
+    int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_stride = b->q_gated ? 2 * hs : hs;
-    float inv_sqrt = 1.0f / sqrtf((float)hs);
+    float attn_scale = b->attention_scale;
     if (hs > BN_MAX_VLA_ELEMS) return;
 
     for (int h = h_start; h < h_end; h++) {
         int kv_h = h / kv_mul;
         for (int t = 0; t < n_tokens; t++) {
             int pos = pos0 + t;
-            float *rc = b->rope_cos + (size_t)t * half_rope;
-            float *rs = b->rope_sin + (size_t)t * half_rope;
+            float *rc = b->rope_cos + (size_t)t * rope_stride;
+            float *rs = b->rope_sin + (size_t)t * rope_stride;
             float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_stride;
             float q[hs];
             memcpy(q, q_src, hs * sizeof(float));
@@ -124,7 +127,7 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
             const float *vcache = s->value_cache + loff;
             for (int i = 0; i < n_kv; i++) {
                 int ki = (kv_start + i) % seq_len;
-                float score = batched_dot(q, kc + (size_t)ki * kv_dim + kv_h * hs, hs) * inv_sqrt;
+                float score = batched_dot(q, kc + (size_t)ki * kv_dim + kv_h * hs, hs) * attn_scale;
                 if (score > rmax) {
                     float rescale = expf(rmax - score);
                     rmax = score; rsum *= rescale;

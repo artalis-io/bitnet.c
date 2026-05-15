@@ -93,19 +93,25 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
     // Embed the token
     bn_model_embed_token(m, s->x, token);
 
-    // Precompute RoPE cos/sin for this position
-    int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
-    int half_rope = rope_dims / 2;
-    float rope_cos[half_rope], rope_sin[half_rope];
-    for (int i = 0; i < half_rope; i++) {
-        float angle = pos * s->rope_freq[i];
-        rope_cos[i] = cosf(angle);
-        rope_sin[i] = sinf(angle);
-    }
-
     // Process each layer
     int cache_pos = pos % c->seq_len;
     for (int l = 0; l < c->n_layers; l++) {
+        BnLayerWeights *lw = &m->weights.layers[l];
+        int layer_head_size = lw->attn.head_size > 0 ? lw->attn.head_size : head_size;
+        int use_swa_rope = c->rope_theta_swa > 0.0f && layer_head_size < c->head_size;
+        int rope_dims = use_swa_rope && c->rope_dim_count_swa > 0
+            ? c->rope_dim_count_swa
+            : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
+        if (rope_dims > layer_head_size) rope_dims = layer_head_size;
+        int half_rope = rope_dims / 2;
+        float rope_cos[half_rope], rope_sin[half_rope];
+        float theta = use_swa_rope ? c->rope_theta_swa : c->rope_theta;
+        for (int i = 0; i < half_rope; i++) {
+            float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
+            float angle = pos * freq;
+            rope_cos[i] = cosf(angle);
+            rope_sin[i] = sinf(angle);
+        }
         if (bn_transformer_cpu_forward_layer(m, sess, l, pos, cache_pos, rope_dims,
                                          rope_cos, rope_sin) != 0)
             return -1;
