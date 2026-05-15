@@ -284,4 +284,111 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
     }
 }
 
+void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start, int unit_end) {
+    BnBatchedAttnCtx *b = (BnBatchedAttnCtx *)ctx;
+    BnRunState *s = b->s;
+    int head_size = b->head_size;
+    int kv_dim = b->kv_dim;
+    int kv_mul = b->kv_mul;
+    int seq_len = b->seq_len;
+    int n_tokens = b->n_tokens;
+    int pos0 = b->pos0;
+    size_t loff = b->loff;
+    int kv_f16 = b->c->kv_f16;
+    int rope_dims = b->rope_dims;
+    int half_rope = rope_dims / 2;
+    int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_head_stride = b->q_gated ? 2 * head_size : head_size;
+    float attn_scale = b->attention_scale;
+    if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
+
+    for (int unit = unit_start; unit < unit_end; unit++) {
+        int h = unit / n_tokens;
+        int t = unit - h * n_tokens;
+        int kv_h = h / kv_mul;
+        int pos = pos0 + t;
+        float *rc = b->rope_cos + (size_t)t * rope_stride;
+        float *rs = b->rope_sin + (size_t)t * rope_stride;
+
+        float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
+        float q_local[head_size];
+        memcpy(q_local, q_src, head_size * sizeof(float));
+
+        if (b->q_bias)
+            for (int d = 0; d < head_size; d++)
+                q_local[d] += b->q_bias[h * head_size + d];
+        if (b->q_norm) {
+            int stride = b->qk_norm_per_head ? head_size : 0;
+            BATCHED_RMSNORM(q_local, q_local, b->q_norm + h * stride,
+                            head_size, b->norm_eps);
+        }
+        batched_apply_rope_token(q_local, 1, head_size, rope_dims, rc, rs, head_size);
+
+        int n_kv = (pos + 1 < seq_len) ? pos + 1 : seq_len;
+        int kv_start = pos - n_kv + 1;
+
+        float out_buf[head_size];
+        memset(out_buf, 0, head_size * sizeof(float));
+        float running_max = -INFINITY;
+        float running_sum = 0.0f;
+
+        for (int ti_start = 0; ti_start < n_kv; ti_start += FLASH_ATTN_TILE) {
+            int ti_end = ti_start + FLASH_ATTN_TILE;
+            if (ti_end > n_kv) ti_end = n_kv;
+
+            for (int ti = ti_start; ti < ti_end; ti++) {
+                int ki = (kv_start + ti) % seq_len;
+
+                if (ti + 1 < ti_end) {
+                    int ki_next = (kv_start + ti + 1) % seq_len;
+                    if (kv_f16)
+                        _mm_prefetch((const char *)((const uint16_t *)s->key_cache + loff + (size_t)ki_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
+                    else
+                        _mm_prefetch((const char *)(s->key_cache + loff + (size_t)ki_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
+                }
+
+                float score;
+                if (kv_f16)
+                    score = batched_dot_fp16(q_local, (const uint16_t *)s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
+                else
+                    score = batched_dot_fp32(q_local, s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
+
+                float old_max = running_max;
+                if (score > old_max) {
+                    float rescale = expf(old_max - score);
+                    running_max = score;
+                    running_sum *= rescale;
+                    __m256 rs_v = _mm256_set1_ps(rescale);
+                    for (int rd = 0; rd < head_size; rd += 8)
+                        _mm256_storeu_ps(out_buf + rd, _mm256_mul_ps(_mm256_loadu_ps(out_buf + rd), rs_v));
+                }
+
+                float w = expf(score - running_max);
+                running_sum += w;
+                if (kv_f16)
+                    batched_acc_v_fp16(out_buf, w, (const uint16_t *)s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
+                else
+                    batched_acc_v_fp32(out_buf, w, s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
+            }
+        }
+
+        float inv_sum = running_sum > 0.0f ? 1.0f / running_sum : 0.0f;
+        __m256 is_v = _mm256_set1_ps(inv_sum);
+
+        if (b->q_gated) {
+            float *gate = q_src + head_size;
+            for (int d = 0; d < head_size; d += 8) {
+                __m256 o = _mm256_mul_ps(_mm256_loadu_ps(out_buf + d), is_v);
+                __m256 g = _mm256_loadu_ps(gate + d);
+                _mm256_storeu_ps(b->out + (size_t)t * b->wo_cols + h * head_size + d,
+                                 _mm256_mul_ps(o, bn_avx2_fast_sigmoid_ps(g)));
+            }
+        } else {
+            float *dst = b->out + (size_t)t * b->wo_cols + h * head_size;
+            for (int d = 0; d < head_size; d += 8)
+                _mm256_storeu_ps(dst + d, _mm256_mul_ps(_mm256_loadu_ps(out_buf + d), is_v));
+        }
+    }
+}
+
 #endif // __AVX2__

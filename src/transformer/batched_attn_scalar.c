@@ -8,8 +8,6 @@
 #include <string.h>
 #include <math.h>
 
-#if !defined(__AVX2__)
-
 #define BATCHED_RMSNORM bn_transformer_rmsnorm_scalar
 
 static inline float batched_dot(const float *a, const float *b, int n) {
@@ -188,5 +186,3 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
         }
     }
 }
-
-#endif // !__AVX2__

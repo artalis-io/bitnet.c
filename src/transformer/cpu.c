@@ -182,7 +182,9 @@ void bn_transformer_batched_attn_dispatch(BnModel *m,
     bn_tp_fn fn;
     if (m->config.flash_attn) {
 #ifdef __AVX2__
-        fn = bn_transformer_batched_attn_flash_avx2_range;
+        fn = ctx->n_tokens > 1
+            ? bn_transformer_batched_attn_flash_avx2_pair_range
+            : bn_transformer_batched_attn_flash_avx2_range;
 #elif defined(__ARM_NEON)
         fn = bn_transformer_batched_attn_flash_neon_range;
 #else
@@ -197,7 +199,12 @@ void bn_transformer_batched_attn_dispatch(BnModel *m,
         fn = bn_transformer_batched_attn_naive_scalar_range;
 #endif
     }
-    BnTPTask task = { fn, ctx, ctx->n_heads };
+    int units = ctx->n_heads;
+#ifdef __AVX2__
+    if (fn == bn_transformer_batched_attn_flash_avx2_pair_range)
+        units = ctx->n_heads * ctx->n_tokens;
+#endif
+    BnTPTask task = { fn, ctx, units };
     bn_tp_dispatch(bn_model_pool(m), &task, 1);
 }
 
