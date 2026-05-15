@@ -33,6 +33,67 @@ static inline int32x4_t q4_repacked_dot4_xor(const uint8_t *qbase,
     return vaddq_s32(vaddq_s32(acc02, acc13), vaddq_s32(acc46, acc57));
 }
 
+static inline void q4_repacked_dot4_panel4_xor(const uint8_t *qbase,
+                                               const int8_t *abase,
+                                               int32x4_t acc[4]) {
+    const uint8x16_t mask_hi = vdupq_n_u8(0xF0);
+    int8x16_t raw0 = vld1q_s8((const int8_t *)qbase);
+    int8x16_t raw1 = vld1q_s8((const int8_t *)qbase + 16);
+    int8x16_t raw2 = vld1q_s8((const int8_t *)qbase + 32);
+    int8x16_t raw3 = vld1q_s8((const int8_t *)qbase + 48);
+    int8x16_t lo0 = vshlq_n_s8(raw0, 4);
+    int8x16_t lo1 = vshlq_n_s8(raw1, 4);
+    int8x16_t lo2 = vshlq_n_s8(raw2, 4);
+    int8x16_t lo3 = vshlq_n_s8(raw3, 4);
+    int8x16_t hi0 = vreinterpretq_s8_u8(vandq_u8(vreinterpretq_u8_s8(raw0), mask_hi));
+    int8x16_t hi1 = vreinterpretq_s8_u8(vandq_u8(vreinterpretq_u8_s8(raw1), mask_hi));
+    int8x16_t hi2 = vreinterpretq_s8_u8(vandq_u8(vreinterpretq_u8_s8(raw2), mask_hi));
+    int8x16_t hi3 = vreinterpretq_s8_u8(vandq_u8(vreinterpretq_u8_s8(raw3), mask_hi));
+
+    int8x16_t a0 = vld1q_s8(abase);
+    int8x16_t a1 = vld1q_s8(abase + 16);
+    int8x16_t a2 = vld1q_s8(abase + 32);
+    int8x16_t a3 = vld1q_s8(abase + 48);
+    int8x16_t a4 = vld1q_s8(abase + 64);
+    int8x16_t a5 = vld1q_s8(abase + 80);
+    int8x16_t a6 = vld1q_s8(abase + 96);
+    int8x16_t a7 = vld1q_s8(abase + 112);
+
+    acc[0] = vdotq_laneq_s32(acc[0], lo0, a0, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], lo0, a0, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], lo0, a0, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], lo0, a0, 3);
+    acc[0] = vdotq_laneq_s32(acc[0], lo1, a1, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], lo1, a1, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], lo1, a1, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], lo1, a1, 3);
+    acc[0] = vdotq_laneq_s32(acc[0], lo2, a2, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], lo2, a2, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], lo2, a2, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], lo2, a2, 3);
+    acc[0] = vdotq_laneq_s32(acc[0], lo3, a3, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], lo3, a3, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], lo3, a3, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], lo3, a3, 3);
+
+    acc[0] = vdotq_laneq_s32(acc[0], hi0, a4, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], hi0, a4, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], hi0, a4, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], hi0, a4, 3);
+    acc[0] = vdotq_laneq_s32(acc[0], hi1, a5, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], hi1, a5, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], hi1, a5, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], hi1, a5, 3);
+    acc[0] = vdotq_laneq_s32(acc[0], hi2, a6, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], hi2, a6, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], hi2, a6, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], hi2, a6, 3);
+    acc[0] = vdotq_laneq_s32(acc[0], hi3, a7, 0);
+    acc[1] = vdotq_laneq_s32(acc[1], hi3, a7, 1);
+    acc[2] = vdotq_laneq_s32(acc[2], hi3, a7, 2);
+    acc[3] = vdotq_laneq_s32(acc[3], hi3, a7, 3);
+}
+
 static float q4_native_row_dot(const BnQWeight *W, int row,
                                const int8_t *x_q, const float *x_scales) {
     const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)W->data;
@@ -350,6 +411,82 @@ void bn_quant_q4_repacked_neon_sdot_matmul_group_range(void *ctx,
 
             for (int ti = 0; ti < tn; ti++)
                 vst1q_f32(c->out + (size_t)(t0 + ti) * rows + row, sums[ti]);
+        }
+    }
+}
+
+void bn_quant_q4_repacked_neon_sdot_matmul_panel4_range(void *ctx,
+                                                        int group_start,
+                                                        int group_end) {
+    BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
+    const BnPreparedWeight *prepared = c->prepared;
+    const uint16_t *rp_scales = prepared ? prepared->scales : NULL;
+    const uint8_t *rp_qs = prepared ? prepared->qs : NULL;
+    const int8_t *x_q4 = c->x_q4;
+    const float *x_scales4 = c->x_scales4;
+    if (!rp_scales || !rp_qs || !x_q4 || !x_scales4 || c->n_token_panels <= 0) {
+        bn_quant_q4_repacked_neon_sdot_matmul_group_range(ctx, group_start, group_end);
+        return;
+    }
+
+    int rows = c->W->rows;
+    int cols = c->cols;
+    int n_blocks_per_row = cols / 32;
+    int n_tokens = c->n_tokens;
+    int n_full_panels = n_tokens / 4;
+    const int32x4_t zero = vdupq_n_s32(0);
+
+    for (int group = group_start; group < group_end; group++) {
+        int row = group << 2;
+
+        for (int p = 0; p < n_full_panels; p++) {
+            float32x4_t sums[4] = {
+                vdupq_n_f32(0.0f), vdupq_n_f32(0.0f),
+                vdupq_n_f32(0.0f), vdupq_n_f32(0.0f)
+            };
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                size_t gb = (size_t)group * n_blocks_per_row + b;
+                const uint8_t *qbase = rp_qs + gb * 64;
+                const int8_t *abase = x_q4 + ((size_t)p * n_blocks_per_row + b) * 128;
+                if (b + 8 < n_blocks_per_row) {
+                    __builtin_prefetch(rp_qs + (gb + 8) * 64, 0, 0);
+                    __builtin_prefetch(x_q4 + ((size_t)p * n_blocks_per_row + b + 8) * 128, 0, 0);
+                }
+
+                int32x4_t acc[4] = { zero, zero, zero, zero };
+                q4_repacked_dot4_panel4_xor(qbase, abase, acc);
+                float32x4_t d4 =
+                    vcvt_f32_f16(vld1_f16((const float16_t *)(rp_scales + gb * 4)));
+                const float *dx = x_scales4 + ((size_t)p * n_blocks_per_row + b) * 4;
+                sums[0] = vfmaq_f32(sums[0], vcvtq_n_f32_s32(acc[0], 4), vmulq_n_f32(d4, dx[0]));
+                sums[1] = vfmaq_f32(sums[1], vcvtq_n_f32_s32(acc[1], 4), vmulq_n_f32(d4, dx[1]));
+                sums[2] = vfmaq_f32(sums[2], vcvtq_n_f32_s32(acc[2], 4), vmulq_n_f32(d4, dx[2]));
+                sums[3] = vfmaq_f32(sums[3], vcvtq_n_f32_s32(acc[3], 4), vmulq_n_f32(d4, dx[3]));
+            }
+
+            int t = p * 4;
+            vst1q_f32(c->out + (size_t)(t + 0) * rows + row, sums[0]);
+            vst1q_f32(c->out + (size_t)(t + 1) * rows + row, sums[1]);
+            vst1q_f32(c->out + (size_t)(t + 2) * rows + row, sums[2]);
+            vst1q_f32(c->out + (size_t)(t + 3) * rows + row, sums[3]);
+        }
+
+        for (int t = n_full_panels * 4; t < n_tokens; t++) {
+            float32x4_t sum = vdupq_n_f32(0.0f);
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                size_t gb = (size_t)group * n_blocks_per_row + b;
+                const uint8_t *qbase = rp_qs + gb * 64;
+                const int8_t *xb = c->x_q + (size_t)t * cols + b * 32;
+                int32x4_t acc = q4_repacked_dot4_xor(qbase,
+                                                      vld1q_s8(xb),
+                                                      vld1q_s8(xb + 16));
+                float32x4_t f = vcvtq_n_f32_s32(acc, 4);
+                float32x4_t d4 =
+                    vcvt_f32_f16(vld1_f16((const float16_t *)(rp_scales + gb * 4)));
+                float dx = c->x_scales[(size_t)t * n_blocks_per_row + b];
+                sum = vfmaq_f32(sum, f, vmulq_n_f32(d4, dx));
+            }
+            vst1q_f32(c->out + (size_t)t * rows + row, sum);
         }
     }
 }

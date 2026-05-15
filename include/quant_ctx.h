@@ -78,6 +78,9 @@ typedef struct {
     const BnPreparedWeight *prepared;
     int n_tokens;
     int cols;
+    const int8_t *x_q4;
+    const float *x_scales4;
+    int n_token_panels;
 } BnQ4MatmulCtx;
 
 typedef struct {

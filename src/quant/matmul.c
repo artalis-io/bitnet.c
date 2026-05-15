@@ -19,6 +19,33 @@
 
 #define BN_MAX_SCALE_BLOCKS 8192
 
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+static void q4_pack_q8_panel4(const int8_t *xq_all, const float *xs_all,
+                              int n_tokens, int cols, int n_blocks,
+                              int8_t *xq4, float *xs4) {
+    int n_panels = n_tokens / 4;
+    for (int p = 0; p < n_panels; p++) {
+        int t0 = p * 4;
+        for (int b = 0; b < n_blocks; b++) {
+            int8_t *dst = xq4 + ((size_t)p * n_blocks + b) * 128;
+            for (int half = 0; half < 2; half++) {
+                for (int g = 0; g < 4; g++) {
+                    int off = half * 16 + g * 4;
+                    int dst_base = half * 64 + g * 16;
+                    for (int t = 0; t < 4; t++) {
+                        const int8_t *src = xq_all + (size_t)(t0 + t) * cols + b * 32 + off;
+                        memcpy(dst + dst_base + t * 4, src, 4);
+                    }
+                }
+            }
+            float *sd = xs4 + ((size_t)p * n_blocks + b) * 4;
+            for (int t = 0; t < 4; t++)
+                sd[t] = xs_all[(size_t)(t0 + t) * n_blocks + b];
+        }
+    }
+}
+#endif
+
 void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               const BnPreparedWeight *prepared,
                               const float *X, int n_tokens,
@@ -52,8 +79,10 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                                     xq_all + (size_t)t * cols,
                                     xs_all + (size_t)t * n_blocks, cols);
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        BnQ4MatmulCtx ctx = { out, W, xq_all, xs_all, prepared, n_tokens, cols };
 #ifdef __AVX2__
+        BnQ4MatmulCtx ctx = {
+            out, W, xq_all, xs_all, prepared, n_tokens, cols, NULL, NULL, 0
+        };
         BnTPTask task = { bn_quant_q8_avx2_matmul_range, &ctx, rows };
         bn_tp_dispatch(pool, &task, 1);
         free(xq_all);
@@ -82,24 +111,55 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
             bn_quant_x_to_q8_blocks(X + (size_t)t * cols,
                                     xq_all + (size_t)t * cols,
                                     xs_all + (size_t)t * n_blocks, cols);
+        int8_t *xq4 = NULL;
+        float *xs4 = NULL;
+        int n_panels = 0;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+        int use_panel4 = prepared && prepared->qs && prepared->scales &&
+                         (rows % 4) == 0 && n_tokens >= 4;
+        if (use_panel4) {
+            n_panels = n_tokens / 4;
+            xq4 = (int8_t *)malloc((size_t)n_panels * n_blocks * 128);
+            xs4 = (float *)malloc((size_t)n_panels * n_blocks * 4 * sizeof(float));
+            if (!xq4 || !xs4) {
+                free(xq4);
+                free(xs4);
+                xq4 = NULL;
+                xs4 = NULL;
+                n_panels = 0;
+                use_panel4 = 0;
+            } else {
+                q4_pack_q8_panel4(xq_all, xs_all, n_tokens, cols, n_blocks, xq4, xs4);
+            }
+        }
+#endif
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        BnQ4MatmulCtx ctx = { out, W, xq_all, xs_all, prepared, n_tokens, cols };
+        BnQ4MatmulCtx ctx = {
+            out, W, xq_all, xs_all, prepared, n_tokens, cols, NULL, NULL, 0
+        };
+        ctx.x_q4 = xq4;
+        ctx.x_scales4 = xs4;
+        ctx.n_token_panels = n_panels;
 #ifdef __AVX2__
         BnTPTask task = { bn_quant_q4_avx2_matmul_range, &ctx, rows };
 #else
         int use_group_range = prepared && prepared->qs && prepared->scales &&
                               (rows % 4) == 0;
         BnTPTask task = {
-            use_group_range
+            use_panel4
+                ? bn_quant_q4_repacked_neon_sdot_matmul_panel4_range
+                : (use_group_range
                 ? bn_quant_q4_repacked_neon_sdot_matmul_group_range
                 : ((prepared && prepared->qs && prepared->scales)
                     ? bn_quant_q4_repacked_neon_sdot_matmul_range
-                    : bn_quant_q4_neon_sdot_matmul_range),
+                    : bn_quant_q4_neon_sdot_matmul_range)),
             &ctx,
             use_group_range ? rows / 4 : rows
         };
 #endif
         bn_tp_dispatch(pool, &task, 1);
+        free(xq4);
+        free(xs4);
         free(xq_all);
         free(xs_all);
         return;
@@ -345,6 +405,27 @@ void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                 bn_quant_x_to_q8_blocks(X + (size_t)t * cols,
                                         xq_all + (size_t)t * cols,
                                         xs_all + (size_t)t * n_blocks, cols);
+            int8_t *xq4 = NULL;
+            float *xs4 = NULL;
+            int n_panels = 0;
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+            int can_panel4 = n_tokens >= 4;
+            if (can_panel4) {
+                n_panels = n_tokens / 4;
+                xq4 = (int8_t *)malloc((size_t)n_panels * n_blocks * 128);
+                xs4 = (float *)malloc((size_t)n_panels * n_blocks * 4 * sizeof(float));
+                if (!xq4 || !xs4) {
+                    free(xq4);
+                    free(xs4);
+                    xq4 = NULL;
+                    xs4 = NULL;
+                    n_panels = 0;
+                    can_panel4 = 0;
+                } else {
+                    q4_pack_q8_panel4(xq_all, xs_all, n_tokens, cols, n_blocks, xq4, xs4);
+                }
+            }
+#endif
 
             BnQ4MatmulCtx ctxs[BN_MAX_PREPARED_MULTI_MATMUL];
             BnTPTask tasks[BN_MAX_PREPARED_MULTI_MATMUL];
@@ -353,8 +434,11 @@ void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                 ctxs[i] = (BnQ4MatmulCtx){
                     out[i], W[i], xq_all, xs_all,
                     prepared ? prepared[i] : NULL,
-                    n_tokens, cols
+                    n_tokens, cols, NULL, NULL, 0
                 };
+                ctxs[i].x_q4 = xq4;
+                ctxs[i].x_scales4 = xs4;
+                ctxs[i].n_token_panels = n_panels;
 #ifdef __AVX2__
                 tasks[i] = (BnTPTask){ bn_quant_q4_avx2_matmul_range,
                                        &ctxs[i], W[i]->rows };
@@ -362,19 +446,24 @@ void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                 int use_group_range = prepared && prepared[i] &&
                                       prepared[i]->qs && prepared[i]->scales &&
                                       (W[i]->rows % 4) == 0;
+                int use_panel4 = can_panel4 && use_group_range;
                 tasks[i] = (BnTPTask){
-                    use_group_range
+                    use_panel4
+                        ? bn_quant_q4_repacked_neon_sdot_matmul_panel4_range
+                        : (use_group_range
                         ? bn_quant_q4_repacked_neon_sdot_matmul_group_range
                         : ((prepared && prepared[i] &&
                             prepared[i]->qs && prepared[i]->scales)
                             ? bn_quant_q4_repacked_neon_sdot_matmul_range
-                            : bn_quant_q4_neon_sdot_matmul_range),
+                            : bn_quant_q4_neon_sdot_matmul_range)),
                     &ctxs[i],
                     use_group_range ? W[i]->rows / 4 : W[i]->rows
                 };
 #endif
             }
             bn_tp_dispatch(pool, tasks, n);
+            free(xq4);
+            free(xs4);
             free(xq_all);
             free(xs_all);
             return;
