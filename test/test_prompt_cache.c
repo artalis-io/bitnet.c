@@ -516,6 +516,7 @@ static void test_tq_roundtrip(void) {
     bn_session_free(s3, NULL);
     bn_prompt_cache_free(pc);
     bn_tq_free(&tq);
+    bn_model_free(&model);
     printf("PASSED\n");
 }
 
