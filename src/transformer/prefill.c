@@ -590,6 +590,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     float *hb2_t = Hb2 + (size_t)t * hidden_dim;
                     if (c->act_type == 1) {
                         int i = 0;
+#ifdef __ARM_NEON
+                        float32x4_t zero_v = vdupq_n_f32(0.0f);
+                        for (; i + 3 < hidden_dim; i += 4) {
+                            float32x4_t g = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
+                            float32x4_t u = vld1q_f32(hb2_t + i);
+                            vst1q_f32(hb_t + i, vmulq_f32(vmulq_f32(g, g), u));
+                        }
+#endif
 #ifdef __AVX2__
                         __m256 zero_v = _mm256_setzero_ps();
                         for (; i + 7 < hidden_dim; i += 8) {
@@ -603,22 +611,33 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             hb_t[i] = g * g * hb2_t[i];
                         }
                     } else if (c->act_type == 2) {
-#ifdef __AVX2__
                         int i = 0;
+#ifdef __ARM_NEON
+                        for (; i + 3 < hidden_dim; i += 4) {
+                            float32x4_t g = vld1q_f32(hb_t + i);
+                            float32x4_t u = vld1q_f32(hb2_t + i);
+                            vst1q_f32(hb_t + i, vmulq_f32(bn_neon_fast_gelu_f32(g), u));
+                        }
+#endif
+#ifdef __AVX2__
                         for (; i + 7 < hidden_dim; i += 8) {
                             __m256 g = _mm256_loadu_ps(hb_t + i);
                             __m256 u = _mm256_loadu_ps(hb2_t + i);
                             _mm256_storeu_ps(hb_t + i,
                                              _mm256_mul_ps(bn_avx2_fast_gelu_ps(g), u));
                         }
+#endif
                         for (; i < hidden_dim; i++)
                             hb_t[i] = prefill_gelu(hb_t[i]) * hb2_t[i];
-#else
-                        for (int i = 0; i < hidden_dim; i++)
-                            hb_t[i] = prefill_gelu(hb_t[i]) * hb2_t[i];
-#endif
                     } else {
                         int i = 0;
+#ifdef __ARM_NEON
+                        for (; i + 3 < hidden_dim; i += 4) {
+                            float32x4_t g = vld1q_f32(hb_t + i);
+                            float32x4_t u = vld1q_f32(hb2_t + i);
+                            vst1q_f32(hb_t + i, vmulq_f32(bn_neon_fast_silu_f32(g), u));
+                        }
+#endif
 #ifdef __AVX2__
                         for (; i + 7 < hidden_dim; i += 8) {
                             __m256 g = _mm256_loadu_ps(hb_t + i);
@@ -638,6 +657,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     float *hb_t = Hb + (size_t)t * hidden_dim;
                     if (c->act_type == 1) {
                         int i = 0;
+#ifdef __ARM_NEON
+                        float32x4_t zero_v = vdupq_n_f32(0.0f);
+                        for (; i + 3 < hidden_dim; i += 4) {
+                            float32x4_t v = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
+                            vst1q_f32(hb_t + i, vmulq_f32(v, v));
+                        }
+#endif
 #ifdef __AVX2__
                         __m256 zero_v = _mm256_setzero_ps();
                         for (; i + 7 < hidden_dim; i += 8) {
@@ -650,20 +676,29 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             hb_t[i] = v * v;
                         }
                     } else if (c->act_type == 2) {
-#ifdef __AVX2__
                         int i = 0;
+#ifdef __ARM_NEON
+                        for (; i + 3 < hidden_dim; i += 4) {
+                            float32x4_t v = vld1q_f32(hb_t + i);
+                            vst1q_f32(hb_t + i, bn_neon_fast_gelu_f32(v));
+                        }
+#endif
+#ifdef __AVX2__
                         for (; i + 7 < hidden_dim; i += 8) {
                             __m256 v = _mm256_loadu_ps(hb_t + i);
                             _mm256_storeu_ps(hb_t + i, bn_avx2_fast_gelu_ps(v));
                         }
+#endif
                         for (; i < hidden_dim; i++)
                             hb_t[i] = prefill_gelu(hb_t[i]);
-#else
-                        for (int i = 0; i < hidden_dim; i++)
-                            hb_t[i] = prefill_gelu(hb_t[i]);
-#endif
                     } else {
                         int i = 0;
+#ifdef __ARM_NEON
+                        for (; i + 3 < hidden_dim; i += 4) {
+                            float32x4_t v = vld1q_f32(hb_t + i);
+                            vst1q_f32(hb_t + i, bn_neon_fast_silu_f32(v));
+                        }
+#endif
 #ifdef __AVX2__
                         for (; i + 7 < hidden_dim; i += 8) {
                             __m256 v = _mm256_loadu_ps(hb_t + i);
