@@ -6,6 +6,7 @@
 void bn_quant_q8_avx512_vnni_4row_range(void *ctx, int start, int end);
 void bn_quant_q4_avx512_vnni_4row_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx512_vnni_4row_range(void *ctx, int start, int end);
+void bn_quant_q4k_avx512_vnni_matmul_4row_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx512_4row_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx512_vnni_4row_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx512_vnni_matmul_4row_range(void *ctx, int start, int end);

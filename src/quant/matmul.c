@@ -192,6 +192,12 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
         BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
         BnTPTask task = { bn_quant_q4k_neon_sdot_matmul_range, &ctx, rows };
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+        BnTPTask task = {
+            bn_quant_q4k_avx512_vnni_matmul_4row_range,
+            &ctx,
+            (rows + 3) / 4
+        };
 #else
         BnTPTask task = { bn_quant_q4k_avx2_sdot_matmul_range, &ctx, rows };
 #endif
@@ -551,11 +557,19 @@ void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
                     out[i], W[i], (int8_t *)x_q, (float *)x_d,
                     (int16_t *)x_bsums, n_tokens, cols
                 };
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+                bn_tp_fn fn = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
+                    ? (bn_tp_fn)bn_quant_q4k_avx512_vnni_matmul_4row_range
+                    : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
+                int units = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
+                    ? (W[i]->rows + 3) / 4 : W[i]->rows;
+#else
                 bn_tp_fn fn = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
                     ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_4row_range
                     : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
                 int units = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
                     ? (W[i]->rows + 3) / 4 : W[i]->rows;
+#endif
                 tasks[i] = (BnTPTask){ fn, &ctxs[i], units };
             }
             bn_tp_dispatch(pool, tasks, n);
