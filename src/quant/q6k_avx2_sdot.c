@@ -91,7 +91,7 @@ void bn_quant_q6k_avx2_sdot_range(void *ctx, int row_start, int row_end) {
     }
 }
 
-#define Q6K_TILE_T 4
+#define Q6K_TILE_T 8
 
 void bn_quant_q6k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) {
     BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;

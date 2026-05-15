@@ -122,6 +122,22 @@ typedef struct {
     float *out;
     const BnQWeight *W;
     const float *x;
+    int n_tokens;
+    int cols;
+} BnQ5KMatmulCtx;
+
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
+    int n_tokens;
+    int cols;
+} BnKQuantFloatMatmulCtx;
+
+typedef struct {
+    float *out;
+    const BnQWeight *W;
+    const float *x;
 } BnFloatXCtx;
 
 typedef BnFloatXCtx BnQ8KCtx;

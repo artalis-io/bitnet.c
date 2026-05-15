@@ -78,7 +78,7 @@ void bn_quant_q4k_avx2_sdot_range(void *ctx, int row_start, int row_end) {
 // Reordered matmul: row → token_tile → block → token_in_tile.
 // Accumulates all blocks into local acc[] per token tile before
 // writing to the scattered output, reducing cache misses.
-#define Q4K_TILE_T 4
+#define Q4K_TILE_T 8
 
 void bn_quant_q4k_avx2_sdot_matmul_range(void *ctx, int row_start, int row_end) {
     BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;

@@ -162,3 +162,108 @@ void bn_quant_q5k_avx2_4row_range(void *ctx, int group_start, int group_end) {
             c->out[row0 + r] = row_sums[r];
     }
 }
+
+#define Q5K_TILE_T 8
+
+void bn_quant_q5k_avx2_matmul_range(void *ctx, int row_start, int row_end) {
+    BnQ5KMatmulCtx *c = (BnQ5KMatmulCtx *)ctx;
+    int cols = c->cols;
+    int rows = c->W->rows;
+    int n_bpr = cols / BN_QK_K;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ5K *blocks = (const BnBlockQ5K *)c->W->data;
+
+    const __m128i mask_lo = _mm_set1_epi8(0xF);
+
+    for (int row = row_start; row < row_end; row++) {
+        for (int t0 = 0; t0 < n_tokens; t0 += Q5K_TILE_T) {
+            int tile_n = t0 + Q5K_TILE_T <= n_tokens ? Q5K_TILE_T : n_tokens - t0;
+            float sums[Q5K_TILE_T] = {0};
+
+            for (int b = 0; b < n_bpr; b++) {
+                const BnBlockQ5K *blk = &blocks[(size_t)row * n_bpr + b];
+                float d = bn_fp16_to_fp32(blk->d);
+                float dmin = bn_fp16_to_fp32(blk->dmin);
+                const uint8_t *qh = blk->qh;
+
+                __m128i wv[16] = {0};
+                __m256 vds[16] = {0}, vdm[16] = {0};
+                const uint8_t *qs = blk->qs;
+                for (int j = 0; j < BN_QK_K; j += 64) {
+                    uint8_t sc, m;
+                    int sub = j / 32;
+                    int group = j / 64;
+                    int bit_lo = group * 2;
+                    int bit_hi = group * 2 + 1;
+
+                    __m128i raw0 = _mm_loadu_si128((const __m128i *)qs);
+                    __m128i raw1 = _mm_loadu_si128((const __m128i *)(qs + 16));
+                    __m128i hb0 = q5k_extract_hb(qh, 0, bit_lo);
+                    __m128i hb1 = q5k_extract_hb(qh, 16, bit_lo);
+                    __m128i hb2 = q5k_extract_hb(qh, 0, bit_hi);
+                    __m128i hb3 = q5k_extract_hb(qh, 16, bit_hi);
+
+                    int base = j / 16;
+                    bn_q4k_get_scale_min(sub, blk->scales, &sc, &m);
+                    vds[base] = _mm256_set1_ps(d * sc);
+                    vdm[base] = _mm256_set1_ps(dmin * m);
+                    vds[base + 1] = vds[base];
+                    vdm[base + 1] = vdm[base];
+                    wv[base] = _mm_or_si128(_mm_and_si128(raw0, mask_lo), hb0);
+                    wv[base + 1] = _mm_or_si128(_mm_and_si128(raw1, mask_lo), hb1);
+
+                    bn_q4k_get_scale_min(sub + 1, blk->scales, &sc, &m);
+                    vds[base + 2] = _mm256_set1_ps(d * sc);
+                    vdm[base + 2] = _mm256_set1_ps(dmin * m);
+                    vds[base + 3] = vds[base + 2];
+                    vdm[base + 3] = vdm[base + 2];
+                    wv[base + 2] = _mm_or_si128(
+                        _mm_and_si128(_mm_srli_epi16(raw0, 4), mask_lo), hb2);
+                    wv[base + 3] = _mm_or_si128(
+                        _mm_and_si128(_mm_srli_epi16(raw1, 4), mask_lo), hb3);
+
+                    qs += 32;
+                }
+
+                for (int ti = 0; ti < tile_n; ti++) {
+                    const float *xb = c->x + (size_t)(t0 + ti) * cols + b * BN_QK_K;
+                    __m256 acc = _mm256_setzero_ps();
+
+#define Q5K_MATMUL_ACC(idx, xp) do { \
+                        __m256 wf_lo = _mm256_fmsub_ps( \
+                            _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(wv[(idx)])), \
+                            vds[(idx)], vdm[(idx)]); \
+                        __m256 wf_hi = _mm256_fmsub_ps( \
+                            _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(wv[(idx)], 8))), \
+                            vds[(idx)], vdm[(idx)]); \
+                        acc = _mm256_fmadd_ps(wf_lo, _mm256_loadu_ps((xp)), acc); \
+                        acc = _mm256_fmadd_ps(wf_hi, _mm256_loadu_ps((xp) + 8), acc); \
+                    } while (0)
+
+                    Q5K_MATMUL_ACC(0, xb);
+                    Q5K_MATMUL_ACC(1, xb + 16);
+                    Q5K_MATMUL_ACC(2, xb + 32);
+                    Q5K_MATMUL_ACC(3, xb + 48);
+                    Q5K_MATMUL_ACC(4, xb + 64);
+                    Q5K_MATMUL_ACC(5, xb + 80);
+                    Q5K_MATMUL_ACC(6, xb + 96);
+                    Q5K_MATMUL_ACC(7, xb + 112);
+                    Q5K_MATMUL_ACC(8, xb + 128);
+                    Q5K_MATMUL_ACC(9, xb + 144);
+                    Q5K_MATMUL_ACC(10, xb + 160);
+                    Q5K_MATMUL_ACC(11, xb + 176);
+                    Q5K_MATMUL_ACC(12, xb + 192);
+                    Q5K_MATMUL_ACC(13, xb + 208);
+                    Q5K_MATMUL_ACC(14, xb + 224);
+                    Q5K_MATMUL_ACC(15, xb + 240);
+#undef Q5K_MATMUL_ACC
+
+                    sums[ti] += bn_avx2_hsum_ps(acc);
+                }
+            }
+
+            for (int ti = 0; ti < tile_n; ti++)
+                c->out[(size_t)(t0 + ti) * rows + row] += sums[ti];
+        }
+    }
+}

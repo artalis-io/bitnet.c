@@ -1,6 +1,8 @@
 #include "quant_ctx.h"
+#include "quant_kernels_avx512.h"
 #include "quant_kernels_neon.h"
 #include "quant_kernels_avx2.h"
+#include "quant_kernels_scalar.h"
 #include "threadpool.h"
 #include "gguf.h"
 #include <stdlib.h>
@@ -9,6 +11,10 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #endif
 
 #define BN_MAX_SCALE_BLOCKS 8192
@@ -17,6 +23,9 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               const BnPreparedWeight *prepared,
                               const float *X, int n_tokens,
                               int8_t *x_q_buf, BnThreadPool *pool) {
+#if !defined(__AVX2__) && !(defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
+    (void)prepared;
+#endif
     int rows = W->rows;
     int cols = W->cols;
 
@@ -129,6 +138,47 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
         free(xbs_all);
         return;
     }
+#elif defined(__AVX2__)
+    if (W->type == BN_GGUF_TENSOR_Q5_K) {
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
+        int n_bpr = cols / BN_QK_K;
+        if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;
+        size_t xq_size = (size_t)n_tokens * cols;
+        if (n_tokens > 0 && xq_size / n_tokens != (size_t)cols) goto fallback_loop;
+        int8_t *xq_all = (int8_t *)malloc(xq_size);
+        float *xd_all = (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+        int16_t *xbs_all = (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+        if (!xq_all || !xd_all || !xbs_all) {
+            free(xq_all);
+            free(xd_all);
+            free(xbs_all);
+            goto fallback_loop;
+        }
+        for (int t = 0; t < n_tokens; t++)
+            bn_quant_x_to_q8k(X + (size_t)t * cols,
+                              xq_all + (size_t)t * cols,
+                              xd_all + (size_t)t * n_bpr,
+                              xbs_all + (size_t)t * n_bpr * 16, cols);
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnTPTask task = {
+            bn_quant_q5k_avx512_vnni_matmul_4row_range,
+            &ctx,
+            (rows + 3) / 4
+        };
+        bn_tp_dispatch(pool, &task, 1);
+        free(xq_all);
+        free(xd_all);
+        free(xbs_all);
+        return;
+#else
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnQ5KMatmulCtx ctx = { out, W, X, n_tokens, cols };
+        BnTPTask task = { bn_quant_q5k_avx2_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+#endif
+    }
 #endif
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
         int n_bpr = cols / BN_QK_K;
@@ -164,6 +214,31 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
     }
 fallback_loop:
 #endif
+
+#if !defined(__AVX2__) && !(defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
+    if (W->type == BN_GGUF_TENSOR_Q4_K) {
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnKQuantFloatMatmulCtx ctx = { out, W, X, n_tokens, cols };
+        BnTPTask task = { bn_quant_q4k_scalar_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+    if (W->type == BN_GGUF_TENSOR_Q5_K) {
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnKQuantFloatMatmulCtx ctx = { out, W, X, n_tokens, cols };
+        BnTPTask task = { bn_quant_q5k_scalar_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+    if (W->type == BN_GGUF_TENSOR_Q6_K) {
+        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
+        BnKQuantFloatMatmulCtx ctx = { out, W, X, n_tokens, cols };
+        BnTPTask task = { bn_quant_q6k_scalar_matmul_range, &ctx, rows };
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+#endif
+
     for (int t = 0; t < n_tokens; t++) {
         bn_quant_matvec(out + (size_t)t * rows, W, X + (size_t)t * cols,
                         x_q_buf, pool);

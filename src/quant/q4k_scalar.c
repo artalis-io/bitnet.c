@@ -103,3 +103,61 @@ void bn_quant_q4k_scalar_range(void *ctx, int row_start, int row_end) {
         c->out[row] = row_sum;
     }
 }
+
+#define Q4K_SCALAR_TILE_T 4
+
+void bn_quant_q4k_scalar_matmul_range(void *ctx, int row_start, int row_end) {
+    BnKQuantFloatMatmulCtx *c = (BnKQuantFloatMatmulCtx *)ctx;
+    int cols = c->cols;
+    int rows = c->W->rows;
+    int n_blocks_per_row = cols / BN_QK_K;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ4K *blocks = (const BnBlockQ4K *)c->W->data;
+
+    for (int row = row_start; row < row_end; row++) {
+        for (int t0 = 0; t0 < n_tokens; t0 += Q4K_SCALAR_TILE_T) {
+            int tile_n = t0 + Q4K_SCALAR_TILE_T <= n_tokens
+                ? Q4K_SCALAR_TILE_T : n_tokens - t0;
+            float sums[Q4K_SCALAR_TILE_T] = {0};
+
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                const BnBlockQ4K *blk = &blocks[(size_t)row * n_blocks_per_row + b];
+                float d = bn_fp16_to_fp32(blk->d);
+                float dmin = bn_fp16_to_fp32(blk->dmin);
+
+                for (int ti = 0; ti < tile_n; ti++) {
+                    const uint8_t *qs = blk->qs;
+                    const float *xb = c->x + (size_t)(t0 + ti) * cols + b * BN_QK_K;
+
+                    for (int j = 0; j < BN_QK_K; j += 64) {
+                        uint8_t sc, m;
+                        int sub = j / 32;
+                        bn_q4k_get_scale_min(sub, blk->scales, &sc, &m);
+                        float sum_qx = 0.0f;
+                        float sum_x = 0.0f;
+                        for (int l = 0; l < 32; l++) {
+                            float xv = xb[j + l];
+                            sum_qx += (float)(qs[l] & 0xF) * xv;
+                            sum_x += xv;
+                        }
+                        sums[ti] += (d * sc) * sum_qx - (dmin * m) * sum_x;
+
+                        bn_q4k_get_scale_min(sub + 1, blk->scales, &sc, &m);
+                        sum_qx = 0.0f;
+                        sum_x = 0.0f;
+                        for (int l = 0; l < 32; l++) {
+                            float xv = xb[j + l + 32];
+                            sum_qx += (float)(qs[l] >> 4) * xv;
+                            sum_x += xv;
+                        }
+                        sums[ti] += (d * sc) * sum_qx - (dmin * m) * sum_x;
+                        qs += 32;
+                    }
+                }
+            }
+
+            for (int ti = 0; ti < tile_n; ti++)
+                c->out[(size_t)(t0 + ti) * rows + row] += sums[ti];
+        }
+    }
+}
