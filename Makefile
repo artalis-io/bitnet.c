@@ -252,7 +252,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -262,6 +262,15 @@ bench_suite: $(MAIN_TARGET)
 
 bench_llama_compare: bench_avx2
 	./bench/compare_llama.sh
+
+LLAMA_TOPK_MODEL ?= models/qwen2.5-3b-instruct-q4_0.gguf
+LLAMA_TOPK_ARGS ?= --metal --llama-metal --flash --maxseq 512 --gpu-max-storage-binding-mb 4096 --top-k 10 --min-overlap 3 --benchmark --bench-runs 3
+LLAMA_TOPK_PORT ?= 0
+bench_llama_topk: bitnet
+	python3 test/compare_llama_topk.py $(LLAMA_TOPK_MODEL) $(LLAMA_TOPK_ARGS)
+
+bench_llama_topk_server: bitnet
+	python3 test/run_llama_topk_gate.py $(LLAMA_TOPK_MODEL) --port $(LLAMA_TOPK_PORT) -- $(LLAMA_TOPK_ARGS)
 
 bench_kernels_run: bench_kernels
 

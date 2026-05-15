@@ -10,6 +10,7 @@ With --benchmark, the default --min-throughput-ratio is 1.0.
 import argparse
 import json
 import re
+import statistics
 import subprocess
 import sys
 import urllib.request
@@ -41,12 +42,17 @@ def parse_args():
     p.add_argument("--q4-q8-tail-native", type=int)
     p.add_argument("--q4-q8-attn-only", action="store_true")
     p.add_argument("--q4-q8-ffn-only", action="store_true")
+    p.add_argument("--q4-q8-disable-gateup", action="store_true")
+    p.add_argument("--q4-q8-disable-ffn-down", action="store_true")
     p.add_argument("--gpu-flash-min-kv", type=int)
     p.add_argument("--gpu-max-storage-binding-mb", type=int)
+    p.add_argument("--metal-disable-barriers", action="store_true")
     p.add_argument("--metal-disable-q4-q8", action="store_true")
     p.add_argument("--metal-enable-q6-q8k", action="store_true")
+    p.add_argument("--metal-q4-prepared", action="store_true")
     p.add_argument("--benchmark", action="store_true")
     p.add_argument("--bench-tokens", type=int, default=128)
+    p.add_argument("--bench-runs", type=int, default=1)
     p.add_argument("--llama-throughput", choices=("server", "bench"),
                    default="server")
     p.add_argument("--min-throughput-ratio", type=float, default=1.0)
@@ -75,15 +81,23 @@ def run_bitnet_topk(args, prompt):
         cmd.append("--q4-q8-attn-only")
     if args.q4_q8_ffn_only:
         cmd.append("--q4-q8-ffn-only")
+    if args.q4_q8_disable_gateup:
+        cmd.append("--q4-q8-disable-gateup")
+    if args.q4_q8_disable_ffn_down:
+        cmd.append("--q4-q8-disable-ffn-down")
     if args.gpu_flash_min_kv is not None:
         cmd += ["--gpu-flash-min-kv", str(args.gpu_flash_min_kv)]
     if args.gpu_max_storage_binding_mb is not None:
         cmd += ["--gpu-max-storage-binding-mb",
                 str(args.gpu_max_storage_binding_mb)]
+    if args.metal_disable_barriers:
+        cmd.append("--metal-disable-barriers")
     if args.metal_disable_q4_q8:
         cmd.append("--metal-disable-q4-q8")
     if args.metal_enable_q6_q8k:
         cmd.append("--metal-enable-q6-q8k")
+    if args.metal_q4_prepared:
+        cmd.append("--metal-q4-prepared")
 
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
@@ -147,15 +161,23 @@ def run_bitnet_bench(args, prompt):
         cmd.append("--q4-q8-attn-only")
     if args.q4_q8_ffn_only:
         cmd.append("--q4-q8-ffn-only")
+    if args.q4_q8_disable_gateup:
+        cmd.append("--q4-q8-disable-gateup")
+    if args.q4_q8_disable_ffn_down:
+        cmd.append("--q4-q8-disable-ffn-down")
     if args.gpu_flash_min_kv is not None:
         cmd += ["--gpu-flash-min-kv", str(args.gpu_flash_min_kv)]
     if args.gpu_max_storage_binding_mb is not None:
         cmd += ["--gpu-max-storage-binding-mb",
                 str(args.gpu_max_storage_binding_mb)]
+    if args.metal_disable_barriers:
+        cmd.append("--metal-disable-barriers")
     if args.metal_disable_q4_q8:
         cmd.append("--metal-disable-q4-q8")
     if args.metal_enable_q6_q8k:
         cmd.append("--metal-enable-q6-q8k")
+    if args.metal_q4_prepared:
+        cmd.append("--metal-q4-prepared")
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
     if proc.returncode != 0:
@@ -220,6 +242,9 @@ def main():
     if args.min_overlap > args.top_k:
         print("--min-overlap cannot exceed --top-k", file=sys.stderr)
         return 2
+    if args.bench_runs < 1:
+        print("--bench-runs must be positive", file=sys.stderr)
+        return 2
 
     print("Top-logit coherence: bitnet.c vs llama.cpp")
     print(f"Model: {args.model}")
@@ -253,16 +278,26 @@ def main():
     print(f"Mean top-{args.top_k} overlap: {overlap_total / len(prompts):.2f}")
 
     if args.benchmark:
-        bitnet_tps = run_bitnet_bench(args, prompts[0])
+        bitnet_samples = [run_bitnet_bench(args, prompts[0])
+                          for _ in range(args.bench_runs)]
         if args.llama_throughput == "bench":
-            llama_tps = run_llama_bench(args)
+            llama_samples = [run_llama_bench(args)
+                             for _ in range(args.bench_runs)]
         else:
-            llama_tps = run_llama_server_bench(args, prompts[0])
+            llama_samples = [run_llama_server_bench(args, prompts[0])
+                             for _ in range(args.bench_runs)]
+        bitnet_tps = statistics.median(bitnet_samples)
+        llama_tps = statistics.median(llama_samples)
         ratio = bitnet_tps / llama_tps if llama_tps > 0.0 else 0.0
         print("---")
         print(f"Throughput bitnet={bitnet_tps:.2f} tok/s "
               f"llama={llama_tps:.2f} tok/s "
               f"mode={args.llama_throughput} ratio={ratio:.3f}")
+        if args.bench_runs > 1:
+            bitnet_csv = ",".join(f"{v:.2f}" for v in bitnet_samples)
+            llama_csv = ",".join(f"{v:.2f}" for v in llama_samples)
+            print(f"Throughput samples bitnet=[{bitnet_csv}] "
+                  f"llama=[{llama_csv}] median_runs={args.bench_runs}")
         if ratio < args.min_throughput_ratio:
             failed += 1
 

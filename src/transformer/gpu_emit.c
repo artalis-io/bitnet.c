@@ -448,7 +448,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
         ctx->graph, input, weight, gate_rows, up_rows, cols,
         BN_GPU_IR_ACTIVATION_SILU, "fused_gateup.out");
     if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0 &&
-        use_q4_q8)
+        use_q4_q8 && !getenv("BN_GPU_Q4_Q8_DISABLE_GATEUP"))
         ctx->graph->ops[ctx->graph->n_ops - 1].flags |= 1u;
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
@@ -849,7 +849,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         ctx, lw->ffn.ffn_down.type,
         res ? res->ffn_down : NULL, down_in_buf,
         BN_GPU_VALUE_XB2, lw->ffn.ffn_down.rows, lw->ffn.ffn_down.cols, 0,
-        use_q4_q8 ? 1u : 0u);
+        (use_q4_q8 && !getenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN")) ? 1u : 0u);
 
     emit_context_residual_rmsnorm(
         ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB, dim, u_eps,
@@ -1111,9 +1111,13 @@ void bn_transformer_gpu_emit_context_attention_gqa(
         int flash_min_kv = 0;
         const char *flash_min_env = getenv("BN_GPU_FLASH_MIN_KV");
         if (flash_min_env) flash_min_kv = atoi(flash_min_env);
+        int flash_max_kv = 0;
+        const char *flash_max_env = getenv("BN_GPU_FLASH_MAX_KV");
+        if (flash_max_env) flash_max_kv = atoi(flash_max_env);
         if (bn_transformer_gpu_can_flash_attn(res->gpu) &&
             (has_moe || c->flash_attn) &&
-            n_kv >= flash_min_kv) {
+            n_kv >= flash_min_kv &&
+            (flash_max_kv <= 0 || n_kv <= flash_max_kv)) {
             emit_context_flash_attention(
                 ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_XB, n_heads,
                 head_size, n_kv, c->kv_mul, kv_dim, c->seq_len, loff,

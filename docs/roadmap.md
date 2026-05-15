@@ -256,11 +256,24 @@ The current strict Metal acceptance gate is `test/compare_llama_topk.py` against
 `llama-server -fa on -np 1`. It requires top-1/top-k coherence and, when
 `--benchmark` is used, defaults `--min-throughput-ratio` to `1.0`. The latest
 local Qwen2.5 sample matched top-1 on `8/8` prompts with mean top-10 overlap
-`9.62`, but measured bitnet.c at 91.58 tok/s versus llama.cpp at 102.20 tok/s
-(ratio 0.896), so this gate is intentionally still not satisfied. The older
+`9.62`, but measured bitnet.c at 96.55 tok/s versus llama.cpp at 117.71 tok/s
+(ratio 0.820), so this gate is intentionally still not satisfied. A later
+self-contained gate rerun measured bitnet.c at 96.83 tok/s versus llama.cpp at
+97.39 tok/s (ratio 0.994), still below the default `1.0` threshold and not a
+parity claim because the llama.cpp baseline was much lower than prior samples. The older
 32-token `make bench_llama_compare` result, median bitnet.c 39.30 tok/s versus
 llama.cpp 17.59 tok/s, is historical and should not be used as the active
 parity claim.
+
+Use `make BN_ENABLE_METAL=1 bench_llama_topk_server` for the self-contained
+gate: it starts `llama-server` with `-fa on -np 1`, runs the same comparator,
+and shuts the server down afterwards. The default target asks the helper to
+choose a free localhost port, uses `--bench-runs 3`, and compares median
+throughput. The latest target-level run measured bitnet.c samples
+`[94.92, 95.09, 95.37]` tok/s and llama.cpp samples
+`[115.96, 116.45, 115.61]` tok/s, giving medians 95.09 and 115.96
+respectively (ratio 0.820), so the median gate is also intentionally still not
+satisfied.
 
 ### Backend Expansion Plan
 
@@ -305,6 +318,110 @@ Do not add model, quant, or backend support as isolated one-offs. Each milestone
 - [ ] **Model families x quants** — record the recommended and tested quants for each family, including dense, MoE, SSM, MLA, local/global attention, and ternary/BitNet-style variants.
 - [ ] **Fallback reasons** — every unsupported matrix cell should point to a concrete missing capability: tensor role, op kind, quant kernel, backend memory policy, architecture rule, tokenizer behavior, or validation fixture.
 - [ ] **Benchmark parity rows** — for representative cells, keep bitnet.c vs llama.cpp prompt-processing and generation numbers with the same model, quant, thread count, context length, batch size, and GPU placement.
+- [ ] **Metal flash-attention parity** — evolve the current bounded short-context Metal flash shader into a tiled/chunked implementation that keeps enough parallel work for the 128-token server gate and matches llama.cpp `-fa on` style f16-KV throughput behavior. Lowering `BN_GPU_FLASH_MIN_KV` is not sufficient until the flash path beats the non-flash scores/softmax/combine path at the acceptance length.
+- [ ] **Metal FFN matvec parity** — redesign the Metal Q4_0 FFN hot path around the measured bottlenecks: fused gate/up, FFN down, and Q6_K logits. The current first-three-layer Q4_0 x Q8 policy is the best tested setting; `--q4-q8-disable-ffn-down` measured 94.90 tok/s versus llama.cpp 115.72 tok/s, and combining it with `--q4-q8-disable-gateup` measured 95.76 tok/s versus llama.cpp 115.40 tok/s, so native-FFN policy toggles are not enough. The next concrete kernel direction is a row-grouped Q4_0 matvec/gateup design that reuses each activation slice across multiple output rows, matching the structure of llama.cpp's `mul_vec_q_n_f32_impl<block_q4_0, N_R0_Q4_0>` instead of the current one-output-row-per-8-lane-group design. A first two-row Q4_0 x Q8 matvec diagnostic was rejected because it regressed the direct FFN `up`/`down` rows and measured only 94.50 tok/s in the llama-server gate.
+- [ ] **Metal Q6_K x Q8_K diagnostics** — the Q8_K activation quantizer is now parallelized, and `bench_kernels --metal` now reports the quantized tied-embedding logits row through GPU-resident weights. On Qwen2.5 Q4_0, default Metal Q6_K logits measured 1786.4 us/call, the older scalar `--metal-enable-q6-q8k` shader measured 11898.2 us/call, and the vectorized Q6_K x Q8_K shader reduced that to 5178.5 us/call for the same 151936 x 2048 matrix. The opt-in path passes top-k coherence but only reaches 72.04 tok/s versus llama.cpp at 117.20 tok/s, so it remains diagnostic-only until it beats the default Q6_K logits path.
+- [ ] **Metal greedy logits readback reduction** — lower priority: lightweight profiling shows readback is effectively 0.0ms on the current M1 Max gate, but a GPU-side argmax/top-k path may still be useful on discrete-memory backends. Keep full-logit readback for logprobs, top-logit comparison, repetition penalties, and non-greedy sampling.
+
+### Qwen 3 / Qwen 3.5 Backend Improvement Plan
+
+The current model-family gate is top-logit coherence plus generation throughput
+against `llama-server -fa on -np 1` with the same model, context, prompt, and
+CPU/GPU placement. The local fixture set covers Qwen3 dense, Qwen3 MoE,
+Qwen3.5 dense, and Qwen3.5 MoE. No Qwen3.6 GGUF is currently present under
+`models/`, so Qwen3.6 remains unverified until a fixture is added.
+
+Latest local measurements:
+
+| Model | Backend | Coherence | bitnet.c tok/s | llama.cpp tok/s | Ratio |
+|---|---|---:|---:|---:|---:|
+| `Qwen3-0.6B-Q8_0` | ARM NEON / CPU | 7/8 top-1, mean top-10 9.38 | 92.79 | 113.60 | 0.817 |
+| `Qwen3-0.6B-Q8_0` | Metal | 8/8 top-1, mean top-10 10.00 | 209.16 | 174.08 | 1.202 |
+| `Qwen3.5-9B-Q4_K_M` | ARM NEON / CPU | 8/8 top-1, mean top-10 9.88 | 17.34 | 18.14 | 0.956 |
+| `Qwen3.5-9B-Q4_K_M` | Metal | 8/8 top-1, mean top-10 9.75 | 15.28 | 32.80 | 0.466 |
+| `Qwen3-30B-A3B-Q4_K_M` | ARM NEON / CPU | 8/8 top-1, mean top-10 9.50 | 2.84 | 5.62 | 0.505 |
+| `Qwen3-30B-A3B-Q4_K_M` | Metal | 8/8 top-1, mean top-10 9.50 | 1.55 | 77.00 | 0.020 |
+| `Qwen3.5-35B-A3B-Q4_K_M` | ARM NEON / CPU | 8/8 top-1, mean top-10 9.62 | 3.91 | 4.34 | 0.901 |
+| `Qwen3.5-35B-A3B-Q4_K_M` | Metal | 8/8 top-1, mean top-10 9.88 | 0.61 | 48.82 | 0.012 |
+
+Immediate interpretation: dense Qwen3 Metal is healthy, dense Qwen3.5 CPU is
+close, Qwen3 CPU has one near-tie top-1 swap, and Metal placement for Qwen3.5
+Q4_K_M plus both large MoE models is not competitive. The MoE Metal numbers are
+so far below llama.cpp that the first fix is placement/fallback visibility, not
+micro-optimizing a single matvec shader.
+
+ARM NEON / CPU plan:
+
+- [ ] **Qwen-family CPU parity gate** — add a repeatable target or script that
+  runs the same top-k/throughput gate for `Qwen3-0.6B-Q8_0`,
+  `Qwen3.5-9B-Q4_K_M`, `Qwen3-30B-A3B-Q4_K_M`, and
+  `Qwen3.5-35B-A3B-Q4_K_M`, with `--ngl 0`, fixed `--maxseq 512`, and a
+  small/large model token budget split. Store the latest rows in
+  `docs/benchmarks.md`.
+- [ ] **Investigate Qwen3 dense top-1 near-tie** — for
+  `Qwen3-0.6B-Q8_0` CPU, compare the `"Python is a programming language
+  created by"` logits against llama.cpp at higher precision. The top-10 set
+  matched exactly but tokens 12157 and 279 swapped rank, so this should be
+  treated as a numerical parity issue in logits accumulation, normalization,
+  RoPE, or final sampling penalties before calling CPU coherence clean.
+- [ ] **Profile CPU k-quant hot paths by model family** — collect per-op timing
+  for Q8_0 dense, Q4_K_M dense, and Q4_K_M MoE. Break down attention QKV/O,
+  FFN gate/up/down, routed expert gate/up/down, shared expert work, logits, and
+  router computation. Do not optimize blindly from aggregate tok/s.
+- [ ] **Close Q4_K_M dense CPU gap first** — `Qwen3.5-9B-Q4_K_M` CPU is already
+  near parity at ratio 0.956. Focus on Q4_K/Q5_K/Q6_K NEON inner loops,
+  batch/pre-Q8 reuse, and logits path overhead before broader MoE work.
+- [ ] **Make MoE CPU expert execution cache-aware** — for Qwen3/Qwen3.5 MoE,
+  measure expert cache hit rate, mmap/pread behavior, routed expert count,
+  shared expert cost, and page faults. Optimize expert locality and active
+  expert batching before adding more SIMD variants.
+- [ ] **Batch routed expert matvecs where possible** — group selected experts
+  by quant type and shape so NEON kernels can amortize activation quantization
+  and thread dispatch overhead across gate/up/down work. Preserve deterministic
+  routing and top-k logits parity as the acceptance check.
+- [ ] **Tune thread partitioning for sparse MoE** — large MoE CPU runs are
+  sensitive to tiny per-expert jobs and thread wake overhead. Add a benchmark
+  sweep for thread count, expert batch size, and pread cache size, then encode
+  the best default policy in MoE execution rather than relying on CLI tuning.
+- [ ] **Add Qwen3.6 CPU fixture before claiming support** — once a Qwen3.6
+  dense or MoE GGUF is available, add it to `test/model_matrix.sh` through
+  `BN_MODEL_QWEN36_*` and run the same CPU gate before updating support status.
+
+Metal plan:
+
+- [ ] **Make Metal fallback reasons visible per layer/op** — print or record
+  backend placement for Qwen3.5 dense and MoE models: native Metal, repacked
+  Metal, split/fused Metal, CPU fallback, and the exact missing capability.
+  The MoE Metal ratios 0.020 and 0.012 indicate broad fallback or synchronous
+  CPU/GPU transfer boundaries, which must be made explicit before kernel work.
+- [ ] **Prioritize k-quant Metal kernels for Q4_K_M dense** —
+  `Qwen3.5-9B-Q4_K_M` is coherent on Metal but only 0.466x llama.cpp. Profile
+  Q4_K/Q5_K/Q6_K matvec, split QKV, FFN gate/up/down, and logits rows with
+  `bench_kernels --metal`; add native or repacked Metal paths only where the
+  measured row is slower than llama.cpp-style placement.
+- [ ] **Keep dense Qwen3 Metal as a regression guard** — `Qwen3-0.6B-Q8_0`
+  Metal is currently coherent and faster than llama.cpp. Add it to the Metal
+  parity matrix so future Qwen3.5/MoE changes cannot regress the healthy Q8_0
+  dense path.
+- [ ] **Implement MoE GPU placement as a whole path** — for Qwen3/Qwen3.5 MoE,
+  do not move only one expert matvec to Metal. A useful Metal path needs router
+  logits, top-k routing, expert gate/up/down, shared experts, residual/norm,
+  and expert output accumulation resident on the backend with minimal readback.
+- [ ] **Add Metal expert cache/upload policy** — large MoE models cannot assume
+  all experts fit in fast GPU residency. Implement a backend-owned expert cache
+  with explicit capacity, LRU/working-set reporting, async upload where
+  possible, and clear fallback when a layer exceeds budget.
+- [ ] **Avoid CPU/GPU ping-pong at fallback boundaries** — when SSM, MoE, or a
+  quant format falls back to CPU, schedule whole blocks on CPU or whole blocks
+  on Metal. Per-op fallback inside a layer should be treated as a bug unless a
+  benchmark proves it is faster.
+- [ ] **Compare against llama.cpp placement, not only tok/s** — collect
+  llama.cpp logs for the same MoE runs to see which tensors/layers are actually
+  on Metal. Matching `-ngl 99` is not enough if bitnet.c and llama.cpp place
+  routed experts differently.
+- [ ] **Qwen3.6 Metal fixture** — add a Qwen3.6 GGUF before any Metal support
+  claim. Run both dense and MoE forms if available, then decide whether the
+  limiting work is architecture rules, quant kernels, or MoE placement.
 
 ### Next Architecture Cleanup
 

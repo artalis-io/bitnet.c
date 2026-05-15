@@ -1,21 +1,20 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Fused flash attention: Q·K scores + online softmax + weighted V combine
-// Zero barriers, zero shared memory — uses simd_sum for dot product reduction.
+// Fused short-context attention: Q·K scores + softmax + weighted V combine.
 //
-// 8 heads per threadgroup (1 simdgroup = 32 threads per head).
-// Each thread owns head_size/32 output dimensions and loops over all KV positions.
-// simd_sum across 32 lanes gives the full Q·K dot product (0 barriers).
-// Online softmax per thread (all lanes see the same score via simd_sum).
+// One threadgroup handles one attention head. Eight simdgroups compute score
+// tiles in parallel, then the full threadgroup normalizes scores and combines V.
+// This keeps short decode parallelism closer to the scores/softmax/combine path
+// while avoiding the intermediate global attention buffer and two extra
+// dispatches.
 //
-// Dispatch: (ceil(n_heads/8), 1, 1)
+// Dispatch: (n_heads, 1, 1)
 //
 // p0 = n_heads, p1 = head_size, p2 = n_kv, p3 = kv_mul
 // p4 = kv_dim, p5 = seq_len, p6 = loff, p7 = inv_sqrt_hs (bitcast)
 
-// Max dims per thread: head_size=256 / 32 threads = 8
-constant uint MAX_DPT = 8;
+constant uint MAX_FLASH_KV = 1024;
 
 kernel void flash_attn(device const float *q           [[buffer(0)]],
                        device const float *key_cache   [[buffer(1)]],
@@ -28,54 +27,74 @@ kernel void flash_attn(device const float *q           [[buffer(0)]],
     uint kv_dim = p[4], loff = p[6];
     float scale = as_type<float>(p[7]);
 
-    uint simd_id = lid.x >> 5;       // 0-7: which simdgroup
-    uint lane = lid.x & 31;          // 0-31: lane within simdgroup
-    uint h = wid.x * 8 + simd_id;   // global head index
+    threadgroup float scores[MAX_FLASH_KV];
+    threadgroup float simd_scratch[8];
 
-    if (h >= n_heads) return;
+    uint tid = lid.x;
+    uint simd_id = tid >> 5;
+    uint lane = tid & 31;
+    uint h = wid.x;
+
+    if (h >= n_heads || n_kv > MAX_FLASH_KV) return;
 
     uint kv_h = h / kv_mul;
-    uint dpt = (head_size + 31) >> 5;  // dims per thread = ceil(head_size/32)
-    uint d_base = lane * dpt;
+    uint q_base = h * head_size;
 
-    // Load Q for this head into registers
-    float q_reg[MAX_DPT];
-    for (uint i = 0; i < dpt && d_base + i < head_size; i++)
-        q_reg[i] = q[h * head_size + d_base + i];
-
-    // Online softmax state
-    float my_max = -3.402823e+38f;
-    float my_sum = 0.0f;
-    float out_reg[MAX_DPT];
-    for (uint i = 0; i < dpt; i++)
-        out_reg[i] = 0.0f;
-
-    for (uint t = 0; t < n_kv; t++) {
+    for (uint t = simd_id; t < n_kv; t += 8) {
         uint kv_base = loff + t * kv_dim + kv_h * head_size;
-
-        // Partial Q·K dot product (dpt elements per thread)
         float partial = 0.0f;
-        for (uint i = 0; i < dpt && d_base + i < head_size; i++)
-            partial += q_reg[i] * key_cache[kv_base + d_base + i];
-
-        // Full dot product via simd_sum (0 barriers)
+        for (uint d = lane; d < head_size; d += 32)
+            partial += q[q_base + d] * key_cache[kv_base + d];
         float score = simd_sum(partial) * scale;
+        if (lane == 0)
+            scores[t] = score;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        // Online softmax update (all 32 lanes compute the same values)
-        float prev_max = my_max;
-        my_max = max(my_max, score);
-        float exp_diff = exp(prev_max - my_max);
-        float exp_score = exp(score - my_max);
-        my_sum = my_sum * exp_diff + exp_score;
+    float local_max = -3.402823e+38f;
+    for (uint t = tid; t < n_kv; t += 256)
+        local_max = max(local_max, scores[t]);
 
-        // Weighted V accumulation (each thread handles its own dimensions)
-        for (uint i = 0; i < dpt && d_base + i < head_size; i++)
-            out_reg[i] = out_reg[i] * exp_diff + exp_score * value_cache[kv_base + d_base + i];
+    float partial_max = simd_max(local_max);
+    if (lane == 0) simd_scratch[simd_id] = partial_max;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid < 8) {
+        float v = simd_scratch[tid];
+        v = max(v, simd_shuffle_xor(v, 4));
+        v = max(v, simd_shuffle_xor(v, 2));
+        v = max(v, simd_shuffle_xor(v, 1));
+        if (tid == 0) simd_scratch[0] = v;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float max_score = simd_scratch[0];
+
+    float local_sum = 0.0f;
+    for (uint t = tid; t < n_kv; t += 256) {
+        float e = exp(scores[t] - max_score);
+        scores[t] = e;
+        local_sum += e;
     }
 
-    // Write output (each thread writes its dimensions independently)
-    float inv_sum = 1.0f / my_sum;
+    float partial_sum = simd_sum(local_sum);
+    if (lane == 0) simd_scratch[simd_id] = partial_sum;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid < 8) {
+        float v = simd_scratch[tid];
+        v += simd_shuffle_xor(v, 4);
+        v += simd_shuffle_xor(v, 2);
+        v += simd_shuffle_xor(v, 1);
+        if (tid == 0) simd_scratch[0] = v;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float inv_sum = 1.0f / simd_scratch[0];
+
     uint out_base = h * head_size;
-    for (uint i = 0; i < dpt && d_base + i < head_size; i++)
-        xb[out_base + d_base + i] = out_reg[i] * inv_sum;
+    for (uint d = tid; d < head_size; d += 256) {
+        float acc = 0.0f;
+        for (uint t = 0; t < n_kv; t++) {
+            uint v_base = loff + t * kv_dim + kv_h * head_size;
+            acc += scores[t] * value_cache[v_base + d];
+        }
+        xb[out_base + d] = acc * inv_sum;
+    }
 }
