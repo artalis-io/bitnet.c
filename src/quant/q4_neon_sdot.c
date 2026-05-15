@@ -149,7 +149,7 @@ void bn_quant_q4_neon_sdot_range(void *ctx, int row_start, int row_end) {
     }
 }
 
-#define Q4_NEON_MATMUL_TILE_T 12
+#define Q4_NEON_MATMUL_TILE_T 16
 
 void bn_quant_q4_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
     BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
