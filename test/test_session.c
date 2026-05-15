@@ -236,6 +236,7 @@ static void test_session_reset_tq(void) {
 
     bn_session_free(s, NULL);
     bn_tq_free(&tq);
+    bn_model_free(&model);
     printf("PASSED\n");
 }
 
