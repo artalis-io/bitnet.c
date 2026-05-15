@@ -7,11 +7,35 @@
 #include "threadpool.h"
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
 
 #ifdef __AVX2__
 #include <immintrin.h>
 
 #define BATCHED_RMSNORM bn_transformer_rmsnorm_avx2
+
+static inline float batched_fast_expf(float x) {
+#if defined(__AVX512F__)
+    return expf(x);
+#else
+    if (x < -87.3f) x = -87.3f;
+    if (x > 88.7f) x = 88.7f;
+
+    float n_f = floorf(x * 1.4426950409f + 0.5f);
+    int n = (int)n_f;
+    float r = x - n_f * 0.6931471806f;
+
+    float poly = ((0.04166664f * r + 0.16666667f) * r + 0.49999994f) * r + 1.0f;
+    poly = poly * r + 1.0f;
+
+    union {
+        uint32_t i;
+        float f;
+    } e2n;
+    e2n.i = (uint32_t)(n + 127) << 23;
+    return poly * e2n.f;
+#endif
+}
 
 static inline float batched_dot_fp32(const float *q, const float *k, int head_size) {
     __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps();
@@ -247,7 +271,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
 
                     float old_max = running_max;
                     if (score > old_max) {
-                        float rescale = expf(old_max - score);
+                        float rescale = batched_fast_expf(old_max - score);
                         running_max = score;
                         running_sum *= rescale;
                         __m256 rs_v = _mm256_set1_ps(rescale);
@@ -255,7 +279,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
                             _mm256_storeu_ps(out_buf + rd, _mm256_mul_ps(_mm256_loadu_ps(out_buf + rd), rs_v));
                     }
 
-                    float w = expf(score - running_max);
+                    float w = batched_fast_expf(score - running_max);
                     running_sum += w;
                     if (kv_f16)
                         batched_acc_v_fp16(out_buf, w, (const uint16_t *)s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
@@ -355,7 +379,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
 
                 float old_max = running_max;
                 if (score > old_max) {
-                    float rescale = expf(old_max - score);
+                    float rescale = batched_fast_expf(old_max - score);
                     running_max = score;
                     running_sum *= rescale;
                     __m256 rs_v = _mm256_set1_ps(rescale);
@@ -363,7 +387,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
                         _mm256_storeu_ps(out_buf + rd, _mm256_mul_ps(_mm256_loadu_ps(out_buf + rd), rs_v));
                 }
 
-                float w = expf(score - running_max);
+                float w = batched_fast_expf(score - running_max);
                 running_sum += w;
                 if (kv_f16)
                     batched_acc_v_fp16(out_buf, w, (const uint16_t *)s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
