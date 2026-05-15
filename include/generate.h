@@ -70,6 +70,8 @@ int bn_generate_speculative(BnModel *target, BnSession *ts,
 // If no_prefill is set, runs tokens one at a time (for debugging).
 float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                   int pos0, int no_prefill);
+int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
+                         int n_tokens, int pos0, int no_prefill);
 
 // Encode text into tokens. Returns number of tokens written.
 // alloc is used for scratch buffer (NULL = stdlib default).

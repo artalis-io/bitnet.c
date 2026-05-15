@@ -1002,56 +1002,65 @@ int main(int argc, char **argv) {
         int pos = 0;
         int n_generated = 0;
 
-        // Prefill prompt tokens
-        float *logits = bn_prefill(&model, session, prompt_tokens, n_prompt, 0, args.no_prefill);
-        pos = n_prompt;
-
-        // Also prefill draft model if speculative decoding
-        if (has_draft && logits) {
-            bn_prefill(&draft_model, draft_session, prompt_tokens, n_prompt, 0, args.no_prefill);
-        }
-
-        if (!logits) {
-            SH_LOG_ERROR("Forward pass returned NULL during prompt");
-        } else {
-            for (int i = 0; i < n_prompt; i++) {
-                bn_sampler_accept(&sampler, prompt_tokens[i]);
+        if (args.n_tokens == 0 && !has_draft) {
+            if (bn_prefill_no_logits(&model, session, prompt_tokens, n_prompt, 0,
+                                     args.no_prefill) != 0) {
+                SH_LOG_ERROR("Forward pass returned NULL during prompt");
             }
+            pos = n_prompt;
             gen_start = bn_platform_time_ms();
+        } else {
+            // Prefill prompt tokens
+            float *logits = bn_prefill(&model, session, prompt_tokens, n_prompt, 0, args.no_prefill);
+            pos = n_prompt;
+
+            // Also prefill draft model if speculative decoding
+            if (has_draft && logits) {
+                bn_prefill(&draft_model, draft_session, prompt_tokens, n_prompt, 0, args.no_prefill);
+            }
+
+            if (!logits) {
+                SH_LOG_ERROR("Forward pass returned NULL during prompt");
+            } else {
+                for (int i = 0; i < n_prompt; i++) {
+                    bn_sampler_accept(&sampler, prompt_tokens[i]);
+                }
+                gen_start = bn_platform_time_ms();
 #ifdef DEBUG
-            // Dump top-10 logits after prefill
-            {
-                int top[10];
-                for (int k = 0; k < 10; k++) top[k] = 0;
-                for (int v = 0; v < cfg->vocab_size; v++) {
-                    for (int k = 0; k < 10; k++) {
-                        if (logits[v] > logits[top[k]]) {
-                            for (int j = 9; j > k; j--) top[j] = top[j-1];
-                            top[k] = v;
-                            break;
+                // Dump top-10 logits after prefill
+                {
+                    int top[10];
+                    for (int k = 0; k < 10; k++) top[k] = 0;
+                    for (int v = 0; v < cfg->vocab_size; v++) {
+                        for (int k = 0; k < 10; k++) {
+                            if (logits[v] > logits[top[k]]) {
+                                for (int j = 9; j > k; j--) top[j] = top[j-1];
+                                top[k] = v;
+                                break;
+                            }
                         }
                     }
+                    fprintf(stderr, "DBG top10 after prefill:\n");
+                    for (int k = 0; k < 10; k++)
+                        fprintf(stderr, "  token %6d: %.4f\n", top[k], logits[top[k]]);
                 }
-                fprintf(stderr, "DBG top10 after prefill:\n");
-                for (int k = 0; k < 10; k++)
-                    fprintf(stderr, "  token %6d: %.4f\n", top[k], logits[top[k]]);
-            }
 #endif
-            // Generate tokens — speculative or standard
-            if (has_draft) {
-                n_generated = bn_generate_speculative(
-                    &model, session, &draft_model, draft_session, args.draft_k,
-                    &tokenizer, &sampler, args.n_tokens, &pos,
-                    args.quiet ? NULL : print_token, NULL, NULL);
-                if (n_generated < 0)
-                    SH_LOG_ERROR("Speculative generation failed");
-            } else {
-                BnChatHistory out_ctx = { NULL, 0, 0, args.token_ids };
-                n_generated = bn_generate(&model, session, &tokenizer, &sampler,
-                                           args.n_tokens, &pos,
-                                           args.quiet ? NULL : print_token,
-                                           args.token_ids ? &out_ctx : NULL,
-                                           NULL, NULL);
+                // Generate tokens — speculative or standard
+                if (has_draft) {
+                    n_generated = bn_generate_speculative(
+                        &model, session, &draft_model, draft_session, args.draft_k,
+                        &tokenizer, &sampler, args.n_tokens, &pos,
+                        args.quiet ? NULL : print_token, NULL, NULL);
+                    if (n_generated < 0)
+                        SH_LOG_ERROR("Speculative generation failed");
+                } else {
+                    BnChatHistory out_ctx = { NULL, 0, 0, args.token_ids };
+                    n_generated = bn_generate(&model, session, &tokenizer, &sampler,
+                                               args.n_tokens, &pos,
+                                               args.quiet ? NULL : print_token,
+                                               args.token_ids ? &out_ctx : NULL,
+                                               NULL, NULL);
+                }
             }
         }
 

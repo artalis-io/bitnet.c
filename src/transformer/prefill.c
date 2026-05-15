@@ -150,9 +150,13 @@ static void prefill_fill_rope(float *rope_cos_buf, float *rope_sin_buf,
 }
 
 static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
-                               int n_tokens, int pos0, float *all_logits) {
+                               int n_tokens, int pos0, float *all_logits,
+                               int need_last_logits) {
     if (n_tokens <= 0) return NULL;
-    if (n_tokens == 1) return bn_transformer_forward(m, sess, tokens[0], pos0);
+    if (n_tokens == 1) {
+        float *logits = bn_transformer_forward(m, sess, tokens[0], pos0);
+        return need_last_logits ? logits : (logits ? sess->state.x : NULL);
+    }
 
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
@@ -265,6 +269,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     if (!rope_cos_buf || !rope_sin_buf) { sh_arena_free(pf_arena); return NULL; }
 
     BnWeights *w = &m->weights;
+    int rope_cache_dims = -1;
+    float rope_cache_theta = 0.0f;
 
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
@@ -279,9 +285,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int layer_kv_mul = plan.kv_mul;
             int layer_q_dim = plan.q_dim;
             int layer_rope_dims = prefill_layer_rope_dims(c, layer_head_size);
-            prefill_fill_rope(rope_cos_buf, rope_sin_buf, half_rope, n_tokens, pos0,
-                              layer_rope_dims,
-                              prefill_layer_rope_theta(c, layer_head_size));
+            float layer_rope_theta = prefill_layer_rope_theta(c, layer_head_size);
+            if (rope_cache_dims != layer_rope_dims ||
+                rope_cache_theta != layer_rope_theta) {
+                prefill_fill_rope(rope_cos_buf, rope_sin_buf, half_rope, n_tokens, pos0,
+                                  layer_rope_dims, layer_rope_theta);
+                rope_cache_dims = layer_rope_dims;
+                rope_cache_theta = layer_rope_theta;
+            }
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
                                 lw->norm.attn_norm, dim, c->norm_eps);
@@ -754,12 +765,19 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     memcpy(s->x, act + (size_t)(n_tokens - 1) * dim, dim * sizeof(float));
     sh_arena_free(pf_arena);
-    return prefill_logits(m, sess);
+    if (need_last_logits)
+        return prefill_logits(m, sess);
+    return s->x;
 }
 
 float *bn_transformer_prefill(BnModel *m, BnSession *s, const int *tokens,
                               int n_tokens, int pos0) {
-    return prefill_internal(m, s, tokens, n_tokens, pos0, NULL);
+    return prefill_internal(m, s, tokens, n_tokens, pos0, NULL, 1);
+}
+
+int bn_transformer_prefill_no_logits(BnModel *m, BnSession *s, const int *tokens,
+                                     int n_tokens, int pos0) {
+    return prefill_internal(m, s, tokens, n_tokens, pos0, NULL, 0) ? 0 : -1;
 }
 
 int bn_transformer_prefill_all(BnModel *m, BnSession *s, const int *tokens,
@@ -773,6 +791,6 @@ int bn_transformer_prefill_all(BnModel *m, BnSession *s, const int *tokens,
         return 0;
     }
 
-    float *result = prefill_internal(m, s, tokens, n_tokens, pos0, all_logits);
+    float *result = prefill_internal(m, s, tokens, n_tokens, pos0, all_logits, 1);
     return result ? 0 : -1;
 }

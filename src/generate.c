@@ -318,6 +318,19 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
     return logits;
 }
 
+int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
+                         int n_tokens, int pos0, int no_prefill) {
+    int gpu_attached = bn_model_gpu(model) != NULL;
+    if (!no_prefill && n_tokens > 1 &&
+        (!gpu_attached || getenv("BN_GPU_PREFILL_MATMUL"))) {
+        return bn_transformer_prefill_no_logits(model, s, tokens, n_tokens, pos0);
+    }
+    float *logits = NULL;
+    for (int i = 0; i < n_tokens; i++)
+        logits = bn_transformer_forward(model, s, tokens[i], pos0 + i);
+    return logits ? 0 : -1;
+}
+
 int bn_count_tokens(const BnTokenizer *tok, const char *text,
                     BnAllocator *alloc) {
     alloc = resolve_alloc(alloc);

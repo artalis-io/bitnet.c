@@ -433,6 +433,21 @@ static void test_prefill_null_model(void) {
     printf("PASSED\n");
 }
 
+static void test_prefill_no_logits_null_model(void) {
+    printf("test_prefill_no_logits_null_model... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    BnSession sess;
+    memset(&sess, 0, sizeof(sess));
+
+    int tokens[] = {2, 3};
+    int rc = bn_prefill_no_logits(&model, &sess, tokens, 2, 0, 1);
+    assert(rc == -1);
+
+    printf("PASSED\n");
+}
+
 // ===================================================================
 // Test bn_chat_format_messages (multi-turn)
 // ===================================================================
@@ -1062,6 +1077,7 @@ int main(void) {
     test_generate_stop_multiple();
     test_generate_stop_empty_list();
     test_prefill_null_model();
+    test_prefill_no_logits_null_model();
     test_logprobs_basic();
     test_logprobs_sum_to_one();
     test_logprobs_zero_topk();
