@@ -256,12 +256,15 @@ static void test_q4_matmul_correctness(void) {
     float *ref = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_multi0 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_multi1 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     int8_t *x_q = (int8_t *)malloc((size_t)cols);
     int n_groups = rows / 4;
     BnPreparedWeight prepared = { 0 };
     prepared.qs = (uint8_t *)calloc((size_t)n_groups * n_bpr * 64, 1);
     prepared.scales = (uint16_t *)calloc((size_t)n_groups * n_bpr * 4, sizeof(uint16_t));
-    assert(X && ref && out && out_prepared && x_q && prepared.qs && prepared.scales);
+    assert(X && ref && out && out_prepared && out_multi0 && out_multi1 &&
+           x_q && prepared.qs && prepared.scales);
 
     for (int g = 0; g < n_groups; g++) {
         for (int b = 0; b < n_bpr; b++) {
@@ -295,6 +298,13 @@ static void test_q4_matmul_correctness(void) {
 
     bn_quant_matmul(out, &W, X, n_tokens, x_q, NULL);
     bn_quant_matmul_prepared(out_prepared, &W, &prepared, X, n_tokens, x_q, NULL);
+    {
+        float *multi_out[2] = { out_multi0, out_multi1 };
+        const BnQWeight *multi_w[2] = { &W, &W };
+        const BnPreparedWeight *multi_prepared[2] = { &prepared, &prepared };
+        bn_quant_matmul_prepared_multi(multi_out, multi_w, multi_prepared, 2,
+                                       X, n_tokens, x_q, NULL);
+    }
 
     for (int t = 0; t < n_tokens; t++) {
         for (int r = 0; r < rows; r++) {
@@ -303,10 +313,15 @@ static void test_q4_matmul_correctness(void) {
             assert(diff / mag < 0.01f || diff < 1e-4f);
             diff = fabsf(out_prepared[(size_t)t * rows + r] - ref[(size_t)t * rows + r]);
             assert(diff / mag < 0.01f || diff < 1e-4f);
+            diff = fabsf(out_multi0[(size_t)t * rows + r] - ref[(size_t)t * rows + r]);
+            assert(diff / mag < 0.01f || diff < 1e-4f);
+            diff = fabsf(out_multi1[(size_t)t * rows + r] - ref[(size_t)t * rows + r]);
+            assert(diff / mag < 0.01f || diff < 1e-4f);
         }
     }
 
     free(blocks); free(X); free(ref); free(out); free(out_prepared);
+    free(out_multi0); free(out_multi1);
     free(x_q); free(prepared.qs); free(prepared.scales);
     printf("PASSED\n");
 }

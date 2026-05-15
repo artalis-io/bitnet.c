@@ -47,6 +47,31 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                     bn_model_gpu(m));
 }
 
+static void prefill_quant_matmul_multi(const BnModel *m,
+                                       float **out,
+                                       const BnQWeight **W,
+                                       int n,
+                                       const float *X,
+                                       int n_tokens,
+                                       int8_t *x_q_buf) {
+    if (!bn_model_gpu(m)) {
+        const BnBackendModel *backend = bn_model_backend(m);
+        const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
+        if (n > 4) {
+            for (int i = 0; i < n; i++)
+                prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, x_q_buf);
+            return;
+        }
+        for (int i = 0; i < n; i++)
+            prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
+        bn_quant_matmul_prepared_multi(out, W, prepared, n, X, n_tokens,
+                                       x_q_buf, bn_model_pool(m));
+        return;
+    }
+    for (int i = 0; i < n; i++)
+        prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, x_q_buf);
+}
+
 #ifdef __AVX2__
 static int prefill_quant_can_preq8k_pair(int a, int b) {
     return bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
@@ -402,9 +427,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             } else
 #endif
             {
-                prefill_quant_matmul_gpu(m, Q_buf, &lw->attn.wq, Xb, n_tokens, s->x_q);
-                prefill_quant_matmul_gpu(m, K_new, &lw->attn.wk, Xb, n_tokens, s->x_q);
-                prefill_quant_matmul_gpu(m, V_new, &lw->attn.wv, Xb, n_tokens, s->x_q);
+                float *qkv_out[3] = { Q_buf, K_new, V_new };
+                const BnQWeight *qkv_w[3] = {
+                    &lw->attn.wq, &lw->attn.wk, &lw->attn.wv
+                };
+                prefill_quant_matmul_multi(m, qkv_out, qkv_w, 3, Xb,
+                                           n_tokens, s->x_q);
             }
 
             int attn_idx = plan.attn_idx;
@@ -679,8 +707,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 } else
 #endif
                 {
-                    prefill_quant_matmul_gpu(m, Hb, &lw->ffn.ffn_gate, Xb, n_tokens, s->x_q);
-                    prefill_quant_matmul_gpu(m, Hb2, &lw->ffn.ffn_up, Xb, n_tokens, s->x_q);
+                    float *gu_out[2] = { Hb, Hb2 };
+                    const BnQWeight *gu_w[2] = {
+                        &lw->ffn.ffn_gate, &lw->ffn.ffn_up
+                    };
+                    prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,
+                                               n_tokens, s->x_q);
                 }
 
                 BnPrefillFFNActCtx act_ctx = { Hb, Hb2, hidden_dim, c->act_type };

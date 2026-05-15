@@ -175,6 +175,96 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
     bn_quant_matmul_prepared(out, W, NULL, X, n_tokens, x_q_buf, pool);
 }
 
+#define BN_MAX_PREPARED_MULTI_MATMUL 4
+
+void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
+                                    const BnPreparedWeight **prepared, int n,
+                                    const float *X, int n_tokens,
+                                    int8_t *x_q_buf, BnThreadPool *pool) {
+    if (n <= 0 || n > BN_MAX_PREPARED_MULTI_MATMUL) {
+        for (int i = 0; i < n; i++)
+            bn_quant_matmul_prepared(out[i], W[i],
+                                     prepared ? prepared[i] : NULL,
+                                     X, n_tokens, x_q_buf, pool);
+        return;
+    }
+
+    if (n_tokens <= 1) {
+        for (int i = 0; i < n; i++)
+            bn_quant_matmul_prepared(out[i], W[i],
+                                     prepared ? prepared[i] : NULL,
+                                     X, n_tokens, x_q_buf, pool);
+        return;
+    }
+
+#if defined(__AVX2__) || (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
+    {
+        int cols = W[0]->cols;
+        int all_q4 = cols > 0 && cols % 32 == 0;
+        for (int i = 0; i < n; i++) {
+            if (!W[i] || W[i]->type != BN_GGUF_TENSOR_Q4_0 ||
+                W[i]->cols != cols) {
+                all_q4 = 0;
+                break;
+            }
+        }
+
+        if (all_q4) {
+            int n_blocks = cols / 32;
+            if (n_blocks < 1 || n_blocks > BN_MAX_SCALE_BLOCKS)
+                goto fallback_loop;
+            size_t xq_size = (size_t)n_tokens * cols;
+            if (xq_size / (size_t)n_tokens != (size_t)cols)
+                goto fallback_loop;
+            int8_t *xq_all = (int8_t *)malloc(xq_size);
+            float *xs_all = (float *)malloc((size_t)n_tokens * n_blocks * sizeof(float));
+            if (!xq_all || !xs_all) {
+                free(xq_all);
+                free(xs_all);
+                goto fallback_loop;
+            }
+
+            for (int t = 0; t < n_tokens; t++)
+                bn_quant_x_to_q8_blocks(X + (size_t)t * cols,
+                                        xq_all + (size_t)t * cols,
+                                        xs_all + (size_t)t * n_blocks, cols);
+
+            BnQ4MatmulCtx ctxs[BN_MAX_PREPARED_MULTI_MATMUL];
+            BnTPTask tasks[BN_MAX_PREPARED_MULTI_MATMUL];
+            for (int i = 0; i < n; i++) {
+                memset(out[i], 0, (size_t)n_tokens * W[i]->rows * sizeof(float));
+                ctxs[i] = (BnQ4MatmulCtx){
+                    out[i], W[i], xq_all, xs_all,
+                    prepared ? prepared[i] : NULL,
+                    n_tokens, cols
+                };
+#ifdef __AVX2__
+                tasks[i] = (BnTPTask){ bn_quant_q4_avx2_matmul_range,
+                                       &ctxs[i], W[i]->rows };
+#else
+                tasks[i] = (BnTPTask){
+                    (prepared && prepared[i] &&
+                     prepared[i]->qs && prepared[i]->scales)
+                        ? bn_quant_q4_repacked_neon_sdot_matmul_range
+                        : bn_quant_q4_neon_sdot_matmul_range,
+                    &ctxs[i],
+                    W[i]->rows
+                };
+#endif
+            }
+            bn_tp_dispatch(pool, tasks, n);
+            free(xq_all);
+            free(xs_all);
+            return;
+        }
+    }
+fallback_loop:
+#endif
+    for (int i = 0; i < n; i++)
+        bn_quant_matmul_prepared(out[i], W[i], prepared ? prepared[i] : NULL,
+                                 X, n_tokens, x_q_buf, pool);
+}
+
 void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
                             const int8_t *x_q, const float *x_d,
                             const int16_t *x_bsums, const float *x_float,

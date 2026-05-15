@@ -321,6 +321,10 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               const BnPreparedWeight *prepared,
                               const float *X, int n_tokens,
                               int8_t *x_q_buf, BnThreadPool *pool);
+void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
+                                    const BnPreparedWeight **prepared, int n,
+                                    const float *X, int n_tokens,
+                                    int8_t *x_q_buf, BnThreadPool *pool);
 
 // Matmul with pre-quantized Q8_K input (avoids redundant re-quantization).
 // x_q/x_d/x_bsums must be [n_tokens * cols] / [n_tokens * n_bpr] / [n_tokens * n_bpr * 16].
