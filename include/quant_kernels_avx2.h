@@ -9,6 +9,7 @@ void bn_quant_tq2_avx2_range(void *ctx, int start, int end);
 void bn_quant_tq1_avx2_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_range(void *ctx, int start, int end);
 void bn_quant_q8_avx2_4row_range(void *ctx, int start, int end);
+void bn_quant_q8_avx2_matmul_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_4row_range(void *ctx, int start, int end);
 void bn_quant_q4_avx2_matmul_range(void *ctx, int start, int end);

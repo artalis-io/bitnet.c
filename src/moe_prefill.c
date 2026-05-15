@@ -102,6 +102,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                           struct BnLayerWeights *lw, int l,
                           float *act, float *Xb, int n_tokens) {
     (void)l;  // reserved for pread cache keying in future
+    double t_compute = bn_moe_time_ms();
+    double t0;
     BnConfig *c = &m->config;
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
@@ -111,9 +113,11 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     const BnMoEExpertMap *map = &lw->moe.expert_map;
 
     // 1. Batch RMSNorm
+    t0 = bn_moe_time_ms();
     for (int t = 0; t < n_tokens; t++)
         bn_moe_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
                     lw->norm.ffn_norm, dim, c->norm_eps);
+    ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     // 2. Batch routing: route each token individually (reuse existing router)
     // Allocate routing results: [n_tokens][K] indices and weights
@@ -133,9 +137,11 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     memset(all_indices, 0, sz_idx);
     memset(all_weights, 0, sz_wts);
 
+    t0 = bn_moe_time_ms();
     moe_batch_route(batch_logits, all_indices, all_weights, Xb,
                     lw->moe.router_weight, n_tokens, dim, n_experts, K,
                     bn_model_pool(m));
+    ms->stats.route_time_ms += bn_moe_time_ms() - t0;
 
     // 3. Build token-expert grouping (two-pass)
     // Pass 1: count tokens per expert
@@ -255,6 +261,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                                             map->down_rows, map->down_cols);
 
         // Gate + Up matmul (T tokens at once)
+        t0 = bn_moe_time_ms();
         if (T == 1) {
             // Single token: use matvec (less overhead)
             BnMatvecTask gu[2] = {
@@ -266,8 +273,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             bn_quant_matmul(gate_buf, &wgate, gather_buf, T, x_q_scratch, bn_model_pool(m));
             bn_quant_matmul(up_buf, &wup, gather_buf, T, x_q_scratch, bn_model_pool(m));
         }
+        ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
         // SwiGLU activation across T * moe_hidden
+        t0 = bn_moe_time_ms();
         {
             size_t swiglu_n = (size_t)T * moe_hidden;
             for (size_t i = 0; i < swiglu_n; i++) {
@@ -275,15 +284,19 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 gate_buf[i] = (g / (1.0f + expf(-g))) * up_buf[i];
             }
         }
+        ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
         // Down matmul
+        t0 = bn_moe_time_ms();
         if (T == 1) {
             bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch, bn_model_pool(m));
         } else {
             bn_quant_matmul(down_buf, &wdown, gate_buf, T, x_q_scratch, bn_model_pool(m));
         }
+        ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
         // Scatter-add with routing weights
+        t0 = bn_moe_time_ms();
         for (int i = 0; i < T; i++) {
             int tid = group_token_ids[off + i];
             float w = group_weights[off + i];
@@ -292,10 +305,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             for (int d = 0; d < dim; d++)
                 out_t[d] += w * down_t[d];
         }
+        ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
     }
 
     // 6. Shared expert (if present) — batch matmul across all tokens
     if (c->has_shared_expert && lw->shared.shared_gate.data) {
+        t0 = bn_moe_time_ms();
         int shared_hidden = c->shared_expert_intermediate_size;
         float *sh_gate = gate_buf;  // reuse (T_max >= 1, shared_hidden <= moe_hidden usually)
         float *sh_up = up_buf;
@@ -347,6 +362,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             if (sh_u) bn_free(&a, sh_u, sz_shg);
             if (sh_d) bn_free(&a, sh_d, sz_shd);
         }
+        ms->stats.shared_time_ms += bn_moe_time_ms() - t0;
     }
 
     // 7. Residual add: act += moe_out
@@ -364,5 +380,6 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     bn_free(&a, group_token_ids, sz_gtid); bn_free(&a, group_weights, sz_gwts);
     bn_free(&a, fill_pos, sz_fill);
 
+    ms->stats.compute_time_ms += bn_moe_time_ms() - t_compute;
     return 0;
 }

@@ -12,6 +12,7 @@
 #include "transformer.h"
 #include "sampler.h"
 #include "threadpool.h"
+#include "moe.h"
 #include "../src/gpu_shader_ir_internal.h"
 #include "../src/transformer/gpu_internal.h"
 #ifdef BN_ENABLE_WEBGPU
@@ -525,6 +526,8 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters) {
     }
 
     double t0 = bn_platform_time_ms();
+    if (session && session->moe_state)
+        bn_moe_reset_stats(session->moe_state);
     for (int i = 0; i < n_iters; i++) {
         float *logits = bn_transformer_prefill(m, session, tokens, n_prompt, 0);
         if (!logits)
@@ -542,6 +545,8 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters) {
 
     printf("\nPrefill: %.1f tok/s  (%d tokens x %d in %.0f ms)\n",
            toks_per_sec, n_prompt, n_iters, elapsed);
+    if (session && session->moe_state)
+        bn_moe_print_stats(session->moe_state, n_prompt * n_iters);
 
 done:
     bn_session_free(session, NULL);

@@ -58,3 +58,48 @@ void bn_quant_q8_avx2_4row_range(void *ctx, int group_start, int group_end) {
             c->out[row0 + r] = row_sums[r];
     }
 }
+
+#define Q8_MATMUL_TILE_T 8
+
+void bn_quant_q8_avx2_matmul_range(void *ctx, int row_start, int row_end) {
+    BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
+    int cols = c->cols;
+    int rows = c->W->rows;
+    int n_bpr = cols / 32;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)c->W->data;
+    const int8_t *x_q = c->x_q;
+    const float *x_scales = c->x_scales;
+    (void)c->prepared;
+
+    for (int t0 = 0; t0 < n_tokens; t0 += Q8_MATMUL_TILE_T) {
+        int t_end = t0 + Q8_MATMUL_TILE_T;
+        if (t_end > n_tokens) t_end = n_tokens;
+        int tn = t_end - t0;
+
+        for (int row = row_start; row < row_end; row++) {
+            __m256 facc[Q8_MATMUL_TILE_T];
+            for (int ti = 0; ti < tn; ti++)
+                facc[ti] = _mm256_setzero_ps();
+
+            for (int b = 0; b < n_bpr; b++) {
+                const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_bpr + b];
+                __m256i w = _mm256_loadu_si256((const __m256i *)blk->qs);
+                __m256 d_w = _mm256_set1_ps(bn_fp16_to_fp32(blk->d));
+
+                for (int ti = 0; ti < tn; ti++) {
+                    int t = t0 + ti;
+                    __m256i xq = _mm256_loadu_si256(
+                        (const __m256i *)(x_q + (size_t)t * cols + b * 32));
+                    __m256 d = _mm256_mul_ps(
+                        d_w, _mm256_set1_ps(x_scales[(size_t)t * n_bpr + b]));
+                    __m256i dot = bn_avx2_dpbusd(_mm256_setzero_si256(), w, xq);
+                    facc[ti] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(dot), d, facc[ti]);
+                }
+            }
+
+            for (int ti = 0; ti < tn; ti++)
+                c->out[(size_t)(t0 + ti) * rows + row] += bn_avx2_hsum_ps(facc[ti]);
+        }
+    }
+}

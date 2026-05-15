@@ -8,6 +8,7 @@ void bn_quant_tq2_scalar_range(void *ctx, int start, int end);
 void bn_quant_tq1_scalar_range(void *ctx, int start, int end);
 void bn_quant_q8_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q8_scalar_range(void *ctx, int start, int end);
+void bn_quant_q8_scalar_matmul_range(void *ctx, int start, int end);
 void bn_quant_q4_scalar_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_scalar_range(void *ctx, int start, int end);
