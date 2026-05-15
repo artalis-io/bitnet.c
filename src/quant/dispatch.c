@@ -416,9 +416,13 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
         BnQ5KCtx ctx = { out, W, x };
         BnTPTask task = { bn_quant_q5k_wasm_range, &ctx, W->rows };
 #else
-        (void)x_q_buf;
-        BnQ5KCtx ctx = { out, W, x };
-        BnTPTask task = { bn_quant_q5k_scalar_range, &ctx, W->rows };
+        int n_sb = W->cols / BN_QK_K;
+        if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) return;
+        float q8k_d[n_sb];
+        int16_t q8k_bsums[n_sb * 16];
+        bn_quant_x_to_q8k_scalar(x, x_q_buf, q8k_d, q8k_bsums, W->cols);
+        BnQ5KSdotCtx ctx = { out, W, x_q_buf, q8k_d, q8k_bsums };
+        BnTPTask task = { bn_quant_q5k_scalar_sdot_range, &ctx, W->rows };
 #endif
 #endif
         bn_tp_dispatch(pool, &task, 1);
