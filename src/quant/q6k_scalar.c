@@ -180,3 +180,84 @@ void bn_quant_q6k_scalar_matmul_range(void *ctx, int row_start, int row_end) {
         }
     }
 }
+
+#define Q6K_SCALAR_SDOT_TILE_T 4
+
+void bn_quant_q6k_scalar_sdot_matmul_range(void *ctx,
+                                            int row_start,
+                                            int row_end) {
+    BnKQuantMatmulCtx *c = (BnKQuantMatmulCtx *)ctx;
+    int cols = c->cols;
+    int rows = c->W->rows;
+    int n_blocks_per_row = cols / BN_QK_K;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)c->W->data;
+
+    for (int row = row_start; row < row_end; row++) {
+        for (int t0 = 0; t0 < n_tokens; t0 += Q6K_SCALAR_SDOT_TILE_T) {
+            int tile_n = t0 + Q6K_SCALAR_SDOT_TILE_T <= n_tokens
+                ? Q6K_SCALAR_SDOT_TILE_T : n_tokens - t0;
+            float sums[Q6K_SCALAR_SDOT_TILE_T] = {0};
+
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                const BnBlockQ6K *blk = &blocks[(size_t)row * n_blocks_per_row + b];
+                float d = bn_fp16_to_fp32(blk->d);
+
+                for (int ti = 0; ti < tile_n; ti++) {
+                    int t = t0 + ti;
+                    float dx = c->x_d[(size_t)t * n_blocks_per_row + b];
+                    const int8_t *xb = c->x_q + (size_t)t * cols + b * BN_QK_K;
+                    const int16_t *bsums =
+                        c->x_bsums + ((size_t)t * n_blocks_per_row + b) * 16;
+                    const uint8_t *ql = blk->ql;
+                    const uint8_t *qh = blk->qh;
+                    const int8_t *sc = blk->scales;
+
+                    int32_t sumi = 0;
+                    int32_t bias_corr = 0;
+                    for (int chunk = 0; chunk < 2; chunk++) {
+                        for (int is = 0; is < 2; is++) {
+                            int l0 = is * 16;
+                            int32_t sum1 = 0;
+                            int32_t sum2 = 0;
+                            int32_t sum3 = 0;
+                            int32_t sum4 = 0;
+                            for (int i = 0; i < 16; i++) {
+                                int l = l0 + i;
+                                uint8_t h = qh[l];
+                                int q1 = (int)((ql[l] & 0x0f) | ((h & 0x03) << 4));
+                                int q2 = (int)((ql[l + 32] & 0x0f) |
+                                    (((h >> 2) & 0x03) << 4));
+                                int q3 = (int)((ql[l] >> 4) |
+                                    (((h >> 4) & 0x03) << 4));
+                                int q4 = (int)((ql[l + 32] >> 4) |
+                                    (((h >> 6) & 0x03) << 4));
+                                sum1 += q1 * (int32_t)xb[l];
+                                sum2 += q2 * (int32_t)xb[l + 32];
+                                sum3 += q3 * (int32_t)xb[l + 64];
+                                sum4 += q4 * (int32_t)xb[l + 96];
+                            }
+                            sumi += (int32_t)sc[is + 0] * sum1 +
+                                    (int32_t)sc[is + 2] * sum2 +
+                                    (int32_t)sc[is + 4] * sum3 +
+                                    (int32_t)sc[is + 6] * sum4;
+                        }
+                        for (int g = 0; g < 8; g++)
+                            bias_corr += (int32_t)sc[g] *
+                                          (int32_t)bsums[chunk * 8 + g];
+
+                        xb += 128;
+                        ql += 64;
+                        qh += 32;
+                        sc += 8;
+                    }
+
+                    sums[ti] += d * dx * (float)(sumi - 32 * bias_corr);
+                }
+            }
+
+            for (int ti = 0; ti < tile_n; ti++)
+                c->out[(size_t)(t0 + ti) * rows + row] += sums[ti];
+        }
+    }
+}
