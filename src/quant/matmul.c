@@ -241,7 +241,6 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
     }
 #elif defined(__AVX2__)
     if (W->type == BN_GGUF_TENSOR_Q5_K) {
-#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
         int n_bpr = cols / BN_QK_K;
         if (n_bpr < 1 || n_bpr > BN_MAX_SCALE_BLOCKS / 8) goto fallback_loop;
         size_t xq_size = (size_t)n_tokens * cols;
@@ -262,23 +261,20 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               xbs_all + (size_t)t * n_bpr * 16, cols);
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
         BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
         BnTPTask task = {
             bn_quant_q5k_avx512_vnni_matmul_4row_range,
             &ctx,
             (rows + 3) / 4
         };
+#else
+        BnTPTask task = { bn_quant_q5k_avx2_sdot_matmul_range, &ctx, rows };
+#endif
         bn_tp_dispatch(pool, &task, 1);
         free(xq_all);
         free(xd_all);
         free(xbs_all);
         return;
-#else
-        memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        BnQ5KMatmulCtx ctx = { out, W, X, n_tokens, cols };
-        BnTPTask task = { bn_quant_q5k_avx2_matmul_range, &ctx, rows };
-        bn_tp_dispatch(pool, &task, 1);
-        return;
-#endif
     }
 #endif
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
