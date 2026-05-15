@@ -149,7 +149,7 @@ void bn_quant_q4_neon_sdot_range(void *ctx, int row_start, int row_end) {
     }
 }
 
-#define Q4_NEON_MATMUL_TILE_T 4
+#define Q4_NEON_MATMUL_TILE_T 8
 
 void bn_quant_q4_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
     BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
@@ -171,7 +171,7 @@ void bn_quant_q4_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
         int tn = t_end - t0;
 
         for (int row = row_start; row < row_end; row++) {
-            float sums[Q4_NEON_MATMUL_TILE_T] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            float sums[Q4_NEON_MATMUL_TILE_T] = { 0.0f };
             size_t base = (size_t)row * n_blocks_per_row;
 
             for (int b = 0; b < n_blocks_per_row; b++) {
@@ -249,10 +249,9 @@ void bn_quant_q4_repacked_neon_sdot_matmul_range(void *ctx, int row_start, int r
             int t_end = t0 + Q4_NEON_MATMUL_TILE_T;
             if (t_end > n_tokens) t_end = n_tokens;
             int tn = t_end - t0;
-            float32x4_t sums[Q4_NEON_MATMUL_TILE_T] = {
-                vdupq_n_f32(0.0f), vdupq_n_f32(0.0f),
-                vdupq_n_f32(0.0f), vdupq_n_f32(0.0f)
-            };
+            float32x4_t sums[Q4_NEON_MATMUL_TILE_T];
+            for (int ti = 0; ti < tn; ti++)
+                sums[ti] = vdupq_n_f32(0.0f);
 
             for (int b = 0; b < n_blocks_per_row; b++) {
                 size_t gb = (size_t)group * n_blocks_per_row + b;
