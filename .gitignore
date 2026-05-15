@@ -1,5 +1,6 @@
 # Build artifacts
 bitnet
+bitnet_scalar
 dump_model
 .build-config
 src/*.o
@@ -35,7 +36,9 @@ test_*
 # Bench binaries
 bench_kernels
 bench_scalar
+bench_scalar_layers
 bench_avx2
+bench_webgpu
 bench_layers
 bench/*.wasm
 bench/*.js
