@@ -1,5 +1,101 @@
 #include "moe_internal.h"
 
+typedef struct {
+    float *logits;
+    const float *router_w;
+    const float *x;
+    int dim;
+    int n_experts;
+} BnMoEBatchRouterCtx;
+
+static void moe_batch_router_range(void *ctx, int start, int end) {
+    BnMoEBatchRouterCtx *c = (BnMoEBatchRouterCtx *)ctx;
+    for (int idx = start; idx < end; idx++) {
+        int t = idx / c->n_experts;
+        int e = idx - t * c->n_experts;
+        const float *row = c->router_w + (size_t)e * c->dim;
+        const float *x = c->x + (size_t)t * c->dim;
+        float sum = 0.0f;
+#ifdef __AVX2__
+        __m256 a0 = _mm256_setzero_ps();
+        __m256 a1 = _mm256_setzero_ps();
+        int d = 0;
+        for (; d + 15 < c->dim; d += 16) {
+            a0 = _mm256_fmadd_ps(_mm256_loadu_ps(row + d),
+                                 _mm256_loadu_ps(x + d), a0);
+            a1 = _mm256_fmadd_ps(_mm256_loadu_ps(row + d + 8),
+                                 _mm256_loadu_ps(x + d + 8), a1);
+        }
+        sum = bn_avx2_hsum_ps(_mm256_add_ps(a0, a1));
+        for (; d < c->dim; d++)
+            sum += row[d] * x[d];
+#elif defined(__ARM_NEON)
+        float32x4_t acc0 = vdupq_n_f32(0.0f);
+        float32x4_t acc1 = vdupq_n_f32(0.0f);
+        float32x4_t acc2 = vdupq_n_f32(0.0f);
+        float32x4_t acc3 = vdupq_n_f32(0.0f);
+        int d = 0;
+        for (; d + 15 < c->dim; d += 16) {
+            acc0 = vfmaq_f32(acc0, vld1q_f32(row + d), vld1q_f32(x + d));
+            acc1 = vfmaq_f32(acc1, vld1q_f32(row + d + 4), vld1q_f32(x + d + 4));
+            acc2 = vfmaq_f32(acc2, vld1q_f32(row + d + 8), vld1q_f32(x + d + 8));
+            acc3 = vfmaq_f32(acc3, vld1q_f32(row + d + 12), vld1q_f32(x + d + 12));
+        }
+        acc0 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
+        sum = vaddvq_f32(acc0);
+        for (; d < c->dim; d++)
+            sum += row[d] * x[d];
+#else
+        for (int d = 0; d < c->dim; d++)
+            sum += row[d] * x[d];
+#endif
+        c->logits[(size_t)t * c->n_experts + e] = sum;
+    }
+}
+
+static void moe_batch_route(float *logits, int *all_indices, float *all_weights,
+                            const float *x, const float *router_w,
+                            int n_tokens, int dim, int n_experts, int k,
+                            BnThreadPool *pool) {
+    BnMoEBatchRouterCtx rctx = { logits, router_w, x, dim, n_experts };
+    BnTPTask rtask = { moe_batch_router_range, &rctx, n_tokens * n_experts };
+    bn_tp_dispatch(pool, &rtask, 1);
+
+    for (int t = 0; t < n_tokens; t++) {
+        float *row = logits + (size_t)t * n_experts;
+        float max_val = row[0];
+        for (int e = 1; e < n_experts; e++)
+            if (row[e] > max_val) max_val = row[e];
+
+        float sum = 0.0f;
+        for (int e = 0; e < n_experts; e++) {
+            row[e] = expf(row[e] - max_val);
+            sum += row[e];
+        }
+
+        for (int i = 0; i < k; i++) {
+            int best = -1;
+            float best_val = -1.0f;
+            for (int e = 0; e < n_experts; e++) {
+                if (row[e] > best_val) {
+                    best_val = row[e];
+                    best = e;
+                }
+            }
+            all_indices[(size_t)t * k + i] = best;
+            all_weights[(size_t)t * k + i] = best_val / sum;
+            row[best] = -1.0f;
+        }
+
+        float wsum = 0.0f;
+        for (int i = 0; i < k; i++)
+            wsum += all_weights[(size_t)t * k + i];
+        if (wsum > 0.0f)
+            for (int i = 0; i < k; i++)
+                all_weights[(size_t)t * k + i] /= wsum;
+    }
+}
+
 // --- Batch MoE FFN for prefill ---
 // Route all n_tokens, group by expert, batch matmul per expert.
 int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
@@ -24,22 +120,22 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     BnAllocator a = bn_allocator_default();
     size_t sz_idx = (size_t)n_tokens * K * sizeof(int);
     size_t sz_wts = (size_t)n_tokens * K * sizeof(float);
+    size_t sz_logits = (size_t)n_tokens * n_experts * sizeof(float);
     int *all_indices = (int *)bn_malloc(&a, sz_idx);
     float *all_weights = (float *)bn_malloc(&a, sz_wts);
-    if (!all_indices || !all_weights) {
+    float *batch_logits = (float *)bn_malloc(&a, sz_logits);
+    if (!all_indices || !all_weights || !batch_logits) {
         if (all_indices) bn_free(&a, all_indices, sz_idx);
         if (all_weights) bn_free(&a, all_weights, sz_wts);
+        if (batch_logits) bn_free(&a, batch_logits, sz_logits);
         return -1;
     }
     memset(all_indices, 0, sz_idx);
     memset(all_weights, 0, sz_wts);
 
-    for (int t = 0; t < n_tokens; t++) {
-        bn_moe_route(ms, Xb + (size_t)t * dim, lw->moe.router_weight,
-                     dim, n_experts, K, bn_model_pool(m));
-        memcpy(all_indices + (size_t)t * K, ms->expert_indices, (size_t)K * sizeof(int));
-        memcpy(all_weights + (size_t)t * K, ms->expert_weights, (size_t)K * sizeof(float));
-    }
+    moe_batch_route(batch_logits, all_indices, all_weights, Xb,
+                    lw->moe.router_weight, n_tokens, dim, n_experts, K,
+                    bn_model_pool(m));
 
     // 3. Build token-expert grouping (two-pass)
     // Pass 1: count tokens per expert
@@ -49,6 +145,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     if (!expert_counts || !expert_offsets) {
         if (expert_counts) bn_free(&a, expert_counts, sz_ecnt);
         if (expert_offsets) bn_free(&a, expert_offsets, sz_ecnt);
+        bn_free(&a, batch_logits, sz_logits);
         bn_free(&a, all_indices, sz_idx); bn_free(&a, all_weights, sz_wts);
         return -1;
     }
@@ -80,6 +177,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         if (group_weights) bn_free(&a, group_weights, sz_gwts);
         if (fill_pos) bn_free(&a, fill_pos, sz_fill);
         bn_free(&a, expert_counts, sz_ecnt); bn_free(&a, expert_offsets, sz_ecnt);
+        bn_free(&a, batch_logits, sz_logits);
         bn_free(&a, all_indices, sz_idx); bn_free(&a, all_weights, sz_wts);
         return -1;
     }
@@ -125,6 +223,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         bn_free(&a, group_token_ids, sz_gtid); bn_free(&a, group_weights, sz_gwts);
         bn_free(&a, fill_pos, sz_fill); bn_free(&a, expert_counts, sz_ecnt);
         bn_free(&a, expert_offsets, sz_ecnt);
+        bn_free(&a, batch_logits, sz_logits);
         bn_free(&a, all_indices, sz_idx); bn_free(&a, all_weights, sz_wts);
         return -1;
     }
@@ -259,6 +358,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     bn_free(&a, gather_buf, sz_gather); bn_free(&a, gate_buf, sz_gate);
     bn_free(&a, up_buf, sz_up); bn_free(&a, down_buf, sz_down);
     bn_free(&a, moe_out, sz_mout); bn_free(&a, x_q_scratch, sz_xq);
+    bn_free(&a, batch_logits, sz_logits);
     bn_free(&a, all_indices, sz_idx); bn_free(&a, all_weights, sz_wts);
     bn_free(&a, expert_counts, sz_ecnt); bn_free(&a, expert_offsets, sz_ecnt);
     bn_free(&a, group_token_ids, sz_gtid); bn_free(&a, group_weights, sz_gwts);
@@ -266,4 +366,3 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
     return 0;
 }
-

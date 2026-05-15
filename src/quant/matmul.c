@@ -368,9 +368,10 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
         BnKQuantMatmulCtx ctx = { out, W, (int8_t *)x_q, (float *)x_d,
                                   (int16_t *)x_bsums, n_tokens, cols };
         bn_tp_fn fn = (W->type == BN_GGUF_TENSOR_Q4_K)
-            ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_range
+            ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_4row_range
             : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
-        BnTPTask task = { fn, &ctx, rows };
+        int units = (W->type == BN_GGUF_TENSOR_Q4_K) ? (rows + 3) / 4 : rows;
+        BnTPTask task = { fn, &ctx, units };
         bn_tp_dispatch(pool, &task, 1);
         return;
     }
@@ -424,9 +425,11 @@ void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
                     (int16_t *)x_bsums, n_tokens, cols
                 };
                 bn_tp_fn fn = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
-                    ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_range
+                    ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_4row_range
                     : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
-                tasks[i] = (BnTPTask){ fn, &ctxs[i], W[i]->rows };
+                int units = (W[i]->type == BN_GGUF_TENSOR_Q4_K)
+                    ? (W[i]->rows + 3) / 4 : W[i]->rows;
+                tasks[i] = (BnTPTask){ fn, &ctxs[i], units };
             }
             bn_tp_dispatch(pool, tasks, n);
             return;

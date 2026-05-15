@@ -21,6 +21,7 @@ void bn_quant_q4k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_sdot_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_4row_range(void *ctx, int start, int end);
 void bn_quant_q4k_avx2_sdot_matmul_range(void *ctx, int start, int end);
+void bn_quant_q4k_avx2_sdot_matmul_4row_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_4row_range(void *ctx, int start, int end);
 void bn_quant_q5k_avx2_matmul_range(void *ctx, int start, int end);
