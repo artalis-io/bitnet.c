@@ -217,10 +217,16 @@ static int gguf_get_u32_or_i32_array(BnGGUFFile *f, const char *key, int idx) {
     if (kv->type != BN_GGUF_TYPE_ARRAY || idx < 0) return 0;
     BnGGUFArray *a = &kv->value.arr;
     if ((uint64_t)idx >= a->n || !a->data) return 0;
-    if (a->elem_type == BN_GGUF_TYPE_INT32)
-        return ((const int32_t *)a->data)[idx];
-    if (a->elem_type == BN_GGUF_TYPE_UINT32)
-        return (int)((const uint32_t *)a->data)[idx];
+    if (a->elem_type == BN_GGUF_TYPE_INT32) {
+        int32_t v;
+        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
+        return v;
+    }
+    if (a->elem_type == BN_GGUF_TYPE_UINT32) {
+        uint32_t v;
+        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
+        return (int)v;
+    }
     return 0;
 }
 

@@ -12,12 +12,29 @@ using namespace metal;
 //
 // Dispatch: (ceil(rows/32), n_tokens, 1)
 
-// Dequantize 4 consecutive nibbles from a u32 word at bit offset sh
-#define DQ4(w, sh, s) (s * float4( \
-    float(int(((w) >> (sh))       & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 12))& 0xF) - 8)))
+#define UQ4(w, sh) float4( \
+    float(((w) >> (sh))        & 0xF), \
+    float(((w) >> ((sh) + 4))  & 0xF), \
+    float(((w) >> ((sh) + 8))  & 0xF), \
+    float(((w) >> ((sh) + 12)) & 0xF))
+
+static inline float q4_block_dot(uint w0, uint w1, uint w2, uint w3,
+                                 float s, device const float4 *xp) {
+    float4 sx0 = xp[0] + xp[1] + xp[2] + xp[3];
+    float4 sx1 = xp[4] + xp[5] + xp[6] + xp[7];
+    float4 sx = sx0 + sx1;
+    float sumx = (sx.x + sx.y) + (sx.z + sx.w);
+    float acc = 0.0f;
+    acc += dot(UQ4(w0,  0), xp[0]);
+    acc += dot(UQ4(w0, 16), xp[1]);
+    acc += dot(UQ4(w1,  0), xp[2]);
+    acc += dot(UQ4(w1, 16), xp[3]);
+    acc += dot(UQ4(w2,  0), xp[4]);
+    acc += dot(UQ4(w2, 16), xp[5]);
+    acc += dot(UQ4(w3,  0), xp[6]);
+    acc += dot(UQ4(w3, 16), xp[7]);
+    return s * (acc - 8.0f * sumx);
+}
 
 kernel void q4_matvec(device const uint  *weights [[buffer(0)]],
                       device const float *x       [[buffer(1)]],
@@ -55,15 +72,7 @@ kernel void q4_matvec(device const uint  *weights [[buffer(0)]],
             // float4 loads — coalesced 16-byte reads
             device const float4 *xp = (device const float4 *)(x + x_base + b * 32);
 
-            // 8 vectorized dot products (was 32 scalar multiply-adds)
-            acc += dot(DQ4(w0,  0, s), xp[0]);   // elements 0-3
-            acc += dot(DQ4(w0, 16, s), xp[1]);   // elements 4-7
-            acc += dot(DQ4(w1,  0, s), xp[2]);   // elements 8-11
-            acc += dot(DQ4(w1, 16, s), xp[3]);   // elements 12-15
-            acc += dot(DQ4(w2,  0, s), xp[4]);   // elements 16-19
-            acc += dot(DQ4(w2, 16, s), xp[5]);   // elements 20-23
-            acc += dot(DQ4(w3,  0, s), xp[6]);   // elements 24-27
-            acc += dot(DQ4(w3, 16, s), xp[7]);   // elements 28-31
+            acc += q4_block_dot(w0, w1, w2, w3, s, xp);
         }
     }
 
@@ -79,4 +88,4 @@ kernel void q4_matvec(device const uint  *weights [[buffer(0)]],
     }
 }
 
-#undef DQ4
+#undef UQ4

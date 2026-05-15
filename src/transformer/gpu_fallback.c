@@ -13,6 +13,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#endif
+
 static void fallback_rmsnorm(float *out,
                              const float *x,
                              const float *w,
@@ -350,6 +355,14 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
                                         int pos,
                                         const float *x,
                                         int cols) {
+#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
+    (void)gpu;
+    (void)layer;
+    (void)pos;
+    (void)x;
+    (void)cols;
+    return;
+#else
     if (!gpu || !gpu->read_activation || !x || cols <= 0 ||
         (cols % 32) != 0)
         return;
@@ -415,6 +428,7 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
             sqrt(sum_scale_sq / (double)n_blocks));
 
     free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
+#endif
 }
 
 int bn_transformer_gpu_debug_compare_ffn_state(

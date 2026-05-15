@@ -6,6 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#endif
+
 #define BN_MAX_SCALE_BLOCKS 8192
 
 void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,

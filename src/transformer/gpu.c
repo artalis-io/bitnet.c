@@ -6,6 +6,92 @@
 #include <string.h>
 #include <stdlib.h>
 
+static float gpu_exact_q6k_row_dot(const BnQWeight *W, int row,
+                                   const float *x) {
+    int cols = W->cols;
+    int n_blocks_per_row = cols / BN_QK_K;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)W->data;
+    float row_sum = 0.0f;
+
+    for (int b = 0; b < n_blocks_per_row; b++) {
+        const BnBlockQ6K *blk =
+            &blocks[(size_t)row * n_blocks_per_row + b];
+        float d = bn_fp16_to_fp32(blk->d);
+        const uint8_t *ql = blk->ql;
+        const uint8_t *qh = blk->qh;
+        const int8_t *sc = blk->scales;
+        const float *xb = x + (size_t)b * BN_QK_K;
+
+        for (int n = 0; n < BN_QK_K; n += 128) {
+            for (int is = 0; is < 2; is++) {
+                float sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f, sum4 = 0.0f;
+                int l0 = is * 16;
+                for (int i = 0; i < 16; i++) {
+                    int l = l0 + i;
+                    int q1 = (int)((ql[l]      & 0xF) |
+                                   (((qh[l] >> 0) & 3) << 4)) - 32;
+                    int q2 = (int)((ql[l + 32] & 0xF) |
+                                   (((qh[l] >> 2) & 3) << 4)) - 32;
+                    int q3 = (int)((ql[l]      >> 4) |
+                                   (((qh[l] >> 4) & 3) << 4)) - 32;
+                    int q4 = (int)((ql[l + 32] >> 4) |
+                                   (((qh[l] >> 6) & 3) << 4)) - 32;
+                    sum1 += (float)q1 * xb[l + 0];
+                    sum2 += (float)q2 * xb[l + 32];
+                    sum3 += (float)q3 * xb[l + 64];
+                    sum4 += (float)q4 * xb[l + 96];
+                }
+                row_sum += d * ((float)sc[is + 0] * sum1 +
+                                (float)sc[is + 2] * sum2 +
+                                (float)sc[is + 4] * sum3 +
+                                (float)sc[is + 6] * sum4);
+            }
+            xb += 128;
+            ql += 64;
+            qh += 32;
+            sc += 8;
+        }
+    }
+    return row_sum;
+}
+
+static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
+                                     const BnQWeight *W, const float *x,
+                                     int top_n) {
+    if (!logits || !W || !W->data || !x || W->type != BN_GGUF_TENSOR_Q6_K)
+        return 0;
+    if (top_n <= 0) return 0;
+    if (top_n > 128) top_n = 128;
+    if (top_n > n_logits) top_n = n_logits;
+
+    int ids[128];
+    float vals[128];
+    int n_top = 0;
+    for (int i = 0; i < n_logits; i++) {
+        float v = logits[i];
+        int j = n_top;
+        if (j == top_n && v <= vals[j - 1]) continue;
+        if (j < top_n) {
+            ids[j] = i;
+            vals[j] = v;
+            n_top++;
+        } else {
+            j--;
+        }
+        while (j > 0 && v > vals[j - 1]) {
+            ids[j] = ids[j - 1];
+            vals[j] = vals[j - 1];
+            j--;
+        }
+        ids[j] = i;
+        vals[j] = v;
+    }
+
+    for (int i = 0; i < n_top; i++)
+        logits[ids[i]] = gpu_exact_q6k_row_dot(W, ids[i], x);
+    return n_top;
+}
+
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
@@ -115,6 +201,10 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                     if (q4_q8_to_layer < -1)
                         q4_q8_to_layer = -1;
                 }
+            } else if (getenv("BN_GPU_Q4_Q8") &&
+                       !getenv("BN_METAL_Q4_PREPARED") &&
+                       c->n_layers > 33) {
+                q4_q8_to_layer = c->n_layers - 33 - 1;
             }
         }
         q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
@@ -406,6 +496,20 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     if (rc != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu final execute failed");
+    if (getenv("BN_METAL_ENABLE_Q6_Q8K") &&
+        logit_res->type == BN_GGUF_TENSOR_Q6_K &&
+        logit_res->cpu_weight) {
+        int refine_top = 8;
+        const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+        if (env) refine_top = atoi(env);
+        if (refine_top > 0 &&
+            bn_transformer_gpu_read_xb(gpu, s->x,
+                                       (size_t)dim * sizeof(float)) == 0) {
+            gpu_refine_q6k_logits_top(s->logits, c->vocab_size,
+                                      logit_res->cpu_weight, s->x,
+                                      refine_top);
+        }
+    }
     if (getenv("BN_GPU_COMPARE_LOGITS")) {
         float *cpu_logits = (float *)malloc((size_t)c->vocab_size *
                                             sizeof(float));

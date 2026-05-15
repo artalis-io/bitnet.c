@@ -4,11 +4,33 @@ using namespace metal;
 // Q4_0 repacked fused gate/up matvec with SiLU activation.
 // Buffer layout: [f32 scales: n_blocks][nibble u32s: n_blocks * 4][optional f32 bias].
 
-#define DQ4(w, sh, s) (s * float4( \
-    float(int(((w) >> (sh))       & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 4)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 8)) & 0xF) - 8), \
-    float(int(((w) >> ((sh) + 12))& 0xF) - 8)))
+#define UQ4(w, sh) float4( \
+    float(((w) >> (sh))        & 0xF), \
+    float(((w) >> ((sh) + 4))  & 0xF), \
+    float(((w) >> ((sh) + 8))  & 0xF), \
+    float(((w) >> ((sh) + 12)) & 0xF))
+
+static inline float q4_block_sumx(device const float4 *xp) {
+    float4 sx0 = xp[0] + xp[1] + xp[2] + xp[3];
+    float4 sx1 = xp[4] + xp[5] + xp[6] + xp[7];
+    float4 sx = sx0 + sx1;
+    return (sx.x + sx.y) + (sx.z + sx.w);
+}
+
+static inline float q4_block_dot_sumx(uint w0, uint w1, uint w2, uint w3,
+                                      float s, float sumx,
+                                      device const float4 *xp) {
+    float acc = 0.0f;
+    acc += dot(UQ4(w0,  0), xp[0]);
+    acc += dot(UQ4(w0, 16), xp[1]);
+    acc += dot(UQ4(w1,  0), xp[2]);
+    acc += dot(UQ4(w1, 16), xp[3]);
+    acc += dot(UQ4(w2,  0), xp[4]);
+    acc += dot(UQ4(w2, 16), xp[5]);
+    acc += dot(UQ4(w3,  0), xp[6]);
+    acc += dot(UQ4(w3, 16), xp[7]);
+    return s * (acc - 8.0f * sumx);
+}
 
 static inline float bn_fast_exp(float x) {
     const float log2e = 1.4426950409f;
@@ -66,23 +88,9 @@ kernel void q4_fused_gateup_silu(device const uint  *weights [[buffer(0)]],
             uint uw3 = weights[up_nib + 3];
 
             device const float4 *xp = (device const float4 *)(x + b * 32);
-            gate_acc += dot(DQ4(gw0,  0, gate_s), xp[0]);
-            gate_acc += dot(DQ4(gw0, 16, gate_s), xp[1]);
-            gate_acc += dot(DQ4(gw1,  0, gate_s), xp[2]);
-            gate_acc += dot(DQ4(gw1, 16, gate_s), xp[3]);
-            gate_acc += dot(DQ4(gw2,  0, gate_s), xp[4]);
-            gate_acc += dot(DQ4(gw2, 16, gate_s), xp[5]);
-            gate_acc += dot(DQ4(gw3,  0, gate_s), xp[6]);
-            gate_acc += dot(DQ4(gw3, 16, gate_s), xp[7]);
-
-            up_acc += dot(DQ4(uw0,  0, up_s), xp[0]);
-            up_acc += dot(DQ4(uw0, 16, up_s), xp[1]);
-            up_acc += dot(DQ4(uw1,  0, up_s), xp[2]);
-            up_acc += dot(DQ4(uw1, 16, up_s), xp[3]);
-            up_acc += dot(DQ4(uw2,  0, up_s), xp[4]);
-            up_acc += dot(DQ4(uw2, 16, up_s), xp[5]);
-            up_acc += dot(DQ4(uw3,  0, up_s), xp[6]);
-            up_acc += dot(DQ4(uw3, 16, up_s), xp[7]);
+            float sumx = q4_block_sumx(xp);
+            gate_acc += q4_block_dot_sumx(gw0, gw1, gw2, gw3, gate_s, sumx, xp);
+            up_acc += q4_block_dot_sumx(uw0, uw1, uw2, uw3, up_s, sumx, xp);
         }
     }
 
@@ -104,4 +112,4 @@ kernel void q4_fused_gateup_silu(device const uint  *weights [[buffer(0)]],
     }
 }
 
-#undef DQ4
+#undef UQ4

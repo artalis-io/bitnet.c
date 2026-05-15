@@ -41,6 +41,8 @@ typedef struct {
     id<MTLComputePipelineState> q8k_quant_pipeline;
     id<MTLComputePipelineState> q4_q8_matvec_pipeline;
     id<MTLComputePipelineState> q4_prepared_q8_matvec_pipeline;
+    id<MTLComputePipelineState> q4_prepared_q8_split_pipeline;
+    id<MTLComputePipelineState> q4_prepared_q8_gateup_pipeline;
     id<MTLComputePipelineState> q4_q8_split_pipeline;
     id<MTLComputePipelineState> q4_q8_gateup_pipeline;
     id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
@@ -94,6 +96,8 @@ typedef struct {
     uint32_t cols;
     uint32_t aux;
     int count;
+    double gpu_ms;
+    double wall_ms;
 } BnMetalProfileShape;
 
 static const char *metal_shader_profile_name(int shader)
@@ -131,6 +135,38 @@ static void metal_profile_add_shape(BnMetalProfileShape *shapes,
     shapes[*n_shapes].cols = cols;
     shapes[*n_shapes].aux = aux;
     shapes[*n_shapes].count = 1;
+    shapes[*n_shapes].gpu_ms = 0.0;
+    shapes[*n_shapes].wall_ms = 0.0;
+    (*n_shapes)++;
+}
+
+static void metal_profile_add_shape_time(BnMetalProfileShape *shapes,
+                                         int *n_shapes,
+                                         int max_shapes,
+                                         int shader,
+                                         uint32_t rows,
+                                         uint32_t cols,
+                                         uint32_t aux,
+                                         double gpu_ms,
+                                         double wall_ms)
+{
+    for (int i = 0; i < *n_shapes; i++) {
+        if (shapes[i].shader == shader && shapes[i].rows == rows &&
+            shapes[i].cols == cols && shapes[i].aux == aux) {
+            shapes[i].count++;
+            shapes[i].gpu_ms += gpu_ms;
+            shapes[i].wall_ms += wall_ms;
+            return;
+        }
+    }
+    if (*n_shapes >= max_shapes) return;
+    shapes[*n_shapes].shader = shader;
+    shapes[*n_shapes].rows = rows;
+    shapes[*n_shapes].cols = cols;
+    shapes[*n_shapes].aux = aux;
+    shapes[*n_shapes].count = 1;
+    shapes[*n_shapes].gpu_ms = gpu_ms;
+    shapes[*n_shapes].wall_ms = wall_ms;
     (*n_shapes)++;
 }
 
@@ -277,7 +313,7 @@ static id<MTLBuffer> metal_new_weight_buffer(BnMetalCtx *ctx,
                                              size_t size)
 {
     if (!ctx || !data || size == 0) return nil;
-    if (!getenv("BN_METAL_PRIVATE_WEIGHTS")) {
+    if (getenv("BN_METAL_SHARED_WEIGHTS")) {
         return [ctx->device newBufferWithBytes:data
                                         length:size
                                        options:MTLResourceStorageModeShared];
@@ -1041,7 +1077,7 @@ static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
     [enc setBuffer:ctx->q8_bsums_buf offset:0 atIndex:3];
     [enc setBytes:params length:sizeof(params) atIndex:4];
-    MTLSize tpg = MTLSizeMake(1, 1, 1);
+    MTLSize tpg = MTLSizeMake(256, 1, 1);
     MTLSize grid = MTLSizeMake(cols / 256, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
     if (ctx->q8_barriers_enabled) {
@@ -1070,7 +1106,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
                     !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline;
     int use_q6_q8k = type == BN_GGUF_TENSOR_Q6_K &&
-                     !getenv("BN_METAL_DISABLE_Q6_Q8K") &&
+                     getenv("BN_METAL_ENABLE_Q6_Q8K") &&
                      ctx->q8k_quant_pipeline && ctx->q6_q8k_matvec_pipeline &&
                      (cols % 256) == 0;
     if (wbuf->q4_prepared && !use_q4_prepared_q8) return -1;
@@ -1289,10 +1325,21 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
-    BnMetalProfileShape q8_shapes[16], q4_shapes[16];
-    int n_q8_shapes = 0, n_q4_shapes = 0;
+    BnMetalProfileShape matvec_shapes[32], q8_shapes[16], q4_shapes[16];
+    int n_matvec_shapes = 0, n_q8_shapes = 0, n_q4_shapes = 0;
+    BnMetalProfileShape timed_shapes[64];
+    int n_timed_shapes = 0;
+    int profile_each_op = ctx->gpu_profile >= 4;
+    double shader_gpu_ms[BN_GPU_SHADER_COUNT];
+    double shader_wall_ms[BN_GPU_SHADER_COUNT];
+    int shader_profile_counts[BN_GPU_SHADER_COUNT];
+    memset(matvec_shapes, 0, sizeof(matvec_shapes));
     memset(q8_shapes, 0, sizeof(q8_shapes));
     memset(q4_shapes, 0, sizeof(q4_shapes));
+    memset(timed_shapes, 0, sizeof(timed_shapes));
+    memset(shader_gpu_ms, 0, sizeof(shader_gpu_ms));
+    memset(shader_wall_ms, 0, sizeof(shader_wall_ms));
+    memset(shader_profile_counts, 0, sizeof(shader_profile_counts));
     ctx->q8_quant_dispatches = 0;
     ctx->q8k_quant_dispatches = 0;
     ctx->q8_matvec_dispatches = 0;
@@ -1348,10 +1395,28 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                        op->p[6] &&
                        op->type == BN_GGUF_TENSOR_Q4_0 &&
                        op->W_buf &&
+                       ctx->q8_quant_pipeline &&
+                       ((BnMetalBuf *)op->W_buf)->q4_prepared &&
+                       ctx->q4_prepared_q8_gateup_pipeline) {
+                pipeline = ctx->q4_prepared_q8_gateup_pipeline;
+            } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
+                       ctx->q4_q8_enabled &&
+                       op->p[6] &&
+                       op->type == BN_GGUF_TENSOR_Q4_0 &&
+                       op->W_buf &&
                        !((BnMetalBuf *)op->W_buf)->q4_prepared &&
                        ctx->q8_quant_pipeline &&
                        ctx->q4_q8_gateup_pipeline) {
                 pipeline = ctx->q4_q8_gateup_pipeline;
+            } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
+                       ctx->q4_q8_enabled &&
+                       (op->flags & 1u) &&
+                       op->type == BN_GGUF_TENSOR_Q4_0 &&
+                       op->W_buf &&
+                       ctx->q8_quant_pipeline &&
+                       ((BnMetalBuf *)op->W_buf)->q4_prepared &&
+                       ctx->q4_prepared_q8_split_pipeline) {
+                pipeline = ctx->q4_prepared_q8_split_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        ctx->q4_q8_enabled &&
                        (op->flags & 1u) &&
@@ -1365,6 +1430,23 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 pipeline = ctx->fwd_pipelines[shader];
             }
             if (!pipeline) continue;
+
+            if (ctx->gpu_profile >= 2 &&
+                (shader == BN_GPU_SHADER_MATVEC ||
+                 shader == BN_GPU_SHADER_MATVEC_SPLIT ||
+                 shader == BN_GPU_SHADER_FUSED_GATEUP_SILU)) {
+                uint32_t n_tokens = shader == BN_GPU_SHADER_MATVEC && op->p[2]
+                    ? op->p[2]
+                    : 1;
+                uint32_t rows = shader == BN_GPU_SHADER_MATVEC_SPLIT
+                    ? op->p[0]
+                    : (uint32_t)op->rows;
+                if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU && op->p[0])
+                    rows = op->p[0];
+                metal_profile_add_shape(matvec_shapes, &n_matvec_shapes, 32,
+                                        shader, rows, (uint32_t)op->cols,
+                                        n_tokens);
+            }
 
             /* Compute this op's read/write buffer masks. */
             uint32_t op_reads = 0, op_writes = 0;
@@ -1402,6 +1484,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             since_barrier_writes |= op_writes;
 
             /* Start compute encoder if needed */
+            if (!cmd)
+                cmd = [ctx->queue commandBuffer];
             if (!enc) {
                 enc = [cmd computeCommandEncoder];
                 current_pso = nil;
@@ -1419,12 +1503,18 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     ctx->q4_q8_matvec_pipeline))) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
-                  pre_wbuf && !pre_wbuf->q4_prepared &&
-                  ctx->q4_q8_split_pipeline) ||
+                  pre_wbuf &&
+                  ((pre_wbuf->q4_prepared &&
+                    ctx->q4_prepared_q8_split_pipeline) ||
+                   (!pre_wbuf->q4_prepared &&
+                    ctx->q4_q8_split_pipeline))) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
-                  pre_wbuf && !pre_wbuf->q4_prepared &&
-                  ctx->q4_q8_gateup_pipeline));
+                  pre_wbuf &&
+                  ((pre_wbuf->q4_prepared &&
+                    ctx->q4_prepared_q8_gateup_pipeline) ||
+                   (!pre_wbuf->q4_prepared &&
+                    ctx->q4_q8_gateup_pipeline))));
             /* Skip redundant PSO switch — avoids GPU instruction cache flush */
             if (!q4_q8_deferred_pso && pipeline != current_pso) {
                 [enc setComputePipelineState:pipeline];
@@ -1497,7 +1587,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->type == BN_GGUF_TENSOR_Q6_K &&
-                           !getenv("BN_METAL_DISABLE_Q6_Q8K") &&
+                           getenv("BN_METAL_ENABLE_Q6_Q8K") &&
                            ctx->q8k_quant_pipeline &&
                            ctx->q6_q8k_matvec_pipeline &&
                            (op->cols % 256) == 0) {
@@ -1707,6 +1797,26 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (ctx->q4_q8_enabled &&
                     (op->flags & 1u) &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    wbuf->q4_prepared &&
+                    ctx->q8_quant_pipeline &&
+                    ctx->q4_prepared_q8_split_pipeline) {
+                    if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
+                        return -1;
+                    metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
+                                          (uint32_t)op->cols, 1);
+                    ctx->q8_split_dispatches++;
+                    [enc setComputePipelineState:ctx->q4_prepared_q8_split_pipeline];
+                    current_pso = ctx->q4_prepared_q8_split_pipeline;
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+                    [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
+                    [enc setBuffer:ctx->act_bufs[op->buf_aux] offset:0 atIndex:4];
+                    [enc setBuffer:ctx->act_bufs[op->rows] offset:0 atIndex:5];
+                    [enc setBytes:params length:sizeof(params) atIndex:6];
+                } else if (ctx->q4_q8_enabled &&
+                    (op->flags & 1u) &&
+                    op->type == BN_GGUF_TENSOR_Q4_0 &&
                     !wbuf->q4_prepared &&
                        ctx->q8_quant_pipeline &&
                        ctx->q4_q8_split_pipeline) {
@@ -1756,6 +1866,24 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (!wbuf) continue;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
                 if (ctx->q4_q8_enabled &&
+                    op->p[6] &&
+                    op->type == BN_GGUF_TENSOR_Q4_0 &&
+                    wbuf->q4_prepared &&
+                    ctx->q8_quant_pipeline &&
+                    ctx->q4_prepared_q8_gateup_pipeline) {
+                    if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
+                        return -1;
+                    metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
+                                          (uint32_t)op->cols, 1);
+                    ctx->q8_gateup_dispatches++;
+                    [enc setComputePipelineState:ctx->q4_prepared_q8_gateup_pipeline];
+                    current_pso = ctx->q4_prepared_q8_gateup_pipeline;
+                    [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
+                    [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
+                    [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
+                    [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
+                    [enc setBytes:params length:sizeof(params) atIndex:4];
+                } else if (ctx->q4_q8_enabled &&
                     op->p[6] &&
                     op->type == BN_GGUF_TENSOR_Q4_0 &&
                     !wbuf->q4_prepared &&
@@ -1878,7 +2006,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 wg_x = (op->p[0] + 255) / 256;
                 break;
             case BN_GPU_SHADER_FLASH_ATTN:
-                wg_x = (op->p[0] + 7) / 8;  /* 8 heads per threadgroup */
+                wg_x = op->p[0];  /* one head per threadgroup */
                 break;
             case BN_GPU_SHADER_COPY:
                 wg_x = (op->p[2] + 255) / 256;
@@ -1901,14 +2029,55 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             MTLSize tpg = MTLSizeMake(threads_per_tg, 1, 1);
             MTLSize grid = MTLSizeMake(wg_x, wg_y, 1);
             [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
+
+            if (profile_each_op && shader >= 0 && shader < BN_GPU_SHADER_COUNT) {
+                double op_wall0 = bn_platform_time_ms();
+                [enc endEncoding];
+                enc = nil;
+                id<MTLCommandBuffer> done_cmd = cmd;
+                [done_cmd commit];
+                [done_cmd waitUntilCompleted];
+                double op_wall1 = bn_platform_time_ms();
+                double gpu_ms = 0.0;
+                double gpu_start = done_cmd.GPUStartTime;
+                double gpu_end = done_cmd.GPUEndTime;
+                if (gpu_end > gpu_start)
+                    gpu_ms = (gpu_end - gpu_start) * 1000.0;
+                shader_gpu_ms[shader] += gpu_ms;
+                shader_wall_ms[shader] += op_wall1 - op_wall0;
+                shader_profile_counts[shader]++;
+                if (shader == BN_GPU_SHADER_MATVEC ||
+                    shader == BN_GPU_SHADER_MATVEC_SPLIT ||
+                    shader == BN_GPU_SHADER_FUSED_GATEUP_SILU ||
+                    shader == BN_GPU_SHADER_Q4K_MATVEC_SPLIT) {
+                    uint32_t rows = (uint32_t)op->rows;
+                    uint32_t cols = (uint32_t)op->cols;
+                    uint32_t aux = 1;
+                    if (shader == BN_GPU_SHADER_MATVEC) {
+                        aux = op->p[2] ? op->p[2] : 1;
+                    } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT ||
+                               shader == BN_GPU_SHADER_Q4K_MATVEC_SPLIT) {
+                        rows = op->p[0];
+                    } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU) {
+                        rows = op->p[2];
+                    }
+                    metal_profile_add_shape_time(
+                        timed_shapes, &n_timed_shapes, 64, shader, rows,
+                        cols, aux, gpu_ms, op_wall1 - op_wall0);
+                }
+                cmd = nil;
+                current_pso = nil;
+            }
         }
 
         if (enc) [enc endEncoding];
 
         t_encode = bn_platform_time_ms();
 
-        [cmd commit];
-        [cmd waitUntilCompleted];
+        if (cmd) {
+            [cmd commit];
+            [cmd waitUntilCompleted];
+        }
 
         t_gpu = bn_platform_time_ms();
     }
@@ -1960,6 +2129,49 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         metal_shader_profile_name(q4_shapes[i].shader),
                         q4_shapes[i].count, q4_shapes[i].rows,
                         q4_shapes[i].cols, q4_shapes[i].aux);
+            }
+        }
+        if (n_matvec_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- matvec shapes ---\n");
+            for (int i = 0; i < n_matvec_shapes; i++) {
+                fprintf(stderr, "  %-16s: %3d ops rows=%u cols=%u tokens=%u\n",
+                        metal_shader_profile_name(matvec_shapes[i].shader),
+                        matvec_shapes[i].count, matvec_shapes[i].rows,
+                        matvec_shapes[i].cols, matvec_shapes[i].aux);
+            }
+        }
+    }
+    /* Per-op command-buffer timing (BN_GPU_PROFILE>=4, frame 1 only).
+     * This intentionally changes submission granularity and is diagnostic-only. */
+    if (ctx->gpu_profile >= 4 && ctx->gpu_frame == 1) {
+        fprintf(stderr, "[gpu:metal:breakdown] --- per-op shader timing ---\n");
+        for (int s = 0; s < BN_GPU_SHADER_COUNT; s++) {
+            if (shader_profile_counts[s] > 0) {
+                double shown_gpu = shader_gpu_ms[s] > 0.0
+                    ? shader_gpu_ms[s]
+                    : shader_wall_ms[s];
+                fprintf(stderr, "  %-16s: %3d ops gpu=%.3fms wall=%.3fms avg=%.3fms\n",
+                        metal_shader_profile_name(s),
+                        shader_profile_counts[s],
+                        shown_gpu,
+                        shader_wall_ms[s],
+                        shown_gpu / (double)shader_profile_counts[s]);
+            }
+        }
+        if (n_timed_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- per-shape timing ---\n");
+            for (int i = 0; i < n_timed_shapes; i++) {
+                double shown_gpu = timed_shapes[i].gpu_ms > 0.0
+                    ? timed_shapes[i].gpu_ms
+                    : timed_shapes[i].wall_ms;
+                fprintf(stderr, "  %-16s: %3d ops rows=%u cols=%u tokens=%u gpu=%.3fms avg=%.3fms\n",
+                        metal_shader_profile_name(timed_shapes[i].shader),
+                        timed_shapes[i].count,
+                        timed_shapes[i].rows,
+                        timed_shapes[i].cols,
+                        timed_shapes[i].aux,
+                        shown_gpu,
+                        shown_gpu / (double)timed_shapes[i].count);
             }
         }
     }
@@ -2020,10 +2232,18 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         ctx->cpu_order_rmsnorm_enabled =
             getenv("BN_METAL_CPU_ORDER_RMSNORM") ? 1 : 0;
 
-        ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
-            "q8k_quantize.metal", "q8k_quantize");
-        ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,
-            "q6k_q8k_matvec.metal", "q6k_q8k_matvec");
+        if (getenv("BN_METAL_ENABLE_Q6_Q8K")) {
+            ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
+                "q8k_quantize.metal", "q8k_quantize");
+            ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,
+                "q6k_q8k_matvec.metal", "q6k_q8k_matvec");
+            if (!ctx->q8k_quant_pipeline || !ctx->q6_q8k_matvec_pipeline) {
+                fprintf(stderr, "[bn:gpu:metal] --metal-enable-q6-q8k requested "
+                        "but required Q8_K/Q6_K pipelines failed to compile\n");
+                free(ctx);
+                return NULL;
+            }
+        }
         if (ctx->q4_q8_enabled) {
             ctx->q8_quant_pipeline = compile_shader(ctx, dir,
                 "q8_quantize.metal", "q8_quantize");
@@ -2033,6 +2253,12 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
             ctx->q4_prepared_q8_matvec_pipeline = compile_shader(ctx, dir,
                 "q4_prepared_q8_matvec.metal",
                 "q4_prepared_q8_matvec");
+            ctx->q4_prepared_q8_split_pipeline = compile_shader(ctx, dir,
+                "q4_prepared_q8_split.metal",
+                "q4_prepared_q8_split");
+            ctx->q4_prepared_q8_gateup_pipeline = compile_shader(ctx, dir,
+                "q4_prepared_q8_gateup.metal",
+                "q4_prepared_q8_gateup");
             ctx->q4_q8_split_pipeline = compile_shader(ctx, dir,
                 "q4_matvec_split_q8_prequant.metal",
                 "q4_matvec_split_q8_prequant");

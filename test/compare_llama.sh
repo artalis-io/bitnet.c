@@ -39,12 +39,16 @@ while [[ $# -gt 0 ]]; do
         --flash) BITNET_ARGS+=(--flash); LLAMA_FLASH=(-fa on); shift ;;
         --llama-flash-off) LLAMA_FLASH=(-fa off); shift ;;
         --metal-disable-q4-q8) BITNET_ARGS+=(--metal-disable-q4-q8); shift ;;
+        --metal-enable-q6-q8k) BITNET_ARGS+=(--metal-enable-q6-q8k); shift ;;
         --metal-disable-q6-q8k) BITNET_ARGS+=(--metal-disable-q6-q8k); shift ;;
         --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
         --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
         --gpu-max-storage-binding-mb) BITNET_ARGS+=(--gpu-max-storage-binding-mb "$2"); shift 2 ;;
         --q4-q8-to-layer) BITNET_ARGS+=(--q4-q8-to-layer "$2"); shift 2 ;;
         --q4-q8-tail-native) BITNET_ARGS+=(--q4-q8-tail-native "$2"); shift 2 ;;
+        --q4-q8-attn-only) BITNET_ARGS+=(--q4-q8-attn-only); shift ;;
+        --q4-q8-ffn-only) BITNET_ARGS+=(--q4-q8-ffn-only); shift ;;
+        --gpu-flash-min-kv) BITNET_ARGS+=(--gpu-flash-min-kv "$2"); shift 2 ;;
         --metal-private-weights) BITNET_ARGS+=(--metal-private-weights); shift ;;
         --maxseq) BITNET_ARGS+=(--maxseq "$2"); LLAMA_ARGS+=(-c "$2"); shift 2 ;;
         -t) BITNET_ARGS+=(-t "$2"); LLAMA_THREADS="$2"; shift 2 ;;

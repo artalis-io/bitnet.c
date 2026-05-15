@@ -22,7 +22,13 @@ emcc \
     "$PROJECT_DIR/src/quant/fp16.c" \
     "$PROJECT_DIR/src/quant/dequant.c" \
     "$PROJECT_DIR/src/quant/registry.c" \
+    "$PROJECT_DIR/src/quant/kernel_select.c" \
     "$PROJECT_DIR/src/quant/dispatch.c" \
+    "$PROJECT_DIR/src/quant/matvec_batch.c" \
+    "$PROJECT_DIR/src/quant/matmul.c" \
+    "$PROJECT_DIR/src/quant/fused_gateup.c" \
+    "$PROJECT_DIR/src/quant/batch_preq8k.c" \
+    "$PROJECT_DIR/src/quant/matvec_multi.c" \
     "$PROJECT_DIR/src/quant/x_quant_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_scalar.c" \
@@ -70,12 +76,29 @@ emcc \
     "$PROJECT_DIR/src/quant/iq2s_scalar.c" \
     "$PROJECT_DIR/src/turboquant.c" \
     "$PROJECT_DIR/src/model.c" \
+    "$PROJECT_DIR/src/model_arch.c" \
+    "$PROJECT_DIR/src/model_session.c" \
+    "$PROJECT_DIR/src/model_gpu.c" \
+    "$PROJECT_DIR/src/model_embed.c" \
     "$PROJECT_DIR/src/backend_layout.c" \
     "$PROJECT_DIR/src/backend_model.c" \
+    "$PROJECT_DIR/src/backend_session.c" \
+    "$PROJECT_DIR/src/backend_quant.c" \
     "$PROJECT_DIR/src/moe.c" \
+    "$PROJECT_DIR/src/moe_cache.c" \
+    "$PROJECT_DIR/src/moe_io.c" \
+    "$PROJECT_DIR/src/moe_route.c" \
+    "$PROJECT_DIR/src/moe_math.c" \
+    "$PROJECT_DIR/src/moe_execute.c" \
+    "$PROJECT_DIR/src/moe_prefill.c" \
+    "$PROJECT_DIR/src/moe_stats.c" \
     "$PROJECT_DIR/src/gpu_moe_cache.c" \
+    "$PROJECT_DIR/src/gpu_moe_bridge.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/cpu.c" \
+    "$PROJECT_DIR/src/transformer/gpu_fallback.c" \
+    "$PROJECT_DIR/src/transformer/gpu_policy.c" \
+    "$PROJECT_DIR/src/transformer/gpu_resources.c" \
     "$PROJECT_DIR/src/transformer/gpu.c" \
     "$PROJECT_DIR/src/transformer/gpu_emit.c" \
     "$PROJECT_DIR/src/transformer/kv.c" \
@@ -99,6 +122,8 @@ emcc \
     "$PROJECT_DIR/src/sh_log.c" \
     "$PROJECT_DIR/src/bn_alloc.c" \
     "$PROJECT_DIR/src/session.c" \
+    "$PROJECT_DIR/src/prompt_cache.c" \
+    "$PROJECT_DIR/src/generate.c" \
     "$PROJECT_DIR/wasm/api.c" \
     -I"$PROJECT_DIR/include" \
     -std=c11 -D_GNU_SOURCE -Wall -Wextra \

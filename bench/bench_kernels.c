@@ -5,11 +5,15 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "backend_model.h"
 #include "session.h"
 #include "quant.h"
+#include "gpu_backend.h"
 #include "transformer.h"
 #include "sampler.h"
 #include "threadpool.h"
+#include "../src/gpu_shader_ir_internal.h"
+#include "../src/transformer/gpu_internal.h"
 #ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif
@@ -250,20 +254,37 @@ static void bench_q4_expanded(const char *name, const BnQWeight *W,
 }
 #endif
 
-static void bench_matvec(const char *name, const BnQWeight *W,
-                          const float *x, int8_t *x_q, BnThreadPool *pool,
-                          int n_iters) {
+static void bench_matvec_buf(const char *name, const BnQWeight *W,
+                             const float *x, int8_t *x_q, BnThreadPool *pool,
+                             BnGPUBackend *gpu, void *gpu_buf,
+                             int n_iters) {
     float *out = calloc((size_t)W->rows, sizeof(float));
     if (!out) return;
+    if (!gpu || !gpu->matvec)
+        gpu_buf = NULL;
 
     // Warmup
-    for (int i = 0; i < 5; i++)
-        bn_quant_matvec(out, W, x, x_q, pool);
+    for (int i = 0; i < 5; i++) {
+        if (gpu_buf) {
+            if (gpu->matvec(gpu->ctx, out, gpu_buf, x, W->rows,
+                            W->cols, W->type) != 0)
+                goto done;
+        } else {
+            bn_quant_matvec(out, W, x, x_q, pool);
+        }
+    }
 
     // Timed iterations
     double t0 = bn_platform_time_ms();
-    for (int i = 0; i < n_iters; i++)
-        bn_quant_matvec(out, W, x, x_q, pool);
+    for (int i = 0; i < n_iters; i++) {
+        if (gpu_buf) {
+            if (gpu->matvec(gpu->ctx, out, gpu_buf, x, W->rows,
+                            W->cols, W->type) != 0)
+                goto done;
+        } else {
+            bn_quant_matvec(out, W, x, x_q, pool);
+        }
+    }
     double elapsed = bn_platform_time_ms() - t0;
     bench_sink += out[0] + out[W->rows / 2] + out[W->rows - 1];
 
@@ -307,6 +328,97 @@ static void bench_matvec(const char *name, const BnQWeight *W,
 
     bench_q4_expanded(name, W, x, x_q, n_iters);
 
+done:
+    free(out);
+}
+
+static void bench_matvec(const char *name, const BnQWeight *W,
+                          const float *x, int8_t *x_q, BnThreadPool *pool,
+                          BnGPUBackend *gpu, const BnBackendModel *backend,
+                          int n_iters) {
+    void *gpu_buf = backend ? bn_backend_model_qweight_buf(backend, W) : NULL;
+    bench_matvec_buf(name, W, x, x_q, pool, gpu, gpu_buf, n_iters);
+}
+
+static void bench_gpu_fused_gateup(const BnLayerWeights *L,
+                                   BnGPUBackend *gpu,
+                                   const BnBackendModel *backend,
+                                   const float *x,
+                                   int n_iters) {
+    if (!L || !gpu || !gpu->execute || !gpu->write_activation || !backend)
+        return;
+    if (!L->ffn.ffn_gate.data || !L->ffn.ffn_up.data ||
+        L->ffn.ffn_gate.type != L->ffn.ffn_up.type ||
+        L->ffn.ffn_gate.cols != L->ffn.ffn_up.cols)
+        return;
+
+    void *gateup = bn_backend_model_handle(
+        backend, 0, BN_BACKEND_HANDLE_GATEUP_STACKED);
+    if (!gateup)
+        return;
+
+    int rows = L->ffn.ffn_gate.rows;
+    int cols = L->ffn.ffn_gate.cols;
+    float *out = (float *)calloc((size_t)rows, sizeof(float));
+    if (!out)
+        return;
+
+    BnGPUOp ops[4];
+    BnTransformerGPUEmitContext emit;
+    bn_transformer_gpu_emit_context_init(&emit, ops,
+                                         (int)(sizeof(ops) / sizeof(ops[0])));
+    int use_q4_q8 = getenv("BN_GPU_Q4_Q8") != NULL &&
+                    getenv("BN_GPU_Q4_Q8_ATTN_ONLY") == NULL;
+    int rc = bn_transformer_gpu_emit_context_fused_gateup_silu(
+        &emit, L->ffn.ffn_gate.type, gateup, BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
+        L->ffn.ffn_gate.rows, L->ffn.ffn_up.rows, cols, use_q4_q8);
+    if (rc == 0)
+        rc = bn_transformer_gpu_emit_context_lower_pending(&emit);
+    if (rc != 0 || emit.n <= 0)
+        goto done;
+
+    if (gpu->write_activation(gpu->ctx, BN_GPU_VALUE_XB, x,
+                              (size_t)cols * sizeof(float), 0) != 0)
+        goto done;
+
+    for (int i = 0; i < 5; i++) {
+        if (gpu->execute(gpu->ctx, ops, emit.n, -1, NULL, 0) != 0)
+            goto done;
+    }
+
+    double t0 = bn_platform_time_ms();
+    for (int i = 0; i < n_iters; i++) {
+        if (gpu->execute(gpu->ctx, ops, emit.n, -1, NULL, 0) != 0)
+            goto done;
+    }
+    double elapsed = bn_platform_time_ms() - t0;
+    if (gpu->read_activation) {
+        gpu->read_activation(gpu->ctx, BN_GPU_VALUE_HB, out,
+                             (size_t)rows * sizeof(float), 0);
+        bench_sink += out[0] + out[rows / 2] + out[rows - 1];
+    }
+
+    double us_per_call = (elapsed * 1000.0) / n_iters;
+    size_t weight_bytes = 0;
+    switch (L->ffn.ffn_gate.type) {
+        case BN_GGUF_TENSOR_Q4_0:
+            weight_bytes = (size_t)(rows + L->ffn.ffn_up.rows) *
+                           (size_t)(cols / 32) * 18;
+            break;
+        default:
+            weight_bytes = (size_t)(rows + L->ffn.ffn_up.rows) *
+                           (size_t)cols;
+            break;
+    }
+    size_t total_bytes = weight_bytes + (size_t)cols * sizeof(float);
+    double gb_per_s = (total_bytes / 1e9) / (us_per_call / 1e6);
+
+    printf("%-8s | %-7s | %5d x %-5d | %8.1f | %5.2f\n",
+           "gateup*", type_name(L->ffn.ffn_gate.type),
+           rows + L->ffn.ffn_up.rows, cols, us_per_call, gb_per_s);
+
+done:
+    bn_transformer_gpu_emit_context_free(&emit);
     free(out);
 }
 
@@ -355,45 +467,28 @@ static void bench_logits_f16(const BnModel *m, const float *x, int n_iters) {
     free(logits);
 }
 
-static void bench_logits_real(const BnModel *m, int n_iters, BnThreadPool *pool) {
-    // Use the actual transformer logits path via a forward pass on token 0
-    int dim = m->config.dim;
-    int vocab = m->config.vocab_size;
-
-    // Build a fake x vector
-    float *x = calloc((size_t)dim, sizeof(float));
-    float *logits = calloc((size_t)vocab, sizeof(float));
-    int8_t *x_q = calloc((size_t)dim, sizeof(int8_t));
-    if (!x || !logits || !x_q) { free(x); free(logits); free(x_q); return; }
-
-    for (int i = 0; i < dim; i++) x[i] = bench_randf();
-
-    // If model has output_weight (untied embeddings), benchmark that
+static void bench_logits_real(const BnModel *m, const float *x, int8_t *x_q,
+                              int n_iters, BnThreadPool *pool,
+                              BnGPUBackend *gpu,
+                              const BnBackendModel *backend) {
     if (m->weights.output_weight.data) {
         const BnQWeight *W = &m->weights.output_weight;
-
-        // Warmup
-        for (int i = 0; i < 5; i++)
-            bn_quant_matvec(logits, W, x, x_q, pool);
-
-        double t0 = bn_platform_time_ms();
-        for (int i = 0; i < n_iters; i++)
-            bn_quant_matvec(logits, W, x, x_q, pool);
-        double elapsed = bn_platform_time_ms() - t0;
-        bench_sink += logits[0] + logits[vocab / 2] + logits[vocab - 1];
-        double us_per_call = (elapsed * 1000.0) / n_iters;
-
-        // Rough bandwidth
-        size_t total_bytes = (size_t)vocab * dim / 2; // approximate
-        double gb_per_s = (total_bytes / 1e9) / (us_per_call / 1e6);
-
-        printf("%-8s | %-7s | %5d x %-5d | %8.1f | %5.2f\n",
-               "logits", type_name(W->type), W->rows, W->cols, us_per_call, gb_per_s);
+        bench_matvec("logits", W, x, x_q, pool, gpu, backend, n_iters);
+    } else if (bn_quant_format_supported(m->weights.emb_type) &&
+               m->weights.emb_type != BN_GGUF_TENSOR_F16 &&
+               m->weights.emb_type != BN_GGUF_TENSOR_F32) {
+        BnQWeight tied = {
+            m->weights.token_embedding,
+            m->weights.emb_type,
+            m->config.vocab_size,
+            m->config.dim,
+            1.0f,
+        };
+        void *gpu_buf = backend
+            ? bn_backend_model_handle(backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING)
+            : NULL;
+        bench_matvec_buf("logits", &tied, x, x_q, pool, gpu, gpu_buf, n_iters);
     }
-
-    free(x);
-    free(logits);
-    free(x_q);
 }
 
 static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
@@ -432,7 +527,7 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--q4-expand] [--webgpu] [--metal] [--shader-dir DIR]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--kv16] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -443,6 +538,8 @@ int main(int argc, char **argv) {
     int kv_f16 = 0;
     int use_webgpu = 0;
     int use_metal = 0;
+    int metal_enable_q6_q8k = 0;
+    int metal_disable_q4_q8 = 0;
 #ifdef BN_ENABLE_WEBGPU
     const char *shader_dir = "shaders/";
 #endif
@@ -465,6 +562,14 @@ int main(int argc, char **argv) {
             use_webgpu = 1;
         else if (strcmp(argv[i], "--metal") == 0)
             use_metal = 1;
+        else if (strcmp(argv[i], "--metal-enable-q6-q8k") == 0)
+            metal_enable_q6_q8k = 1;
+        else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0)
+            metal_disable_q4_q8 = 1;
+        else if (strcmp(argv[i], "--q4-q8-disable-gateup") == 0)
+            setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
+        else if (strcmp(argv[i], "--q4-q8-disable-ffn-down") == 0)
+            setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
         else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             const char *dir = argv[++i];
 #ifdef BN_ENABLE_WEBGPU
@@ -484,8 +589,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-#ifdef BN_ENABLE_METAL
+#ifndef BN_ENABLE_METAL
+    (void)metal_enable_q6_q8k;
+    (void)metal_disable_q4_q8;
+#endif
+
+    BnGPUBackend *gpu = NULL;
     BnGPUBackend *metal_gpu = NULL;
+
+#ifdef BN_ENABLE_METAL
+    if (metal_enable_q6_q8k)
+        setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+    if (metal_disable_q4_q8)
+        setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
     if (use_metal) {
         metal_gpu = bn_gpu_metal_create(metal_shader_dir);
         if (!metal_gpu) {
@@ -536,7 +652,6 @@ int main(int argc, char **argv) {
     }
 
 #ifdef BN_ENABLE_WEBGPU
-    BnGPUBackend *gpu = NULL;
     if (use_webgpu) {
         gpu = bn_gpu_wgpu_create(shader_dir);
         if (!gpu) {
@@ -674,14 +789,25 @@ int main(int argc, char **argv) {
 
     for (int i = 0; i < n_targets; i++) {
         if (targets[i].W->data)
-            bench_matvec(targets[i].name, targets[i].W, x, x_q, pool, n_iters);
+            bench_matvec(targets[i].name, targets[i].W, x, x_q, pool,
+                         use_webgpu ? gpu : metal_gpu, bn_model_backend(&model),
+                         n_iters);
     }
     if (model.config.has_ffn_gate && gate_target.W->data)
-        bench_matvec(gate_target.name, gate_target.W, x, x_q, pool, n_iters);
+        bench_matvec(gate_target.name, gate_target.W, x, x_q, pool,
+                     use_webgpu ? gpu : metal_gpu, bn_model_backend(&model),
+                     n_iters);
+    bench_gpu_fused_gateup(L, use_webgpu ? gpu : metal_gpu,
+                           bn_model_backend(&model), x, n_iters);
 
     // Benchmark logits
-    if (model.weights.output_weight.data) {
-        bench_logits_real(&model, n_iters, pool);
+    if (model.weights.output_weight.data ||
+        (bn_quant_format_supported(model.weights.emb_type) &&
+         model.weights.emb_type != BN_GGUF_TENSOR_F16 &&
+         model.weights.emb_type != BN_GGUF_TENSOR_F32)) {
+        bench_logits_real(&model, x, x_q, n_iters, pool,
+                          use_webgpu ? gpu : metal_gpu,
+                          bn_model_backend(&model));
     } else if (model.weights.emb_type == BN_GGUF_TENSOR_F16) {
         bench_logits_f16(&model, x, n_iters);
     }

@@ -54,6 +54,7 @@ typedef struct {
     int prefault_moe;   // touch all mmap'd MoE expert pages before generation
     int quiet;          // suppress generated token output
     int token_ids;      // print generated token IDs to stderr
+    int top_logits;     // hidden diagnostic: print top-K logits before sampling
     const char *draft_path; // --draft <model.gguf> for speculative decoding
     int draft_k;        // --draft-k: number of draft tokens (default 5)
     int threads;        // 0 = auto-detect
@@ -64,7 +65,8 @@ typedef struct {
     int gpu_max_storage_binding_mb; // hidden diagnostic: allow large GPU logits
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
-    int metal_disable_q6_q8k; // hidden diagnostic: use native Q6_K Metal path
+    int metal_enable_q6_q8k; // hidden diagnostic: use Q6_K x Q8_K Metal path
+    int metal_q4_prepared; // hidden diagnostic: use prepared Q4_0 Metal upload layout
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
     int gpu_disable_qkv_split; // hidden diagnostic: disable stacked QKV split
     int gpu_disable_gateup_split; // hidden diagnostic: disable gate/up split
@@ -74,6 +76,11 @@ typedef struct {
     int metal_private_weights; // hidden diagnostic: upload weights to private Metal buffers
     int q4_q8_to_layer; // hidden diagnostic: last Q4 x Q8 layer
     int q4_q8_tail_native; // hidden diagnostic: final layers to leave on native Q4
+    int q4_q8_attn_only; // hidden diagnostic: use Q4 x Q8 only for attention
+    int q4_q8_ffn_only; // hidden diagnostic: use Q4 x Q8 only for FFN
+    int q4_q8_disable_gateup; // hidden diagnostic: use native Q4 fused gate/up
+    int q4_q8_disable_ffn_down; // hidden diagnostic: use native Q4 FFN down
+    int gpu_flash_min_kv; // hidden diagnostic: minimum KV length for GPU flash attention
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
@@ -110,6 +117,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --metal         Enable Metal backend (requires BN_ENABLE_METAL=1)\n");
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
     fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
+    fprintf(stderr, "  --metal-q4-prepared  Use prepared Q4_0 Metal upload layout\n");
     fprintf(stderr, "  --gpu-debug-qkv-split  Print QKV split diagnostic\n");
     fprintf(stderr, "  --gpu-disable-qkv-split  Disable stacked QKV split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-gateup-split  Disable gate/up split diagnostic path\n");
@@ -156,6 +164,7 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.q4_q8_to_layer = -1;
     args.q4_q8_tail_native = -1;
     args.gpu_max_storage_binding_mb = -1;
+    args.gpu_flash_min_kv = -1;
 
     if (argc < 2) {
         print_usage(argv[0]);
@@ -199,6 +208,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.quiet = 1;
         } else if (strcmp(argv[i], "--token-ids") == 0) {
             args.token_ids = 1;
+        } else if (strcmp(argv[i], "--top-logits") == 0 && i + 1 < argc) {
+            args.top_logits = parse_int(argv[++i], "--top-logits");
         } else if (strcmp(argv[i], "--draft") == 0 && i + 1 < argc) {
             args.draft_path = argv[++i];
         } else if (strcmp(argv[i], "--draft-k") == 0 && i + 1 < argc) {
@@ -229,8 +240,12 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_profile = parse_int(argv[++i], "--gpu-profile");
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
             args.metal_disable_barriers = 1;
+        } else if (strcmp(argv[i], "--metal-enable-q6-q8k") == 0) {
+            args.metal_enable_q6_q8k = 1;
+        } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
+            args.metal_q4_prepared = 1;
         } else if (strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
-            args.metal_disable_q6_q8k = 1;
+            /* Q6_K x Q8_K is now opt-in; keep the old diagnostic flag harmless. */
         } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
             args.gpu_debug_qkv_split = 1;
         } else if (strcmp(argv[i], "--gpu-disable-qkv-split") == 0) {
@@ -249,6 +264,16 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.q4_q8_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
         } else if (strcmp(argv[i], "--q4-q8-tail-native") == 0 && i + 1 < argc) {
             args.q4_q8_tail_native = parse_int(argv[++i], "--q4-q8-tail-native");
+        } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
+            args.q4_q8_attn_only = 1;
+        } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
+            args.q4_q8_ffn_only = 1;
+        } else if (strcmp(argv[i], "--q4-q8-disable-gateup") == 0) {
+            args.q4_q8_disable_gateup = 1;
+        } else if (strcmp(argv[i], "--q4-q8-disable-ffn-down") == 0) {
+            args.q4_q8_disable_ffn_down = 1;
+        } else if (strcmp(argv[i], "--gpu-flash-min-kv") == 0 && i + 1 < argc) {
+            args.gpu_flash_min_kv = parse_int(argv[++i], "--gpu-flash-min-kv");
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
             args.shader_dir = argv[++i];
         } else if (strcmp(argv[i], "--metal-shader-dir") == 0 && i + 1 < argc) {
@@ -317,8 +342,15 @@ int main(int argc, char **argv) {
     }
     if (args.metal_disable_barriers)
         setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
-    if (args.metal_disable_q6_q8k)
-        setenv("BN_METAL_DISABLE_Q6_Q8K", "1", 1);
+    if (args.metal_enable_q6_q8k)
+        setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+    if (args.metal_q4_prepared)
+        setenv("BN_METAL_Q4_PREPARED", "1", 1);
+    if (args.top_logits > 0) {
+        char top_env[16];
+        snprintf(top_env, sizeof(top_env), "%d", args.top_logits);
+        setenv("BN_TOP_LOGITS", top_env, 1);
+    }
     if (args.gpu_debug_qkv_split)
         setenv("BN_GPU_DEBUG_QKV_SPLIT", "1", 1);
     if (args.gpu_disable_qkv_split)
@@ -343,6 +375,23 @@ int main(int argc, char **argv) {
         snprintf(tail_env, sizeof(tail_env), "%d", args.q4_q8_tail_native);
         setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", tail_env, 1);
     }
+    if (args.q4_q8_attn_only)
+        setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
+    if (args.q4_q8_ffn_only)
+        setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
+    if (args.q4_q8_disable_gateup)
+        setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
+    if (args.q4_q8_disable_ffn_down)
+        setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
+    if (args.gpu_flash_min_kv >= 0) {
+        char min_kv_env[32];
+        snprintf(min_kv_env, sizeof(min_kv_env), "%d", args.gpu_flash_min_kv);
+        setenv("BN_GPU_FLASH_MIN_KV", min_kv_env, 1);
+    } else if (args.metal && args.flash_attn) {
+        setenv("BN_GPU_FLASH_MIN_KV", "256", 0);
+    }
+    if (args.metal && args.flash_attn)
+        setenv("BN_GPU_FLASH_MAX_KV", "1024", 0);
     if (args.gpu_max_storage_binding_mb >= 0) {
         char mb_env[32];
         snprintf(mb_env, sizeof(mb_env), "%d", args.gpu_max_storage_binding_mb);

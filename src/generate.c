@@ -44,25 +44,28 @@ static int check_stop_strings(const char *buf, int buf_len,
 #define LOOP_BUF_SIZE 32
 #define LOOP_NGRAM    4
 
-#ifdef DEBUG
-static void debug_dump_top_logits(const float *logits, int vocab_size,
-                                  const char *label, int step) {
-    int top[10];
-    for (int k = 0; k < 10; k++) top[k] = 0;
+#define BN_MAX_TOP_LOGITS 32
+
+static void dump_top_logits(const float *logits, int vocab_size, int top_k,
+                            const char *label, int step) {
+    if (top_k <= 0) return;
+    if (top_k > BN_MAX_TOP_LOGITS) top_k = BN_MAX_TOP_LOGITS;
+    int top[BN_MAX_TOP_LOGITS];
+    for (int k = 0; k < top_k; k++) top[k] = 0;
     for (int v = 0; v < vocab_size; v++) {
-        for (int k = 0; k < 10; k++) {
+        for (int k = 0; k < top_k; k++) {
             if (logits[v] > logits[top[k]]) {
-                for (int j = 9; j > k; j--) top[j] = top[j - 1];
+                for (int j = top_k - 1; j > k; j--) top[j] = top[j - 1];
                 top[k] = v;
                 break;
             }
         }
     }
-    fprintf(stderr, "DBG top10 %s step=%d:\n", label, step);
-    for (int k = 0; k < 10; k++)
-        fprintf(stderr, "  token %6d: %.4f\n", top[k], logits[top[k]]);
+    fprintf(stderr, "top_logits %s step=%d k=%d\n", label, step, top_k);
+    for (int k = 0; k < top_k; k++)
+        fprintf(stderr, "top_logit step=%d rank=%d token=%d logit=%.9g\n",
+                step, k + 1, top[k], logits[top[k]]);
 }
-#endif
 
 int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampler,
                 int max_tokens, int *pos,
@@ -90,12 +93,13 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
 
     float *logits = s->state.logits;
     if (!logits) return -2;
+    const char *top_env = getenv("BN_TOP_LOGITS");
+    int top_logits = top_env ? atoi(top_env) : 0;
 
     for (int i = 0; i < max_tokens; i++) {
-#ifdef DEBUG
-        if (getenv("BN_DEBUG_TOP_LOGITS"))
-            debug_dump_top_logits(logits, model->config.vocab_size, "generate", i);
-#endif
+        if (top_logits > 0)
+            dump_top_logits(logits, model->config.vocab_size, top_logits,
+                            "generate", i);
         int next = bn_sampler_sample(sampler, logits);
 
         if (next == tok->eot_id || next == tok->eos_id ||
