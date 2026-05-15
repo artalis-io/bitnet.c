@@ -90,6 +90,11 @@ static float bench_randf(void) {
     return (float)(bench_rng_state >> 16) / 65536.0f - 0.5f;
 }
 
+static int bench_rand_token(int vocab_size) {
+    bench_rng_state = bench_rng_state * 1664525u + 1013904223u;
+    return (int)(bench_rng_state % (uint32_t)vocab_size);
+}
+
 typedef struct {
     const char *name;
     const BnQWeight *W;
@@ -554,22 +559,24 @@ done_free_tokens:
     free(tokens);
 }
 
-static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
+static void bench_toks(BnModel *m, BnSession *s, int n_gen, int random_gen) {
     // Generate tokens and measure throughput
     int warmup = 4;
     int total = warmup + n_gen;
 
     BnSampler sampler;
-    bn_sampler_init(&sampler, m->config.vocab_size, 0.0f, 0.9f, 42);
+    if (!random_gen)
+        bn_sampler_init(&sampler, m->config.vocab_size, 0.0f, 0.9f, 42);
 
     // Feed BOS token at pos 0
     float *logits = bn_transformer_forward(m, s, 1, 0);  // token 1 = BOS for most models
     if (!logits) {
         fprintf(stderr, "Forward pass failed\n");
-        bn_sampler_free(&sampler);
+        if (!random_gen)
+            bn_sampler_free(&sampler);
         return;
     }
-    int next = bn_sampler_sample(&sampler, logits);
+    int next = random_gen ? bench_rand_token(m->config.vocab_size) : bn_sampler_sample(&sampler, logits);
 
     // Warmup + timed generation
     double t_start = 0;
@@ -577,20 +584,21 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen) {
         if (i == warmup) t_start = bn_platform_time_ms();
         logits = bn_transformer_forward(m, s, next, i + 1);
         if (!logits) break;
-        next = bn_sampler_sample(&sampler, logits);
+        next = random_gen ? bench_rand_token(m->config.vocab_size) : bn_sampler_sample(&sampler, logits);
     }
     double elapsed = bn_platform_time_ms() - t_start;
     double toks_per_sec = (double)n_gen / (elapsed / 1000.0);
 
-    printf("\nThroughput: %.1f tok/s  (%d tokens in %.0f ms, %d warmup)\n",
-           toks_per_sec, n_gen, elapsed, warmup);
+    printf("\nThroughput: %.1f tok/s  (%d tokens in %.0f ms, %d warmup%s)\n",
+           toks_per_sec, n_gen, elapsed, warmup, random_gen ? ", random next-token" : "");
 
-    bn_sampler_free(&sampler);
+    if (!random_gen)
+        bn_sampler_free(&sampler);
 }
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--prefill-toks N] [--prefill-iters N] [--kv16] [--flash] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
+        fprintf(stderr, "Usage: %s model.gguf [--iters N] [--threads T] [--toks N] [--prefill-toks N] [--prefill-iters N] [--kv16] [--flash] [--random-gen] [--q4-expand] [--webgpu] [--metal] [--metal-enable-q6-q8k] [--metal-disable-q4-q8] [--q4-q8-disable-gateup] [--q4-q8-disable-ffn-down] [--shader-dir DIR]\n", argv[0]);
         return 1;
     }
 
@@ -602,6 +610,7 @@ int main(int argc, char **argv) {
     int n_prefill_iters = 3;
     int kv_f16 = 0;
     int flash_attn = 0;
+    int random_gen = 0;
     int use_webgpu = 0;
     int use_metal = 0;
     int metal_enable_q6_q8k = 0;
@@ -628,6 +637,8 @@ int main(int argc, char **argv) {
             kv_f16 = 1;
         else if (strcmp(argv[i], "--flash") == 0)
             flash_attn = 1;
+        else if (strcmp(argv[i], "--random-gen") == 0)
+            random_gen = 1;
         else if (strcmp(argv[i], "--q4-expand") == 0)
             bench_q4_expand_enabled = 1;
         else if (strcmp(argv[i], "--webgpu") == 0)
@@ -891,7 +902,7 @@ int main(int argc, char **argv) {
     bench_prefill(&model, n_prefill, n_prefill_iters);
     BnSession *session = bn_session_create(&model, NULL);
     if (session) {
-        bench_toks(&model, session, n_toks);
+        bench_toks(&model, session, n_toks, random_gen);
         bn_session_free(session, NULL);
     } else {
         fprintf(stderr, "Failed to create session for tok/s benchmark\n");

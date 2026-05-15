@@ -503,7 +503,9 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
         int all_kquant = 1;
         for (int t = 0; t < n_tasks; t++) {
             int type = tasks[t].W->type;
-            if (type != BN_GGUF_TENSOR_Q4_K && type != BN_GGUF_TENSOR_Q6_K) {
+            if (type != BN_GGUF_TENSOR_Q4_K &&
+                type != BN_GGUF_TENSOR_Q5_K &&
+                type != BN_GGUF_TENSOR_Q6_K) {
                 all_kquant = 0;
                 break;
             }
@@ -520,9 +522,11 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                 for (int t = 0; t < n_tasks; t++) {
                     ctxs[t] = (BnKQuantSdotCtx){ tasks[t].out, tasks[t].W,
                                                   x_q_buf, q8k_d, q8k_bsums };
-                    bn_tp_fn fn = (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
-                        ? bn_quant_q4k_scalar_sdot_range
-                        : bn_quant_q6k_scalar_sdot_range;
+                    bn_tp_fn fn = bn_quant_q6k_scalar_sdot_range;
+                    if (tasks[t].W->type == BN_GGUF_TENSOR_Q4_K)
+                        fn = bn_quant_q4k_scalar_sdot_range;
+                    else if (tasks[t].W->type == BN_GGUF_TENSOR_Q5_K)
+                        fn = bn_quant_q5k_scalar_sdot_range;
                     tp_tasks[t] = (BnTPTask){ fn, &ctxs[t], tasks[t].W->rows };
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);

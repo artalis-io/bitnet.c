@@ -44,7 +44,7 @@ void bn_quant_q5k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
                 bsum_corr += (int32_t)mins[j] *
                     ((int32_t)bsums[2 * j] + (int32_t)bsums[2 * j + 1]);
 
-            int32_t sumi = 0;
+            int16_t qw[BN_QK_K];
             const uint8_t *qs = blk->qs;
             for (int p = 0; p < 4; p++) {
                 int bit_lo = p * 2;
@@ -56,11 +56,15 @@ void bn_quant_q5k_scalar_sdot_range(void *ctx, int row_start, int row_end) {
                         (int)(((qh[i] >> bit_lo) & 1) << 4);
                     int qhi = (int)(qs[i] >> 4) |
                         (int)(((qh[i] >> bit_hi) & 1) << 4);
-                    sumi += qlo * sc_lo * (int32_t)xb[p * 64 + i];
-                    sumi += qhi * sc_hi * (int32_t)xb[p * 64 + 32 + i];
+                    qw[p * 64 + i] = (int16_t)(qlo * sc_lo);
+                    qw[p * 64 + 32 + i] = (int16_t)(qhi * sc_hi);
                 }
                 qs += 32;
             }
+
+            int32_t sumi = 0;
+            for (int i = 0; i < BN_QK_K; i++)
+                sumi += (int32_t)qw[i] * (int32_t)xb[i];
 
             row_sum += dx * (d * (float)sumi - dmin * (float)bsum_corr);
         }
