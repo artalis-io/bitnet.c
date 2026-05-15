@@ -13,8 +13,10 @@
 
 #define BN_MAX_SCALE_BLOCKS 8192
 
-void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
-                     int n_tokens, int8_t *x_q_buf, BnThreadPool *pool) {
+void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
+                              const BnPreparedWeight *prepared,
+                              const float *X, int n_tokens,
+                              int8_t *x_q_buf, BnThreadPool *pool) {
     int rows = W->rows;
     int cols = W->cols;
 
@@ -23,7 +25,7 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
         return;
     }
 
-#ifdef __AVX2__
+#if defined(__AVX2__) || (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
     if (W->type == BN_GGUF_TENSOR_Q4_0) {
         int n_blocks = cols / 32;
         if (n_blocks < 1 || n_blocks > BN_MAX_SCALE_BLOCKS) goto fallback_loop;
@@ -41,15 +43,18 @@ void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
                                     xq_all + (size_t)t * cols,
                                     xs_all + (size_t)t * n_blocks, cols);
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        struct {
-            float *out;
-            const BnQWeight *W;
-            const int8_t *x_q;
-            const float *x_scales;
-            int n_tokens;
-            int cols;
-        } ctx = { out, W, xq_all, xs_all, n_tokens, cols };
+        BnQ4MatmulCtx ctx = { out, W, xq_all, xs_all, prepared, n_tokens, cols };
+#ifdef __AVX2__
         BnTPTask task = { bn_quant_q4_avx2_matmul_range, &ctx, rows };
+#else
+        BnTPTask task = {
+            (prepared && prepared->qs && prepared->scales)
+                ? bn_quant_q4_repacked_neon_sdot_matmul_range
+                : bn_quant_q4_neon_sdot_matmul_range,
+            &ctx,
+            rows
+        };
+#endif
         bn_tp_dispatch(pool, &task, 1);
         free(xq_all);
         free(xs_all);
@@ -163,6 +168,11 @@ fallback_loop:
         bn_quant_matvec(out + (size_t)t * rows, W, X + (size_t)t * cols,
                         x_q_buf, pool);
     }
+}
+
+void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
+                     int n_tokens, int8_t *x_q_buf, BnThreadPool *pool) {
+    bn_quant_matmul_prepared(out, W, NULL, X, n_tokens, x_q_buf, pool);
 }
 
 void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,

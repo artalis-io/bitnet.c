@@ -3,6 +3,7 @@
 #include "transformer_kv_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_math_internal.h"
+#include "quant.h"
 #include "threadpool.h"
 #include <string.h>
 #include <math.h>
@@ -15,6 +16,16 @@ static inline float batched_dot(const float *a, const float *b, int n) {
     float sum = 0;
     for (int i = 0; i < n; i++) sum += a[i] * b[i];
     return sum;
+}
+
+static inline float batched_dot_fp16(const float *a, const uint16_t *b, int n) {
+    float sum = 0;
+    for (int i = 0; i < n; i++) sum += a[i] * bn_fp16_to_fp32(b[i]);
+    return sum;
+}
+
+static inline void batched_acc_fp16(float *out, float w, const uint16_t *v, int n) {
+    for (int i = 0; i < n; i++) out[i] += w * bn_fp16_to_fp32(v[i]);
 }
 
 static void batched_rope_token(float *v, int n_heads, int head_size,
@@ -38,6 +49,7 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
     int hs = b->head_size, kv_dim = b->kv_dim, kv_mul = b->kv_mul;
     int seq_len = b->seq_len, n_tokens = b->n_tokens, pos0 = b->pos0;
     size_t loff = b->loff;
+    int kv_f16 = b->c->kv_f16;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_stride = b->q_gated ? 2 * hs : hs;
@@ -65,18 +77,32 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
             float att[n_kv > BN_MAX_VLA_ELEMS ? 1 : n_kv];
             if (n_kv > BN_MAX_VLA_ELEMS) return;
 
-            const float *kc = s->key_cache + loff;
-            for (int i = 0; i < n_kv; i++)
-                att[i] = batched_dot(q, kc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs, hs) * attn_scale;
+            if (kv_f16) {
+                const uint16_t *kc = (const uint16_t *)s->key_cache + loff;
+                for (int i = 0; i < n_kv; i++)
+                    att[i] = batched_dot_fp16(q, kc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs, hs) * attn_scale;
+            } else {
+                const float *kc = s->key_cache + loff;
+                for (int i = 0; i < n_kv; i++)
+                    att[i] = batched_dot(q, kc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs, hs) * attn_scale;
+            }
             bn_transformer_softmax(att, n_kv);
 
             float xb[hs];
             memset(xb, 0, hs * sizeof(float));
-            const float *vc = s->value_cache + loff;
-            for (int i = 0; i < n_kv; i++) {
-                float a = att[i];
-                const float *vi = vc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs;
-                for (int d = 0; d < hs; d++) xb[d] += a * vi[d];
+            if (kv_f16) {
+                const uint16_t *vc = (const uint16_t *)s->value_cache + loff;
+                for (int i = 0; i < n_kv; i++) {
+                    const uint16_t *vi = vc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs;
+                    batched_acc_fp16(xb, att[i], vi, hs);
+                }
+            } else {
+                const float *vc = s->value_cache + loff;
+                for (int i = 0; i < n_kv; i++) {
+                    float a = att[i];
+                    const float *vi = vc + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * hs;
+                    for (int d = 0; d < hs; d++) xb[d] += a * vi[d];
+                }
             }
 
             if (b->q_gated) {
@@ -95,6 +121,7 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
     int hs = b->head_size, kv_dim = b->kv_dim, kv_mul = b->kv_mul;
     int seq_len = b->seq_len, n_tokens = b->n_tokens, pos0 = b->pos0;
     size_t loff = b->loff;
+    int kv_f16 = b->c->kv_f16;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_stride = b->q_gated ? 2 * hs : hs;
@@ -123,19 +150,30 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
             memset(out_buf, 0, hs * sizeof(float));
             float rmax = -INFINITY, rsum = 0;
 
-            const float *kc = s->key_cache + loff;
-            const float *vcache = s->value_cache + loff;
             for (int i = 0; i < n_kv; i++) {
                 int ki = (kv_start + i) % seq_len;
-                float score = batched_dot(q, kc + (size_t)ki * kv_dim + kv_h * hs, hs) * attn_scale;
+                float score;
+                if (kv_f16) {
+                    const uint16_t *kc = (const uint16_t *)s->key_cache + loff;
+                    score = batched_dot_fp16(q, kc + (size_t)ki * kv_dim + kv_h * hs, hs) * attn_scale;
+                } else {
+                    const float *kc = s->key_cache + loff;
+                    score = batched_dot(q, kc + (size_t)ki * kv_dim + kv_h * hs, hs) * attn_scale;
+                }
                 if (score > rmax) {
                     float rescale = expf(rmax - score);
                     rmax = score; rsum *= rescale;
                     for (int d = 0; d < hs; d++) out_buf[d] *= rescale;
                 }
                 float w = expf(score - rmax); rsum += w;
-                const float *vi = vcache + (size_t)ki * kv_dim + kv_h * hs;
-                for (int d = 0; d < hs; d++) out_buf[d] += w * vi[d];
+                if (kv_f16) {
+                    const uint16_t *vcache = (const uint16_t *)s->value_cache + loff;
+                    batched_acc_fp16(out_buf, w, vcache + (size_t)ki * kv_dim + kv_h * hs, hs);
+                } else {
+                    const float *vcache = s->value_cache + loff;
+                    const float *vi = vcache + (size_t)ki * kv_dim + kv_h * hs;
+                    for (int d = 0; d < hs; d++) out_buf[d] += w * vi[d];
+                }
             }
 
             float inv_sum = rsum > 0 ? 1.0f / rsum : 0;

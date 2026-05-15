@@ -49,7 +49,8 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_neon.c src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_neon.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c src/transformer/gqa_tq_neon.c \
-    src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
+    src/transformer/batched_attn_avx2.c src/transformer/batched_attn_neon.c \
+    src/transformer/batched_attn_scalar.c \
     src/transformer/logits_neon.c src/transformer/logits_scalar.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \

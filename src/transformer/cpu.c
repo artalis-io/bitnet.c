@@ -183,12 +183,16 @@ void bn_transformer_batched_attn_dispatch(BnModel *m,
     if (m->config.flash_attn) {
 #ifdef __AVX2__
         fn = bn_transformer_batched_attn_flash_avx2_range;
+#elif defined(__ARM_NEON)
+        fn = bn_transformer_batched_attn_flash_neon_range;
 #else
         fn = bn_transformer_batched_attn_flash_scalar_range;
 #endif
     } else {
 #ifdef __AVX2__
         fn = bn_transformer_batched_attn_naive_avx2_range;
+#elif defined(__ARM_NEON)
+        fn = bn_transformer_batched_attn_naive_neon_range;
 #else
         fn = bn_transformer_batched_attn_naive_scalar_range;
 #endif

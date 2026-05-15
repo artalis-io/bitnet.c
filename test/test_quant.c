@@ -231,6 +231,86 @@ static void test_matmul_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_q4_matmul_correctness(void) {
+    printf("test_q4_matmul_correctness... ");
+
+    int rows = 7, cols = 96, n_tokens = 5;
+    int n_bpr = cols / 32;
+    BnBlockQ4_0 *blocks = (BnBlockQ4_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ4_0));
+    assert(blocks);
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ4_0 *blk = &blocks[(size_t)r * n_bpr + b];
+            blk->d = bn_fp32_to_fp16(0.03125f * (float)(1 + ((r + b) % 5)));
+            for (int i = 0; i < 16; i++) {
+                uint8_t lo = (uint8_t)((r * 3 + b * 5 + i * 7) & 0x0F);
+                uint8_t hi = (uint8_t)((r * 11 + b * 13 + i * 17 + 3) & 0x0F);
+                blk->qs[i] = (uint8_t)(lo | (hi << 4));
+            }
+        }
+    }
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q4_0, rows, cols, 1.0f };
+    float *X = (float *)malloc((size_t)n_tokens * cols * sizeof(float));
+    float *ref = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    int8_t *x_q = (int8_t *)malloc((size_t)cols);
+    int n_groups = rows / 4;
+    BnPreparedWeight prepared = { 0 };
+    prepared.qs = (uint8_t *)calloc((size_t)n_groups * n_bpr * 64, 1);
+    prepared.scales = (uint16_t *)calloc((size_t)n_groups * n_bpr * 4, sizeof(uint16_t));
+    assert(X && ref && out && out_prepared && x_q && prepared.qs && prepared.scales);
+
+    for (int g = 0; g < n_groups; g++) {
+        for (int b = 0; b < n_bpr; b++) {
+            size_t gb = (size_t)g * n_bpr + b;
+            for (int r = 0; r < 4; r++) {
+                size_t src = (size_t)(g * 4 + r) * n_bpr + b;
+                prepared.scales[gb * 4 + r] = blocks[src].d;
+            }
+            uint8_t *dst = prepared.qs + gb * 64;
+            for (int ng = 0; ng < 4; ng++) {
+                for (int r = 0; r < 4; r++) {
+                    size_t src = (size_t)(g * 4 + r) * n_bpr + b;
+                    const uint8_t *qs = blocks[src].qs + ng * 4;
+                    uint8_t *dp = dst + ng * 16 + r * 4;
+                    for (int j = 0; j < 4; j++)
+                        dp[j] = qs[j] ^ 0x88;
+                }
+            }
+        }
+    }
+
+    for (int t = 0; t < n_tokens; t++) {
+        for (int i = 0; i < cols; i++) {
+            int v = (t * 19 + i * 23) % 41;
+            X[(size_t)t * cols + i] = 0.075f * (float)(v - 20);
+        }
+    }
+
+    for (int t = 0; t < n_tokens; t++)
+        bn_quant_matvec(ref + (size_t)t * rows, &W, X + (size_t)t * cols, x_q, NULL);
+
+    bn_quant_matmul(out, &W, X, n_tokens, x_q, NULL);
+    bn_quant_matmul_prepared(out_prepared, &W, &prepared, X, n_tokens, x_q, NULL);
+
+    for (int t = 0; t < n_tokens; t++) {
+        for (int r = 0; r < rows; r++) {
+            float diff = fabsf(out[(size_t)t * rows + r] - ref[(size_t)t * rows + r]);
+            float mag = fabsf(ref[(size_t)t * rows + r]) + 1e-6f;
+            assert(diff / mag < 0.01f || diff < 1e-4f);
+            diff = fabsf(out_prepared[(size_t)t * rows + r] - ref[(size_t)t * rows + r]);
+            assert(diff / mag < 0.01f || diff < 1e-4f);
+        }
+    }
+
+    free(blocks); free(X); free(ref); free(out); free(out_prepared);
+    free(x_q); free(prepared.qs); free(prepared.scales);
+    printf("PASSED\n");
+}
+
 static void test_q5k_matmul_correctness(void) {
     printf("test_q5k_matmul_correctness... ");
 
@@ -916,6 +996,7 @@ int main(void) {
     test_matvec_batch();
     test_matvec_threaded();
     test_matmul_correctness();
+    test_q4_matmul_correctness();
     test_q5k_matmul_correctness();
     test_q5k_matvec_multi_correctness();
     test_q5k_matvec_batch_correctness();

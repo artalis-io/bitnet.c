@@ -1,4 +1,5 @@
 #include "transformer_cpu_internal.h"
+#include "transformer_batched_attn_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "../src/transformer/gpu_internal.h"
@@ -880,6 +881,90 @@ static void test_block_planning(void) {
     printf("PASSED\n");
 }
 
+static void test_batched_attn_fp16_kv(void) {
+    printf("test_batched_attn_fp16_kv... ");
+
+    BnConfig c;
+    BnRunState s;
+    memset(&c, 0, sizeof(c));
+    memset(&s, 0, sizeof(s));
+
+    c.kv_f16 = 1;
+    enum { head_size = 4, kv_dim = 4, seq_len = 4, n_tokens = 2 };
+    uint16_t key_cache[seq_len * kv_dim];
+    uint16_t value_cache[seq_len * kv_dim];
+    float q_buf[n_tokens * head_size];
+    float out_scalar[n_tokens * head_size];
+#ifdef __ARM_NEON
+    float out_neon[n_tokens * head_size];
+#endif
+    float rope_cos[1] = {0.0f};
+    float rope_sin[1] = {0.0f};
+
+    float keys[seq_len * kv_dim] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f,
+    };
+    float values[seq_len * kv_dim] = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+    };
+    for (int i = 0; i < seq_len * kv_dim; i++) {
+        key_cache[i] = bn_fp32_to_fp16(keys[i]);
+        value_cache[i] = bn_fp32_to_fp16(values[i]);
+    }
+
+    q_buf[0] = 1.0f; q_buf[1] = 0.0f; q_buf[2] = 0.0f; q_buf[3] = 0.0f;
+    q_buf[4] = 0.0f; q_buf[5] = 1.0f; q_buf[6] = 0.0f; q_buf[7] = 0.0f;
+    memset(out_scalar, 0, sizeof(out_scalar));
+
+    s.key_cache = (float *)key_cache;
+    s.value_cache = (float *)value_cache;
+
+    BnBatchedAttnCtx ctx = {
+        .c = &c, .s = &s,
+        .Q_buf = q_buf, .K_new = NULL, .V_new = NULL, .out = out_scalar,
+        .loff = 0, .pos0 = 0, .n_tokens = n_tokens,
+        .n_heads = 1, .n_kv_heads = 1,
+        .head_size = head_size, .kv_dim = kv_dim, .kv_mul = 1,
+        .seq_len = seq_len, .rope_dims = 0,
+        .rope_freq = NULL, .rope_cos = rope_cos, .rope_sin = rope_sin,
+        .attention_scale = 1.0f / sqrtf((float)head_size),
+        .q_norm = NULL, .k_norm = NULL,
+        .q_bias = NULL, .k_bias = NULL, .v_bias = NULL,
+        .qk_norm_per_head = 0, .norm_eps = 1e-5f,
+        .q_gated = 0, .wq_rows = head_size, .wo_cols = head_size,
+    };
+
+    bn_transformer_batched_attn_naive_scalar_range(&ctx, 0, 1);
+
+    for (int d = 0; d < head_size; d++)
+        assert(fabsf(out_scalar[d] - values[d]) < 1e-5f);
+
+    float inv_sqrt = 1.0f / sqrtf((float)head_size);
+    float w0 = expf(0.0f);
+    float w1 = expf(inv_sqrt);
+    float denom = w0 + w1;
+    for (int d = 0; d < head_size; d++) {
+        float expected = (w0 * values[d] + w1 * values[head_size + d]) / denom;
+        assert(fabsf(out_scalar[head_size + d] - expected) < 1e-5f);
+    }
+
+#ifdef __ARM_NEON
+    memset(out_neon, 0, sizeof(out_neon));
+    ctx.out = out_neon;
+    bn_transformer_batched_attn_naive_neon_range(&ctx, 0, 1);
+    for (int i = 0; i < n_tokens * head_size; i++)
+        assert(fabsf(out_neon[i] - out_scalar[i]) < 1e-5f);
+#endif
+
+    printf("PASSED\n");
+}
+
 int main(void) {
     printf("=== Transformer Tests ===\n");
     test_rmsnorm();
@@ -895,6 +980,7 @@ int main(void) {
     test_model_arch_registry();
     test_layer_shape_planning();
     test_block_planning();
+    test_batched_attn_fp16_kv();
     printf("All transformer tests passed!\n");
     return 0;
 }

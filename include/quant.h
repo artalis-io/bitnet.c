@@ -317,6 +317,10 @@ int bn_quant_q4_gate_up_silu(float *out,
 // out must be [n_tokens * W->rows] floats, X is [n_tokens * W->cols] floats.
 void bn_quant_matmul(float *out, const BnQWeight *W, const float *X,
                      int n_tokens, int8_t *x_q_buf, BnThreadPool *pool);
+void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
+                              const BnPreparedWeight *prepared,
+                              const float *X, int n_tokens,
+                              int8_t *x_q_buf, BnThreadPool *pool);
 
 // Matmul with pre-quantized Q8_K input (avoids redundant re-quantization).
 // x_q/x_d/x_bsums must be [n_tokens * cols] / [n_tokens * n_bpr] / [n_tokens * n_bpr * 16].

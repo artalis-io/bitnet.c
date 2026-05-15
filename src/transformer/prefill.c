@@ -34,6 +34,13 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      const float *X,
                                      int n_tokens,
                                      int8_t *x_q_buf) {
+    if (!bn_model_gpu(m)) {
+        const BnBackendModel *backend = bn_model_backend(m);
+        bn_quant_matmul_prepared(out, W,
+                                 bn_backend_model_prepared_qweight(backend, W),
+                                 X, n_tokens, x_q_buf, bn_model_pool(m));
+        return;
+    }
     bn_backend_quant_matmul_gpu_buf(out, W,
                                     prefill_qweight_backend_buf(bn_model_backend(m), W),
                                     X, n_tokens, x_q_buf, bn_model_pool(m),

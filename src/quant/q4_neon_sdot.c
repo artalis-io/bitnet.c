@@ -149,6 +149,156 @@ void bn_quant_q4_neon_sdot_range(void *ctx, int row_start, int row_end) {
     }
 }
 
+#define Q4_NEON_MATMUL_TILE_T 4
+
+void bn_quant_q4_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
+    BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
+    int rows = c->W->rows;
+    int cols = c->cols;
+    int n_blocks_per_row = cols / 32;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)c->W->data;
+    const int8_t *x_q = c->x_q;
+    const float *x_scales = c->x_scales;
+
+    const uint8x16_t mask_lo = vdupq_n_u8(0xF);
+    const int8x16_t eight = vdupq_n_s8(8);
+    const int32x4_t zero = vdupq_n_s32(0);
+
+    for (int t0 = 0; t0 < n_tokens; t0 += Q4_NEON_MATMUL_TILE_T) {
+        int t_end = t0 + Q4_NEON_MATMUL_TILE_T;
+        if (t_end > n_tokens) t_end = n_tokens;
+        int tn = t_end - t0;
+
+        for (int row = row_start; row < row_end; row++) {
+            float sums[Q4_NEON_MATMUL_TILE_T] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            size_t base = (size_t)row * n_blocks_per_row;
+
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                const BnBlockQ4_0 *blk = &blocks[base + b];
+                if (b + 8 < n_blocks_per_row)
+                    __builtin_prefetch(blk + 8, 0, 0);
+
+                float wd = bn_fp16_to_fp32(blk->d);
+                uint8x16_t raw = vld1q_u8(blk->qs);
+                int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), eight);
+                int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), eight);
+
+                for (int ti = 0; ti < tn; ti++) {
+                    int t = t0 + ti;
+                    const int8_t *xb = x_q + (size_t)t * cols + b * 32;
+                    int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
+                    acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+                    sums[ti] += wd * x_scales[(size_t)t * n_blocks_per_row + b] *
+                                (float)vaddvq_s32(acc);
+                }
+            }
+
+            for (int ti = 0; ti < tn; ti++)
+                c->out[(size_t)(t0 + ti) * rows + row] += sums[ti];
+        }
+    }
+}
+
+void bn_quant_q4_repacked_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) {
+    BnQ4MatmulCtx *c = (BnQ4MatmulCtx *)ctx;
+    const BnPreparedWeight *prepared = c->prepared;
+    const uint16_t *rp_scales = prepared ? prepared->scales : NULL;
+    const uint8_t *rp_qs = prepared ? prepared->qs : NULL;
+    if (!rp_scales || !rp_qs) {
+        bn_quant_q4_neon_sdot_matmul_range(ctx, row_start, row_end);
+        return;
+    }
+
+    int rows = c->W->rows;
+    int cols = c->cols;
+    int n_blocks_per_row = cols / 32;
+    int n_tokens = c->n_tokens;
+    const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)c->W->data;
+    const int8_t *x_q = c->x_q;
+    const float *x_scales = c->x_scales;
+
+    const uint8x16_t mask_lo = vdupq_n_u8(0xF);
+    const int8x16_t eight = vdupq_n_s8(8);
+    const int32x4_t zero = vdupq_n_s32(0);
+
+    int row = row_start;
+    for (; row < row_end && (row & 3); row++) {
+        for (int t = 0; t < n_tokens; t++) {
+            float sum = 0.0f;
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
+                float wd = bn_fp16_to_fp32(blk->d);
+                uint8x16_t raw = vld1q_u8(blk->qs);
+                int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), eight);
+                int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), eight);
+                const int8_t *xb = x_q + (size_t)t * cols + b * 32;
+                int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
+                acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+                sum += wd * x_scales[(size_t)t * n_blocks_per_row + b] *
+                       (float)vaddvq_s32(acc);
+            }
+            c->out[(size_t)t * rows + row] += sum;
+        }
+    }
+
+    for (; row + 3 < row_end; row += 4) {
+        int group = row >> 2;
+
+        for (int t0 = 0; t0 < n_tokens; t0 += Q4_NEON_MATMUL_TILE_T) {
+            int t_end = t0 + Q4_NEON_MATMUL_TILE_T;
+            if (t_end > n_tokens) t_end = n_tokens;
+            int tn = t_end - t0;
+            float32x4_t sums[Q4_NEON_MATMUL_TILE_T] = {
+                vdupq_n_f32(0.0f), vdupq_n_f32(0.0f),
+                vdupq_n_f32(0.0f), vdupq_n_f32(0.0f)
+            };
+
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                size_t gb = (size_t)group * n_blocks_per_row + b;
+                const uint8_t *qbase = rp_qs + gb * 64;
+                if (b + 8 < n_blocks_per_row)
+                    __builtin_prefetch(rp_qs + (gb + 8) * 64, 0, 0);
+
+                float32x4_t d4 =
+                    vcvt_f32_f16(vld1_f16((const float16_t *)(rp_scales + gb * 4)));
+                for (int ti = 0; ti < tn; ti++) {
+                    int t = t0 + ti;
+                    const int8_t *xb = x_q + (size_t)t * cols + b * 32;
+                    int8x16_t a0 = vld1q_s8(xb);
+                    int8x16_t a1 = vld1q_s8(xb + 16);
+                    int32x4_t acc = q4_repacked_dot4_xor(qbase, a0, a1);
+                    float32x4_t f = vcvtq_n_f32_s32(acc, 4);
+                    float dx = x_scales[(size_t)t * n_blocks_per_row + b];
+                    sums[ti] = vfmaq_f32(sums[ti], f, vmulq_n_f32(d4, dx));
+                }
+            }
+
+            for (int ti = 0; ti < tn; ti++)
+                vst1q_f32(c->out + (size_t)(t0 + ti) * rows + row, sums[ti]);
+        }
+    }
+
+    for (; row < row_end; row++) {
+        for (int t = 0; t < n_tokens; t++) {
+            float sum = 0.0f;
+            for (int b = 0; b < n_blocks_per_row; b++) {
+                const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
+                float wd = bn_fp16_to_fp32(blk->d);
+                uint8x16_t raw = vld1q_u8(blk->qs);
+                int8x16_t lo = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(raw, mask_lo)), eight);
+                int8x16_t hi = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(raw, 4)), eight);
+                const int8_t *xb = x_q + (size_t)t * cols + b * 32;
+                int32x4_t acc = vdotq_s32(zero, lo, vld1q_s8(xb));
+                acc = vdotq_s32(acc, hi, vld1q_s8(xb + 16));
+                sum += wd * x_scales[(size_t)t * n_blocks_per_row + b] *
+                       (float)vaddvq_s32(acc);
+            }
+            c->out[(size_t)t * rows + row] += sum;
+        }
+    }
+}
+
 void bn_quant_q4_repacked_neon_sdot_range(void *ctx, int row_start, int row_end) {
     BnQ4SdotCtx *c = (BnQ4SdotCtx *)ctx;
     const uint16_t *rp_scales = c->prepared ? c->prepared->scales : NULL;

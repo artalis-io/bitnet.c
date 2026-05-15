@@ -8,15 +8,6 @@
 
 #define Q4_MATMUL_TILE_T 8
 
-typedef struct {
-    float *out;
-    const BnQWeight *W;
-    const int8_t *x_q;
-    const float *x_scales;
-    int n_tokens;
-    int cols;
-} BnQ4MatmulCtx;
-
 static inline __m256 dot_i8_float(__m256i w, __m256i x) {
     __m256i aw = _mm256_sign_epi8(w, w);
     __m256i sx = _mm256_sign_epi8(x, w);
@@ -34,6 +25,7 @@ void bn_quant_q4_avx2_matmul_range(void *ctx, int row_start, int row_end) {
     const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)c->W->data;
     const int8_t *x_q = c->x_q;
     const float *x_scales = c->x_scales;
+    (void)c->prepared;
 
     const __m128i mask_lo = _mm_set1_epi8(0xF);
     const __m128i bias8 = _mm_set1_epi8(8);

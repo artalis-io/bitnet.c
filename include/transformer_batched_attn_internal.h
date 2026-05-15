@@ -48,8 +48,10 @@ typedef struct {
 void bn_transformer_batched_attn_dispatch(BnModel *m, BnBatchedAttnCtx *ctx);
 
 void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int start, int end);
+void bn_transformer_batched_attn_naive_neon_range(void *ctx, int start, int end);
 void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int start, int end);
 void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int start, int end);
+void bn_transformer_batched_attn_flash_neon_range(void *ctx, int start, int end);
 void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int start, int end);
 
 #endif
