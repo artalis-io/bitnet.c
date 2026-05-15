@@ -134,6 +134,93 @@ static float prefill_gelu(float x) {
                          (1.0f + 0.044715f * x * x)));
 }
 
+typedef struct {
+    float *hb;
+    const float *hb2;
+    int hidden_dim;
+    int act_type;
+} BnPrefillFFNActCtx;
+
+static void prefill_ffn_activation_range(void *ctx, int start, int end) {
+    BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
+    int hidden_dim = c->hidden_dim;
+    for (int t = start; t < end; t++) {
+        float *hb_t = c->hb + (size_t)t * hidden_dim;
+        const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
+        if (c->act_type == 1) {
+            int i = 0;
+#ifdef __ARM_NEON
+            float32x4_t zero_v = vdupq_n_f32(0.0f);
+            for (; i + 3 < hidden_dim; i += 4) {
+                float32x4_t g = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
+                float32x4_t v = vmulq_f32(g, g);
+                if (hb2_t)
+                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
+                vst1q_f32(hb_t + i, v);
+            }
+#endif
+#ifdef __AVX2__
+            __m256 zero_v = _mm256_setzero_ps();
+            for (; i + 7 < hidden_dim; i += 8) {
+                __m256 g = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
+                __m256 v = _mm256_mul_ps(g, g);
+                if (hb2_t)
+                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
+                _mm256_storeu_ps(hb_t + i, v);
+            }
+#endif
+            for (; i < hidden_dim; i++) {
+                float g = hb_t[i] > 0 ? hb_t[i] : 0;
+                hb_t[i] = hb2_t ? g * g * hb2_t[i] : g * g;
+            }
+        } else if (c->act_type == 2) {
+            int i = 0;
+#ifdef __ARM_NEON
+            for (; i + 3 < hidden_dim; i += 4) {
+                float32x4_t v = bn_neon_fast_gelu_f32(vld1q_f32(hb_t + i));
+                if (hb2_t)
+                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
+                vst1q_f32(hb_t + i, v);
+            }
+#endif
+#ifdef __AVX2__
+            for (; i + 7 < hidden_dim; i += 8) {
+                __m256 v = bn_avx2_fast_gelu_ps(_mm256_loadu_ps(hb_t + i));
+                if (hb2_t)
+                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
+                _mm256_storeu_ps(hb_t + i, v);
+            }
+#endif
+            for (; i < hidden_dim; i++) {
+                float v = prefill_gelu(hb_t[i]);
+                hb_t[i] = hb2_t ? v * hb2_t[i] : v;
+            }
+        } else {
+            int i = 0;
+#ifdef __ARM_NEON
+            for (; i + 3 < hidden_dim; i += 4) {
+                float32x4_t v = bn_neon_fast_silu_f32(vld1q_f32(hb_t + i));
+                if (hb2_t)
+                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
+                vst1q_f32(hb_t + i, v);
+            }
+#endif
+#ifdef __AVX2__
+            for (; i + 7 < hidden_dim; i += 8) {
+                __m256 v = bn_avx2_fast_silu_ps(_mm256_loadu_ps(hb_t + i));
+                if (hb2_t)
+                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
+                _mm256_storeu_ps(hb_t + i, v);
+            }
+#endif
+            for (; i < hidden_dim; i++) {
+                float v = hb_t[i] / (1.0f + expf(-hb_t[i]));
+                hb_t[i] = hb2_t ? v * hb2_t[i] : v;
+            }
+        }
+    }
+}
+
 static void prefill_fill_rope(float *rope_cos_buf, float *rope_sin_buf,
                               int rope_stride, int n_tokens, int pos0,
                               int rope_dims, float theta) {
@@ -596,132 +683,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     prefill_quant_matmul_gpu(m, Hb2, &lw->ffn.ffn_up, Xb, n_tokens, s->x_q);
                 }
 
-                for (int t = 0; t < n_tokens; t++) {
-                    float *hb_t = Hb + (size_t)t * hidden_dim;
-                    float *hb2_t = Hb2 + (size_t)t * hidden_dim;
-                    if (c->act_type == 1) {
-                        int i = 0;
-#ifdef __ARM_NEON
-                        float32x4_t zero_v = vdupq_n_f32(0.0f);
-                        for (; i + 3 < hidden_dim; i += 4) {
-                            float32x4_t g = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
-                            float32x4_t u = vld1q_f32(hb2_t + i);
-                            vst1q_f32(hb_t + i, vmulq_f32(vmulq_f32(g, g), u));
-                        }
-#endif
-#ifdef __AVX2__
-                        __m256 zero_v = _mm256_setzero_ps();
-                        for (; i + 7 < hidden_dim; i += 8) {
-                            __m256 g = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
-                            __m256 u = _mm256_loadu_ps(hb2_t + i);
-                            _mm256_storeu_ps(hb_t + i, _mm256_mul_ps(_mm256_mul_ps(g, g), u));
-                        }
-#endif
-                        for (; i < hidden_dim; i++) {
-                            float g = hb_t[i] > 0 ? hb_t[i] : 0;
-                            hb_t[i] = g * g * hb2_t[i];
-                        }
-                    } else if (c->act_type == 2) {
-                        int i = 0;
-#ifdef __ARM_NEON
-                        for (; i + 3 < hidden_dim; i += 4) {
-                            float32x4_t g = vld1q_f32(hb_t + i);
-                            float32x4_t u = vld1q_f32(hb2_t + i);
-                            vst1q_f32(hb_t + i, vmulq_f32(bn_neon_fast_gelu_f32(g), u));
-                        }
-#endif
-#ifdef __AVX2__
-                        for (; i + 7 < hidden_dim; i += 8) {
-                            __m256 g = _mm256_loadu_ps(hb_t + i);
-                            __m256 u = _mm256_loadu_ps(hb2_t + i);
-                            _mm256_storeu_ps(hb_t + i,
-                                             _mm256_mul_ps(bn_avx2_fast_gelu_ps(g), u));
-                        }
-#endif
-                        for (; i < hidden_dim; i++)
-                            hb_t[i] = prefill_gelu(hb_t[i]) * hb2_t[i];
-                    } else {
-                        int i = 0;
-#ifdef __ARM_NEON
-                        for (; i + 3 < hidden_dim; i += 4) {
-                            float32x4_t g = vld1q_f32(hb_t + i);
-                            float32x4_t u = vld1q_f32(hb2_t + i);
-                            vst1q_f32(hb_t + i, vmulq_f32(bn_neon_fast_silu_f32(g), u));
-                        }
-#endif
-#ifdef __AVX2__
-                        for (; i + 7 < hidden_dim; i += 8) {
-                            __m256 g = _mm256_loadu_ps(hb_t + i);
-                            __m256 u = _mm256_loadu_ps(hb2_t + i);
-                            _mm256_storeu_ps(hb_t + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
-                        }
-#endif
-                        for (; i < hidden_dim; i++) {
-                            float g = hb_t[i];
-                            hb_t[i] = (g / (1.0f + expf(-g))) * hb2_t[i];
-                        }
-                    }
-                }
+                BnPrefillFFNActCtx act_ctx = { Hb, Hb2, hidden_dim, c->act_type };
+                BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
+                bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
             } else {
                 prefill_quant_matmul_gpu(m, Hb, &lw->ffn.ffn_up, Xb, n_tokens, s->x_q);
-                for (int t = 0; t < n_tokens; t++) {
-                    float *hb_t = Hb + (size_t)t * hidden_dim;
-                    if (c->act_type == 1) {
-                        int i = 0;
-#ifdef __ARM_NEON
-                        float32x4_t zero_v = vdupq_n_f32(0.0f);
-                        for (; i + 3 < hidden_dim; i += 4) {
-                            float32x4_t v = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
-                            vst1q_f32(hb_t + i, vmulq_f32(v, v));
-                        }
-#endif
-#ifdef __AVX2__
-                        __m256 zero_v = _mm256_setzero_ps();
-                        for (; i + 7 < hidden_dim; i += 8) {
-                            __m256 v = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
-                            _mm256_storeu_ps(hb_t + i, _mm256_mul_ps(v, v));
-                        }
-#endif
-                        for (; i < hidden_dim; i++) {
-                            float v = hb_t[i] > 0 ? hb_t[i] : 0;
-                            hb_t[i] = v * v;
-                        }
-                    } else if (c->act_type == 2) {
-                        int i = 0;
-#ifdef __ARM_NEON
-                        for (; i + 3 < hidden_dim; i += 4) {
-                            float32x4_t v = vld1q_f32(hb_t + i);
-                            vst1q_f32(hb_t + i, bn_neon_fast_gelu_f32(v));
-                        }
-#endif
-#ifdef __AVX2__
-                        for (; i + 7 < hidden_dim; i += 8) {
-                            __m256 v = _mm256_loadu_ps(hb_t + i);
-                            _mm256_storeu_ps(hb_t + i, bn_avx2_fast_gelu_ps(v));
-                        }
-#endif
-                        for (; i < hidden_dim; i++)
-                            hb_t[i] = prefill_gelu(hb_t[i]);
-                    } else {
-                        int i = 0;
-#ifdef __ARM_NEON
-                        for (; i + 3 < hidden_dim; i += 4) {
-                            float32x4_t v = vld1q_f32(hb_t + i);
-                            vst1q_f32(hb_t + i, bn_neon_fast_silu_f32(v));
-                        }
-#endif
-#ifdef __AVX2__
-                        for (; i + 7 < hidden_dim; i += 8) {
-                            __m256 v = _mm256_loadu_ps(hb_t + i);
-                            _mm256_storeu_ps(hb_t + i, bn_avx2_fast_silu_ps(v));
-                        }
-#endif
-                        for (; i < hidden_dim; i++) {
-                            float v = hb_t[i];
-                            hb_t[i] = v / (1.0f + expf(-v));
-                        }
-                    }
-                }
+                BnPrefillFFNActCtx act_ctx = { Hb, NULL, hidden_dim, c->act_type };
+                BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
+                bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
             }
 
             if (lw->norm.ffn_sub_norm)
