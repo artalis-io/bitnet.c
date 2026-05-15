@@ -196,6 +196,11 @@ BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
 bench_kernels: $(BENCH_SRCS) $(METAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+BENCH_PREFILL_SRCS = bench/bench_prefill.c $(filter-out src/main.c, $(SRCS))
+
+bench_prefill: $(BENCH_PREFILL_SRCS) $(METAL_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 # Scalar benchmark (no -march=native, no SIMD)
 SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -DBN_FORCE_SCALAR
 ifeq ($(UNAME_S),Linux)
@@ -604,4 +609,4 @@ test_coherence: $(COHERENCE_SRCS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bench_kernels bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f bitnet bitnet_scalar bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
