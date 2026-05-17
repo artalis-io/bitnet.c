@@ -8,6 +8,7 @@ struct BnBackendSession {
     BnGPUValueGraph gpu_value_graph;
     void *gpu_lowering_values;
     int cap_gpu_lowering_values;
+    int gpu_cached_op_count;
 };
 
 BnBackendSession *bn_backend_session_create(void) {
@@ -69,6 +70,21 @@ void *bn_backend_session_ensure_gpu_command_buffer(BnBackendSession *backend,
     if (out_cap)
         *out_cap = graph->cap;
     return graph->ops;
+}
+
+int bn_backend_session_gpu_cached_op_count(const BnBackendSession *backend) {
+    return backend ? backend->gpu_cached_op_count : 0;
+}
+
+void bn_backend_session_set_gpu_cached_op_count(BnBackendSession *backend,
+                                                int n_ops) {
+    if (!backend) return;
+    backend->gpu_cached_op_count = n_ops > 0 ? n_ops : 0;
+}
+
+void bn_backend_session_clear_gpu_cached_ops(BnBackendSession *backend) {
+    if (!backend) return;
+    backend->gpu_cached_op_count = 0;
 }
 
 BnGPUValueGraph *bn_backend_session_gpu_value_graph(BnBackendSession *backend) {

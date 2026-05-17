@@ -6,6 +6,9 @@
 #if defined(BN_GEMMA4_TEST_WEBGPU) && defined(BN_ENABLE_WEBGPU)
 #include "gpu_wgpu.h"
 #endif
+#if defined(BN_GEMMA4_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+#include "gpu_cuda.h"
+#endif
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -213,6 +216,23 @@ static int assert_forward_finite_webgpu(BnModel *model) {
 }
 #endif
 
+#if defined(BN_GEMMA4_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+static int assert_forward_finite_cuda(BnModel *model) {
+    BnGPUBackend *gpu = bn_gpu_cuda_create();
+    if (!gpu) {
+        printf("SKIPPED_CUDA ");
+        return 0;
+    }
+    assert(bn_model_upload_weights(model, gpu) == 0);
+    assert(gpu->init_activations);
+    assert(gpu->init_activations(gpu->ctx, &model->config) == 0);
+    assert_forward_finite(model);
+    bn_model_free(model);
+    bn_gpu_cuda_destroy(gpu);
+    return 1;
+}
+#endif
+
 static void test_gemma4_dense(void) {
     printf("test_gemma4_dense... ");
     uint8_t *buf = calloc(1, 4 * 1024 * 1024); assert(buf);
@@ -291,6 +311,31 @@ static void test_gemma4_moe_webgpu(void) {
 }
 #endif
 
+#if defined(BN_GEMMA4_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+static void test_gemma4_dense_cuda(void) {
+    printf("test_gemma4_dense_cuda... ");
+    uint8_t *buf = calloc(1, 4 * 1024 * 1024); assert(buf);
+    BnGGUFFile *gf = build_gemma4(buf, 4 * 1024 * 1024, 0); assert(gf);
+    BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
+    int ran = assert_forward_finite_cuda(&m);
+    if (!ran) bn_model_free(&m);
+    bn_gguf_free(gf); free(buf);
+    printf("PASSED\n");
+}
+
+static void test_gemma4_moe_cuda(void) {
+    printf("test_gemma4_moe_cuda... ");
+    uint8_t *buf = calloc(1, 4 * 1024 * 1024); assert(buf);
+    BnGGUFFile *gf = build_gemma4(buf, 4 * 1024 * 1024, 1); assert(gf);
+    BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
+    bn_model_set_moe_mmap_base(&m, gf->raw);
+    int ran = assert_forward_finite_cuda(&m);
+    if (!ran) bn_model_free(&m);
+    bn_gguf_free(gf); free(buf);
+    printf("PASSED\n");
+}
+#endif
+
 int main(void) {
     printf("=== Gemma4 Architecture Tests ===\n");
     test_gemma4_dense();
@@ -298,6 +343,10 @@ int main(void) {
 #if defined(BN_GEMMA4_TEST_WEBGPU) && defined(BN_ENABLE_WEBGPU)
     test_gemma4_dense_webgpu();
     test_gemma4_moe_webgpu();
+#endif
+#if defined(BN_GEMMA4_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+    test_gemma4_dense_cuda();
+    test_gemma4_moe_cuda();
 #endif
     printf("All Gemma4 architecture tests passed!\n");
     return 0;

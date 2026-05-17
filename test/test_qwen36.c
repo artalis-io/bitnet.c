@@ -3,6 +3,9 @@
 #include "model_arch.h"
 #include "session.h"
 #include "transformer.h"
+#if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+#include "gpu_cuda.h"
+#endif
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -293,6 +296,22 @@ static void assert_forward_finite(BnModel *model) {
     bn_session_free(session, NULL);
 }
 
+#if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+static void assert_forward_finite_cuda(BnModel *model) {
+    BnGPUBackend *gpu = bn_gpu_cuda_create();
+    if (!gpu) {
+        printf("SKIPPED_CUDA ");
+        return;
+    }
+    assert(bn_model_upload_weights(model, gpu) == 0);
+    assert(gpu->init_activations);
+    assert(gpu->init_activations(gpu->ctx, &model->config) == 0);
+    assert_forward_finite(model);
+    bn_model_free(model);
+    bn_gpu_cuda_destroy(gpu);
+}
+#endif
+
 static void test_qwen36_dense(void) {
     printf("test_qwen36_dense... ");
 
@@ -322,9 +341,13 @@ static void test_qwen36_dense(void) {
     assert(model.weights.layers[0].ssm.wqkv.data != NULL);
     assert(model.weights.layers[3].attn.wq.rows == 256);
     assert(model.weights.layers[3].ffn.ffn_gate.data != NULL);
+#if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+    assert_forward_finite_cuda(&model);
+#else
     assert_forward_finite(&model);
-
     bn_model_free(&model);
+#endif
+
     bn_gguf_free(gf);
     free(buf);
     printf("PASSED\n");
@@ -358,9 +381,70 @@ static void test_qwen36_moe(void) {
     assert(model.weights.layers[0].moe.expert_map.expert_gate_bytes == 128 * 64 * sizeof(float));
     assert(model.weights.layers[0].shared.shared_expert_gate != NULL);
     assert(model.weights.layers[3].attn.wq.rows == 256);
+#if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+    assert_forward_finite_cuda(&model);
+#else
     assert_forward_finite(&model);
-
     bn_model_free(&model);
+#endif
+
+    bn_gguf_free(gf);
+    free(buf);
+    printf("PASSED\n");
+}
+
+static void test_qwen36_explicit_dense(void) {
+    printf("test_qwen36_explicit_dense... ");
+
+    uint8_t *buf = (uint8_t *)calloc(1, 4 * 1024 * 1024);
+    assert(buf != NULL);
+    BnGGUFFile *gf = build_qwen36_gguf(buf, 4 * 1024 * 1024, "qwen36", 0);
+    assert(gf != NULL);
+    assert(strcmp(bn_model_arch_prefix("qwen36"), "qwen36") == 0);
+
+    BnModel model;
+    assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
+    assert(model.config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN);
+    assert(model.config.n_experts == 0);
+    assert(model.weights.layers[0].block_kind == BN_LAYER_BLOCK_SSM);
+    assert(model.weights.layers[3].block_kind == BN_LAYER_BLOCK_ATTENTION);
+#if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+    assert_forward_finite_cuda(&model);
+#else
+    assert_forward_finite(&model);
+    bn_model_free(&model);
+#endif
+
+    bn_gguf_free(gf);
+    free(buf);
+    printf("PASSED\n");
+}
+
+static void test_qwen36_explicit_moe(void) {
+    printf("test_qwen36_explicit_moe... ");
+
+    uint8_t *buf = (uint8_t *)calloc(1, 4 * 1024 * 1024);
+    assert(buf != NULL);
+    BnGGUFFile *gf = build_qwen36_gguf(buf, 4 * 1024 * 1024, "qwen36moe", 1);
+    assert(gf != NULL);
+    const BnModelArchOps *ops = bn_model_arch_ops_for("qwen36");
+    assert(ops);
+    assert(bn_model_arch_infer_moe_hidden(gf, ops) == 64);
+    assert(bn_model_arch_has_shared_expert(gf, ops) == 1);
+
+    BnModel model;
+    assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
+    assert(model.config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN);
+    bn_model_set_moe_mmap_base(&model, gf->raw);
+    assert(model.config.n_experts == 4);
+    assert(model.weights.layers[0].ffn_kind == BN_LAYER_FFN_MOE);
+#if defined(BN_QWEN36_TEST_CUDA) && defined(BN_ENABLE_CUDA)
+    assert_forward_finite_cuda(&model);
+#else
+    assert_forward_finite(&model);
+    bn_model_free(&model);
+#endif
+
     bn_gguf_free(gf);
     free(buf);
     printf("PASSED\n");
@@ -370,6 +454,8 @@ int main(void) {
     printf("=== Qwen3.6 Architecture Tests ===\n");
     test_qwen36_dense();
     test_qwen36_moe();
+    test_qwen36_explicit_dense();
+    test_qwen36_explicit_moe();
     printf("All Qwen3.6 architecture tests passed!\n");
     return 0;
 }

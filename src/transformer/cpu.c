@@ -4,6 +4,7 @@
 #include "transformer_kv_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
+#include "backend_quant.h"
 #include "backend_model.h"
 #include "quant.h"
 #include "moe.h"
@@ -62,6 +63,27 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
         bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
         return;
     }
+    if (bn_model_gpu(m)) {
+        void *bufs_inline[8];
+        void **bufs = bufs_inline;
+        void **heap_bufs = NULL;
+        if (n_tasks > 8) {
+            heap_bufs = (void **)malloc((size_t)n_tasks * sizeof(*heap_bufs));
+            bufs = heap_bufs;
+        }
+        if (bufs) {
+            const BnBackendModel *backend = bn_model_backend(m);
+            for (int i = 0; i < n_tasks; i++)
+                bufs[i] = bn_backend_model_qweight_buf(backend,
+                                                       prepared_tasks[i].W);
+            bn_backend_quant_matvec_batch_gpu_buf(
+                prepared_tasks, (const void *const *)bufs, n_tasks, x,
+                x_q_buf, bn_model_pool(m), bn_model_gpu(m));
+            free(heap_bufs);
+            if (prepared_tasks != inline_tasks) free(prepared_tasks);
+            return;
+        }
+    }
     bn_quant_matvec_batch(prepared_tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
@@ -73,6 +95,11 @@ static void cpu_quant_matvec_batch_preq8k(const BnModel *m,
                                           const float *x_d,
                                           const int16_t *x_bsums,
                                           const float *x_float) {
+    if (bn_model_gpu(m)) {
+        cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
+                                        (int8_t *)x_q);
+        return;
+    }
     if (cpu_force_float_kquant(m)) {
         cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
                                         (int8_t *)x_q);
@@ -964,6 +991,29 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     int hidden_dim = ffn_plan->hidden_dim;
     int ffn_activated = 0;
     int fused_gate_up = 0;
+
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    if (gpu && gpu->dense_ffn && ffn_plan->has_gate &&
+        !ffn_plan->has_sub_norm && ffn_plan->activation == 0) {
+        const BnBackendModel *backend = bn_model_backend(m);
+        void *gate_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_gate);
+        void *up_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_up);
+        void *down_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_down);
+        if (gate_buf && up_buf && down_buf) {
+            cpu_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
+            if (gpu->dense_ffn(gpu->ctx, s->xb, gate_buf, up_buf, down_buf,
+                               s->xb, dim, hidden_dim,
+                               lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
+                               lw->ffn.ffn_down.type, ffn_plan->activation) == 0) {
+                if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                    lw->norm.ffn_post_norm)
+                    cpu_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm, dim,
+                                c->norm_eps);
+                bn_transformer_cpu_residual_add(s->x, s->xb, dim);
+                return;
+            }
+        }
+    }
 
 #ifdef __AVX2__
     if (ffn_plan->has_gate && !bn_model_gpu(m) && dim % BN_QK_K == 0 &&

@@ -119,6 +119,7 @@ typedef struct {
     const int16_t *x_bsums;
     int n_tokens;
     int cols;
+    const BnPreparedWeight *prepared;
 } BnKQuantMatmulCtx;
 
 typedef struct {
@@ -147,6 +148,7 @@ typedef BnFloatXCtx BnQ8KCtx;
 typedef BnFloatXCtx BnQ4KCtx;
 typedef BnFloatXCtx BnQ5KCtx;
 typedef BnFloatXCtx BnQ4_1Ctx;
+typedef BnFloatXCtx BnQ5_0Ctx;
 typedef BnFloatXCtx BnQ5_1Ctx;
 typedef BnFloatXCtx BnF32Ctx;
 typedef BnFloatXCtx BnF16Ctx;

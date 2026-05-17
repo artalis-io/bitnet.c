@@ -5,6 +5,7 @@ ROOT=${BN_MODEL_ROOT:-}
 REQUIRE_MODELS=${REQUIRE_MODELS:-0}
 RUN_WEBGPU=${RUN_WEBGPU:-0}
 RUN_METAL=${RUN_METAL:-0}
+RUN_CUDA=${RUN_CUDA:-0}
 COHERENCE=${COHERENCE:-./test_coherence}
 
 fail=0
@@ -42,6 +43,8 @@ run_case() {
             "$COHERENCE" "$args" --webgpu || fail=1
         elif [ "$RUN_METAL" = "1" ]; then
             "$COHERENCE" "$args" --metal || fail=1
+        elif [ "$RUN_CUDA" = "1" ]; then
+            "$COHERENCE" "$args" --cuda || fail=1
         else
             "$COHERENCE" "$args" || fail=1
         fi

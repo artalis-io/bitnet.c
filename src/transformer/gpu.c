@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
 #include "session.h"
+#include "../gpu_shader_ir_internal.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -92,12 +93,48 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
     return n_top;
 }
 
+static int gpu_patch_cached_decode_ops(BnGPUOp *ops, int n_ops,
+                                       const BnConfig *c, int pos) {
+    if (!ops || !c || n_ops <= 0 || c->seq_len <= 0 || c->kv_dim <= 0)
+        return -1;
+    int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
+    int cache_pos = pos % c->seq_len;
+    uint32_t kv_dim = (uint32_t)c->kv_dim;
+    uint32_t layer_span = (uint32_t)(c->seq_len * c->kv_dim);
+    uint32_t cache_off = (uint32_t)(cache_pos * c->kv_dim);
+    for (int i = 0; i < n_ops; i++) {
+        BnGPUOp *op = &ops[i];
+        switch (op->op_code) {
+        case BN_GPU_CODE_ROPE:
+        case BN_GPU_CODE_ROPE_QK:
+            op->p[2] = (uint32_t)pos;
+            break;
+        case BN_GPU_CODE_FLASH_ATTN:
+            op->p[2] = (uint32_t)n_kv;
+            break;
+        case BN_GPU_CODE_COPY:
+            if ((op->buf_out == BN_GPU_VALUE_KEY_CACHE ||
+                 op->buf_out == BN_GPU_VALUE_VALUE_CACHE) &&
+                op->p[2] == kv_dim && layer_span > 0) {
+                uint32_t base = (op->p[1] / layer_span) * layer_span;
+                op->p[1] = base + cache_off;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return 0;
+}
+
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
 // Supports attention biases (Qwen2.5) and tied embeddings (BitNet).
 // Returns s->logits on success, NULL to fall back to CPU.
-float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int pos) {
+static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
+                                              int token, int pos,
+                                              int need_logits) {
     /* no-op */
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
@@ -149,69 +186,116 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     int q4_q8_attn_only = 0;
     int q4_q8_ffn_only = 0;
     {
-        const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
-        if (env) cpu_fallback_from_layer = atoi(env);
-        env = getenv("BN_GPU_CPU_FALLBACK_LAYER");
-        if (env) cpu_fallback_layer = atoi(env);
-        env = getenv("BN_GPU_CPU_ATTN_LAYER");
-        if (env) cpu_fallback_attn_layer = atoi(env);
-        env = getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
-        if (env) cpu_fallback_attn_from_layer = atoi(env);
-        env = getenv("BN_GPU_CPU_FFN_LAYER");
-        if (env) cpu_fallback_ffn_layer = atoi(env);
-        env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
-        if (env) cpu_fallback_ffn_from_layer = atoi(env);
-        env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
-        if (env) cpu_fallback_ffn_down_from_layer = atoi(env);
-        env = getenv("BN_GPU_COMPARE_ATTENTION_LAYER");
-        if (env) compare_attention_layer = atoi(env);
-        env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
-        if (env) compare_attention_pos = atoi(env);
-        env = getenv("BN_GPU_COMPARE_GQA_LAYER");
-        if (env) compare_gqa_layer = atoi(env);
-        env = getenv("BN_GPU_COMPARE_GQA_POS");
-        if (env) compare_gqa_pos = atoi(env);
-        env = getenv("BN_GPU_COMPARE_QKV_LAYER");
-        if (env) compare_qkv_layer = atoi(env);
-        env = getenv("BN_GPU_COMPARE_QKV_POS");
-        if (env) compare_qkv_pos = atoi(env);
-        env = getenv("BN_GPU_COMPARE_FFN_DOWN_LAYER");
-        if (env) compare_ffn_down_layer = atoi(env);
-        env = getenv("BN_GPU_COMPARE_FFN_DOWN_POS");
-        if (env) compare_ffn_down_pos = atoi(env);
-        env = getenv("BN_GPU_COMPARE_FFN_STATE_LAYER");
-        if (env) compare_ffn_state_layer = atoi(env);
-        env = getenv("BN_GPU_COMPARE_FFN_STATE_POS");
-        if (env) compare_ffn_state_pos = atoi(env);
-        env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
-        if (env) {
-            q4_q8_from_layer = atoi(env);
-        } else if (getenv("BN_GPU_Q4_Q8")) {
-            q4_q8_from_layer = c->n_layers - 1;
-        }
-        env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
-        if (env) {
-            q4_q8_to_layer = atoi(env);
-        } else {
-            env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
+        static int init = 0;
+        static int s_cpu_fallback_layer = -1;
+        static int s_cpu_fallback_from_layer = -1;
+        static int s_cpu_fallback_attn_layer = -1;
+        static int s_cpu_fallback_attn_from_layer = -1;
+        static int s_cpu_fallback_ffn_layer = -1;
+        static int s_cpu_fallback_ffn_from_layer = -1;
+        static int s_cpu_fallback_ffn_down_from_layer = -1;
+        static int s_compare_attention_layer = -1;
+        static int s_compare_attention_pos = -1;
+        static int s_compare_gqa_layer = -1;
+        static int s_compare_gqa_pos = -1;
+        static int s_compare_qkv_layer = -1;
+        static int s_compare_qkv_pos = -1;
+        static int s_compare_ffn_down_layer = -1;
+        static int s_compare_ffn_down_pos = -1;
+        static int s_compare_ffn_state_layer = -1;
+        static int s_compare_ffn_state_pos = -1;
+        static int s_q4_q8_from_layer = -1;
+        static int s_q4_q8_to_layer = -1;
+        static int s_q4_q8_attn_only = 0;
+        static int s_q4_q8_ffn_only = 0;
+        if (!init) {
+            const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
+            if (env) s_cpu_fallback_from_layer = atoi(env);
+            env = getenv("BN_GPU_CPU_FALLBACK_LAYER");
+            if (env) s_cpu_fallback_layer = atoi(env);
+            env = getenv("BN_GPU_CPU_ATTN_LAYER");
+            if (env) s_cpu_fallback_attn_layer = atoi(env);
+            env = getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+            if (env) s_cpu_fallback_attn_from_layer = atoi(env);
+            env = getenv("BN_GPU_CPU_FFN_LAYER");
+            if (env) s_cpu_fallback_ffn_layer = atoi(env);
+            env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
+            if (env) s_cpu_fallback_ffn_from_layer = atoi(env);
+            env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
+            if (env) s_cpu_fallback_ffn_down_from_layer = atoi(env);
+            env = getenv("BN_GPU_COMPARE_ATTENTION_LAYER");
+            if (env) s_compare_attention_layer = atoi(env);
+            env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
+            if (env) s_compare_attention_pos = atoi(env);
+            env = getenv("BN_GPU_COMPARE_GQA_LAYER");
+            if (env) s_compare_gqa_layer = atoi(env);
+            env = getenv("BN_GPU_COMPARE_GQA_POS");
+            if (env) s_compare_gqa_pos = atoi(env);
+            env = getenv("BN_GPU_COMPARE_QKV_LAYER");
+            if (env) s_compare_qkv_layer = atoi(env);
+            env = getenv("BN_GPU_COMPARE_QKV_POS");
+            if (env) s_compare_qkv_pos = atoi(env);
+            env = getenv("BN_GPU_COMPARE_FFN_DOWN_LAYER");
+            if (env) s_compare_ffn_down_layer = atoi(env);
+            env = getenv("BN_GPU_COMPARE_FFN_DOWN_POS");
+            if (env) s_compare_ffn_down_pos = atoi(env);
+            env = getenv("BN_GPU_COMPARE_FFN_STATE_LAYER");
+            if (env) s_compare_ffn_state_layer = atoi(env);
+            env = getenv("BN_GPU_COMPARE_FFN_STATE_POS");
+            if (env) s_compare_ffn_state_pos = atoi(env);
+            env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
             if (env) {
-                int tail_native = atoi(env);
-                if (tail_native > 0) {
-                    q4_q8_to_layer = c->n_layers - tail_native - 1;
-                    if (q4_q8_to_layer < -1)
-                        q4_q8_to_layer = -1;
-                }
-            } else if (getenv("BN_GPU_Q4_Q8") &&
-                       !getenv("BN_METAL_Q4_PREPARED") &&
-                       c->n_layers > 33) {
-                q4_q8_to_layer = c->n_layers - 33 - 1;
+                s_q4_q8_from_layer = atoi(env);
+            } else if (getenv("BN_GPU_Q4_Q8")) {
+                s_q4_q8_from_layer = c->n_layers - 1;
             }
+            env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
+            if (env) {
+                s_q4_q8_to_layer = atoi(env);
+            } else {
+                env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
+                if (env) {
+                    int tail_native = atoi(env);
+                    if (tail_native > 0) {
+                        s_q4_q8_to_layer = c->n_layers - tail_native - 1;
+                        if (s_q4_q8_to_layer < -1)
+                            s_q4_q8_to_layer = -1;
+                    }
+                } else if (getenv("BN_GPU_Q4_Q8") &&
+                           !getenv("BN_METAL_Q4_PREPARED") &&
+                           c->n_layers > 33) {
+                    s_q4_q8_to_layer = c->n_layers - 33 - 1;
+                }
+            }
+            s_q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
+            s_q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
+            init = 1;
         }
-        q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
-        q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
+        cpu_fallback_layer = s_cpu_fallback_layer;
+        cpu_fallback_from_layer = s_cpu_fallback_from_layer;
+        cpu_fallback_attn_layer = s_cpu_fallback_attn_layer;
+        cpu_fallback_attn_from_layer = s_cpu_fallback_attn_from_layer;
+        cpu_fallback_ffn_layer = s_cpu_fallback_ffn_layer;
+        cpu_fallback_ffn_from_layer = s_cpu_fallback_ffn_from_layer;
+        cpu_fallback_ffn_down_from_layer =
+            s_cpu_fallback_ffn_down_from_layer;
+        compare_attention_layer = s_compare_attention_layer;
+        compare_attention_pos = s_compare_attention_pos;
+        compare_gqa_layer = s_compare_gqa_layer;
+        compare_gqa_pos = s_compare_gqa_pos;
+        compare_qkv_layer = s_compare_qkv_layer;
+        compare_qkv_pos = s_compare_qkv_pos;
+        compare_ffn_down_layer = s_compare_ffn_down_layer;
+        compare_ffn_down_pos = s_compare_ffn_down_pos;
+        compare_ffn_state_layer = s_compare_ffn_state_layer;
+        compare_ffn_state_pos = s_compare_ffn_state_pos;
+        q4_q8_from_layer = s_q4_q8_from_layer;
+        q4_q8_to_layer = s_q4_q8_to_layer;
+        q4_q8_attn_only = s_q4_q8_attn_only;
+        q4_q8_ffn_only = s_q4_q8_ffn_only;
     }
 
-    // Embed token on CPU, upload to GPU x buffer
+    // Embed token on CPU, upload to GPU x buffer.
     float emb[dim];
     bn_model_embed_token(m, emb, token);
     if (bn_transformer_gpu_write_x(gpu, emb,
@@ -238,6 +322,35 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     if (!command_buffer)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
+    int cacheable_decode =
+        !need_logits &&
+        gpu->kind == BN_GPU_BACKEND_CUDA && !policy.has_moe &&
+        !policy.has_ssm &&
+        cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
+        cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0 &&
+        cpu_fallback_ffn_layer < 0 && cpu_fallback_ffn_from_layer < 0 &&
+        cpu_fallback_ffn_down_from_layer < 0 &&
+        compare_attention_layer < 0 && compare_gqa_layer < 0 &&
+        compare_qkv_layer < 0 && compare_ffn_down_layer < 0 &&
+        compare_ffn_state_layer < 0 && q4_q8_from_layer < 0 &&
+        !getenv("BN_GPU_CPU_LOGITS") && !getenv("BN_GPU_COMPARE_LOGITS") &&
+        !getenv("BN_METAL_ENABLE_Q6_Q8K");
+    int cached_n = cacheable_decode
+        ? bn_backend_session_gpu_cached_op_count(sess->backend)
+        : 0;
+    if (cached_n > 0 && cached_n <= command_cap) {
+        if (gpu_patch_cached_decode_ops((BnGPUOp *)command_buffer, cached_n,
+                                        c, pos) == 0 &&
+            bn_transformer_gpu_execute_ops(
+                gpu, command_buffer, cached_n,
+                need_logits ? BN_GPU_VALUE_LOGITS : -1,
+                need_logits ? s->logits : NULL,
+                need_logits ? c->vocab_size : 0) == 0) {
+            bn_transformer_gpu_emit_context_free(&emit);
+            return need_logits ? s->logits : s->x;
+        }
+        bn_backend_session_clear_gpu_cached_ops(sess->backend);
+    }
     if (bn_transformer_gpu_emit_context_init_session(
             &emit, sess->backend, command_buffer, command_cap,
             max_ops * 4, max_ops) != 0)
@@ -332,6 +445,9 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
                 &emit, c, lw, &plan, &qkv_res, pos, q_dim,
                 head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
                 use_q4_q8_attn);
+            if (!need_logits && l + 1 == c->n_layers) {
+                continue;
+            }
             if (compare_qkv_layer == l &&
                 (compare_qkv_pos < 0 || compare_qkv_pos == pos)) {
                 if (bn_transformer_gpu_debug_compare_qkv(
@@ -469,7 +585,7 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     }
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
-    {
+    if (need_logits) {
         if (getenv("BN_GPU_CPU_LOGITS") ||
             bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res)) {
             if (bn_transformer_gpu_fallback_logits(
@@ -490,12 +606,25 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu op graph capacity exceeded");
 
-    // Execute final batch (logits + any remaining layer ops)
-    int rc = bn_transformer_gpu_emit_context_execute_logits(
-        &emit, gpu, s->logits, c->vocab_size);
+    // Execute final batch (logits + any remaining layer ops).
+    if (bn_transformer_gpu_emit_context_lower_pending(&emit) != 0)
+        return bn_transformer_gpu_reject_forward(
+            &emit, "gpu final lower failed");
+    int final_n = emit.n;
+    int rc = bn_transformer_gpu_execute_ops(
+        gpu, emit.lowered_ops, emit.n,
+        need_logits ? BN_GPU_VALUE_LOGITS : -1,
+        need_logits ? s->logits : NULL,
+        need_logits ? c->vocab_size : 0);
     if (rc != 0)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu final execute failed");
+    if (cacheable_decode && final_n > 0)
+        bn_backend_session_set_gpu_cached_op_count(sess->backend, final_n);
+    if (!need_logits) {
+        bn_transformer_gpu_emit_context_free(&emit);
+        return s->x;
+    }
     if (getenv("BN_METAL_ENABLE_Q6_Q8K") &&
         logit_res->type == BN_GGUF_TENSOR_Q6_K &&
         logit_res->cpu_weight) {
@@ -543,4 +672,14 @@ float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess, int token, int po
     bn_transformer_gpu_emit_context_free(&emit);
     #undef GPU_LEGACY_OPS
     return s->logits;
+}
+
+float *bn_transformer_gpu_forward(BnModel *m, BnSession *sess,
+                                  int token, int pos) {
+    return bn_transformer_gpu_forward_impl(m, sess, token, pos, 1);
+}
+
+float *bn_transformer_gpu_forward_no_logits(BnModel *m, BnSession *sess,
+                                            int token, int pos) {
+    return bn_transformer_gpu_forward_impl(m, sess, token, pos, 0);
 }

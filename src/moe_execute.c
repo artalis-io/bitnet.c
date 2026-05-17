@@ -1,4 +1,85 @@
 #include "moe_internal.h"
+#include "backend_quant.h"
+#include "gpu_moe_bridge.h"
+
+static const void *moe_mmap_expert_proj(const BnMoEIO *io,
+                                        const BnMoEExpertMap *map,
+                                        int expert_idx,
+                                        int proj) {
+    size_t offset = 0;
+    size_t proj_bytes = 0;
+    if (!io || !io->mmap_base ||
+        bn_moe_proj_info(map, expert_idx, proj, &offset, &proj_bytes) != 0)
+        return NULL;
+    (void)proj_bytes;
+    return io->mmap_base + offset;
+}
+
+static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
+                                     BnLayerWeights *lw, int layer,
+                                     int expert_idx, float weight) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    BnMoEState *ms = sess->moe_state;
+    BnRunState *s = &sess->state;
+    const BnMoEExpertMap *map = &lw->moe.expert_map;
+    BnMoEIO *io = bn_model_moe_io(m);
+    if (!gpu || !ms || !io || !io->mmap_base)
+        return -1;
+
+    BnGPUMoETemporaryBuffers temps;
+    BnGPUMoEExpertBuffers bufs;
+    memset(&temps, 0, sizeof(temps));
+    memset(&bufs, 0, sizeof(bufs));
+    if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, expert_idx,
+                                     &temps, &bufs) != 0)
+        return -1;
+    if (bufs.use_gateup_split || !bufs.gate || !bufs.up || !bufs.down) {
+        bn_gpu_moe_bridge_release_temporaries(m, &temps);
+        return -1;
+    }
+
+    const void *gate_data = moe_mmap_expert_proj(io, map, expert_idx, 0);
+    const void *up_data = moe_mmap_expert_proj(io, map, expert_idx, 1);
+    const void *down_data = moe_mmap_expert_proj(io, map, expert_idx, 2);
+    if (!gate_data || !up_data || !down_data) {
+        bn_gpu_moe_bridge_release_temporaries(m, &temps);
+        return -1;
+    }
+
+    double t0 = bn_moe_time_ms();
+    BnQWeight wgate = bn_moe_make_qweight(gate_data, map->gate_type,
+                                          map->gate_rows, map->gate_cols);
+    BnQWeight wup = bn_moe_make_qweight(up_data, map->up_type,
+                                        map->up_rows, map->up_cols);
+    BnMatvecTask gu[2] = {
+        { ms->expert_hb,  &wgate, NULL, 0 },
+        { ms->expert_hb2, &wup,   NULL, 0 },
+    };
+    const void *gu_bufs[2] = { bufs.gate, bufs.up };
+    bn_backend_quant_matvec_batch_gpu_buf(gu, gu_bufs, 2, s->xb, s->x_q,
+                                          bn_model_pool(m), gpu);
+    ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+
+    t0 = bn_moe_time_ms();
+    bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
+                  m->config.moe_intermediate_size);
+    ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
+
+    t0 = bn_moe_time_ms();
+    BnQWeight wdown = bn_moe_make_qweight(down_data, map->down_type,
+                                          map->down_rows, map->down_cols);
+    bn_backend_quant_matvec_gpu_buf(s->xb2, &wdown, bufs.down,
+                                    ms->expert_hb, s->x_q,
+                                    bn_model_pool(m), gpu);
+    ms->stats.down_time_ms += bn_moe_time_ms() - t0;
+
+    t0 = bn_moe_time_ms();
+    bn_moe_weighted_add(ms->expert_out, s->xb2, weight, m->config.dim);
+    ms->stats.accum_time_ms += bn_moe_time_ms() - t0;
+
+    bn_gpu_moe_bridge_release_temporaries(m, &temps);
+    return 0;
+}
 
 // Full MoE FFN block
 void bn_moe_forward(struct BnModel *m, BnSession *sess,
@@ -428,6 +509,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             int eidx = ms->expert_indices[k];
             float weight = ms->expert_weights[k];
             if (eidx < 0) continue;
+            if (moe_try_gpu_serial_expert(m, sess, lw, l, eidx, weight) == 0)
+                continue;
 
             t0 = bn_moe_time_ms();
             const void *gate_data = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, &lw->moe.expert_map, eidx, 0);

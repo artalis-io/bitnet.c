@@ -114,6 +114,8 @@ BnTransformerGPUQKVResources bn_transformer_gpu_resolve_qkv_resources(
         .k_norm = backend_handle_or(backend, layer, BN_BACKEND_HANDLE_K_NORM),
         .qkv_stacked = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_QKV_STACKED),
+        .qk_stacked = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_QK_STACKED),
         .packed_qkv = qweight_backend_buf(backend, &lw->ssm.wqkv),
         .wq = qweight_backend_buf(backend, &lw->attn.wq),
         .wk = qweight_backend_buf(backend, &lw->attn.wk),

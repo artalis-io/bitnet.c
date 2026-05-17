@@ -473,10 +473,16 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_I2_S, 1, 128) == 36);
 
     assert(bn_quant_format_supported(BN_GGUF_TENSOR_Q5_1));
-    assert(!bn_quant_format_supported(BN_GGUF_TENSOR_Q5_0));
-    assert(!bn_quant_format_has_cpu_matvec(BN_GGUF_TENSOR_Q5_0));
-    assert(bn_quant_format_matvec(BN_GGUF_TENSOR_Q5_0) == NULL);
-    assert(bn_quant_format_matmul(BN_GGUF_TENSOR_Q5_0) == NULL);
+    assert(bn_quant_format_supported(BN_GGUF_TENSOR_Q5_0));
+    assert(bn_quant_format_has_cpu_matvec(BN_GGUF_TENSOR_Q5_0));
+    assert(bn_quant_format_has_cpu_batch(BN_GGUF_TENSOR_Q5_0));
+    assert(bn_quant_format_has_cpu_matmul(BN_GGUF_TENSOR_Q5_0));
+    assert(bn_quant_format_matvec(BN_GGUF_TENSOR_Q5_0) == bn_quant_matvec);
+    assert(bn_quant_format_matmul(BN_GGUF_TENSOR_Q5_0) == bn_quant_matmul);
+    assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q5_0) ==
+           BN_GPU_CAP_Q5_MATVEC_SPLIT);
+    assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q5_0) ==
+           BN_GPU_CAP_Q5_FUSED_GATEUP_SILU);
     assert(!bn_quant_format_has_cap(99999, BN_QUANT_CAP_LOADABLE));
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CAP_Q8_MATVEC_SPLIT);
@@ -592,6 +598,7 @@ static void test_backend_layout_prepared_qweights(void) {
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
     assert(bytes > 0);
     assert(stats.q4_repack_bytes == bytes);
+    assert(stats.q4k_scale_bytes == 0);
     assert(stats.q8_scale_bytes == 0);
 
     SHArena *arena = sh_arena_create(bytes + 4 * SH_ARENA_ALIGN);
@@ -602,10 +609,12 @@ static void test_backend_layout_prepared_qweights(void) {
     BnBackendLayoutPreparedStats built = {0};
     bn_backend_layout_prepare_qweights(backend, &config, &weights, arena, &built);
     assert(built.q4_repack_bytes == stats.q4_repack_bytes);
+    assert(built.q4k_scale_bytes == 0);
     assert(built.q8_scale_bytes == 0);
     const BnPreparedWeight *prepared =
         bn_backend_model_prepared_qweight(backend, &layer.attn.wq);
     assert(prepared != NULL);
+    assert(prepared->kind == BN_PREPARED_WEIGHT_Q4_0_REPACK);
     assert(prepared->qs != NULL);
 #ifdef __wasm_relaxed_simd__
     assert(prepared->f32_scales != NULL);
@@ -618,7 +627,58 @@ static void test_backend_layout_prepared_qweights(void) {
 #else
     assert(bytes == 0);
     assert(stats.q4_repack_bytes == 0);
+    assert(stats.q4k_scale_bytes == 0);
     assert(stats.q8_scale_bytes == 0);
+#endif
+
+    BnBlockQ4K q4k_blocks[1];
+    memset(q4k_blocks, 0, sizeof(q4k_blocks));
+    q4k_blocks[0].d = bn_fp32_to_fp16(1.0f);
+    q4k_blocks[0].dmin = bn_fp32_to_fp16(0.5f);
+    for (int i = 0; i < 12; i++)
+        q4k_blocks[0].scales[i] = (uint8_t)(i + 1);
+
+    BnLayerWeights q4k_layer = {0};
+    BnWeights q4k_weights = {0};
+    q4k_weights.layers = &q4k_layer;
+    q4k_layer.attn.wq.data = q4k_blocks;
+    q4k_layer.attn.wq.type = BN_GGUF_TENSOR_Q4_K;
+    q4k_layer.attn.wq.rows = 1;
+    q4k_layer.attn.wq.cols = BN_QK_K;
+
+    BnBackendLayoutPreparedStats q4k_stats = {0};
+    size_t q4k_bytes =
+        bn_backend_layout_prepared_qweights_size(&config, &q4k_weights,
+                                                 &q4k_stats);
+#if defined(__AVX2__)
+    assert(q4k_bytes > 0);
+    assert(q4k_stats.q4_repack_bytes == 0);
+    assert(q4k_stats.q4k_scale_bytes == q4k_bytes);
+    assert(q4k_stats.q8_scale_bytes == 0);
+
+    SHArena *q4k_arena = sh_arena_create(q4k_bytes + 4 * SH_ARENA_ALIGN);
+    assert(q4k_arena != NULL);
+    BnBackendModel *q4k_backend = bn_backend_model_create();
+    assert(q4k_backend != NULL);
+    BnBackendLayoutPreparedStats q4k_built = {0};
+    bn_backend_layout_prepare_qweights(q4k_backend, &config, &q4k_weights,
+                                       q4k_arena, &q4k_built);
+    assert(q4k_built.q4_repack_bytes == 0);
+    assert(q4k_built.q4k_scale_bytes == q4k_stats.q4k_scale_bytes);
+    assert(q4k_built.q8_scale_bytes == 0);
+    const BnPreparedWeight *q4k_prepared =
+        bn_backend_model_prepared_qweight(q4k_backend, &q4k_layer.attn.wq);
+    assert(q4k_prepared != NULL);
+    assert(q4k_prepared->kind == BN_PREPARED_WEIGHT_Q4_K_SCALES);
+    assert(q4k_prepared->qs != NULL);
+    assert(q4k_prepared->f32_scales != NULL);
+    bn_backend_model_free(q4k_backend);
+    sh_arena_free(q4k_arena);
+#else
+    assert(q4k_bytes == 0);
+    assert(q4k_stats.q4_repack_bytes == 0);
+    assert(q4k_stats.q4k_scale_bytes == 0);
+    assert(q4k_stats.q8_scale_bytes == 0);
 #endif
 
     printf("PASSED\n");

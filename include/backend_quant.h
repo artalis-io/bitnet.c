@@ -9,6 +9,7 @@
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q5_0: return BN_GPU_CAP_Q5_MATVEC_SPLIT;
         case BN_GGUF_TENSOR_Q4_K: return BN_GPU_CAP_Q4K_MATVEC_SPLIT;
         case BN_GGUF_TENSOR_Q5_K: return BN_GPU_CAP_Q5K_MATVEC_SPLIT;
         case BN_GGUF_TENSOR_Q8_0: return BN_GPU_CAP_Q8_MATVEC_SPLIT;
@@ -31,6 +32,8 @@ static inline int bn_backend_quant_can_gpu_repack(int type) {
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q5_0: return BN_GPU_CAP_Q5_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q8_0: return BN_GPU_CAP_Q8_FUSED_GATEUP_SILU;
         default: return 0;
     }
 }

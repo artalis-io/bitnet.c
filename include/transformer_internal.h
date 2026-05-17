@@ -12,5 +12,9 @@ float *bn_transformer_gpu_forward(BnModel *m,
                                   BnSession *sess,
                                   int token,
                                   int pos);
+float *bn_transformer_gpu_forward_no_logits(BnModel *m,
+                                            BnSession *sess,
+                                            int token,
+                                            int pos);
 
 #endif // BN_TRANSFORMER_INTERNAL_H

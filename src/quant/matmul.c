@@ -201,7 +201,9 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
 
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
 
-        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnKQuantMatmulCtx ctx = {
+            out, W, xq_all, xd_all, xbs_all, n_tokens, cols, prepared
+        };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
         BnTPTask task = { bn_quant_q4k_neon_sdot_matmul_range, &ctx, rows };
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
@@ -242,7 +244,9 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               xbs_all + (size_t)t * n_bpr * 16, cols);
 
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnKQuantMatmulCtx ctx = {
+            out, W, xq_all, xd_all, xbs_all, n_tokens, cols, prepared
+        };
         BnTPTask task = { bn_quant_q5k_neon_sdot_matmul_range, &ctx, rows };
         bn_tp_dispatch(pool, &task, 1);
 
@@ -272,7 +276,9 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               xd_all + (size_t)t * n_bpr,
                               xbs_all + (size_t)t * n_bpr * 16, cols);
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnKQuantMatmulCtx ctx = {
+            out, W, xq_all, xd_all, xbs_all, n_tokens, cols, prepared
+        };
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
         BnTPTask task = {
             bn_quant_q5k_avx512_vnni_matmul_4row_range,
@@ -309,7 +315,9 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
                               xd_all + (size_t)t * n_bpr,
                               xbs_all + (size_t)t * n_bpr * 16, cols);
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
-        BnKQuantMatmulCtx ctx = { out, W, xq_all, xd_all, xbs_all, n_tokens, cols };
+        BnKQuantMatmulCtx ctx = {
+            out, W, xq_all, xd_all, xbs_all, n_tokens, cols, prepared
+        };
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
         BnTPTask task = { bn_quant_q6k_neon_sdot_matmul_range, &ctx, rows };
 #else
@@ -571,7 +579,7 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
     if (W->type == BN_GGUF_TENSOR_Q4_K || W->type == BN_GGUF_TENSOR_Q6_K) {
         memset(out, 0, (size_t)n_tokens * rows * sizeof(float));
         BnKQuantMatmulCtx ctx = { out, W, (int8_t *)x_q, (float *)x_d,
-                                  (int16_t *)x_bsums, n_tokens, cols };
+                                  (int16_t *)x_bsums, n_tokens, cols, NULL };
         bn_tp_fn fn = (W->type == BN_GGUF_TENSOR_Q4_K)
             ? (bn_tp_fn)bn_quant_q4k_avx2_sdot_matmul_4row_range
             : (bn_tp_fn)bn_quant_q6k_avx2_sdot_matmul_range;
@@ -589,7 +597,8 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
 
 #define BN_MAX_MULTI_MATMUL 4
 
-void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
+void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W,
+                                  const BnPreparedWeight **prepared, int n,
                                   int n_tokens, const int8_t *x_q,
                                   const float *x_d, const int16_t *x_bsums,
                                   const float *x_float, BnThreadPool *pool) {
@@ -627,7 +636,8 @@ void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
                 memset(out[i], 0, (size_t)n_tokens * W[i]->rows * sizeof(float));
                 ctxs[i] = (BnKQuantMatmulCtx){
                     out[i], W[i], (int8_t *)x_q, (float *)x_d,
-                    (int16_t *)x_bsums, n_tokens, cols
+                    (int16_t *)x_bsums, n_tokens, cols,
+                    prepared ? prepared[i] : NULL
                 };
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
                 bn_tp_fn fn = (W[i]->type == BN_GGUF_TENSOR_Q4_K)

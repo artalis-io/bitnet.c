@@ -477,6 +477,14 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
         return;
     }
 
+    if (W->type == BN_GGUF_TENSOR_Q5_0) {
+        (void)x_q_buf;
+        BnQ5_0Ctx ctx = { out, W, x };
+        BnTPTask task = { bn_quant_q5_0_scalar_range, &ctx, W->rows };
+        bn_tp_dispatch(pool, &task, 1);
+        return;
+    }
+
     if (W->type == BN_GGUF_TENSOR_BF16) {
         (void)x_q_buf;
         BnBF16Ctx ctx = { out, W, x };

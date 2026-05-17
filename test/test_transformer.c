@@ -268,25 +268,30 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_has_cap(NULL, BN_GPU_CAP_FLASH_ATTN));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_0));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_0));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
 
     gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+               BN_GPU_CAP_Q5_MATVEC_SPLIT |
                BN_GPU_CAP_Q4K_MATVEC_SPLIT |
                BN_GPU_CAP_Q8_MATVEC_SPLIT |
                BN_GPU_CAP_Q5K_MATVEC_SPLIT |
                BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
+               BN_GPU_CAP_Q5_FUSED_GATEUP_SILU |
                BN_GPU_CAP_FLASH_ATTN;
     gpu.kind = BN_GPU_BACKEND_METAL;
 
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_0));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q8_0));
+    assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_0));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_F16));
 
     assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 0));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 1));
+    assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q5_0, 0));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q8_0, 0));
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
 

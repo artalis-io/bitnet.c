@@ -11,125 +11,35 @@ static void prepared_stats_add(BnBackendLayoutPreparedStats *dst,
                                const BnBackendLayoutPreparedStats *src) {
     if (!dst || !src) return;
     dst->q4_repack_bytes += src->q4_repack_bytes;
+    dst->q4k_scale_bytes += src->q4k_scale_bytes;
     dst->q8_scale_bytes += src->q8_scale_bytes;
 }
 
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
-static size_t prepared_q4_repack_bytes(const BnQWeight *w) {
-    if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return 0;
-    if (w->rows % 4 != 0) return 0;
-    size_t n_blocks = (size_t)w->rows * (w->cols / 32);
-    size_t bytes = n_blocks * 16 + SH_ARENA_ALIGN;
-#ifdef __wasm_relaxed_simd__
-    bytes += n_blocks * sizeof(float) + SH_ARENA_ALIGN;
-#else
-    bytes += n_blocks * sizeof(uint16_t) + SH_ARENA_ALIGN;
-#endif
-    return bytes;
-}
-
-static void prepared_q4_repack(BnBackendModel *backend, const BnQWeight *w, SHArena *arena) {
-    if (w->type != BN_GGUF_TENSOR_Q4_0 || !w->data) return;
-    if (w->rows % 4 != 0) return;
-    int n_blocks_per_row = w->cols / 32;
-    size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
-    BnPreparedWeight prepared = { 0 };
-
-    prepared.qs = (uint8_t *)sh_arena_alloc(arena, n_blocks * 16);
-#ifdef __wasm_relaxed_simd__
-    prepared.f32_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
-#else
-    prepared.scales = (uint16_t *)sh_arena_alloc(arena, n_blocks * sizeof(uint16_t));
-#endif
-    if (!prepared.qs) return;
-#ifdef __wasm_relaxed_simd__
-    if (!prepared.f32_scales) return;
-#else
-    if (!prepared.scales) return;
-#endif
-
-    const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)w->data;
-    int n_groups = w->rows / 4;
-    for (int g = 0; g < n_groups; g++) {
-        for (int b = 0; b < n_blocks_per_row; b++) {
-            size_t gb = (size_t)g * n_blocks_per_row + b;
-            for (int r = 0; r < 4; r++) {
-                size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
-#ifdef __wasm_relaxed_simd__
-                prepared.f32_scales[gb * 4 + r] = bn_fp16_to_fp32(blocks[src].d);
-#else
-                prepared.scales[gb * 4 + r] = blocks[src].d;
-#endif
-            }
-            uint8_t *dst = prepared.qs + gb * 64;
-            for (int ng = 0; ng < 4; ng++) {
-                for (int r = 0; r < 4; r++) {
-                    size_t src = (size_t)(g * 4 + r) * n_blocks_per_row + b;
-                    const uint8_t *qs = blocks[src].qs + ng * 4;
-                    uint8_t *dp = dst + ng * 16 + r * 4;
-                    for (int j = 0; j < 4; j++)
-                        dp[j] = qs[j] ^ 0x88;
-                }
-            }
-        }
+static void prepared_stats_add_bytes(BnBackendLayoutPreparedStats *stats,
+                                     BnPreparedWeightKind kind,
+                                     size_t bytes) {
+    if (!stats || bytes == 0) return;
+    switch (kind) {
+        case BN_PREPARED_WEIGHT_Q4_0_REPACK:
+            stats->q4_repack_bytes += bytes;
+            break;
+        case BN_PREPARED_WEIGHT_Q4_K_SCALES:
+            stats->q4k_scale_bytes += bytes;
+            break;
+        case BN_PREPARED_WEIGHT_Q8_0_F32_SCALES:
+            stats->q8_scale_bytes += bytes;
+            break;
+        default:
+            break;
     }
-    (void)bn_backend_model_register_prepared_qweight(backend, w, &prepared);
 }
-#else
-static size_t prepared_q4_repack_bytes(const BnQWeight *w) {
-    (void)w;
-    return 0;
-}
-
-static void prepared_q4_repack(BnBackendModel *backend, const BnQWeight *w, SHArena *arena) {
-    (void)backend;
-    (void)w;
-    (void)arena;
-}
-#endif
-
-#ifdef __wasm_relaxed_simd__
-static size_t prepared_q8_f32_scale_bytes(const BnQWeight *w) {
-    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data) return 0;
-    if ((w->cols & 31) != 0) return 0;
-    size_t n_blocks = (size_t)w->rows * (w->cols / 32);
-    return n_blocks * sizeof(float) + SH_ARENA_ALIGN;
-}
-
-static void prepared_q8_f32_scales(BnBackendModel *backend, const BnQWeight *w,
-                                   SHArena *arena) {
-    if (w->type != BN_GGUF_TENSOR_Q8_0 || !w->data) return;
-    if ((w->cols & 31) != 0) return;
-    int n_blocks_per_row = w->cols / 32;
-    size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
-    BnPreparedWeight prepared = { 0 };
-    prepared.f32_scales = (float *)sh_arena_alloc(arena, n_blocks * sizeof(float));
-    if (!prepared.f32_scales) return;
-
-    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)w->data;
-    for (size_t i = 0; i < n_blocks; i++)
-        prepared.f32_scales[i] = bn_fp16_to_fp32(blocks[i].d);
-    (void)bn_backend_model_register_prepared_qweight(backend, w, &prepared);
-}
-#else
-static size_t prepared_q8_f32_scale_bytes(const BnQWeight *w) {
-    (void)w;
-    return 0;
-}
-
-static void prepared_q8_f32_scales(BnBackendModel *backend, const BnQWeight *w,
-                                   SHArena *arena) {
-    (void)backend;
-    (void)w;
-    (void)arena;
-}
-#endif
 
 static void prepared_qweight_size_one(const BnQWeight *w,
                                       BnBackendLayoutPreparedStats *stats) {
     if (!stats) return;
-    stats->q4_repack_bytes += prepared_q4_repack_bytes(w);
-    stats->q8_scale_bytes += prepared_q8_f32_scale_bytes(w);
+    BnPreparedWeightKind kind = BN_PREPARED_WEIGHT_NONE;
+    size_t bytes = bn_quant_prepared_qweight_size(w, &kind);
+    prepared_stats_add_bytes(stats, kind, bytes);
 }
 
 static void prepared_qweight_size_layer(const BnLayerWeights *lw,
@@ -149,8 +59,10 @@ static void prepared_qweight_size_layer(const BnLayerWeights *lw,
 static void prepared_qweight_prepare_one(BnBackendModel *backend,
                                          const BnQWeight *w,
                                          SHArena *arena) {
-    prepared_q4_repack(backend, w, arena);
-    prepared_q8_f32_scales(backend, w, arena);
+    BnPreparedWeight prepared = { 0 };
+    if (bn_quant_prepare_qweight(&prepared, w, arena) == 0)
+        (void)bn_backend_model_register_prepared_qweight(backend, w,
+                                                         &prepared);
 }
 
 static void prepared_qweight_prepare_layer(BnBackendModel *backend,
@@ -371,7 +283,8 @@ size_t bn_backend_layout_prepared_qweights_size(const BnConfig *config,
         prepared_qweight_size_layer(&weights->layers[i], stats);
     prepared_qweight_size_one(&weights->output_weight, stats);
 
-    return stats->q4_repack_bytes + stats->q8_scale_bytes;
+    return stats->q4_repack_bytes + stats->q4k_scale_bytes +
+           stats->q8_scale_bytes;
 }
 
 void bn_backend_layout_prepare_qweights(BnBackendModel *backend,

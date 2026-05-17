@@ -175,6 +175,15 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             return -1;
         }
 
+        void *qk_stacked_gpu =
+            bn_backend_layout_upload_stacked2(gpu, &lw->attn.wq, &lw->attn.wk);
+        if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_QK_STACKED,
+                                qk_stacked_gpu) != 0) {
+            if (qk_stacked_gpu) gpu->buffer_destroy(gpu->ctx, qk_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
+
         void *gateup_stacked_gpu =
             bn_backend_layout_upload_stacked2(gpu, &lw->ffn.ffn_gate, &lw->ffn.ffn_up);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_GATEUP_STACKED,

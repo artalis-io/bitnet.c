@@ -21,6 +21,9 @@
 #ifdef BN_ENABLE_METAL
 #include "gpu_metal.h"
 #endif
+#ifdef BN_ENABLE_CUDA
+#include "gpu_cuda.h"
+#endif
 #if defined(__wasm_relaxed_simd__)
 #include <wasm_simd128.h>
 #include "simd_helpers.h"
@@ -36,6 +39,8 @@ static const char *type_name(int type) {
         case BN_GGUF_TENSOR_F16:     return "F16";
         case BN_GGUF_TENSOR_Q4_0:    return "Q4_0";
         case BN_GGUF_TENSOR_Q4_1:    return "Q4_1";
+        case BN_GGUF_TENSOR_Q5_0:    return "Q5_0";
+        case BN_GGUF_TENSOR_Q5_1:    return "Q5_1";
         case BN_GGUF_TENSOR_Q8_0:    return "Q8_0";
         case BN_GGUF_TENSOR_Q2_K:    return "Q2_K";
         case BN_GGUF_TENSOR_Q3_K:    return "Q3_K";
@@ -58,9 +63,10 @@ static const char *type_name(int type) {
     }
 }
 
-static const char *backend_name(int webgpu, int metal) {
+static const char *backend_name(int webgpu, int metal, int cuda) {
     if (webgpu) return "WebGPU";
     if (metal) return "Metal";
+    if (cuda) return "CUDA";
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
     return "ARM NEON + SDOT";
 #elif defined(__ARM_NEON)
@@ -569,8 +575,11 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen, int random_gen) {
         bn_sampler_init(&sampler, m->config.vocab_size, 0.0f, 0.9f, 42);
 
     // Feed BOS token at pos 0
-    float *logits = bn_transformer_forward(m, s, 1, 0);  // token 1 = BOS for most models
-    if (!logits) {
+    float *logits = NULL;
+    int ok = random_gen
+        ? (bn_transformer_forward_no_logits(m, s, 1, 0) == 0)
+        : ((logits = bn_transformer_forward(m, s, 1, 0)) != NULL);
+    if (!ok) {
         fprintf(stderr, "Forward pass failed\n");
         if (!random_gen)
             bn_sampler_free(&sampler);
@@ -582,9 +591,21 @@ static void bench_toks(BnModel *m, BnSession *s, int n_gen, int random_gen) {
     double t_start = 0;
     for (int i = 0; i < total; i++) {
         if (i == warmup) t_start = bn_platform_time_ms();
-        logits = bn_transformer_forward(m, s, next, i + 1);
-        if (!logits) break;
+        ok = random_gen
+            ? (bn_transformer_forward_no_logits(m, s, next, i + 1) == 0)
+            : ((logits = bn_transformer_forward(m, s, next, i + 1)) != NULL);
+        if (!ok) break;
         next = random_gen ? bench_rand_token(m->config.vocab_size) : bn_sampler_sample(&sampler, logits);
+    }
+    if (random_gen) {
+        BnGPUBackend *gpu = bn_model_gpu(m);
+        if (gpu && gpu->read_activation) {
+            float sync_value = 0.0f;
+            if (gpu->read_activation(gpu->ctx, BN_GPU_VALUE_X,
+                                     &sync_value, sizeof(sync_value), 0) != 0)
+                ok = 0;
+            bench_sink += sync_value;
+        }
     }
     double elapsed = bn_platform_time_ms() - t_start;
     double toks_per_sec = (double)n_gen / (elapsed / 1000.0);
@@ -613,6 +634,7 @@ int main(int argc, char **argv) {
     int random_gen = 0;
     int use_webgpu = 0;
     int use_metal = 0;
+    int use_cuda = 0;
     int metal_enable_q6_q8k = 0;
     int metal_disable_q4_q8 = 0;
 #ifdef BN_ENABLE_WEBGPU
@@ -645,6 +667,8 @@ int main(int argc, char **argv) {
             use_webgpu = 1;
         else if (strcmp(argv[i], "--metal") == 0)
             use_metal = 1;
+        else if (strcmp(argv[i], "--cuda") == 0)
+            use_cuda = 1;
         else if (strcmp(argv[i], "--metal-enable-q6-q8k") == 0)
             metal_enable_q6_q8k = 1;
         else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0)
@@ -667,8 +691,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (use_webgpu && use_metal) {
-        fprintf(stderr, "--webgpu and --metal are mutually exclusive\n");
+    if ((use_webgpu ? 1 : 0) + (use_metal ? 1 : 0) + (use_cuda ? 1 : 0) > 1) {
+        fprintf(stderr, "--webgpu, --metal, and --cuda are mutually exclusive\n");
         return 1;
     }
 
@@ -679,6 +703,7 @@ int main(int argc, char **argv) {
 
     BnGPUBackend *gpu = NULL;
     BnGPUBackend *metal_gpu = NULL;
+    BnGPUBackend *cuda_gpu = NULL;
 
 #ifdef BN_ENABLE_METAL
     if (metal_enable_q6_q8k)
@@ -691,6 +716,21 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Failed to create Metal backend\n");
             return 1;
         }
+    }
+#endif
+
+#ifdef BN_ENABLE_CUDA
+    if (use_cuda) {
+        cuda_gpu = bn_gpu_cuda_create();
+        if (!cuda_gpu) {
+            fprintf(stderr, "Failed to create CUDA backend\n");
+            return 1;
+        }
+    }
+#else
+    if (use_cuda) {
+        fprintf(stderr, "--cuda requires BN_ENABLE_CUDA=1 build\n");
+        return 1;
     }
 #endif
 
@@ -799,6 +839,26 @@ int main(int argc, char **argv) {
     }
 #endif
 
+#ifdef BN_ENABLE_CUDA
+    if (use_cuda) {
+        if (bn_model_upload_weights(&model, cuda_gpu) != 0) {
+            fprintf(stderr, "Failed to upload model weights to CUDA\n");
+            bn_gpu_cuda_destroy(cuda_gpu);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+        if (cuda_gpu->init_activations &&
+            cuda_gpu->init_activations(cuda_gpu->ctx, &model.config) != 0) {
+            fprintf(stderr, "Failed to initialize CUDA activations\n");
+            bn_gpu_cuda_destroy(cuda_gpu);
+            bn_model_free(&model);
+            bn_gguf_free(gf);
+            return 1;
+        }
+    }
+#endif
+
     // Extract model name from path
     const char *fname = strrchr(model_path, '/');
     fname = fname ? fname + 1 : model_path;
@@ -851,13 +911,14 @@ int main(int argc, char **argv) {
 
     // Print header
     printf("Backend: %-20s | Model: %-30s | Iters: %d | Threads: %d\n",
-           backend_name(use_webgpu, use_metal), fname, n_iters, pool ? bn_tp_num_threads(pool) : 1);
+           backend_name(use_webgpu, use_metal, use_cuda), fname, n_iters, pool ? bn_tp_num_threads(pool) : 1);
     printf("%-8s | %-7s | %-13s | %8s | %s\n",
            "Matrix", "Format", "Dims", "us/call", "GB/s");
     printf("---------|---------|---------------|----------|------\n");
 
     // Benchmark layer 0 weight matrices
     BnLayerWeights *L = &model.weights.layers[0];
+    BnGPUBackend *active_gpu = use_webgpu ? gpu : (use_metal ? metal_gpu : cuda_gpu);
 
     BenchTarget targets[] = {
         { "wq",   &L->attn.wq },
@@ -875,14 +936,14 @@ int main(int argc, char **argv) {
     for (int i = 0; i < n_targets; i++) {
         if (targets[i].W->data)
             bench_matvec(targets[i].name, targets[i].W, x, x_q, pool,
-                         use_webgpu ? gpu : metal_gpu, bn_model_backend(&model),
+                         active_gpu, bn_model_backend(&model),
                          n_iters);
     }
     if (model.config.has_ffn_gate && gate_target.W->data)
         bench_matvec(gate_target.name, gate_target.W, x, x_q, pool,
-                     use_webgpu ? gpu : metal_gpu, bn_model_backend(&model),
+                     active_gpu, bn_model_backend(&model),
                      n_iters);
-    bench_gpu_fused_gateup(L, use_webgpu ? gpu : metal_gpu,
+    bench_gpu_fused_gateup(L, active_gpu,
                            bn_model_backend(&model), x, n_iters);
 
     // Benchmark logits
@@ -891,7 +952,7 @@ int main(int argc, char **argv) {
          model.weights.emb_type != BN_GGUF_TENSOR_F16 &&
          model.weights.emb_type != BN_GGUF_TENSOR_F32)) {
         bench_logits_real(&model, x, x_q, n_iters, pool,
-                          use_webgpu ? gpu : metal_gpu,
+                          active_gpu,
                           bn_model_backend(&model));
     } else if (model.weights.emb_type == BN_GGUF_TENSOR_F16) {
         bench_logits_f16(&model, x, n_iters);
@@ -919,6 +980,9 @@ int main(int argc, char **argv) {
 #endif
 #ifdef BN_ENABLE_METAL
     if (metal_gpu) bn_gpu_metal_destroy(metal_gpu);
+#endif
+#ifdef BN_ENABLE_CUDA
+    if (cuda_gpu) bn_gpu_cuda_destroy(cuda_gpu);
 #endif
     bn_gguf_free(gf);
 

@@ -1,4 +1,6 @@
 CC      ?= cc
+NVCC    ?= /usr/local/cuda-13.2/bin/nvcc
+CUDA_ARCH ?= sm_120
 LDFLAGS = -lm
 
 # Platform-specific arch flags:
@@ -17,7 +19,7 @@ CFLAGS += -D_GNU_SOURCE
 LDFLAGS += -lpthread
 endif
 
-QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/kernel_select.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c
+QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c
 
 UNAME_M := $(shell uname -m)
 ifneq ($(filter arm% aarch%,$(UNAME_M)),)
@@ -143,14 +145,31 @@ else
   METAL_OBJS :=
 endif
 
+# --- CUDA (optional: BN_ENABLE_CUDA=1) ---
+ifdef BN_ENABLE_CUDA
+  CUDA_CFLAGS := -DBN_ENABLE_CUDA
+  CUDA_NVCCFLAGS := -arch=$(CUDA_ARCH)
+  CUDA_SRCS := src/gpu_cuda.cu
+  CUDA_OBJS := src/gpu_cuda.o
+  CUDA_LDFLAGS := -L$(dir $(NVCC))../lib64 -lcudart -lstdc++
+  LINK := $(CC)
+else
+  CUDA_CFLAGS :=
+  CUDA_NVCCFLAGS :=
+  CUDA_SRCS :=
+  CUDA_OBJS :=
+  CUDA_LDFLAGS :=
+  LINK := $(CC)
+endif
+
 SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
        $(TRANSFORMER_SRCS) src/tokenizer.c src/sampler.c \
        src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(WEBGPU_SRCS) src/main.c
-CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS)
-LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS)
-OBJS = $(SRCS:.c=.o) $(METAL_OBJS)
+CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS) $(CUDA_CFLAGS)
+LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS) $(CUDA_LDFLAGS)
+OBJS = $(SRCS:.c=.o) $(METAL_OBJS) $(CUDA_OBJS)
 HEADERS = $(wildcard include/*.h src/*.h src/transformer/*.h)
-BUILD_CONFIG := webgpu=$(if $(BN_ENABLE_WEBGPU),1,0) metal=$(if $(BN_ENABLE_METAL),1,0) cc=$(CC) cflags=$(CFLAGS)
+BUILD_CONFIG := webgpu=$(if $(BN_ENABLE_WEBGPU),1,0) metal=$(if $(BN_ENABLE_METAL),1,0) cuda=$(if $(BN_ENABLE_CUDA),1,0) cc=$(CC) nvcc=$(NVCC) cuda_arch=$(CUDA_ARCH) cflags=$(CFLAGS)
 BUILD_CONFIG_STAMP := .build-config
 
 .PHONY: config-check
@@ -164,7 +183,7 @@ config-check:
 
 # Default target
 bitnet: config-check $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(LDFLAGS)
+	$(LINK) $(CFLAGS) -o $@ $(filter %.o,$^) $(LDFLAGS)
 
 # Debug build
 debug: CFLAGS += -DDEBUG -g -O0
@@ -185,6 +204,9 @@ src/quant/%.o: src/quant/%.c $(HEADERS)
 src/transformer/%.o: src/transformer/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+src/%.o: src/%.cu $(HEADERS)
+	$(NVCC) -O3 -std=c++11 -Iinclude $(CUDA_CFLAGS) $(CUDA_NVCCFLAGS) -c -o $@ $<
+
 # Objective-C pattern rule for Metal backend
 src/%.o: src/%.m $(HEADERS)
 	$(CC) $(CFLAGS) -fobjc-arc -c -o $@ $<
@@ -192,8 +214,9 @@ src/%.o: src/%.m $(HEADERS)
 # --- Tests ---
 # --- Benchmark ---
 BENCH_SRCS = bench/bench_kernels.c $(filter-out src/main.c, $(SRCS))
+BENCH_OBJS = $(METAL_OBJS) $(CUDA_OBJS)
 
-bench_kernels: $(BENCH_SRCS) $(METAL_OBJS)
+bench_kernels: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 BENCH_PREFILL_SRCS = bench/bench_prefill.c $(filter-out src/main.c, $(SRCS))
@@ -245,11 +268,11 @@ bench_scalar_layers: $(SCALAR_BENCH_SRCS)
 bitnet_scalar: $(SCALAR_SRCS)
 	$(CC) $(SCALAR_CFLAGS) -o $@ $^ $(LDFLAGS)
 
-bench_avx2: $(BENCH_SRCS) $(METAL_OBJS)
+bench_avx2: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 ifeq ($(BN_ENABLE_WEBGPU),1)
-bench_webgpu: $(BENCH_SRCS) $(METAL_OBJS)
+bench_webgpu: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 else
 bench_webgpu:
@@ -258,10 +281,10 @@ endif
 
 # Per-layer timing build (BN_BENCH_LAYERS)
 bench_layers: CFLAGS += -DBN_BENCH_LAYERS
-bench_layers: $(BENCH_SRCS) $(METAL_OBJS)
+bench_layers: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -271,6 +294,9 @@ bench_suite: $(MAIN_TARGET)
 
 bench_llama_compare: bench_avx2
 	./bench/compare_llama.sh
+
+bench_cuda_compare: bench_kernels
+	./bench/cuda_compare.sh
 
 LLAMA_TOPK_MODEL ?= models/qwen2.5-3b-instruct-q4_0.gguf
 LLAMA_TOPK_ARGS ?= --metal --llama-metal --flash --maxseq 512 --gpu-max-storage-binding-mb 4096 --top-k 10 --min-overlap 3 --benchmark --bench-runs 3
@@ -296,7 +322,7 @@ test_model_matrix: test_coherence
 test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_quant: test/test_quant.c $(QUANT_SRCS) src/threadpool.c
+test_quant: test/test_quant.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_avx512_quant: test/test_avx512_quant.c src/quant/q8_avx512_vnni.c src/quant/q4_avx512_vnni.c \
@@ -369,14 +395,32 @@ else
 	@echo "test_gemma4_webgpu skipped: set BN_ENABLE_WEBGPU=1"
 endif
 
-test_gemma4_backend_matrix: test_gemma4 test_gemma4_avx2 test_gemma4_webgpu
+ifdef BN_ENABLE_CUDA
+test_qwen36_cuda: test/test_qwen36.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
+             src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c src/gpu_cuda.o
+	$(CC) $(CFLAGS) -DBN_QWEN36_TEST_CUDA -o $@ $^ $(LDFLAGS) && ./$@
+
+test_gemma4_cuda: test/test_gemma4.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
+             src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/threadpool.c \
+             src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c src/gpu_cuda.o
+	$(CC) $(CFLAGS) -DBN_GEMMA4_TEST_CUDA -o $@ $^ $(LDFLAGS) && ./$@
+else
+test_qwen36_cuda:
+	@echo "test_qwen36_cuda skipped: set BN_ENABLE_CUDA=1"
+
+test_gemma4_cuda:
+	@echo "test_gemma4_cuda skipped: set BN_ENABLE_CUDA=1"
+endif
+
+test_gemma4_backend_matrix: test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda
 
 test_generate: test/test_generate.c src/generate.c src/bn_alloc.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
                src/sh_arena.c src/sh_log.c src/session.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_q2k: test/test_q2k.c $(QUANT_SRCS) src/threadpool.c
+test_q2k: test/test_q2k.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_session: test/test_session.c src/session.c src/bn_alloc.c src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
@@ -400,6 +444,14 @@ test_gpu_backend: test/test_gpu_backend.c $(QUANT_SRCS) src/turboquant.c $(MODEL
                   src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
                   src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+
+ifdef BN_ENABLE_CUDA
+test_cuda_backend: test/test_cuda_backend.c src/gpu_cuda.o src/quant/fp16.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
+else
+test_cuda_backend:
+	@echo "test_cuda_backend skipped: set BN_ENABLE_CUDA=1"
+endif
 
 test_e2e: test/test_e2e.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
           src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
@@ -593,6 +645,10 @@ COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SR
 ifdef BN_ENABLE_WEBGPU
 COHERENCE_SRCS += src/gpu_wgpu.c
 endif
+COHERENCE_EXTRA_OBJS :=
+ifdef BN_ENABLE_CUDA
+COHERENCE_EXTRA_OBJS += src/gpu_cuda.o
+endif
 ifdef BN_ENABLE_METAL
 COHERENCE_OBJS = $(COHERENCE_SRCS:.c=.o) src/gpu_metal.o
 else
@@ -600,13 +656,13 @@ COHERENCE_OBJS =
 endif
 
 ifdef BN_ENABLE_METAL
-test_coherence: $(COHERENCE_SRCS) src/gpu_metal.m
+test_coherence: $(COHERENCE_SRCS) $(COHERENCE_EXTRA_OBJS) src/gpu_metal.m
 	$(CC) $(CFLAGS) -c -o /tmp/bn_coherence_metal.o src/gpu_metal.m -fobjc-arc
-	$(CC) $(CFLAGS) -o $@ $(COHERENCE_SRCS) /tmp/bn_coherence_metal.o $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(COHERENCE_SRCS) $(COHERENCE_EXTRA_OBJS) /tmp/bn_coherence_metal.o $(LDFLAGS)
 else
-test_coherence: $(COHERENCE_SRCS)
+test_coherence: $(COHERENCE_SRCS) $(COHERENCE_EXTRA_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 endif
 
 clean:
-	rm -f bitnet bitnet_scalar bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)
+	rm -f bitnet bitnet_scalar bench_kernels bench_prefill bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers src/*.o src/quant/*.o src/transformer/*.o test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence test_e2e test_prefill test_kv_f16 default.profraw default.profdata src/*.gcda src/quant/*.gcda src/transformer/*.gcda src/gpu_metal.o $(BUILD_CONFIG_STAMP)

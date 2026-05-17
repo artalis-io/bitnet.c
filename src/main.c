@@ -13,11 +13,14 @@
 #ifdef BN_ENABLE_WEBGPU
 #include "gpu_wgpu.h"
 #endif
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
 #include "gpu_moe_cache.h"
 #endif
 #ifdef BN_ENABLE_METAL
 #include "gpu_metal.h"
+#endif
+#ifdef BN_ENABLE_CUDA
+#include "gpu_cuda.h"
 #endif
 
 #include <stdio.h>
@@ -60,6 +63,7 @@ typedef struct {
     int threads;        // 0 = auto-detect
     int webgpu;         // use WebGPU backend for matvec (requires BN_ENABLE_WEBGPU)
     int metal;          // use Metal backend (requires BN_ENABLE_METAL)
+    int cuda;           // use CUDA backend (requires BN_ENABLE_CUDA)
     int gpu_cpu_logits; // hidden diagnostic: run final logits on CPU
     int gpu_compare_logits; // hidden diagnostic: compare GPU logits to CPU
     int gpu_max_storage_binding_mb; // hidden diagnostic: allow large GPU logits
@@ -115,6 +119,7 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --draft-k <int> Draft tokens per iteration (default: 5)\n");
     fprintf(stderr, "  --webgpu        Enable WebGPU backend (requires BN_ENABLE_WEBGPU=1)\n");
     fprintf(stderr, "  --metal         Enable Metal backend (requires BN_ENABLE_METAL=1)\n");
+    fprintf(stderr, "  --cuda          Enable experimental CUDA backend (requires BN_ENABLE_CUDA=1)\n");
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
     fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
     fprintf(stderr, "  --metal-q4-prepared  Use prepared Q4_0 Metal upload layout\n");
@@ -230,6 +235,8 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.webgpu = 1;
         } else if (strcmp(argv[i], "--metal") == 0) {
             args.metal = 1;
+        } else if (strcmp(argv[i], "--cuda") == 0) {
+            args.cuda = 1;
         } else if (strcmp(argv[i], "--gpu-cpu-logits") == 0) {
             args.gpu_cpu_logits = 1;
         } else if (strcmp(argv[i], "--gpu-compare-logits") == 0) {
@@ -408,15 +415,15 @@ int main(int argc, char **argv) {
             fprintf(stderr, "--kv-tq and --kv16 are mutually exclusive\n");
             return 1;
         }
-        if (args.webgpu || args.metal) {
-            fprintf(stderr, "--kv-tq and --webgpu/--metal are mutually exclusive (GPU TQ not yet supported)\n");
+        if (args.webgpu || args.metal || args.cuda) {
+            fprintf(stderr, "--kv-tq and --webgpu/--metal/--cuda are mutually exclusive (GPU TQ not yet supported)\n");
             return 1;
         }
     }
 
-    // Validate --webgpu and --metal mutual exclusion
-    if (args.webgpu && args.metal) {
-        fprintf(stderr, "--webgpu and --metal are mutually exclusive\n");
+    // Validate GPU backend mutual exclusion
+    if ((args.webgpu ? 1 : 0) + (args.metal ? 1 : 0) + (args.cuda ? 1 : 0) > 1) {
+        fprintf(stderr, "--webgpu, --metal, and --cuda are mutually exclusive\n");
         return 1;
     }
 
@@ -506,14 +513,15 @@ int main(int argc, char **argv) {
         SH_LOG_INFO("GGUF parsed", "version", ver, "tensors", nt, "kv", nkv);
     }
 
-    if ((args.webgpu || args.metal) && !args.max_seq_len_set) {
+    if ((args.webgpu || args.metal || args.cuda) && !args.max_seq_len_set) {
         int model_seq_len = gguf_get_arch_u32(gf, "context_length");
         int n_experts = gguf_get_arch_u32(gf, "expert_count");
-        if ((args.webgpu || (args.metal && n_experts > 0)) &&
+        if ((args.webgpu || args.cuda || (args.metal && n_experts > 0)) &&
             model_seq_len > BN_GPU_DEFAULT_MAXSEQ) {
             args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;
             SH_LOG_WARN(args.webgpu ? "Auto-capping WebGPU sequence length" :
-                                      "Auto-capping Metal MoE sequence length",
+                        (args.cuda ? "Auto-capping CUDA sequence length" :
+                                     "Auto-capping Metal MoE sequence length"),
                         "seq", "4096", "override", "--maxseq");
         }
     }
@@ -686,6 +694,53 @@ int main(int argc, char **argv) {
 #else
     if (args.metal) {
         SH_LOG_WARN("--metal requires BN_ENABLE_METAL=1 build, falling back to CPU");
+    }
+#endif
+
+    // CUDA backend (optional)
+#ifdef BN_ENABLE_CUDA
+    if (args.cuda) {
+        BnGPUBackend *gpu = bn_gpu_cuda_create();
+        if (gpu) {
+            double gpu_t0 = bn_platform_time_ms();
+            if (bn_model_upload_weights(&model, gpu) == 0) {
+                char ms[16];
+                snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
+                SH_LOG_INFO("CUDA weights uploaded", "ms", ms);
+                if (gpu->init_activations) {
+                    if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
+                        SH_LOG_INFO("CUDA activations initialized");
+                    } else {
+                        SH_LOG_WARN("CUDA activation initialization failed, falling back to CPU");
+                        bn_model_release_gpu(&model);
+                        bn_gpu_cuda_destroy(gpu);
+                        gpu = NULL;
+                    }
+                }
+                if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
+                    model.config.n_layers > 0 && gpu) {
+                    BnMoEExpertMap *em0 = &model.weights.layers[0].moe.expert_map;
+                    size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
+                                       + em0->expert_down_bytes;
+                    if (entry_bytes > 0) {
+                        bn_model_set_gpu_moe_cache(
+                            &model,
+                            bn_gpu_moe_cache_create(
+                                (size_t)args.gpu_cache_mb * 1024 * 1024,
+                                entry_bytes, gpu));
+                    }
+                }
+            } else {
+                SH_LOG_WARN("CUDA weight upload failed, falling back to CPU");
+                bn_gpu_cuda_destroy(gpu);
+            }
+        } else {
+            SH_LOG_WARN("No CUDA device available, falling back to CPU");
+        }
+    }
+#else
+    if (args.cuda) {
+        SH_LOG_WARN("--cuda requires BN_ENABLE_CUDA=1 build, falling back to CPU");
     }
 #endif
 
@@ -1100,7 +1155,7 @@ int main(int argc, char **argv) {
         bn_moe_cache_free(bn_model_moe_cache(&model));
         bn_model_set_moe_cache(&model, NULL);
     }
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
     if (bn_model_gpu_moe_cache(&model)) {
         bn_gpu_moe_cache_print_stats(bn_model_gpu_moe_cache(&model));
         bn_gpu_moe_cache_free(bn_model_gpu_moe_cache(&model));

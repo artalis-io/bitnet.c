@@ -74,13 +74,23 @@ int bn_transformer_gpu_validate_forward(
     if (pos < 0)
         GPU_POLICY_REJECT("negative position");
 
+    static const BnGPUBackend *cached_gpu = NULL;
+    static const BnBackendModel *cached_backend = NULL;
+    static const BnConfig *cached_config = NULL;
+    static const BnWeights *cached_weights = NULL;
+    static BnTransformerGPUForwardPolicy cached_policy;
+    static int cached_valid = 0;
+    if (cached_valid && cached_gpu == gpu && cached_backend == backend &&
+        cached_config == c && cached_weights == w) {
+        *out = cached_policy;
+        return 0;
+    }
+
     if (!getenv("BN_GPU_FORCE_GRAPH") && c->dim >= 4096 &&
         (bn_model_arch_requires_large_gpu_graph_fallback(c) ||
          c->full_attn_interval > 0 || c->n_experts > 0))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
 
-    if (c->kv_f16)
-        GPU_POLICY_REJECT("kv_f16 unsupported");
     if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)
         GPU_POLICY_REJECT("dim exceeds VLA limit");
 
@@ -122,6 +132,12 @@ int bn_transformer_gpu_validate_forward(
     if (!out->logits.gpu_buf)
         GPU_POLICY_REJECT("logit weight not uploaded");
 
+    cached_gpu = gpu;
+    cached_backend = backend;
+    cached_config = c;
+    cached_weights = w;
+    cached_policy = *out;
+    cached_valid = 1;
     return 0;
 #undef GPU_POLICY_REJECT
 }

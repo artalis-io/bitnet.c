@@ -81,6 +81,13 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
         for (int b = 0; b < n_blocks_per_row; b++) {
             bn_quant_dequant_q4_1(&row[b], out + b * 32);
         }
+    } else if (m->weights.emb_type == BN_GGUF_TENSOR_Q5_0) {
+        const BnBlockQ5_0 *blocks = (const BnBlockQ5_0 *)m->weights.token_embedding;
+        int n_blocks_per_row = dim / 32;
+        const BnBlockQ5_0 *row = blocks + (size_t)token * n_blocks_per_row;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            bn_quant_dequant_q5_0(&row[b], out + b * 32);
+        }
     } else if (m->weights.emb_type == BN_GGUF_TENSOR_Q5_1) {
         const BnBlockQ5_1 *blocks = (const BnBlockQ5_1 *)m->weights.token_embedding;
         int n_blocks_per_row = dim / 32;

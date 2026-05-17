@@ -30,6 +30,7 @@ typedef enum {
     BN_BACKEND_HANDLE_SSM_DT_BIAS = 17,
     BN_BACKEND_HANDLE_SSM_A_LOG = 18,
     BN_BACKEND_HANDLE_SSM_NORM = 19,
+    BN_BACKEND_HANDLE_QK_STACKED = 20,
 } BnBackendHandleRole;
 
 BnBackendModel *bn_backend_model_create(void);

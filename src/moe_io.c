@@ -227,7 +227,17 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
 const void *bn_moe_get_expert_proj(BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *em,
                                     int expert_idx, int proj) {
-    return bn_moe_load_expert_proj(io, ms, em, expert_idx, proj);
+    uint8_t *buf = ms->buf;
+    size_t buf_size = ms->buf_size;
+    if (proj == 1) {
+        buf = ms->buf2;
+        buf_size = ms->buf2_size;
+    } else if (proj == 2) {
+        buf = ms->buf5;
+        buf_size = ms->buf5_size;
+    }
+    return bn_moe_load_expert_proj_into(io, &ms->stats, em, expert_idx, proj,
+                                        buf, buf_size);
 }
 
 void bn_moe_prefetch_create(BnMoEIO *io) {

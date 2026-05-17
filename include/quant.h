@@ -51,6 +51,14 @@ typedef struct {
     uint8_t  qs[16];  // packed nibbles (2 values per byte)
 } BnBlockQ4_0;
 
+// Q5_0: 5-bit quantization, 32 elements per block
+// FP16 per-block scale + 4 high-bit bytes + 16 packed nibble bytes = 22 bytes
+typedef struct {
+    uint16_t d;
+    uint8_t  qh[4];
+    uint8_t  qs[16];
+} BnBlockQ5_0;
+
 // Q4_1: 4-bit quantization with min, 32 elements per block
 // FP16 scale + FP16 min + 16 packed nibble bytes = 20 bytes
 typedef struct {
@@ -178,11 +186,21 @@ typedef struct {
 // Single per-tensor scale stored at offset nelements/4 in the data
 // Encoding: 0=-1, 1=0, 2=+1
 
+typedef struct SHArena SHArena;
+
+typedef enum {
+    BN_PREPARED_WEIGHT_NONE = 0,
+    BN_PREPARED_WEIGHT_Q4_0_REPACK = 1,
+    BN_PREPARED_WEIGHT_Q8_0_F32_SCALES = 2,
+    BN_PREPARED_WEIGHT_Q4_K_SCALES = 3,
+} BnPreparedWeightKind;
+
 // Backend/runtime-prepared layout for a quantized weight tensor.
 typedef struct BnPreparedWeight {
     uint16_t *scales;
     uint8_t *qs;
     float *f32_scales;
+    BnPreparedWeightKind kind;
 } BnPreparedWeight;
 
 // Quantized weight tensor descriptor (zero-copy into GGUF buffer)
@@ -249,6 +267,7 @@ void     bn_quant_dequant_tq1(const BnBlockTQ1 *block, float *out);
 void     bn_quant_dequant_tq2(const BnBlockTQ2 *block, float *out);
 void     bn_quant_dequant_q8_0(const BnBlockQ8_0 *block, float *out);
 void     bn_quant_dequant_q4_0(const BnBlockQ4_0 *block, float *out);
+void     bn_quant_dequant_q5_0(const BnBlockQ5_0 *block, float *out);
 void     bn_quant_dequant_q4_1(const BnBlockQ4_1 *block, float *out);
 void     bn_quant_dequant_q5_1(const BnBlockQ5_1 *block, float *out);
 void     bn_quant_dequant_q2k(const BnBlockQ2K *block, float *out);
@@ -302,6 +321,11 @@ typedef struct {
 void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                             int8_t *x_q_bufs, BnThreadPool *pool);
 
+size_t bn_quant_prepared_qweight_size(const BnQWeight *W,
+                                      BnPreparedWeightKind *kind);
+int bn_quant_prepare_qweight(BnPreparedWeight *prepared, const BnQWeight *W,
+                             SHArena *arena);
+
 // Fused Q4_0 gate/up SiLU fast path. Returns 0 if dispatched, -1 if unsupported.
 int bn_quant_q4_gate_up_silu(float *out,
                              const BnQWeight *gate,
@@ -337,7 +361,8 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
 // Dispatch up to n matmuls in a single threadpool cycle.
 // All weight matrices must share the same pre-quantized input.
 // out/W arrays must have n entries. Falls back to sequential if types differ.
-void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W, int n,
+void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W,
+                                  const BnPreparedWeight **prepared, int n,
                                   int n_tokens, const int8_t *x_q,
                                   const float *x_d, const int16_t *x_bsums,
                                   const float *x_float, BnThreadPool *pool);

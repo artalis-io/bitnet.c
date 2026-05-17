@@ -118,6 +118,11 @@ void bn_quant_q4k_avx512_vnni_matmul_4row_range(void *ctx,
     int n_bpr = cols / BN_QK_K;
     int n_tokens = c->n_tokens;
     const BnBlockQ4K *blocks = (const BnBlockQ4K *)c->W->data;
+    const BnPreparedWeight *prepared =
+        (c->prepared && c->prepared->kind == BN_PREPARED_WEIGHT_Q4_K_SCALES)
+            ? c->prepared : NULL;
+    const uint8_t *prep_scales = prepared ? prepared->qs : NULL;
+    const float *prep_d = prepared ? prepared->f32_scales : NULL;
 
     const __m256i mask_lo = _mm256_set1_epi8(0x0F);
     const uint32_t kmask1 = 0x3f3f3f3f;
@@ -153,21 +158,35 @@ void bn_quant_q4k_avx512_vnni_matmul_4row_range(void *ctx,
                 }
 
                 for (int r = 0; r < nrows; r++) {
-                    const BnBlockQ4K *blk = &blocks[(size_t)(row0 + r) * n_bpr + b];
-                    float d = q4k_fp16_to_fp32(blk->d);
-                    float dmin = q4k_fp16_to_fp32(blk->dmin);
-
+                    size_t block_idx = (size_t)(row0 + r) * n_bpr + b;
+                    const BnBlockQ4K *blk = &blocks[block_idx];
+                    float d, dmin;
+                    const uint8_t *sc;
+                    const uint8_t *mins_ptr;
                     uint32_t utmp[3];
-                    memcpy(utmp, blk->scales, 12);
-                    uint32_t m_lo = utmp[1] & kmask1;
-                    uint32_t m_hi = ((utmp[2] >> 4) & kmask2) | (((utmp[1] >> 6) & kmask3) << 4);
-                    utmp[1] = (utmp[2] & kmask2) | (((utmp[0] >> 6) & kmask3) << 4);
-                    utmp[0] &= kmask1;
-                    const uint8_t *sc = (const uint8_t *)utmp;
                     uint8_t mins[8];
-                    memcpy(mins, &m_lo, 4);
-                    memcpy(mins + 4, &m_hi, 4);
-                    __m128i mins_v = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)mins));
+                    if (prep_scales && prep_d) {
+                        sc = prep_scales + block_idx * 16;
+                        mins_ptr = sc + 8;
+                        d = prep_d[block_idx * 2];
+                        dmin = prep_d[block_idx * 2 + 1];
+                    } else {
+                        d = q4k_fp16_to_fp32(blk->d);
+                        dmin = q4k_fp16_to_fp32(blk->dmin);
+                        memcpy(utmp, blk->scales, 12);
+                        uint32_t m_lo = utmp[1] & kmask1;
+                        uint32_t m_hi = ((utmp[2] >> 4) & kmask2) |
+                                        (((utmp[1] >> 6) & kmask3) << 4);
+                        utmp[1] = (utmp[2] & kmask2) |
+                                  (((utmp[0] >> 6) & kmask3) << 4);
+                        utmp[0] &= kmask1;
+                        sc = (const uint8_t *)utmp;
+                        memcpy(mins, &m_lo, 4);
+                        memcpy(mins + 4, &m_hi, 4);
+                        mins_ptr = mins;
+                    }
+                    __m128i mins_v =
+                        _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i *)mins_ptr));
 
                     __m512i w_join[4], sc_pair[4];
                     for (int p = 0; p < 4; p++) {

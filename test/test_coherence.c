@@ -29,6 +29,9 @@
 #ifdef BN_ENABLE_METAL
 #include "gpu_metal.h"
 #endif
+#ifdef BN_ENABLE_CUDA
+#include "gpu_cuda.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +51,7 @@ static const char *type_name(int type) {
     case BN_GGUF_TENSOR_TQ2_0:   return "TQ2_0";
     case BN_GGUF_TENSOR_Q4_0:    return "Q4_0";
     case BN_GGUF_TENSOR_Q4_1:    return "Q4_1";
+    case BN_GGUF_TENSOR_Q5_0:    return "Q5_0";
     case BN_GGUF_TENSOR_Q8_0:    return "Q8_0";
     case BN_GGUF_TENSOR_BF16:    return "BF16";
     case BN_GGUF_TENSOR_F16:     return "F16";
@@ -77,7 +81,7 @@ static float rand_float(uint64_t *state) {
     return (float)((int32_t)(*state & 0xFFFFFF) - (1 << 23)) / (float)(1 << 23);
 }
 
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
 static void print_vec_delta(const char *label,
                             int step,
                             const float *a,
@@ -100,7 +104,9 @@ static void print_vec_delta(const char *label,
            label, step, max_abs, max_i, a[max_i], b[max_i],
            sum_abs / (double)n, sqrt(sum_sq / (double)n));
 }
+#endif
 
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
 static int compare_prefill_kv_cache(BnGPUBackend *gpu,
                                     const BnConfig *config,
                                     const float *cpu_key,
@@ -152,6 +158,7 @@ static scalar_fn get_scalar_fn(int type) {
     case BN_GGUF_TENSOR_TQ2_0:   return bn_quant_tq2_scalar_range;
     case BN_GGUF_TENSOR_Q4_0:    return bn_quant_q4_scalar_range;
     case BN_GGUF_TENSOR_Q4_1:    return bn_quant_q4_1_scalar_range;
+    case BN_GGUF_TENSOR_Q5_0:    return bn_quant_q5_0_scalar_range;
     case BN_GGUF_TENSOR_Q8_0:    return bn_quant_q8_scalar_range;
     case BN_GGUF_TENSOR_F32:     return bn_quant_f32_scalar_range;
     case BN_GGUF_TENSOR_F16:     return bn_quant_f16_scalar_range;
@@ -255,7 +262,7 @@ static int test_matvec_weight(const char *name, const BnQWeight *W, BnThreadPool
     return pass ? 1 : -1;
 }
 
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
 static int test_gpu_matvec_weight(const char *backend_name,
                                   BnGPUBackend *gpu,
                                   const char *name,
@@ -270,10 +277,12 @@ static int test_gpu_matvec_weight(const char *backend_name,
     int cols = W->cols;
     size_t sz = bn_qweight_data_size(W);
     void *gpu_buf = NULL;
+    int fused_bias = 0;
     if (bias && gpu->buffer_create_biased) {
         gpu_buf = gpu->buffer_create_biased(
             gpu->ctx, W->data, sz, W->type, rows, cols,
             bias, (size_t)rows * sizeof(float));
+        fused_bias = gpu_buf != NULL;
     }
     if (!gpu_buf)
         gpu_buf = gpu->buffer_create(gpu->ctx, W->data, sz,
@@ -313,6 +322,10 @@ static int test_gpu_matvec_weight(const char *backend_name,
         printf("  %-12s SKIP (%s matvec dispatch error %d)\n",
                name, backend_name, rc);
     } else {
+        if (bias && !fused_bias) {
+            for (int i = 0; i < rows; i++)
+                out_gpu[i] += bias[i];
+        }
         float max_diff = 0.0f;
         for (int i = 0; i < rows; i++) {
             float diff = fabsf(out_gpu[i] - out_cpu[i]);
@@ -345,12 +358,12 @@ static int test_gpu_matvec_weight(const char *backend_name,
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-tail-native N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash]\n", argv[0]);
-        fprintf(stderr, "Coherence test: WebGPU/Metal vs CPU forward pass, SIMD vs scalar matvec\n");
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--cuda] [--prompt <text>] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-tail-native N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash] [--kv16]\n", argv[0]);
+        fprintf(stderr, "Coherence test: WebGPU/Metal/CUDA vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
 
-    int use_webgpu = 0, use_metal = 0;
+    int use_webgpu = 0, use_metal = 0, use_cuda = 0;
     int cpu_fallback_layer = -1;
     int cpu_fallback_from_layer = -1;
     int cpu_attn_layer = -1;
@@ -387,12 +400,15 @@ int main(int argc, char **argv) {
     int disable_gateup_split = 0;
     int disable_fused_gateup = 0;
     int split_residual_rmsnorm = 0;
+    int kv16 = 0;
     const char *prompt = "Hello";
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--webgpu") == 0) {
             use_webgpu = 1;
         } else if (strcmp(argv[i], "--metal") == 0) {
             use_metal = 1;
+        } else if (strcmp(argv[i], "--cuda") == 0) {
+            use_cuda = 1;
         } else if (strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
             prompt = argv[++i];
         } else if (strcmp(argv[i], "--cpu-fallback-layer") == 0 && i + 1 < argc) {
@@ -459,6 +475,8 @@ int main(int argc, char **argv) {
             q4_q8_ffn_only = 1;
         } else if (strcmp(argv[i], "--flash") == 0) {
             use_flash = 1;
+        } else if (strcmp(argv[i], "--kv16") == 0) {
+            kv16 = 1;
         } else if (strcmp(argv[i], "--disable-qkv-split") == 0) {
             disable_qkv_split = 1;
         } else if (strcmp(argv[i], "--disable-gateup-split") == 0) {
@@ -472,9 +490,13 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
-#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL)
+#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL) && !defined(BN_ENABLE_CUDA)
     (void)compare_hidden;
 #endif
+    if ((use_webgpu ? 1 : 0) + (use_metal ? 1 : 0) + (use_cuda ? 1 : 0) > 1) {
+        fprintf(stderr, "--webgpu, --metal, and --cuda are mutually exclusive\n");
+        return 1;
+    }
     if (cpu_fallback_from_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", cpu_fallback_from_layer);
@@ -607,7 +629,8 @@ int main(int argc, char **argv) {
 
     printf("=== Coherence Test ===\n");
     printf("Model: %s\n", argv[1]);
-    printf("GPU:   %s\n\n", use_webgpu ? "webgpu" : use_metal ? "metal" : "off");
+    printf("GPU:   %s\n\n",
+           use_webgpu ? "webgpu" : use_metal ? "metal" : use_cuda ? "cuda" : "off");
 
     /* ── Load model ──────────────────────────────────────────────── */
 
@@ -633,6 +656,8 @@ int main(int argc, char **argv) {
     }
     if (use_flash)
         model.config.flash_attn = 1;
+    if (kv16)
+        model.config.kv_f16 = 1;
     bn_model_set_file(&model, mf);
     if (model.config.n_experts > 0) {
         if (mf.is_mmap == 1 && mf.data)
@@ -1006,8 +1031,120 @@ int main(int argc, char **argv) {
         }
     } else
 #endif
+#ifdef BN_ENABLE_CUDA
+    if (use_cuda) {
+        BnGPUBackend *gpu = bn_gpu_cuda_create();
+        if (!gpu) {
+            printf("  CUDA: not available, skipping Phase 1 CUDA comparison\n");
+            total_skip++;
+        } else {
+            if (bn_model_upload_weights(&model, gpu) != 0) {
+                printf("  CUDA: weight upload failed, skipping\n");
+                bn_gpu_cuda_destroy(gpu);
+                total_skip++;
+            } else {
+                int gpu_tokens[N_DECODE_STEPS];
+
+                BnSession *s = bn_session_create(&model, NULL);
+                if (!s) {
+                    fprintf(stderr, "Failed to create CUDA session\n");
+                    return 1;
+                }
+
+                BnSampler sampler;
+                bn_sampler_init(&sampler, model.config.vocab_size, 0.0f, 0.0f, 42);
+                float *gpu_step_logits = calloc((size_t)N_DECODE_STEPS *
+                                                (size_t)vocab_size,
+                                                sizeof(float));
+                float *gpu_step_hidden = calloc((size_t)N_DECODE_STEPS *
+                                                (size_t)model.config.dim,
+                                                sizeof(float));
+                if (!gpu_step_logits || !gpu_step_hidden) {
+                    fprintf(stderr, "Failed to allocate CUDA step logits\n");
+                    free(gpu_step_logits);
+                    free(gpu_step_hidden);
+                    return 1;
+                }
+
+                int token = prompt_tokens[0];
+                int pos = 0;
+                float *logits = NULL;
+
+                for (int i = 0; i < n_prompt; i++) {
+                    logits = bn_transformer_forward(&model, s, token, pos);
+                    if (i < n_prompt - 1)
+                        token = prompt_tokens[i + 1];
+                    pos++;
+                }
+
+                for (int i = 0; i < N_DECODE_STEPS; i++) {
+                    memcpy(gpu_step_logits + (size_t)i * (size_t)vocab_size,
+                           logits, (size_t)vocab_size * sizeof(float));
+                    memcpy(gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                           s->state.x, (size_t)model.config.dim * sizeof(float));
+                    token = bn_sampler_sample(&sampler, logits);
+                    gpu_tokens[i] = token;
+                    if (i + 1 < N_DECODE_STEPS) {
+                        logits = bn_transformer_forward(&model, s, token, pos);
+                        pos++;
+                    }
+                }
+
+                printf("  CUDA tokens: ");
+                for (int i = 0; i < N_DECODE_STEPS; i++) {
+                    const char *piece = bn_tokenizer_decode(&tok, gpu_tokens[i]);
+                    printf("[%d]=%d(\"%s\") ", i, gpu_tokens[i], piece ? piece : "?");
+                }
+                printf("\n");
+
+                for (int i = 0; i < N_DECODE_STEPS; i++) {
+                    int match = (cpu_tokens[i] == gpu_tokens[i]);
+                    int required = (i < N_MATCH_REQUIRED);
+                    if (match) {
+                        printf("  token[%d]: PASS (cpu=%d cuda=%d)\n",
+                               i, cpu_tokens[i], gpu_tokens[i]);
+                        if (compare_hidden) {
+                            print_vec_delta(
+                                "hidden", i,
+                                cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                model.config.dim);
+                        }
+                        total_pass++;
+                    } else if (required) {
+                        printf("  token[%d]: FAIL (cpu=%d cuda=%d) [REQUIRED]\n",
+                               i, cpu_tokens[i], gpu_tokens[i]);
+                        printf("    logits: cpu[cpu]=%.6f cpu[cuda]=%.6f cuda[cpu]=%.6f cuda[cuda]=%.6f\n",
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]]);
+                        print_vec_delta(
+                            "hidden", i,
+                            cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                            gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                            model.config.dim);
+                        total_fail++;
+                    } else {
+                        printf("  token[%d]: DRIFT (cpu=%d cuda=%d) [allowed]\n",
+                               i, cpu_tokens[i], gpu_tokens[i]);
+                        total_pass++;
+                    }
+                }
+
+                bn_sampler_free(&sampler);
+                free(gpu_step_logits);
+                free(gpu_step_hidden);
+                bn_session_free(s, NULL);
+
+                bn_model_release_gpu(&model);
+                bn_gpu_cuda_destroy(gpu);
+            }
+        }
+    } else
+#endif
     {
-        if (use_webgpu || use_metal)
+        if (use_webgpu || use_metal || use_cuda)
             printf("  GPU: not compiled, skipping\n");
         else
             printf("  GPU: not requested, skipping GPU vs CPU comparison\n");
@@ -1066,7 +1203,7 @@ int main(int argc, char **argv) {
             phase3_name = "ffn_gate";
         }
     }
-#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL)
+#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL) && !defined(BN_ENABLE_CUDA)
     (void)phase3_name;
 #endif
 
@@ -1284,8 +1421,148 @@ int main(int argc, char **argv) {
         }
     } else
 #endif
+#ifdef BN_ENABLE_CUDA
+    if (use_cuda) {
+        BnGPUBackend *gpu = bn_gpu_cuda_create();
+        if (!gpu) {
+            printf("  CUDA: not available, skipping Phase 3\n");
+            total_skip++;
+        } else {
+            const BnQWeight *W = phase3_W;
+            if (!W->data || W->rows == 0) {
+                printf("  SKIP: no layer 0 matvec weight has data\n");
+                total_skip++;
+            } else {
+                int rows = W->rows;
+                int cols = W->cols;
+
+                size_t sz = bn_qweight_data_size(W);
+                void *gpu_buf = gpu->buffer_create(gpu->ctx, W->data, sz,
+                                                    W->type, rows, cols);
+                if (!gpu_buf) {
+                    printf("  SKIP: CUDA buffer_create failed\n");
+                    total_skip++;
+                } else {
+                    float *x = malloc((size_t)cols * sizeof(float));
+                    uint64_t rng = 99999;
+                    for (int j = 0; j < cols; j++)
+                        x[j] = rand_float(&rng);
+
+                    float *out_cpu = calloc((size_t)rows, sizeof(float));
+                    int max_dim = cols > rows ? cols : rows;
+                    int8_t *x_q = calloc((size_t)max_dim, 1);
+                    bn_quant_matvec(out_cpu, W, x, x_q, NULL);
+
+                    float *out_gpu = calloc((size_t)rows, sizeof(float));
+                    int rc = gpu->matvec(gpu->ctx, out_gpu, gpu_buf, x,
+                                          rows, cols, W->type);
+                    if (rc != 0) {
+                        printf("  SKIP: CUDA matvec dispatch error %d\n", rc);
+                        total_skip++;
+                    } else {
+                        float max_diff = 0.0f;
+                        for (int i = 0; i < rows; i++) {
+                            float diff = fabsf(out_gpu[i] - out_cpu[i]);
+                            if (diff > max_diff) max_diff = diff;
+                        }
+
+                        int pass = max_diff < MATVEC_TOL;
+                        printf("  %s CUDA vs CPU: %-6s max_diff=%.4f (rows=%d cols=%d type=%s)\n",
+                               phase3_name, pass ? "PASS" : "FAIL", max_diff, rows, cols, type_name(W->type));
+                        if (pass)
+                            total_pass++;
+                        else {
+                            total_fail++;
+                            for (int i = 0; i < rows && i < 8; i++) {
+                                printf("    [%d] cpu=%.6f cuda=%.6f diff=%.6f\n",
+                                       i, out_cpu[i], out_gpu[i],
+                                       fabsf(out_gpu[i] - out_cpu[i]));
+                            }
+                        }
+                    }
+
+                    free(x); free(out_cpu); free(out_gpu); free(x_q);
+                    gpu->buffer_destroy(gpu->ctx, gpu_buf);
+                }
+            }
+
+            const BnQWeight *logits_W = NULL;
+            BnQWeight tied_logits;
+            if (model.weights.output_weight.data) {
+                logits_W = &model.weights.output_weight;
+            } else if (bn_quant_format_supported(model.weights.emb_type) &&
+                       model.weights.emb_type != BN_GGUF_TENSOR_F16 &&
+                       model.weights.emb_type != BN_GGUF_TENSOR_F32) {
+                tied_logits = (BnQWeight){
+                    model.weights.token_embedding,
+                    model.weights.emb_type,
+                    model.config.vocab_size,
+                    model.config.dim,
+                    1.0f
+                };
+                logits_W = &tied_logits;
+            }
+            if (logits_W && logits_W != W) {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "logits", logits_W, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "wk",
+                                               &L0->attn.wk, L0->attn.k_bias);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "wv",
+                                               &L0->attn.wv, L0->attn.v_bias);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "wq+bias",
+                                               &L0->attn.wq, L0->attn.q_bias);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "wo",
+                                               &L0->attn.wo, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "ffn_gate",
+                                               &L0->ffn.ffn_gate, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "ffn_up",
+                                               &L0->ffn.ffn_up, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            {
+                int r = test_gpu_matvec_weight("CUDA", gpu, "ffn_down",
+                                               &L0->ffn.ffn_down, NULL);
+                if (r == 1) total_pass++;
+                else if (r == -1) total_fail++;
+                else total_skip++;
+            }
+            bn_gpu_cuda_destroy(gpu);
+        }
+    } else
+#endif
     {
-        if (use_webgpu || use_metal)
+        if (use_webgpu || use_metal || use_cuda)
             printf("  GPU: not compiled, skipping\n");
         else
             printf("  GPU: not requested, skipping\n");

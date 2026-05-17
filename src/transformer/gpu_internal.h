@@ -41,6 +41,7 @@ typedef struct {
     void *q_norm;
     void *k_norm;
     void *qkv_stacked;
+    void *qk_stacked;
     void *packed_qkv;
     void *wq;
     void *wk;

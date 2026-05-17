@@ -24,6 +24,7 @@ void bn_quant_q5k_scalar_range(void *ctx, int start, int end);
 void bn_quant_q5k_scalar_matmul_range(void *ctx, int start, int end);
 void bn_quant_q5k_scalar_sdot_matmul_range(void *ctx, int start, int end);
 void bn_quant_q4_1_scalar_range(void *ctx, int start, int end);
+void bn_quant_q5_0_scalar_range(void *ctx, int start, int end);
 void bn_quant_q5_1_scalar_range(void *ctx, int start, int end);
 void bn_quant_f32_scalar_range(void *ctx, int start, int end);
 void bn_quant_f16_scalar_range(void *ctx, int start, int end);

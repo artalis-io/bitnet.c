@@ -80,6 +80,16 @@ struct BnGPUBackend {
     int (*matvec_batch)(void *ctx, const BnGPUMatvecOp *ops, int n_ops,
                         const float *x, int x_cols);
 
+    // Dense FFN fast path: out[dim] = down(activation(gate(x)) * up(x)).
+    // All weight buffers are opaque handles from buffer_create. This is
+    // optional and intended for backends that can keep FFN intermediates
+    // resident across gate/up activation and down projection.
+    int (*dense_ffn)(void *ctx, float *out,
+                     void *gate_buf, void *up_buf, void *down_buf,
+                     const float *x, int dim, int hidden_dim,
+                     int gate_type, int up_type, int down_type,
+                     int act_type);
+
     // GPU-resident forward pass: execute a backend-private lowered command list
     // as a single submission. All intermediate buffers stay on GPU. Only
     // readback_buf is copied to out_host.
@@ -129,5 +139,8 @@ struct BnGPUBackend {
 #define BN_GPU_CAP_Q4_MATVEC_SPLIT (1u << 3) // stacked Q4_0 split matvec shader available
 #define BN_GPU_CAP_Q4_FUSED_GATEUP_SILU (1u << 4) // fused Q4_0 gate/up SiLU shader available
 #define BN_GPU_CAP_Q4K_MATVEC_SPLIT (1u << 5) // Q4_K packed split matvec shader available
+#define BN_GPU_CAP_Q5_FUSED_GATEUP_SILU (1u << 6) // fused Q5_0 gate/up SiLU shader available
+#define BN_GPU_CAP_Q5_MATVEC_SPLIT (1u << 7) // stacked Q5_0 split matvec shader available
+#define BN_GPU_CAP_Q8_FUSED_GATEUP_SILU (1u << 8) // fused Q8_0 gate/up SiLU shader available
 
 #endif // BN_GPU_BACKEND_H

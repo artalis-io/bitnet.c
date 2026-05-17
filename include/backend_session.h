@@ -11,6 +11,10 @@ void *bn_backend_session_ensure_gpu_graph(BnBackendSession *backend, int cap_ops
 void *bn_backend_session_ensure_gpu_command_buffer(BnBackendSession *backend,
                                                    int cap_ops,
                                                    int *out_cap);
+int bn_backend_session_gpu_cached_op_count(const BnBackendSession *backend);
+void bn_backend_session_set_gpu_cached_op_count(BnBackendSession *backend,
+                                                int n_ops);
+void bn_backend_session_clear_gpu_cached_ops(BnBackendSession *backend);
 BnGPUValueGraph *bn_backend_session_gpu_value_graph(BnBackendSession *backend);
 int bn_backend_session_ensure_gpu_lowering_values(BnBackendSession *backend,
                                                   int elem_size,

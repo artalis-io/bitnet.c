@@ -878,6 +878,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     void *q_norm = res ? res->q_norm : NULL;
     void *k_norm = res ? res->k_norm : NULL;
     void *qkv_stacked = res ? res->qkv_stacked : NULL;
+    void *qk_stacked = res ? res->qk_stacked : NULL;
 
     int use_packed_qkv = lw->ssm.wqkv.data &&
                          res && res->packed_qkv &&
@@ -904,15 +905,24 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
+    int use_qk_split = !qkv_split_disabled && qk_stacked && !q_gated &&
+                       lw->attn.wq.rows == q_dim &&
+                       lw->attn.wk.rows == kv_dim &&
+                       lw->attn.wq.cols == lw->attn.wk.cols &&
+                       lw->attn.wq.type == lw->attn.wk.type &&
+                       bn_gpu_quant_split_op_code(lw->attn.wq.type) !=
+                           BN_GPU_CODE_UNKNOWN &&
+                       bn_transformer_gpu_can_matvec_split(res->gpu,
+                                                           lw->attn.wq.type);
     static int qkv_debug_printed = 0;
     if (!qkv_debug_printed && getenv("BN_GPU_DEBUG_QKV_SPLIT")) {
         fprintf(stderr,
-                "[bn:gpu:debug] qkv_split disabled=%d stacked=%p q_gated=%d "
-                "q_bias=%p k_bias=%p v_bias=%p op=%d can=%d use=%d\n",
-                qkv_split_disabled, qkv_stacked, q_gated, q_bias, k_bias,
+                "[bn:gpu:debug] qkv_split disabled=%d stacked=%p qk=%p q_gated=%d "
+                "q_bias=%p k_bias=%p v_bias=%p op=%d can=%d use=%d qk_use=%d\n",
+                qkv_split_disabled, qkv_stacked, qk_stacked, q_gated, q_bias, k_bias,
                 v_bias, qkv_split_op_code,
                 bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type),
-                use_split || use_q8_split || use_q5_split);
+                use_split || use_q8_split || use_q5_split, use_qk_split);
         qkv_debug_printed = 1;
     }
 
@@ -959,11 +969,22 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                  BN_GPU_VALUE_QKV, -1, BN_GPU_VALUE_Q, 0,
                                  NULL, deinterleave_params);
         } else {
-            emit_context_matvec_flags(
-                ctx, lw->attn.wq.type,
-                res ? res->wq : NULL, BN_GPU_VALUE_XB,
-                BN_GPU_VALUE_Q, lw->attn.wq.rows, lw->attn.wq.cols, 0,
-                use_q4_q8 ? 1u : 0u);
+            if (use_qk_split) {
+                int k_split_buf = k_bias ? BN_GPU_VALUE_SCRATCH
+                                         : BN_GPU_VALUE_KEY_CACHE;
+                int k_split_offset = k_bias ? 0 : (int)kv_cache_off;
+                emit_context_matvec_split(
+                    ctx, lw->attn.wq.type, qk_stacked, BN_GPU_VALUE_XB,
+                    BN_GPU_VALUE_Q, k_split_buf, -1,
+                    q_dim + kv_dim, lw->attn.wq.cols, q_dim, 0,
+                    k_split_offset, 0, use_q4_q8);
+            } else {
+                emit_context_matvec_flags(
+                    ctx, lw->attn.wq.type,
+                    res ? res->wq : NULL, BN_GPU_VALUE_XB,
+                    BN_GPU_VALUE_Q, lw->attn.wq.rows, lw->attn.wq.cols, 0,
+                    use_q4_q8 ? 1u : 0u);
+            }
         }
         if (q_bias) {
             uint32_t bias_params[8] = {
@@ -974,7 +995,32 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                  bias_params);
         }
 
-        if (k_bias) {
+        if (use_qk_split) {
+            if (k_bias) {
+                uint32_t bias_params[8] = {
+                    (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0
+                };
+                emit_context_utility(ctx, BN_GPU_IR_UTILITY_BIAS_ADD,
+                                     BN_GPU_VALUE_SCRATCH, -1, -1, 0,
+                                     k_bias, bias_params);
+                if (k_norm) {
+                    uint32_t ph_params[8] = {
+                        (uint32_t)head_size, u_eps,
+                        (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0
+                    };
+                    emit_context_utility(ctx,
+                                         BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
+                                         BN_GPU_VALUE_SCRATCH, -1, -1,
+                                         c->n_kv_heads, k_norm, ph_params);
+                }
+                emit_context_rope(ctx, BN_GPU_VALUE_SCRATCH, -1,
+                                  c->n_kv_heads, head_size, pos, rope_dims,
+                                  0, 0);
+                bn_transformer_gpu_emit_context_copy(
+                    ctx, BN_GPU_VALUE_SCRATCH, BN_GPU_VALUE_KEY_CACHE, 0,
+                    (int)kv_cache_off, kv_dim);
+            }
+        } else if (k_bias) {
             emit_context_matvec_flags(
                 ctx, lw->attn.wk.type,
                 res ? res->wk : NULL, BN_GPU_VALUE_XB,
@@ -1114,8 +1160,11 @@ void bn_transformer_gpu_emit_context_attention_gqa(
         int flash_max_kv = 0;
         const char *flash_max_env = getenv("BN_GPU_FLASH_MAX_KV");
         if (flash_max_env) flash_max_kv = atoi(flash_max_env);
+        else if (res->gpu && res->gpu->kind == BN_GPU_BACKEND_CUDA)
+            flash_max_kv = 2048;
         if (bn_transformer_gpu_can_flash_attn(res->gpu) &&
-            (has_moe || c->flash_attn) &&
+            (has_moe || c->flash_attn ||
+             (res->gpu && res->gpu->kind == BN_GPU_BACKEND_CUDA)) &&
             n_kv >= flash_min_kv &&
             (flash_max_kv <= 0 || n_kv <= flash_max_kv)) {
             emit_context_flash_attention(

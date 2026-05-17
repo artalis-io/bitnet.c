@@ -24,6 +24,7 @@ typedef enum {
 
 typedef struct {
     size_t q4_repack_bytes;
+    size_t q4k_scale_bytes;
     size_t q8_scale_bytes;
 } BnBackendLayoutPreparedStats;
 

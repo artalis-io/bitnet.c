@@ -8,6 +8,11 @@ typedef struct BnSession BnSession;
 // Run one token through the transformer, returns pointer to logits
 float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos);
 
+// Run one token and update state/KV without computing logits.
+// Intended for benchmarks/callers that do not sample from model logits.
+// Returns 0 on success, -1 on error.
+int bn_transformer_forward_no_logits(BnModel *m, BnSession *s, int token, int pos);
+
 // Process n_tokens starting at pos0, computing logits only for the last token.
 // Returns logits pointer (same as bn_transformer_forward), or NULL on error.
 float *bn_transformer_prefill(BnModel *m, BnSession *s, const int *tokens, int n_tokens, int pos0);

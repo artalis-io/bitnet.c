@@ -80,6 +80,28 @@ static int prefill_quant_can_preq8k_pair(int a, int b) {
 static int prefill_quant_can_preq8k_triple(int a, int b, int c) {
     return prefill_quant_can_preq8k_pair(a, b) && bn_quant_format_can_preq8k(c);
 }
+
+static void prefill_quant_matmul_preq8k_multi(const BnModel *m,
+                                              float **out,
+                                              const BnQWeight **W,
+                                              int n,
+                                              int n_tokens,
+                                              const int8_t *x_q,
+                                              const float *x_d,
+                                              const int16_t *x_bsums,
+                                              const float *x_float) {
+    const BnBackendModel *backend = bn_model_backend(m);
+    const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
+    if (n > 4) {
+        bn_quant_matmul_preq8k_multi(out, W, NULL, n, n_tokens, x_q, x_d,
+                                     x_bsums, x_float, bn_model_pool(m));
+        return;
+    }
+    for (int i = 0; i < n; i++)
+        prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
+    bn_quant_matmul_preq8k_multi(out, W, prepared, n, n_tokens, x_q, x_d,
+                                 x_bsums, x_float, bn_model_pool(m));
+}
 #endif
 
 #ifdef __ARM_NEON
@@ -421,8 +443,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 {
                     float *qkv_out[3] = { Q_buf, K_new, V_new };
                     const BnQWeight *qkv_w[3] = { &lw->attn.wq, &lw->attn.wk, &lw->attn.wv };
-                    bn_quant_matmul_preq8k_multi(qkv_out, qkv_w, 3, n_tokens,
-                                                 pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
+                    prefill_quant_matmul_preq8k_multi(m, qkv_out, qkv_w, 3,
+                                                       n_tokens, pf_xq, pf_xd,
+                                                       pf_xbs, Xb);
                 }
             } else
 #endif
@@ -701,8 +724,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     {
                         float *gu_out[2] = { Hb, Hb2 };
                         const BnQWeight *gu_w[2] = { &lw->ffn.ffn_gate, &lw->ffn.ffn_up };
-                        bn_quant_matmul_preq8k_multi(gu_out, gu_w, 2, n_tokens,
-                                                     pf_xq, pf_xd, pf_xbs, Xb, bn_model_pool(m));
+                        prefill_quant_matmul_preq8k_multi(m, gu_out, gu_w, 2,
+                                                           n_tokens, pf_xq,
+                                                           pf_xd, pf_xbs, Xb);
                     }
                 } else
 #endif

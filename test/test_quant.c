@@ -1,5 +1,6 @@
 #include "quant.h"
 #include "gguf.h"
+#include "sh_arena.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,6 +58,17 @@ static void test_dispatch_routing(void) {
     bn_quant_matvec(&out, &W_q8, x32, x_q32, NULL);
     assert(fabsf(out - 32.0f) < 0.1f);
 
+    // Q5_0: all low bits zero, high bits set on second half -> [-16, 0]
+    BnBlockQ5_0 *q5_0 = (BnBlockQ5_0 *)calloc(1, sizeof(BnBlockQ5_0));
+    q5_0->d = 0x3C00;
+    for (int i = 0; i < 4; i++) q5_0->qh[i] = 0;
+    q5_0->qh[2] = 0xFF;
+    q5_0->qh[3] = 0xFF;
+    BnQWeight W_q5_0 = { q5_0, BN_GGUF_TENSOR_Q5_0, 1, 32, 1.0f };
+
+    bn_quant_matvec(&out, &W_q5_0, x32, x_q32, NULL);
+    assert(fabsf(out - (-256.0f)) < 0.1f);
+
     // Q6_K: all scales=1, all ql/qh=0 → quant=-32, dot = 256*(-32)*1 = -8192
     BnBlockQ6K *q6k = (BnBlockQ6K *)calloc(1, sizeof(BnBlockQ6K));
     q6k->d = 0x3C00;
@@ -80,6 +92,7 @@ static void test_dispatch_routing(void) {
 
     free(tq2);
     free(q8);
+    free(q5_0);
     free(q6k);
     free(q5k);
     printf("PASSED\n");
@@ -971,7 +984,10 @@ static void test_kquant_preq8k_matmul_correctness(void) {
     float *out4 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out4b = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out6 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
-    assert(X && x_q && x_d && x_bsums && ref4 && ref6 && out4 && out4b && out6);
+    float *out4_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out4b_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    assert(X && x_q && x_d && x_bsums && ref4 && ref6 && out4 && out4b &&
+           out6 && out4_prepared && out4b_prepared);
 
     for (int t = 0; t < n_tokens; t++) {
         for (int i = 0; i < cols; i++)
@@ -991,17 +1007,42 @@ static void test_kquant_preq8k_matmul_correctness(void) {
 
     float *multi_out[3] = { out4, out4b, out6 };
     const BnQWeight *multi_w[3] = { &W4a, &W4b, &W6 };
-    bn_quant_matmul_preq8k_multi(multi_out, multi_w, 3, n_tokens,
+    bn_quant_matmul_preq8k_multi(multi_out, multi_w, NULL, 3, n_tokens,
                                  x_q, x_d, x_bsums, X, NULL);
+
+    BnPreparedWeight prepared4a = { 0 };
+    BnPreparedWeight prepared4b = { 0 };
+    BnPreparedWeightKind kind4a = BN_PREPARED_WEIGHT_NONE;
+    BnPreparedWeightKind kind4b = BN_PREPARED_WEIGHT_NONE;
+    size_t prep_bytes4a = bn_quant_prepared_qweight_size(&W4a, &kind4a);
+    size_t prep_bytes4b = bn_quant_prepared_qweight_size(&W4b, &kind4b);
+    assert(kind4a == BN_PREPARED_WEIGHT_Q4_K_SCALES);
+    assert(kind4b == BN_PREPARED_WEIGHT_Q4_K_SCALES);
+    SHArena *prep_arena =
+        sh_arena_create(prep_bytes4a + prep_bytes4b + 4 * SH_ARENA_ALIGN);
+    assert(prep_arena != NULL);
+    assert(bn_quant_prepare_qweight(&prepared4a, &W4a, prep_arena) == 0);
+    assert(bn_quant_prepare_qweight(&prepared4b, &W4b, prep_arena) == 0);
+    assert(prepared4a.kind == BN_PREPARED_WEIGHT_Q4_K_SCALES);
+    assert(prepared4b.kind == BN_PREPARED_WEIGHT_Q4_K_SCALES);
+    float *prepared_out[2] = { out4_prepared, out4b_prepared };
+    const BnQWeight *prepared_w[2] = { &W4a, &W4b };
+    const BnPreparedWeight *prepared[2] = { &prepared4a, &prepared4b };
+    bn_quant_matmul_preq8k_multi(prepared_out, prepared_w, prepared, 2,
+                                 n_tokens, x_q, x_d, x_bsums, X, NULL);
 
     for (int i = 0; i < rows * n_tokens; i++) {
         assert(fabsf(out4[i] - ref4[i]) < 1e-3f);
         assert(fabsf(out6[i] - ref6[i]) < 1e-3f);
+        assert(fabsf(out4_prepared[i] - out4[i]) < 1e-5f);
+        assert(fabsf(out4b_prepared[i] - out4b[i]) < 1e-5f);
     }
 
     free(q4a); free(q4b); free(q6);
     free(X); free(x_q); free(x_d); free(x_bsums);
     free(ref4); free(ref6); free(out4); free(out4b); free(out6);
+    free(out4_prepared); free(out4b_prepared);
+    sh_arena_free(prep_arena);
     printf("PASSED\n");
 }
 

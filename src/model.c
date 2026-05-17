@@ -915,6 +915,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                                           (double)built_stats.q4_repack_bytes / (1024*1024));
                 SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
             }
+            if (built_stats.q4k_scale_bytes > 0) {
+                char q4k_mb[16]; snprintf(q4k_mb, sizeof(q4k_mb), "%.0f",
+                                           (double)built_stats.q4k_scale_bytes / (1024*1024));
+                SH_LOG_INFO("Q4_K scales prepared", "MB", q4k_mb);
+            }
             if (built_stats.q8_scale_bytes > 0) {
                 char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f",
                                           (double)built_stats.q8_scale_bytes / (1024*1024));

@@ -140,12 +140,33 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
         return gpu_logits;
     }
 
-    // Fall back to the CPU kernels. If the GPU-resident graph rejected the
-    // model, per-matvec GPU fallback is usually much slower than the AVX/CPU
-    // path because it submits many tiny decode kernels.
-    bn_model_set_gpu_disabled(m, 1);
+    // Fall back to CPU orchestration. Existing graph backends disable
+    // per-matvec fallback after graph rejection because many tiny dispatches
+    // are slower there. The experimental CUDA backend has no graph path yet,
+    // so keep it attached to exercise backend-owned matvec buffers.
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    int disable_gpu = !(gpu && gpu->kind == BN_GPU_BACKEND_CUDA);
+    if (disable_gpu)
+        bn_model_set_gpu_disabled(m, 1);
     int rc = forward_layers(m, s, token, pos);
     float *logits = rc == 0 ? forward_logits(m, s) : NULL;
-    bn_model_set_gpu_disabled(m, 0);
+    if (disable_gpu)
+        bn_model_set_gpu_disabled(m, 0);
     return logits;
+}
+
+int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
+                                     int token, int pos) {
+    float *gpu_state = bn_transformer_gpu_forward_no_logits(m, s, token, pos);
+    if (gpu_state)
+        return 0;
+
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    int disable_gpu = !(gpu && gpu->kind == BN_GPU_BACKEND_CUDA);
+    if (disable_gpu)
+        bn_model_set_gpu_disabled(m, 1);
+    int rc = forward_layers(m, s, token, pos);
+    if (disable_gpu)
+        bn_model_set_gpu_disabled(m, 0);
+    return rc == 0 ? 0 : -1;
 }
