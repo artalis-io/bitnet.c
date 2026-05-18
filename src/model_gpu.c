@@ -2,6 +2,7 @@
 #include "backend_layout.h"
 #include "backend_model.h"
 #include "gpu_backend.h"
+#include <stdlib.h>
 #include <stdint.h>
 
 static int checked_mul_size(size_t a, size_t b, size_t *out) {
@@ -26,7 +27,26 @@ static void *upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
     return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
 }
 
-static int upload_qweight_owned(BnBackendModel *backend, BnGPUBackend *gpu, BnQWeight *w) {
+static int should_skip_cuda_small_kquant(const BnModel *model,
+                                         const BnGPUBackend *gpu,
+                                         const BnQWeight *w) {
+    if (!model || !gpu || !w || gpu->kind != BN_GPU_BACKEND_CUDA)
+        return 0;
+    if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
+        return 0;
+    if (model->config.n_experts > 0 || model->config.full_attn_interval > 0)
+        return 0;
+    if (model->config.dim > 2560)
+        return 0;
+    /* Small dense Qwen K-quants have close greedy ties where native CUDA
+     * Q4_K/Q6_K error can change tokens; keep those weights on CPU by default. */
+    return w->type == BN_GGUF_TENSOR_Q4_K || w->type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static int upload_qweight_owned(BnModel *model, BnBackendModel *backend,
+                                BnGPUBackend *gpu, BnQWeight *w) {
+    if (should_skip_cuda_small_kquant(model, gpu, w))
+        return 0;
     void *handle = upload_qweight(gpu, w);
     if (!w->data) return 0;
     if (!handle) return -1;
@@ -59,7 +79,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     BnConfig *c = &model->config;
     int n_layers = c->n_layers;
 
-    if (upload_qweight_owned(backend, gpu, &w->output_weight) != 0) {
+    if (upload_qweight_owned(model, backend, gpu, &w->output_weight) != 0) {
         bn_model_release_gpu(model);
         return -1;
     }
@@ -99,7 +119,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (upload_qweight_owned(backend, gpu, weights[i]) != 0) {
+            if (upload_qweight_owned(model, backend, gpu, weights[i]) != 0) {
                 bn_model_release_gpu(model);
                 return -1;
             }
