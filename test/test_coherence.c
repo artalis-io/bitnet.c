@@ -1129,6 +1129,18 @@ int main(int argc, char **argv) {
                     } else {
                         printf("  token[%d]: DRIFT (cpu=%d cuda=%d) [allowed]\n",
                                i, cpu_tokens[i], gpu_tokens[i]);
+                        printf("    logits: cpu[cpu]=%.6f cpu[cuda]=%.6f cuda[cpu]=%.6f cuda[cuda]=%.6f\n",
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               cpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + cpu_tokens[i]],
+                               gpu_step_logits[(size_t)i * (size_t)vocab_size + gpu_tokens[i]]);
+                        if (compare_hidden) {
+                            print_vec_delta(
+                                "hidden", i,
+                                cpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                gpu_step_hidden + (size_t)i * (size_t)model.config.dim,
+                                model.config.dim);
+                        }
                         total_pass++;
                     }
                 }

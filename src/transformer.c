@@ -142,10 +142,14 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
 
     // Fall back to CPU orchestration. Existing graph backends disable
     // per-matvec fallback after graph rejection because many tiny dispatches
-    // are slower there. The experimental CUDA backend has no graph path yet,
-    // so keep it attached to exercise backend-owned matvec buffers.
+    // are slower there. Dense CUDA keeps per-matvec fallback for now; MoE and
+    // hybrid models detach it because graph rejection means only partial
+    // CUDA matvecs would run, which can flip close greedy decisions.
     BnGPUBackend *gpu = bn_model_gpu(m);
-    int disable_gpu = !(gpu && gpu->kind == BN_GPU_BACKEND_CUDA && gpu->execute);
+    int keep_cuda_matvec =
+        gpu && gpu->kind == BN_GPU_BACKEND_CUDA && gpu->execute &&
+        m->config.n_experts <= 0 && m->config.full_attn_interval <= 0;
+    int disable_gpu = !keep_cuda_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
     int rc = forward_layers(m, s, token, pos);
@@ -162,7 +166,10 @@ int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
         return 0;
 
     BnGPUBackend *gpu = bn_model_gpu(m);
-    int disable_gpu = !(gpu && gpu->kind == BN_GPU_BACKEND_CUDA && gpu->execute);
+    int keep_cuda_matvec =
+        gpu && gpu->kind == BN_GPU_BACKEND_CUDA && gpu->execute &&
+        m->config.n_experts <= 0 && m->config.full_attn_interval <= 0;
+    int disable_gpu = !keep_cuda_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
     int rc = forward_layers(m, s, token, pos);
