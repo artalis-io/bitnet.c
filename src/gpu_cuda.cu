@@ -852,6 +852,94 @@ static __global__ void q8_0_matmul4_warp_kernel(float *out,
     }
 }
 
+static __global__ void q5_0_matmul4_warp_kernel(float *out,
+                                                const BnBlockQ5_0 *blocks,
+                                                const float *x, int rows,
+                                                int cols, int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row0 = (blockIdx.x * warps_per_block + warp) * 4;
+    int token = blockIdx.y;
+    if (row0 >= rows || token >= n_tokens) return;
+
+    int n_bpr = cols / 32;
+    const float *x_token = x + (size_t)token * cols;
+    float sum0 = 0.0f;
+    float sum1 = 0.0f;
+    float sum2 = 0.0f;
+    float sum3 = 0.0f;
+    const BnBlockQ5_0 *row_blocks0 = blocks + (size_t)row0 * n_bpr;
+    const BnBlockQ5_0 *row_blocks1 = row_blocks0 + n_bpr;
+    const BnBlockQ5_0 *row_blocks2 = row_blocks1 + n_bpr;
+    const BnBlockQ5_0 *row_blocks3 = row_blocks2 + n_bpr;
+
+    for (int b = 0; b < n_bpr; b++) {
+        float xv = x_token[(size_t)b * 32 + lane];
+
+        const BnBlockQ5_0 *blk0 = &row_blocks0[b];
+        uint32_t qh0 = (uint32_t)blk0->qh[0] |
+                       ((uint32_t)blk0->qh[1] << 8) |
+                       ((uint32_t)blk0->qh[2] << 16) |
+                       ((uint32_t)blk0->qh[3] << 24);
+        uint8_t qs0 = blk0->qs[lane & 15];
+        int q0 = lane < 16
+            ? (int)((qs0 & 15) | (((qh0 >> lane) & 1u) << 4)) - 16
+            : (int)((qs0 >> 4) | (((qh0 >> lane) & 1u) << 4)) - 16;
+        sum0 += cuda_fp16_to_fp32(blk0->d) * (float)q0 * xv;
+
+        if (row0 + 1 < rows) {
+            const BnBlockQ5_0 *blk1 = &row_blocks1[b];
+            uint32_t qh1 = (uint32_t)blk1->qh[0] |
+                           ((uint32_t)blk1->qh[1] << 8) |
+                           ((uint32_t)blk1->qh[2] << 16) |
+                           ((uint32_t)blk1->qh[3] << 24);
+            uint8_t qs1 = blk1->qs[lane & 15];
+            int q1 = lane < 16
+                ? (int)((qs1 & 15) | (((qh1 >> lane) & 1u) << 4)) - 16
+                : (int)((qs1 >> 4) | (((qh1 >> lane) & 1u) << 4)) - 16;
+            sum1 += cuda_fp16_to_fp32(blk1->d) * (float)q1 * xv;
+        }
+        if (row0 + 2 < rows) {
+            const BnBlockQ5_0 *blk2 = &row_blocks2[b];
+            uint32_t qh2 = (uint32_t)blk2->qh[0] |
+                           ((uint32_t)blk2->qh[1] << 8) |
+                           ((uint32_t)blk2->qh[2] << 16) |
+                           ((uint32_t)blk2->qh[3] << 24);
+            uint8_t qs2 = blk2->qs[lane & 15];
+            int q2 = lane < 16
+                ? (int)((qs2 & 15) | (((qh2 >> lane) & 1u) << 4)) - 16
+                : (int)((qs2 >> 4) | (((qh2 >> lane) & 1u) << 4)) - 16;
+            sum2 += cuda_fp16_to_fp32(blk2->d) * (float)q2 * xv;
+        }
+        if (row0 + 3 < rows) {
+            const BnBlockQ5_0 *blk3 = &row_blocks3[b];
+            uint32_t qh3 = (uint32_t)blk3->qh[0] |
+                           ((uint32_t)blk3->qh[1] << 8) |
+                           ((uint32_t)blk3->qh[2] << 16) |
+                           ((uint32_t)blk3->qh[3] << 24);
+            uint8_t qs3 = blk3->qs[lane & 15];
+            int q3 = lane < 16
+                ? (int)((qs3 & 15) | (((qh3 >> lane) & 1u) << 4)) - 16
+                : (int)((qs3 >> 4) | (((qh3 >> lane) & 1u) << 4)) - 16;
+            sum3 += cuda_fp16_to_fp32(blk3->d) * (float)q3 * xv;
+        }
+    }
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum0 += __shfl_down_sync(0xffffffffu, sum0, offset);
+        sum1 += __shfl_down_sync(0xffffffffu, sum1, offset);
+        sum2 += __shfl_down_sync(0xffffffffu, sum2, offset);
+        sum3 += __shfl_down_sync(0xffffffffu, sum3, offset);
+    }
+    if (lane == 0) {
+        size_t base = (size_t)token * rows + (size_t)row0;
+        out[base] = sum0;
+        if (row0 + 1 < rows) out[base + 1] = sum1;
+        if (row0 + 2 < rows) out[base + 2] = sum2;
+        if (row0 + 3 < rows) out[base + 3] = sum3;
+    }
+}
+
 static __global__ void q5_0_matvec_warp_kernel(float *out,
                                                const BnBlockQ5_0 *blocks,
                                                const float *x,
@@ -2475,6 +2563,12 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ8_0 *)w->data, ctx->d_x, rows, cols,
+            n_tokens);
+    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0) {
+        int warps = threads / 32;
+        dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, rows, cols,
             n_tokens);
     } else {
         dim3 grid(rows, n_tokens, 1);
