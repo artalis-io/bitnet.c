@@ -12,6 +12,10 @@
 #include "session.h"
 #include "sh_arena.h"
 #include "sh_log.h"
+#include "platform.h"
+
+#include <stdio.h>
+#include <stdlib.h>
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
@@ -22,6 +26,28 @@
 #endif
 
 #define BN_MAX_VLA_ELEMS 8192
+
+typedef struct {
+    int enabled;
+    double embed_ms;
+    double attn_norm_ms;
+    double qkv_ms;
+    double attn_cpu_ms;
+    double wo_ms;
+    double ffn_norm_ms;
+    double ffn_ms;
+    double residual_ms;
+    double logits_ms;
+} BnPrefillProfile;
+
+static inline double prefill_profile_now(const BnPrefillProfile *p) {
+    return p && p->enabled ? bn_platform_time_ms() : 0.0;
+}
+
+static inline void prefill_profile_add(double *dst, double start) {
+    if (start > 0.0)
+        *dst += bn_platform_time_ms() - start;
+}
 
 static inline void *prefill_qweight_backend_buf(const BnBackendModel *backend,
                                                 const BnQWeight *w) {
@@ -340,6 +366,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     BnRunState *s = &sess->state;
     int dim = c->dim;
     int head_size = c->head_size;
+    BnPrefillProfile prof = {0};
+    prof.enabled = getenv("BN_PREFILL_PROFILE") != NULL;
+    double t_prof = prefill_profile_now(&prof);
 
     if (head_size > BN_MAX_VLA_ELEMS || dim > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("Model dimensions too large for stack VLAs");
@@ -417,6 +446,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     for (int t = 0; t < n_tokens; t++)
         bn_model_embed_token(m, act + (size_t)t * dim, tokens[t]);
+    prefill_profile_add(&prof.embed_ms, t_prof);
 
     float *batch_buf = (float *)sh_arena_alloc(pf_arena, batch_floats * sizeof(float));
     if (!batch_buf) { sh_arena_free(pf_arena); return NULL; }
@@ -471,9 +501,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 rope_cache_dims = layer_rope_dims;
                 rope_cache_theta = layer_rope_theta;
             }
+            t_prof = prefill_profile_now(&prof);
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
                                 lw->norm.attn_norm, dim, c->norm_eps);
+            prefill_profile_add(&prof.attn_norm_ms, t_prof);
 
 #ifdef __AVX2__
             if (pf_xq && !bn_model_gpu(m) &&
@@ -498,8 +530,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 const BnQWeight *qkv_w[3] = {
                     &lw->attn.wq, &lw->attn.wk, &lw->attn.wv
                 };
+                t_prof = prefill_profile_now(&prof);
                 prefill_quant_matmul_multi(m, qkv_out, qkv_w, 3, Xb,
                                            n_tokens, s->x_q);
+                prefill_profile_add(&prof.qkv_ms, t_prof);
             }
 
             int attn_idx = plan.attn_idx;
@@ -509,6 +543,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
             if (!bn_model_gpu(m) && bn_model_tq_state(m) == NULL) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
+                t_prof = prefill_profile_now(&prof);
                 for (int t = 0; t < n_tokens; t++) {
                     int pos = pos0 + t;
                     int cache_pos = pos % c->seq_len;
@@ -641,10 +676,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     memcpy(Q_buf + (size_t)t * wo_cols_attn, s->xb,
                            wo_cols_attn * sizeof(float));
                 }
+                prefill_profile_add(&prof.attn_cpu_ms, t_prof);
             }
 
             {
                 int wo_cols = lw->attn.wo.cols;
+                t_prof = prefill_profile_now(&prof);
                 if (lw->norm.attn_sub_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_rmsnorm(Q_buf + (size_t)t * wo_cols,
@@ -656,11 +693,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_rmsnorm(Xb2 + (size_t)t * dim,
                                         Xb2 + (size_t)t * dim,
                                         lw->norm.attn_post_norm, dim, c->norm_eps);
+                prefill_profile_add(&prof.wo_ms, t_prof);
             }
 
+            t_prof = prefill_profile_now(&prof);
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)
                     act[(size_t)t * dim + d] += Xb2[(size_t)t * dim + d];
+            prefill_profile_add(&prof.residual_ms, t_prof);
 
         } else if (!is_attn) {
             int num_k_heads = c->ssm_group_count;
@@ -751,11 +791,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 return NULL;
             }
         } else if (lw->ffn.ffn_up.data) {
+            t_prof = prefill_profile_now(&prof);
             for (int t = 0; t < n_tokens; t++)
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
                                 lw->norm.ffn_norm, dim, c->norm_eps);
+            prefill_profile_add(&prof.ffn_norm_ms, t_prof);
 
             int used_gpu_batch_ffn = 0;
+            t_prof = prefill_profile_now(&prof);
             if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
                 !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
                   lw->norm.ffn_post_norm) &&
@@ -819,10 +862,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                         lw->norm.ffn_post_norm, dim,
                                         c->norm_eps);
             }
+            prefill_profile_add(&prof.ffn_ms, t_prof);
 
+            t_prof = prefill_profile_now(&prof);
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)
                     act[(size_t)t * dim + d] += Xb[(size_t)t * dim + d];
+            prefill_profile_add(&prof.residual_ms, t_prof);
         }
 
         if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.layer_output_scale) {
@@ -835,6 +881,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     if (all_logits) {
         int vocab_size = c->vocab_size;
+        t_prof = prefill_profile_now(&prof);
         for (int t = 0; t < n_tokens; t++) {
             memcpy(s->x, act + (size_t)t * dim, dim * sizeof(float));
             float *lg = prefill_logits(m, sess);
@@ -842,10 +889,27 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             memcpy(all_logits + (size_t)t * vocab_size, lg,
                    vocab_size * sizeof(float));
         }
+        prefill_profile_add(&prof.logits_ms, t_prof);
+        if (prof.enabled) {
+            fprintf(stderr,
+                    "[bn:prefill:profile] tokens=%d layers=%d embed=%.3f attn_norm=%.3f qkv=%.3f attn_cpu=%.3f wo=%.3f ffn_norm=%.3f ffn=%.3f residual=%.3f logits=%.3f\n",
+                    n_tokens, c->n_layers, prof.embed_ms, prof.attn_norm_ms,
+                    prof.qkv_ms, prof.attn_cpu_ms, prof.wo_ms,
+                    prof.ffn_norm_ms, prof.ffn_ms, prof.residual_ms,
+                    prof.logits_ms);
+        }
         sh_arena_free(pf_arena);
         return s->logits;
     }
 
+    if (prof.enabled) {
+        fprintf(stderr,
+                "[bn:prefill:profile] tokens=%d layers=%d embed=%.3f attn_norm=%.3f qkv=%.3f attn_cpu=%.3f wo=%.3f ffn_norm=%.3f ffn=%.3f residual=%.3f logits=%.3f\n",
+                n_tokens, c->n_layers, prof.embed_ms, prof.attn_norm_ms,
+                prof.qkv_ms, prof.attn_cpu_ms, prof.wo_ms,
+                prof.ffn_norm_ms, prof.ffn_ms, prof.residual_ms,
+                prof.logits_ms);
+    }
     memcpy(s->x, act + (size_t)(n_tokens - 1) * dim, dim * sizeof(float));
     sh_arena_free(pf_arena);
     if (need_last_logits)
