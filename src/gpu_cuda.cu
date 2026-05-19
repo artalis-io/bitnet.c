@@ -44,9 +44,17 @@ typedef struct {
     float *h_out;
     size_t h_out_bytes;
     void *d_runtime;
+    void *d_q8_1;
+    size_t d_q8_1_bytes;
     float *act_bufs[BN_GPU_VALUE_COUNT];
     size_t act_sizes[BN_GPU_VALUE_COUNT];
 } BnCudaCtx;
+
+typedef struct {
+    uint16_t d;
+    uint16_t s;
+    int8_t qs[32];
+} BnCudaBlockQ8_1;
 
 typedef struct {
     int pos;
@@ -340,6 +348,150 @@ static __device__ float cuda_q6k_value(const BnBlockQ6K *blk, int i) {
         scale_idx = l / 16 + 6;
     }
     return d * (float)sc[scale_idx] * (float)q;
+}
+
+static __device__ __forceinline__ int cuda_dp4a_i32(int a, int b, int c) {
+    return __dp4a(a, b, c);
+}
+
+static __global__ void quantize_q8_1_kernel(BnCudaBlockQ8_1 *out,
+                                            const float *x, int cols) {
+    int block = blockIdx.x;
+    int lane = threadIdx.x;
+    int c = block * 32 + lane;
+    float v = c < cols ? x[c] : 0.0f;
+    float amax = fabsf(v);
+    float sum = v;
+
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        amax = fmaxf(amax, __shfl_down_sync(0xffffffffu, amax, offset));
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    }
+    amax = __shfl_sync(0xffffffffu, amax, 0);
+    float d = amax / 127.0f;
+    int q = d == 0.0f ? 0 : (int)rintf(v / d);
+    q = q < -128 ? -128 : (q > 127 ? 127 : q);
+
+    out[block].qs[lane] = (int8_t)q;
+    if (lane == 0) {
+        out[block].d = cuda_fp32_to_fp16_bits(d);
+        out[block].s = cuda_fp32_to_fp16_bits(sum);
+    }
+}
+
+static __device__ __forceinline__ float cuda_vec_dot_q4k_q8_1(
+    const BnBlockQ4K *blk, const BnCudaBlockQ8_1 *xq, int iqs) {
+    int v[2];
+    int u[4];
+    float d8[2];
+
+    const int bq8_offset = 2 * ((iqs / 2) / 4);
+    const int q4_offset = 16 * bq8_offset + 4 * ((iqs / 2) % 4);
+    const int *q4 = (const int *)(blk->qs + q4_offset);
+    v[0] = q4[0];
+    v[1] = q4[4];
+
+    const uint16_t *scales = (const uint16_t *)blk->scales;
+    uint16_t aux[2];
+    const int j = bq8_offset / 2;
+    if (j < 2) {
+        aux[0] = scales[j + 0] & 0x3f3f;
+        aux[1] = scales[j + 2] & 0x3f3f;
+    } else {
+        aux[0] = ((scales[j + 2] >> 0) & 0x0f0f) |
+                 ((scales[j - 2] & 0xc0c0) >> 2);
+        aux[1] = ((scales[j + 2] >> 4) & 0x0f0f) |
+                 ((scales[j - 0] & 0xc0c0) >> 2);
+    }
+    const uint8_t *sc = (const uint8_t *)aux;
+    const uint8_t *mn = sc + 2;
+
+#pragma unroll
+    for (int i = 0; i < 2; i++) {
+        const BnCudaBlockQ8_1 *xb = xq + bq8_offset + i;
+        d8[i] = cuda_fp16_to_fp32(xb->d);
+        const int *q8 = (const int *)xb->qs + ((iqs / 2) % 4);
+        u[2 * i + 0] = q8[0];
+        u[2 * i + 1] = q8[4];
+    }
+
+    float sum_d = 0.0f;
+    float sum_m = 0.0f;
+#pragma unroll
+    for (int i = 0; i < 2; i++) {
+        const int v0i = (v[0] >> (4 * i)) & 0x0f0f0f0f;
+        const int v1i = (v[1] >> (4 * i)) & 0x0f0f0f0f;
+        const int dot = cuda_dp4a_i32(v1i, u[2 * i + 1],
+                                      cuda_dp4a_i32(v0i, u[2 * i + 0], 0));
+        const int usum = cuda_dp4a_i32(0x01010101, u[2 * i + 1],
+                                       cuda_dp4a_i32(0x01010101,
+                                                     u[2 * i + 0], 0));
+        sum_d += d8[i] * (float)(dot * sc[i]);
+        sum_m += d8[i] * (float)(usum * mn[i]);
+    }
+
+    return cuda_fp16_to_fp32(blk->d) * sum_d -
+           cuda_fp16_to_fp32(blk->dmin) * sum_m;
+}
+
+static __global__ void q4k_dot_matvec_kernel(float *out,
+                                             const BnBlockQ4K *blocks,
+                                             const BnCudaBlockQ8_1 *xq,
+                                             const float *bias,
+                                             int rows, int cols,
+                                             size_t out_offset) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row = blockIdx.x * warps_per_block + warp;
+    if (row >= rows) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    float sum = 0.0f;
+    const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
+    for (int b = kbx; b < n_bpr; b += 2)
+        sum += cuda_vec_dot_q4k_q8_1(&row_blocks[b], xq + (size_t)b * 8,
+                                     iqs);
+
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0) {
+        if (bias) sum += bias[row];
+        out[out_offset + row] = sum;
+    }
+}
+
+static __global__ void q4k_dot_fused_gateup_silu_kernel(
+    float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
+    int gate_rows, int up_rows, int cols) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row = blockIdx.x * warps_per_block + warp;
+    if (row >= gate_rows || row >= up_rows) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    float gate = 0.0f;
+    float up = 0.0f;
+    const BnBlockQ4K *gate_blocks = blocks + (size_t)row * n_bpr;
+    const BnBlockQ4K *up_blocks =
+        blocks + (size_t)(gate_rows + row) * n_bpr;
+    for (int b = kbx; b < n_bpr; b += 2) {
+        const BnCudaBlockQ8_1 *xqb = xq + (size_t)b * 8;
+        gate += cuda_vec_dot_q4k_q8_1(&gate_blocks[b], xqb, iqs);
+        up += cuda_vec_dot_q4k_q8_1(&up_blocks[b], xqb, iqs);
+    }
+
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        gate += __shfl_down_sync(0xffffffffu, gate, offset);
+        up += __shfl_down_sync(0xffffffffu, up, offset);
+    }
+    if (lane == 0)
+        out[row] = (gate / (1.0f + __expf(-gate))) * up;
 }
 
 static __device__ float cuda_dot_row(const void *wdata, const float *x,
@@ -2276,6 +2428,24 @@ static int cuda_ensure_ops(BnCudaCtx *ctx, size_t ops_bytes) {
     return 0;
 }
 
+static int cuda_ensure_q8_1(BnCudaCtx *ctx, int cols) {
+    if (!ctx || cols <= 0) return -1;
+    size_t n_blocks = ((size_t)cols + 31u) / 32u;
+    size_t bytes = n_blocks * sizeof(BnCudaBlockQ8_1);
+    if (bytes <= ctx->d_q8_1_bytes) return 0;
+    if (ctx->d_q8_1) cudaFree(ctx->d_q8_1);
+    ctx->d_q8_1 = NULL;
+    ctx->d_q8_1_bytes = 0;
+    cudaError_t err = cudaMalloc(&ctx->d_q8_1, bytes);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] q8_1 scratch alloc failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    ctx->d_q8_1_bytes = bytes;
+    return 0;
+}
+
 static int cuda_ensure_host_out(BnCudaCtx *ctx, size_t bytes) {
     if (!ctx) return -1;
     if (bytes <= ctx->h_out_bytes) return 0;
@@ -2529,6 +2699,16 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         int blocks = (rows + warps - 1) / warps;
         q6k_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ6K *)w->data, ctx->d_x, NULL,
+            rows, cols, 0);
+    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
+               !getenv("BN_CUDA_DISABLE_Q4K_DOT")) {
+        if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_kernel<<<(cols + 31) / 32, 32>>>(xq, ctx->d_x, cols);
+        int warps = threads / 32;
+        int blocks = (rows + warps - 1) / warps;
+        q4k_dot_matvec_kernel<<<blocks, threads>>>(
+            ctx->d_out, (const BnBlockQ4K *)w->data, xq, NULL,
             rows, cols, 0);
     } else if (type == BN_GGUF_TENSOR_Q8_0 && rows >= 16384 &&
                (cols & 31) == 0) {
@@ -3207,6 +3387,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int fuse_rope_flash_enabled_flag = 1;
     static int enable_q5_matvec4_flag = 0;
     static int enable_q5_warp_flag = 0;
+    static int enable_q4k_dot_flag = 1;
     static int enable_q6k_warp_flag = 0;
     static int disable_q8_warp_flag = 0;
     static int disable_qkv_mixed_fuse_flag = 0;
@@ -3224,6 +3405,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_q5_matvec4_flag =
             getenv("BN_CUDA_ENABLE_Q5_MATVEC4") != NULL;
         enable_q5_warp_flag = getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
+        enable_q4k_dot_flag = getenv("BN_CUDA_DISABLE_Q4K_DOT") == NULL;
         enable_q6k_warp_flag = getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
         disable_q8_warp_flag = getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
         disable_qkv_mixed_fuse_flag =
@@ -3246,6 +3428,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int fuse_rope_flash_enabled = fuse_rope_flash_enabled_flag;
     const int enable_q5_matvec4 = enable_q5_matvec4_flag;
     const int enable_q5_warp = enable_q5_warp_flag;
+    const int enable_q4k_dot = enable_q4k_dot_flag;
     const int enable_q6k_warp = enable_q6k_warp_flag;
     const int disable_q8_warp = disable_q8_warp_flag;
     const int disable_qkv_mixed_fuse = disable_qkv_mixed_fuse_flag;
@@ -3434,6 +3617,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH(ctx, q6k_matvec_warp_kernel, blocks,
                     q6_threads, 0,
                     out, (const BnBlockQ6K *)w->data, in, bias,
+                    op->rows, op->cols, out_offset);
+            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+                       (op->cols % BN_QK_K) == 0 && enable_q4k_dot) {
+                if (cuda_ensure_q8_1(ctx, op->cols) != 0) return -1;
+                BnCudaBlockQ8_1 *xq =
+                    (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                    (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
+                int q4_threads = 256;
+                int warps = q4_threads / 32;
+                int blocks = (op->rows + warps - 1) / warps;
+                BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_kernel, blocks,
+                    q4_threads, 0,
+                    out, (const BnBlockQ4K *)w->data, xq, bias,
                     op->rows, op->cols, out_offset);
             } else if (!disable_q8_warp && op->type == BN_GGUF_TENSOR_Q8_0 &&
                        op->rows >= 16384 && (op->cols & 31) == 0 && !bias) {
@@ -3661,6 +3858,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH_STATIC(ctx, q8_0_fused_gateup_silu_warp_kernel,
                     blocks, q8_gateup_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, in, gate_rows,
+                    up_rows, cols);
+            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+                       (cols % BN_QK_K) == 0 && enable_q4k_dot) {
+                if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
+                BnCudaBlockQ8_1 *xq =
+                    (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                    (cols + 31) / 32, 32, 0, xq, in, cols);
+                int q4_gateup_threads = 256;
+                int warps = q4_gateup_threads / 32;
+                int blocks = (gate_rows + warps - 1) / warps;
+                BN_CUDA_LAUNCH(ctx, q4k_dot_fused_gateup_silu_kernel,
+                    blocks, q4_gateup_threads, 0,
+                    out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                     up_rows, cols);
             } else {
                 BN_CUDA_LAUNCH_STATIC(ctx, fused_gateup_silu_kernel, gate_rows,
@@ -4286,6 +4497,7 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
         if (ctx->d_out) cudaFree(ctx->d_out);
         if (ctx->d_ops) cudaFree(ctx->d_ops);
         if (ctx->d_runtime) cudaFree(ctx->d_runtime);
+        if (ctx->d_q8_1) cudaFree(ctx->d_q8_1);
         if (ctx->exec_graph) cudaGraphExecDestroy(ctx->exec_graph);
         if (ctx->exec_graph_def) cudaGraphDestroy(ctx->exec_graph_def);
         free(ctx->exec_nodes);
