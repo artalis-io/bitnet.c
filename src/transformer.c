@@ -126,6 +126,9 @@ static int should_disable_cuda_matvec_fallback(const BnModel *m,
         return 0;
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 0;
+    if (!getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") &&
+        !(m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3))
+        return 0;
     if (m->config.n_experts > 0 || m->config.full_attn_interval > 0 ||
         m->config.dim > 2560)
         return 0;

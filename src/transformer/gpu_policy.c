@@ -32,7 +32,46 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
     return bn_qweight_data_size(logits->cpu_weight) > max_storage_binding;
 }
 
+static int small_dense_cuda_qweight_supported(int type) {
+    return type == BN_GGUF_TENSOR_F32 || type == BN_GGUF_TENSOR_F16 ||
+           type == BN_GGUF_TENSOR_Q8_0 || type == BN_GGUF_TENSOR_Q4_0 ||
+           type == BN_GGUF_TENSOR_Q5_0 || type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_K || type == BN_GGUF_TENSOR_Q6_K ||
+           type == BN_GGUF_TENSOR_Q8_K;
+}
+
 static int small_dense_cuda_native_by_default(
+    const BnConfig *c,
+    const BnWeights *w) {
+    if (!c || !w || c->n_experts > 0 || c->full_attn_interval > 0 ||
+        c->dim > 2560)
+        return 0;
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) &&
+        !getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
+        return 0;
+    if (w->output_weight.data) {
+        if (!small_dense_cuda_qweight_supported(w->output_weight.type))
+            return 0;
+    } else if (!small_dense_cuda_qweight_supported(w->emb_type)) {
+        return 0;
+    }
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        const BnQWeight *weights[] = {
+            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
+            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
+        };
+        int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
+        for (int i = 0; i < n_weights; i++) {
+            if (weights[i]->data &&
+                !small_dense_cuda_qweight_supported(weights[i]->type))
+                return 0;
+        }
+    }
+    return 1;
+}
+
+static int small_dense_cuda_q8_native_by_default(
     const BnConfig *c,
     const BnWeights *w) {
     if (!c || !w || c->n_experts > 0 || c->full_attn_interval > 0 ||
@@ -120,11 +159,15 @@ int bn_transformer_gpu_validate_forward(
          c->full_attn_interval > 0 || c->n_experts > 0))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
 
-    if (!getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE") &&
-        gpu->kind == BN_GPU_BACKEND_CUDA && c->dim <= 2560 &&
-        c->n_experts <= 0 && c->full_attn_interval <= 0 &&
-        !small_dense_cuda_native_by_default(c, w))
-        GPU_POLICY_REJECT("small dense cuda graph disabled");
+    if (gpu->kind == BN_GPU_BACKEND_CUDA && c->dim <= 2560 &&
+        c->n_experts <= 0 && c->full_attn_interval <= 0) {
+        if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")) {
+            if (!small_dense_cuda_q8_native_by_default(c, w))
+                GPU_POLICY_REJECT("small dense cuda graph disabled");
+        } else if (!small_dense_cuda_native_by_default(c, w)) {
+            GPU_POLICY_REJECT("small dense cuda graph unsupported");
+        }
+    }
 
     if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)
         GPU_POLICY_REJECT("dim exceeds VLA limit");
