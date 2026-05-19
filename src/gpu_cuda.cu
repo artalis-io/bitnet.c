@@ -801,7 +801,8 @@ static __global__ void q8_0_matvec4_warp_kernel(float *out,
 static __global__ void q8_0_matmul4_warp_kernel(float *out,
                                                 const BnBlockQ8_0 *blocks,
                                                 const float *x, int rows,
-                                                int cols, int n_tokens) {
+                                                int cols, int n_tokens,
+                                                size_t out_offset) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -844,7 +845,7 @@ static __global__ void q8_0_matmul4_warp_kernel(float *out,
         sum3 += __shfl_down_sync(0xffffffffu, sum3, offset);
     }
     if (lane == 0) {
-        size_t base = (size_t)token * rows + (size_t)row0;
+        size_t base = out_offset + (size_t)token * rows + (size_t)row0;
         out[base] = sum0;
         if (row0 + 1 < rows) out[base + 1] = sum1;
         if (row0 + 2 < rows) out[base + 2] = sum2;
@@ -855,7 +856,8 @@ static __global__ void q8_0_matmul4_warp_kernel(float *out,
 static __global__ void q5_0_matmul4_warp_kernel(float *out,
                                                 const BnBlockQ5_0 *blocks,
                                                 const float *x, int rows,
-                                                int cols, int n_tokens) {
+                                                int cols, int n_tokens,
+                                                size_t out_offset) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -932,7 +934,7 @@ static __global__ void q5_0_matmul4_warp_kernel(float *out,
         sum3 += __shfl_down_sync(0xffffffffu, sum3, offset);
     }
     if (lane == 0) {
-        size_t base = (size_t)token * rows + (size_t)row0;
+        size_t base = out_offset + (size_t)token * rows + (size_t)row0;
         out[base] = sum0;
         if (row0 + 1 < rows) out[base + 1] = sum1;
         if (row0 + 2 < rows) out[base + 2] = sum2;
@@ -2164,6 +2166,27 @@ static __global__ void ffn_activation_kernel(float *out,
     }
 }
 
+static __global__ void ffn_activation_batch_kernel(float *out,
+                                                   const float *gate_up,
+                                                   int hidden_dim,
+                                                   int n_tokens,
+                                                   int act_type) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = hidden_dim * n_tokens;
+    if (i >= total) return;
+    int token = i / hidden_dim;
+    int h = i - token * hidden_dim;
+    size_t base = (size_t)token * hidden_dim + h;
+    float gate = gate_up[base];
+    float up = gate_up[(size_t)n_tokens * hidden_dim + base];
+    if (act_type == 0) {
+        float silu = gate / (1.0f + __expf(-gate));
+        out[base] = silu * up;
+    } else {
+        out[base] = gate * up;
+    }
+}
+
 static int cuda_type_supported(int type) {
     static int init = 0;
     static int disable_matvec = 0;
@@ -2563,13 +2586,13 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ8_0 *)w->data, ctx->d_x, rows, cols,
-            n_tokens);
+            n_tokens, 0);
     } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0) {
         int warps = threads / 32;
         dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, rows, cols,
-            n_tokens);
+            n_tokens, 0);
     } else {
         dim3 grid(rows, n_tokens, 1);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
@@ -2778,6 +2801,126 @@ static int cuda_dense_ffn(void *vctx, float *out,
     err = cudaMemcpy(out, ctx->d_out, out_bytes, cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
         fprintf(stderr, "[bn:gpu:cuda] dense ffn output readback failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    return 0;
+}
+
+static int cuda_dense_ffn_batch(void *vctx, float *out,
+                                void *gate_buf, void *up_buf,
+                                void *down_buf, const float *X,
+                                int n_tokens, int dim, int hidden_dim,
+                                int gate_type, int up_type, int down_type,
+                                int act_type) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    BnCudaBuffer *gate = (BnCudaBuffer *)gate_buf;
+    BnCudaBuffer *up = (BnCudaBuffer *)up_buf;
+    BnCudaBuffer *down = (BnCudaBuffer *)down_buf;
+    if (!getenv("BN_CUDA_ENABLE_DENSE_FFN_BATCH"))
+        return -1;
+    if (!ctx || !out || !gate || !up || !down || !X ||
+        !gate->data || !up->data || !down->data ||
+        n_tokens <= 1 || dim <= 0 || hidden_dim <= 0 || act_type != 0)
+        return -1;
+    if (gate->rows != hidden_dim || up->rows != hidden_dim ||
+        gate->cols != dim || up->cols != dim ||
+        down->rows != dim || down->cols != hidden_dim)
+        return -1;
+    if (!cuda_type_supported(gate_type) || !cuda_type_supported(up_type) ||
+        !cuda_type_supported(down_type))
+        return -1;
+
+    size_t input_bytes = (size_t)n_tokens * dim * sizeof(float);
+    size_t hidden_bytes = (size_t)n_tokens * hidden_dim * sizeof(float);
+    size_t gateup_bytes = hidden_bytes * 2;
+    size_t out_bytes = (size_t)n_tokens * dim * sizeof(float);
+    size_t scratch_x = input_bytes > hidden_bytes ? input_bytes : hidden_bytes;
+    size_t scratch_out = gateup_bytes > out_bytes ? gateup_bytes : out_bytes;
+    if (cuda_ensure_scratch(ctx, scratch_x, scratch_out) != 0) return -1;
+
+    cudaError_t err = cudaMemcpy(ctx->d_x, X, input_bytes,
+                                 cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] dense ffn batch input upload failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    int threads = 256;
+    int warps = threads / 32;
+    if (gate_type == BN_GGUF_TENSOR_Q5_0 && up_type == BN_GGUF_TENSOR_Q5_0 &&
+        (dim & 31) == 0) {
+        dim3 grid(((hidden_dim + 3) / 4 + warps - 1) / warps,
+                  n_tokens, 1);
+        q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ5_0 *)gate->data, ctx->d_x,
+            hidden_dim, dim, n_tokens, 0);
+        q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ5_0 *)up->data, ctx->d_x,
+            hidden_dim, dim, n_tokens, (size_t)n_tokens * hidden_dim);
+    } else if (gate_type == BN_GGUF_TENSOR_Q8_0 &&
+               up_type == BN_GGUF_TENSOR_Q8_0 && (dim & 31) == 0) {
+        dim3 grid(((hidden_dim + 3) / 4 + warps - 1) / warps,
+                  n_tokens, 1);
+        q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ8_0 *)gate->data, ctx->d_x,
+            hidden_dim, dim, n_tokens, 0);
+        q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ8_0 *)up->data, ctx->d_x,
+            hidden_dim, dim, n_tokens, (size_t)n_tokens * hidden_dim);
+    } else {
+        dim3 grid(hidden_dim, n_tokens, 1);
+        matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
+            ctx->d_out, gate->data, ctx->d_x, NULL, hidden_dim, dim,
+            gate_type, 0);
+        matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
+            ctx->d_out, up->data, ctx->d_x, NULL, hidden_dim, dim,
+            up_type, (size_t)n_tokens * hidden_dim);
+    }
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] dense ffn batch gate/up failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    int act_total = n_tokens * hidden_dim;
+    int act_blocks = (act_total + threads - 1) / threads;
+    ffn_activation_batch_kernel<<<act_blocks, threads>>>(
+        ctx->d_x, ctx->d_out, hidden_dim, n_tokens, act_type);
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] dense ffn batch activation failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    if (down_type == BN_GGUF_TENSOR_Q8_0 && (hidden_dim & 31) == 0) {
+        dim3 grid(((dim + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ8_0 *)down->data, ctx->d_x,
+            dim, hidden_dim, n_tokens, 0);
+    } else if (down_type == BN_GGUF_TENSOR_Q5_0 && (hidden_dim & 31) == 0) {
+        dim3 grid(((dim + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ5_0 *)down->data, ctx->d_x,
+            dim, hidden_dim, n_tokens, 0);
+    } else {
+        dim3 grid(dim, n_tokens, 1);
+        matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
+            ctx->d_out, down->data, ctx->d_x, NULL, dim, hidden_dim,
+            down_type, 0);
+    }
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] dense ffn batch down failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    err = cudaMemcpy(out, ctx->d_out, out_bytes, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] dense ffn batch output readback failed: %s\n",
                 cudaGetErrorString(err));
         return -1;
     }
@@ -4029,6 +4172,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->matmul = cuda_matmul;
     gpu->matvec_batch = cuda_matvec_batch;
     gpu->dense_ffn = cuda_dense_ffn;
+    gpu->dense_ffn_batch = cuda_dense_ffn_batch;
     gpu->init_activations = cuda_init_activations;
     gpu->free_activations = cuda_free_activations;
     gpu->write_activation = cuda_write_activation;

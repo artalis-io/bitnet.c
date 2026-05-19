@@ -72,6 +72,33 @@ static void prefill_quant_matmul_multi(const BnModel *m,
         prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, x_q_buf);
 }
 
+static int prefill_dense_ffn_gpu_batch(const BnModel *m,
+                                       float *out,
+                                       const BnLayerWeights *lw,
+                                       const float *X,
+                                       int n_tokens,
+                                       int dim,
+                                       int hidden_dim,
+                                       int act_type) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    const BnBackendModel *backend = bn_model_backend(m);
+    if (!gpu || !gpu->dense_ffn_batch || !backend ||
+        !lw->ffn.ffn_gate.data || !lw->ffn.ffn_up.data ||
+        !lw->ffn.ffn_down.data)
+        return -1;
+
+    void *gate_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_gate);
+    void *up_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
+    void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
+    if (!gate_buf || !up_buf || !down_buf)
+        return -1;
+
+    return gpu->dense_ffn_batch(
+        gpu->ctx, out, gate_buf, up_buf, down_buf, X, n_tokens,
+        dim, hidden_dim, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
+        lw->ffn.ffn_down.type, act_type);
+}
+
 #ifdef __AVX2__
 static int prefill_quant_can_preq8k_pair(int a, int b) {
     return bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
@@ -711,7 +738,15 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
                                 lw->norm.ffn_norm, dim, c->norm_eps);
 
-            if (c->has_ffn_gate) {
+            int used_gpu_batch_ffn = 0;
+            if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
+                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                  lw->norm.ffn_post_norm) &&
+                prefill_dense_ffn_gpu_batch(m, Xb, lw, Xb, n_tokens,
+                                            dim, hidden_dim,
+                                            c->act_type) == 0) {
+                used_gpu_batch_ffn = 1;
+            } else if (c->has_ffn_gate) {
 #ifdef __AVX2__
                 if (pf_xq && !bn_model_gpu(m) &&
                     prefill_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
@@ -749,18 +784,24 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
             }
 
-            if (lw->norm.ffn_sub_norm)
-                for (int t = 0; t < n_tokens; t++)
-                    prefill_rmsnorm(Hb + (size_t)t * hidden_dim,
-                                    Hb + (size_t)t * hidden_dim,
-                                    lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
+            if (!used_gpu_batch_ffn) {
+                if (lw->norm.ffn_sub_norm)
+                    for (int t = 0; t < n_tokens; t++)
+                        prefill_rmsnorm(Hb + (size_t)t * hidden_dim,
+                                        Hb + (size_t)t * hidden_dim,
+                                        lw->norm.ffn_sub_norm, hidden_dim,
+                                        c->norm_eps);
 
-            prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb, n_tokens, s->x_q);
-            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.ffn_post_norm)
-                for (int t = 0; t < n_tokens; t++)
-                    prefill_rmsnorm(Xb + (size_t)t * dim,
-                                    Xb + (size_t)t * dim,
-                                    lw->norm.ffn_post_norm, dim, c->norm_eps);
+                prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb,
+                                         n_tokens, s->x_q);
+                if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                    lw->norm.ffn_post_norm)
+                    for (int t = 0; t < n_tokens; t++)
+                        prefill_rmsnorm(Xb + (size_t)t * dim,
+                                        Xb + (size_t)t * dim,
+                                        lw->norm.ffn_post_norm, dim,
+                                        c->norm_eps);
+            }
 
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)

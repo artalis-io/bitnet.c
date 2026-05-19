@@ -90,6 +90,16 @@ struct BnGPUBackend {
                      int gate_type, int up_type, int down_type,
                      int act_type);
 
+    // Batched dense FFN fast path for prompt processing:
+    // out[n_tokens, dim] = down(activation(gate(X)) * up(X)).
+    // Optional; backends may keep all gate/up/down intermediates resident.
+    int (*dense_ffn_batch)(void *ctx, float *out,
+                           void *gate_buf, void *up_buf, void *down_buf,
+                           const float *X, int n_tokens,
+                           int dim, int hidden_dim,
+                           int gate_type, int up_type, int down_type,
+                           int act_type);
+
     // GPU-resident forward pass: execute a backend-private lowered command list
     // as a single submission. All intermediate buffers stay on GPU. Only
     // readback_buf is copied to out_host.
