@@ -4036,7 +4036,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->execute = cuda_execute;
     gpu->ctx = ctx;
     gpu->kind = BN_GPU_BACKEND_CUDA;
-    gpu->max_storage_binding_size = 0;
+    gpu->max_storage_binding_size = (size_t)-1;
     gpu->caps = BN_GPU_CAP_FLASH_ATTN |
                 BN_GPU_CAP_Q4_MATVEC_SPLIT |
                 BN_GPU_CAP_Q5_MATVEC_SPLIT |

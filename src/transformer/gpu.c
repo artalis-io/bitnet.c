@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS 8192
+
 static float gpu_exact_q6k_row_dot(const BnQWeight *W, int row,
                                    const float *x) {
     int cols = W->cols;
@@ -91,6 +93,75 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
     for (int i = 0; i < n_top; i++)
         logits[ids[i]] = gpu_exact_q6k_row_dot(W, ids[i], x);
     return n_top;
+}
+
+static float gpu_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
+                                      const int8_t *x_q,
+                                      const float *x_scales) {
+    int n_blocks_per_row = W->cols / 32;
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
+    float row_sum = 0.0f;
+
+    for (int b = 0; b < n_blocks_per_row; b++) {
+        const BnBlockQ8_0 *blk =
+            &blocks[(size_t)row * n_blocks_per_row + b];
+        const int8_t *xb = x_q + b * 32;
+        int32_t sumi = 0;
+        for (int i = 0; i < 32; i++)
+            sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
+        row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
+    }
+    return row_sum;
+}
+
+static int gpu_refine_q8_logits_top(float *logits, int n_logits,
+                                    const BnQWeight *W, const float *x,
+                                    int8_t *x_q, int top_n) {
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+    if (!logits || !W || !W->data || !x || !x_q ||
+        W->type != BN_GGUF_TENSOR_Q8_0)
+        return 0;
+    if (top_n <= 0) return 0;
+    if (top_n > 128) top_n = 128;
+    if (top_n > n_logits) top_n = n_logits;
+    int n_blocks = W->cols / 32;
+    if (n_blocks <= 0 || n_blocks > BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS)
+        return 0;
+
+    int ids[128];
+    float vals[128];
+    int n_top = 0;
+    for (int i = 0; i < n_logits; i++) {
+        float v = logits[i];
+        int j = n_top;
+        if (j == top_n && v <= vals[j - 1]) continue;
+        if (j < top_n) {
+            ids[j] = i;
+            vals[j] = v;
+            n_top++;
+        } else {
+            j--;
+        }
+        while (j > 0 && v > vals[j - 1]) {
+            ids[j] = ids[j - 1];
+            vals[j] = vals[j - 1];
+            j--;
+        }
+        ids[j] = i;
+        vals[j] = v;
+    }
+
+    float x_scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
+    for (int i = 0; i < n_top; i++)
+        logits[ids[i]] = gpu_exact_q8_row_dot_q8x(
+            W, ids[i], x_q, x_scales);
+    return n_top;
+#else
+    (void)logits; (void)n_logits; (void)W; (void)x; (void)x_q; (void)top_n;
+    return 0;
+#endif
 }
 
 static int gpu_patch_cached_decode_ops(BnGPUOp *ops, int n_ops,
@@ -412,7 +483,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
     int cacheable_decode =
-        !need_logits &&
+        (!need_logits ||
+         (getenv("BN_CUDA_ENABLE_LOGITS_CACHE") &&
+          !bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res))) &&
         gpu->kind == BN_GPU_BACKEND_CUDA && !policy.has_moe &&
         !policy.has_ssm &&
         cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
@@ -753,6 +826,20 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             gpu_refine_q6k_logits_top(s->logits, c->vocab_size,
                                       logit_res->cpu_weight, s->xb,
                                       refine_top);
+        }
+    }
+    if (!getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") &&
+        logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
+        logit_res->cpu_weight) {
+        int refine_top = 8;
+        const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
+        if (env) refine_top = atoi(env);
+        if (refine_top > 0 &&
+            bn_transformer_gpu_read_xb(gpu, s->xb,
+                                       (size_t)dim * sizeof(float)) == 0) {
+            gpu_refine_q8_logits_top(s->logits, c->vocab_size,
+                                     logit_res->cpu_weight, s->xb,
+                                     s->x_q, refine_top);
         }
     }
     if (getenv("BN_GPU_COMPARE_LOGITS")) {
