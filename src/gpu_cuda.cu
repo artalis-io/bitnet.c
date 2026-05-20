@@ -4687,13 +4687,17 @@ static int cuda_prefill_attention(void *vctx, float *out,
                 cudaGetErrorString(err));
         return -1;
     }
-    err = cudaMemcpy(out, ctx->d_out, q_values * sizeof(float),
+    size_t out_bytes = q_values * sizeof(float);
+    if (cuda_ensure_host_out(ctx, out_bytes) != 0)
+        return -1;
+    err = cudaMemcpy(ctx->h_out, ctx->d_out, out_bytes,
                      cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
         fprintf(stderr, "[bn:gpu:cuda] prefill attention readback failed: %s\n",
                 cudaGetErrorString(err));
         return -1;
     }
+    memcpy(out, ctx->h_out, out_bytes);
     return 0;
 }
 
