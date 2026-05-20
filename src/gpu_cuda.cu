@@ -2534,6 +2534,64 @@ static __global__ void ssm_delta_kernel(
     }
 }
 
+static __global__ void ssm_delta_128_warp_kernel(
+    float *state, float *out, const float *q, const float *k,
+    const float *v, const float *alpha, const float *beta,
+    int num_k_heads, float q_scale, size_t state_off,
+    int q_off, int k_off, int v_off) {
+    const int hv_idx = blockIdx.x;
+    const int col = blockIdx.y * blockDim.y + threadIdx.y;
+    const int lane = threadIdx.x;
+    if (col >= 128) return;
+
+    const int hk_idx = hv_idx % num_k_heads;
+    const size_t state_base = state_off + (size_t)hv_idx * 128u * 128u;
+    const float decay = alpha[hv_idx];
+    const float b = beta[hv_idx];
+    const float *qh = q + (size_t)q_off + (size_t)hk_idx * 128u;
+    const float *kh = k + (size_t)k_off + (size_t)hk_idx * 128u;
+    const float *vh = v + (size_t)v_off + (size_t)hv_idx * 128u;
+
+    float s_shard[4];
+    float k_reg[4];
+    float q_reg[4];
+#pragma unroll
+    for (int r = 0; r < 4; r++) {
+        int row = r * 32 + lane;
+        size_t idx = state_base + (size_t)row * 128u + (size_t)col;
+        s_shard[r] = state[idx] * decay;
+        k_reg[r] = kh[row];
+        q_reg[r] = qh[row];
+    }
+
+    float kv_partial = 0.0f;
+#pragma unroll
+    for (int r = 0; r < 4; r++)
+        kv_partial += s_shard[r] * k_reg[r];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        kv_partial += __shfl_down_sync(0xffffffffu, kv_partial, offset);
+    float kv_col = __shfl_sync(0xffffffffu, kv_partial, 0);
+    float delta = (vh[col] - kv_col) * b;
+
+    float attn_partial = 0.0f;
+#pragma unroll
+    for (int r = 0; r < 4; r++) {
+        s_shard[r] += k_reg[r] * delta;
+        attn_partial += s_shard[r] * q_reg[r];
+    }
+    for (int offset = 16; offset > 0; offset >>= 1)
+        attn_partial += __shfl_down_sync(0xffffffffu, attn_partial, offset);
+    if (lane == 0)
+        out[(size_t)hv_idx * 128u + (size_t)col] =
+            attn_partial * q_scale;
+
+#pragma unroll
+    for (int r = 0; r < 4; r++) {
+        int row = r * 32 + lane;
+        state[state_base + (size_t)row * 128u + (size_t)col] = s_shard[r];
+    }
+}
+
 static __global__ void ssm_gate_kernel(
     float *out, const float *z, const float *norm_w, int head_v_dim,
     float eps) {
@@ -5442,10 +5500,17 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 head_k_dim <= 0 || head_v_dim <= 0 || num_k_heads <= 0 ||
                 num_v_heads <= 0)
                 return -1;
-            BN_CUDA_LAUNCH(ctx, ssm_delta_kernel, num_v_heads, threads,
-                (size_t)head_v_dim * sizeof(float), state, out, q, k, v,
-                alpha, beta, head_k_dim, head_v_dim, num_k_heads, q_scale,
-                state_off, q_off, k_off, v_off);
+            if (head_k_dim == 128 && head_v_dim == 128) {
+                BN_CUDA_LAUNCH(ctx, ssm_delta_128_warp_kernel,
+                    dim3(num_v_heads, 32, 1), dim3(32, 4, 1), 0,
+                    state, out, q, k, v, alpha, beta, num_k_heads, q_scale,
+                    state_off, q_off, k_off, v_off);
+            } else {
+                BN_CUDA_LAUNCH(ctx, ssm_delta_kernel, num_v_heads, threads,
+                    (size_t)head_v_dim * sizeof(float), state, out, q, k, v,
+                    alpha, beta, head_k_dim, head_v_dim, num_k_heads,
+                    q_scale, state_off, q_off, k_off, v_off);
+            }
             break;
         }
         case BN_GPU_CODE_SSM_GATE: {
