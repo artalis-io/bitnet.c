@@ -42,6 +42,7 @@ typedef struct {
 
     int q_gated;
     int wq_rows;
+    int q_row_stride;
     int wo_cols;
 } BnBatchedAttnCtx;
 

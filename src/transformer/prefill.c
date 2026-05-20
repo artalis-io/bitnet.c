@@ -567,6 +567,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 lw->norm.attn_norm, dim, c->norm_eps);
             prefill_profile_add(&prof.attn_norm_ms, t_prof);
 
+            int q_read_stride = lw->attn.wq.rows;
 #ifdef __AVX2__
             if (pf_xq && !bn_model_gpu(m) &&
                 prefill_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type)) {
@@ -590,6 +591,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 if (prefill_qk_stacked_gpu(m, lw, Q_buf, K_new, Xb,
                                            n_tokens, q_buf_stride, dim,
                                            l) == 0) {
+                    q_read_stride = q_buf_stride;
                     const BnBackendModel *backend = bn_model_backend(m);
                     void *wv_buf = backend ? bn_backend_model_handle(
                         backend, l, BN_BACKEND_HANDLE_WV_PREFILL) : NULL;
@@ -671,6 +673,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .norm_eps = c->norm_eps,
                     .q_gated = q_gated,
                     .wq_rows = lw->attn.wq.rows,
+                    .q_row_stride = q_read_stride,
                     .wo_cols = wo_cols_attn,
                 };
                 t_prof = prefill_profile_now(&prof);
@@ -681,7 +684,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 for (int t = 0; t < n_tokens; t++) {
                     int pos = pos0 + t;
                     int cache_pos = pos % c->seq_len;
-                    float *q_t = Q_buf + (size_t)t * lw->attn.wq.rows;
+                    float *q_t = Q_buf + (size_t)t * q_read_stride;
                     float *k_t = K_new + (size_t)t * layer_kv_dim;
                     float *v_t = V_new + (size_t)t * layer_kv_dim;
 
@@ -751,9 +754,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                     memcpy(Q_buf + (size_t)t * wo_cols_attn, s->xb,
                            wo_cols_attn * sizeof(float));
-                }
-                prefill_profile_add(&prof.attn_cpu_ms, t_prof);
             }
+                prefill_profile_add(&prof.attn_cpu_ms, t_prof);
+                }
 
             {
                 int wo_cols = lw->attn.wo.cols;

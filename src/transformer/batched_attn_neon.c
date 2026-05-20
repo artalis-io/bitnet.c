@@ -129,8 +129,10 @@ static inline void batched_prepare_q(BnBatchedAttnCtx *b, int h, int t,
                                      float *q_local) {
     int head_size = b->head_size;
     int half_rope = b->rope_dims / 2;
+    int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
-    float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
+    float *q_src = b->Q_buf + (size_t)t * q_row_stride + h * q_head_stride;
     memcpy(q_local, q_src, (size_t)head_size * sizeof(float));
     if (b->q_bias) {
         int d = 0;
@@ -148,19 +150,20 @@ static inline void batched_prepare_q(BnBatchedAttnCtx *b, int h, int t,
                         head_size, b->norm_eps);
     }
     batched_apply_rope_neon(q_local, head_size, b->rope_dims,
-                            b->rope_cos + (size_t)t * half_rope,
-                            b->rope_sin + (size_t)t * half_rope);
+                            b->rope_cos + (size_t)t * rope_stride,
+                            b->rope_sin + (size_t)t * rope_stride);
 }
 
 static inline void batched_store_output(BnBatchedAttnCtx *b, int h, int t,
                                         const float *out_buf, float inv_sum) {
     int head_size = b->head_size;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
     float *dst = b->out + (size_t)t * b->wo_cols + h * head_size;
     float32x4_t is = vdupq_n_f32(inv_sum);
     int d = 0;
     if (b->q_gated) {
-        float *gate = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride + head_size;
+        float *gate = b->Q_buf + (size_t)t * q_row_stride + h * q_head_stride + head_size;
         for (; d + 3 < head_size; d += 4) {
             float32x4_t o = vmulq_f32(vld1q_f32(out_buf + d), is);
             vst1q_f32(dst + d, vmulq_f32(o, bn_neon_fast_sigmoid_f32(vld1q_f32(gate + d))));

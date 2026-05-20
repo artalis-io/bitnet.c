@@ -124,6 +124,7 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
     float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
@@ -136,7 +137,7 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
             float *rc = b->rope_cos + (size_t)t * rope_stride;
             float *rs = b->rope_sin + (size_t)t * rope_stride;
 
-            float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
+            float *q_src = b->Q_buf + (size_t)t * q_row_stride + h * q_head_stride;
             float q_local[head_size];
             memcpy(q_local, q_src, head_size * sizeof(float));
 
@@ -214,6 +215,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
     float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
@@ -226,7 +228,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
             float *rc = b->rope_cos + (size_t)t * rope_stride;
             float *rs = b->rope_sin + (size_t)t * rope_stride;
 
-            float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
+            float *q_src = b->Q_buf + (size_t)t * q_row_stride + h * q_head_stride;
             float q_local[head_size];
             memcpy(q_local, q_src, head_size * sizeof(float));
 
@@ -322,6 +324,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_head_stride = b->q_gated ? 2 * head_size : head_size;
     float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
@@ -334,7 +337,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
         float *rc = b->rope_cos + (size_t)t * rope_stride;
         float *rs = b->rope_sin + (size_t)t * rope_stride;
 
-        float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_head_stride;
+        float *q_src = b->Q_buf + (size_t)t * q_row_stride + h * q_head_stride;
         float q_local[head_size];
         memcpy(q_local, q_src, head_size * sizeof(float));
 

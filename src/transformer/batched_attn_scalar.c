@@ -50,6 +50,7 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
     int kv_f16 = b->c->kv_f16;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_stride = b->q_gated ? 2 * hs : hs;
     float attn_scale = b->attention_scale;
     if (hs > BN_MAX_VLA_ELEMS) return;
@@ -60,7 +61,7 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
             int pos = pos0 + t;
             float *rc = b->rope_cos + (size_t)t * rope_stride;
             float *rs = b->rope_sin + (size_t)t * rope_stride;
-            float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_stride;
+            float *q_src = b->Q_buf + (size_t)t * q_row_stride + h * q_stride;
             float q[hs];
             memcpy(q, q_src, hs * sizeof(float));
             if (b->q_bias) for (int d = 0; d < hs; d++) q[d] += b->q_bias[h * hs + d];
@@ -122,6 +123,7 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
     int kv_f16 = b->c->kv_f16;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
+    int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
     int q_stride = b->q_gated ? 2 * hs : hs;
     float attn_scale = b->attention_scale;
     if (hs > BN_MAX_VLA_ELEMS) return;
@@ -132,7 +134,7 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
             int pos = pos0 + t;
             float *rc = b->rope_cos + (size_t)t * rope_stride;
             float *rs = b->rope_sin + (size_t)t * rope_stride;
-            float *q_src = b->Q_buf + (size_t)t * b->wq_rows + h * q_stride;
+            float *q_src = b->Q_buf + (size_t)t * q_row_stride + h * q_stride;
             float q[hs];
             memcpy(q, q_src, hs * sizeof(float));
             if (b->q_bias) for (int d = 0; d < hs; d++) q[d] += b->q_bias[h * hs + d];
