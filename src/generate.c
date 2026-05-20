@@ -312,7 +312,12 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
         logits = bn_transformer_prefill(model, s, tokens, n_tokens, pos0);
     } else {
         for (int i = 0; i < n_tokens; i++) {
-            logits = bn_transformer_forward(model, s, tokens[i], pos0 + i);
+            if (i + 1 == n_tokens) {
+                logits = bn_transformer_forward(model, s, tokens[i], pos0 + i);
+            } else if (bn_transformer_forward_no_logits(
+                           model, s, tokens[i], pos0 + i) != 0) {
+                return NULL;
+            }
         }
     }
     return logits;
@@ -325,10 +330,12 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
         (!gpu_attached || getenv("BN_GPU_PREFILL_MATMUL"))) {
         return bn_transformer_prefill_no_logits(model, s, tokens, n_tokens, pos0);
     }
-    float *logits = NULL;
-    for (int i = 0; i < n_tokens; i++)
-        logits = bn_transformer_forward(model, s, tokens[i], pos0 + i);
-    return logits ? 0 : -1;
+    for (int i = 0; i < n_tokens; i++) {
+        if (bn_transformer_forward_no_logits(model, s, tokens[i],
+                                             pos0 + i) != 0)
+            return -1;
+    }
+    return 0;
 }
 
 int bn_count_tokens(const BnTokenizer *tok, const char *text,

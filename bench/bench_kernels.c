@@ -505,6 +505,18 @@ static void bench_logits_real(const BnModel *m, const float *x, int8_t *x_q,
     }
 }
 
+static int bench_sync_gpu_prompt(BnModel *m) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    if (!gpu || !gpu->read_activation)
+        return 0;
+    float sync_value = 0.0f;
+    if (gpu->read_activation(gpu->ctx, BN_GPU_VALUE_X, &sync_value,
+                             sizeof(sync_value), 0) != 0)
+        return -1;
+    bench_sink += sync_value;
+    return 0;
+}
+
 static void bench_prefill(BnModel *m, int n_prompt, int n_iters) {
     if (n_prompt <= 1 || n_iters <= 0)
         return;
@@ -524,12 +536,25 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters) {
         free(tokens);
         return;
     }
+    int gpu_prompt_path = bn_model_gpu(m) != NULL &&
+                          getenv("BN_GPU_PREFILL_MATMUL") == NULL;
 
     for (int i = 0; i < 2; i++) {
-        float *logits = bn_transformer_prefill(m, session, tokens, n_prompt, 0);
-        if (!logits)
-            goto done;
-        bench_sink += logits[tokens[i % n_prompt] % vocab];
+        if (gpu_prompt_path) {
+            for (int t = 0; t < n_prompt; t++) {
+                if (bn_transformer_forward_no_logits(
+                        m, session, tokens[t], t) != 0)
+                    goto done;
+            }
+            if (bench_sync_gpu_prompt(m) != 0)
+                goto done;
+        } else {
+            float *logits = bn_transformer_prefill(m, session, tokens,
+                                                   n_prompt, 0);
+            if (!logits)
+                goto done;
+            bench_sink += logits[tokens[i % n_prompt] % vocab];
+        }
         bn_session_free(session, NULL);
         session = bn_session_create(m, NULL);
         if (!session)
@@ -540,10 +565,21 @@ static void bench_prefill(BnModel *m, int n_prompt, int n_iters) {
     if (session && session->moe_state)
         bn_moe_reset_stats(session->moe_state);
     for (int i = 0; i < n_iters; i++) {
-        float *logits = bn_transformer_prefill(m, session, tokens, n_prompt, 0);
-        if (!logits)
-            goto done;
-        bench_sink += logits[tokens[i % n_prompt] % vocab];
+        if (gpu_prompt_path) {
+            for (int t = 0; t < n_prompt; t++) {
+                if (bn_transformer_forward_no_logits(
+                        m, session, tokens[t], t) != 0)
+                    goto done;
+            }
+            if (bench_sync_gpu_prompt(m) != 0)
+                goto done;
+        } else {
+            float *logits = bn_transformer_prefill(m, session, tokens,
+                                                   n_prompt, 0);
+            if (!logits)
+                goto done;
+            bench_sink += logits[tokens[i % n_prompt] % vocab];
+        }
         if (i + 1 < n_iters) {
             bn_session_free(session, NULL);
             session = bn_session_create(m, NULL);
