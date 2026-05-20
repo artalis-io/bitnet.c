@@ -2311,6 +2311,62 @@ static __global__ void per_head_rmsnorm_kernel(float *x,
         xh[i] = xh[i] * scale * wh[i];
 }
 
+static __global__ void qk_rmsnorm_rope_kernel(
+    float *q, float *k, const float *q_weight, const float *k_weight,
+    const float *freq, int n_heads, int n_kv_heads, int head_size,
+    float eps, int per_head_weight, size_t k_offset, int pos,
+    int rope_dims) {
+    int h = blockIdx.x;
+    int tid = threadIdx.x;
+    int is_q = h < n_heads;
+    int idx = is_q ? h : h - n_heads;
+    int n = is_q ? n_heads : n_kv_heads;
+    if (idx >= n || head_size <= 0) return;
+
+    float *xh = is_q
+        ? q + (size_t)idx * head_size
+        : k + k_offset + (size_t)idx * head_size;
+    const float *weight = is_q ? q_weight : k_weight;
+    const float *wh = weight + (per_head_weight ? (size_t)idx * head_size : 0);
+
+    float ss = 0.0f;
+    for (int i = tid; i < head_size; i += blockDim.x)
+        ss += xh[i] * xh[i];
+
+    extern __shared__ float scratch[];
+    int lane = tid & 31;
+    int warp = tid >> 5;
+    for (int offset = 16; offset > 0; offset >>= 1)
+        ss += __shfl_down_sync(0xffffffffu, ss, offset);
+    if (lane == 0) scratch[warp] = ss;
+    __syncthreads();
+    if (warp == 0) {
+        int n_warps = (blockDim.x + 31) >> 5;
+        float total = lane < n_warps ? scratch[lane] : 0.0f;
+        for (int offset = 16; offset > 0; offset >>= 1)
+            total += __shfl_down_sync(0xffffffffu, total, offset);
+        if (lane == 0) scratch[0] = total;
+    }
+    __syncthreads();
+
+    float scale = rsqrtf(scratch[0] / (float)head_size + eps);
+    for (int i = tid; i < head_size; i += blockDim.x)
+        xh[i] = xh[i] * scale * wh[i];
+    __syncthreads();
+
+    int half_rope = rope_dims / 2;
+    for (int i = tid; i < half_rope; i += blockDim.x) {
+        int j = i + half_rope;
+        float angle = (float)pos * freq[i];
+        float s, c;
+        __sincosf(angle, &s, &c);
+        float x0 = xh[i];
+        float x1 = xh[j];
+        xh[i] = x0 * c - x1 * s;
+        xh[j] = x0 * s + x1 * c;
+    }
+}
+
 static __global__ void residual_rmsnorm_kernel(float *x, const float *r,
                                                float *out,
                                                const float *weight,
@@ -5338,10 +5394,43 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             size_t x_offset = (size_t)op->p[3];
             if (!w || !w->data || !in || n_heads <= 0 || head_size <= 0)
                 return -1;
-            BN_CUDA_LAUNCH(ctx, per_head_rmsnorm_kernel, n_heads, threads,
+            const BnGPUOp *after_next = (i + 2 < n_ops) ? &ops[i + 2] : NULL;
+            if (next && after_next &&
+                getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FUSE") == NULL &&
+                op->buf_in == BN_GPU_VALUE_Q &&
+                next->op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
+                next->buf_in == BN_GPU_VALUE_KEY_CACHE &&
+                after_next->op_code == BN_GPU_CODE_ROPE_QK &&
+                after_next->buf_in == BN_GPU_VALUE_Q &&
+                after_next->buf_aux == BN_GPU_VALUE_KEY_CACHE &&
+                (int)next->p[0] == head_size &&
+                (int)next->p[1] == (int)op->p[1] &&
+                (int)next->p[2] == (int)op->p[2] &&
+                (int)after_next->p[0] == n_heads &&
+                (int)after_next->p[1] == head_size &&
+                (int)after_next->p[3] > 0 &&
+                (int)after_next->p[4] == next->rows &&
+                (size_t)after_next->p[5] == (size_t)next->p[3]) {
+                BnCudaBuffer *kw = (BnCudaBuffer *)next->W_buf;
+                float *key = cuda_act(ctx, BN_GPU_VALUE_KEY_CACHE);
+                float *freq = cuda_act(ctx, BN_GPU_VALUE_ROPE_FREQ);
+                if (!kw || !kw->data || !key || !freq)
+                    return -1;
+                BN_CUDA_LAUNCH(ctx, qk_rmsnorm_rope_kernel,
+                    n_heads + next->rows, threads,
+                    (size_t)threads * sizeof(float),
+                    in, key, (const float *)w->data,
+                    (const float *)kw->data, freq, n_heads, next->rows,
+                    head_size, cuda_u32_to_f32(op->p[1]), (int)op->p[2],
+                    (size_t)next->p[3], (int)after_next->p[2],
+                    (int)after_next->p[3]);
+                i += 2;
+            } else {
+                BN_CUDA_LAUNCH(ctx, per_head_rmsnorm_kernel, n_heads, threads,
                 (size_t)threads * sizeof(float),
                 in, (const float *)w->data, n_heads, head_size,
                 cuda_u32_to_f32(op->p[1]), (int)op->p[2], x_offset);
+            }
             break;
         }
         case BN_GPU_CODE_COPY: {
