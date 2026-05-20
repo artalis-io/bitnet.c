@@ -96,7 +96,8 @@ for model in $MODELS; do
 
     if [ "$BITNET_TG_MODE" = "generate" ]; then
         if ! bitnet_tg_out=$(BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_CLI" \
-            "$model" --cuda -n "$TOKS" --maxseq "$MAXSEQ" --quiet 2>&1); then
+            "$model" --cuda -n "$TOKS" -t "$THREADS" \
+            --maxseq "$MAXSEQ" --quiet 2>&1); then
             echo -e "$(basename "$model")\t$bitnet_pp\tSKIP\t0\tERROR\tbitnet generate failed\t0\tFAIL"
             printf '%s\n' "$bitnet_tg_out" >&2
             continue
