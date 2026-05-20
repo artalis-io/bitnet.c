@@ -49,13 +49,7 @@ static int small_dense_cuda_native_by_default(
     if (w->output_weight.data) {
         if (!small_dense_cuda_qweight_supported(w->output_weight.type))
             return 0;
-        if (c->dim > 1024 && w->output_weight.type == BN_GGUF_TENSOR_Q4_K &&
-            !getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
-            return 0;
     } else if (!small_dense_cuda_qweight_supported(w->emb_type)) {
-        return 0;
-    } else if (c->dim > 1024 && w->emb_type == BN_GGUF_TENSOR_Q4_K &&
-               !getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE")) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -68,10 +62,6 @@ static int small_dense_cuda_native_by_default(
         for (int i = 0; i < n_weights; i++) {
             if (weights[i]->data &&
                 !small_dense_cuda_qweight_supported(weights[i]->type))
-                return 0;
-            if (c->dim > 1024 && weights[i]->data &&
-                weights[i]->type == BN_GGUF_TENSOR_Q4_K &&
-                !getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
                 return 0;
         }
     }

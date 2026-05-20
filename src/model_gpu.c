@@ -27,26 +27,9 @@ static void *upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
     return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
 }
 
-static int should_skip_cuda_small_kquant(const BnModel *model,
-                                         const BnGPUBackend *gpu,
-                                         const BnQWeight *w) {
-    if (!model || !gpu || !w || gpu->kind != BN_GPU_BACKEND_CUDA)
-        return 0;
-    if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
-        return 0;
-    if (model->config.n_experts > 0 || model->config.full_attn_interval > 0)
-        return 0;
-    if (model->config.dim <= 1024 || model->config.dim > 2560)
-        return 0;
-    /* Keep small dense Q4_K on the conservative path until native CUDA
-     * decode remains token-coherent across full Qwen2.5/Qwen3 stacks. */
-    return w->type == BN_GGUF_TENSOR_Q4_K;
-}
-
 static int upload_qweight_owned(BnModel *model, BnBackendModel *backend,
                                 BnGPUBackend *gpu, BnQWeight *w) {
-    if (should_skip_cuda_small_kquant(model, gpu, w))
-        return 0;
+    (void)model;
     void *handle = upload_qweight(gpu, w);
     if (!w->data) return 0;
     if (!handle) return -1;
@@ -61,23 +44,6 @@ static int register_gpu_handle(BnModel *model, int layer,
                                BnBackendHandleRole role, void *handle) {
     if (!handle) return 0;
     return bn_backend_model_register_handle(bn_model_backend(model), layer, role, handle);
-}
-
-static int register_prefill_qweight_handle(BnModel *model,
-                                           BnGPUBackend *gpu,
-                                           int layer,
-                                           BnBackendHandleRole role,
-                                           BnQWeight *w) {
-    if (!should_skip_cuda_small_kquant(model, gpu, w))
-        return 0;
-    void *handle = upload_qweight(gpu, w);
-    if (!w->data) return 0;
-    if (!handle) return -1;
-    if (register_gpu_handle(model, layer, role, handle) != 0) {
-        gpu->buffer_destroy(gpu->ctx, handle);
-        return -1;
-    }
-    return 0;
 }
 
 static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
@@ -233,19 +199,6 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_GATEUP_STACKED,
                                 gateup_stacked_gpu) != 0) {
             if (gateup_stacked_gpu) gpu->buffer_destroy(gpu->ctx, gateup_stacked_gpu);
-            bn_model_release_gpu(model);
-            return -1;
-        }
-
-        if (register_prefill_qweight_handle(
-                model, gpu, l, BN_BACKEND_HANDLE_WV_PREFILL,
-                &lw->attn.wv) != 0 ||
-            register_prefill_qweight_handle(
-                model, gpu, l, BN_BACKEND_HANDLE_WO_PREFILL,
-                &lw->attn.wo) != 0 ||
-            register_prefill_qweight_handle(
-                model, gpu, l, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL,
-                &lw->ffn.ffn_down) != 0) {
             bn_model_release_gpu(model);
             return -1;
         }
