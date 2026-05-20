@@ -3356,6 +3356,31 @@ static int cuda_ops_look_like_decode_graph(const BnGPUOp *ops, int n_ops,
            ((wants_logits_readback && has_logits) || wants_gpu_resident);
 }
 
+static int cuda_ops_have_mixed_quant_matvec(const BnGPUOp *ops, int n_ops) {
+    if (!ops) return 0;
+    for (int i = 0; i < n_ops; i++) {
+        const BnGPUOp *op = &ops[i];
+        if (op->op_kind == BN_GPU_OP_LOGITS ||
+            (op->op_code == BN_GPU_CODE_MATVEC &&
+             op->buf_out == BN_GPU_VALUE_LOGITS))
+            continue;
+        switch (op->op_code) {
+        case BN_GPU_CODE_MATVEC:
+        case BN_GPU_CODE_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q8_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q5K_MATVEC_SPLIT:
+        case BN_GPU_CODE_FUSED_GATEUP_SILU:
+            if (op->type != BN_GGUF_TENSOR_Q8_0)
+                return 1;
+            break;
+        default:
+            break;
+        }
+    }
+    return 0;
+}
+
 static int cuda_buf_unused_until_write(const BnGPUOp *ops, int n_ops,
                                        int start, int buf) {
     if (!ops || buf < 0) return 0;
@@ -3460,6 +3485,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int disable_q8_gateup_warp_flag = 0;
     static int enable_bias_rope_flash_fuse_flag = 0;
     static int enable_graph_exec_flag = 0;
+    static int enable_q8_preq_all_flag = 0;
+    static int disable_q8_preq_logits_flag = 0;
     if (!flags_init) {
         fuse_bias_enabled_flag =
             getenv("BN_CUDA_DISABLE_FUSE_BIAS") == NULL;
@@ -3485,6 +3512,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             getenv("BN_CUDA_ENABLE_BIAS_ROPE_FLASH_FUSE") != NULL;
         enable_graph_exec_flag =
             getenv("BN_CUDA_ENABLE_GRAPH_EXEC") != NULL;
+        enable_q8_preq_all_flag =
+            getenv("BN_CUDA_ENABLE_Q8_PREQ") != NULL;
+        disable_q8_preq_logits_flag =
+            getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") != NULL;
         flags_init = 1;
     }
     const int fuse_bias_enabled = fuse_bias_enabled_flag;
@@ -3501,6 +3532,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int disable_q8_gateup_warp = disable_q8_gateup_warp_flag;
     const int enable_bias_rope_flash_fuse =
         enable_bias_rope_flash_fuse_flag;
+    const int enable_q8_preq_all = enable_q8_preq_all_flag;
+    const int disable_q8_preq_logits = disable_q8_preq_logits_flag;
     unsigned char skip_ops[8192];
     if (n_ops > (int)sizeof(skip_ops)) {
         fprintf(stderr, "[bn:gpu:cuda] execute graph too large: %d ops\n",
@@ -3518,6 +3551,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         out_host, out_len);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
+    int q8_preq_logits_default =
+        !disable_q8_preq_logits && cuda_ops_have_mixed_quant_matvec(ops, n_ops);
     int graph_building = 0;
     cudaGraphExec_t graph_instance = NULL;
     if (graph_exec) {
@@ -3606,9 +3641,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         const BnGPUOp *op = &ops[i];
         const BnGPUOp *next = (i + 1 < n_ops) ? &ops[i + 1] : NULL;
         cudaError_t err = cudaSuccess;
-        int profile_code = (op->op_kind == BN_GPU_OP_LOGITS ||
-                            (op->op_code == BN_GPU_CODE_MATVEC &&
-                             op->buf_out == BN_GPU_VALUE_LOGITS))
+        int is_logits_op = op->op_kind == BN_GPU_OP_LOGITS ||
+                           (op->op_code == BN_GPU_CODE_MATVEC &&
+                            op->buf_out == BN_GPU_VALUE_LOGITS);
+        int profile_code = is_logits_op
             ? BN_CUDA_PROFILE_LOGITS
             : op->op_code;
         if (profile)
@@ -3698,7 +3734,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     q4_threads, 0,
                     out, (const BnBlockQ4K *)w->data, xq, bias,
                     op->rows, op->cols, out_offset);
-            } else if (getenv("BN_CUDA_ENABLE_Q8_PREQ") &&
+            } else if ((enable_q8_preq_all ||
+                        (is_logits_op && q8_preq_logits_default)) &&
                        op->type == BN_GGUF_TENSOR_Q8_0 &&
                        (op->cols & 31) == 0 && !bias) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0) return -1;
