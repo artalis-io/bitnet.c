@@ -34,16 +34,13 @@ static int should_skip_cuda_small_kquant(const BnModel *model,
         return 0;
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 0;
-    if (!getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") &&
-        !(model->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3))
-        return 0;
     if (model->config.n_experts > 0 || model->config.full_attn_interval > 0)
         return 0;
-    if (model->config.dim > 2560)
+    if (model->config.dim <= 1024 || model->config.dim > 2560)
         return 0;
-    /* Keep Qwen3 and explicit diagnostics on the conservative path until the
-     * native graph matches CPU through Q/K norm and RoPE-sensitive layers. */
-    return w->type == BN_GGUF_TENSOR_Q4_K || w->type == BN_GGUF_TENSOR_Q6_K;
+    /* Keep small dense Q4_K on the conservative path until native CUDA
+     * decode remains token-coherent across full Qwen2.5/Qwen3 stacks. */
+    return w->type == BN_GGUF_TENSOR_Q4_K;
 }
 
 static int upload_qweight_owned(BnModel *model, BnBackendModel *backend,
