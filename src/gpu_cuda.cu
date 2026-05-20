@@ -3520,8 +3520,14 @@ static int cuda_ensure_argmax(BnCudaCtx *ctx, int n, int n_penalty_tokens) {
 static int cuda_ensure_host_out(BnCudaCtx *ctx, size_t bytes) {
     if (!ctx) return -1;
     if (bytes <= ctx->h_out_bytes) return 0;
-    float *next = (float *)realloc(ctx->h_out, bytes);
-    if (!next) return -1;
+    float *next = NULL;
+    cudaError_t err = cudaMallocHost((void **)&next, bytes);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] pinned host output alloc failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    if (ctx->h_out) cudaFreeHost(ctx->h_out);
     ctx->h_out = next;
     ctx->h_out_bytes = bytes;
     return 0;
@@ -6371,7 +6377,7 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
         if (ctx->exec_graph) cudaGraphExecDestroy(ctx->exec_graph);
         if (ctx->exec_graph_def) cudaGraphDestroy(ctx->exec_graph_def);
         free(ctx->exec_nodes);
-        free(ctx->h_out);
+        if (ctx->h_out) cudaFreeHost(ctx->h_out);
         cuda_free_activations(ctx);
         if (ctx->cublas) cublasDestroy(ctx->cublas);
         if (ctx->stream) cudaStreamDestroy(ctx->stream);
