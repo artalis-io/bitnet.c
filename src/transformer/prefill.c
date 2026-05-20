@@ -802,7 +802,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
                         &lw->attn.wo);
                     if (gpu->prefill_attention_wo && wo_buf &&
-                        c->dim < 2048 &&
                         !lw->norm.attn_sub_norm &&
                         !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
                           lw->norm.attn_post_norm) &&
