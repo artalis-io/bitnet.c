@@ -6136,13 +6136,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         if (profile)
             cudaEventRecord(ev_start, ctx->exec_stream);
         cudaError_t err = cudaSuccess;
+        size_t readback_bytes = (size_t)out_len * sizeof(float);
+        if (cuda_ensure_host_out(ctx, readback_bytes) != 0) {
+            if (profile) {
+                cudaEventDestroy(ev_start);
+                cudaEventDestroy(ev_stop);
+            }
+            return -1;
+        }
         if (ctx->exec_stream) {
-            err = cudaMemcpyAsync(out_host, src,
-                                  (size_t)out_len * sizeof(float),
+            err = cudaMemcpyAsync(ctx->h_out, src, readback_bytes,
                                   cudaMemcpyDeviceToHost,
                                   ctx->exec_stream);
         } else {
-            err = cudaMemcpy(out_host, src, (size_t)out_len * sizeof(float),
+            err = cudaMemcpy(ctx->h_out, src, readback_bytes,
                              cudaMemcpyDeviceToHost);
         }
         if (err != cudaSuccess) {
@@ -6180,6 +6187,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 return -1;
             }
         }
+        memcpy(out_host, ctx->h_out, readback_bytes);
     }
     if (profile) {
         cudaEventDestroy(ev_start);
