@@ -246,6 +246,14 @@ static float *load_f32_tensor(BnGGUFFile *f, const char *name) {
     return (float *)bn_gguf_tensor_data(f, ti);
 }
 
+static float *load_float_tensor_data(BnGGUFFile *f, const char *name,
+                                     int *type_out) {
+    int ti = bn_gguf_find_tensor(f, name);
+    if (ti < 0) return NULL;
+    if (type_out) *type_out = f->tensors[ti].type;
+    return (float *)bn_gguf_tensor_data(f, ti);
+}
+
 static int gguf_get_u32_or_i32_array(BnGGUFFile *f, const char *key, int idx) {
     int ki = bn_gguf_find_key(f, key);
     if (ki < 0) return 0;
@@ -825,7 +833,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_SHARED_FFN_ROUTER) != 0)
                     goto fail_layers;
-                lw->shared.shared_expert_gate = load_f32_tensor(f, wname);
+                lw->shared.shared_expert_gate = load_float_tensor_data(
+                    f, wname, &lw->shared.shared_expert_gate_type);
             }
         } else {
             // --- Dense FFN ---
@@ -875,8 +884,18 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     BnBackendLayoutPreparedStats prepared_stats = { 0 };
     size_t prepared_weight_bytes =
         bn_backend_layout_prepared_qweights_size(c, w, &prepared_stats);
+    size_t shared_gate_float_bytes = 0;
+    if (c->has_shared_expert) {
+        for (int i = 0; i < c->n_layers; i++) {
+            BnSharedExpertWeights *sh = &w->layers[i].shared;
+            if (sh->shared_expert_gate &&
+                sh->shared_expert_gate_type != BN_GGUF_TENSOR_F32)
+                shared_gate_float_bytes += (size_t)c->dim * sizeof(float);
+        }
+    }
 
     size_t weight_arena_size = emb_i8_bytes + emb_i8_scales_bytes + prepared_weight_bytes
+                              + shared_gate_float_bytes
                               + 4 * SH_ARENA_ALIGN;
     m->runtime->weight_arena = NULL;
     memset(&m->io->moe_io, 0, sizeof(m->io->moe_io));
@@ -911,6 +930,34 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 w->emb_out_i8 = NULL;
                 w->emb_out_scales = NULL;
                 SH_LOG_DEBUG("INT8 embedding arena alloc failed, using F16 fallback");
+            }
+        }
+
+        if (shared_gate_float_bytes > 0) {
+            for (int i = 0; i < c->n_layers; i++) {
+                BnSharedExpertWeights *sh = &w->layers[i].shared;
+                if (!sh->shared_expert_gate ||
+                    sh->shared_expert_gate_type == BN_GGUF_TENSOR_F32)
+                    continue;
+                float *dst = (float *)sh_arena_alloc(
+                    m->runtime->weight_arena, (size_t)c->dim * sizeof(float));
+                if (!dst) {
+                    SH_LOG_ERROR("Failed to allocate shared expert gate");
+                    goto fail_state;
+                }
+                const uint16_t *src = (const uint16_t *)sh->shared_expert_gate;
+                if (sh->shared_expert_gate_type == BN_GGUF_TENSOR_BF16) {
+                    for (int d = 0; d < c->dim; d++)
+                        dst[d] = bn_bf16_to_fp32(src[d]);
+                } else if (sh->shared_expert_gate_type == BN_GGUF_TENSOR_F16) {
+                    for (int d = 0; d < c->dim; d++)
+                        dst[d] = bn_fp16_to_fp32(src[d]);
+                } else {
+                    SH_LOG_ERROR("Unsupported shared expert gate type");
+                    goto fail_state;
+                }
+                sh->shared_expert_gate = dst;
+                sh->shared_expert_gate_type = BN_GGUF_TENSOR_F32;
             }
         }
 

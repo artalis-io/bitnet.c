@@ -55,6 +55,7 @@ typedef struct {
 typedef struct {
     BnQWeight shared_gate, shared_up, shared_down;
     float *shared_expert_gate;              // [dim] sigmoid gate for shared expert output (NULL if absent)
+    int shared_expert_gate_type;            // GGUF tensor type for shared_expert_gate
 } BnSharedExpertWeights;
 
 typedef struct BnLayerWeights {
