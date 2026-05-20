@@ -600,8 +600,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .wq_rows = lw->attn.wq.rows,
                     .wo_cols = wo_cols_attn,
                 };
+                t_prof = prefill_profile_now(&prof);
                 bn_transformer_batched_attn_dispatch(m, &bctx);
+                prefill_profile_add(&prof.attn_cpu_ms, t_prof);
             } else {
+                t_prof = prefill_profile_now(&prof);
                 for (int t = 0; t < n_tokens; t++) {
                     int pos = pos0 + t;
                     int cache_pos = pos % c->seq_len;

@@ -20,6 +20,8 @@ typedef struct {
     void *data;
     void *f16_data;
     size_t f16_size;
+    void *f32_data;
+    size_t f32_size;
     size_t size;
     int type;
     int rows;
@@ -229,6 +231,8 @@ static __device__ uint16_t cuda_fp32_to_fp16_bits(float f) {
     return __half_as_ushort(__float2half_rn(f));
 }
 
+static __device__ float cuda_q6k_value(const BnBlockQ6K *blk, int i);
+
 static __global__ void f32_to_f16_kernel(__half *out, const float *in,
                                          size_t n) {
     size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
@@ -268,6 +272,19 @@ static __global__ void dequant_q5_0_to_f16_kernel(
         : (int)((qs >> 4) | (((qh >> j) & 1u) << 4)) - 16;
     float v = cuda_fp16_to_fp32(blk->d) * (float)q;
     out[i] = __float2half_rn(v);
+}
+
+static __global__ void dequant_q6k_to_f32_kernel(
+    float *out, const BnBlockQ6K *blocks, int rows, int cols) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n = (size_t)rows * (size_t)cols;
+    if (i >= n) return;
+    int row = (int)(i / (size_t)cols);
+    int col = (int)(i - (size_t)row * (size_t)cols);
+    int n_bpr = cols / BN_QK_K;
+    const BnBlockQ6K *blk = &blocks[(size_t)row * n_bpr +
+                                    col / BN_QK_K];
+    out[i] = cuda_q6k_value(blk, col & (BN_QK_K - 1));
 }
 
 static __device__ void cuda_kv_store(void *cache, size_t idx, float v,
@@ -2772,20 +2789,25 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
         (buf->cols & 31) != 0)
         return 0;
     if (buf->type != BN_GGUF_TENSOR_Q8_0 &&
-        buf->type != BN_GGUF_TENSOR_Q5_0)
+        buf->type != BN_GGUF_TENSOR_Q5_0 &&
+        buf->type != BN_GGUF_TENSOR_Q6_K)
         return 0;
     if (getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
         return 0;
 
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
-    size_t bytes = n * sizeof(__half);
+    size_t bytes = n * (buf->type == BN_GGUF_TENSOR_Q6_K
+                        ? sizeof(float)
+                        : sizeof(__half));
     int max_mb = cuda_env_int("BN_CUDA_CUBLAS_CACHE_MAX_MB", 128);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
-    cudaError_t err = cudaMalloc(&buf->f16_data, bytes);
+    void **cache_ptr = buf->type == BN_GGUF_TENSOR_Q6_K
+        ? &buf->f32_data
+        : &buf->f16_data;
+    cudaError_t err = cudaMalloc(cache_ptr, bytes);
     if (err != cudaSuccess) {
-        buf->f16_data = NULL;
-        buf->f16_size = 0;
+        *cache_ptr = NULL;
         return 0;
     }
     int threads = 256;
@@ -2794,19 +2816,25 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
         dequant_q8_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ8_0 *)buf->data,
             buf->rows, buf->cols);
-    } else {
+    } else if (buf->type == BN_GGUF_TENSOR_Q5_0) {
         dequant_q5_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5_0 *)buf->data,
+            buf->rows, buf->cols);
+    } else {
+        dequant_q6k_to_f32_kernel<<<blocks, threads>>>(
+            (float *)buf->f32_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);
     }
     err = cudaGetLastError();
     if (err != cudaSuccess) {
-        cudaFree(buf->f16_data);
-        buf->f16_data = NULL;
-        buf->f16_size = 0;
+        cudaFree(*cache_ptr);
+        *cache_ptr = NULL;
         return 0;
     }
-    buf->f16_size = bytes;
+    if (buf->type == BN_GGUF_TENSOR_Q6_K)
+        buf->f32_size = bytes;
+    else
+        buf->f16_size = bytes;
     return 0;
 }
 
@@ -2848,6 +2876,7 @@ static void cuda_buffer_destroy(void *vctx, void *buffer) {
     BnCudaBuffer *buf = (BnCudaBuffer *)buffer;
     if (!buf) return;
     if (buf->f16_data) cudaFree(buf->f16_data);
+    if (buf->f32_data) cudaFree(buf->f32_data);
     if (buf->data) cudaFree(buf->data);
     free(buf);
 }
@@ -2856,8 +2885,29 @@ static int cuda_cublas_matmul_f16(BnCudaCtx *ctx, float *d_out,
                                   const BnCudaBuffer *w,
                                   const float *d_x,
                                   int rows, int cols, int n_tokens) {
-    if (!ctx || !ctx->cublas || !d_out || !w || !w->f16_data || !d_x ||
+    if (!ctx || !ctx->cublas || !d_out || !w || !d_x ||
         rows <= 0 || cols <= 0 || n_tokens <= 1)
+        return -1;
+    if (w->f32_data) {
+        const float alpha = 1.0f;
+        const float beta = 0.0f;
+        cublasStatus_t st = cublasSgemm(
+            ctx->cublas,
+            CUBLAS_OP_T, CUBLAS_OP_N,
+            rows, n_tokens, cols,
+            &alpha,
+            (const float *)w->f32_data, cols,
+            d_x, cols,
+            &beta,
+            d_out, rows);
+        if (st != CUBLAS_STATUS_SUCCESS) {
+            fprintf(stderr, "[bn:gpu:cuda] cublas sgemm failed: status %d\n",
+                    (int)st);
+            return -1;
+        }
+        return 0;
+    }
+    if (!w->f16_data)
         return -1;
     if (cuda_ensure_x_f16(ctx, (size_t)n_tokens * (size_t)cols) != 0)
         return -1;
@@ -2986,7 +3036,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
     }
 
     int threads = 256;
-    if (w->f16_data && n_tokens > 1 &&
+    if ((w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out, w, ctx->d_x, rows, cols,
                                n_tokens) == 0) {
         err = cudaSuccess;
@@ -3061,7 +3111,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         int rows = ops[i].rows;
         int type = ops[i].type;
-        if (w->f16_data &&
+        if ((w->f16_data || w->f32_data) &&
             cuda_cublas_matmul_f16(ctx, ctx->d_out + out_offset, w,
                                    ctx->d_x, rows, x_cols,
                                    n_tokens) == 0) {
@@ -3344,7 +3394,8 @@ static int cuda_dense_ffn_batch(void *vctx, float *out,
 
     int threads = 256;
     int warps = threads / 32;
-    if (gate->f16_data && up->f16_data &&
+    if ((gate->f16_data || gate->f32_data) &&
+        (up->f16_data || up->f32_data) &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out, gate, ctx->d_x,
                                hidden_dim, dim, n_tokens) == 0 &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out + (size_t)n_tokens * hidden_dim,
@@ -3400,7 +3451,7 @@ static int cuda_dense_ffn_batch(void *vctx, float *out,
         return -1;
     }
 
-    if (down->f16_data &&
+    if ((down->f16_data || down->f32_data) &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out, down, ctx->d_x,
                                dim, hidden_dim, n_tokens) == 0) {
         err = cudaSuccess;
