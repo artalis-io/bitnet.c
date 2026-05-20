@@ -24,6 +24,11 @@ MODEL_ROOT="${BN_MODEL_ROOT:-${MODEL_ROOT:-/data/models/gguf}}"
 MAXSEQ="${MAXSEQ:-512}"
 BITNET_TG_MODE="${BITNET_TG_MODE:-generate}"
 
+LLAMA_CUDA_ENV=()
+if [ "$CUDA_DEVICE" != "auto" ] && [ -n "$CUDA_DEVICE" ]; then
+    LLAMA_CUDA_ENV=(CUDA_VISIBLE_DEVICES="$CUDA_DEVICE")
+fi
+
 find_first_model() {
     pattern=$1
     if [ -n "$MODEL_ROOT" ] && [ -d "$MODEL_ROOT" ]; then
@@ -113,7 +118,8 @@ for model in $MODELS; do
             awk '/Throughput:/ { v=$2 } END { if (v == "") v="0"; print v }')
     fi
 
-    if ! llama_out=$(LD_LIBRARY_PATH="$LLAMA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    if ! llama_out=$(env "${LLAMA_CUDA_ENV[@]}" \
+        LD_LIBRARY_PATH="$LLAMA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$LLAMA_BENCH" -m "$model" -p "$PREFILL_TOKS" -n "$LLAMA_TOKS" -t "$THREADS" -ngl 99 2>&1); then
         echo -e "$(basename "$model")\t$bitnet_pp\tllama-bench failed\t0\t$bitnet_tps\tllama-bench failed\t0\tFAIL"
         printf '%s\n' "$llama_out" >&2
