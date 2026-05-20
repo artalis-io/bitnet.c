@@ -3828,6 +3828,12 @@ static void cuda_buffer_destroy(void *vctx, void *buffer) {
     free(buf);
 }
 
+static int cuda_cublas_matmul_f16_preconverted(BnCudaCtx *ctx, float *d_out,
+                                               const BnCudaBuffer *w,
+                                               const void *d_x_f16,
+                                               int rows, int cols,
+                                               int n_tokens);
+
 static int cuda_cublas_matmul_f16(BnCudaCtx *ctx, float *d_out,
                                   const BnCudaBuffer *w,
                                   const float *d_x,
@@ -3871,6 +3877,18 @@ static int cuda_cublas_matmul_f16(BnCudaCtx *ctx, float *d_out,
         return -1;
     }
 
+    return cuda_cublas_matmul_f16_preconverted(
+        ctx, d_out, w, ctx->d_x_f16, rows, cols, n_tokens);
+}
+
+static int cuda_cublas_matmul_f16_preconverted(BnCudaCtx *ctx, float *d_out,
+                                               const BnCudaBuffer *w,
+                                               const void *d_x_f16,
+                                               int rows, int cols,
+                                               int n_tokens) {
+    if (!ctx || !ctx->cublas || !d_out || !w || !w->f16_data || !d_x_f16 ||
+        rows <= 0 || cols <= 0 || n_tokens <= 1)
+        return -1;
     const float alpha = 1.0f;
     const float beta = 0.0f;
     cublasStatus_t st = cublasGemmEx(
@@ -3879,7 +3897,7 @@ static int cuda_cublas_matmul_f16(BnCudaCtx *ctx, float *d_out,
         rows, n_tokens, cols,
         &alpha,
         w->f16_data, CUDA_R_16F, cols,
-        ctx->d_x_f16, CUDA_R_16F, cols,
+        d_x_f16, CUDA_R_16F, cols,
         &beta,
         d_out, CUDA_R_32F, rows,
         CUDA_R_32F,
@@ -4095,6 +4113,30 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
 
     int threads = 256;
     int warps = threads / 32;
+    int x_f16_ready = 0;
+    for (int i = 0; i < n_ops; i++) {
+        BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
+        if (w && w->f16_data) {
+            if (cuda_ensure_x_f16(ctx,
+                    (size_t)n_tokens * (size_t)x_cols) != 0)
+                return -1;
+            size_t x_values = (size_t)n_tokens * (size_t)x_cols;
+            int cvt_threads = 256;
+            int cvt_blocks = (int)((x_values + (size_t)cvt_threads - 1u) /
+                                   (size_t)cvt_threads);
+            f32_to_f16_kernel<<<cvt_blocks, cvt_threads>>>(
+                (__half *)ctx->d_x_f16, ctx->d_x, x_values);
+            err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                fprintf(stderr,
+                        "[bn:gpu:cuda] matmul batch input convert failed: %s\n",
+                        cudaGetErrorString(err));
+                return -1;
+            }
+            x_f16_ready = 1;
+            break;
+        }
+    }
     int q8_1_ready = 0;
     int q8_k_ready = 0;
     size_t out_offset = 0;
@@ -4102,7 +4144,12 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         int rows = ops[i].rows;
         int type = ops[i].type;
-        if ((w->f16_data || w->f32_data) &&
+        if (w->f16_data && x_f16_ready &&
+            cuda_cublas_matmul_f16_preconverted(
+                ctx, ctx->d_out + out_offset, w, ctx->d_x_f16, rows,
+                x_cols, n_tokens) == 0) {
+            err = cudaSuccess;
+        } else if ((w->f16_data || w->f32_data) &&
             cuda_cublas_matmul_f16(ctx, ctx->d_out + out_offset, w,
                                    ctx->d_x, rows, x_cols,
                                    n_tokens) == 0) {
