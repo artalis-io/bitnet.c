@@ -119,6 +119,16 @@ struct BnGPUBackend {
                              int head_size, int kv_mul, int kv_dim,
                              float attention_scale);
 
+    // Fused prompt attention + output projection. Optional; backends may keep
+    // the attention intermediate resident before applying W_wo.
+    int (*prefill_attention_wo)(void *ctx, float *out, void *wo_buf,
+                                const float *Q, const float *K,
+                                const float *V, int n_tokens,
+                                int n_heads, int n_kv_heads, int head_size,
+                                int kv_mul, int kv_dim, int wo_rows,
+                                int wo_cols, int wo_type,
+                                float attention_scale);
+
     // GPU-resident forward pass: execute a backend-private lowered command list
     // as a single submission. All intermediate buffers stay on GPU. Only
     // readback_buf is copied to out_host.

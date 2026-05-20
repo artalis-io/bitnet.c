@@ -4778,6 +4778,131 @@ static int cuda_prefill_attention(void *vctx, float *out,
     return 0;
 }
 
+static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
+                                     const float *Q, const float *K,
+                                     const float *V, int n_tokens,
+                                     int n_heads, int n_kv_heads,
+                                     int head_size, int kv_mul, int kv_dim,
+                                     int wo_rows, int wo_cols, int wo_type,
+                                     float attention_scale) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    BnCudaBuffer *wo = (BnCudaBuffer *)wo_buf;
+    if (getenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO"))
+        return -1;
+    if (!ctx || !out || !wo || !wo->data || !Q || !K || !V ||
+        n_tokens <= 1 || n_heads <= 0 || n_kv_heads <= 0 ||
+        head_size <= 0 || kv_mul <= 0 || kv_dim <= 0 ||
+        n_heads / kv_mul != n_kv_heads || wo_rows <= 0 ||
+        wo_cols != n_heads * head_size || wo->rows != wo_rows ||
+        wo->cols != wo_cols || !cuda_type_supported(wo_type))
+        return -1;
+    int min_tokens = cuda_env_int("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", 64);
+    if (n_tokens < min_tokens || n_tokens > 2048)
+        return -1;
+
+    size_t q_values = (size_t)n_tokens * (size_t)n_heads *
+                      (size_t)head_size;
+    size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
+    size_t total_values = q_values + 2u * kv_values;
+    size_t out_values = (size_t)n_tokens * (size_t)wo_rows;
+    if (cuda_ensure_prefill(ctx, total_values) != 0)
+        return -1;
+    if (cuda_ensure_scratch(ctx, q_values * sizeof(float),
+                            out_values * sizeof(float)) != 0)
+        return -1;
+
+    float *d_q = ctx->d_prefill;
+    float *d_k = d_q + q_values;
+    float *d_v = d_k + kv_values;
+    cudaError_t err = cudaMemcpy(d_q, Q, q_values * sizeof(float),
+                                 cudaMemcpyHostToDevice);
+    if (err == cudaSuccess)
+        err = cudaMemcpy(d_k, K, kv_values * sizeof(float),
+                         cudaMemcpyHostToDevice);
+    if (err == cudaSuccess)
+        err = cudaMemcpy(d_v, V, kv_values * sizeof(float),
+                         cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill attention+wo upload failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    int threads = 256;
+    int warps = threads / 32;
+    size_t shared = (size_t)(n_tokens + threads) * sizeof(float);
+    prefill_attention_kernel<<<dim3(n_heads, n_tokens, 1), threads,
+                               shared>>>(
+        ctx->d_x, d_q, d_k, d_v, n_tokens, n_heads, head_size,
+        kv_mul, kv_dim, attention_scale);
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill attention+wo attention failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    if ((wo->f16_data || wo->f32_data) &&
+        cuda_cublas_matmul_f16(ctx, ctx->d_out, wo, ctx->d_x, wo_rows,
+                               wo_cols, n_tokens) == 0) {
+        err = cudaSuccess;
+    } else if (wo_type == BN_GGUF_TENSOR_Q4_K && (wo_cols % BN_QK_K) == 0) {
+        int x_blocks = (wo_cols + 31) / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(x_blocks, n_tokens, 1), 32, 0>>>(
+            xq, ctx->d_x, wo_cols, n_tokens);
+        dim3 grid((wo_rows + warps - 1) / warps, n_tokens, 1);
+        q4k_dot_matmul_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ4K *)wo->data, xq, wo_rows,
+            wo_cols, n_tokens, 0);
+    } else if (wo_type == BN_GGUF_TENSOR_Q6_K && (wo_cols % BN_QK_K) == 0 &&
+               !getenv("BN_CUDA_DISABLE_Q6K_DOT")) {
+        int x_blocks = wo_cols / BN_QK_K;
+        if (cuda_ensure_q8_k(ctx, wo_cols, n_tokens) != 0)
+            return -1;
+        BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
+        quantize_q8k_batch_kernel<<<dim3(x_blocks, n_tokens, 1), BN_QK_K>>>(
+            xq, ctx->d_x, wo_cols, n_tokens);
+        dim3 grid((wo_rows + warps - 1) / warps, n_tokens, 1);
+        q6k_dot_matmul_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ6K *)wo->data, xq, wo_rows,
+            wo_cols, n_tokens, 0);
+    } else if (wo_type == BN_GGUF_TENSOR_Q5_0 && (wo_cols & 31) == 0) {
+        dim3 grid(((wo_rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ5_0 *)wo->data, ctx->d_x, wo_rows,
+            wo_cols, n_tokens, 0);
+    } else if (wo_type == BN_GGUF_TENSOR_Q8_0 && (wo_cols & 31) == 0) {
+        dim3 grid(((wo_rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            ctx->d_out, (const BnBlockQ8_0 *)wo->data, ctx->d_x, wo_rows,
+            wo_cols, n_tokens, 0);
+    } else {
+        return -1;
+    }
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill attention+wo matmul failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    size_t out_bytes = out_values * sizeof(float);
+    if (cuda_ensure_host_out(ctx, out_bytes) != 0)
+        return -1;
+    err = cudaMemcpy(ctx->h_out, ctx->d_out, out_bytes,
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill attention+wo readback failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    memcpy(out, ctx->h_out, out_bytes);
+    return 0;
+}
+
 static float cuda_u32_to_f32(uint32_t bits) {
     float out;
     memcpy(&out, &bits, sizeof(out));
@@ -6423,6 +6548,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->dense_ffn = cuda_dense_ffn;
     gpu->dense_ffn_batch = cuda_dense_ffn_batch;
     gpu->prefill_attention = cuda_prefill_attention;
+    gpu->prefill_attention_wo = cuda_prefill_attention_wo;
     gpu->init_activations = cuda_init_activations;
     gpu->free_activations = cuda_free_activations;
     gpu->write_activation = cuda_write_activation;

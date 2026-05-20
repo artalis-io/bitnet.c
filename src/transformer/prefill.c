@@ -721,6 +721,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
             int q_gated = plan.q_gated;
             int wo_cols_attn = lw->attn.wo.cols;
+            int used_fused_attn_wo = 0;
 
             if (bn_model_tq_state(m) == NULL) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
@@ -789,15 +790,33 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     !getenv("BN_CUDA_DISABLE_PREFILL_ATTN") &&
                     n_tokens >= prefill_gpu_attention_min_tokens() &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
-                    if (gpu->prefill_attention(
+                    const BnBackendModel *backend = bn_model_backend(m);
+                    void *wo_buf = backend ? bn_backend_model_handle(
+                        backend, l, BN_BACKEND_HANDLE_WO_PREFILL) : NULL;
+                    if (gpu->prefill_attention_wo && wo_buf &&
+                        c->dim < 2048 &&
+                        !lw->norm.attn_sub_norm &&
+                        !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                          lw->norm.attn_post_norm) &&
+                        gpu->prefill_attention_wo(
+                            gpu->ctx, Xb2, wo_buf, Q_buf, K_new, V_new,
+                            n_tokens, c->n_heads, layer_n_kv_heads,
+                            layer_head_size, layer_kv_mul, kv_dim,
+                            lw->attn.wo.rows, lw->attn.wo.cols,
+                            lw->attn.wo.type,
+                            prefill_attention_scale(c, layer_head_size)) == 0) {
+                        used_gpu_attn = 1;
+                        used_fused_attn_wo = 1;
+                    } else if (gpu->prefill_attention(
                             gpu->ctx, Q_buf, Q_buf, K_new, V_new, n_tokens,
                             c->n_heads, layer_n_kv_heads, layer_head_size,
                             layer_kv_mul, kv_dim,
-                            prefill_attention_scale(c, layer_head_size)) != 0) {
+                            prefill_attention_scale(c, layer_head_size)) == 0) {
+                        used_gpu_attn = 1;
+                    } else {
                         sh_arena_free(pf_arena);
                         return NULL;
                     }
-                    used_gpu_attn = 1;
                 }
                 if (!used_gpu_attn)
                     bn_transformer_batched_attn_dispatch(m, &bctx);
@@ -884,12 +903,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             {
                 int wo_cols = lw->attn.wo.cols;
                 t_prof = prefill_profile_now(&prof);
-                if (lw->norm.attn_sub_norm)
+                if (!used_fused_attn_wo && lw->norm.attn_sub_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_rmsnorm(Q_buf + (size_t)t * wo_cols,
                                         Q_buf + (size_t)t * wo_cols,
                                         lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
-                {
+                if (!used_fused_attn_wo) {
                     const BnBackendModel *backend = bn_model_backend(m);
                     void *wo_buf = backend ? bn_backend_model_handle(
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL) : NULL;
@@ -899,7 +918,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_quant_matmul_gpu(m, Xb2, &lw->attn.wo,
                                                  Q_buf, n_tokens, s->x_q);
                 }
-                if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
+                if (!used_fused_attn_wo &&
+                    (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                    lw->norm.attn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_rmsnorm(Xb2 + (size_t)t * dim,
                                         Xb2 + (size_t)t * dim,
