@@ -726,6 +726,35 @@ static __global__ void q4k_dot_matvec_kernel(float *out,
     }
 }
 
+static __global__ void q5k_dot_matvec_kernel(float *out,
+                                             const BnBlockQ5K *blocks,
+                                             const BnCudaBlockQ8_1 *xq,
+                                             const float *bias,
+                                             int rows, int cols,
+                                             size_t out_offset) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row = blockIdx.x * warps_per_block + warp;
+    if (row >= rows) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    float sum = 0.0f;
+    const BnBlockQ5K *row_blocks = blocks + (size_t)row * n_bpr;
+    for (int b = kbx; b < n_bpr; b += 2)
+        sum += cuda_vec_dot_q5k_q8_1(&row_blocks[b], xq + (size_t)b * 8,
+                                     iqs);
+
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0) {
+        if (bias) sum += bias[row];
+        out[out_offset + row] = sum;
+    }
+}
+
 static __global__ void q4k_dot_matmul_kernel(float *out,
                                              const BnBlockQ4K *blocks,
                                              const BnCudaBlockQ8_1 *xq,
@@ -4782,6 +4811,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_kernel, blocks,
                     q4_threads, 0,
                     out, (const BnBlockQ4K *)w->data, xq, bias,
+                    op->rows, op->cols, out_offset);
+            } else if (op->type == BN_GGUF_TENSOR_Q5_K &&
+                       (op->cols % BN_QK_K) == 0 && enable_q5k_dot) {
+                if (cuda_ensure_q8_1(ctx, op->cols) != 0) return -1;
+                BnCudaBlockQ8_1 *xq =
+                    (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                    (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
+                int q5_threads = 256;
+                int warps = q5_threads / 32;
+                int blocks = (op->rows + warps - 1) / warps;
+                BN_CUDA_LAUNCH(ctx, q5k_dot_matvec_kernel, blocks,
+                    q5_threads, 0,
+                    out, (const BnBlockQ5K *)w->data, xq, bias,
                     op->rows, op->cols, out_offset);
             } else if ((enable_q8_preq_all ||
                         (is_logits_op && q8_preq_logits_default)) &&
