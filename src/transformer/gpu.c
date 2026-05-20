@@ -544,10 +544,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 bn_transformer_gpu_resolve_dense_ffn_resources(
                     gpu, backend, lw, l);
         }
+        int use_q4_q8_layer = q4_q8_from_layer >= 0 &&
+                               l >= q4_q8_from_layer &&
+                               (q4_q8_to_layer < 0 || l <= q4_q8_to_layer);
+        int use_q4_q8_attn = use_q4_q8_layer && !q4_q8_ffn_only;
+        int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
 
-        // ---- SSM layer: CPU fallback until the WebGPU SSM path is token-coherent ----
+        // ---- SSM layer: CPU fallback until the GPU SSM path is token-coherent ----
         if (!is_attn) {
             int use_cpu_ssm_fallback = 1;
+            if (gpu->kind == BN_GPU_BACKEND_CUDA &&
+                getenv("BN_CUDA_ENABLE_SSM_GRAPH"))
+                use_cpu_ssm_fallback = 0;
             if (use_cpu_ssm_fallback) {
                 void *nn = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);
@@ -586,11 +594,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
         BnTransformerGPUQKVResources qkv_res =
             bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
-        int use_q4_q8_layer = q4_q8_from_layer >= 0 &&
-                               l >= q4_q8_from_layer &&
-                               (q4_q8_to_layer < 0 || l <= q4_q8_to_layer);
-        int use_q4_q8_attn = use_q4_q8_layer && !q4_q8_ffn_only;
-        int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
         BnTransformerGPUAttentionResources attn_res =
             bn_transformer_gpu_resolve_attention_resources(gpu, backend, lw, l);
         if (gpu_qkv_resources_missing(lw, &plan, &qkv_res) ||

@@ -2407,6 +2407,154 @@ static __global__ void activation_kernel(float *x, int n, int kind) {
     }
 }
 
+static __global__ void ssm_conv_silu_kernel(
+    float *qkv, float *conv_state, const float *conv1d_w,
+    int qkv_dim, int kern, size_t conv_off) {
+    int ch = blockIdx.x * blockDim.x + threadIdx.x;
+    if (ch >= qkv_dim || kern < 2) return;
+    float sum = 0.0f;
+    for (int k = 0; k < kern - 1; k++)
+        sum += conv_state[conv_off + (size_t)k * qkv_dim + ch] *
+               conv1d_w[(size_t)ch * kern + k];
+    float cur = qkv[ch];
+    sum += cur * conv1d_w[(size_t)ch * kern + (kern - 1)];
+    for (int k = 0; k < kern - 2; k++)
+        conv_state[conv_off + (size_t)k * qkv_dim + ch] =
+            conv_state[conv_off + (size_t)(k + 1) * qkv_dim + ch];
+    conv_state[conv_off + (size_t)(kern - 2) * qkv_dim + ch] = cur;
+    qkv[ch] = sum / (1.0f + expf(-sum));
+}
+
+static __global__ void ssm_l2norm_kernel(
+    float *q, float *k, int head_dim, int q_off, int k_off) {
+    int head = blockIdx.x;
+    int tid = threadIdx.x;
+    extern __shared__ float scratch[];
+    float qn = 0.0f;
+    float kn = 0.0f;
+    size_t qb = (size_t)q_off + (size_t)head * head_dim;
+    size_t kb = (size_t)k_off + (size_t)head * head_dim;
+    for (int d = tid; d < head_dim; d += blockDim.x) {
+        float qv = q[qb + d];
+        float kv = k[kb + d];
+        qn += qv * qv;
+        kn += kv * kv;
+    }
+    float *scratch_q = scratch;
+    float *scratch_k = scratch + 8;
+    qn = cuda_block_reduce_sum_all(qn, scratch_q);
+    kn = cuda_block_reduce_sum_all(kn, scratch_k);
+    float inv_q = 1.0f / (sqrtf(qn) + 1e-6f);
+    float inv_k = 1.0f / (sqrtf(kn) + 1e-6f);
+    for (int d = tid; d < head_dim; d += blockDim.x) {
+        q[qb + d] *= inv_q;
+        k[kb + d] *= inv_k;
+    }
+}
+
+static __global__ void ssm_alpha_beta_kernel(
+    float *alpha, float *beta, const float *dt_bias, const float *a_log,
+    int n) {
+    int h = threadIdx.x;
+    if (h >= n) return;
+    float dt = alpha[h] + dt_bias[h];
+    float dt_sp = dt > 20.0f ? dt : logf(1.0f + expf(dt));
+    alpha[h] = expf(dt_sp * a_log[h]);
+    beta[h] = 1.0f / (1.0f + expf(-beta[h]));
+}
+
+static __global__ void ssm_alpha_beta_split_kernel(
+    const float *src, float *alpha, float *beta, const float *dt_bias,
+    const float *a_log, int n, int beta_off) {
+    int h = threadIdx.x;
+    if (h >= n) return;
+    float dt = src[h] + dt_bias[h];
+    float dt_sp = dt > 20.0f ? dt : logf(1.0f + expf(dt));
+    alpha[h] = expf(dt_sp * a_log[h]);
+    float b = src[beta_off + h];
+    beta[h] = 1.0f / (1.0f + expf(-b));
+}
+
+static __global__ void ssm_delta_kernel(
+    float *state, float *out, const float *q, const float *k,
+    const float *v, const float *alpha, const float *beta,
+    int head_k_dim, int head_v_dim, int num_k_heads, float q_scale,
+    size_t state_off, int q_off, int k_off, int v_off) {
+    int hv_idx = blockIdx.x;
+    int tid = threadIdx.x;
+    int hk_idx = hv_idx % num_k_heads;
+    extern __shared__ float sk[];
+    size_t state_base = state_off +
+        (size_t)hv_idx * (size_t)head_k_dim * (size_t)head_v_dim;
+    float decay = alpha[hv_idx];
+    float b = beta[hv_idx];
+    int total = head_k_dim * head_v_dim;
+
+    for (int i = tid; i < total; i += blockDim.x)
+        state[state_base + i] *= decay;
+    __syncthreads();
+
+    for (int vi = tid; vi < head_v_dim; vi += blockDim.x) {
+        float sum = 0.0f;
+        float comp = 0.0f;
+        for (int ki = 0; ki < head_k_dim; ki++) {
+            float y = state[state_base + (size_t)ki * head_v_dim + vi] *
+                      k[(size_t)k_off + (size_t)hk_idx * head_k_dim + ki] -
+                      comp;
+            float t = sum + y;
+            comp = (t - sum) - y;
+            sum = t;
+        }
+        sk[vi] = sum;
+    }
+    __syncthreads();
+
+    for (int i = tid; i < total; i += blockDim.x) {
+        int ki = i / head_v_dim;
+        int vi = i - ki * head_v_dim;
+        float kk = k[(size_t)k_off + (size_t)hk_idx * head_k_dim + ki];
+        state[state_base + i] +=
+            kk * b * (v[(size_t)v_off + (size_t)hv_idx * head_v_dim + vi] -
+                      sk[vi]);
+    }
+    __syncthreads();
+
+    for (int vi = tid; vi < head_v_dim; vi += blockDim.x) {
+        float sum = 0.0f;
+        float comp = 0.0f;
+        for (int ki = 0; ki < head_k_dim; ki++) {
+            float y = state[state_base + (size_t)ki * head_v_dim + vi] *
+                      q[(size_t)q_off + (size_t)hk_idx * head_k_dim + ki] -
+                      comp;
+            float t = sum + y;
+            comp = (t - sum) - y;
+            sum = t;
+        }
+        out[(size_t)hv_idx * head_v_dim + vi] = sum * q_scale;
+    }
+}
+
+static __global__ void ssm_gate_kernel(
+    float *out, const float *z, const float *norm_w, int head_v_dim,
+    float eps) {
+    int hv_idx = blockIdx.x;
+    int tid = threadIdx.x;
+    extern __shared__ float scratch[];
+    size_t base = (size_t)hv_idx * head_v_dim;
+    float ss = 0.0f;
+    for (int d = tid; d < head_v_dim; d += blockDim.x) {
+        float v = out[base + d];
+        ss += v * v;
+    }
+    ss = cuda_block_reduce_sum_all(ss, scratch);
+    float inv = 1.0f / sqrtf(ss / (float)head_v_dim + eps);
+    for (int d = tid; d < head_v_dim; d += blockDim.x) {
+        float normed = out[base + d] * inv * norm_w[d];
+        float g = z[base + d];
+        out[base + d] = normed * (g / (1.0f + expf(-g)));
+    }
+}
+
 static __global__ void rope_kernel(float *q, float *k, const float *freq,
                                    int n_heads, int head_size, int pos,
                                    int rope_dims, int n_kv_heads,
@@ -4063,6 +4211,12 @@ static const char *cuda_op_name(int code) {
     case BN_GPU_CODE_SOFTMAX: return "softmax";
     case BN_GPU_CODE_GQA_COMBINE: return "gqa_combine";
     case BN_GPU_CODE_FLASH_ATTN: return "flash_attn";
+    case BN_GPU_CODE_SSM_CONV_SILU: return "ssm_conv_silu";
+    case BN_GPU_CODE_SSM_L2NORM: return "ssm_l2norm";
+    case BN_GPU_CODE_SSM_ALPHA_BETA: return "ssm_alpha_beta";
+    case BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT: return "ssm_alpha_beta_split";
+    case BN_GPU_CODE_SSM_DELTA: return "ssm_delta";
+    case BN_GPU_CODE_SSM_GATE: return "ssm_gate";
     default: return "unknown";
     }
 }
@@ -5201,6 +5355,112 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 out, q, key, value, n_heads, head_size, n_kv, kv_mul,
                 kv_dim, seq_len, op->p[6], cuda_u32_to_f32(op->p[7]),
                 ctx->kv_f16);
+            break;
+        }
+        case BN_GPU_CODE_SSM_CONV_SILU: {
+            BnCudaBuffer *w = (BnCudaBuffer *)op->W_buf;
+            float *qkv = cuda_act(ctx, op->buf_in);
+            float *conv_state = cuda_act(ctx, BN_GPU_VALUE_SSM_CONV_STATE);
+            int qkv_dim = (int)op->p[0];
+            int kern = (int)op->p[1];
+            size_t conv_off = (size_t)op->p[2];
+            if (!w || !w->data || !qkv || !conv_state ||
+                qkv_dim <= 0 || kern <= 1)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, ssm_conv_silu_kernel,
+                (qkv_dim + threads - 1) / threads, threads, 0,
+                qkv, conv_state, (const float *)w->data, qkv_dim, kern,
+                conv_off);
+            break;
+        }
+        case BN_GPU_CODE_SSM_L2NORM: {
+            float *q = cuda_act(ctx, op->buf_in);
+            float *k = cuda_act(ctx, op->buf_out);
+            int head_dim = (int)op->p[0];
+            int q_off = (int)op->p[1];
+            int k_off = (int)op->p[2];
+            int n_heads = op->rows;
+            if (!q || !k || head_dim <= 0 || n_heads <= 0)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, ssm_l2norm_kernel, n_heads, threads,
+                16 * sizeof(float), q, k, head_dim, q_off, k_off);
+            break;
+        }
+        case BN_GPU_CODE_SSM_ALPHA_BETA: {
+            BnCudaBuffer *dt = (BnCudaBuffer *)op->W_buf;
+            uintptr_t a_raw = (uintptr_t)op->p[6] |
+                              ((uintptr_t)op->p[7] << 32);
+            BnCudaBuffer *a = (BnCudaBuffer *)a_raw;
+            float *alpha = cuda_act(ctx, BN_GPU_VALUE_SSM_ALPHA);
+            float *beta = cuda_act(ctx, BN_GPU_VALUE_SSM_BETA);
+            int n = (int)op->p[0];
+            if (!dt || !dt->data || !a || !a->data ||
+                !alpha || !beta || n <= 0)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, ssm_alpha_beta_kernel, 1, threads, 0,
+                alpha, beta, (const float *)dt->data, (const float *)a->data,
+                n);
+            break;
+        }
+        case BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT: {
+            BnCudaBuffer *dt = (BnCudaBuffer *)op->W_buf;
+            uintptr_t a_raw = (uintptr_t)op->p[6] |
+                              ((uintptr_t)op->p[7] << 32);
+            BnCudaBuffer *a = (BnCudaBuffer *)a_raw;
+            const float *src = cuda_act(ctx, op->buf_in);
+            float *alpha = cuda_act(ctx, BN_GPU_VALUE_SSM_ALPHA);
+            float *beta = cuda_act(ctx, BN_GPU_VALUE_SSM_BETA);
+            int n = (int)op->p[0];
+            int beta_off = (int)op->p[1];
+            if (!dt || !dt->data || !a || !a->data ||
+                !src || !alpha || !beta || n <= 0 || beta_off < n)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, ssm_alpha_beta_split_kernel, 1, threads, 0,
+                src, alpha, beta, (const float *)dt->data,
+                (const float *)a->data, n, beta_off);
+            break;
+        }
+        case BN_GPU_CODE_SSM_DELTA: {
+            float *state = cuda_act(ctx, BN_GPU_VALUE_SSM_STATE);
+            float *out = cuda_act(ctx, op->buf_out);
+            const float *q = cuda_act(ctx, op->buf_in);
+            const float *k = cuda_act(ctx, op->buf_aux);
+            int v_buf = op->p[7] ? op->buf_in : BN_GPU_VALUE_SSM_V;
+            const float *v = cuda_act(ctx, v_buf);
+            const float *alpha = cuda_act(ctx, BN_GPU_VALUE_SSM_ALPHA);
+            const float *beta = cuda_act(ctx, BN_GPU_VALUE_SSM_BETA);
+            int head_k_dim = (int)op->p[0];
+            int head_v_dim = (int)op->p[1];
+            int num_k_heads = (int)op->p[2];
+            float q_scale = cuda_u32_to_f32(op->p[3]);
+            size_t state_off = (size_t)op->p[4] / sizeof(float);
+            int q_off = (int)op->p[6];
+            int k_off = (int)op->p[7];
+            int v_off = k_off ? 2 * num_k_heads * head_k_dim : 0;
+            int num_v_heads = op->rows;
+            if (!state || !out || !q || !k || !v || !alpha || !beta ||
+                head_k_dim <= 0 || head_v_dim <= 0 || num_k_heads <= 0 ||
+                num_v_heads <= 0)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, ssm_delta_kernel, num_v_heads, threads,
+                (size_t)head_v_dim * sizeof(float), state, out, q, k, v,
+                alpha, beta, head_k_dim, head_v_dim, num_k_heads, q_scale,
+                state_off, q_off, k_off, v_off);
+            break;
+        }
+        case BN_GPU_CODE_SSM_GATE: {
+            BnCudaBuffer *w = (BnCudaBuffer *)op->W_buf;
+            float *out = cuda_act(ctx, op->buf_in);
+            const float *z = cuda_act(ctx, op->buf_aux);
+            int head_v_dim = (int)op->p[0];
+            float eps = cuda_u32_to_f32(op->p[1]);
+            int num_v_heads = op->rows;
+            if (!w || !w->data || !out || !z ||
+                head_v_dim <= 0 || num_v_heads <= 0)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, ssm_gate_kernel, num_v_heads, threads,
+                8 * sizeof(float), out, z, (const float *)w->data,
+                head_v_dim, eps);
             break;
         }
         default:
