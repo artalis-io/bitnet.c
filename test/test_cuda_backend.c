@@ -79,6 +79,65 @@ static void run_per_head_rmsnorm_case(BnGPUBackend *gpu) {
     gpu->free_activations(gpu->ctx);
 }
 
+static void run_gated_q_utility_case(BnGPUBackend *gpu) {
+    BnConfig cfg = {0};
+    cfg.dim = 8;
+    cfg.hidden_dim = 8;
+    cfg.n_layers = 1;
+    cfg.n_heads = 2;
+    cfg.n_kv_heads = 2;
+    cfg.vocab_size = 16;
+    cfg.seq_len = 8;
+    cfg.rope_theta = BN_DEFAULT_ROPE_THETA;
+    cfg.head_size = 4;
+    cfg.kv_dim = 8;
+    cfg.kv_mul = 1;
+    assert(gpu->init_activations(gpu->ctx, &cfg) == 0);
+
+    float qkv[16] = {
+        1.0f, 2.0f, 3.0f, 4.0f, -1.0f, 0.0f, 1.0f, 2.0f,
+        5.0f, 6.0f, 7.0f, 8.0f, -2.0f, -1.0f, 0.5f, 1.5f,
+    };
+    float q_ref[8] = {
+        1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f,
+    };
+    float q_out[8] = {0};
+    assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_QKV, qkv,
+                                 sizeof(qkv), 0) == 0);
+    BnGPUOp deint = {0};
+    deint.op_code = BN_GPU_CODE_DEINTERLEAVE_Q;
+    deint.buf_in = BN_GPU_VALUE_QKV;
+    deint.buf_out = BN_GPU_VALUE_Q;
+    deint.p[0] = 8;
+    deint.p[1] = 4;
+    assert(gpu->execute(gpu->ctx, &deint, 1, BN_GPU_VALUE_Q, q_out, 8) == 0);
+    expect_close(q_out, q_ref, 8);
+
+    float attn[8] = { 2.0f, -4.0f, 1.0f, 0.5f, -1.5f, 3.0f, 0.25f, -2.0f };
+    float gated_ref[8] = {0};
+    for (int h = 0; h < 2; h++) {
+        for (int d = 0; d < 4; d++) {
+            int i = h * 4 + d;
+            float gate = qkv[h * 8 + 4 + d];
+            gated_ref[i] = attn[i] / (1.0f + expf(-gate));
+        }
+    }
+    float gated_out[8] = {0};
+    assert(gpu->write_activation(gpu->ctx, BN_GPU_VALUE_XB, attn,
+                                 sizeof(attn), 0) == 0);
+    BnGPUOp gate = {0};
+    gate.op_code = BN_GPU_CODE_SIGMOID_GATE;
+    gate.buf_in = BN_GPU_VALUE_XB;
+    gate.buf_aux = BN_GPU_VALUE_QKV;
+    gate.p[0] = 8;
+    gate.p[1] = 4;
+    assert(gpu->execute(gpu->ctx, &gate, 1, BN_GPU_VALUE_XB,
+                        gated_out, 8) == 0);
+    expect_close(gated_out, gated_ref, 8);
+
+    gpu->free_activations(gpu->ctx);
+}
+
 int main(void) {
 #ifndef BN_ENABLE_CUDA
     printf("CUDA backend test skipped: BN_ENABLE_CUDA not set\n");
@@ -250,6 +309,7 @@ int main(void) {
                     1, BN_QK_K, xk, &ref_q8k);
 
     run_per_head_rmsnorm_case(gpu);
+    run_gated_q_utility_case(gpu);
 
     bn_gpu_cuda_destroy(gpu);
 

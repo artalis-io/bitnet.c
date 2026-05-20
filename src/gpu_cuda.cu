@@ -2172,6 +2172,15 @@ static __global__ void copy_kernel(const float *src, float *dst,
     if (i < n) dst[dst_off + i] = src[src_off + i];
 }
 
+static __global__ void deinterleave_q_kernel(const float *src, float *dst,
+                                             int q_dim, int head_size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= q_dim) return;
+    int h = i / head_size;
+    int d = i - h * head_size;
+    dst[i] = src[(size_t)h * 2u * (size_t)head_size + (size_t)d];
+}
+
 static __global__ void bias_add_kernel(float *x, const float *bias, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) x[i] += bias[i];
@@ -2228,7 +2237,7 @@ static __global__ void residual_add_kernel(float *x, const float *r, int n) {
 }
 
 static __global__ void activation_gate_kernel(float *x, const float *aux,
-                                              int n, int kind) {
+                                              int n, int kind, int param1) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
     float v = x[i];
@@ -2236,7 +2245,15 @@ static __global__ void activation_gate_kernel(float *x, const float *aux,
         float r = v > 0.0f ? v : 0.0f;
         x[i] = r * r * aux[i];
     } else if (kind == BN_GPU_CODE_SIGMOID_GATE) {
-        x[i] = aux[i] / (1.0f + __expf(-v));
+        if (param1 > 0) {
+            int h = i / param1;
+            int d = i - h * param1;
+            float gate = aux[(size_t)h * 2u * (size_t)param1 +
+                             (size_t)param1 + (size_t)d];
+            x[i] = v / (1.0f + __expf(-gate));
+        } else {
+            x[i] = aux[i] / (1.0f + __expf(-v));
+        }
     } else {
         x[i] = (v / (1.0f + __expf(-v))) * aux[i];
     }
@@ -3896,6 +3913,7 @@ static const char *cuda_op_name(int code) {
     case BN_GPU_CODE_RESIDUAL_RMSNORM: return "residual_rmsnorm";
     case BN_GPU_CODE_PER_HEAD_RMSNORM: return "per_head_rmsnorm";
     case BN_GPU_CODE_COPY: return "copy";
+    case BN_GPU_CODE_DEINTERLEAVE_Q: return "deinterleave_q";
     case BN_GPU_CODE_BIAS_ADD: return "bias_add";
     case BN_GPU_CODE_RESIDUAL_ADD: return "residual_add";
     case BN_GPU_CODE_SILU_GATE: return "silu_gate";
@@ -3960,6 +3978,7 @@ static int cuda_op_reads_buf(const BnGPUOp *op, int buf) {
     case BN_GPU_CODE_RMSNORM:
     case BN_GPU_CODE_PER_HEAD_RMSNORM:
     case BN_GPU_CODE_COPY:
+    case BN_GPU_CODE_DEINTERLEAVE_Q:
     case BN_GPU_CODE_BIAS_ADD:
     case BN_GPU_CODE_SILU_ACT:
     case BN_GPU_CODE_RELU2_ACT:
@@ -4745,6 +4764,18 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 in, out, (int)op->p[0], (int)op->p[1], n);
             break;
         }
+        case BN_GPU_CODE_DEINTERLEAVE_Q: {
+            float *in = cuda_act(ctx, op->buf_in);
+            float *out = cuda_act(ctx, op->buf_out);
+            int q_dim = (int)op->p[0];
+            int head_size = (int)op->p[1];
+            if (!in || !out || q_dim <= 0 || head_size <= 0)
+                return -1;
+            BN_CUDA_LAUNCH(ctx, deinterleave_q_kernel,
+                (q_dim + threads - 1) / threads, threads, 0,
+                in, out, q_dim, head_size);
+            break;
+        }
         case BN_GPU_CODE_BIAS_ADD: {
             BnCudaBuffer *w = (BnCudaBuffer *)op->W_buf;
             float *in = cuda_act(ctx, op->buf_in);
@@ -4856,7 +4887,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (!in || !aux || n <= 0) return -1;
             BN_CUDA_LAUNCH(ctx, activation_gate_kernel,
                 (n + threads - 1) / threads, threads, 0,
-                in, aux, n, op->op_code);
+                in, aux, n, op->op_code, (int)op->p[1]);
             break;
         }
         case BN_GPU_CODE_SILU_ACT:
