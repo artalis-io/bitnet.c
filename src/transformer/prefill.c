@@ -235,7 +235,9 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
                                        int dim,
                                        int hidden_dim,
                                        int act_type,
-                                       int layer) {
+                                       int layer,
+                                       void *norm_buf,
+                                       float norm_eps) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     if (!gpu || !gpu->dense_ffn_batch || !backend ||
@@ -259,6 +261,14 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
             backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
     if (!gate_buf || !down_buf)
         return -1;
+
+    if (norm_buf && gpu->dense_ffn_batch_norm) {
+        return gpu->dense_ffn_batch_norm(
+            gpu->ctx, out, gate_buf, up_buf, down_buf, norm_buf, X,
+            n_tokens, dim, hidden_dim, lw->ffn.ffn_gate.type,
+            lw->ffn.ffn_up.type, lw->ffn.ffn_down.type, act_type,
+            norm_eps);
+    }
 
     return gpu->dense_ffn_batch(
         gpu->ctx, out, gate_buf, up_buf, down_buf, X, n_tokens,
@@ -670,12 +680,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 rope_cache_dims = layer_rope_dims;
                 rope_cache_theta = layer_rope_theta;
             }
-            t_prof = prefill_profile_now(&prof);
-            for (int t = 0; t < n_tokens; t++)
-                prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
-                                lw->norm.attn_norm, dim, c->norm_eps);
-            prefill_profile_add(&prof.attn_norm_ms, t_prof);
-
             int q_read_stride = lw->attn.wq.rows;
             int attn_idx = plan.attn_idx;
             size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
@@ -685,6 +689,27 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int used_raw_prefill_attn_wo = 0;
             BnGPUBackend *gpu = bn_model_gpu(m);
             const BnBackendModel *backend = bn_model_backend(m);
+            void *attn_norm_buf = backend ? bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_ATTN_NORM) : NULL;
+            int can_fuse_attn_input_norm =
+                gpu && gpu->prefill_qkv_attention_wo_norm && attn_norm_buf &&
+                n_tokens >= prefill_gpu_attention_min_tokens() &&
+                bn_model_tq_state(m) == NULL &&
+                !q_gated && pos0 == 0 &&
+                layer_rope_theta == c->rope_theta &&
+                !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
+                !lw->norm.attn_sub_norm &&
+                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                  lw->norm.attn_post_norm);
+            int attn_norm_ready = 0;
+            if (!can_fuse_attn_input_norm) {
+                t_prof = prefill_profile_now(&prof);
+                for (int t = 0; t < n_tokens; t++)
+                    prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
+                                    lw->norm.attn_norm, dim, c->norm_eps);
+                prefill_profile_add(&prof.attn_norm_ms, t_prof);
+                attn_norm_ready = 1;
+            }
             if (gpu && gpu->prefill_qkv_attention_wo &&
                 bn_model_tq_state(m) == NULL &&
                 !q_gated && pos0 == 0 &&
@@ -707,8 +732,33 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 void *k_norm_buf = backend ? bn_backend_model_handle(
                     backend, l, BN_BACKEND_HANDLE_K_NORM) : NULL;
                 t_prof = prefill_profile_now(&prof);
-                if (qk_buf && wv_buf && wo_buf &&
-                    gpu->prefill_qkv_attention_wo(
+                int qkv_fused_rc = -1;
+                if (qk_buf && wv_buf && wo_buf && can_fuse_attn_input_norm) {
+                    qkv_fused_rc = gpu->prefill_qkv_attention_wo_norm(
+                        gpu->ctx, Xb2, qk_buf, wv_buf, wo_buf,
+                        attn_norm_buf, q_norm_buf, k_norm_buf, act, K_new,
+                        V_new, n_tokens, dim, c->n_heads,
+                        layer_n_kv_heads, layer_head_size, layer_kv_mul,
+                        kv_dim, lw->attn.wq.rows + lw->attn.wk.rows,
+                        lw->attn.wq.type, lw->attn.wv.rows,
+                        lw->attn.wv.type, lw->attn.wo.rows,
+                        lw->attn.wo.cols, lw->attn.wo.type,
+                        c->qk_norm_per_head, c->norm_eps, pos0,
+                        layer_rope_dims,
+                        prefill_attention_scale(c, layer_head_size));
+                    if (qkv_fused_rc != 0) {
+                        t_prof = prefill_profile_now(&prof);
+                        for (int t = 0; t < n_tokens; t++)
+                            prefill_rmsnorm(
+                                Xb + t * dim, act + (size_t)t * dim,
+                                lw->norm.attn_norm, dim, c->norm_eps);
+                        prefill_profile_add(&prof.attn_norm_ms, t_prof);
+                        attn_norm_ready = 1;
+                        t_prof = prefill_profile_now(&prof);
+                    }
+                }
+                if (qkv_fused_rc != 0 && qk_buf && wv_buf && wo_buf) {
+                    qkv_fused_rc = gpu->prefill_qkv_attention_wo(
                         gpu->ctx, Xb2, qk_buf, wv_buf, wo_buf,
                         q_norm_buf, k_norm_buf, Xb, K_new, V_new,
                         n_tokens, dim, c->n_heads, layer_n_kv_heads,
@@ -719,13 +769,25 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->attn.wo.cols, lw->attn.wo.type,
                         c->qk_norm_per_head, c->norm_eps, pos0,
                         layer_rope_dims,
-                        prefill_attention_scale(c, layer_head_size)) == 0) {
+                        prefill_attention_scale(c, layer_head_size));
+                }
+                if (qkv_fused_rc == 0) {
                     used_raw_prefill_attn_wo = 1;
                     used_fused_attn_wo = 1;
                     prefill_profile_add(&prof.qkv_ms, t_prof);
                 }
             }
             if (!used_raw_prefill_attn_wo) {
+                if (!attn_norm_ready) {
+                    t_prof = prefill_profile_now(&prof);
+                    for (int t = 0; t < n_tokens; t++)
+                        prefill_rmsnorm(Xb + t * dim,
+                                        act + (size_t)t * dim,
+                                        lw->norm.attn_norm, dim,
+                                        c->norm_eps);
+                    prefill_profile_add(&prof.attn_norm_ms, t_prof);
+                    attn_norm_ready = 1;
+                }
 #ifdef __AVX2__
             if (pf_xq && !bn_model_gpu(m) &&
                 prefill_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type)) {
@@ -1087,22 +1149,42 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 return NULL;
             }
         } else if (lw->ffn.ffn_up.data) {
-            t_prof = prefill_profile_now(&prof);
-            for (int t = 0; t < n_tokens; t++)
-                prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
-                                lw->norm.ffn_norm, dim, c->norm_eps);
-            prefill_profile_add(&prof.ffn_norm_ms, t_prof);
-
             int used_gpu_batch_ffn = 0;
             t_prof = prefill_profile_now(&prof);
+            BnGPUBackend *gpu_ffn = bn_model_gpu(m);
+            const BnBackendModel *backend_ffn = bn_model_backend(m);
+            void *ffn_norm_buf =
+                backend_ffn ? bn_backend_model_handle(
+                    backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
             if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
                 !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
                   lw->norm.ffn_post_norm) &&
-                prefill_dense_ffn_gpu_batch(m, Xb, lw, Xb, n_tokens,
+                n_tokens >= prefill_gpu_attention_min_tokens() &&
+                gpu_ffn && gpu_ffn->dense_ffn_batch_norm && ffn_norm_buf &&
+                prefill_dense_ffn_gpu_batch(m, Xb, lw, act, n_tokens,
                                             dim, hidden_dim,
-                                            c->act_type, l) == 0) {
+                                            c->act_type, l, ffn_norm_buf,
+                                            c->norm_eps) == 0) {
                 used_gpu_batch_ffn = 1;
-            } else if (c->has_ffn_gate) {
+            }
+            if (!used_gpu_batch_ffn) {
+                prefill_profile_add(&prof.ffn_ms, t_prof);
+                t_prof = prefill_profile_now(&prof);
+                for (int t = 0; t < n_tokens; t++)
+                    prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
+                                    lw->norm.ffn_norm, dim, c->norm_eps);
+                prefill_profile_add(&prof.ffn_norm_ms, t_prof);
+
+                t_prof = prefill_profile_now(&prof);
+                if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
+                    !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                      lw->norm.ffn_post_norm) &&
+                    prefill_dense_ffn_gpu_batch(m, Xb, lw, Xb, n_tokens,
+                                                dim, hidden_dim,
+                                                c->act_type, l, NULL,
+                                                0.0f) == 0) {
+                    used_gpu_batch_ffn = 1;
+                } else if (c->has_ffn_gate) {
 #ifdef __AVX2__
                 if (pf_xq && !bn_model_gpu(m) &&
                     prefill_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
@@ -1138,6 +1220,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnPrefillFFNActCtx act_ctx = { Hb, NULL, hidden_dim, c->act_type };
                 BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
                 bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
+                }
             }
 
             if (!used_gpu_batch_ffn) {
