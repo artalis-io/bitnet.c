@@ -1,4 +1,5 @@
 #include "moe_internal.h"
+#include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
 #include <stdlib.h>
@@ -381,10 +382,11 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         float *sh_up = up_buf;
         float *sh_down = down_buf;
 
-        // Need buffers sized for n_tokens * shared_hidden
-        // If shared_hidden > moe_hidden * T_max, we'd need bigger buffers.
+        // Need buffers sized for the full shared-expert batch. The reusable
+        // routed-expert buffers are only sized by the largest routed group.
         // For safety, allocate if needed.
-        int need_sh = (size_t)n_tokens * shared_hidden > (size_t)T_max * moe_hidden;
+        int need_sh = ((size_t)n_tokens * shared_hidden > (size_t)T_max * moe_hidden ||
+                       n_tokens > T_max);
         size_t sz_shg = (size_t)n_tokens * shared_hidden * sizeof(float);
         size_t sz_shd = (size_t)n_tokens * dim * sizeof(float);
         float *sh_g = need_sh ? (float *)bn_malloc(&a, sz_shg) : sh_gate;
@@ -392,16 +394,42 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         float *sh_d = need_sh ? (float *)bn_malloc(&a, sz_shd) : sh_down;
 
         if (sh_g && sh_u && sh_d) {
-            bn_quant_matmul(sh_g, &lw->shared.shared_gate, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
-            bn_quant_matmul(sh_u, &lw->shared.shared_up, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
-
-            size_t sh_total = (size_t)n_tokens * shared_hidden;
-            for (size_t i = 0; i < sh_total; i++) {
-                float g = sh_g[i];
-                sh_g[i] = (g / (1.0f + expf(-g))) * sh_u[i];
+            int used_gpu_shared = 0;
+            BnGPUBackend *gpu = bn_model_gpu(m);
+            BnBackendModel *backend = bn_model_backend(m);
+            int gpu_min_tokens = moe_cuda_prefill_min_tokens();
+            if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+                gpu->dense_ffn_batch && backend && n_tokens >= gpu_min_tokens) {
+                void *gate_gpu = bn_backend_model_qweight_buf(
+                    backend, &lw->shared.shared_gate);
+                void *up_gpu = bn_backend_model_qweight_buf(
+                    backend, &lw->shared.shared_up);
+                void *down_gpu = bn_backend_model_qweight_buf(
+                    backend, &lw->shared.shared_down);
+                if (gate_gpu && up_gpu && down_gpu &&
+                    gpu->dense_ffn_batch(
+                        gpu->ctx, sh_d, gate_gpu, up_gpu, down_gpu, Xb,
+                        n_tokens, dim, shared_hidden,
+                        lw->shared.shared_gate.type,
+                        lw->shared.shared_up.type,
+                        lw->shared.shared_down.type,
+                        c->act_type) == 0) {
+                    used_gpu_shared = 1;
+                }
             }
 
-            bn_quant_matmul(sh_d, &lw->shared.shared_down, sh_g, n_tokens, x_q_scratch, bn_model_pool(m));
+            if (!used_gpu_shared) {
+                bn_quant_matmul(sh_g, &lw->shared.shared_gate, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
+                bn_quant_matmul(sh_u, &lw->shared.shared_up, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
+
+                size_t sh_total = (size_t)n_tokens * shared_hidden;
+                for (size_t i = 0; i < sh_total; i++) {
+                    float g = sh_g[i];
+                    sh_g[i] = (g / (1.0f + expf(-g))) * sh_u[i];
+                }
+
+                bn_quant_matmul(sh_d, &lw->shared.shared_down, sh_g, n_tokens, x_q_scratch, bn_model_pool(m));
+            }
 
             // Apply shared expert sigmoid gate if present (Qwen3.5 MoE)
             if (lw->shared.shared_expert_gate) {
