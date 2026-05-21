@@ -60,11 +60,17 @@ typedef struct {
     size_t d_argmax_bytes;
     int *d_penalty_tokens;
     size_t d_penalty_tokens_bytes;
+    void **d_gemm_ptrs;
+    size_t d_gemm_ptrs_bytes;
+    void **h_gemm_ptrs;
+    size_t h_gemm_ptrs_bytes;
     float *d_prefill;
     size_t d_prefill_bytes;
     float *act_bufs[BN_GPU_VALUE_COUNT];
     size_t act_sizes[BN_GPU_VALUE_COUNT];
 } BnCudaCtx;
+
+static int cuda_ensure_gemm_ptrs(BnCudaCtx *ctx, int n_ptrs);
 
 typedef struct {
     uint16_t d;
@@ -3201,6 +3207,78 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
     const float zero = 0.0f;
     int q_ld = n_heads * head_size;
 
+    if (!getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM") &&
+        cuda_ensure_gemm_ptrs(ctx, n_heads * 3) == 0) {
+        const float **d_a = (const float **)ctx->d_gemm_ptrs;
+        const float **d_b = d_a + n_heads;
+        float **d_c = (float **)(d_b + n_heads);
+        void **h_a = ctx->h_gemm_ptrs;
+        void **h_b = h_a + n_heads;
+        void **h_c = h_b + n_heads;
+        for (int h = 0; h < n_heads; h++) {
+            int kv_h = h / kv_mul;
+            h_a[h] = (void *)(d_k + (size_t)kv_h * head_size);
+            h_b[h] = (void *)(d_q + (size_t)h * head_size);
+            h_c[h] = (void *)(d_scores + (size_t)h * n_tokens * n_tokens);
+        }
+        size_t ptr_bytes = (size_t)n_heads * 3u * sizeof(void *);
+        cudaError_t copy_err = cudaMemcpy(ctx->d_gemm_ptrs, ctx->h_gemm_ptrs,
+                                          ptr_bytes, cudaMemcpyHostToDevice);
+        if (copy_err != cudaSuccess) {
+            fprintf(stderr,
+                    "[bn:gpu:cuda] prefill score ptr upload failed: %s\n",
+                    cudaGetErrorString(copy_err));
+            return -1;
+        }
+        cublasStatus_t st = cublasSgemmBatched(
+            ctx->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
+            n_tokens, n_tokens, head_size,
+            &alpha, d_a, kv_dim, d_b, q_ld,
+            &zero, d_c, n_tokens, n_heads);
+        if (st == CUBLAS_STATUS_SUCCESS) {
+            int threads = 256;
+            prefill_causal_softmax_kernel<<<dim3(n_heads, n_tokens, 1), threads,
+                                            (size_t)threads * sizeof(float)>>>(
+                d_scores, n_tokens);
+            cudaError_t err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                fprintf(stderr, "[bn:gpu:cuda] prefill softmax launch failed: %s\n",
+                        cudaGetErrorString(err));
+                return -1;
+            }
+
+            for (int h = 0; h < n_heads; h++) {
+                int kv_h = h / kv_mul;
+                h_a[h] = (void *)(d_v + (size_t)kv_h * head_size);
+                h_b[h] = (void *)(d_scores + (size_t)h * n_tokens * n_tokens);
+                h_c[h] = (void *)(d_out + (size_t)h * head_size);
+            }
+            copy_err = cudaMemcpy(ctx->d_gemm_ptrs, ctx->h_gemm_ptrs,
+                                  ptr_bytes, cudaMemcpyHostToDevice);
+            if (copy_err != cudaSuccess) {
+                fprintf(stderr,
+                        "[bn:gpu:cuda] prefill value ptr upload failed: %s\n",
+                        cudaGetErrorString(copy_err));
+                return -1;
+            }
+            st = cublasSgemmBatched(
+                ctx->cublas, CUBLAS_OP_N, CUBLAS_OP_N,
+                head_size, n_tokens, n_tokens,
+                &one, d_a, kv_dim, d_b, n_tokens,
+                &zero, d_c, q_ld, n_heads);
+            if (st == CUBLAS_STATUS_SUCCESS)
+                return 0;
+            fprintf(stderr,
+                    "[bn:gpu:cuda] prefill batched value gemm failed: status %d\n",
+                    (int)st);
+            return -1;
+        }
+        if (getenv("BN_CUDA_DEBUG_PREFILL_GEMM"))
+            fprintf(stderr,
+                    "[bn:gpu:cuda] prefill batched score gemm unavailable: status %d\n",
+                    (int)st);
+    }
+
     for (int h = 0; h < n_heads; h++) {
         int kv_h = h / kv_mul;
         const float *q_h = d_q + (size_t)h * head_size;
@@ -3735,6 +3813,33 @@ static int cuda_ensure_prefill(BnCudaCtx *ctx, size_t values) {
         return -1;
     }
     ctx->d_prefill_bytes = bytes;
+    return 0;
+}
+
+static int cuda_ensure_gemm_ptrs(BnCudaCtx *ctx, int n_ptrs) {
+    if (!ctx || n_ptrs <= 0) return -1;
+    size_t bytes = (size_t)n_ptrs * sizeof(void *);
+    if (bytes > ctx->h_gemm_ptrs_bytes) {
+        void **p = (void **)realloc(ctx->h_gemm_ptrs, bytes);
+        if (!p) {
+            fprintf(stderr, "[bn:gpu:cuda] host gemm ptr alloc failed\n");
+            return -1;
+        }
+        ctx->h_gemm_ptrs = p;
+        ctx->h_gemm_ptrs_bytes = bytes;
+    }
+    if (bytes > ctx->d_gemm_ptrs_bytes) {
+        if (ctx->d_gemm_ptrs) cudaFree(ctx->d_gemm_ptrs);
+        ctx->d_gemm_ptrs = NULL;
+        ctx->d_gemm_ptrs_bytes = 0;
+        cudaError_t err = cudaMalloc(&ctx->d_gemm_ptrs, bytes);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] device gemm ptr alloc failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+        ctx->d_gemm_ptrs_bytes = bytes;
+    }
     return 0;
 }
 
@@ -6937,10 +7042,12 @@ void bn_gpu_cuda_destroy(BnGPUBackend *gpu) {
         if (ctx->d_x_f16) cudaFree(ctx->d_x_f16);
         if (ctx->d_argmax) cudaFree(ctx->d_argmax);
         if (ctx->d_penalty_tokens) cudaFree(ctx->d_penalty_tokens);
+        if (ctx->d_gemm_ptrs) cudaFree(ctx->d_gemm_ptrs);
         if (ctx->d_prefill) cudaFree(ctx->d_prefill);
         if (ctx->exec_graph) cudaGraphExecDestroy(ctx->exec_graph);
         if (ctx->exec_graph_def) cudaGraphDestroy(ctx->exec_graph_def);
         free(ctx->exec_nodes);
+        free(ctx->h_gemm_ptrs);
         if (ctx->h_out) cudaFreeHost(ctx->h_out);
         cuda_free_activations(ctx);
         if (ctx->cublas) cublasDestroy(ctx->cublas);
