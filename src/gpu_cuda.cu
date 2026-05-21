@@ -323,6 +323,19 @@ static __global__ void dequant_q6k_to_f32_kernel(
     out[i] = cuda_q6k_value(blk, col & (BN_QK_K - 1));
 }
 
+static __global__ void dequant_q6k_to_f16_kernel(
+    __half *out, const BnBlockQ6K *blocks, int rows, int cols) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n = (size_t)rows * (size_t)cols;
+    if (i >= n) return;
+    int row = (int)(i / (size_t)cols);
+    int col = (int)(i - (size_t)row * (size_t)cols);
+    int n_bpr = cols / BN_QK_K;
+    const BnBlockQ6K *blk = &blocks[(size_t)row * n_bpr +
+                                    col / BN_QK_K];
+    out[i] = __float2half_rn(cuda_q6k_value(blk, col & (BN_QK_K - 1)));
+}
+
 static __device__ void cuda_kv_store(void *cache, size_t idx, float v,
                                      int kv_f16) {
     if (kv_f16) {
@@ -4279,14 +4292,16 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
     if (getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
         return 0;
 
+    int q6_as_f16 = buf->type == BN_GGUF_TENSOR_Q6_K &&
+                    getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL;
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
-    size_t bytes = n * (buf->type == BN_GGUF_TENSOR_Q6_K
+    size_t bytes = n * (buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16
                         ? sizeof(float)
                         : sizeof(__half));
     int max_mb = cuda_env_int("BN_CUDA_CUBLAS_CACHE_MAX_MB", 128);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
-    void **cache_ptr = buf->type == BN_GGUF_TENSOR_Q6_K
+    void **cache_ptr = buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16
         ? &buf->f32_data
         : &buf->f16_data;
     cudaError_t err = cudaMalloc(cache_ptr, bytes);
@@ -4313,6 +4328,10 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
         dequant_q4k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
+    } else if (buf->type == BN_GGUF_TENSOR_Q6_K && q6_as_f16) {
+        dequant_q6k_to_f16_kernel<<<blocks, threads>>>(
+            (__half *)buf->f16_data, (const BnBlockQ6K *)buf->data,
+            buf->rows, buf->cols);
     } else {
         dequant_q6k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ6K *)buf->data,
@@ -4333,8 +4352,8 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
         fprintf(stderr,
                 "[bn:gpu:cuda] cublas cache ready type=%d rows=%d cols=%d bytes=%zu precision=%s\n",
                 buf->type, buf->rows, buf->cols, bytes,
-                buf->type == BN_GGUF_TENSOR_Q6_K ? "f32" : "f16");
-    if (buf->type == BN_GGUF_TENSOR_Q6_K)
+                buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16 ? "f32" : "f16");
+    if (buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16)
         buf->f32_size = bytes;
     else
         buf->f16_size = bytes;
