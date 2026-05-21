@@ -198,7 +198,8 @@ int bn_transformer_gpu_validate_forward(
             GPU_POLICY_REJECT("layer norm not uploaded");
     }
 
-    if (out->has_moe)
+    if (out->has_moe &&
+        !(gpu->kind == BN_GPU_BACKEND_CUDA && getenv("BN_CUDA_ENABLE_MOE_FFN")))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
     if (out->has_ssm && (!gpu->read_activation || !gpu->write_activation))
         GPU_POLICY_REJECT("ssm needs read/write activation");

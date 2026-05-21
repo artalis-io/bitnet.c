@@ -2,6 +2,7 @@
 #include "backend_session.h"
 #include "session.h"
 #include "../gpu_shader_ir_internal.h"
+#include "moe.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -698,8 +699,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         // ---- FFN (MoE or dense) ----
         ffn_block:;
         if (lw->moe.router_weight) {
-            // MoE FFN: CPU fallback until the WebGPU MoE path is token-coherent
             int use_cpu_moe_fallback = 1;
+            if (gpu->kind == BN_GPU_BACKEND_CUDA &&
+                getenv("BN_CUDA_ENABLE_MOE_FFN"))
+                use_cpu_moe_fallback = 0;
             if (use_cpu_moe_fallback) {
                 void *moe_next_norm = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);
@@ -714,6 +717,17 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             BnGPUMoETemporaryBuffers moe_temporaries;
             void *next_norm = bn_transformer_gpu_resolve_next_norm(
                 backend, l, c->n_layers, output_norm);
+            if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                bn_transformer_gpu_read_xb(gpu, s->xb,
+                                           (size_t)dim * sizeof(float)) != 0)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu moe route input readback failed");
+            if (!sess->moe_state)
+                return bn_transformer_gpu_reject_forward(
+                    &emit, "gpu moe session state missing");
+            bn_moe_route(sess->moe_state, s->xb, lw->moe.router_weight,
+                         dim, c->n_experts, c->n_experts_active,
+                         bn_model_pool(m));
             BnGPUMoEResolvedExpert expert_emit[BN_MAX_MOE_K];
             BnGPUMoEResources moe_res;
             if (bn_gpu_moe_bridge_resolve_resources(
