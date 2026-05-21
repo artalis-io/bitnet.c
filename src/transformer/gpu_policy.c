@@ -151,9 +151,13 @@ int bn_transformer_gpu_validate_forward(
         return 0;
     }
 
+    int cuda_hybrid_dense =
+        gpu->kind == BN_GPU_BACKEND_CUDA &&
+        c->full_attn_interval > 0 && c->n_experts <= 0;
     if (!getenv("BN_GPU_FORCE_GRAPH") && c->dim >= 4096 &&
         (bn_model_arch_requires_large_gpu_graph_fallback(c) ||
-         c->full_attn_interval > 0 || c->n_experts > 0))
+         (c->full_attn_interval > 0 && !cuda_hybrid_dense) ||
+         c->n_experts > 0))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
 
     if (gpu->kind == BN_GPU_BACKEND_CUDA && c->dim <= 2560 &&
