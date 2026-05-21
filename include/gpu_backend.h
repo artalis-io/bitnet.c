@@ -129,6 +129,23 @@ struct BnGPUBackend {
                                 int wo_cols, int wo_type,
                                 float attention_scale);
 
+    // Fused prompt QK/WV matmul + Q/K norm/RoPE + attention + W_O.
+    // Optional CUDA-oriented fast path. Writes processed K/V rows back to
+    // K_out/V_out so the existing session KV cache remains authoritative.
+    int (*prefill_qkv_attention_wo)(void *ctx, float *out,
+                                    void *qk_buf, void *wv_buf, void *wo_buf,
+                                    void *q_norm_buf, void *k_norm_buf,
+                                    const float *X, float *K_out,
+                                    float *V_out, int n_tokens, int dim,
+                                    int n_heads, int n_kv_heads,
+                                    int head_size, int kv_mul, int kv_dim,
+                                    int qk_rows, int qk_type,
+                                    int wv_rows, int wv_type,
+                                    int wo_rows, int wo_cols, int wo_type,
+                                    int qk_norm_per_head, float norm_eps,
+                                    int pos0, int rope_dims,
+                                    float attention_scale);
+
     // GPU-resident forward pass: execute a backend-private lowered command list
     // as a single submission. All intermediate buffers stay on GPU. Only
     // readback_buf is copied to out_host.

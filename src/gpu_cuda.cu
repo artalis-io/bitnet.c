@@ -2537,6 +2537,87 @@ static __global__ void qk_rmsnorm_rope_kernel(
     }
 }
 
+static __global__ void split_qk_prefill_kernel(const float *qk,
+                                               float *q,
+                                               float *k,
+                                               int n_tokens,
+                                               int q_dim,
+                                               int kv_dim,
+                                               int qk_rows) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_tokens * (q_dim + kv_dim);
+    if (i >= total) return;
+    int row = i / (q_dim + kv_dim);
+    int col = i - row * (q_dim + kv_dim);
+    const float *src = qk + (size_t)row * qk_rows;
+    if (col < q_dim)
+        q[(size_t)row * q_dim + col] = src[col];
+    else
+        k[(size_t)row * kv_dim + (col - q_dim)] = src[q_dim + (col - q_dim)];
+}
+
+static __global__ void qk_prefill_rmsnorm_rope_kernel(
+    float *q, float *k, const float *q_weight, const float *k_weight,
+    const float *freq, int n_tokens, int pos0, int n_heads,
+    int n_kv_heads, int head_size, float eps, int per_head_weight,
+    int rope_dims) {
+    int h = blockIdx.x;
+    int t = blockIdx.y;
+    int tid = threadIdx.x;
+    int is_q = h < n_heads;
+    int idx = is_q ? h : h - n_heads;
+    int n = is_q ? n_heads : n_kv_heads;
+    if (t >= n_tokens || idx >= n || head_size <= 0) return;
+
+    int q_dim = n_heads * head_size;
+    int kv_dim = n_kv_heads * head_size;
+    float *xh = is_q
+        ? q + (size_t)t * q_dim + (size_t)idx * head_size
+        : k + (size_t)t * kv_dim + (size_t)idx * head_size;
+    const float *weight = is_q ? q_weight : k_weight;
+
+    if (weight) {
+        const float *wh = weight +
+            (per_head_weight ? (size_t)idx * head_size : 0);
+        float ss = 0.0f;
+        for (int i = tid; i < head_size; i += blockDim.x)
+            ss += xh[i] * xh[i];
+
+        extern __shared__ float scratch[];
+        int lane = tid & 31;
+        int warp = tid >> 5;
+        for (int offset = 16; offset > 0; offset >>= 1)
+            ss += __shfl_down_sync(0xffffffffu, ss, offset);
+        if (lane == 0) scratch[warp] = ss;
+        __syncthreads();
+        if (warp == 0) {
+            int n_warps = (blockDim.x + 31) >> 5;
+            float total = lane < n_warps ? scratch[lane] : 0.0f;
+            for (int offset = 16; offset > 0; offset >>= 1)
+                total += __shfl_down_sync(0xffffffffu, total, offset);
+            if (lane == 0) scratch[0] = total;
+        }
+        __syncthreads();
+
+        float scale = rsqrtf(scratch[0] / (float)head_size + eps);
+        for (int i = tid; i < head_size; i += blockDim.x)
+            xh[i] = xh[i] * scale * wh[i];
+        __syncthreads();
+    }
+
+    int half_rope = rope_dims / 2;
+    for (int i = tid; i < half_rope; i += blockDim.x) {
+        int j = i + half_rope;
+        float angle = (float)(pos0 + t) * freq[i];
+        float s, c;
+        __sincosf(angle, &s, &c);
+        float x0 = xh[i];
+        float x1 = xh[j];
+        xh[i] = x0 * c - x1 * s;
+        xh[j] = x0 * s + x1 * c;
+    }
+}
+
 static __global__ void residual_rmsnorm_kernel(float *x, const float *r,
                                                float *out,
                                                const float *weight,
@@ -4274,6 +4355,68 @@ static int cuda_cublas_matmul_f16_preconverted(BnCudaCtx *ctx, float *d_out,
     return 0;
 }
 
+static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
+                                  const BnCudaBuffer *w, const float *d_x,
+                                  int rows, int cols, int n_tokens,
+                                  int type) {
+    if (!ctx || !d_dst || !w || !w->data || !d_x || rows <= 0 ||
+        cols <= 0 || n_tokens <= 0 || !cuda_type_supported(type))
+        return -1;
+
+    int threads = 256;
+    int warps = threads / 32;
+    cudaError_t err = cudaSuccess;
+    if ((w->f16_data || w->f32_data) && n_tokens > 1 &&
+        cuda_cublas_matmul_f16(ctx, d_dst, w, d_x, rows, cols,
+                               n_tokens) == 0) {
+        err = cudaSuccess;
+    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0) {
+        int x_blocks = (cols + 31) / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        dim3 qgrid(x_blocks, n_tokens, 1);
+        quantize_q8_1_batch_kernel<<<qgrid, 32, 0>>>(
+            xq, d_x, cols, n_tokens);
+        dim3 grid((rows + warps - 1) / warps, n_tokens, 1);
+        q4k_dot_matmul_kernel<<<grid, threads, 0>>>(
+            d_dst, (const BnBlockQ4K *)w->data, xq, rows, cols,
+            n_tokens, 0);
+    } else if (type == BN_GGUF_TENSOR_Q6_K && (cols % BN_QK_K) == 0 &&
+               !getenv("BN_CUDA_DISABLE_Q6K_DOT")) {
+        int x_blocks = cols / BN_QK_K;
+        if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
+        BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
+        quantize_q8k_batch_kernel<<<dim3(x_blocks, n_tokens, 1),
+                                    BN_QK_K>>>(xq, d_x, cols, n_tokens);
+        dim3 grid((rows + warps - 1) / warps, n_tokens, 1);
+        q6k_dot_matmul_kernel<<<grid, threads, 0>>>(
+            d_dst, (const BnBlockQ6K *)w->data, xq, rows, cols,
+            n_tokens, 0);
+    } else if (type == BN_GGUF_TENSOR_Q8_0 && (cols & 31) == 0) {
+        dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q8_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            d_dst, (const BnBlockQ8_0 *)w->data, d_x, rows, cols,
+            n_tokens, 0);
+    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0) {
+        dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
+        q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
+            d_dst, (const BnBlockQ5_0 *)w->data, d_x, rows, cols,
+            n_tokens, 0);
+    } else {
+        dim3 grid(rows, n_tokens, 1);
+        matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
+            d_dst, w->data, d_x, NULL, rows, cols, type, 0);
+    }
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] device matmul failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    return 0;
+}
+
 static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
                        int rows, int cols, int type) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
@@ -5290,6 +5433,140 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                      cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
         fprintf(stderr, "[bn:gpu:cuda] prefill attention+wo readback failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    memcpy(out, ctx->h_out, out_bytes);
+    return 0;
+}
+
+static int cuda_prefill_qkv_attention_wo(
+        void *vctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
+        void *q_norm_buf, void *k_norm_buf, const float *X, float *K_out,
+        float *V_out, int n_tokens, int dim, int n_heads, int n_kv_heads,
+        int head_size, int kv_mul, int kv_dim, int qk_rows, int qk_type,
+        int wv_rows, int wv_type, int wo_rows, int wo_cols, int wo_type,
+        int qk_norm_per_head, float norm_eps, int pos0, int rope_dims,
+        float attention_scale) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    BnCudaBuffer *qk = (BnCudaBuffer *)qk_buf;
+    BnCudaBuffer *wv = (BnCudaBuffer *)wv_buf;
+    BnCudaBuffer *wo = (BnCudaBuffer *)wo_buf;
+    BnCudaBuffer *q_norm = (BnCudaBuffer *)q_norm_buf;
+    BnCudaBuffer *k_norm = (BnCudaBuffer *)k_norm_buf;
+    if (getenv("BN_CUDA_DISABLE_PREFILL_QKV_ATTN_WO"))
+        return -1;
+    if (!ctx || !out || !qk || !qk->data || !wv || !wv->data ||
+        !wo || !wo->data || !X || !K_out || !V_out || n_tokens <= 1 ||
+        dim <= 0 || n_heads <= 0 || n_kv_heads <= 0 || head_size <= 0 ||
+        kv_mul <= 0 || kv_dim <= 0 || n_heads / kv_mul != n_kv_heads ||
+        qk_rows != n_heads * head_size + kv_dim || wv_rows != kv_dim ||
+        wo_cols != n_heads * head_size || wo->rows != wo_rows ||
+        wo->cols != wo_cols || !cuda_type_supported(qk_type) ||
+        !cuda_type_supported(wv_type) || !cuda_type_supported(wo_type) ||
+        pos0 != 0 || rope_dims <= 0 ||
+        !ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ])
+        return -1;
+    int min_tokens = cuda_env_int("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", 64);
+    if (n_tokens < min_tokens || n_tokens > 2048)
+        return -1;
+
+    int q_dim = n_heads * head_size;
+    size_t q_values = (size_t)n_tokens * (size_t)q_dim;
+    size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
+    size_t qk_values = (size_t)n_tokens * (size_t)qk_rows;
+    int use_gemm_attention =
+        !getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN") &&
+        (getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") ||
+         n_tokens >= cuda_env_int("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", 256)) &&
+        n_tokens <= 512;
+    if (!use_gemm_attention)
+        return -1;
+    size_t score_values =
+        (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens;
+    size_t total_values = q_values + 2u * kv_values + qk_values + score_values;
+    size_t out_values = (size_t)n_tokens * (size_t)wo_rows;
+    if (cuda_ensure_scratch(ctx, (size_t)n_tokens * (size_t)dim * sizeof(float),
+                            out_values * sizeof(float)) != 0)
+        return -1;
+    if (cuda_ensure_prefill(ctx, total_values) != 0)
+        return -1;
+
+    cudaError_t err = cudaMemcpy(ctx->d_x, X,
+                                 (size_t)n_tokens * (size_t)dim * sizeof(float),
+                                 cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill qkv input upload failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    float *d_q = ctx->d_prefill;
+    float *d_k = d_q + q_values;
+    float *d_v = d_k + kv_values;
+    float *d_qk = d_v + kv_values;
+    float *d_scores = d_qk + qk_values;
+
+    if (cuda_matmul_device_out(ctx, d_qk, qk, ctx->d_x, qk_rows, dim,
+                               n_tokens, qk_type) != 0 ||
+        cuda_matmul_device_out(ctx, d_v, wv, ctx->d_x, wv_rows, dim,
+                               n_tokens, wv_type) != 0)
+        return -1;
+
+    int threads = 256;
+    int total_qk = n_tokens * (q_dim + kv_dim);
+    int blocks = (total_qk + threads - 1) / threads;
+    split_qk_prefill_kernel<<<blocks, threads>>>(
+        d_qk, d_q, d_k, n_tokens, q_dim, kv_dim, qk_rows);
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill qk split failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    const float *q_norm_data = q_norm ? (const float *)q_norm->data : NULL;
+    const float *k_norm_data = k_norm ? (const float *)k_norm->data : NULL;
+    qk_prefill_rmsnorm_rope_kernel<<<dim3(n_heads + n_kv_heads, n_tokens, 1),
+                                     threads,
+                                     (size_t)threads * sizeof(float)>>>(
+        d_q, d_k, q_norm_data, k_norm_data,
+        cuda_act(ctx, BN_GPU_VALUE_ROPE_FREQ), n_tokens, pos0,
+        n_heads, n_kv_heads, head_size, norm_eps, qk_norm_per_head,
+        rope_dims);
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill qk norm/rope failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    if (cuda_prefill_attention_gemm(ctx, ctx->d_x, d_q, d_k, d_v, d_scores,
+                                    n_tokens, n_heads, n_kv_heads,
+                                    head_size, kv_mul, kv_dim,
+                                    attention_scale) != 0)
+        return -1;
+    if (cuda_matmul_device_out(ctx, ctx->d_out, wo, ctx->d_x, wo_rows,
+                               wo_cols, n_tokens, wo_type) != 0)
+        return -1;
+
+    size_t kv_bytes = kv_values * sizeof(float);
+    err = cudaMemcpy(K_out, d_k, kv_bytes, cudaMemcpyDeviceToHost);
+    if (err == cudaSuccess)
+        err = cudaMemcpy(V_out, d_v, kv_bytes, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill kv readback failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    size_t out_bytes = out_values * sizeof(float);
+    if (cuda_ensure_host_out(ctx, out_bytes) != 0)
+        return -1;
+    err = cudaMemcpy(ctx->h_out, ctx->d_out, out_bytes,
+                     cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] prefill qkv attention+wo readback failed: %s\n",
                 cudaGetErrorString(err));
         return -1;
     }
@@ -7003,6 +7280,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->dense_ffn_batch = cuda_dense_ffn_batch;
     gpu->prefill_attention = cuda_prefill_attention;
     gpu->prefill_attention_wo = cuda_prefill_attention_wo;
+    gpu->prefill_qkv_attention_wo = cuda_prefill_qkv_attention_wo;
     gpu->init_activations = cuda_init_activations;
     gpu->free_activations = cuda_free_activations;
     gpu->write_activation = cuda_write_activation;

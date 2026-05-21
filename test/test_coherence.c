@@ -660,6 +660,9 @@ int main(int argc, char **argv) {
         setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
     if (metal_cpu_rmsnorm)
         setenv("BN_METAL_CPU_ORDER_RMSNORM", "1", 1);
+#if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL) && !defined(BN_ENABLE_CUDA)
+    (void)require_all_tokens;
+#endif
 
     int total_pass = 0, total_fail = 0, total_skip = 0;
 

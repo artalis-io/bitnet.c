@@ -488,7 +488,8 @@ static void test_quant_registry(void) {
            BN_GPU_CAP_Q8_MATVEC_SPLIT);
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_MATVEC_SPLIT);
-    assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) == 0);
+    assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) ==
+           BN_GPU_CAP_Q8_FUSED_GATEUP_SILU);
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_gpu_split_cap(BN_GGUF_TENSOR_Q4_K) ==

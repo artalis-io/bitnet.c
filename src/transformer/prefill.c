@@ -677,6 +677,55 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             prefill_profile_add(&prof.attn_norm_ms, t_prof);
 
             int q_read_stride = lw->attn.wq.rows;
+            int attn_idx = plan.attn_idx;
+            size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
+            int q_gated = plan.q_gated;
+            int wo_cols_attn = lw->attn.wo.cols;
+            int used_fused_attn_wo = 0;
+            int used_raw_prefill_attn_wo = 0;
+            BnGPUBackend *gpu = bn_model_gpu(m);
+            const BnBackendModel *backend = bn_model_backend(m);
+            if (gpu && gpu->prefill_qkv_attention_wo &&
+                bn_model_tq_state(m) == NULL &&
+                !q_gated && pos0 == 0 &&
+                layer_rope_theta == c->rope_theta &&
+                !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
+                !lw->norm.attn_sub_norm &&
+                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                  lw->norm.attn_post_norm)) {
+                void *qk_buf = backend ? bn_backend_model_handle(
+                    backend, l, BN_BACKEND_HANDLE_QK_STACKED) : NULL;
+                void *wv_buf = backend ? bn_backend_model_handle(
+                    backend, l, BN_BACKEND_HANDLE_WV_PREFILL) : NULL;
+                if (!wv_buf)
+                    wv_buf = prefill_qweight_backend_buf(backend,
+                                                         &lw->attn.wv);
+                void *wo_buf = prefill_backend_role_or_qweight(
+                    backend, l, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
+                void *q_norm_buf = backend ? bn_backend_model_handle(
+                    backend, l, BN_BACKEND_HANDLE_Q_NORM) : NULL;
+                void *k_norm_buf = backend ? bn_backend_model_handle(
+                    backend, l, BN_BACKEND_HANDLE_K_NORM) : NULL;
+                t_prof = prefill_profile_now(&prof);
+                if (qk_buf && wv_buf && wo_buf &&
+                    gpu->prefill_qkv_attention_wo(
+                        gpu->ctx, Xb2, qk_buf, wv_buf, wo_buf,
+                        q_norm_buf, k_norm_buf, Xb, K_new, V_new,
+                        n_tokens, dim, c->n_heads, layer_n_kv_heads,
+                        layer_head_size, layer_kv_mul, kv_dim,
+                        lw->attn.wq.rows + lw->attn.wk.rows,
+                        lw->attn.wq.type, lw->attn.wv.rows,
+                        lw->attn.wv.type, lw->attn.wo.rows,
+                        lw->attn.wo.cols, lw->attn.wo.type,
+                        c->qk_norm_per_head, c->norm_eps, pos0,
+                        layer_rope_dims,
+                        prefill_attention_scale(c, layer_head_size)) == 0) {
+                    used_raw_prefill_attn_wo = 1;
+                    used_fused_attn_wo = 1;
+                    prefill_profile_add(&prof.qkv_ms, t_prof);
+                }
+            }
+            if (!used_raw_prefill_attn_wo) {
 #ifdef __AVX2__
             if (pf_xq && !bn_model_gpu(m) &&
                 prefill_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type)) {
@@ -705,7 +754,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                   n_tokens, q_buf_stride, dim,
                                                   l) == 0) {
                     q_read_stride = q_buf_stride;
-                    const BnBackendModel *backend = bn_model_backend(m);
                     void *wv_buf = backend ? bn_backend_model_handle(
                         backend, l, BN_BACKEND_HANDLE_WV_PREFILL) : NULL;
                     if (prefill_quant_matmul_gpu_buf(
@@ -723,48 +771,58 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
                 prefill_profile_add(&prof.qkv_ms, t_prof);
             }
-
-            int attn_idx = plan.attn_idx;
-            size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
-            int q_gated = plan.q_gated;
-            int wo_cols_attn = lw->attn.wo.cols;
-            int used_fused_attn_wo = 0;
+            }
 
             if (bn_model_tq_state(m) == NULL) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
                 t_prof = prefill_profile_now(&prof);
-                for (int t = 0; t < n_tokens; t++) {
-                    int pos = pos0 + t;
-                    int cache_pos = pos % c->seq_len;
-                    float *k_t = K_new + (size_t)t * layer_kv_dim;
-                    float *v_t = V_new + (size_t)t * layer_kv_dim;
-                    float *rc = rope_cos_buf + t * half_rope;
-                    float *rs = rope_sin_buf + t * half_rope;
+                if (!used_raw_prefill_attn_wo) {
+                    for (int t = 0; t < n_tokens; t++) {
+                        int pos = pos0 + t;
+                        int cache_pos = pos % c->seq_len;
+                        float *k_t = K_new + (size_t)t * layer_kv_dim;
+                        float *v_t = V_new + (size_t)t * layer_kv_dim;
+                        float *rc = rope_cos_buf + t * half_rope;
+                        float *rs = rope_sin_buf + t * half_rope;
 
-                    if (lw->attn.k_bias)
-                        for (int i = 0; i < layer_kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
-                    if (lw->attn.v_bias)
-                        for (int i = 0; i < layer_kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
-                    if (lw->attn.k_norm) {
-                        int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
-                        for (int h = 0; h < layer_n_kv_heads; h++)
-                            prefill_rmsnorm(k_t + h * layer_head_size, k_t + h * layer_head_size,
-                                            lw->attn.k_norm + h * qk_stride,
-                                            layer_head_size, c->norm_eps);
+                        if (lw->attn.k_bias)
+                            for (int i = 0; i < layer_kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
+                        if (lw->attn.v_bias)
+                            for (int i = 0; i < layer_kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
+                        if (lw->attn.k_norm) {
+                            int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
+                            for (int h = 0; h < layer_n_kv_heads; h++)
+                                prefill_rmsnorm(k_t + h * layer_head_size, k_t + h * layer_head_size,
+                                                lw->attn.k_norm + h * qk_stride,
+                                                layer_head_size, c->norm_eps);
+                        }
+                        if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                            prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
+                                                       layer_head_size, c->norm_eps);
+                        bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
+                                                            layer_head_size,
+                                                            layer_rope_dims, rc, rs);
+
+                        if (c->kv_f16)
+                            bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
+                                                         k_t, v_t, layer_kv_dim);
+                        else
+                            bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
+                                                         k_t, v_t, layer_kv_dim);
                     }
-                    if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
-                        prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
-                                                   layer_head_size, c->norm_eps);
-                    bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
-                                                        layer_head_size,
-                                                        layer_rope_dims, rc, rs);
-
-                    if (c->kv_f16)
-                        bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, layer_kv_dim);
-                    else
-                        bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, layer_kv_dim);
+                } else {
+                    for (int t = 0; t < n_tokens; t++) {
+                        int pos = pos0 + t;
+                        int cache_pos = pos % c->seq_len;
+                        float *k_t = K_new + (size_t)t * layer_kv_dim;
+                        float *v_t = V_new + (size_t)t * layer_kv_dim;
+                        if (c->kv_f16)
+                            bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
+                                                         k_t, v_t, layer_kv_dim);
+                        else
+                            bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
+                                                         k_t, v_t, layer_kv_dim);
+                    }
                 }
 
                 // Phase 2: batched attention (Q processing + attention, parallel over heads)
@@ -791,13 +849,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .wo_cols = wo_cols_attn,
                 };
                 t_prof = prefill_profile_now(&prof);
-                BnGPUBackend *gpu = bn_model_gpu(m);
-                int used_gpu_attn = 0;
-                if (gpu && gpu->prefill_attention &&
+                int used_gpu_attn = used_raw_prefill_attn_wo;
+                if (!used_raw_prefill_attn_wo &&
+                    gpu && gpu->prefill_attention &&
                     !getenv("BN_CUDA_DISABLE_PREFILL_ATTN") &&
                     n_tokens >= prefill_gpu_attention_min_tokens() &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
-                    const BnBackendModel *backend = bn_model_backend(m);
                     void *wo_buf = prefill_backend_role_or_qweight(
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
                         &lw->attn.wo);
@@ -916,7 +973,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                         Q_buf + (size_t)t * wo_cols,
                                         lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
                 if (!used_fused_attn_wo) {
-                    const BnBackendModel *backend = bn_model_backend(m);
                     void *wo_buf = prefill_backend_role_or_qweight(
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
                         &lw->attn.wo);
