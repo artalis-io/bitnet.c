@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <math.h>
 
 #define N_DECODE_STEPS 5
@@ -351,6 +352,38 @@ static int test_gpu_matvec_weight(const char *backend_name,
     free(x); free(out_cpu); free(out_gpu); free(x_q);
     gpu->buffer_destroy(gpu->ctx, gpu_buf);
     return result;
+}
+
+static int test_gpu_moe_expert_weight(const char *backend_name,
+                                      BnGPUBackend *gpu,
+                                      BnModel *model,
+                                      BnSession *sess,
+                                      const BnMoEExpertMap *map,
+                                      int expert_idx,
+                                      int proj,
+                                      const char *name) {
+    if (!model || !sess || !map || model->config.n_experts <= 0)
+        return 0;
+    const void *data = bn_moe_get_expert_proj(
+        bn_model_moe_io(model), sess->moe_state, map, expert_idx, proj);
+    if (!data) {
+        printf("  %-12s SKIP (expert projection unavailable)\n", name);
+        return 0;
+    }
+    int type = proj == 0 ? map->gate_type : proj == 1 ? map->up_type
+                                                       : map->down_type;
+    int rows = proj == 0 ? map->gate_rows : proj == 1 ? map->up_rows
+                                                       : map->down_rows;
+    int cols = proj == 0 ? map->gate_cols : proj == 1 ? map->up_cols
+                                                       : map->down_cols;
+    BnQWeight W = {
+        (void *)(uintptr_t)data,
+        type,
+        rows,
+        cols,
+        1.0f
+    };
+    return test_gpu_matvec_weight(backend_name, gpu, name, &W, NULL);
 }
 #endif
 
@@ -1572,6 +1605,51 @@ int main(int argc, char **argv) {
                 if (r == 1) total_pass++;
                 else if (r == -1) total_fail++;
                 else total_skip++;
+            }
+            if (model.config.n_experts > 0) {
+                BnSession *moe_s = bn_session_create(&model, NULL);
+                const BnLayerWeights *moe_L = NULL;
+                int moe_layer = -1;
+                if (moe_s) {
+                    for (int l = 0; l < model.config.n_layers; l++) {
+                        const BnLayerWeights *lw = &model.weights.layers[l];
+                        if (lw->ffn_kind == BN_LAYER_FFN_MOE &&
+                            lw->moe.expert_map.gate_rows > 0) {
+                            moe_L = lw;
+                            moe_layer = l;
+                            break;
+                        }
+                    }
+                }
+                if (!moe_s) {
+                    printf("  moe_expert  SKIP (session allocation failed)\n");
+                    total_skip++;
+                } else if (!moe_L) {
+                    printf("  moe_expert  SKIP (no expert projection map)\n");
+                    total_skip++;
+                } else {
+                    printf("  MoE expert projection checks: layer=%d expert=0\n", moe_layer);
+                    int r = test_gpu_moe_expert_weight("CUDA", gpu, &model, moe_s,
+                                                       &moe_L->moe.expert_map, 0, 0,
+                                                       "moe_gate");
+                    if (r == 1) total_pass++;
+                    else if (r == -1) total_fail++;
+                    else total_skip++;
+                    r = test_gpu_moe_expert_weight("CUDA", gpu, &model, moe_s,
+                                                   &moe_L->moe.expert_map, 0, 1,
+                                                   "moe_up");
+                    if (r == 1) total_pass++;
+                    else if (r == -1) total_fail++;
+                    else total_skip++;
+                    r = test_gpu_moe_expert_weight("CUDA", gpu, &model, moe_s,
+                                                   &moe_L->moe.expert_map, 0, 2,
+                                                   "moe_down");
+                    if (r == 1) total_pass++;
+                    else if (r == -1) total_fail++;
+                    else total_skip++;
+                }
+                if (moe_s)
+                    bn_session_free(moe_s, NULL);
             }
             bn_gpu_cuda_destroy(gpu);
         }
