@@ -310,18 +310,42 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
                                          float attention_scale) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
+    int q_dim = n_heads * head_size;
+    int has_split_qkv =
+        lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
+    int has_packed_qkv =
+        lw->ssm.wqkv.data && lw->ssm.wqkv.cols == dim &&
+        lw->ssm.wqkv.rows == q_dim + 2 * kv_dim;
     if (!gpu || !gpu->prefill_dense_layer || !backend ||
-        !lw->attn.wq.data || !lw->attn.wk.data || !lw->attn.wv.data ||
+        (!has_split_qkv && !has_packed_qkv) ||
         !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
         !lw->ffn.ffn_up.data || !lw->ffn.ffn_down.data)
         return -1;
 
-    void *qk_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-    void *wv_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-    if (!wv_buf)
-        wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
+    void *qk_buf = NULL;
+    void *wv_buf = NULL;
+    int qk_rows = 0;
+    int qk_type = 0;
+    int wv_rows = 0;
+    int wv_type = 0;
+    if (has_packed_qkv) {
+        qk_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
+        qk_rows = lw->ssm.wqkv.rows;
+        qk_type = lw->ssm.wqkv.type;
+        wv_rows = 0;
+        wv_type = qk_type;
+    } else {
+        qk_buf = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
+        wv_buf = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
+        if (!wv_buf)
+            wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
+        qk_rows = lw->attn.wq.rows + lw->attn.wk.rows;
+        qk_type = lw->attn.wq.type;
+        wv_rows = lw->attn.wv.rows;
+        wv_type = lw->attn.wv.type;
+    }
     void *wo_buf = prefill_backend_role_or_qweight(
         backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
     void *gateup_buf = bn_backend_model_handle(
@@ -346,7 +370,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_Q_NORM);
     void *k_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_K_NORM);
-    if (!qk_buf || !wv_buf || !wo_buf || !gate_buf || !down_buf ||
+    if (!qk_buf || (!has_packed_qkv && !wv_buf) || !wo_buf || !gate_buf || !down_buf ||
         !attn_norm_buf || !ffn_norm_buf)
         return -1;
 
@@ -354,8 +378,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         gpu->ctx, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
         attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf, X, K_out, V_out,
         n_tokens, dim, hidden_dim, n_heads, n_kv_heads, head_size, kv_mul,
-        kv_dim, lw->attn.wq.rows + lw->attn.wk.rows, lw->attn.wq.type,
-        lw->attn.wv.rows, lw->attn.wv.type, lw->attn.wo.rows,
+        kv_dim, qk_rows, qk_type, wv_rows, wv_type, lw->attn.wo.rows,
         lw->attn.wo.cols, lw->attn.wo.type, lw->ffn.ffn_gate.type,
         lw->ffn.ffn_up.type, lw->ffn.ffn_down.type, m->config.act_type,
         m->config.qk_norm_per_head, m->config.norm_eps, pos0, rope_dims,
@@ -377,7 +400,6 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         layer_rope_theta != c->rope_theta ||
         !plan->is_attn || plan->q_gated ||
         lw->moe.router_weight || !c->has_ffn_gate || !lw->ffn.ffn_up.data ||
-        !lw->attn.wq.data || !lw->attn.wk.data || !lw->attn.wv.data ||
         !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
         !lw->ffn.ffn_down.data ||
         lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias ||
@@ -386,13 +408,27 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)))
         return 0;
+    int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
+    int has_split_qkv =
+        lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
+    int has_packed_qkv =
+        lw->ssm.wqkv.data && lw->ssm.wqkv.cols == c->dim &&
+        lw->ssm.wqkv.rows == q_dim + 2 * plan->kv_dim;
+    if (!has_split_qkv && !has_packed_qkv)
+        return 0;
 
-    void *qk_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-    void *wv_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-    if (!wv_buf)
-        wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
+    void *qk_buf = NULL;
+    void *wv_buf = NULL;
+    if (has_packed_qkv) {
+        qk_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
+    } else {
+        qk_buf = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
+        wv_buf = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
+        if (!wv_buf)
+            wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
+    }
     void *wo_buf = prefill_backend_role_or_qweight(
         backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
     void *gateup_buf = bn_backend_model_handle(
@@ -414,7 +450,8 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
     void *ffn_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-    return qk_buf && wv_buf && wo_buf && gate_buf && (gateup_buf || up_buf) &&
+    return qk_buf && (has_packed_qkv || wv_buf) && wo_buf &&
+           gate_buf && (gateup_buf || up_buf) &&
            down_buf && attn_norm_buf && ffn_norm_buf;
 }
 
