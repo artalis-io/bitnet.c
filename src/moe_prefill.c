@@ -1,4 +1,14 @@
 #include "moe_internal.h"
+#include "gpu_backend.h"
+#include "gpu_moe_bridge.h"
+#include <stdlib.h>
+
+static int moe_cuda_prefill_min_tokens(void) {
+    const char *env = getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
+    if (!env || !*env) return 4;
+    int v = atoi(env);
+    return v > 0 ? v : 4;
+}
 
 typedef struct {
     float *logits;
@@ -278,40 +288,77 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         BnQWeight wdown = bn_moe_make_qweight(down_data, map->down_type,
                                             map->down_rows, map->down_cols);
 
-        // Gate + Up matmul (T tokens at once)
         t0 = bn_moe_time_ms();
-        if (T == 1) {
+        int used_gpu_expert = 0;
+        BnGPUBackend *gpu = bn_model_gpu(m);
+        int gpu_min_tokens = moe_cuda_prefill_min_tokens();
+        if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+            gpu->dense_ffn_batch && T >= gpu_min_tokens) {
+            BnGPUMoETemporaryBuffers temps;
+            BnGPUMoEExpertBuffers expert_gpu;
+            memset(&temps, 0, sizeof(temps));
+            memset(&expert_gpu, 0, sizeof(expert_gpu));
+            if (bn_gpu_moe_bridge_get_expert(
+                    m, sess, lw, l, e, &temps, &expert_gpu) == 0 &&
+                expert_gpu.gate && expert_gpu.down &&
+                (expert_gpu.up || expert_gpu.use_gateup_split) &&
+                gpu->dense_ffn_batch(
+                    gpu->ctx, down_buf, expert_gpu.gate,
+                    expert_gpu.use_gateup_split ? NULL : expert_gpu.up,
+                    expert_gpu.down, gather_buf, T, dim, moe_hidden,
+                    map->gate_type, map->up_type, map->down_type,
+                    c->act_type) == 0) {
+                used_gpu_expert = 1;
+                if (temps.n_buffers > 0)
+                    bn_gpu_moe_bridge_release_temporaries(m, &temps);
+            } else if (temps.n_buffers > 0) {
+                bn_gpu_moe_bridge_release_temporaries(m, &temps);
+            }
+        }
+        if (used_gpu_expert) {
+            ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+            ms->stats.down_time_ms += 0.0;
+        } else if (T == 1) {
             // Single token: use matvec (less overhead)
             BnMatvecTask gu[2] = {
                  { gate_buf, &wgate, NULL, 0 },
                  { up_buf,   &wup  , NULL, 0 },
             };
             bn_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch, bn_model_pool(m));
-        } else {
-            bn_quant_matmul(gate_buf, &wgate, gather_buf, T, x_q_scratch, bn_model_pool(m));
-            bn_quant_matmul(up_buf, &wup, gather_buf, T, x_q_scratch, bn_model_pool(m));
-        }
-        ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+            ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
-        // SwiGLU activation across T * moe_hidden
-        t0 = bn_moe_time_ms();
-        {
-            size_t swiglu_n = (size_t)T * moe_hidden;
-            for (size_t i = 0; i < swiglu_n; i++) {
+            t0 = bn_moe_time_ms();
+            for (int i = 0; i < moe_hidden; i++) {
                 float g = gate_buf[i];
                 gate_buf[i] = (g / (1.0f + expf(-g))) * up_buf[i];
             }
-        }
-        ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
+            ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
-        // Down matmul
-        t0 = bn_moe_time_ms();
-        if (T == 1) {
-            bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch, bn_model_pool(m));
+            t0 = bn_moe_time_ms();
+            bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch,
+                            bn_model_pool(m));
+            ms->stats.down_time_ms += bn_moe_time_ms() - t0;
         } else {
+            bn_quant_matmul(gate_buf, &wgate, gather_buf, T, x_q_scratch, bn_model_pool(m));
+            bn_quant_matmul(up_buf, &wup, gather_buf, T, x_q_scratch, bn_model_pool(m));
+            ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+
+            // SwiGLU activation across T * moe_hidden
+            t0 = bn_moe_time_ms();
+            {
+                size_t swiglu_n = (size_t)T * moe_hidden;
+                for (size_t i = 0; i < swiglu_n; i++) {
+                    float g = gate_buf[i];
+                    gate_buf[i] = (g / (1.0f + expf(-g))) * up_buf[i];
+                }
+            }
+            ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
+
+            // Down matmul
+            t0 = bn_moe_time_ms();
             bn_quant_matmul(down_buf, &wdown, gate_buf, T, x_q_scratch, bn_model_pool(m));
+            ms->stats.down_time_ms += bn_moe_time_ms() - t0;
         }
-        ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
         // Scatter-add with routing weights
         t0 = bn_moe_time_ms();
