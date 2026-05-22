@@ -7193,6 +7193,7 @@ static int cuda_op_writes_buf(const BnGPUOp *op, int buf) {
     switch (op->op_code) {
     case BN_GPU_CODE_RESIDUAL_ADD:
     case BN_GPU_CODE_WEIGHTED_ADD:
+    case BN_GPU_CODE_WEIGHTED_ADD_SIGMOID:
         return op->buf_in == buf;
     case BN_GPU_CODE_MATVEC_SPLIT:
     case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
@@ -7229,6 +7230,7 @@ static int cuda_op_reads_buf(const BnGPUOp *op, int buf) {
     case BN_GPU_CODE_RESIDUAL_RMSNORM:
     case BN_GPU_CODE_RESIDUAL_ADD:
     case BN_GPU_CODE_WEIGHTED_ADD:
+    case BN_GPU_CODE_WEIGHTED_ADD_SIGMOID:
     case BN_GPU_CODE_SILU_GATE:
     case BN_GPU_CODE_RELU2_GATE:
     case BN_GPU_CODE_SIGMOID_GATE:
@@ -7855,9 +7857,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             (cols + 31) / 32, 32, 0, xq, in, cols);
                         xq_mixed = xq;
                     }
-                    int q_unused = qkv_fuse_key_cache &&
-                        cuda_buf_unused_until_write(ops, n_ops, i + 8,
-                                                    op->buf_out);
+                    int q_unused = 0;
                     if (q_unused) {
                         BN_CUDA_LAUNCH(ctx, kv_mixed_matvec_kernel,
                             k_grid_rows + ops[i + 5].rows, threads,

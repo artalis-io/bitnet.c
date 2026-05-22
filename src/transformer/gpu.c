@@ -2,6 +2,7 @@
 #include "backend_session.h"
 #include "session.h"
 #include "../gpu_shader_ir_internal.h"
+#include "../moe_internal.h"
 #include "moe.h"
 #include <math.h>
 #include <stdio.h>
@@ -9,6 +10,123 @@
 #include <stdlib.h>
 
 #define BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS 8192
+
+static void gpu_debug_compare_vec_local(const char *label,
+                                        int layer,
+                                        int pos,
+                                        const float *cpu,
+                                        const float *gpu,
+                                        int n) {
+    if (!label || !cpu || !gpu || n <= 0) return;
+    double sum_abs = 0.0;
+    double sum_sq = 0.0;
+    float max_abs = 0.0f;
+    int max_i = 0;
+    for (int i = 0; i < n; i++) {
+        float diff = fabsf(cpu[i] - gpu[i]);
+        sum_abs += (double)diff;
+        sum_sq += (double)diff * (double)diff;
+        if (diff > max_abs) {
+            max_abs = diff;
+            max_i = i;
+        }
+    }
+    fprintf(stderr,
+            "[bn:gpu:debug] %s layer=%d pos=%d max_abs=%.9g max_i=%d "
+            "cpu=%.9g gpu=%.9g mean_abs=%.9g rms=%.9g\n",
+            label, layer, pos, max_abs, max_i, cpu[max_i], gpu[max_i],
+            sum_abs / (double)n, sqrt(sum_sq / (double)n));
+}
+
+static int gpu_debug_compute_moe_cpu_from_xb(
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int dim,
+    const float *x_in,
+    const float *xb_in,
+    float *x_out) {
+    if (!m || !sess || !lw || !x_in || !xb_in || !x_out || !sess->moe_state)
+        return -1;
+    BnMoEState *ms = sess->moe_state;
+    BnConfig *c = &m->config;
+    int K = c->n_experts_active;
+    int moe_hidden = c->moe_intermediate_size;
+    int hidden_cap = moe_hidden;
+    if (c->shared_expert_intermediate_size > hidden_cap)
+        hidden_cap = c->shared_expert_intermediate_size;
+    float *expert_out = (float *)calloc((size_t)dim, sizeof(float));
+    float *hb = (float *)malloc((size_t)hidden_cap * sizeof(float));
+    float *hb2 = (float *)malloc((size_t)hidden_cap * sizeof(float));
+    float *down = (float *)malloc((size_t)dim * sizeof(float));
+    if (!expert_out || !hb || !hb2 || !down) {
+        free(expert_out);
+        free(hb);
+        free(hb2);
+        free(down);
+        return -1;
+    }
+
+    const BnMoEExpertMap *em = &lw->moe.expert_map;
+    for (int k = 0; k < K; k++) {
+        int eidx = ms->expert_indices[k];
+        float weight = ms->expert_weights[k];
+        if (eidx < 0) continue;
+        const void *gate_data = bn_moe_get_expert_proj(
+            bn_model_moe_io(m), ms, em, eidx, 0);
+        const void *up_data = bn_moe_get_expert_proj(
+            bn_model_moe_io(m), ms, em, eidx, 1);
+        const void *down_data = bn_moe_get_expert_proj(
+            bn_model_moe_io(m), ms, em, eidx, 2);
+        if (!gate_data || !up_data || !down_data) {
+            free(expert_out);
+            free(hb);
+            free(hb2);
+            free(down);
+            return -1;
+        }
+        BnQWeight wgate = bn_moe_make_qweight(
+            gate_data, em->gate_type, em->gate_rows, em->gate_cols);
+        BnQWeight wup = bn_moe_make_qweight(
+            up_data, em->up_type, em->up_rows, em->up_cols);
+        BnQWeight wdown = bn_moe_make_qweight(
+            down_data, em->down_type, em->down_rows, em->down_cols);
+        bn_quant_matvec(hb, &wgate, xb_in, sess->state.x_q, bn_model_pool(m));
+        bn_quant_matvec(hb2, &wup, xb_in, sess->state.x_q, bn_model_pool(m));
+        bn_moe_swiglu(hb, hb, hb2, moe_hidden);
+        bn_quant_matvec(down, &wdown, hb, sess->state.x_q, bn_model_pool(m));
+        bn_moe_weighted_add(expert_out, down, weight, dim);
+    }
+
+    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+        int shared_hidden = c->shared_expert_intermediate_size;
+        bn_quant_matvec(hb, &lw->shared.shared_gate, xb_in,
+                        sess->state.x_q, bn_model_pool(m));
+        bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
+                        sess->state.x_q, bn_model_pool(m));
+        bn_moe_swiglu(hb, hb, hb2, shared_hidden);
+        bn_quant_matvec(down, &lw->shared.shared_down, hb,
+                        sess->state.x_q, bn_model_pool(m));
+        if (lw->shared.shared_expert_gate) {
+            float gate_dot = 0.0f;
+            for (int d = 0; d < dim; d++)
+                gate_dot += xb_in[d] * lw->shared.shared_expert_gate[d];
+            float gate = 1.0f / (1.0f + expf(-gate_dot));
+            bn_moe_weighted_add(expert_out, down, gate, dim);
+        } else {
+            bn_moe_weighted_add(expert_out, down, 1.0f, dim);
+        }
+    }
+
+    for (int i = 0; i < dim; i++)
+        x_out[i] = x_in[i] + expert_out[i];
+
+    free(expert_out);
+    free(hb);
+    free(hb2);
+    free(down);
+    return 0;
+}
 
 static float gpu_exact_q6k_row_dot(const BnQWeight *W, int row,
                                    const float *x) {
@@ -728,6 +846,31 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             bn_moe_route(sess->moe_state, s->xb, lw->moe.router_weight,
                          dim, c->n_experts, c->n_experts_active,
                          bn_model_pool(m));
+            int compare_moe = 0;
+            const char *compare_moe_env = getenv("BN_GPU_COMPARE_MOE_LAYER");
+            if (compare_moe_env) {
+                int compare_layer = atoi(compare_moe_env);
+                const char *compare_pos_env = getenv("BN_GPU_COMPARE_MOE_POS");
+                int compare_pos = compare_pos_env ? atoi(compare_pos_env) : -1;
+                compare_moe = compare_layer == l &&
+                              (compare_pos < 0 || compare_pos == pos);
+            }
+            float *moe_cpu_x = NULL;
+            float *moe_gpu_x = NULL;
+            if (compare_moe) {
+                moe_cpu_x = (float *)malloc((size_t)dim * sizeof(float));
+                moe_gpu_x = (float *)malloc((size_t)dim * sizeof(float));
+                if (!moe_cpu_x || !moe_gpu_x ||
+                    bn_transformer_gpu_read_x(gpu, s->x,
+                                              (size_t)dim * sizeof(float)) != 0 ||
+                    gpu_debug_compute_moe_cpu_from_xb(
+                        m, sess, lw, dim, s->x, s->xb, moe_cpu_x) != 0) {
+                    free(moe_cpu_x);
+                    free(moe_gpu_x);
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu moe compare setup failed");
+                }
+            }
             BnGPUMoEResolvedExpert expert_emit[BN_MAX_MOE_K];
             BnGPUMoEResources moe_res;
             if (bn_gpu_moe_bridge_resolve_resources(
@@ -740,10 +883,23 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     backend, lw, l);
             bn_transformer_gpu_emit_context_moe(
                 &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm);
-            if (moe_temporaries.n_buffers > 0) {
+            if (moe_temporaries.n_buffers > 0 || compare_moe) {
                 if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu execute flush failed");
+                if (compare_moe) {
+                    if (bn_transformer_gpu_read_x(gpu, moe_gpu_x,
+                                                  (size_t)dim * sizeof(float)) != 0) {
+                        free(moe_cpu_x);
+                        free(moe_gpu_x);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu moe compare readback failed");
+                    }
+                    gpu_debug_compare_vec_local("moe_state_compare", l, pos,
+                                                moe_cpu_x, moe_gpu_x, dim);
+                    free(moe_cpu_x);
+                    free(moe_gpu_x);
+                }
                 bn_gpu_moe_bridge_release_temporaries(m, &moe_temporaries);
             }
             continue;  // skip dense FFN below
