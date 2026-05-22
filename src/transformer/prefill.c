@@ -1291,7 +1291,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnBatchedAttnCtx bctx = {
                     .c = c, .s = s,
                     .Q_buf = Q_buf, .K_new = K_new, .V_new = V_new,
-                    .out = Q_buf,
+                    .out = q_gated ? Xb2 : Q_buf,
                     .loff = loff, .pos0 = pos0, .n_tokens = n_tokens,
                     .n_heads = c->n_heads, .n_kv_heads = layer_n_kv_heads,
                     .head_size = layer_head_size, .kv_dim = kv_dim,
@@ -1346,6 +1346,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
                 if (!used_gpu_attn)
                     bn_transformer_batched_attn_dispatch(m, &bctx);
+                if (!used_gpu_attn && q_gated) {
+                    for (int t = 0; t < n_tokens; t++)
+                        memcpy(Q_buf + (size_t)t * wo_cols_attn,
+                               Xb2 + (size_t)t * wo_cols_attn,
+                               (size_t)wo_cols_attn * sizeof(float));
+                }
                 prefill_profile_add(&prof.attn_cpu_ms, t_prof);
             } else {
                 t_prof = prefill_profile_now(&prof);
