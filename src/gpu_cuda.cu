@@ -3397,7 +3397,7 @@ static __global__ void ssm_delta_kernel(
         float sum = 0.0f;
         float comp = 0.0f;
         for (int ki = 0; ki < head_k_dim; ki++) {
-            float y = state[state_base + (size_t)ki * head_v_dim + vi] *
+            float y = state[state_base + (size_t)vi * head_k_dim + ki] *
                       k[(size_t)k_off + (size_t)hk_idx * head_k_dim + ki] -
                       comp;
             float t = sum + y;
@@ -3412,7 +3412,7 @@ static __global__ void ssm_delta_kernel(
         int ki = i / head_v_dim;
         int vi = i - ki * head_v_dim;
         float kk = k[(size_t)k_off + (size_t)hk_idx * head_k_dim + ki];
-        state[state_base + i] +=
+        state[state_base + (size_t)vi * head_k_dim + ki] +=
             kk * b * (v[(size_t)v_off + (size_t)hv_idx * head_v_dim + vi] -
                       sk[vi]);
     }
@@ -3422,7 +3422,7 @@ static __global__ void ssm_delta_kernel(
         float sum = 0.0f;
         float comp = 0.0f;
         for (int ki = 0; ki < head_k_dim; ki++) {
-            float y = state[state_base + (size_t)ki * head_v_dim + vi] *
+            float y = state[state_base + (size_t)vi * head_k_dim + ki] *
                       q[(size_t)q_off + (size_t)hk_idx * head_k_dim + ki] -
                       comp;
             float t = sum + y;
@@ -3457,7 +3457,7 @@ static __global__ void ssm_delta_128_warp_kernel(
 #pragma unroll
     for (int r = 0; r < 4; r++) {
         int row = r * 32 + lane;
-        size_t idx = state_base + (size_t)row * 128u + (size_t)col;
+        size_t idx = state_base + (size_t)col * 128u + (size_t)row;
         s_shard[r] = state[idx] * decay;
         k_reg[r] = kh[row];
         q_reg[r] = qh[row];
@@ -3487,7 +3487,7 @@ static __global__ void ssm_delta_128_warp_kernel(
 #pragma unroll
     for (int r = 0; r < 4; r++) {
         int row = r * 32 + lane;
-        state[state_base + (size_t)row * 128u + (size_t)col] = s_shard[r];
+        state[state_base + (size_t)col * 128u + (size_t)row] = s_shard[r];
     }
 }
 
