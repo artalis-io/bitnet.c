@@ -3580,6 +3580,67 @@ static __global__ void ssm_prefill_alpha_beta_kernel(
     beta[h] = 1.0f / (1.0f + expf(-beta[h]));
 }
 
+static __global__ void ssm_prefill_alpha_beta_f32_kernel(
+    float *alpha, float *beta, const float *alpha_w, const float *beta_w,
+    const float *x, const float *dt_bias, const float *a_log,
+    int num_v_heads, int dim, int n_tokens) {
+    int h = blockIdx.x;
+    int tok = blockIdx.y;
+    int tid = threadIdx.x;
+    if (h >= num_v_heads || tok >= n_tokens) return;
+    extern __shared__ float scratch[];
+    const float *x_t = x + (size_t)tok * (size_t)dim;
+    const float *aw = alpha_w + (size_t)h * (size_t)dim;
+    const float *bw = beta_w + (size_t)h * (size_t)dim;
+    float as = 0.0f;
+    float bs = 0.0f;
+    for (int c = tid; c < dim; c += blockDim.x) {
+        float xv = x_t[c];
+        as += aw[c] * xv;
+        bs += bw[c] * xv;
+    }
+    float *scratch_a = scratch;
+    float *scratch_b = scratch + 8;
+    as = cuda_block_reduce_sum_all(as, scratch_a);
+    bs = cuda_block_reduce_sum_all(bs, scratch_b);
+    if (tid == 0) {
+        float dt = as + dt_bias[h];
+        float dt_sp = dt > 20.0f ? dt : logf(1.0f + expf(dt));
+        size_t idx = (size_t)tok * (size_t)num_v_heads + (size_t)h;
+        alpha[idx] = expf(dt_sp * a_log[h]);
+        beta[idx] = 1.0f / (1.0f + expf(-bs));
+    }
+}
+
+static __global__ void ssm_prefill_split_ab_kernel(
+    const float *ab, float *alpha, float *beta, int num_v_heads,
+    int n_tokens) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = num_v_heads * n_tokens;
+    if (i >= total) return;
+    int tok = i / num_v_heads;
+    int h = i - tok * num_v_heads;
+    const float *ab_t = ab + (size_t)tok * (size_t)(2 * num_v_heads);
+    alpha[i] = ab_t[h];
+    beta[i] = ab_t[num_v_heads + h];
+}
+
+static __global__ void ssm_prefill_split_qkvz_kernel(
+    const float *qkvz, float *qkv, float *z, int qkv_dim, int inner_dim,
+    int n_tokens) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_tokens * (qkv_dim + inner_dim);
+    if (i >= total) return;
+    int stride = qkv_dim + inner_dim;
+    int tok = i / stride;
+    int col = i - tok * stride;
+    if (col < qkv_dim) {
+        qkv[(size_t)tok * (size_t)qkv_dim + col] = qkvz[i];
+    } else {
+        z[(size_t)tok * (size_t)inner_dim + (col - qkv_dim)] = qkvz[i];
+    }
+}
+
 static __global__ void ssm_prefill_delta_128_warp_kernel(
     float *state, float *out, const float *qkv,
     const float *alpha, const float *beta, int n_tokens, int qkv_dim,
@@ -7117,10 +7178,11 @@ static int cuda_prefill_dense_layer(
 
 static int cuda_prefill_ssm_layer(
         void *vctx, float *out, void *wqkv_buf, void *wz_buf,
-        void *alpha_buf, void *beta_buf, void *ssm_out_buf,
-        void *attn_norm_buf, void *conv1d_buf, void *dt_bias_buf,
-        void *a_log_buf, void *ssm_norm_buf, const float *X, int n_tokens,
-        int dim, int qkv_dim, int inner_dim, int num_k_heads,
+        void *alpha_buf, void *beta_buf, void *qkvz_stacked_buf,
+        void *ab_stacked_buf, void *ssm_out_buf, void *attn_norm_buf,
+        void *conv1d_buf, void *dt_bias_buf, void *a_log_buf,
+        void *ssm_norm_buf, const float *X, int n_tokens, int dim,
+        int qkv_dim, int inner_dim, int num_k_heads,
         int head_k_dim, int num_v_heads, int head_v_dim, int conv_kernel,
         int ssm_idx, int wqkv_type, int wz_type, int alpha_type,
         int beta_type, int out_type, float norm_eps) {
@@ -7129,6 +7191,8 @@ static int cuda_prefill_ssm_layer(
     BnCudaBuffer *wz = (BnCudaBuffer *)wz_buf;
     BnCudaBuffer *alpha = (BnCudaBuffer *)alpha_buf;
     BnCudaBuffer *beta = (BnCudaBuffer *)beta_buf;
+    BnCudaBuffer *qkvz = (BnCudaBuffer *)qkvz_stacked_buf;
+    BnCudaBuffer *ab = (BnCudaBuffer *)ab_stacked_buf;
     BnCudaBuffer *ssm_out = (BnCudaBuffer *)ssm_out_buf;
     BnCudaBuffer *attn_norm = (BnCudaBuffer *)attn_norm_buf;
     BnCudaBuffer *conv1d = (BnCudaBuffer *)conv1d_buf;
@@ -7161,12 +7225,25 @@ static int cuda_prefill_ssm_layer(
         !cuda_type_supported(out_type))
         return -1;
 
+    int use_stacked_prefill = getenv("BN_CUDA_ENABLE_SSM_STACKED_PREFILL") != NULL;
+    int use_qkvz = use_stacked_prefill &&
+                   qkvz && qkvz->data && wqkv_type == wz_type &&
+                   qkvz->rows == qkv_dim + inner_dim &&
+                   qkvz->cols == dim;
+    int use_ab = use_stacked_prefill &&
+                 ab && ab->data && alpha_type == beta_type &&
+                 ab->rows == 2 * num_v_heads && ab->cols == dim;
     size_t dim_values = (size_t)n_tokens * (size_t)dim;
     size_t qkv_values = (size_t)n_tokens * (size_t)qkv_dim;
     size_t z_values = (size_t)n_tokens * (size_t)inner_dim;
     size_t ab_values = (size_t)n_tokens * (size_t)num_v_heads;
+    size_t qkvz_values = use_qkvz
+        ? (size_t)n_tokens * (size_t)(qkv_dim + inner_dim) : 0u;
+    size_t ab_stacked_values = use_ab
+        ? (size_t)n_tokens * (size_t)(2 * num_v_heads) : 0u;
     size_t total_values = dim_values + qkv_values + z_values +
-                          z_values + 2u * ab_values;
+                          z_values + 2u * ab_values + qkvz_values +
+                          ab_stacked_values;
     if (cuda_ensure_scratch(ctx, dim_values * sizeof(float),
                             dim_values * sizeof(float)) != 0)
         return -1;
@@ -7187,6 +7264,8 @@ static int cuda_prefill_ssm_layer(
     float *d_ssm = d_z + z_values;
     float *d_alpha = d_ssm + z_values;
     float *d_beta = d_alpha + ab_values;
+    float *d_qkvz = d_beta + ab_values;
+    float *d_ab = d_qkvz + qkvz_values;
 
     int threads = 256;
     int warps = threads / 32;
@@ -7201,15 +7280,65 @@ static int cuda_prefill_ssm_layer(
         return -1;
     }
 
-    if (cuda_matmul_device_out(ctx, d_qkv, wqkv, d_norm, qkv_dim, dim,
-                               n_tokens, wqkv_type) != 0 ||
-        cuda_matmul_device_out(ctx, d_z, wz, d_norm, inner_dim, dim,
-                               n_tokens, wz_type) != 0 ||
-        cuda_matmul_device_out(ctx, d_alpha, alpha, d_norm, num_v_heads,
-                               dim, n_tokens, alpha_type) != 0 ||
-        cuda_matmul_device_out(ctx, d_beta, beta, d_norm, num_v_heads,
-                               dim, n_tokens, beta_type) != 0)
+    if (use_qkvz) {
+        if (cuda_matmul_device_out(ctx, d_qkvz, qkvz, d_norm,
+                                   qkv_dim + inner_dim, dim, n_tokens,
+                                   wqkv_type) != 0)
+            return -1;
+        int split_total = n_tokens * (qkv_dim + inner_dim);
+        ssm_prefill_split_qkvz_kernel<<<(split_total + threads - 1) / threads,
+                                        threads, 0>>>(
+            d_qkvz, d_qkv, d_z, qkv_dim, inner_dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill ssm qkvz split failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    } else if (cuda_matmul_device_out(ctx, d_qkv, wqkv, d_norm, qkv_dim, dim,
+                                      n_tokens, wqkv_type) != 0 ||
+               cuda_matmul_device_out(ctx, d_z, wz, d_norm, inner_dim, dim,
+                                      n_tokens, wz_type) != 0) {
         return -1;
+    }
+
+    int ab_preactivated = 0;
+    if (getenv("BN_CUDA_ENABLE_SSM_F32_AB_PREFILL") &&
+        alpha_type == BN_GGUF_TENSOR_F32 && beta_type == BN_GGUF_TENSOR_F32) {
+        ssm_prefill_alpha_beta_f32_kernel<<<dim3(num_v_heads, n_tokens, 1),
+                                            threads, 16 * sizeof(float)>>>(
+            d_alpha, d_beta, (const float *)alpha->data,
+            (const float *)beta->data, d_norm, (const float *)dt_bias->data,
+            (const float *)a_log->data, num_v_heads, dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill ssm f32 alpha/beta failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+        ab_preactivated = 1;
+    } else if (use_ab) {
+        if (cuda_matmul_device_out(ctx, d_ab, ab, d_norm, 2 * num_v_heads,
+                                   dim, n_tokens, alpha_type) != 0)
+            return -1;
+        int split_total = n_tokens * num_v_heads;
+        ssm_prefill_split_ab_kernel<<<(split_total + threads - 1) / threads,
+                                      threads, 0>>>(
+            d_ab, d_alpha, d_beta, num_v_heads, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill ssm alpha/beta split failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    } else if (cuda_matmul_device_out(ctx, d_alpha, alpha, d_norm,
+                                      num_v_heads, dim, n_tokens,
+                                      alpha_type) != 0 ||
+               cuda_matmul_device_out(ctx, d_beta, beta, d_norm,
+                                      num_v_heads, dim, n_tokens,
+                                      beta_type) != 0) {
+        return -1;
+    }
 
     float q_scale = 1.0f / sqrtf((float)head_k_dim);
     int key_dim = num_k_heads * head_k_dim;
@@ -7242,15 +7371,17 @@ static int cuda_prefill_ssm_layer(
             return -1;
         }
 
-        ssm_prefill_alpha_beta_kernel<<<
-            ((int)ab_values + threads - 1) / threads, threads, 0>>>(
-            d_alpha, d_beta, (const float *)dt_bias->data,
-            (const float *)a_log->data, num_v_heads, n_tokens);
-        err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            fprintf(stderr, "[bn:gpu:cuda] prefill ssm batched alpha/beta failed: %s\n",
-                    cudaGetErrorString(err));
-            return -1;
+        if (!ab_preactivated) {
+            ssm_prefill_alpha_beta_kernel<<<
+                ((int)ab_values + threads - 1) / threads, threads, 0>>>(
+                d_alpha, d_beta, (const float *)dt_bias->data,
+                (const float *)a_log->data, num_v_heads, n_tokens);
+            err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                fprintf(stderr, "[bn:gpu:cuda] prefill ssm batched alpha/beta failed: %s\n",
+                        cudaGetErrorString(err));
+                return -1;
+            }
         }
 
         ssm_prefill_delta_128_warp_kernel<<<dim3(num_v_heads, 32, 1),
@@ -7304,15 +7435,17 @@ static int cuda_prefill_ssm_layer(
                 return -1;
             }
 
-            ssm_alpha_beta_kernel<<<1, threads, 0>>>(
-                alpha_t, beta_t, (const float *)dt_bias->data,
-                (const float *)a_log->data, num_v_heads);
-            err = cudaGetLastError();
-            if (err != cudaSuccess) {
-                fprintf(stderr,
-                        "[bn:gpu:cuda] prefill ssm alpha/beta failed: %s\n",
-                        cudaGetErrorString(err));
-                return -1;
+            if (!ab_preactivated) {
+                ssm_alpha_beta_kernel<<<1, threads, 0>>>(
+                    alpha_t, beta_t, (const float *)dt_bias->data,
+                    (const float *)a_log->data, num_v_heads);
+                err = cudaGetLastError();
+                if (err != cudaSuccess) {
+                    fprintf(stderr,
+                            "[bn:gpu:cuda] prefill ssm alpha/beta failed: %s\n",
+                            cudaGetErrorString(err));
+                    return -1;
+                }
             }
 
             if (head_k_dim == 128 && head_v_dim == 128) {

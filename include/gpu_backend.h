@@ -238,6 +238,8 @@ struct BnGPUBackend {
                                     void *ctx, float *out,
                                     void *wqkv_buf, void *wz_buf,
                                     void *alpha_buf, void *beta_buf,
+                                    void *qkvz_stacked_buf,
+                                    void *ab_stacked_buf,
                                     void *ssm_out_buf, void *attn_norm_buf,
                                     void *conv1d_buf, void *dt_bias_buf,
                                     void *a_log_buf, void *ssm_norm_buf,

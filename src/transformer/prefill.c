@@ -484,6 +484,10 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
     void *wz_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wz);
     void *alpha_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_alpha);
     void *beta_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_beta);
+    void *qkvz_stacked_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
+    void *ab_stacked_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SSM_AB_STACKED);
     void *out_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_out);
     void *attn_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
@@ -500,12 +504,13 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         !ssm_norm_buf)
         return -1;
     return gpu->prefill_ssm_layer(
-        gpu->ctx, out, wqkv_buf, wz_buf, alpha_buf, beta_buf, out_buf,
-        attn_norm_buf, conv1d_buf, dt_bias_buf, a_log_buf, ssm_norm_buf,
-        X, n_tokens, dim, qkv_dim, inner_dim, num_k_heads, head_k_dim,
-        num_v_heads, head_v_dim, conv_kernel, ssm_idx, lw->ssm.wqkv.type,
-        lw->ssm.wz.type, lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type,
-        lw->ssm.ssm_out.type, norm_eps);
+        gpu->ctx, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
+        qkvz_stacked_buf, ab_stacked_buf, out_buf, attn_norm_buf, conv1d_buf,
+        dt_bias_buf, a_log_buf, ssm_norm_buf, X, n_tokens, dim, qkv_dim,
+        inner_dim, num_k_heads, head_k_dim, num_v_heads, head_v_dim,
+        conv_kernel, ssm_idx, lw->ssm.wqkv.type, lw->ssm.wz.type,
+        lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type, lw->ssm.ssm_out.type,
+        norm_eps);
 }
 
 #ifdef __AVX2__
