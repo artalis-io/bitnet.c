@@ -701,7 +701,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         if (lw->moe.router_weight) {
             int use_cpu_moe_fallback = 1;
             if (gpu->kind == BN_GPU_BACKEND_CUDA &&
-                getenv("BN_CUDA_ENABLE_MOE_FFN"))
+                getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN"))
                 use_cpu_moe_fallback = 0;
             if (use_cpu_moe_fallback) {
                 void *moe_next_norm = bn_transformer_gpu_resolve_next_norm(

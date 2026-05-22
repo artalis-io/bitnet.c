@@ -154,8 +154,15 @@ int bn_transformer_gpu_emit_context_lower_pending(
     if (!ctx) return -1;
     if (ctx->graph->n_ops == 0) return 0;
     if (!ctx->lowered_ops || ctx->n < 0 || ctx->cap < ctx->n ||
-        ctx->cap - ctx->n < ctx->graph->n_ops)
+        ctx->cap - ctx->n < ctx->graph->n_ops) {
+        if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+            fprintf(stderr,
+                    "[gpu:fallback] lower capacity failed n=%d cap=%d "
+                    "graph_ops=%d lowered_ops=%p\n",
+                    ctx->n, ctx->cap, ctx->graph->n_ops, ctx->lowered_ops);
+        }
         return -1;
+    }
     BnGPUIRLoweringMap map = {
         .values = (BnGPUIRLoweringValue *)ctx->lowering_values,
         .n_values = ctx->graph->n_values,
@@ -164,8 +171,15 @@ int bn_transformer_gpu_emit_context_lower_pending(
     if (bn_gpu_value_graph_lower_to_shader(ctx->graph, &map,
                                            &((BnGPUOp *)ctx->lowered_ops)[ctx->n],
                                            ctx->cap - ctx->n,
-                                           &lowered) != 0)
+                                           &lowered) != 0) {
+        if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+            fprintf(stderr,
+                    "[gpu:fallback] lower shader failed graph_ops=%d "
+                    "graph_values=%d n=%d cap=%d\n",
+                    ctx->graph->n_ops, ctx->graph->n_values, ctx->n, ctx->cap);
+        }
         return -1;
+    }
     ctx->n += lowered;
     bn_gpu_value_graph_clear(ctx->graph);
     return 0;
@@ -178,13 +192,18 @@ int bn_transformer_gpu_emit_context_execute(
     float *readback,
     int readback_count) {
     if (!ctx) return -1;
-    if (bn_transformer_gpu_emit_context_lower_pending(ctx) != 0)
+    if (bn_transformer_gpu_emit_context_lower_pending(ctx) != 0) {
+        if (getenv("BN_GPU_DEBUG_FALLBACK"))
+            fprintf(stderr, "[gpu:fallback] gpu lower pending failed\n");
         return -1;
+    }
     if (ctx->n == 0)
         return 0;
     int rc = bn_transformer_gpu_execute_ops(gpu, ctx->lowered_ops, ctx->n,
                                             readback_buf, readback,
                                             readback_count);
+    if (rc != 0 && getenv("BN_GPU_DEBUG_FALLBACK"))
+        fprintf(stderr, "[gpu:fallback] gpu execute ops failed n=%d\n", ctx->n);
     if (rc == 0)
         ctx->n = 0;
     return rc;
@@ -1479,7 +1498,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             lw->shared.shared_down.cols, 0);
         uint32_t u_one;
         { float one = 1.0f; memcpy(&u_one, &one, 4); }
-        if (lw->shared.shared_expert_gate && shared->shared_expert_gate) {
+        if (lw->shared.shared_expert_gate && shared->shared_expert_gate &&
+            !getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE")) {
             uint32_t weighted_add_params[8] = {
                 (uint32_t)dim, u_one, moe->n_experts == 0 ? 1u : 0u,
                 (uint32_t)dim, 0, 0, 0, 0

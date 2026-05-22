@@ -59,7 +59,8 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     const BnMoEExpertMap *em = &lw->moe.expert_map;
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     int split_op_code = bn_gpu_quant_split_op_code(em->gate_type);
-    int use_split = gpu_moe_can_gateup_split(gpu, em, split_op_code);
+    int use_split = !getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") &&
+                    gpu_moe_can_gateup_split(gpu, em, split_op_code);
 
     memset(out, 0, sizeof(*out));
     out->use_gateup_split = use_split;

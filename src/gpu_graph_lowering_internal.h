@@ -96,6 +96,7 @@ static inline int bn_gpu_ir_utility_op_kind(BnGPUIRUtilityKind kind) {
             return BN_GPU_OP_COPY;
         case BN_GPU_IR_UTILITY_BIAS_ADD:
         case BN_GPU_IR_UTILITY_WEIGHTED_ADD:
+        case BN_GPU_IR_UTILITY_WEIGHTED_ADD_SIGMOID:
             return BN_GPU_OP_RESIDUAL;
         default:
             return BN_GPU_OP_UNKNOWN;

@@ -1631,25 +1631,28 @@ int main(int argc, char **argv) {
                     printf("  moe_expert  SKIP (no expert projection map)\n");
                     total_skip++;
                 } else {
-                    printf("  MoE expert projection checks: layer=%d expert=0\n", moe_layer);
-                    int r = test_gpu_moe_expert_weight("CUDA", gpu, &model, moe_s,
-                                                       &moe_L->moe.expert_map, 0, 0,
-                                                       "moe_gate");
-                    if (r == 1) total_pass++;
-                    else if (r == -1) total_fail++;
-                    else total_skip++;
-                    r = test_gpu_moe_expert_weight("CUDA", gpu, &model, moe_s,
-                                                   &moe_L->moe.expert_map, 0, 1,
-                                                   "moe_up");
-                    if (r == 1) total_pass++;
-                    else if (r == -1) total_fail++;
-                    else total_skip++;
-                    r = test_gpu_moe_expert_weight("CUDA", gpu, &model, moe_s,
-                                                   &moe_L->moe.expert_map, 0, 2,
-                                                   "moe_down");
-                    if (r == 1) total_pass++;
-                    else if (r == -1) total_fail++;
-                    else total_skip++;
+                    printf("  MoE expert projection checks: layer=%d experts=%d\n",
+                           moe_layer, model.config.n_experts);
+                    for (int e = 0; e < model.config.n_experts; e++) {
+                        int r = test_gpu_moe_expert_weight(
+                            "CUDA", gpu, &model, moe_s,
+                            &moe_L->moe.expert_map, e, 0, "moe_gate");
+                        if (r == 1) total_pass++;
+                        else if (r == -1) total_fail++;
+                        else total_skip++;
+                        r = test_gpu_moe_expert_weight(
+                            "CUDA", gpu, &model, moe_s,
+                            &moe_L->moe.expert_map, e, 1, "moe_up");
+                        if (r == 1) total_pass++;
+                        else if (r == -1) total_fail++;
+                        else total_skip++;
+                        r = test_gpu_moe_expert_weight(
+                            "CUDA", gpu, &model, moe_s,
+                            &moe_L->moe.expert_map, e, 2, "moe_down");
+                        if (r == 1) total_pass++;
+                        else if (r == -1) total_fail++;
+                        else total_skip++;
+                    }
                 }
                 if (moe_s)
                     bn_session_free(moe_s, NULL);

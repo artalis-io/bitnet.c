@@ -3162,6 +3162,22 @@ static __global__ void weighted_add_sigmoid_kernel(
     }
 }
 
+static __device__ __forceinline__ float cuda_fast_exp(float x) {
+    x = fminf(88.7f, fmaxf(-87.3f, x));
+    float n_f = floorf(x * 1.4426950409f + 0.5f);
+    int n = (int)n_f;
+    float r = x - n_f * 0.6931471806f;
+    float poly = fmaf(0.04166664f, r, 0.16666667f);
+    poly = fmaf(poly, r, 0.49999994f);
+    poly = fmaf(poly, r, 1.0f);
+    poly = fmaf(poly, r, 1.0f);
+    return poly * __int_as_float((n + 127) << 23);
+}
+
+static __device__ __forceinline__ float cuda_fast_sigmoid(float x) {
+    return 1.0f / (1.0f + cuda_fast_exp(-x));
+}
+
 static __global__ void activation_gate_kernel(float *x, const float *aux,
                                               int n, int kind, int param1) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -3176,12 +3192,12 @@ static __global__ void activation_gate_kernel(float *x, const float *aux,
             int d = i - h * param1;
             float gate = aux[(size_t)h * 2u * (size_t)param1 +
                              (size_t)param1 + (size_t)d];
-            x[i] = v / (1.0f + __expf(-gate));
+            x[i] = v * cuda_fast_sigmoid(gate);
         } else {
-            x[i] = aux[i] / (1.0f + __expf(-v));
+            x[i] = aux[i] * cuda_fast_sigmoid(v);
         }
     } else {
-        x[i] = (v / (1.0f + __expf(-v))) * aux[i];
+        x[i] = (v * cuda_fast_sigmoid(v)) * aux[i];
     }
 }
 
@@ -3193,7 +3209,7 @@ static __global__ void activation_kernel(float *x, int n, int kind) {
         float r = v > 0.0f ? v : 0.0f;
         x[i] = r * r;
     } else {
-        x[i] = v / (1.0f + __expf(-v));
+        x[i] = v * cuda_fast_sigmoid(v);
     }
 }
 
@@ -4696,11 +4712,26 @@ static int cuda_write_activation(void *vctx, int buf_idx, const void *data,
 static int cuda_read_activation(void *vctx, int buf_idx, void *out,
                                 size_t size, size_t offset) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (!ctx || !out || buf_idx < 0 || buf_idx >= BN_GPU_VALUE_COUNT)
+    if (!ctx || !out || buf_idx < 0 || buf_idx >= BN_GPU_VALUE_COUNT) {
+        if (getenv("BN_CUDA_DEBUG_READBACK")) {
+            fprintf(stderr,
+                    "[bn:gpu:cuda] read_activation invalid args: ctx=%p "
+                    "out=%p buf=%d size=%zu offset=%zu\n",
+                    (void *)ctx, out, buf_idx, size, offset);
+        }
         return -1;
+    }
     if (cuda_ctx_set_device(ctx) != 0) return -1;
-    if (!ctx->act_bufs[buf_idx] || offset + size > ctx->act_sizes[buf_idx])
+    if (!ctx->act_bufs[buf_idx] || offset + size > ctx->act_sizes[buf_idx]) {
+        if (getenv("BN_CUDA_DEBUG_READBACK")) {
+            fprintf(stderr,
+                    "[bn:gpu:cuda] read_activation invalid buffer: buf=%d "
+                    "ptr=%p size=%zu offset=%zu alloc=%zu\n",
+                    buf_idx, ctx->act_bufs[buf_idx], size, offset,
+                    ctx->act_sizes[buf_idx]);
+        }
         return -1;
+    }
     cudaError_t err = cudaSuccess;
     if (ctx->stream) {
         err = cudaMemcpyAsync(out, (char *)ctx->act_bufs[buf_idx] + offset,
@@ -4710,6 +4741,12 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
     } else {
         err = cudaMemcpy(out, (char *)ctx->act_bufs[buf_idx] + offset,
                          size, cudaMemcpyDeviceToHost);
+    }
+    if (err != cudaSuccess && getenv("BN_CUDA_DEBUG_READBACK")) {
+        fprintf(stderr,
+                "[bn:gpu:cuda] read_activation failed: buf=%d size=%zu "
+                "offset=%zu err=%s\n",
+                buf_idx, size, offset, cudaGetErrorString(err));
     }
     return err == cudaSuccess ? 0 : -1;
 }
