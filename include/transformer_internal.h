@@ -26,5 +26,6 @@ int bn_transformer_gpu_forward_argmax(BnModel *m,
                                       int *out_token);
 int bn_transformer_gpu_upload_kv_cache(BnModel *m, BnSession *sess,
                                        int pos0, int n_tokens);
+int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess);
 
 #endif // BN_TRANSFORMER_INTERNAL_H

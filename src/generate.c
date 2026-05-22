@@ -357,6 +357,11 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
             bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                n_tokens) != 0)
             return NULL;
+        if (logits && gpu_attached &&
+            model->config.full_attn_interval > 0 &&
+            getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") &&
+            bn_transformer_gpu_upload_ssm_state(model, s) != 0)
+            return NULL;
     } else {
         for (int i = 0; i < n_tokens; i++) {
             if (i + 1 == n_tokens) {
@@ -380,6 +385,10 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
         if (rc == 0 && gpu_attached && !s->gpu_kv_direct_valid)
             rc = bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                     n_tokens);
+        if (rc == 0 && gpu_attached &&
+            model->config.full_attn_interval > 0 &&
+            getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER"))
+            rc = bn_transformer_gpu_upload_ssm_state(model, s);
         return rc;
     }
     for (int i = 0; i < n_tokens; i++) {
