@@ -808,8 +808,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return NULL;
     }
 
+    BnGPUBackend *prefill_gpu = bn_model_gpu(m);
+    int cuda_hybrid_prefill =
+        c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
+        c->n_experts <= 0 &&
+        prefill_gpu && prefill_gpu->kind == BN_GPU_BACKEND_CUDA;
     if (c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
-        !getenv("BN_PREFILL_ALLOW_HYBRID_BATCH")) {
+        !cuda_hybrid_prefill && !getenv("BN_PREFILL_ALLOW_HYBRID_BATCH")) {
         float *logits = NULL;
         for (int t = 0; t < n_tokens; t++) {
             logits = bn_transformer_forward(m, sess, tokens[t], pos0 + t);
@@ -1227,7 +1232,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             }
 
-            if (bn_model_tq_state(m) == NULL) {
+            int force_token_attn =
+                getenv("BN_PREFILL_FORCE_TOKEN_ATTN") != NULL ||
+                cuda_hybrid_prefill;
+            if (bn_model_tq_state(m) == NULL && !force_token_attn) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
                 t_prof = prefill_profile_now(&prof);
                 if (!used_raw_prefill_attn_wo) {
