@@ -3260,6 +3260,13 @@ static __global__ void bias_add_kernel(float *x, const float *bias, int n) {
     if (i < n) x[i] += bias[i];
 }
 
+static __global__ void bias_add_batch_kernel(float *x, const float *bias,
+                                             int rows, int n_tokens) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = rows * n_tokens;
+    if (i < total) x[i] += bias[i % rows];
+}
+
 static __global__ void bias_add_copy_kernel(float *x, float *dst,
                                             const float *bias, int src_off,
                                             int dst_off, int n) {
@@ -7083,6 +7090,7 @@ static int cuda_prefill_dense_layer(
         void *vctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
         void *gate_buf, void *up_buf, void *down_buf, void *attn_norm_buf,
         void *ffn_norm_buf, void *q_norm_buf, void *k_norm_buf,
+        void *q_bias_buf, void *k_bias_buf, void *v_bias_buf,
         const float *X, float *K_out, float *V_out, int n_tokens, int dim,
         int hidden_dim, int n_heads, int n_kv_heads, int head_size,
         int kv_mul, int kv_dim, int qk_rows, int qk_type, int wv_rows,
@@ -7101,6 +7109,9 @@ static int cuda_prefill_dense_layer(
     BnCudaBuffer *ffn_norm = (BnCudaBuffer *)ffn_norm_buf;
     BnCudaBuffer *q_norm = (BnCudaBuffer *)q_norm_buf;
     BnCudaBuffer *k_norm = (BnCudaBuffer *)k_norm_buf;
+    BnCudaBuffer *q_bias = (BnCudaBuffer *)q_bias_buf;
+    BnCudaBuffer *k_bias = (BnCudaBuffer *)k_bias_buf;
+    BnCudaBuffer *v_bias = (BnCudaBuffer *)v_bias_buf;
     int stacked_gateup = up == NULL;
     int q_dim = n_heads * head_size;
     int packed_qkv = qk && qk->data && !wv && qk_rows == q_dim + 2 * kv_dim;
@@ -7147,6 +7158,10 @@ static int cuda_prefill_dense_layer(
         return -1;
     if (attn_norm->rows * attn_norm->cols < dim ||
         ffn_norm->rows * ffn_norm->cols < dim)
+        return -1;
+    if ((q_bias && (!q_bias->data || q_bias->rows * q_bias->cols < q_dim)) ||
+        (k_bias && (!k_bias->data || k_bias->rows * k_bias->cols < kv_dim)) ||
+        (v_bias && (!v_bias->data || v_bias->rows * v_bias->cols < kv_dim)))
         return -1;
     if (!cuda_type_supported(qk_type) ||
         (!packed_qkv && !cuda_type_supported(wv_type)) ||
@@ -7279,6 +7294,40 @@ static int cuda_prefill_dense_layer(
         fprintf(stderr, "[bn:gpu:cuda] prefill dense layer qk split failed: %s\n",
                 cudaGetErrorString(err));
         return -1;
+    }
+
+    if (q_bias) {
+        int total = n_tokens * q_dim;
+        bias_add_batch_kernel<<<(total + threads - 1) / threads, threads>>>(
+            d_q, (const float *)q_bias->data, q_dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill dense layer q bias failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    }
+    if (k_bias) {
+        int total = n_tokens * kv_dim;
+        bias_add_batch_kernel<<<(total + threads - 1) / threads, threads>>>(
+            d_k, (const float *)k_bias->data, kv_dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill dense layer k bias failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    }
+    if (v_bias) {
+        int total = n_tokens * kv_dim;
+        bias_add_batch_kernel<<<(total + threads - 1) / threads, threads>>>(
+            d_v, (const float *)v_bias->data, kv_dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill dense layer v bias failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
     }
 
     const float *q_norm_data = q_norm ? (const float *)q_norm->data : NULL;

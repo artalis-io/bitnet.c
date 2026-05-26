@@ -370,17 +370,27 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_Q_NORM);
     void *k_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_K_NORM);
+    void *q_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
+    void *k_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_K_BIAS);
+    void *v_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_V_BIAS);
     if (!qk_buf || (!has_packed_qkv && !wv_buf) || !wo_buf || !gate_buf || !down_buf ||
-        !attn_norm_buf || !ffn_norm_buf)
+        !attn_norm_buf || !ffn_norm_buf ||
+        (lw->attn.q_bias && !q_bias_buf) ||
+        (lw->attn.k_bias && !k_bias_buf) ||
+        (lw->attn.v_bias && !v_bias_buf))
         return -1;
 
     return gpu->prefill_dense_layer(
         gpu->ctx, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
-        attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf, X, K_out, V_out,
-        n_tokens, dim, hidden_dim, n_heads, n_kv_heads, head_size, kv_mul,
-        kv_dim, qk_rows, qk_type, wv_rows, wv_type, lw->attn.wo.rows,
-        lw->attn.wo.cols, lw->attn.wo.type, lw->ffn.ffn_gate.type,
-        lw->ffn.ffn_up.type, lw->ffn.ffn_down.type, m->config.act_type,
+        attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf,
+        q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
+        hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
+        qk_type, wv_rows, wv_type, lw->attn.wo.rows, lw->attn.wo.cols,
+        lw->attn.wo.type, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
+        lw->ffn.ffn_down.type, m->config.act_type,
         m->config.qk_norm_per_head, m->config.norm_eps, pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
 }
@@ -402,7 +412,6 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         lw->moe.router_weight || !c->has_ffn_gate || !lw->ffn.ffn_up.data ||
         !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
         !lw->ffn.ffn_down.data ||
-        lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias ||
         lw->norm.attn_sub_norm || lw->norm.ffn_sub_norm ||
         lw->norm.layer_output_scale ||
         ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
@@ -450,9 +459,18 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
     void *ffn_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    void *q_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
+    void *k_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_K_BIAS);
+    void *v_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_V_BIAS);
     return qk_buf && (has_packed_qkv || wv_buf) && wo_buf &&
            gate_buf && (gateup_buf || up_buf) &&
-           down_buf && attn_norm_buf && ffn_norm_buf;
+           down_buf && attn_norm_buf && ffn_norm_buf &&
+           (!lw->attn.q_bias || q_bias_buf) &&
+           (!lw->attn.k_bias || k_bias_buf) &&
+           (!lw->attn.v_bias || v_bias_buf);
 }
 
 static int prefill_ssm_layer_gpu(const BnModel *m,

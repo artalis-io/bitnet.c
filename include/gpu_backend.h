@@ -216,6 +216,8 @@ struct BnGPUBackend {
                                     void *down_buf, void *attn_norm_buf,
                                     void *ffn_norm_buf,
                                     void *q_norm_buf, void *k_norm_buf,
+                                    void *q_bias_buf, void *k_bias_buf,
+                                    void *v_bias_buf,
                                     const float *X, float *K_out,
                                     float *V_out, int n_tokens, int dim,
                                     int hidden_dim, int n_heads,
