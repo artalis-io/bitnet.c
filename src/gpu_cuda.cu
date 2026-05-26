@@ -1626,10 +1626,10 @@ static __device__ float cuda_block_reduce_max_all(float v, float *scratch) {
     return scratch[0];
 }
 
-static __global__ void matvec_kernel(float *out, const void *wdata,
+static __global__ void matvec_kernel(void *out, const void *wdata,
                                      const float *x, const float *bias,
                                      int rows, int cols, int type,
-                                     size_t out_offset) {
+                                     size_t out_offset, int out_f16) {
     int row = blockIdx.x;
     int token = blockIdx.y;
     int tid = threadIdx.x;
@@ -1806,7 +1806,8 @@ static __global__ void matvec_kernel(float *out, const void *wdata,
     if (tid == 0) {
         float v = sum;
         if (bias) v += bias[row];
-        out[out_offset + (size_t)token * rows + row] = v;
+        cuda_kv_store(out, out_offset + (size_t)token * rows + row, v,
+                      out_f16);
     }
 }
 
@@ -2958,10 +2959,10 @@ static __global__ void per_head_rmsnorm_kernel(float *x,
 }
 
 static __global__ void qk_rmsnorm_rope_kernel(
-    float *q, float *k, const float *q_weight, const float *k_weight,
+    float *q, void *k, const float *q_weight, const float *k_weight,
     const float *freq, int n_heads, int n_kv_heads, int head_size,
     float eps, int per_head_weight, size_t k_offset, int pos,
-    int rope_dims) {
+    int rope_dims, int kv_f16) {
     int h = blockIdx.x;
     int tid = threadIdx.x;
     int is_q = h < n_heads;
@@ -2969,15 +2970,16 @@ static __global__ void qk_rmsnorm_rope_kernel(
     int n = is_q ? n_heads : n_kv_heads;
     if (idx >= n || head_size <= 0) return;
 
-    float *xh = is_q
-        ? q + (size_t)idx * head_size
-        : k + k_offset + (size_t)idx * head_size;
+    float *qh = q + (size_t)idx * head_size;
+    size_t k_base = k_offset + (size_t)idx * head_size;
     const float *weight = is_q ? q_weight : k_weight;
     const float *wh = weight + (per_head_weight ? (size_t)idx * head_size : 0);
 
     float ss = 0.0f;
-    for (int i = tid; i < head_size; i += blockDim.x)
-        ss += xh[i] * xh[i];
+    for (int i = tid; i < head_size; i += blockDim.x) {
+        float xv = is_q ? qh[i] : cuda_kv_load(k, k_base + (size_t)i, kv_f16);
+        ss += xv * xv;
+    }
 
     extern __shared__ float scratch[];
     int lane = tid & 31;
@@ -2996,8 +2998,14 @@ static __global__ void qk_rmsnorm_rope_kernel(
     __syncthreads();
 
     float scale = rsqrtf(scratch[0] / (float)head_size + eps);
-    for (int i = tid; i < head_size; i += blockDim.x)
-        xh[i] = xh[i] * scale * wh[i];
+    for (int i = tid; i < head_size; i += blockDim.x) {
+        float xv = is_q ? qh[i] : cuda_kv_load(k, k_base + (size_t)i, kv_f16);
+        xv = xv * scale * wh[i];
+        if (is_q)
+            qh[i] = xv;
+        else
+            cuda_kv_store(k, k_base + (size_t)i, xv, kv_f16);
+    }
     __syncthreads();
 
     int half_rope = rope_dims / 2;
@@ -3006,10 +3014,17 @@ static __global__ void qk_rmsnorm_rope_kernel(
         float angle = (float)pos * freq[i];
         float s, c;
         __sincosf(angle, &s, &c);
-        float x0 = xh[i];
-        float x1 = xh[j];
-        xh[i] = x0 * c - x1 * s;
-        xh[j] = x0 * s + x1 * c;
+        float x0 = is_q ? qh[i] : cuda_kv_load(k, k_base + (size_t)i, kv_f16);
+        float x1 = is_q ? qh[j] : cuda_kv_load(k, k_base + (size_t)j, kv_f16);
+        float y0 = x0 * c - x1 * s;
+        float y1 = x0 * s + x1 * c;
+        if (is_q) {
+            qh[i] = y0;
+            qh[j] = y1;
+        } else {
+            cuda_kv_store(k, k_base + (size_t)i, y0, kv_f16);
+            cuda_kv_store(k, k_base + (size_t)j, y1, kv_f16);
+        }
     }
 }
 
@@ -3883,9 +3898,9 @@ static __global__ void rope_kernel(float *q, float *k, const float *freq,
 }
 
 static __global__ void prefill_write_kv_cache_kernel(
-        float *key_cache, float *value_cache, const float *k, const float *v,
+        void *key_cache, void *value_cache, const float *k, const float *v,
         int n_tokens, int kv_dim, int kv_cache_stride,
-        uint32_t kv_cache_off) {
+        uint32_t kv_cache_off, int kv_f16) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = n_tokens * kv_dim;
     if (idx >= total) return;
@@ -3893,8 +3908,16 @@ static __global__ void prefill_write_kv_cache_kernel(
     int d = idx - t * kv_dim;
     size_t dst = (size_t)kv_cache_off + (size_t)t * kv_cache_stride +
                  (size_t)d;
-    key_cache[dst] = k[idx];
-    value_cache[dst] = v[idx];
+    cuda_kv_store(key_cache, dst, k[idx], kv_f16);
+    cuda_kv_store(value_cache, dst, v[idx], kv_f16);
+}
+
+static __global__ void kv_store_vector_kernel(void *cache, const float *src,
+                                              int n, size_t offset,
+                                              int kv_f16) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    cuda_kv_store(cache, offset + (size_t)i, src[i], kv_f16);
 }
 
 static __global__ void gqa_scores_kernel(float *att, const float *q,
@@ -5481,7 +5504,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
     } else {
         dim3 grid(rows, n_tokens, 1);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
-            d_dst, w->data, d_x, NULL, rows, cols, type, 0);
+            d_dst, w->data, d_x, NULL, rows, cols, type, 0, 0);
     }
     err = cudaGetLastError();
     if (err != cudaSuccess) {
@@ -5564,7 +5587,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
     } else {
         dim3 grid(rows, 1, 1);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
-            ctx->d_out, w->data, ctx->d_x, NULL, rows, cols, type, 0);
+            ctx->d_out, w->data, ctx->d_x, NULL, rows, cols, type, 0, 0);
     }
     err = cudaGetLastError();
     if (err != cudaSuccess) {
@@ -5687,7 +5710,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
     } else {
         dim3 grid(rows, n_tokens, 1);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
-            ctx->d_out, w->data, ctx->d_x, NULL, rows, cols, type, 0);
+            ctx->d_out, w->data, ctx->d_x, NULL, rows, cols, type, 0, 0);
     }
     if (err == cudaSuccess)
         err = cudaGetLastError();
@@ -5877,7 +5900,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
             dim3 grid(rows, n_tokens, 1);
             matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
                 ctx->d_out, w->data, ctx->d_x, NULL, rows, x_cols, type,
-                out_offset);
+                out_offset, 0);
         }
         if (err == cudaSuccess)
             err = cudaGetLastError();
@@ -6133,7 +6156,7 @@ static int cuda_dense_ffn(void *vctx, float *out,
 
     matvec_kernel<<<dim, threads, (size_t)threads * sizeof(float)>>>(
         ctx->d_out, down->data, ctx->d_x, NULL, dim, hidden_dim, down_type,
-        0);
+        0, 0);
     err = cudaGetLastError();
     if (err != cudaSuccess) {
         fprintf(stderr, "[bn:gpu:cuda] dense ffn down launch failed: %s\n",
@@ -6400,10 +6423,10 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         dim3 grid(hidden_dim, n_tokens, 1);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
             ctx->d_out, gate->data, gate_input, NULL, hidden_dim, dim,
-            gate_type, 0);
+            gate_type, 0, 0);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
             ctx->d_out, up->data, gate_input, NULL, hidden_dim, dim,
-            up_type, (size_t)n_tokens * hidden_dim);
+            up_type, (size_t)n_tokens * hidden_dim, 0);
     }
     if (err == cudaSuccess)
         err = cudaGetLastError();
@@ -6496,7 +6519,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         dim3 grid(dim, n_tokens, 1);
         matvec_kernel<<<grid, threads, (size_t)threads * sizeof(float)>>>(
             ctx->d_out, down->data, ctx->d_x, NULL, dim, hidden_dim,
-            down_type, 0);
+            down_type, 0, 0);
     }
     if (err == cudaSuccess)
         err = cudaGetLastError();
@@ -7384,7 +7407,7 @@ static int cuda_prefill_dense_layer(
         prefill_write_kv_cache_kernel<<<kv_blocks, threads>>>(
             cuda_act(ctx, BN_GPU_VALUE_KEY_CACHE),
             cuda_act(ctx, BN_GPU_VALUE_VALUE_CACHE), d_k, d_v, n_tokens,
-            kv_dim, kv_cache_stride, kv_cache_off);
+            kv_dim, kv_cache_stride, kv_cache_off, ctx->kv_f16);
         err = cudaGetLastError();
         if (err != cudaSuccess) {
             fprintf(stderr, "[bn:gpu:cuda] prefill dense layer kv write failed: %s\n",
@@ -8148,6 +8171,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int profile = getenv("BN_CUDA_PROFILE") != NULL;
     const int profile_wall = getenv("BN_CUDA_PROFILE_WALL") != NULL;
     const int debug_exec_fail = getenv("BN_CUDA_DEBUG_EXEC_FAIL") != NULL;
+    const int debug_sync_each_op =
+        getenv("BN_CUDA_DEBUG_SYNC_EACH_OP") != NULL;
     static unsigned long long profile_calls = 0;
     static unsigned long long profile_ops[BN_CUDA_PROFILE_MAX] = {0};
     static double profile_ms[BN_CUDA_PROFILE_MAX] = {0.0};
@@ -8169,7 +8194,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     if (getenv("BN_CUDA_DUMP_OPS") && n_ops > 0) {
         static int dumped = 0;
         if (!dumped) {
-            int limit = n_ops < 256 ? n_ops : 256;
+            int dump_limit = cuda_env_int("BN_CUDA_DUMP_OPS_LIMIT", 256);
+            if (dump_limit <= 0 || dump_limit > n_ops) dump_limit = n_ops;
+            int limit = n_ops < dump_limit ? n_ops : dump_limit;
             fprintf(stderr, "[bn:gpu:cuda:ops] n_ops=%d showing=%d\n",
                     n_ops, limit);
             for (int i = 0; i < limit; i++) {
@@ -8440,7 +8467,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     bias_idx = -1;
                 }
             }
-            if (next && op->type == BN_GGUF_TENSOR_Q4_K &&
+            int direct_kv_f16 = ctx->kv_f16 &&
+                (op->buf_out == BN_GPU_VALUE_KEY_CACHE ||
+                 op->buf_out == BN_GPU_VALUE_VALUE_CACHE) &&
+                fused_copy_idx < 0 && bias == NULL && bias_idx < 0;
+            void *direct_kv_dst = out;
+            size_t direct_kv_offset = out_offset;
+            if (direct_kv_f16) {
+                float *tmp = cuda_act(ctx, BN_GPU_VALUE_SCRATCH);
+                if (!tmp || op->rows > (int)(ctx->act_sizes[BN_GPU_VALUE_SCRATCH] /
+                                             sizeof(float)))
+                    BN_CUDA_EXEC_FAIL("direct kv f16 scratch unavailable");
+                out = tmp;
+                out_offset = 0;
+            }
+            if (!direct_kv_f16 && next && op->type == BN_GGUF_TENSOR_Q4_K &&
                 next->op_code == BN_GPU_CODE_MATVEC &&
                 next->type == BN_GGUF_TENSOR_Q4_K &&
                 next->buf_in == op->buf_in &&
@@ -8619,14 +8660,19 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim3(op->rows, 1, 1), threads,
                         (size_t)threads * sizeof(float),
                         out, w->data, in, bias, op->rows, op->cols, op->type,
-                        out_offset);
+                        out_offset, 0);
                 } else {
                     BN_CUDA_LAUNCH(ctx, matvec_kernel,
                         dim3(op->rows, 1, 1), threads,
                         (size_t)threads * sizeof(float),
                         out, w->data, in, bias, op->rows, op->cols, op->type,
-                        out_offset);
+                        out_offset, 0);
                 }
+            }
+            if (direct_kv_f16) {
+                BN_CUDA_LAUNCH(ctx, kv_store_vector_kernel,
+                    (op->rows + threads - 1) / threads, threads, 0,
+                    direct_kv_dst, out, op->rows, direct_kv_offset, 1);
             }
             if (fused_copy_idx >= 0) {
                 i += 2;
@@ -9057,7 +9103,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (const float *)kw->data, freq, n_heads, next->rows,
                     head_size, cuda_u32_to_f32(op->p[1]), (int)op->p[2],
                     (size_t)next->p[3], (int)after_next->p[2],
-                    (int)after_next->p[3]);
+                    (int)after_next->p[3], ctx->kv_f16);
                 i += 2;
             } else {
                 BN_CUDA_LAUNCH(ctx, per_head_rmsnorm_kernel, n_heads, threads,
@@ -9496,12 +9542,27 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         exec_launches++;
         if (profile_code >= 0 && profile_code < BN_CUDA_PROFILE_MAX)
             exec_launch_by_code[profile_code]++;
+        if (debug_sync_each_op) {
+            err = cudaDeviceSynchronize();
+            if (err != cudaSuccess) {
+                fprintf(stderr,
+                        "[bn:gpu:cuda] execute op[%d] %s sync failed: %s\n",
+                        i, cuda_op_name(op->op_code),
+                        cudaGetErrorString(err));
+                if (profile) {
+                    cudaEventDestroy(ev_start);
+                    cudaEventDestroy(ev_stop);
+                }
+                return -1;
+            }
+        }
         if (!graph_exec) {
             err = cudaGetLastError();
             if (err != cudaSuccess) {
                 fprintf(stderr,
-                        "[bn:gpu:cuda] execute op %d launch failed: %s\n",
-                        op->op_code, cudaGetErrorString(err));
+                        "[bn:gpu:cuda] execute op[%d] %s launch failed: %s\n",
+                        i, cuda_op_name(op->op_code),
+                        cudaGetErrorString(err));
                 if (profile) {
                     cudaEventDestroy(ev_start);
                     cudaEventDestroy(ev_stop);
