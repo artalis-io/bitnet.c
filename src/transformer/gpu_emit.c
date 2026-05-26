@@ -1385,7 +1385,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
 
     int ssm_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
     if (ssm_qkvz_stacked &&
-        ssm_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
+        ssm_split_op_code != BN_GPU_CODE_UNKNOWN &&
         bn_transformer_gpu_can_matvec_split(res->gpu, lw->ssm.wqkv.type)) {
         int total_rows = lw->ssm.wqkv.rows + lw->ssm.wz.rows;
         emit_context_matvec_split(
