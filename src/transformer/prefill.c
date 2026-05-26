@@ -398,7 +398,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         bn_model_tq_state(m) != NULL ||
         n_tokens < prefill_dense_chain_min_tokens(c, gpu) ||
         layer_rope_theta != c->rope_theta ||
-        !plan->is_attn || plan->q_gated ||
+        !plan->is_attn ||
         lw->moe.router_weight || !c->has_ffn_gate || !lw->ffn.ffn_up.data ||
         !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
         !lw->ffn.ffn_down.data ||
@@ -1143,13 +1143,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             if (bn_model_gpu(m) &&
                 bn_model_tq_state(m) == NULL &&
-                n_tokens >= prefill_gpu_attention_min_tokens() &&
+                n_tokens >= prefill_dense_chain_min_tokens(c, bn_model_gpu(m)) &&
                 pos0 == 0 &&
                 layer_rope_theta == c->rope_theta &&
                 !lw->moe.router_weight &&
                 c->has_ffn_gate &&
                 lw->ffn.ffn_up.data &&
-                !plan.q_gated &&
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm && !lw->norm.ffn_sub_norm &&
                 !lw->norm.layer_output_scale &&

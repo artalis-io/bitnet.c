@@ -2958,6 +2958,35 @@ static __global__ void split_qk_prefill_kernel(const float *qk,
         k[(size_t)row * kv_dim + (col - q_dim)] = src[q_dim + (col - q_dim)];
 }
 
+static __global__ void split_qgk_prefill_kernel(const float *qgk,
+                                                float *q,
+                                                float *q_gate,
+                                                float *k,
+                                                int n_tokens,
+                                                int q_dim,
+                                                int kv_dim,
+                                                int qgk_rows,
+                                                int head_size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int row_width = 2 * q_dim + kv_dim;
+    int total = n_tokens * row_width;
+    if (i >= total) return;
+    int row = i / row_width;
+    int col = i - row * row_width;
+    const float *src = qgk + (size_t)row * qgk_rows;
+    if (col < 2 * q_dim) {
+        int h = col / (2 * head_size);
+        int hc = col - h * 2 * head_size;
+        if (hc < head_size)
+            q[(size_t)row * q_dim + (size_t)h * head_size + hc] = src[col];
+        else
+            q_gate[(size_t)row * q_dim + (size_t)h * head_size +
+                   (hc - head_size)] = src[col];
+    } else {
+        k[(size_t)row * kv_dim + (col - 2 * q_dim)] = src[col];
+    }
+}
+
 static __global__ void split_qkv_prefill_kernel(const float *qkv,
                                                 float *q,
                                                 float *k,
@@ -2980,6 +3009,15 @@ static __global__ void split_qkv_prefill_kernel(const float *qkv,
     } else {
         v[(size_t)row * kv_dim + (col - q_dim - kv_dim)] = src[col];
     }
+}
+
+static __global__ void apply_q_gate_prefill_kernel(float *attn,
+                                                   const float *q_gate,
+                                                   int n_values) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_values) return;
+    float gate = q_gate[i];
+    attn[i] *= 1.0f / (1.0f + __expf(-gate));
 }
 
 static __global__ void qk_prefill_rmsnorm_rope_kernel(
@@ -6927,6 +6965,9 @@ static int cuda_prefill_dense_layer(
     int stacked_gateup = up == NULL;
     int q_dim = n_heads * head_size;
     int packed_qkv = qk && qk->data && !wv && qk_rows == q_dim + 2 * kv_dim;
+    int q_gated = !packed_qkv && qk_rows == 2 * q_dim + kv_dim;
+    int debug_dense_prefill =
+        getenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER") != NULL;
     if (getenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER"))
         return -1;
     if (!ctx || !qk || !qk->data || (!packed_qkv && (!wv || !wv->data)) ||
@@ -6937,13 +6978,21 @@ static int cuda_prefill_dense_layer(
         head_size <= 0 || kv_mul <= 0 || kv_dim <= 0 ||
         kv_cache_stride < kv_dim ||
         n_heads / kv_mul != n_kv_heads || act_type != 0 ||
-        (!packed_qkv && qk_rows != q_dim + kv_dim) ||
+        (!packed_qkv && !q_gated && qk_rows != q_dim + kv_dim) ||
         (!packed_qkv && wv_rows != kv_dim) ||
         wo_cols != n_heads * head_size || wo->rows != wo_rows ||
         wo->cols != wo_cols || down->rows != dim ||
         down->cols != hidden_dim || pos0 != 0 || rope_dims <= 0 ||
-        !ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ])
+        !ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ]) {
+        if (debug_dense_prefill) {
+            fprintf(stderr,
+                    "[bn:gpu:cuda:dense_prefill] reject args qk_rows=%d q_dim=%d kv_dim=%d packed=%d q_gated=%d wv_rows=%d wo_cols=%d head_size=%d n_heads=%d pos0=%d rope_dims=%d has_rope=%d\n",
+                    qk_rows, q_dim, kv_dim, packed_qkv, q_gated, wv_rows,
+                    wo_cols, head_size, n_heads, pos0, rope_dims,
+                    ctx && ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ] ? 1 : 0);
+        }
         return -1;
+    }
     if ((!K_out || !V_out) &&
         (K_out || V_out ||
          !ctx->act_bufs[BN_GPU_VALUE_KEY_CACHE] ||
@@ -7002,7 +7051,8 @@ static int cuda_prefill_dense_layer(
         (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens;
     size_t hidden_values = (size_t)n_tokens * (size_t)hidden_dim;
     size_t gateup_values = hidden_values * 2u;
-    size_t total_values = dim_values + dim_values + q_values +
+    size_t q_gate_values = q_gated ? q_values : 0u;
+    size_t total_values = dim_values + dim_values + q_values + q_gate_values +
                           2u * kv_values + qk_values + score_values +
                           dim_values + dim_values + hidden_values +
                           gateup_values;
@@ -7027,7 +7077,8 @@ static int cuda_prefill_dense_layer(
     float *d_orig = ctx->d_prefill;
     float *d_attn_norm = d_orig + dim_values;
     float *d_q = d_attn_norm + dim_values;
-    float *d_k = d_q + q_values;
+    float *d_q_gate = d_q + q_values;
+    float *d_k = d_q_gate + q_gate_values;
     float *d_v = d_k + kv_values;
     float *d_qk = d_v + kv_values;
     float *d_scores = d_qk + qk_values;
@@ -7066,11 +7117,17 @@ static int cuda_prefill_dense_layer(
     }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_WV);
 
-    int total_qkv = n_tokens * (q_dim + (packed_qkv ? 2 * kv_dim : kv_dim));
+    int total_qkv = n_tokens *
+                    (q_dim + (q_gated ? q_dim : 0) +
+                     (packed_qkv ? 2 * kv_dim : kv_dim));
     int blocks = (total_qkv + threads - 1) / threads;
     if (packed_qkv) {
         split_qkv_prefill_kernel<<<blocks, threads>>>(
             d_qk, d_q, d_k, d_v, n_tokens, q_dim, kv_dim, qk_rows);
+    } else if (q_gated) {
+        split_qgk_prefill_kernel<<<blocks, threads>>>(
+            d_qk, d_q, d_q_gate, d_k, n_tokens, q_dim, kv_dim, qk_rows,
+            head_size);
     } else {
         split_qk_prefill_kernel<<<blocks, threads>>>(
             d_qk, d_q, d_k, n_tokens, q_dim, kv_dim, qk_rows);
@@ -7104,6 +7161,18 @@ static int cuda_prefill_dense_layer(
                                     head_size, kv_mul, kv_dim,
                                     attention_scale) != 0)
         return -1;
+    if (q_gated) {
+        int n_q = n_tokens * q_dim;
+        int gate_blocks = (n_q + threads - 1) / threads;
+        apply_q_gate_prefill_kernel<<<gate_blocks, threads>>>(
+            ctx->d_x, d_q_gate, n_q);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill dense layer q gate failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_ATTN);
     if (cuda_matmul_device_out(ctx, ctx->d_out, wo, ctx->d_x, wo_rows,
                                wo_cols, n_tokens, wo_type) != 0)
