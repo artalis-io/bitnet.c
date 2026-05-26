@@ -7020,8 +7020,10 @@ static int cuda_prefill_dense_layer(
         : (dim >= 2048 ? 16 : 64);
     if (n_tokens < min_tokens || n_tokens > 512)
         return -1;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN"))
-        return -1;
+    int use_gemm_attention =
+        !getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN") &&
+        (getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") ||
+         n_tokens >= cuda_env_int("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", 256));
 
     const int dense_profile = getenv("BN_CUDA_PREFILL_DENSE_PROFILE") != NULL;
     static double dense_profile_totals[BN_CUDA_DENSE_PROF_MAX] = {0.0};
@@ -7047,8 +7049,9 @@ static int cuda_prefill_dense_layer(
     size_t q_values = (size_t)n_tokens * (size_t)q_dim;
     size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
     size_t qk_values = (size_t)n_tokens * (size_t)qk_rows;
-    size_t score_values =
-        (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens;
+    size_t score_values = use_gemm_attention
+        ? (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens
+        : 0u;
     size_t hidden_values = (size_t)n_tokens * (size_t)hidden_dim;
     size_t gateup_values = hidden_values * 2u;
     size_t q_gate_values = q_gated ? q_values : 0u;
@@ -7156,11 +7159,25 @@ static int cuda_prefill_dense_layer(
     }
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_QK_ROPE);
 
-    if (cuda_prefill_attention_gemm(ctx, ctx->d_x, d_q, d_k, d_v, d_scores,
-                                    n_tokens, n_heads, n_kv_heads,
-                                    head_size, kv_mul, kv_dim,
-                                    attention_scale) != 0)
-        return -1;
+    if (use_gemm_attention) {
+        if (cuda_prefill_attention_gemm(ctx, ctx->d_x, d_q, d_k, d_v,
+                                        d_scores, n_tokens, n_heads,
+                                        n_kv_heads, head_size, kv_mul,
+                                        kv_dim, attention_scale) != 0)
+            return -1;
+    } else {
+        size_t shared = (size_t)(n_tokens + threads) * sizeof(float);
+        prefill_attention_kernel<<<dim3(n_heads, n_tokens, 1), threads,
+                                   shared>>>(
+            ctx->d_x, d_q, d_k, d_v, n_tokens, n_heads, head_size, kv_mul,
+            kv_dim, attention_scale);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] prefill dense layer attention failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    }
     if (q_gated) {
         int n_q = n_tokens * q_dim;
         int gate_blocks = (n_q + threads - 1) / threads;

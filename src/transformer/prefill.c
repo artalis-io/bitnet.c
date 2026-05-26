@@ -1120,6 +1120,111 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         }
     }
 
+    if (!getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") &&
+        cuda_hybrid_prefill && pos0 == 0 && c->n_layers > 0 &&
+        bn_model_tq_state(m) == NULL) {
+        int chain_ready = 1;
+        for (int l = 0; l < c->n_layers; l++) {
+            BnLayerWeights *lw = &w->layers[l];
+            BnLayerShapePlan plan;
+            bn_transformer_plan_layer_shape(
+                &plan, c, lw, l, bn_model_tq_state(m) != NULL);
+            if (plan.is_attn) {
+                int layer_head_size = plan.head_size;
+                float layer_rope_theta =
+                    prefill_layer_rope_theta(c, layer_head_size);
+                if (!prefill_dense_layer_chain_ready(
+                        m, lw, &plan, l, n_tokens, layer_rope_theta)) {
+                    chain_ready = 0;
+                    break;
+                }
+            } else if (!prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
+                chain_ready = 0;
+                break;
+            }
+        }
+        if (chain_ready) {
+            int direct_gpu_kv =
+                !getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV") &&
+                !c->kv_f16 && pos0 + n_tokens <= c->seq_len;
+            sess->gpu_kv_direct_valid = 0;
+            t_prof = prefill_profile_now(&prof);
+            for (int l = 0; l < c->n_layers; l++) {
+                BnLayerWeights *lw = &w->layers[l];
+                BnLayerShapePlan plan;
+                bn_transformer_plan_layer_shape(
+                    &plan, c, lw, l, bn_model_tq_state(m) != NULL);
+                float *layer_out = (l == c->n_layers - 1) ? act : NULL;
+                const float *layer_in = (l == 0) ? act : NULL;
+                if (plan.is_attn) {
+                    int layer_head_size = plan.head_size;
+                    int layer_kv_dim = plan.kv_dim;
+                    int layer_n_kv_heads = plan.n_kv_heads;
+                    int layer_kv_mul = plan.kv_mul;
+                    int layer_rope_dims =
+                        prefill_layer_rope_dims(c, layer_head_size);
+                    size_t loff =
+                        (size_t)plan.attn_idx * c->seq_len * kv_dim;
+                    uint32_t kv_cache_off =
+                        (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
+                    if (prefill_dense_layer_gpu_batch(
+                            m, layer_out, lw, layer_in,
+                            direct_gpu_kv ? NULL : K_new,
+                            direct_gpu_kv ? NULL : V_new, n_tokens,
+                            dim, hidden_dim, c->n_heads, layer_n_kv_heads,
+                            layer_head_size, layer_kv_mul, layer_kv_dim,
+                            layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
+                            prefill_attention_scale(c, layer_head_size)) != 0) {
+                        sh_arena_free(pf_arena);
+                        return NULL;
+                    }
+                    if (!direct_gpu_kv) {
+                        for (int t = 0; t < n_tokens; t++) {
+                            int pos = pos0 + t;
+                            int cache_pos = pos % c->seq_len;
+                            float *k_t = K_new + (size_t)t * layer_kv_dim;
+                            float *v_t = V_new + (size_t)t * layer_kv_dim;
+                            if (c->kv_f16)
+                                bn_transformer_write_kv_fp16(
+                                    s, loff, cache_pos, kv_dim, k_t, v_t,
+                                    layer_kv_dim);
+                            else
+                                bn_transformer_write_kv_fp32(
+                                    s, loff, cache_pos, kv_dim, k_t, v_t,
+                                    layer_kv_dim);
+                        }
+                    }
+                } else {
+                    int num_k_heads = c->ssm_group_count;
+                    int head_k_dim = c->ssm_state_size;
+                    int num_v_heads = c->ssm_time_step_rank;
+                    int head_v_dim =
+                        c->ssm_inner_size /
+                        (num_v_heads > 0 ? num_v_heads : 1);
+                    int key_dim_ssm = num_k_heads * head_k_dim;
+                    int value_dim = c->ssm_inner_size;
+                    int qkv_dim_ssm = key_dim_ssm * 2 + value_dim;
+                    int kern_ssm =
+                        c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
+                    int ssm_did_ffn = 0;
+                    if (prefill_ssm_layer_gpu(
+                            m, layer_out, lw, layer_in, n_tokens, dim,
+                            qkv_dim_ssm, value_dim, num_k_heads,
+                            head_k_dim, num_v_heads, head_v_dim, kern_ssm,
+                            plan.ssm_idx, l, 1, c->norm_eps,
+                            &ssm_did_ffn) != 0 || !ssm_did_ffn) {
+                        sh_arena_free(pf_arena);
+                        return NULL;
+                    }
+                }
+            }
+            if (direct_gpu_kv)
+                sess->gpu_kv_direct_valid = 1;
+            prefill_profile_add(&prof.qkv_ms, t_prof);
+            goto prefill_layers_done;
+        }
+    }
+
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &w->layers[l];
         BnLayerShapePlan plan;
