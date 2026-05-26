@@ -23,6 +23,7 @@
 #endif
 #ifdef BN_ENABLE_CUDA
 #include "gpu_cuda.h"
+#include "gpu_moe_cache.h"
 #endif
 #if defined(__wasm_relaxed_simd__)
 #include <wasm_simd128.h>
@@ -902,6 +903,31 @@ int main(int argc, char **argv) {
             bn_gguf_free(gf);
             return 1;
         }
+        if (model.config.n_experts > 0) {
+            int gpu_cache_mb = 4096;
+            const char *cache_env = getenv("BN_GPU_CACHE_MB");
+            if (cache_env && *cache_env)
+                gpu_cache_mb = atoi(cache_env);
+            if (gpu_cache_mb > 0) {
+                size_t entry_bytes = 0;
+                for (int l = 0; l < model.config.n_layers; l++) {
+                    BnMoEExpertMap *em =
+                        &model.weights.layers[l].moe.expert_map;
+                    entry_bytes = em->expert_gate_bytes +
+                                  em->expert_up_bytes +
+                                  em->expert_down_bytes;
+                    if (entry_bytes > 0)
+                        break;
+                }
+                if (entry_bytes > 0) {
+                    bn_model_set_gpu_moe_cache(
+                        &model,
+                        bn_gpu_moe_cache_create(
+                            (size_t)gpu_cache_mb * 1024u * 1024u,
+                            entry_bytes, cuda_gpu));
+                }
+            }
+        }
     }
 #endif
 
@@ -1025,6 +1051,13 @@ int main(int argc, char **argv) {
     free(x);
     free(x_q);
     if (pool) bn_tp_free(pool);
+#ifdef BN_ENABLE_CUDA
+    if (bn_model_gpu_moe_cache(&model)) {
+        bn_gpu_moe_cache_print_stats(bn_model_gpu_moe_cache(&model));
+        bn_gpu_moe_cache_free(bn_model_gpu_moe_cache(&model));
+        bn_model_set_gpu_moe_cache(&model, NULL);
+    }
+#endif
     bn_model_free(&model);
 #ifdef BN_ENABLE_WEBGPU
     if (gpu) bn_gpu_wgpu_destroy(gpu);
