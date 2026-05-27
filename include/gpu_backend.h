@@ -150,6 +150,20 @@ struct BnGPUBackend {
                          int gate_type, int up_type, int down_type,
                          int act_type);
 
+    // Batched routed MoE FFN using monolithic all-expert resident handles.
+    // indices/weights are [n_tokens, k] route results. Returns weighted sum
+    // in out[n_tokens, dim].
+    int (*moe_routed_ffn_batch)(void *ctx, float *out,
+                                void *gate_all_buf, void *up_all_buf,
+                                void *down_all_buf,
+                                const int *indices,
+                                const float *weights,
+                                const float *X,
+                                int n_tokens, int dim, int hidden_dim,
+                                int n_experts, int k,
+                                int gate_type, int up_type,
+                                int down_type, int act_type);
+
     // Batched causal attention for prompt processing:
     // out[n_tokens, n_heads * head_size] =
     // attention(Q[n_tokens, n_heads * head_size],
