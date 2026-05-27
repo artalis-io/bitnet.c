@@ -320,7 +320,8 @@ static __device__ uint16_t cuda_fp32_to_fp16_bits(float f) {
 
 static __device__ float cuda_q4k_value(const BnBlockQ4K *blk, int i);
 static __device__ float cuda_q5k_value(const BnBlockQ5K *blk, int i);
-static __device__ float cuda_q6k_value(const BnBlockQ6K *blk, int i);
+static __device__ __forceinline__ float cuda_q6k_value(const BnBlockQ6K *blk,
+                                                       int i);
 
 static __global__ void f32_to_f16_kernel(__half *out, const float *in,
                                          size_t n) {
@@ -516,7 +517,8 @@ static __device__ float cuda_q5k_value(const BnBlockQ5K *blk, int i) {
            dmin * (float)mins[group];
 }
 
-static __device__ float cuda_q6k_value(const BnBlockQ6K *blk, int i) {
+static __device__ __forceinline__ float cuda_q6k_value(const BnBlockQ6K *blk,
+                                                       int i) {
     const float d = cuda_fp16_to_fp32(blk->d);
     const int chunk = i / 128;
     const int in_chunk = i & 127;
@@ -3914,7 +3916,7 @@ static __global__ void moe_q6k_down_routed_q8k_accum_kernel(
         out[row] = sum;
 }
 
-static __global__ void moe_q6k_down_routed_float_accum_kernel(
+static __global__ void moe_q6k_down_routed_float_accum_row_kernel(
     float *out,
     const BnBlockQ6K *down,
     const float *mid,
@@ -3923,10 +3925,8 @@ static __global__ void moe_q6k_down_routed_float_accum_kernel(
     int hidden,
     int n_experts,
     int k) {
-    int lane = threadIdx.x & 31;
-    int warp = threadIdx.x >> 5;
-    int warps_per_block = blockDim.x >> 5;
-    int row = blockIdx.x * warps_per_block + warp;
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
     if (row >= dim) return;
 
     int n_bpr = hidden / BN_QK_K;
@@ -3940,18 +3940,22 @@ static __global__ void moe_q6k_down_routed_float_accum_kernel(
                     (size_t)n_bpr);
         const float *slot_mid = mid + (size_t)slot * (size_t)hidden;
         float slot_sum = 0.0f;
-        for (int b = 0; b < n_bpr; b++) {
-            const BnBlockQ6K *blk = &row_blocks[b];
-            for (int i = lane; i < BN_QK_K; i += 32)
-                slot_sum += cuda_q6k_value(blk, i) *
-                            slot_mid[(size_t)b * BN_QK_K + i];
-        }
+        for (int b = 0; b < n_bpr; b++)
+            slot_sum += cuda_q6k_value(&row_blocks[b], tid) *
+                        slot_mid[(size_t)b * BN_QK_K + tid];
         sum += route[slot] * slot_sum;
     }
-    for (int offset = 16; offset > 0; offset >>= 1)
-        sum += __shfl_down_sync(0xffffffffu, sum, offset);
-    if (lane == 0)
-        out[row] = sum;
+
+    __shared__ float partial[256];
+    partial[tid] = sum;
+    __syncthreads();
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (tid < stride)
+            partial[tid] += partial[tid + stride];
+        __syncthreads();
+    }
+    if (tid == 0)
+        out[row] = partial[0];
 }
 
 static __global__ void moe_q6k_down_routed_q8k_accum_batch_kernel(
@@ -10506,8 +10510,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (down_type == BN_GGUF_TENSOR_Q6_K) {
                         if (getenv("BN_CUDA_ENABLE_Q6K_FLOAT_MOE_DOWN")) {
                             BN_CUDA_LAUNCH(ctx,
-                                moe_q6k_down_routed_float_accum_kernel,
-                                down_blocks, route_threads, 0,
+                                moe_q6k_down_routed_float_accum_row_kernel,
+                                dim, route_threads, 0,
                                 out, (const BnBlockQ6K *)down->data, mid,
                                 route, dim, hidden, n_experts, k);
                         } else {
