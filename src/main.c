@@ -354,14 +354,15 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     if (!args || args->gpu_cache_mb <= 0 || entry_bytes == 0)
         return 0;
     size_t requested = (size_t)args->gpu_cache_mb * 1024u * 1024u;
-    if (args->gpu_cache_mb_set ||
-        getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT"))
+    if (getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT"))
         return requested;
     int moe_layers = model_moe_layer_count(model);
     if (moe_layers <= 0 || model->config.n_experts <= 0)
         return requested;
     size_t all_experts = entry_bytes * (size_t)moe_layers *
                          (size_t)model->config.n_experts;
+    if (args->gpu_cache_mb_set && requested < all_experts)
+        return requested;
     if (!gpu || !gpu->memory_info)
         return requested;
     size_t free_bytes = 0;
