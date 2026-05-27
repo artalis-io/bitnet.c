@@ -939,6 +939,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu moe session state missing");
             void *moe_router = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
+            if (router_diff && c->n_experts == 2 &&
+                c->n_experts_active == 2 &&
+                !getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2"))
+                moe_router = router_diff;
             int gpu_route_topk =
                 moe_router && !getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK");
             void *moe_gate_all = bn_backend_model_handle(

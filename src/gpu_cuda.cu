@@ -3492,6 +3492,31 @@ static __global__ void moe_route_topk_kernel(float *route,
         route[k + i] = (float)selected[i];
 }
 
+static __global__ void moe_route_diff2_kernel(float *route,
+                                              const float *router_diff,
+                                              const float *x,
+                                              int dim) {
+    int tid = threadIdx.x;
+    float sum = 0.0f;
+    for (int d = tid; d < dim; d += blockDim.x)
+        sum += router_diff[d] * x[d];
+    extern __shared__ float scratch[];
+    scratch[tid] = sum;
+    __syncthreads();
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (tid < stride)
+            scratch[tid] += scratch[tid + stride];
+        __syncthreads();
+    }
+    if (tid == 0) {
+        float w0 = 1.0f / (1.0f + expf(-scratch[0]));
+        route[0] = w0;
+        route[1] = 1.0f - w0;
+        route[2] = 0.0f;
+        route[3] = 1.0f;
+    }
+}
+
 static __global__ void moe_q4k_gateup_routed_mid_kernel(
     float *mid,
     const BnBlockQ4K *gate,
@@ -10150,28 +10175,35 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int n_experts = (int)op->p[0];
             int k = (int)op->p[1];
             int dim = op->cols;
+            int route_diff2 = n_experts == 2 && k == 2 && w && w->rows == 1;
             if (!w || !w->data || !in || !route || !logits ||
                 n_experts <= 0 || k <= 0 || dim <= 0 ||
                 w->type != BN_GGUF_TENSOR_F32 ||
-                w->rows < n_experts || w->cols < dim ||
+                (!route_diff2 && w->rows < n_experts) || w->cols < dim ||
                 ctx->act_sizes[op->buf_aux] <
                     (size_t)n_experts * sizeof(float) ||
                 ctx->act_sizes[op->buf_out] <
                     (size_t)(2 * k) * sizeof(float))
                 return -1;
-            if (getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP")) {
+            if (route_diff2) {
+                BN_CUDA_LAUNCH(ctx, moe_route_diff2_kernel, 1, threads,
+                    (size_t)threads * sizeof(float),
+                    route, (const float *)w->data, in, dim);
+            } else if (getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP")) {
                 BN_CUDA_LAUNCH(ctx, moe_router_logits_kernel, n_experts,
                     threads, (size_t)threads * sizeof(float),
                     logits, (const float *)w->data, in, n_experts, dim);
+                BN_CUDA_LAUNCH(ctx, moe_route_topk_kernel, 1, 1, 0,
+                    route, logits, n_experts, k);
             } else {
                 int warps = threads / 32;
                 int blocks = (n_experts + warps - 1) / warps;
                 BN_CUDA_LAUNCH(ctx, moe_router_logits_warp_kernel, blocks,
                     threads, 0, logits, (const float *)w->data, in,
                     n_experts, dim);
+                BN_CUDA_LAUNCH(ctx, moe_route_topk_kernel, 1, 1, 0,
+                    route, logits, n_experts, k);
             }
-            BN_CUDA_LAUNCH(ctx, moe_route_topk_kernel, 1, 1, 0,
-                route, logits, n_experts, k);
             break;
         }
         case BN_GPU_CODE_MOE_ROUTED_FFN: {
