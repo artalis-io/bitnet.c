@@ -955,7 +955,12 @@ int main(int argc, char **argv) {
             int routed_resident_layers =
                 bench_cuda_routed_moe_resident_layers(&model,
                                                       &routed_moe_layers);
-            if (!cache_env && routed_moe_layers > 0 &&
+            int prefer_cache_prefill =
+                model.config.n_experts == 2 &&
+                model.config.n_experts_active == 2 &&
+                getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL") == NULL;
+            if (!cache_env && !prefer_cache_prefill &&
+                routed_moe_layers > 0 &&
                 routed_resident_layers == routed_moe_layers)
                 gpu_cache_mb = 0;
             if (gpu_cache_mb > 0) {

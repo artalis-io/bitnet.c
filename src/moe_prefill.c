@@ -266,7 +266,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     // 5. Per-expert batch compute
     int used_gpu_moe_batch = 0;
     BnGPUBackend *gpu_batch = bn_model_gpu(m);
-    if (gpu_batch && gpu_batch->kind == BN_GPU_BACKEND_CUDA &&
+    int prefer_cached_expert_batch =
+        bn_model_gpu_moe_cache(m) != NULL &&
+        n_experts == 2 && K == 2 &&
+        getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL") == NULL;
+    if (!prefer_cached_expert_batch &&
+        gpu_batch && gpu_batch->kind == BN_GPU_BACKEND_CUDA &&
         gpu_batch->moe_routed_ffn_batch) {
         const BnBackendModel *backend = bn_model_backend(m);
         void *gate_all = bn_backend_model_handle(
