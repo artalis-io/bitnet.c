@@ -10538,11 +10538,6 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             (const BnBlockQ4K *)up->data, xq, route, hidden,
                             dim, n_experts, k);
                     }
-                    if (cuda_ensure_q8_k(ctx, hidden, k) != 0) return -1;
-                    BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
-                    BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
-                        dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
-                        mid_q, mid, hidden, k);
                     if (down_type == BN_GGUF_TENSOR_Q6_K) {
                         if (getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") &&
                             down->f32_data) {
@@ -10558,6 +10553,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 out, (const BnBlockQ6K *)down->data, mid,
                                 route, dim, hidden, n_experts, k);
                         } else {
+                            if (cuda_ensure_q8_k(ctx, hidden, k) != 0)
+                                return -1;
+                            BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
+                            BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                                dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
+                                mid_q, mid, hidden, k);
                             BN_CUDA_LAUNCH(ctx,
                                 moe_q6k_down_routed_q8k_accum_kernel,
                                 down_blocks, route_threads, 0,
@@ -10565,6 +10566,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 route, dim, hidden, n_experts, k);
                         }
                     } else {
+                        if (cuda_ensure_q8_k(ctx, hidden, k) != 0) return -1;
+                        BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
+                        BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                            dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
+                            mid_q, mid, hidden, k);
                         BN_CUDA_LAUNCH(ctx, moe_q4k_down_routed_q8k_accum_kernel,
                             down_blocks, route_threads, 0,
                             out, (const BnBlockQ4K *)down->data, mid_q,
