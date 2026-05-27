@@ -15,6 +15,8 @@ typedef struct {
 typedef struct {
     BnGPUMoEExpertBuffers buffers;
     float weight;
+    void *route_gate;
+    int route_complement;
 } BnGPUMoEResolvedExpert;
 
 typedef struct {

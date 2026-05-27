@@ -3329,13 +3329,41 @@ static __global__ void weighted_add_kernel(float *x, const float *r,
 
 static __global__ void weighted_add_sigmoid_kernel(
     float *x, const float *r, const float *gate, const float *gate_in,
-    int n, int dim, int reset) {
+    int n, int dim, int reset, int complement) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         float dot = 0.0f;
         for (int d = 0; d < dim; d++)
             dot += gate_in[d] * gate[d];
         float weight = 1.0f / (1.0f + __expf(-dot));
+        if (complement)
+            weight = 1.0f - weight;
+        float v = weight * r[i];
+        x[i] = reset ? v : x[i] + v;
+    }
+}
+
+static __global__ void weighted_add_sigmoid_reduce_kernel(
+    float *x, const float *r, const float *gate, const float *gate_in,
+    int n, int dim, int reset, int complement) {
+    __shared__ float partial[256];
+    int tid = threadIdx.x;
+    float dot = 0.0f;
+    for (int d = tid; d < dim; d += blockDim.x)
+        dot += gate_in[d] * gate[d];
+    partial[tid] = dot;
+    __syncthreads();
+
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (tid < stride)
+            partial[tid] += partial[tid + stride];
+        __syncthreads();
+    }
+
+    float weight = 1.0f / (1.0f + __expf(-partial[0]));
+    if (complement)
+        weight = 1.0f - weight;
+    for (int i = tid; i < n; i += blockDim.x) {
         float v = weight * r[i];
         x[i] = reset ? v : x[i] + v;
     }
@@ -9325,10 +9353,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (!in || !aux || !gate_in || !gate || !gate->data ||
                 n <= 0 || dim <= 0)
                 return -1;
-            BN_CUDA_LAUNCH(ctx, weighted_add_sigmoid_kernel,
-                (n + threads - 1) / threads, threads, 0,
-                in, aux, (const float *)gate->data, gate_in, n, dim,
-                (int)op->p[2]);
+            if (dim <= 8192) {
+                BN_CUDA_LAUNCH(ctx, weighted_add_sigmoid_reduce_kernel,
+                    1, 256, 0, in, aux, (const float *)gate->data,
+                    gate_in, n, dim, (int)op->p[2], (int)op->p[4]);
+            } else {
+                BN_CUDA_LAUNCH(ctx, weighted_add_sigmoid_kernel,
+                    (n + threads - 1) / threads, threads, 0,
+                    in, aux, (const float *)gate->data, gate_in, n, dim,
+                    (int)op->p[2], (int)op->p[4]);
+            }
             break;
         }
         case BN_GPU_CODE_SILU_GATE:
