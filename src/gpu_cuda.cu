@@ -3958,6 +3958,46 @@ static __global__ void moe_q6k_down_routed_float_accum_row_kernel(
         out[row] = partial[0];
 }
 
+static __global__ void moe_q6k_down_routed_f32_cache_row_kernel(
+    float *out,
+    const float *down,
+    const float *mid,
+    const float *route,
+    int dim,
+    int hidden,
+    int n_experts,
+    int k) {
+    int row = blockIdx.x;
+    int tid = threadIdx.x;
+    if (row >= dim) return;
+
+    float sum = 0.0f;
+    for (int slot = 0; slot < k; slot++) {
+        int expert = (int)(route[k + slot] + 0.5f);
+        if (expert < 0) expert = 0;
+        if (expert >= n_experts) expert = n_experts - 1;
+        const float *row_w =
+            down + ((size_t)expert * (size_t)dim + (size_t)row) *
+                       (size_t)hidden;
+        const float *slot_mid = mid + (size_t)slot * (size_t)hidden;
+        float slot_sum = 0.0f;
+        for (int c = tid; c < hidden; c += blockDim.x)
+            slot_sum += row_w[c] * slot_mid[c];
+        sum += route[slot] * slot_sum;
+    }
+
+    __shared__ float partial[256];
+    partial[tid] = sum;
+    __syncthreads();
+    for (int stride = blockDim.x >> 1; stride > 0; stride >>= 1) {
+        if (tid < stride)
+            partial[tid] += partial[tid + stride];
+        __syncthreads();
+    }
+    if (tid == 0)
+        out[row] = partial[0];
+}
+
 static __global__ void moe_q6k_down_routed_q8k_accum_batch_kernel(
     float *out,
     const BnBlockQ6K *down,
@@ -6070,7 +6110,8 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
         return 0;
 
     int q6_as_f16 = buf->type == BN_GGUF_TENSOR_Q6_K &&
-                    getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL;
+                    getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
+                    getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     size_t bytes = n * (buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16
                         ? sizeof(float)
@@ -10508,7 +10549,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                         mid_q, mid, hidden, k);
                     if (down_type == BN_GGUF_TENSOR_Q6_K) {
-                        if (getenv("BN_CUDA_ENABLE_Q6K_FLOAT_MOE_DOWN")) {
+                        if (getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") &&
+                            down->f32_data) {
+                            BN_CUDA_LAUNCH(ctx,
+                                moe_q6k_down_routed_f32_cache_row_kernel,
+                                dim, route_threads, 0,
+                                out, (const float *)down->f32_data, mid,
+                                route, dim, hidden, n_experts, k);
+                        } else if (getenv("BN_CUDA_ENABLE_Q6K_FLOAT_MOE_DOWN")) {
                             BN_CUDA_LAUNCH(ctx,
                                 moe_q6k_down_routed_float_accum_row_kernel,
                                 dim, route_threads, 0,

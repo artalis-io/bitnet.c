@@ -120,8 +120,11 @@ static void *upload_moe_all_proj(BnModel *model,
         return NULL;
     if ((size_t)n_experts > (size_t)INT_MAX / (size_t)rows)
         return NULL;
+    int force_full_buffer =
+        proj == 2 && type == BN_GGUF_TENSOR_Q6_K &&
+        getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
     void *(*create_buffer)(void *, const void *, size_t, int, int, int) =
-        gpu->buffer_create_quant_only
+        (!force_full_buffer && gpu->buffer_create_quant_only)
             ? gpu->buffer_create_quant_only
             : gpu->buffer_create;
     if (stride != expert_bytes) {
