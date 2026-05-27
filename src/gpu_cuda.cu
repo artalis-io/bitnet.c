@@ -9233,31 +9233,6 @@ static int cuda_ops_look_like_decode_graph(const BnGPUOp *ops, int n_ops,
            ((wants_logits_readback && has_logits) || wants_gpu_resident);
 }
 
-static int cuda_ops_have_mixed_quant_matvec(const BnGPUOp *ops, int n_ops) {
-    if (!ops) return 0;
-    for (int i = 0; i < n_ops; i++) {
-        const BnGPUOp *op = &ops[i];
-        if (op->op_kind == BN_GPU_OP_LOGITS ||
-            (op->op_code == BN_GPU_CODE_MATVEC &&
-             op->buf_out == BN_GPU_VALUE_LOGITS))
-            continue;
-        switch (op->op_code) {
-        case BN_GPU_CODE_MATVEC:
-        case BN_GPU_CODE_MATVEC_SPLIT:
-        case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
-        case BN_GPU_CODE_Q8_MATVEC_SPLIT:
-        case BN_GPU_CODE_Q5K_MATVEC_SPLIT:
-        case BN_GPU_CODE_FUSED_GATEUP_SILU:
-            if (op->type != BN_GGUF_TENSOR_Q8_0)
-                return 1;
-            break;
-        default:
-            break;
-        }
-    }
-    return 0;
-}
-
 static int cuda_ops_have_moe(const BnGPUOp *ops, int n_ops) {
     if (!ops) return 0;
     for (int i = 0; i < n_ops; i++) {
@@ -9417,7 +9392,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             getenv("BN_CUDA_ENABLE_GRAPH_EXEC") != NULL ||
             getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") != NULL;
         enable_q8_preq_all_flag =
-            getenv("BN_CUDA_ENABLE_Q8_PREQ") != NULL;
+            getenv("BN_CUDA_DISABLE_Q8_PREQ") == NULL;
         disable_q8_preq_logits_flag =
             getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") != NULL;
         flags_init = 1;
@@ -9458,8 +9433,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         getenv("BN_CUDA_ENABLE_MOE_FFN") == NULL &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
-    int q8_preq_logits_default =
-        !disable_q8_preq_logits && cuda_ops_have_mixed_quant_matvec(ops, n_ops);
+    int q8_preq_logits_default = !disable_q8_preq_logits;
     int moe_graph = cuda_ops_have_moe(ops, n_ops);
     int moe_q4k_q8_dot_default =
         ctx->has_moe_model &&
