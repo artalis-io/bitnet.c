@@ -5658,8 +5658,9 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf) {
     return 0;
 }
 
-static void *cuda_buffer_create(void *vctx, const void *data, size_t size,
-                                int type, int rows, int cols) {
+static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
+                                     int type, int rows, int cols,
+                                     int create_aux_cache) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     if (cuda_ctx_set_device(ctx) != 0) return NULL;
     if (!data || size == 0) return NULL;
@@ -5686,8 +5687,20 @@ static void *cuda_buffer_create(void *vctx, const void *data, size_t size,
         free(buf);
         return NULL;
     }
-    cuda_buffer_create_f16_cache(buf);
+    if (create_aux_cache)
+        cuda_buffer_create_f16_cache(buf);
     return buf;
+}
+
+static void *cuda_buffer_create(void *vctx, const void *data, size_t size,
+                                int type, int rows, int cols) {
+    return cuda_buffer_create_impl(vctx, data, size, type, rows, cols, 1);
+}
+
+static void *cuda_buffer_create_quant_only(void *vctx, const void *data,
+                                           size_t size, int type, int rows,
+                                           int cols) {
+    return cuda_buffer_create_impl(vctx, data, size, type, rows, cols, 0);
 }
 
 static void cuda_buffer_destroy(void *vctx, void *buffer) {
@@ -7641,10 +7654,10 @@ static int cuda_prefill_qkv_attention_wo_impl(
         (getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") ||
          n_tokens >= cuda_env_int("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", 256)) &&
         n_tokens <= 512;
-    if (!use_gemm_attention)
-        return -1;
     size_t score_values =
-        (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens;
+        use_gemm_attention
+            ? (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens
+            : 0u;
     if (add_residual && !attn_norm)
         return -1;
     size_t residual_values = add_residual
@@ -7653,7 +7666,10 @@ static int cuda_prefill_qkv_attention_wo_impl(
     size_t total_values = residual_values + norm_values + q_values +
                           2u * kv_values + qk_values + score_values;
     size_t out_values = (size_t)n_tokens * (size_t)wo_rows;
-    if (cuda_ensure_scratch(ctx, (size_t)n_tokens * (size_t)dim * sizeof(float),
+    size_t x_values = (size_t)n_tokens * (size_t)dim;
+    if (q_values > x_values)
+        x_values = q_values;
+    if (cuda_ensure_scratch(ctx, x_values * sizeof(float),
                             out_values * sizeof(float)) != 0)
         return -1;
     if (cuda_ensure_prefill(ctx, total_values) != 0)
@@ -7737,11 +7753,27 @@ static int cuda_prefill_qkv_attention_wo_impl(
         return -1;
     }
 
-    if (cuda_prefill_attention_gemm(ctx, ctx->d_x, d_q, d_k, d_v, d_scores,
-                                    n_tokens, n_heads, n_kv_heads,
-                                    head_size, kv_mul, kv_dim,
-                                    attention_scale) != 0)
-        return -1;
+    if (use_gemm_attention) {
+        if (cuda_prefill_attention_gemm(ctx, ctx->d_x, d_q, d_k, d_v,
+                                        d_scores, n_tokens, n_heads,
+                                        n_kv_heads, head_size, kv_mul,
+                                        kv_dim, attention_scale) != 0)
+            return -1;
+    } else {
+        int threads = 256;
+        prefill_attention_kernel<<<dim3(n_heads, n_tokens, 1), threads,
+                                   ((size_t)n_tokens + (size_t)threads) *
+                                       sizeof(float)>>>(
+            ctx->d_x, d_q, d_k, d_v, n_tokens, n_heads, head_size, kv_mul,
+            kv_dim, attention_scale);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr,
+                    "[bn:gpu:cuda] prefill qkv attention failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    }
     if (cuda_matmul_device_out(ctx, ctx->d_out, wo, ctx->d_x, wo_rows,
                                wo_cols, n_tokens, wo_type) != 0)
         return -1;
@@ -10743,6 +10775,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     }
     (void)cublasSetMathMode(ctx->cublas, CUBLAS_TENSOR_OP_MATH);
     gpu->buffer_create = cuda_buffer_create;
+    gpu->buffer_create_quant_only = cuda_buffer_create_quant_only;
     gpu->buffer_destroy = cuda_buffer_destroy;
     gpu->matvec = cuda_matvec;
     gpu->matmul = cuda_matmul;

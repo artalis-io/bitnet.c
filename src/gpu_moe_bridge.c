@@ -32,6 +32,20 @@ static void gpu_moe_destroy_partial(BnGPUBackend *gpu,
     if (down) gpu->buffer_destroy(gpu->ctx, down);
 }
 
+static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
+                                          const void *data,
+                                          size_t size,
+                                          int type,
+                                          int rows,
+                                          int cols) {
+    if (!gpu || !data || size == 0)
+        return NULL;
+    if (type == BN_GGUF_TENSOR_Q8_0 && gpu->buffer_create_quant_only)
+        return gpu->buffer_create_quant_only(
+            gpu->ctx, data, size, type, rows, cols);
+    return gpu->buffer_create(gpu->ctx, data, size, type, rows, cols);
+}
+
 static int gpu_moe_track_temporary(BnGPUMoETemporaryBuffers *temporaries,
                                    void *buffer) {
     if (!temporaries || !buffer)
@@ -96,12 +110,12 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
         }
         if (!out->gate) return -1;
     } else {
-        out->gate = gpu->buffer_create(gpu->ctx, gate_data,
-            em->expert_gate_bytes, em->gate_type,
+        out->gate = gpu_moe_create_expert_buffer(
+            gpu, gate_data, em->expert_gate_bytes, em->gate_type,
             em->gate_rows, em->gate_cols);
         if (!out->gate) return -1;
-        out->up = gpu->buffer_create(gpu->ctx, up_data,
-            em->expert_up_bytes, em->up_type,
+        out->up = gpu_moe_create_expert_buffer(
+            gpu, up_data, em->expert_up_bytes, em->up_type,
             em->up_rows, em->up_cols);
         if (!out->up) {
             gpu_moe_destroy_partial(gpu, out->gate, NULL, NULL);
@@ -117,8 +131,8 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
         memset(out, 0, sizeof(*out));
         return -1;
     }
-    out->down = gpu->buffer_create(gpu->ctx, down_data,
-        em->expert_down_bytes, em->down_type,
+    out->down = gpu_moe_create_expert_buffer(
+        gpu, down_data, em->expert_down_bytes, em->down_type,
         em->down_rows, em->down_cols);
     if (!out->down) {
         gpu_moe_destroy_partial(gpu, out->gate, out->up, NULL);
@@ -289,15 +303,15 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
                     free(gateup_data);
                 }
             } else {
-                gate_gpu = gpu->buffer_create(
-                    gpu->ctx, gate_data, em->expert_gate_bytes,
+                gate_gpu = gpu_moe_create_expert_buffer(
+                    gpu, gate_data, em->expert_gate_bytes,
                     em->gate_type, em->gate_rows, em->gate_cols);
-                up_gpu = gpu->buffer_create(
-                    gpu->ctx, up_data, em->expert_up_bytes,
+                up_gpu = gpu_moe_create_expert_buffer(
+                    gpu, up_data, em->expert_up_bytes,
                     em->up_type, em->up_rows, em->up_cols);
             }
-            down_gpu = gpu->buffer_create(
-                gpu->ctx, down_data, em->expert_down_bytes,
+            down_gpu = gpu_moe_create_expert_buffer(
+                gpu, down_data, em->expert_down_bytes,
                 em->down_type, em->down_rows, em->down_cols);
             if (!gate_gpu || (!use_split && !up_gpu) || !down_gpu) {
                 gpu_moe_destroy_partial(gpu, gate_gpu, up_gpu, down_gpu);

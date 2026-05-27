@@ -39,6 +39,10 @@ struct BnGPUBackend {
     // Returns NULL on failure.
     void *(*buffer_create)(void *ctx, const void *data, size_t size,
                            int type, int rows, int cols);
+    // Upload quantized weight data without optional backend-side auxiliary
+    // caches. Optional; callers use this for memory-sensitive resident caches.
+    void *(*buffer_create_quant_only)(void *ctx, const void *data, size_t size,
+                                      int type, int rows, int cols);
     void  (*buffer_destroy)(void *ctx, void *buffer);
 
     // Upload quantized weight data with fused bias. Returns opaque buffer handle.
