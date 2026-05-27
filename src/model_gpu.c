@@ -238,6 +238,18 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             return -1;
         }
 
+        void *shared_gateup_stacked_gpu =
+            bn_backend_layout_upload_stacked2(
+                gpu, &lw->shared.shared_gate, &lw->shared.shared_up);
+        if (register_gpu_handle(model, l,
+                                BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED,
+                                shared_gateup_stacked_gpu) != 0) {
+            if (shared_gateup_stacked_gpu)
+                gpu->buffer_destroy(gpu->ctx, shared_gateup_stacked_gpu);
+            bn_model_release_gpu(model);
+            return -1;
+        }
+
         void *ssm_qkvz_stacked_gpu =
             bn_backend_layout_upload_stacked2(gpu, &lw->ssm.wqkv, &lw->ssm.wz);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED,

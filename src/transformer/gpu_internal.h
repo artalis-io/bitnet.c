@@ -77,6 +77,7 @@ typedef struct {
     void *shared_up;
     void *shared_down;
     void *shared_expert_gate;
+    void *shared_gateup_stacked;
 } BnTransformerGPUMoESharedResources;
 
 typedef struct {

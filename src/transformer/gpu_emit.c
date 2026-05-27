@@ -1560,20 +1560,32 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
     }
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
-        uint32_t shared_gate_flags =
-            lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q4_K ? 1u : 0u;
-        uint32_t shared_up_flags =
-            lw->shared.shared_up.type == BN_GGUF_TENSOR_Q4_K ? 1u : 0u;
-        emit_context_matvec_flags(
-            ctx, lw->shared.shared_gate.type,
-            shared->shared_gate,
-            BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->shared.shared_gate.rows,
-            lw->shared.shared_gate.cols, 0, shared_gate_flags);
-        emit_context_matvec_flags(
-            ctx, lw->shared.shared_up.type,
-            shared->shared_up,
-            BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2, lw->shared.shared_up.rows,
-            lw->shared.shared_up.cols, 0, shared_up_flags);
+        if (shared->shared_gateup_stacked) {
+            emit_context_matvec_split(
+                ctx, lw->shared.shared_gate.type,
+                shared->shared_gateup_stacked,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, -1,
+                lw->shared.shared_gate.rows + lw->shared.shared_up.rows,
+                lw->shared.shared_gate.cols, lw->shared.shared_gate.rows,
+                0, 0, 0, 0);
+        } else {
+            uint32_t shared_gate_flags =
+                lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q4_K ? 1u : 0u;
+            uint32_t shared_up_flags =
+                lw->shared.shared_up.type == BN_GGUF_TENSOR_Q4_K ? 1u : 0u;
+            emit_context_matvec_flags(
+                ctx, lw->shared.shared_gate.type,
+                shared->shared_gate,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
+                lw->shared.shared_gate.rows, lw->shared.shared_gate.cols, 0,
+                shared_gate_flags);
+            emit_context_matvec_flags(
+                ctx, lw->shared.shared_up.type,
+                shared->shared_up,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2,
+                lw->shared.shared_up.rows, lw->shared.shared_up.cols, 0,
+                shared_up_flags);
+        }
         bn_transformer_gpu_emit_context_activation(
             ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
             lw->shared.shared_gate.rows, 0, BN_GPU_IR_ACTIVATION_SILU);

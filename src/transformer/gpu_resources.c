@@ -177,5 +177,7 @@ bn_transformer_gpu_resolve_moe_shared_resources(
         .shared_down = qweight_backend_buf(backend, &lw->shared.shared_down),
         .shared_expert_gate = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE),
+        .shared_gateup_stacked = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED),
     };
 }

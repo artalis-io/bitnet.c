@@ -36,6 +36,7 @@ typedef enum {
     BN_BACKEND_HANDLE_FFN_DOWN_PREFILL = 23,
     BN_BACKEND_HANDLE_SHARED_EXPERT_GATE = 24,
     BN_BACKEND_HANDLE_MOE_ROUTER_DIFF = 25,
+    BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED = 26,
 } BnBackendHandleRole;
 
 BnBackendModel *bn_backend_model_create(void);
