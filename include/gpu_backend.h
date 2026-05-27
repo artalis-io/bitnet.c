@@ -292,6 +292,9 @@ struct BnGPUBackend {
                              const int *penalty_tokens, int n_penalty_tokens,
                              float repeat_penalty, int *out_token);
 
+    // Return free/total device memory in bytes. Optional.
+    int (*memory_info)(void *ctx, size_t *free_bytes, size_t *total_bytes);
+
     void *ctx;  // opaque backend context
 
     // Capability flags (set by backend, checked by transformer)

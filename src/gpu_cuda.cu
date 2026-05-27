@@ -6023,6 +6023,16 @@ static int cuda_argmax_activation(void *vctx, int buf_idx, int n,
     return 0;
 }
 
+static int cuda_memory_info(void *vctx,
+                            size_t *free_bytes,
+                            size_t *total_bytes) {
+    (void)vctx;
+    if (!free_bytes || !total_bytes)
+        return -1;
+    cudaError_t err = cudaMemGetInfo(free_bytes, total_bytes);
+    return err == cudaSuccess ? 0 : -1;
+}
+
 static int cuda_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                              const float *x, int x_cols) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
@@ -8405,8 +8415,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int moe_q4k_q8_dot_default =
         ctx->has_moe_model &&
         getenv("BN_CUDA_DISABLE_MOE_Q4K_Q8K_DOT") == NULL;
-    int graph_exec = (enable_graph_exec_flag || moe_graph ||
-                      default_graph_exec) && n_ops > 10 && !profile;
+    int graph_exec = (enable_graph_exec_flag ||
+                      (!moe_graph && default_graph_exec)) &&
+                     n_ops > 10 && !profile;
     int graph_building = 0;
     cudaGraphExec_t graph_instance = NULL;
     if (graph_exec) {
@@ -9954,6 +9965,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->write_activation = cuda_write_activation;
     gpu->read_activation = cuda_read_activation;
     gpu->argmax_activation = cuda_argmax_activation;
+    gpu->memory_info = cuda_memory_info;
     gpu->execute = cuda_execute;
     gpu->ctx = ctx;
     gpu->kind = BN_GPU_BACKEND_CUDA;

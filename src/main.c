@@ -15,6 +15,7 @@
 #endif
 #if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
 #include "gpu_moe_cache.h"
+#include "gpu_moe_bridge.h"
 #endif
 #ifdef BN_ENABLE_METAL
 #include "gpu_metal.h"
@@ -89,6 +90,7 @@ typedef struct {
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
     int kv_tq_bits;     // TurboQuant KV compression (0=disabled, 2-4=bits)
     int gpu_cache_mb;   // GPU expert buffer cache in MB (default 4096, 0 to disable)
+    int gpu_cache_mb_set; // whether user explicitly set --gpu-cache-mb
 } CLIArgs;
 
 #define BN_GPU_DEFAULT_MAXSEQ 4096
@@ -224,6 +226,7 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.cache_mb_set = 1;
         } else if (strcmp(argv[i], "--gpu-cache-mb") == 0 && i + 1 < argc) {
             args.gpu_cache_mb = parse_int(argv[++i], "--gpu-cache-mb");
+            args.gpu_cache_mb_set = 1;
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             args.threads = parse_int(argv[++i], "-t");
         } else if (strcmp(argv[i], "--repeat-penalty") == 0 && i + 1 < argc) {
@@ -304,6 +307,120 @@ static CLIArgs parse_args(int argc, char **argv) {
 
     return args;
 }
+
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
+static size_t env_mb_or_default(const char *name, int default_mb) {
+    const char *s = getenv(name);
+    if (!s || !*s)
+        return default_mb > 0 ? (size_t)default_mb : 0;
+    char *end = NULL;
+    long v = strtol(s, &end, 10);
+    if (!end || *end != '\0' || v <= 0)
+        return 0;
+    return (size_t)v;
+}
+
+static size_t model_moe_entry_bytes(const BnModel *model) {
+    if (!model || model->config.n_layers <= 0)
+        return 0;
+    for (int l = 0; l < model->config.n_layers; l++) {
+        const BnLayerWeights *lw = &model->weights.layers[l];
+        if (!lw->moe.router_weight)
+            continue;
+        const BnMoEExpertMap *em = &lw->moe.expert_map;
+        return em->expert_gate_bytes + em->expert_up_bytes +
+               em->expert_down_bytes;
+    }
+    return 0;
+}
+
+static int model_moe_layer_count(const BnModel *model) {
+    if (!model)
+        return 0;
+    int count = 0;
+    for (int l = 0; l < model->config.n_layers; l++)
+        if (model->weights.layers[l].moe.router_weight)
+            count++;
+    return count;
+}
+
+static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
+                                          const BnModel *model,
+                                          const BnGPUBackend *gpu,
+                                          size_t entry_bytes,
+                                          int *out_auto_resident) {
+    if (out_auto_resident)
+        *out_auto_resident = 0;
+    if (!args || args->gpu_cache_mb <= 0 || entry_bytes == 0)
+        return 0;
+    size_t requested = (size_t)args->gpu_cache_mb * 1024u * 1024u;
+    if (args->gpu_cache_mb_set ||
+        getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT"))
+        return requested;
+    int moe_layers = model_moe_layer_count(model);
+    if (moe_layers <= 0 || model->config.n_experts <= 0)
+        return requested;
+    size_t all_experts = entry_bytes * (size_t)moe_layers *
+                         (size_t)model->config.n_experts;
+    if (!gpu || !gpu->memory_info)
+        return requested;
+    size_t free_bytes = 0;
+    size_t total_bytes = 0;
+    if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
+        return requested;
+    size_t reserve_mb = env_mb_or_default("BN_GPU_MOE_CACHE_RESERVE_MB", 4096);
+    size_t reserve = reserve_mb * 1024u * 1024u;
+    if (all_experts > 0 && free_bytes > all_experts + reserve) {
+        char total_mb[32], free_mb[32], reserve_mb_s[32];
+        snprintf(total_mb, sizeof(total_mb), "%zu",
+                 all_experts / (1024u * 1024u));
+        snprintf(free_mb, sizeof(free_mb), "%zu",
+                 free_bytes / (1024u * 1024u));
+        snprintf(reserve_mb_s, sizeof(reserve_mb_s), "%zu", reserve_mb);
+        SH_LOG_INFO("GPU MoE cache auto-resident",
+                    "expert_MB", total_mb,
+                    "free_MB", free_mb,
+                    "reserve_MB", reserve_mb_s);
+        if (out_auto_resident)
+            *out_auto_resident = 1;
+        return all_experts;
+    }
+    (void)total_bytes;
+    return requested;
+}
+
+static void maybe_create_gpu_moe_cache(BnModel *model,
+                                       const CLIArgs *args,
+                                       BnGPUBackend *gpu) {
+    if (!model || !args || !gpu || model->config.n_experts <= 0 ||
+        args->gpu_cache_mb <= 0 || model->config.n_layers <= 0)
+        return;
+    size_t entry_bytes = model_moe_entry_bytes(model);
+    if (entry_bytes == 0)
+        return;
+    int auto_resident = 0;
+    size_t budget_bytes =
+        choose_gpu_moe_cache_budget(args, model, gpu, entry_bytes,
+                                    &auto_resident);
+    if (budget_bytes == 0)
+        return;
+    bn_model_set_gpu_moe_cache(
+        model, bn_gpu_moe_cache_create(budget_bytes, entry_bytes, gpu));
+    if (auto_resident && bn_model_gpu_moe_cache(model)) {
+        double t0 = bn_platform_time_ms();
+        int loaded = bn_gpu_moe_bridge_preload_all(model);
+        if (loaded >= 0) {
+            char entries[32], ms[32];
+            snprintf(entries, sizeof(entries), "%d", loaded);
+            snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - t0);
+            SH_LOG_INFO("GPU MoE experts resident",
+                        "entries", entries, "ms", ms);
+        } else {
+            SH_LOG_WARN("GPU MoE resident preload failed; using lazy cache");
+        }
+    }
+}
+#endif
 
 static int gguf_get_arch_u32(BnGGUFFile *gf, const char *suffix) {
     const char *arch = bn_gguf_get_str(gf, "general.architecture");
@@ -610,20 +727,7 @@ int main(int argc, char **argv) {
                         // Initialize GPU slab allocator for MoE weight suballocation
                         if (model.config.n_experts > 0)
                             bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
-                        // Create GPU expert buffer cache for MoE
-                        if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
-                            model.config.n_layers > 0) {
-                            BnMoEExpertMap *em0 = &model.weights.layers[0].moe.expert_map;
-                            size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
-                                               + em0->expert_down_bytes;
-                            if (entry_bytes > 0) {
-                                bn_model_set_gpu_moe_cache(
-                                    &model,
-                                    bn_gpu_moe_cache_create(
-                                        (size_t)args.gpu_cache_mb * 1024 * 1024,
-                                        entry_bytes, gpu));
-                            }
-                        }
+                        maybe_create_gpu_moe_cache(&model, &args, gpu);
                     }
                 }
             } else {
@@ -664,19 +768,7 @@ int main(int argc, char **argv) {
                             setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
                         if (model.config.n_experts > 0)
                             bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
-                        if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
-                            model.config.n_layers > 0) {
-                            BnMoEExpertMap *em0 = &model.weights.layers[0].moe.expert_map;
-                            size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
-                                               + em0->expert_down_bytes;
-                            if (entry_bytes > 0) {
-                                bn_model_set_gpu_moe_cache(
-                                    &model,
-                                    bn_gpu_moe_cache_create(
-                                        (size_t)args.gpu_cache_mb * 1024 * 1024,
-                                        entry_bytes, gpu));
-                            }
-                        }
+                        maybe_create_gpu_moe_cache(&model, &args, gpu);
                     }
                 }
             } else {
@@ -713,19 +805,8 @@ int main(int argc, char **argv) {
                         gpu = NULL;
                     }
                 }
-                if (model.config.n_experts > 0 && args.gpu_cache_mb > 0 &&
-                    model.config.n_layers > 0 && gpu) {
-                    BnMoEExpertMap *em0 = &model.weights.layers[0].moe.expert_map;
-                    size_t entry_bytes = em0->expert_gate_bytes + em0->expert_up_bytes
-                                       + em0->expert_down_bytes;
-                    if (entry_bytes > 0) {
-                        bn_model_set_gpu_moe_cache(
-                            &model,
-                            bn_gpu_moe_cache_create(
-                                (size_t)args.gpu_cache_mb * 1024 * 1024,
-                                entry_bytes, gpu));
-                    }
-                }
+                if (gpu)
+                    maybe_create_gpu_moe_cache(&model, &args, gpu);
             } else {
                 SH_LOG_WARN("CUDA weight upload failed, falling back to CPU");
                 bn_gpu_cuda_destroy(gpu);

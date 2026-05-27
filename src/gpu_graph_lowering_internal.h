@@ -352,6 +352,12 @@ static inline int bn_gpu_ir_lower_one_to_shader(
                 return -1;
             if (weight && !weight->weight_buf)
                 return -1;
+            if ((kind == BN_GPU_IR_UTILITY_BIAS_ADD ||
+                 kind == BN_GPU_IR_UTILITY_RESIDUAL_RMSNORM ||
+                 kind == BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM ||
+                 kind == BN_GPU_IR_UTILITY_WEIGHTED_ADD_SIGMOID) &&
+                !weight)
+                return -1;
             shader_op->op_kind = op_kind;
             shader_op->op_code = op_code;
             shader_op->W_buf = weight ? weight->weight_buf : NULL;

@@ -71,6 +71,8 @@ int bn_transformer_gpu_emit_context_init_session(
             backend, (int)sizeof(BnGPUIRLoweringValue), cap_values,
             &ctx->lowering_values, &ctx->cap_lowering_values) != 0)
         return -1;
+    memset(ctx->lowering_values, 0,
+           (size_t)ctx->cap_lowering_values * sizeof(BnGPUIRLoweringValue));
     return 0;
 }
 
@@ -119,6 +121,20 @@ static int emit_context_reserve_lowering(BnTransformerGPUEmitContext *ctx,
 static BnGPUIRLoweringValue *emit_context_lowering_values(
     BnTransformerGPUEmitContext *ctx) {
     return (BnGPUIRLoweringValue *)ctx->lowering_values;
+}
+
+static void emit_context_set_slot(BnTransformerGPUEmitContext *ctx,
+                                  int value_id,
+                                  int shader_slot) {
+    BnGPUIRLoweringValue *lowering_values = emit_context_lowering_values(ctx);
+    if (!lowering_values || value_id < 0 ||
+        value_id >= ctx->cap_lowering_values)
+        return;
+    lowering_values[value_id] = (BnGPUIRLoweringValue){
+        .shader_slot = shader_slot,
+        .weight_buf = NULL,
+        .tensor_type = -1,
+    };
 }
 
 static int emit_context_add_value(BnTransformerGPUEmitContext *ctx,
@@ -514,11 +530,10 @@ static int emit_context_matvec_split(BnTransformerGPUEmitContext *ctx,
         return -1;
     if (use_q4_q8)
         op->flags |= 1u;
-    BnGPUIRLoweringValue *lowering_values = emit_context_lowering_values(ctx);
-    lowering_values[op->outputs[0]].shader_slot = buf_out0;
-    lowering_values[op->outputs[1]].shader_slot = buf_out1;
+    emit_context_set_slot(ctx, op->outputs[0], buf_out0);
+    emit_context_set_slot(ctx, op->outputs[1], buf_out1);
     if (op->n_outputs > 2)
-        lowering_values[op->outputs[2]].shader_slot = buf_out2;
+        emit_context_set_slot(ctx, op->outputs[2], buf_out2);
     return 0;
 }
 
@@ -549,7 +564,7 @@ static int emit_context_rope(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
-    emit_context_lowering_values(ctx)[output].shader_slot = buf_q;
+    emit_context_set_slot(ctx, output, buf_q);
     return 0;
 }
 
@@ -575,7 +590,7 @@ static int emit_context_flash_attention(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
-    emit_context_lowering_values(ctx)[output].shader_slot = buf_out;
+    emit_context_set_slot(ctx, output, buf_out);
     return 0;
 }
 
@@ -606,10 +621,9 @@ static int emit_context_gqa_attention(BnTransformerGPUEmitContext *ctx,
     if (output == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
-    BnGPUIRLoweringValue *lowering_values = emit_context_lowering_values(ctx);
-    lowering_values[scores].shader_slot = BN_GPU_VALUE_ATT;
-    lowering_values[probs].shader_slot = BN_GPU_VALUE_ATT;
-    lowering_values[output].shader_slot = buf_out;
+    emit_context_set_slot(ctx, scores, BN_GPU_VALUE_ATT);
+    emit_context_set_slot(ctx, probs, BN_GPU_VALUE_ATT);
+    emit_context_set_slot(ctx, output, buf_out);
     return 0;
 }
 
@@ -656,8 +670,7 @@ static int emit_context_ssm(BnTransformerGPUEmitContext *ctx,
     if (result == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
-    emit_context_lowering_values(ctx)[result].shader_slot =
-        buf_out >= 0 ? buf_out : buf_in;
+    emit_context_set_slot(ctx, result, buf_out >= 0 ? buf_out : buf_in);
     return 0;
 }
 
@@ -702,8 +715,7 @@ static int emit_context_utility(BnTransformerGPUEmitContext *ctx,
     if (result == BN_GPU_IR_INVALID_VALUE ||
         emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
-    emit_context_lowering_values(ctx)[result].shader_slot =
-        buf_out >= 0 ? buf_out : buf_in;
+    emit_context_set_slot(ctx, result, buf_out >= 0 ? buf_out : buf_in);
     return 0;
 }
 

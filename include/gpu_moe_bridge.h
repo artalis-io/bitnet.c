@@ -52,4 +52,6 @@ void bn_gpu_moe_bridge_release_temporaries(
     BnModel *m,
     BnGPUMoETemporaryBuffers *temporaries);
 
+int bn_gpu_moe_bridge_preload_all(BnModel *m);
+
 #endif // BN_GPU_MOE_BRIDGE_H

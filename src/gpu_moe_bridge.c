@@ -168,6 +168,7 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
         int eidx = ms->expert_indices[k];
         if (eidx < 0 || eidx >= c->n_experts) continue;
         BnGPUMoEResolvedExpert *expert = &expert_storage[out->n_experts];
+        memset(expert, 0, sizeof(*expert));
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
                                          temporaries, &expert->buffers) != 0)
             return -1;
@@ -192,4 +193,136 @@ void bn_gpu_moe_bridge_release_temporaries(
         temporaries->buffers[i] = NULL;
     }
     temporaries->n_buffers = 0;
+}
+
+int bn_gpu_moe_bridge_preload_all(BnModel *m) {
+    if (!m) return -1;
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    BnGPUMoECache *gpu_cache =
+        (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
+    if (!gpu || !gpu->buffer_create || !gpu_cache)
+        return -1;
+
+    BnMoEState temp_state;
+    memset(&temp_state, 0, sizeof(temp_state));
+    for (int layer = 0; layer < m->config.n_layers; layer++) {
+        const BnLayerWeights *lw = &m->weights.layers[layer];
+        if (!lw->moe.router_weight)
+            continue;
+        const BnMoEExpertMap *em = &lw->moe.expert_map;
+        if (em->expert_gate_bytes > temp_state.buf_size)
+            temp_state.buf_size = em->expert_gate_bytes;
+        if (em->expert_up_bytes > temp_state.buf2_size)
+            temp_state.buf2_size = em->expert_up_bytes;
+        if (em->expert_down_bytes > temp_state.buf5_size)
+            temp_state.buf5_size = em->expert_down_bytes;
+    }
+    if (temp_state.buf_size > 0) {
+        temp_state.buf = (uint8_t *)malloc(temp_state.buf_size);
+        if (!temp_state.buf)
+            return -1;
+    }
+    if (temp_state.buf2_size > 0) {
+        temp_state.buf2 = (uint8_t *)malloc(temp_state.buf2_size);
+        if (!temp_state.buf2) {
+            free(temp_state.buf);
+            return -1;
+        }
+    }
+    if (temp_state.buf5_size > 0) {
+        temp_state.buf5 = (uint8_t *)malloc(temp_state.buf5_size);
+        if (!temp_state.buf5) {
+            free(temp_state.buf);
+            free(temp_state.buf2);
+            return -1;
+        }
+    }
+
+    int loaded = 0;
+    for (int layer = 0; layer < m->config.n_layers; layer++) {
+        const BnLayerWeights *lw = &m->weights.layers[layer];
+        if (!lw->moe.router_weight)
+            continue;
+        const BnMoEExpertMap *em = &lw->moe.expert_map;
+        int split_op_code = bn_gpu_quant_split_op_code(em->gate_type);
+        int use_split = !getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") &&
+                        !(gpu->kind == BN_GPU_BACKEND_CUDA &&
+                          em->gate_type == BN_GGUF_TENSOR_Q4_K) &&
+                        gpu_moe_can_gateup_split(gpu, em, split_op_code);
+
+        for (int expert_idx = 0; expert_idx < m->config.n_experts;
+             expert_idx++) {
+            const void *gate_data = bn_moe_get_expert_proj(
+                bn_model_moe_io(m), &temp_state, em, expert_idx, 0);
+            const void *up_data = bn_moe_get_expert_proj(
+                bn_model_moe_io(m), &temp_state, em, expert_idx, 1);
+            const void *down_data = bn_moe_get_expert_proj(
+                bn_model_moe_io(m), &temp_state, em, expert_idx, 2);
+            if (!gate_data || !up_data || !down_data) {
+                free(temp_state.buf);
+                free(temp_state.buf2);
+                free(temp_state.buf5);
+                return -1;
+            }
+
+            void *gate_gpu = NULL;
+            void *up_gpu = NULL;
+            void *down_gpu = NULL;
+            if (use_split) {
+                if (gpu->buffer_create_stacked2) {
+                    gate_gpu = gpu->buffer_create_stacked2(
+                        gpu->ctx, gate_data, em->expert_gate_bytes,
+                        up_data, em->expert_up_bytes, em->gate_type,
+                        em->gate_rows + em->up_rows, em->gate_cols);
+                } else {
+                    size_t gateup_bytes =
+                        em->expert_gate_bytes + em->expert_up_bytes;
+                    uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
+                    if (!gateup_data) {
+                        free(temp_state.buf);
+                        free(temp_state.buf2);
+                        free(temp_state.buf5);
+                        return -1;
+                    }
+                    memcpy(gateup_data, gate_data, em->expert_gate_bytes);
+                    memcpy(gateup_data + em->expert_gate_bytes, up_data,
+                           em->expert_up_bytes);
+                    gate_gpu = gpu->buffer_create(
+                        gpu->ctx, gateup_data, gateup_bytes, em->gate_type,
+                        em->gate_rows + em->up_rows, em->gate_cols);
+                    free(gateup_data);
+                }
+            } else {
+                gate_gpu = gpu->buffer_create(
+                    gpu->ctx, gate_data, em->expert_gate_bytes,
+                    em->gate_type, em->gate_rows, em->gate_cols);
+                up_gpu = gpu->buffer_create(
+                    gpu->ctx, up_data, em->expert_up_bytes,
+                    em->up_type, em->up_rows, em->up_cols);
+            }
+            down_gpu = gpu->buffer_create(
+                gpu->ctx, down_data, em->expert_down_bytes,
+                em->down_type, em->down_rows, em->down_cols);
+            if (!gate_gpu || (!use_split && !up_gpu) || !down_gpu) {
+                gpu_moe_destroy_partial(gpu, gate_gpu, up_gpu, down_gpu);
+                free(temp_state.buf);
+                free(temp_state.buf2);
+                free(temp_state.buf5);
+                return -1;
+            }
+            if (bn_gpu_moe_cache_insert(gpu_cache, layer, expert_idx,
+                                        gate_gpu, up_gpu, down_gpu) != 0) {
+                gpu_moe_destroy_partial(gpu, gate_gpu, up_gpu, down_gpu);
+                free(temp_state.buf);
+                free(temp_state.buf2);
+                free(temp_state.buf5);
+                return -1;
+            }
+            loaded++;
+        }
+    }
+    free(temp_state.buf);
+    free(temp_state.buf2);
+    free(temp_state.buf5);
+    return loaded;
 }
