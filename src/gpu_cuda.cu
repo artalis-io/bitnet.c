@@ -3744,14 +3744,16 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_kernel(
     }
 }
 
-static __global__ void moe_q4k_gateup_routed_mid_q8k_batch_kernel(
+static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel(
     float *mid, const BnBlockQ4K *gate, const BnBlockQ4K *up,
     const BnBlockQ8K *xq, const int *indices, int hidden, int cols,
     int n_experts, int k, int n_tokens) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
-    int task = blockIdx.x * warps_per_block + warp;
+    int lane_group = lane >> 3;
+    int sublane = lane & 7;
+    int task = (blockIdx.x * warps_per_block + warp) * 4 + lane_group;
     int total_tasks = n_tokens * k * hidden;
     if (task >= total_tasks) return;
 
@@ -3770,15 +3772,18 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_batch_kernel(
     const BnBlockQ8K *token_xq = xq + (size_t)token * (size_t)n_bpr;
     float gate_sum = 0.0f;
     float up_sum = 0.0f;
-    for (int b = lane; b < n_bpr; b += 32) {
+    for (int b = sublane; b < n_bpr; b += 8) {
         gate_sum += cuda_vec_dot_q4k_q8k(&gate_blocks[b], token_xq + b);
         up_sum += cuda_vec_dot_q4k_q8k(&up_blocks[b], token_xq + b);
     }
-    for (int offset = 16; offset > 0; offset >>= 1) {
-        gate_sum += __shfl_down_sync(0xffffffffu, gate_sum, offset);
-        up_sum += __shfl_down_sync(0xffffffffu, up_sum, offset);
-    }
-    if (lane == 0) {
+    unsigned mask = 0xffu << (lane_group * 8);
+    gate_sum += __shfl_down_sync(mask, gate_sum, 4);
+    gate_sum += __shfl_down_sync(mask, gate_sum, 2);
+    gate_sum += __shfl_down_sync(mask, gate_sum, 1);
+    up_sum += __shfl_down_sync(mask, up_sum, 4);
+    up_sum += __shfl_down_sync(mask, up_sum, 2);
+    up_sum += __shfl_down_sync(mask, up_sum, 1);
+    if (sublane == 0) {
         float silu = gate_sum / (1.0f + __expf(-gate_sum));
         mid[((size_t)token * (size_t)k + (size_t)slot) *
             (size_t)hidden + (size_t)row] = silu * up_sum;
@@ -7885,7 +7890,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
             d_weights, hidden_dim, dim, n_experts, k, n_tokens);
     } else {
-        if (getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT")) {
+        if (getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
             if (cuda_ensure_q8_k(ctx, dim, n_tokens) != 0)
                 return -1;
             BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -7899,7 +7904,9 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                         cudaGetErrorString(err));
                 return -1;
             }
-            moe_q4k_gateup_routed_mid_q8k_batch_kernel<<<gateup_blocks, threads, 0>>>(
+            int gateup4_tasks = (gateup_tasks + 3) / 4;
+            int gateup4_blocks = (gateup4_tasks + warps - 1) / warps;
+            moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel<<<gateup4_blocks, threads, 0>>>(
                 d_mid, (const BnBlockQ4K *)gate->data,
                 (const BnBlockQ4K *)up->data, xq, d_indices,
                 hidden_dim, dim, n_experts, k, n_tokens);
