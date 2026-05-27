@@ -1,4 +1,5 @@
 #include "platform.h"
+#include "backend_model.h"
 #include "gguf.h"
 #include "model.h"
 #include "moe.h"
@@ -344,6 +345,33 @@ static int model_moe_layer_count(const BnModel *model) {
     return count;
 }
 
+static int model_count_cuda_routed_moe_resident(const BnModel *model,
+                                                int *moe_layers_out) {
+    if (moe_layers_out)
+        *moe_layers_out = 0;
+    if (!model || !getenv("BN_CUDA_ENABLE_MOE_ROUTED_FFN"))
+        return 0;
+    const BnBackendModel *backend = bn_model_backend(model);
+    if (!backend)
+        return 0;
+    const BnConfig *c = &model->config;
+    int moe_layers = 0;
+    int resident_layers = 0;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &model->weights.layers[l];
+        if (!lw->moe.router_weight)
+            continue;
+        moe_layers++;
+        if (bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL) &&
+            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL) &&
+            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL))
+            resident_layers++;
+    }
+    if (moe_layers_out)
+        *moe_layers_out = moe_layers;
+    return resident_layers;
+}
+
 static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
                                           const BnModel *model,
                                           const BnGPUBackend *gpu,
@@ -396,6 +424,19 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
     if (!model || !args || !gpu || model->config.n_experts <= 0 ||
         args->gpu_cache_mb <= 0 || model->config.n_layers <= 0)
         return;
+    int routed_moe_layers = 0;
+    int routed_resident_layers =
+        model_count_cuda_routed_moe_resident(model, &routed_moe_layers);
+    if (routed_resident_layers > 0) {
+        char resident[32], layers[32];
+        snprintf(resident, sizeof(resident), "%d", routed_resident_layers);
+        snprintf(layers, sizeof(layers), "%d", routed_moe_layers);
+        SH_LOG_INFO("GPU MoE cache skipped",
+                    "reason", "cuda_routed_ffn_resident",
+                    "resident_layers", resident,
+                    "moe_layers", layers);
+        return;
+    }
     size_t entry_bytes = model_moe_entry_bytes(model);
     if (entry_bytes == 0)
         return;

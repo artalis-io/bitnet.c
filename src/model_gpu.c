@@ -124,6 +124,39 @@ static void *upload_moe_all_proj(BnModel *model,
                               type, rows * n_experts, cols);
 }
 
+static int can_use_cuda_moe_routed_ffn(const BnConfig *c,
+                                       const BnLayerWeights *lw) {
+    if (!c || !lw || !lw->moe.router_weight)
+        return 0;
+    const BnMoEExpertMap *em = &lw->moe.expert_map;
+    return !c->has_shared_expert &&
+           em->gate_type == BN_GGUF_TENSOR_Q4_K &&
+           em->up_type == BN_GGUF_TENSOR_Q4_K &&
+           em->down_type == BN_GGUF_TENSOR_Q6_K &&
+           em->gate_rows == c->moe_intermediate_size &&
+           em->up_rows == c->moe_intermediate_size &&
+           em->gate_cols == c->dim &&
+           em->up_cols == c->dim &&
+           em->down_rows == c->dim &&
+           em->down_cols == c->moe_intermediate_size;
+}
+
+static int can_use_cuda_moe_routed_ffn_model(const BnConfig *c,
+                                             const BnWeights *w) {
+    if (!c || !w)
+        return 0;
+    int moe_layers = 0;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        if (!lw->moe.router_weight)
+            continue;
+        moe_layers++;
+        if (!can_use_cuda_moe_routed_ffn(c, lw))
+            return 0;
+    }
+    return moe_layers > 0;
+}
+
 int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     if (!model || !gpu || !gpu->buffer_create) return -1;
     if (bn_model_ensure_backend(model) != 0) return -1;
@@ -133,6 +166,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     BnWeights *w = &model->weights;
     BnConfig *c = &model->config;
     int n_layers = c->n_layers;
+    int upload_moe_all_model = getenv("BN_CUDA_ENABLE_MOE_ROUTED_FFN") &&
+                               can_use_cuda_moe_routed_ffn_model(c, w);
 
     if (w->output_weight.data) {
         void *output_weight_gpu = upload_qweight(gpu, &w->output_weight);
@@ -199,8 +234,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 (size_t)c->n_experts * (size_t)c->dim * sizeof(float),
                 BN_GGUF_TENSOR_F32, c->n_experts, c->dim)
             : NULL;
-        int upload_moe_all = lw->moe.router_weight &&
-                             getenv("BN_CUDA_ENABLE_MOE_ROUTED_FFN");
+        int upload_moe_all = upload_moe_all_model &&
+                             can_use_cuda_moe_routed_ffn(c, lw);
         void *moe_gate_all_gpu = upload_moe_all
             ? upload_moe_all_proj(model, gpu, &lw->moe.expert_map, 0,
                                   c->n_experts)
@@ -213,6 +248,18 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             ? upload_moe_all_proj(model, gpu, &lw->moe.expert_map, 2,
                                   c->n_experts)
             : NULL;
+        if (upload_moe_all &&
+            (!moe_gate_all_gpu || !moe_up_all_gpu || !moe_down_all_gpu)) {
+            if (moe_gate_all_gpu)
+                gpu->buffer_destroy(gpu->ctx, moe_gate_all_gpu);
+            if (moe_up_all_gpu)
+                gpu->buffer_destroy(gpu->ctx, moe_up_all_gpu);
+            if (moe_down_all_gpu)
+                gpu->buffer_destroy(gpu->ctx, moe_down_all_gpu);
+            moe_gate_all_gpu = NULL;
+            moe_up_all_gpu = NULL;
+            moe_down_all_gpu = NULL;
+        }
         void *shared_expert_gate_gpu = lw->shared.shared_expert_gate
             ? gpu->buffer_create(
                 gpu->ctx, lw->shared.shared_expert_gate,
