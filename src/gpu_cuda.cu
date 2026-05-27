@@ -9702,9 +9702,6 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         out_host, out_len);
     int q8_preq_logits_default = !disable_q8_preq_logits;
     int moe_graph = cuda_ops_have_moe(ops, n_ops);
-    int moe_q4k_q8_dot_default =
-        ctx->has_moe_model &&
-        getenv("BN_CUDA_DISABLE_MOE_Q4K_Q8K_DOT") == NULL;
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_building = 0;
@@ -9963,10 +9960,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     op->rows, op->cols, out_offset);
             } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
                        (op->cols % BN_QK_K) == 0 && enable_q4k_dot &&
-                       (getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") ||
-                        getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") ||
-                        (moe_q4k_q8_dot_default && op->cols <= 8192) ||
-                        op->p[6])) {
+                       getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
                 if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                     BN_CUDA_EXEC_FAIL("q4k q8k scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -10334,7 +10328,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     up_rows, cols);
             } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot &&
-                       getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT")) {
+                       getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
                 if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                 BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
@@ -10513,7 +10507,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             route, dim, hidden, n_experts, k);
                     }
                 } else {
-                    if (getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT")) {
+                    int use_q4k_q8k_dot =
+                        getenv("BN_CUDA_DISABLE_MOE_Q4K_Q8K_DOT") == NULL;
+                    if (use_q4k_q8k_dot) {
                         if (cuda_ensure_q8_k(ctx, dim, 1) != 0) return -1;
                         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                         BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
@@ -10539,6 +10535,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             dim, n_experts, k);
                     }
                     if (down_type == BN_GGUF_TENSOR_Q6_K) {
+                        int use_q6_float_down =
+                            getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN") == NULL;
                         if (getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") &&
                             down->f32_data) {
                             BN_CUDA_LAUNCH(ctx,
@@ -10546,7 +10544,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 down_blocks, route_threads, 0,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, n_experts, k);
-                        } else if (getenv("BN_CUDA_ENABLE_Q6K_FLOAT_MOE_DOWN")) {
+                        } else if (use_q6_float_down) {
                             BN_CUDA_LAUNCH(ctx,
                                 moe_q6k_down_routed_float_accum_row_kernel,
                                 dim, route_threads, 0,
