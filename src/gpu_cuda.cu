@@ -7610,6 +7610,8 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     cudaError_t err = cudaMemcpy(d_full_x, X, full_bytes,
                                  cudaMemcpyHostToDevice);
     if (err == cudaSuccess)
+        err = cudaMemset(d_full_out, 0, full_bytes);
+    if (err == cudaSuccess)
         err = cudaMemcpy(d_indices, indices, idx_bytes,
                          cudaMemcpyHostToDevice);
     if (err == cudaSuccess)
