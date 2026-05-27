@@ -476,6 +476,46 @@ static int gpu_dense_ffn_resources_missing(
     return lw->ffn.ffn_down.data && !(res && res->ffn_down);
 }
 
+static int gpu_cuda_moe_decode_cacheable(const BnConfig *c,
+                                         const BnWeights *w,
+                                         const BnBackendModel *backend) {
+    if (!c || !w || !backend || c->n_experts <= 0)
+        return 0;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        if (!lw->moe.router_weight)
+            continue;
+        const BnMoEExpertMap *em = &lw->moe.expert_map;
+        int routed_q4 = em->gate_type == BN_GGUF_TENSOR_Q4_K &&
+                        em->up_type == BN_GGUF_TENSOR_Q4_K &&
+                        (em->down_type == BN_GGUF_TENSOR_Q6_K ||
+                         em->down_type == BN_GGUF_TENSOR_Q4_K);
+        int routed_q8 = em->gate_type == BN_GGUF_TENSOR_Q8_0 &&
+                        em->up_type == BN_GGUF_TENSOR_Q8_0 &&
+                        em->down_type == BN_GGUF_TENSOR_Q8_0;
+        int has_router =
+            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_ROUTER) ||
+            bn_backend_model_handle(backend, l,
+                                    BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
+        if (!has_router ||
+            !bn_backend_model_handle(backend, l,
+                                     BN_BACKEND_HANDLE_MOE_GATE_ALL) ||
+            !bn_backend_model_handle(backend, l,
+                                     BN_BACKEND_HANDLE_MOE_UP_ALL) ||
+            !bn_backend_model_handle(backend, l,
+                                     BN_BACKEND_HANDLE_MOE_DOWN_ALL) ||
+            (!routed_q4 && !routed_q8) ||
+            em->gate_rows != c->moe_intermediate_size ||
+            em->up_rows != c->moe_intermediate_size ||
+            em->gate_cols != c->dim ||
+            em->up_cols != c->dim ||
+            em->down_rows != c->dim ||
+            em->down_cols != c->moe_intermediate_size)
+            return 0;
+    }
+    return 1;
+}
+
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
@@ -678,11 +718,17 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (!command_buffer)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
+    int cacheable_resident_moe =
+        policy.has_moe &&
+        !getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") &&
+        gpu_cuda_moe_decode_cacheable(c, w, backend);
     int cacheable_decode =
         (!emit_logits || argmax_token ||
          (getenv("BN_CUDA_ENABLE_LOGITS_CACHE") &&
           !bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res))) &&
-        gpu->kind == BN_GPU_BACKEND_CUDA && !policy.has_moe &&
+        gpu->kind == BN_GPU_BACKEND_CUDA &&
+        (!policy.has_moe || cacheable_resident_moe ||
+         getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE")) &&
         !policy.has_ssm && !getenv("BN_CUDA_DISABLE_DECODE_CACHE") &&
         cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
         cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0 &&
