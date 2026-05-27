@@ -180,6 +180,19 @@ struct BnGPUBackend {
                            void *router_buf, const float *X,
                            int n_tokens, int dim, int n_experts, int k);
 
+    // Combined batched MoE routing and resident routed FFN for prompt
+    // processing. Avoids route readback and re-upload.
+    int (*moe_route_routed_ffn_batch)(void *ctx, float *out,
+                                      void *router_buf,
+                                      void *gate_all_buf,
+                                      void *up_all_buf,
+                                      void *down_all_buf,
+                                      const float *X,
+                                      int n_tokens, int dim, int hidden_dim,
+                                      int n_experts, int k,
+                                      int gate_type, int up_type,
+                                      int down_type, int act_type);
+
     // Batched causal attention for prompt processing:
     // out[n_tokens, n_heads * head_size] =
     // attention(Q[n_tokens, n_heads * head_size],

@@ -147,9 +147,45 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     lw->norm.ffn_norm, dim, c->norm_eps);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
+    BnAllocator a = bn_allocator_default();
+    if (!c->has_shared_expert && n_experts > 2) {
+        BnGPUBackend *gpu = bn_model_gpu(m);
+        BnBackendModel *backend = bn_model_backend(m);
+        if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+            gpu->moe_route_routed_ffn_batch && backend) {
+            void *router = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
+            void *gate_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+            void *up_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
+            void *down_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+            size_t sz_mout = (size_t)n_tokens * dim * sizeof(float);
+            float *moe_out = (float *)bn_malloc(&a, sz_mout);
+            if (moe_out && router && gate_all && up_all && down_all) {
+                t0 = bn_moe_time_ms();
+                if (gpu->moe_route_routed_ffn_batch(
+                        gpu->ctx, moe_out, router, gate_all, up_all, down_all,
+                        Xb, n_tokens, dim, moe_hidden, n_experts, K,
+                        map->gate_type, map->up_type, map->down_type,
+                        c->act_type) == 0) {
+                    ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+                    for (int t = 0; t < n_tokens; t++)
+                        for (int d = 0; d < dim; d++)
+                            act[(size_t)t * dim + d] +=
+                                moe_out[(size_t)t * dim + d];
+                    bn_free(&a, moe_out, sz_mout);
+                    return 0;
+                }
+            }
+            if (moe_out)
+                bn_free(&a, moe_out, sz_mout);
+        }
+    }
+
     // 2. Batch routing: route each token individually (reuse existing router)
     // Allocate routing results: [n_tokens][K] indices and weights
-    BnAllocator a = bn_allocator_default();
     size_t sz_idx = (size_t)n_tokens * K * sizeof(int);
     size_t sz_wts = (size_t)n_tokens * K * sizeof(float);
     size_t sz_logits = (size_t)n_tokens * n_experts * sizeof(float);

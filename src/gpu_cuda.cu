@@ -8210,6 +8210,176 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     return 0;
 }
 
+static int cuda_moe_route_routed_ffn_batch(
+    void *vctx, float *out, void *router_buf, void *gate_all_buf,
+    void *up_all_buf, void *down_all_buf, const float *X,
+    int n_tokens, int dim, int hidden_dim, int n_experts, int k,
+    int gate_type, int up_type, int down_type, int act_type) {
+    BnCudaCtx *ctx = (BnCudaCtx *)vctx;
+    BnCudaBuffer *router = (BnCudaBuffer *)router_buf;
+    BnCudaBuffer *gate = (BnCudaBuffer *)gate_all_buf;
+    BnCudaBuffer *up = (BnCudaBuffer *)up_all_buf;
+    BnCudaBuffer *down = (BnCudaBuffer *)down_all_buf;
+    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
+        return -1;
+    int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K &&
+                    up_type == BN_GGUF_TENSOR_Q4_K &&
+                    (down_type == BN_GGUF_TENSOR_Q4_K ||
+                     down_type == BN_GGUF_TENSOR_Q6_K);
+    int routed_q8 = gate_type == BN_GGUF_TENSOR_Q8_0 &&
+                    up_type == BN_GGUF_TENSOR_Q8_0 &&
+                    down_type == BN_GGUF_TENSOR_Q8_0;
+    if (!ctx || !out || !router || !gate || !up || !down || !X ||
+        !router->data || !gate->data || !up->data || !down->data ||
+        n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
+        n_experts <= 0 || k <= 0 || k > BN_MAX_MOE_K || act_type != 0 ||
+        router->type != BN_GGUF_TENSOR_F32 ||
+        router->rows < n_experts || router->cols < dim ||
+        (!routed_q4 && !routed_q8) ||
+        (dim % 32) != 0 || (hidden_dim % 32) != 0)
+        return -1;
+    if (gate->type != gate_type || up->type != up_type ||
+        down->type != down_type ||
+        gate->rows < hidden_dim * n_experts || gate->cols < dim ||
+        up->rows < hidden_dim * n_experts || up->cols < dim ||
+        down->rows < dim * n_experts || down->cols < hidden_dim)
+        return -1;
+
+    size_t full_values = (size_t)n_tokens * (size_t)dim;
+    size_t full_bytes = full_values * sizeof(float);
+    size_t logits_values = (size_t)n_tokens * (size_t)n_experts;
+    size_t mid_values = (size_t)n_tokens * (size_t)k *
+                        (size_t)hidden_dim;
+    if (cuda_ensure_scratch(ctx, sizeof(float),
+                            mid_values * sizeof(float)) != 0)
+        return -1;
+    if (cuda_ensure_prefill(ctx, full_values * 2u + logits_values) != 0)
+        return -1;
+    size_t route_items = (size_t)n_tokens * (size_t)k;
+    size_t idx_bytes = route_items * sizeof(int);
+    size_t weight_bytes = route_items * sizeof(float);
+    if (cuda_ensure_ops(ctx, idx_bytes + weight_bytes) != 0)
+        return -1;
+
+    float *d_full_x = ctx->d_prefill;
+    float *d_full_out = d_full_x + full_values;
+    float *d_logits = d_full_out + full_values;
+    float *d_mid = ctx->d_out;
+    int *d_indices = (int *)ctx->d_ops;
+    float *d_weights = (float *)((uint8_t *)ctx->d_ops + idx_bytes);
+
+    cudaError_t err = cudaMemcpy(d_full_x, X, full_bytes,
+                                 cudaMemcpyHostToDevice);
+    if (err == cudaSuccess)
+        err = cudaMemset(d_full_out, 0, full_bytes);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] routed moe combined upload failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    int threads = 256;
+    int warps = threads / 32;
+    int route_tasks = n_tokens * n_experts;
+    int route_blocks = (route_tasks + warps - 1) / warps;
+    moe_router_logits_batch_warp_kernel<<<route_blocks, threads, 0>>>(
+        d_logits, (const float *)router->data, d_full_x, n_tokens,
+        n_experts, dim);
+    err = cudaGetLastError();
+    if (err == cudaSuccess) {
+        int topk_threads = 128;
+        int topk_warps = topk_threads / 32;
+        int topk_blocks = (n_tokens + topk_warps - 1) / topk_warps;
+        moe_route_topk_batch_warp_kernel<<<topk_blocks, topk_threads, 0>>>(
+            d_indices, d_weights, d_logits, n_tokens, n_experts, k);
+        err = cudaGetLastError();
+    }
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] routed moe combined route failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    int gateup_tasks = n_tokens * k * hidden_dim;
+    int gateup_blocks = (gateup_tasks + warps - 1) / warps;
+    if (routed_q8) {
+        moe_q8_0_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
+            d_mid, (const BnBlockQ8_0 *)gate->data,
+            (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
+            d_weights, hidden_dim, dim, n_experts, k, n_tokens);
+    } else if (getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+        if (cuda_ensure_q8_k(ctx, dim, n_tokens) != 0)
+            return -1;
+        BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
+        quantize_q8k_batch_kernel<<<dim3(dim / BN_QK_K, n_tokens, 1),
+                                    BN_QK_K, 0>>>(xq, d_full_x, dim,
+                                                  n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        int gateup4_tasks = (gateup_tasks + 3) / 4;
+        int gateup4_blocks = (gateup4_tasks + warps - 1) / warps;
+        moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel<<<gateup4_blocks, threads, 0>>>(
+            d_mid, (const BnBlockQ4K *)gate->data,
+            (const BnBlockQ4K *)up->data, xq, d_indices,
+            hidden_dim, dim, n_experts, k, n_tokens);
+    } else {
+        int x_blocks = (dim + 31) / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(x_blocks, n_tokens, 1), 32, 0>>>(
+            xq, d_full_x, dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        moe_q4k_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
+            d_mid, (const BnBlockQ4K *)gate->data,
+            (const BnBlockQ4K *)up->data, xq, d_indices, d_weights,
+            hidden_dim, dim, n_experts, k, n_tokens);
+    }
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] routed moe combined gate/up failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+
+    int down_tasks = n_tokens * dim;
+    int down_blocks = (down_tasks + warps - 1) / warps;
+    if (routed_q8) {
+        moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
+            d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
+            d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else {
+        int n_mid = n_tokens * k;
+        if (cuda_ensure_q8_k(ctx, hidden_dim, n_mid) != 0)
+            return -1;
+        BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
+        quantize_q8k_batch_kernel<<<dim3(hidden_dim / BN_QK_K, n_mid, 1),
+                                    BN_QK_K>>>(mid_q, d_mid, hidden_dim,
+                                               n_mid);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        if (down_type == BN_GGUF_TENSOR_Q6_K) {
+            moe_q6k_down_routed_q8k_accum_batch_kernel<<<down_blocks, threads, 0>>>(
+                d_full_out, (const BnBlockQ6K *)down->data, mid_q,
+                d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+        } else {
+            moe_q4k_down_routed_q8k_accum_batch_kernel<<<down_blocks, threads, 0>>>(
+                d_full_out, (const BnBlockQ4K *)down->data, mid_q,
+                d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+        }
+    }
+    err = cudaGetLastError();
+    if (err == cudaSuccess)
+        err = cudaMemcpy(out, d_full_out, full_bytes, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] routed moe combined down failed: %s\n",
+                cudaGetErrorString(err));
+        return -1;
+    }
+    return 0;
+}
+
 static int cuda_prefill_attention(void *vctx, float *out,
                                   const float *Q, const float *K,
                                   const float *V, int n_tokens,
@@ -11799,6 +11969,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->moe_ffn_batch = cuda_moe_ffn_batch;
     gpu->moe_routed_ffn_batch = cuda_moe_routed_ffn_batch;
     gpu->moe_route_batch = cuda_moe_route_batch;
+    gpu->moe_route_routed_ffn_batch = cuda_moe_route_routed_ffn_batch;
     gpu->prefill_attention = cuda_prefill_attention;
     gpu->prefill_attention_wo = cuda_prefill_attention_wo;
     gpu->prefill_qkv_attention_wo = cuda_prefill_qkv_attention_wo;
