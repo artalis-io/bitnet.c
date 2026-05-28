@@ -11145,7 +11145,8 @@ static int cuda_prefill_ssm_layer(
         }                                                             \
     } while (0)
 
-    int use_stacked_prefill = getenv("BN_CUDA_ENABLE_SSM_STACKED_PREFILL") != NULL;
+    int use_stacked_prefill =
+        getenv("BN_CUDA_DISABLE_SSM_STACKED_PREFILL") == NULL;
     int use_qkvz = use_stacked_prefill &&
                    qkvz && qkvz->data && wqkv_type == wz_type &&
                    qkvz->rows == qkv_dim + inner_dim &&
