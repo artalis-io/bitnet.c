@@ -12692,6 +12692,22 @@ static int cuda_ops_have_q8_moe_routed_ffn(const BnGPUOp *ops, int n_ops) {
     return 0;
 }
 
+static int cuda_ops_moe_max_experts(const BnGPUOp *ops, int n_ops) {
+    if (!ops) return 0;
+    int max_experts = 0;
+    for (int i = 0; i < n_ops; i++) {
+        const BnGPUOp *op = &ops[i];
+        int n_experts = 0;
+        if (op->op_code == BN_GPU_CODE_MOE_ROUTE_TOPK)
+            n_experts = (int)op->p[0];
+        else if (op->op_code == BN_GPU_CODE_MOE_ROUTED_FFN)
+            n_experts = (int)op->p[1];
+        if (n_experts > max_experts)
+            max_experts = n_experts;
+    }
+    return max_experts;
+}
+
 static int cuda_buf_unused_until_write(const BnGPUOp *ops, int n_ops,
                                        int start, int buf) {
     if (!ops || buf < 0) return 0;
@@ -12888,10 +12904,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     memset(skip_ops, 0, (size_t)n_ops);
     int moe_graph = cuda_ops_have_moe(ops, n_ops);
     int q8_moe_graph = cuda_ops_have_q8_moe_routed_ffn(ops, n_ops);
+    int moe_max_experts = moe_graph
+        ? cuda_ops_moe_max_experts(ops, n_ops)
+        : 0;
+    int default_moe_graph =
+        moe_graph && !q8_moe_graph && moe_max_experts > 0 &&
+        moe_max_experts <= cuda_env_int("BN_CUDA_MOE_GRAPH_MAX_EXPERTS", 128);
     int default_graph_exec =
         getenv("BN_CUDA_DISABLE_GRAPH_EXEC") == NULL &&
         getenv("BN_CUDA_ENABLE_MOE_FFN") == NULL &&
-        !q8_moe_graph &&
+        (!moe_graph || default_moe_graph) &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
     int q8_preq_logits_default = !disable_q8_preq_logits;
