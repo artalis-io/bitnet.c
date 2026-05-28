@@ -1374,6 +1374,77 @@ static __global__ void q4k_dot_matvec_split_kernel(
     }
 }
 
+static __global__ void q4k_dot_matvec_split_k_rope_cache_kernel(
+    float *out0, void *key_cache, const BnBlockQ4K *blocks,
+    const BnCudaBlockQ8_1 *xq, const float *bias0, const float *bias1,
+    const float *freq, int total_rows, int cols, int split0,
+    int n_kv_heads, int head_size, int pos, int rope_dims,
+    size_t key_offset, int kv_f16) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int unit = blockIdx.x * warps_per_block + warp;
+    int half_rope = rope_dims / 2;
+    int k_pair_units = n_kv_heads * half_rope;
+    if (unit >= split0 + k_pair_units) return;
+
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+
+    if (unit < split0) {
+        float sum = 0.0f;
+        const BnBlockQ4K *row_blocks = blocks + (size_t)unit * n_bpr;
+        for (int b = kbx; b < n_bpr; b += 2)
+            sum += cuda_vec_dot_q4k_q8_1(&row_blocks[b],
+                                         xq + (size_t)b * 8, iqs);
+        for (int offset = 16; offset > 0; offset >>= 1)
+            sum += __shfl_down_sync(0xffffffffu, sum, offset);
+        if (lane == 0) {
+            if (bias0) sum += bias0[unit];
+            out0[unit] = sum;
+        }
+        return;
+    }
+
+    int pair = unit - split0;
+    int head = pair / half_rope;
+    int dim0 = pair - head * half_rope;
+    int dim1 = dim0 + half_rope;
+    int local0 = head * head_size + dim0;
+    int local1 = head * head_size + dim1;
+    int row0 = split0 + local0;
+    int row1 = split0 + local1;
+    if (row1 >= total_rows) return;
+
+    float sum0 = 0.0f;
+    float sum1 = 0.0f;
+    const BnBlockQ4K *row_blocks0 = blocks + (size_t)row0 * n_bpr;
+    const BnBlockQ4K *row_blocks1 = blocks + (size_t)row1 * n_bpr;
+    for (int b = kbx; b < n_bpr; b += 2) {
+        sum0 += cuda_vec_dot_q4k_q8_1(&row_blocks0[b],
+                                      xq + (size_t)b * 8, iqs);
+        sum1 += cuda_vec_dot_q4k_q8_1(&row_blocks1[b],
+                                      xq + (size_t)b * 8, iqs);
+    }
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum0 += __shfl_down_sync(0xffffffffu, sum0, offset);
+        sum1 += __shfl_down_sync(0xffffffffu, sum1, offset);
+    }
+    if (lane == 0) {
+        if (bias1) {
+            sum0 += bias1[local0];
+            sum1 += bias1[local1];
+        }
+        float s, c;
+        __sincosf((float)pos * freq[dim0], &s, &c);
+        float y0 = sum0 * c - sum1 * s;
+        float y1 = sum0 * s + sum1 * c;
+        cuda_kv_store(key_cache, key_offset + (size_t)local0, y0, kv_f16);
+        cuda_kv_store(key_cache, key_offset + (size_t)local1, y1, kv_f16);
+    }
+}
+
 static __global__ void q8_0_matvec_split_preq_warp8_kernel(
     float *out0, float *out1, float *out2, const BnBlockQ8_0 *blocks,
     const BnCudaBlockQ8_1 *xq, const float *bias0, int total_rows, int cols,
@@ -13117,12 +13188,59 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q4_threads = 256;
                 int warps = q4_threads / 32;
-                int blocks = (total_rows + warps - 1) / warps;
-                BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_kernel, blocks,
-                    q4_threads, 0,
-                    out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
-                    bias0, total_rows, cols, split0, split1,
-                    (size_t)op->p[6], (size_t)op->p[7]);
+                int fused_k_rope_cache = 0;
+                int k_bias_idx = -1;
+                if (next && i + 4 < n_ops &&
+                    getenv("BN_CUDA_DISABLE_Q4K_SPLIT_K_ROPE_CACHE_FUSE") == NULL &&
+                    split1 <= split0 &&
+                    next->op_code == BN_GPU_CODE_BIAS_ADD &&
+                    next->buf_in == op->buf_out &&
+                    (int)next->p[0] == split0 &&
+                    ops[i + 2].op_code == BN_GPU_CODE_BIAS_ADD &&
+                    ops[i + 2].buf_in == op->buf_aux &&
+                    (int)ops[i + 2].p[0] == total_rows - split0 &&
+                    ops[i + 3].op_code == BN_GPU_CODE_ROPE &&
+                    ops[i + 3].buf_in == op->buf_aux &&
+                    (int)ops[i + 3].p[0] * (int)ops[i + 3].p[1] ==
+                        total_rows - split0 &&
+                    (int)ops[i + 3].p[1] == (int)ops[i + 3].p[3] &&
+                    ops[i + 4].op_code == BN_GPU_CODE_COPY &&
+                    ops[i + 4].buf_in == op->buf_aux &&
+                    (int)ops[i + 4].p[0] == 0 &&
+                    (int)ops[i + 4].p[2] == total_rows - split0) {
+                    BnCudaBuffer *kbw = (BnCudaBuffer *)ops[i + 2].W_buf;
+                    float *freq = cuda_act(ctx, BN_GPU_VALUE_ROPE_FREQ);
+                    void *key_cache = cuda_act(ctx, ops[i + 4].buf_out);
+                    if (kbw && kbw->data && freq && key_cache) {
+                        k_bias_idx = i + 2;
+                        int n_kv_heads = (int)ops[i + 3].p[0];
+                        int head_size = (int)ops[i + 3].p[1];
+                        int rope_dims = (int)ops[i + 3].p[3];
+                        int units = split0 + n_kv_heads * (rope_dims / 2);
+                        int blocks = (units + warps - 1) / warps;
+                        BN_CUDA_LAUNCH(ctx,
+                            q4k_dot_matvec_split_k_rope_cache_kernel,
+                            blocks, q4_threads, 0,
+                            out0, key_cache, (const BnBlockQ4K *)w->data,
+                            xq, bias0, (const float *)kbw->data, freq,
+                            total_rows, cols, split0, n_kv_heads,
+                            head_size, (int)ops[i + 3].p[2], rope_dims,
+                            (size_t)ops[i + 4].p[1], ctx->kv_f16);
+                        fused_k_rope_cache = 1;
+                    }
+                }
+                if (fused_k_rope_cache) {
+                    skip_ops[k_bias_idx] = 1;
+                    skip_ops[i + 3] = 1;
+                    skip_ops[i + 4] = 1;
+                } else {
+                    int blocks = (total_rows + warps - 1) / warps;
+                    BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_kernel, blocks,
+                        q4_threads, 0,
+                        out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
+                        bias0, total_rows, cols, split0, split1,
+                        (size_t)op->p[6], (size_t)op->p[7]);
+                }
             } else if (op->type == BN_GGUF_TENSOR_Q5_K &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_q5k_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0)
