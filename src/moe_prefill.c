@@ -148,7 +148,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     BnAllocator a = bn_allocator_default();
-    if (!c->has_shared_expert && n_experts > 2) {
+    if (n_experts > 2) {
         BnGPUBackend *gpu = bn_model_gpu(m);
         BnBackendModel *backend = bn_model_backend(m);
         if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
@@ -171,12 +171,61 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         map->gate_type, map->up_type, map->down_type,
                         c->act_type) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
-                    for (int t = 0; t < n_tokens; t++)
-                        for (int d = 0; d < dim; d++)
-                            act[(size_t)t * dim + d] +=
-                                moe_out[(size_t)t * dim + d];
-                    bn_free(&a, moe_out, sz_mout);
-                    return 0;
+                    int shared_ok = 1;
+                    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+                        shared_ok = 0;
+                        int shared_hidden = c->shared_expert_intermediate_size;
+                        size_t sz_shd = (size_t)n_tokens * dim * sizeof(float);
+                        float *sh_d = (float *)bn_malloc(&a, sz_shd);
+                        void *sg = bn_backend_model_qweight_buf(
+                            backend, &lw->shared.shared_gate);
+                        void *su = bn_backend_model_qweight_buf(
+                            backend, &lw->shared.shared_up);
+                        void *sd = bn_backend_model_qweight_buf(
+                            backend, &lw->shared.shared_down);
+                        if (sh_d && gpu->dense_ffn_batch && sg && su && sd) {
+                            double ts = bn_moe_time_ms();
+                            if (gpu->dense_ffn_batch(
+                                    gpu->ctx, sh_d, sg, su, sd, Xb,
+                                    n_tokens, dim, shared_hidden,
+                                    lw->shared.shared_gate.type,
+                                    lw->shared.shared_up.type,
+                                    lw->shared.shared_down.type,
+                                    c->act_type) == 0) {
+                                if (lw->shared.shared_expert_gate) {
+                                    for (int t = 0; t < n_tokens; t++) {
+                                        float gate_dot = 0.0f;
+                                        for (int d = 0; d < dim; d++)
+                                            gate_dot += Xb[(size_t)t * dim + d] *
+                                                        lw->shared.shared_expert_gate[d];
+                                        float gate = 1.0f / (1.0f + expf(-gate_dot));
+                                        for (int d = 0; d < dim; d++)
+                                            moe_out[(size_t)t * dim + d] +=
+                                                gate * sh_d[(size_t)t * dim + d];
+                                    }
+                                } else {
+                                    for (int t = 0; t < n_tokens; t++)
+                                        for (int d = 0; d < dim; d++)
+                                            moe_out[(size_t)t * dim + d] +=
+                                                sh_d[(size_t)t * dim + d];
+                                }
+                                ms->stats.shared_time_ms += bn_moe_time_ms() - ts;
+                                shared_ok = 1;
+                            }
+                        }
+                        if (sh_d)
+                            bn_free(&a, sh_d, sz_shd);
+                    }
+                    if (shared_ok) {
+                        for (int t = 0; t < n_tokens; t++)
+                            for (int d = 0; d < dim; d++)
+                                act[(size_t)t * dim + d] +=
+                                    moe_out[(size_t)t * dim + d];
+                        bn_free(&a, moe_out, sz_mout);
+                        ms->stats.compute_time_ms +=
+                            bn_moe_time_ms() - t_compute;
+                        return 0;
+                    }
                 }
             }
             if (moe_out)

@@ -9709,11 +9709,11 @@ static int cuda_moe_route_routed_ffn_batch(
     size_t idx_bytes = route_items * sizeof(int);
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_grouped =
-        routed_q4 && down_type == BN_GGUF_TENSOR_Q6_K &&
+        ((routed_q4 && down_type == BN_GGUF_TENSOR_Q6_K) || routed_q8) &&
         gate->f16_data && up->f16_data && down->f16_data &&
         getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED") != NULL;
     int use_sorted_slots =
-        routed_q4 && n_tokens > 1 &&
+        (routed_q4 || routed_q8) && n_tokens > 1 &&
         (use_cublas_grouped ||
          getenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT") != NULL);
     size_t route_aux_bytes = use_sorted_slots
