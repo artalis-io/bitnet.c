@@ -4,7 +4,9 @@
 # This is a short parity gate for Qwen GGUFs. The workloads are not identical:
 # bitnet.c prompt processing is measured with bench_kernels. Decode defaults to
 # the real bitnet CLI generation path so logits/readback are included like
-# llama-bench tg. Set BITNET_TG_MODE=bench to use bench_kernels' random
+# llama-bench tg. Prompt processing uses bench_kernels' no-logits prefill path,
+# matching llama-bench pp rather than charging bitnet.c for an extra final
+# logits matvec. Set BITNET_TG_MODE=bench to use bench_kernels' random
 # next-token loop instead. Treat the ratio as a directional CUDA backend
 # regression signal, not a formal benchmark.
 
@@ -88,13 +90,14 @@ for model in $MODELS; do
 
     if ! bitnet_out=$(BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_BENCH" "$model" \
         --cuda --iters "$ITERS" --toks "$TOKS" --prefill-toks "$PREFILL_TOKS" \
-        --prefill-iters 1 --threads "$THREADS" --random-gen 2>&1); then
+        --prefill-iters 1 --prefill-no-logits --threads "$THREADS" \
+        --random-gen 2>&1); then
         echo -e "$(basename "$model")\tERROR\tbitnet bench failed\t0\tFAIL"
         printf '%s\n' "$bitnet_out" >&2
         continue
     fi
     bitnet_pp=$(printf '%s\n' "$bitnet_out" |
-        awk '/^Prefill:/ { v=$2 } END { if (v == "") v="0"; print v }')
+        awk '/^Prefill/ { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+(\.[0-9]+)?$/) { v=$i; break } } END { if (v == "") v="0"; print v }')
 
     if [ "$BITNET_TG_MODE" = "generate" ]; then
         if ! bitnet_tg_out=$(BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_CLI" \
