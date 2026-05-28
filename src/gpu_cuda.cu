@@ -4993,6 +4993,55 @@ static __global__ void moe_q8_0_gateup_routed_mid_batch_kernel(
     }
 }
 
+static __global__ void moe_q8_0_gateup_routed_mid_q8_1_batch_kernel(
+    float *mid, const BnBlockQ8_0 *gate, const BnBlockQ8_0 *up,
+    const BnCudaBlockQ8_1 *xq, const int *indices,
+    int hidden, int cols, int n_experts, int k, int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int task = blockIdx.x * warps_per_block + warp;
+    int total_tasks = n_tokens * k * hidden;
+    if (task >= total_tasks) return;
+
+    int row = task % hidden;
+    int slot_task = task / hidden;
+    int slot = slot_task % k;
+    int token = slot_task / k;
+    int expert = indices[token * k + slot];
+    if (expert < 0) expert = 0;
+    if (expert >= n_experts) expert = n_experts - 1;
+
+    int n_bpr = cols / 32;
+    size_t expert_row = (size_t)expert * (size_t)hidden + (size_t)row;
+    const BnBlockQ8_0 *gate_blocks = gate + expert_row * (size_t)n_bpr;
+    const BnBlockQ8_0 *up_blocks = up + expert_row * (size_t)n_bpr;
+    const BnCudaBlockQ8_1 *xq_token =
+        xq + (size_t)token * (size_t)n_bpr;
+    float gate_sum = 0.0f;
+    float up_sum = 0.0f;
+    for (int b = lane; b < n_bpr; b += 32) {
+        const BnBlockQ8_0 *gb = &gate_blocks[b];
+        const BnBlockQ8_0 *ub = &up_blocks[b];
+        const BnCudaBlockQ8_1 *xb = &xq_token[b];
+        int gate_dot = cuda_dot_i8x32_dp4a(gb->qs, xb->qs);
+        int up_dot = cuda_dot_i8x32_dp4a(ub->qs, xb->qs);
+        float xd = cuda_fp16_to_fp32(xb->d);
+        gate_sum += cuda_fp16_to_fp32(gb->d) * xd * (float)gate_dot;
+        up_sum += cuda_fp16_to_fp32(ub->d) * xd * (float)up_dot;
+    }
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        gate_sum += __shfl_down_sync(0xffffffffu, gate_sum, offset);
+        up_sum += __shfl_down_sync(0xffffffffu, up_sum, offset);
+    }
+    if (lane == 0) {
+        float silu = gate_sum / (1.0f + __expf(-gate_sum));
+        mid[((size_t)token * (size_t)k + (size_t)slot) *
+                (size_t)hidden + (size_t)row] =
+            silu * up_sum;
+    }
+}
+
 static __global__ void moe_q6k_down_routed_q8k_accum_kernel(
     float *out,
     const BnBlockQ6K *down,
@@ -5821,6 +5870,47 @@ static __global__ void moe_q8_0_down_routed_accum_batch_kernel(
             d = __shfl_sync(0xffffffffu, d, 0);
             float xv = slot_mid[(size_t)b * 32u + (size_t)lane];
             slot_sum += d * (float)blk->qs[lane] * xv;
+        }
+        sum += route_weight * slot_sum;
+    }
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        out[(size_t)token * (size_t)dim + (size_t)row] = sum;
+}
+
+static __global__ void moe_q8_0_down_routed_q8_1_accum_batch_kernel(
+    float *out, const BnBlockQ8_0 *down, const BnCudaBlockQ8_1 *mid_q,
+    const int *indices, const float *weights, int dim, int hidden,
+    int n_experts, int k, int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int task = blockIdx.x * warps_per_block + warp;
+    int total_tasks = n_tokens * dim;
+    if (task >= total_tasks) return;
+
+    int token = task / dim;
+    int row = task - token * dim;
+    int n_bpr = hidden / 32;
+    float sum = 0.0f;
+    for (int slot = 0; slot < k; slot++) {
+        int expert = indices[token * k + slot];
+        if (expert < 0) expert = 0;
+        if (expert >= n_experts) expert = n_experts - 1;
+        const BnBlockQ8_0 *row_blocks =
+            down + (((size_t)expert * (size_t)dim + (size_t)row) *
+                    (size_t)n_bpr);
+        const BnCudaBlockQ8_1 *slot_mid_q =
+            mid_q + ((size_t)token * (size_t)k + (size_t)slot) *
+                (size_t)n_bpr;
+        float route_weight = weights[token * k + slot];
+        float slot_sum = 0.0f;
+        for (int b = lane; b < n_bpr; b += 32) {
+            const BnBlockQ8_0 *blk = &row_blocks[b];
+            int dot = cuda_dot_i8x32_dp4a(blk->qs, slot_mid_q[b].qs);
+            slot_sum += cuda_fp16_to_fp32(blk->d) *
+                        cuda_fp16_to_fp32(slot_mid_q[b].d) * (float)dot;
         }
         sum += route_weight * slot_sum;
     }
@@ -10300,7 +10390,22 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         (n_tokens <= 1 ||
          getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
 
-    if (routed_q8) {
+    int use_q8_q8_1_batch =
+        routed_q8 && getenv("BN_CUDA_DISABLE_Q8_MOE_BATCH_Q8_1") == NULL;
+    if (use_q8_q8_1_batch) {
+        int x_blocks = dim / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(x_blocks, n_tokens, 1), 32, 0>>>(
+            xq, d_full_x, dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        moe_q8_0_gateup_routed_mid_q8_1_batch_kernel<<<gateup_blocks, threads, 0>>>(
+            d_mid, (const BnBlockQ8_0 *)gate->data,
+            (const BnBlockQ8_0 *)up->data, xq, d_indices,
+            hidden_dim, dim, n_experts, k, n_tokens);
+    } else if (routed_q8) {
         moe_q8_0_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
             d_mid, (const BnBlockQ8_0 *)gate->data,
             (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
@@ -10368,7 +10473,20 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
 
     int down_tasks = n_tokens * dim;
     int down_blocks = (down_tasks + warps - 1) / warps;
-    if (routed_q8) {
+    if (use_q8_q8_1_batch) {
+        int n_mid = n_tokens * k;
+        int mid_blocks = hidden_dim / 32;
+        if (cuda_ensure_q8_1(ctx, mid_blocks * n_mid) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(mid_blocks, n_mid, 1), 32, 0>>>(
+            mid_q, d_mid, hidden_dim, n_mid);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        moe_q8_0_down_routed_q8_1_accum_batch_kernel<<<down_blocks, threads, 0>>>(
+            d_full_out, (const BnBlockQ8_0 *)down->data, mid_q, d_indices,
+            d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else if (routed_q8) {
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -10681,6 +10799,8 @@ static int cuda_moe_route_routed_ffn_batch(
         getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
         (n_tokens <= 1 ||
          getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
+    int use_q8_q8_1_batch =
+        routed_q8 && getenv("BN_CUDA_DISABLE_Q8_MOE_BATCH_Q8_1") == NULL;
 
     if (use_cublas_grouped) {
         if (cuda_moe_cublas_grouped_prefill(
@@ -10697,7 +10817,21 @@ static int cuda_moe_route_routed_ffn_batch(
                     "[bn:gpu:cuda] grouped cublas moe prefill failed; falling back\n");
     }
 
-    if (routed_q8) {
+    if (use_q8_q8_1_batch) {
+        int x_blocks = dim / 32;
+        if (cuda_ensure_q8_1(ctx, x_blocks * n_tokens) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(x_blocks, n_tokens, 1), 32, 0>>>(
+            xq, d_full_x, dim, n_tokens);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        BN_CUDA_MOE_PREFILL_PROFILE_STEP(2);
+        moe_q8_0_gateup_routed_mid_q8_1_batch_kernel<<<gateup_blocks, threads, 0>>>(
+            d_mid, (const BnBlockQ8_0 *)gate->data,
+            (const BnBlockQ8_0 *)up->data, xq, d_indices,
+            hidden_dim, dim, n_experts, k, n_tokens);
+    } else if (routed_q8) {
         moe_q8_0_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
             d_mid, (const BnBlockQ8_0 *)gate->data,
             (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
@@ -10761,7 +10895,21 @@ static int cuda_moe_route_routed_ffn_batch(
     }
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
 
-    if (routed_q8) {
+    if (use_q8_q8_1_batch) {
+        int n_mid = n_tokens * k;
+        int mid_blocks = hidden_dim / 32;
+        if (cuda_ensure_q8_1(ctx, mid_blocks * n_mid) != 0)
+            return -1;
+        BnCudaBlockQ8_1 *mid_q = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
+        quantize_q8_1_batch_kernel<<<dim3(mid_blocks, n_mid, 1), 32, 0>>>(
+            mid_q, d_mid, hidden_dim, n_mid);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return -1;
+        BN_CUDA_MOE_PREFILL_PROFILE_STEP(4);
+        moe_q8_0_down_routed_q8_1_accum_batch_kernel<<<down_blocks, threads, 0>>>(
+            d_full_out, (const BnBlockQ8_0 *)down->data, mid_q, d_indices,
+            d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else if (routed_q8) {
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
