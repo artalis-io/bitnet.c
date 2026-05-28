@@ -12891,7 +12891,6 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int default_graph_exec =
         getenv("BN_CUDA_DISABLE_GRAPH_EXEC") == NULL &&
         getenv("BN_CUDA_ENABLE_MOE_FFN") == NULL &&
-        !moe_graph &&
         !q8_moe_graph &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
