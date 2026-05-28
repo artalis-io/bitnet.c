@@ -12336,6 +12336,55 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 out = tmp;
                 out_offset = 0;
             }
+            if (!direct_kv_f16 && next &&
+                op->type == BN_GGUF_TENSOR_Q6_K &&
+                next->op_code == BN_GPU_CODE_MATVEC &&
+                next->type == BN_GGUF_TENSOR_Q4_K &&
+                next->buf_in == op->buf_in &&
+                next->cols == op->cols &&
+                op->cols % BN_QK_K == 0 &&
+                op->rows > 0 && next->rows > 0 &&
+                bias == NULL && bias_idx < 0 &&
+                getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") == NULL) {
+                BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
+                float *out1 = cuda_act(ctx, next->buf_out);
+                if (w1 && w1->data && out1) {
+                    if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
+                        BN_CUDA_EXEC_FAIL("q6k/q4k pair q8k scratch alloc failed");
+                    BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
+                    BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                        dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
+                        xq, in, op->cols, 1);
+                    int pair_threads = 256;
+                    int warps = pair_threads / 32;
+                    if ((op->cols <= 4096 ||
+                         (op->cols >= 5120 && op->cols <= 8192)) &&
+                        getenv("BN_CUDA_DISABLE_Q6K_MATVEC4") == NULL) {
+                        int q6_blocks =
+                            (op->rows + warps * 4 - 1) / (warps * 4);
+                        BN_CUDA_LAUNCH(ctx, q6k_dot_matvec4_kernel,
+                            q6_blocks, pair_threads, 0,
+                            out, (const BnBlockQ6K *)w->data, xq,
+                            (const float *)NULL,
+                            op->rows, op->cols, out_offset);
+                    } else {
+                        int q6_blocks = (op->rows + warps - 1) / warps;
+                        BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_kernel,
+                            q6_blocks, pair_threads, 0,
+                            out, (const BnBlockQ6K *)w->data, xq,
+                            (const float *)NULL,
+                            op->rows, op->cols, out_offset);
+                    }
+                    int q4_blocks = (next->rows + warps - 1) / warps;
+                    BN_CUDA_LAUNCH(ctx, q4k_q8k_dot_matvec_kernel,
+                        q4_blocks, pair_threads, 0,
+                        out1, (const BnBlockQ4K *)w1->data, xq,
+                        (const float *)NULL,
+                        next->rows, next->cols, (size_t)next->p[5]);
+                    i++;
+                    break;
+                }
+            }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 getenv("BN_CUDA_ENABLE_CUBLAS_LOGITS") != NULL) {
