@@ -1640,7 +1640,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             uint32_t u_one;
             { float one = 1.0f; memcpy(&u_one, &one, 4); }
             uint32_t weighted_add_params[8] = {
-                (uint32_t)dim, u_one, k == 0 ? 1u : 0u,
+                (uint32_t)dim, u_one,
+                (k == 0 && !moe->preserve_output) ? 1u : 0u,
                 (uint32_t)dim, expert->route_complement ? 1u : 0u,
                 0, 0, 0
             };
@@ -1650,7 +1651,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                                  weighted_add_params);
         } else {
             uint32_t weighted_add_params[8] = {
-                (uint32_t)dim, u_ew, k == 0 ? 1u : 0u, 0, 0, 0, 0, 0
+                (uint32_t)dim, u_ew,
+                (k == 0 && !moe->preserve_output) ? 1u : 0u,
+                0, 0, 0, 0, 0
             };
             emit_context_utility(ctx, BN_GPU_IR_UTILITY_WEIGHTED_ADD,
                                  BN_GPU_VALUE_MOE_OUT, BN_GPU_VALUE_XB2, -1,
@@ -1715,7 +1718,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         if (lw->shared.shared_expert_gate && shared->shared_expert_gate &&
             !getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE")) {
             uint32_t weighted_add_params[8] = {
-                (uint32_t)dim, u_one, moe->n_experts == 0 ? 1u : 0u,
+                (uint32_t)dim, u_one,
+                (moe->n_experts == 0 && !moe->preserve_output) ? 1u : 0u,
                 (uint32_t)dim, 0, 0, 0, 0
             };
             emit_context_utility(
@@ -1724,7 +1728,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 shared->shared_expert_gate, weighted_add_params);
         } else {
             uint32_t weighted_add_params[8] = {
-                (uint32_t)dim, u_one, moe->n_experts == 0 ? 1u : 0u,
+                (uint32_t)dim, u_one,
+                (moe->n_experts == 0 && !moe->preserve_output) ? 1u : 0u,
                 0, 0, 0, 0, 0
             };
             emit_context_utility(ctx, BN_GPU_IR_UTILITY_WEIGHTED_ADD,

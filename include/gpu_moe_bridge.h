@@ -24,6 +24,7 @@ typedef struct {
     const BnGPUMoEResolvedExpert *experts;
     int n_experts;
     int moe_hidden;
+    int preserve_output;
 } BnGPUMoEResources;
 
 typedef struct {

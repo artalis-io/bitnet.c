@@ -1096,7 +1096,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                             gpu, backend, lw, l);
                     BnGPUMoEResources shared_only = {
                         &lw->moe.expert_map, NULL, 1,
-                        c->moe_intermediate_size
+                        c->moe_intermediate_size, 1
                     };
                     bn_transformer_gpu_emit_context_moe(
                         &emit, &shared_only, &moe_shared, lw, dim, u_eps,
