@@ -12618,6 +12618,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     break;
                 }
             }
+            int use_f16_q6k_matvec =
+                getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC") != NULL ||
+                (getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC") == NULL &&
+                 op->rows <= 2048 && op->cols >= 8192);
+            if (!is_logits_op && w->f16_data && out_offset == 0 &&
+                bias == NULL && bias_idx < 0 &&
+                op->type == BN_GGUF_TENSOR_Q6_K && use_f16_q6k_matvec) {
+                int q_threads = 256;
+                int q_warps = q_threads / 32;
+                int q_blocks = (op->rows + q_warps - 1) / q_warps;
+                BN_CUDA_LAUNCH(ctx, f16_matvec_warp_kernel, q_blocks,
+                    q_threads, 0, out, (const __half *)w->f16_data, in,
+                    (const float *)NULL, op->rows, op->cols, out_offset);
+                break;
+            }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 getenv("BN_CUDA_ENABLE_CUBLAS_LOGITS") != NULL) {
