@@ -4651,6 +4651,48 @@ static __global__ void moe_q6k_down_routed_f32_cache_warp_kernel(
         out[row] = sum;
 }
 
+static __global__ void moe_q6k_down_routed_f32_cache_batch_kernel(
+    float *out,
+    const float *down,
+    const float *mid,
+    const int *indices,
+    const float *weights,
+    int dim,
+    int hidden,
+    int n_experts,
+    int k,
+    int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int task = blockIdx.x * warps_per_block + warp;
+    int total_tasks = n_tokens * dim;
+    if (task >= total_tasks) return;
+
+    int row = task % dim;
+    int token = task / dim;
+    float sum = 0.0f;
+    for (int slot = 0; slot < k; slot++) {
+        int route_pos = token * k + slot;
+        int expert = indices[route_pos];
+        if (expert < 0) expert = 0;
+        if (expert >= n_experts) expert = n_experts - 1;
+        const float *row_w =
+            down + ((size_t)expert * (size_t)dim + (size_t)row) *
+                       (size_t)hidden;
+        const float *slot_mid =
+            mid + (size_t)route_pos * (size_t)hidden;
+        float slot_sum = 0.0f;
+        for (int c = lane; c < hidden; c += 32)
+            slot_sum += row_w[c] * slot_mid[c];
+        sum += weights[route_pos] * slot_sum;
+    }
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        out[(size_t)token * (size_t)dim + (size_t)row] = sum;
+}
+
 static __global__ void moe_q6k_down_routed_q8k_accum_batch_kernel(
     float *out,
     const BnBlockQ6K *down,
@@ -7200,6 +7242,9 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
     if (max_env && *max_env) {
         max_mb = atoi(max_env);
+    } else if (force_q6_f32 &&
+               getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE")) {
+        max_mb = 0;
     } else if (buf->type == BN_GGUF_TENSOR_Q4_K ||
                buf->type == BN_GGUF_TENSOR_Q5_K ||
                buf->type == BN_GGUF_TENSOR_Q6_K) {
@@ -9441,6 +9486,12 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else if (down_type == BN_GGUF_TENSOR_Q6_K && down->f32_data &&
+               getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_BATCH") &&
+               getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
+        moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
+            d_full_out, (const float *)down->f32_data, d_mid, d_indices,
+            d_weights, dim, hidden_dim, n_experts, k, n_tokens);
     } else {
         int n_mid = n_tokens * k;
         if (cuda_ensure_q8_k(ctx, hidden_dim, n_mid) != 0)
@@ -9822,6 +9873,12 @@ static int cuda_moe_route_routed_ffn_batch(
     if (routed_q8) {
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
+            d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+    } else if (down_type == BN_GGUF_TENSOR_Q6_K && down->f32_data &&
+               getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_BATCH") &&
+               getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
+        moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
+            d_full_out, (const float *)down->f32_data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
     } else {
         int n_mid = n_tokens * k;
