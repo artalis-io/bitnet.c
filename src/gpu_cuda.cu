@@ -9774,7 +9774,6 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
     } else if (down_type == BN_GGUF_TENSOR_Q6_K && down->f32_data &&
-               getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_BATCH") &&
                getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
@@ -10168,7 +10167,6 @@ static int cuda_moe_route_routed_ffn_batch(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
     } else if (down_type == BN_GGUF_TENSOR_Q6_K && down->f32_data &&
-               getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_BATCH") &&
                getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
