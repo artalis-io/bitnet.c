@@ -9414,13 +9414,18 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     int warps = threads / 32;
     int gateup_tasks = n_tokens * k * hidden_dim;
     int gateup_blocks = (gateup_tasks + warps - 1) / warps;
+    int use_q4k_q8k_gateup =
+        getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
+        (n_tokens <= 1 ||
+         getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
+
     if (routed_q8) {
         moe_q8_0_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
             d_mid, (const BnBlockQ8_0 *)gate->data,
             (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
             d_weights, hidden_dim, dim, n_experts, k, n_tokens);
     } else {
-        if (getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+        if (use_q4k_q8k_gateup) {
             if (cuda_ensure_q8_k(ctx, dim, n_tokens) != 0)
                 return -1;
             BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -9790,6 +9795,10 @@ static int cuda_moe_route_routed_ffn_batch(
     int gateup_blocks = (gateup_tasks + warps - 1) / warps;
     int down_tasks = n_tokens * dim;
     int down_blocks = (down_tasks + warps - 1) / warps;
+    int use_q4k_q8k_gateup =
+        getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
+        (n_tokens <= 1 ||
+         getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
 
     if (use_cublas_grouped) {
         if (cuda_moe_cublas_grouped_prefill(
@@ -9811,7 +9820,7 @@ static int cuda_moe_route_routed_ffn_batch(
             d_mid, (const BnBlockQ8_0 *)gate->data,
             (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
             d_weights, hidden_dim, dim, n_experts, k, n_tokens);
-    } else if (getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+    } else if (use_q4k_q8k_gateup) {
         if (cuda_ensure_q8_k(ctx, dim, n_tokens) != 0)
             return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
