@@ -1007,10 +1007,17 @@ int main(int argc, char **argv) {
                         size_t reserve = reserve_mb * 1024u * 1024u;
                         if (cuda_gpu->memory_info(cuda_gpu->ctx, &free_bytes,
                                                   &total_bytes) == 0 &&
-                            all_experts > 0 &&
-                            free_bytes > all_experts + reserve) {
-                            budget_bytes = all_experts;
-                            auto_resident = 1;
+                            all_experts > 0) {
+                            if (free_bytes > all_experts + reserve) {
+                                budget_bytes = all_experts;
+                                auto_resident = 1;
+                            } else if (free_bytes > reserve + budget_bytes) {
+                                size_t lazy_budget = free_bytes - reserve;
+                                if (lazy_budget > all_experts)
+                                    lazy_budget = all_experts;
+                                if (lazy_budget > budget_bytes)
+                                    budget_bytes = lazy_budget;
+                            }
                             (void)total_bytes;
                         }
                     }
