@@ -4705,6 +4705,55 @@ static __global__ void moe_q6k_down_routed_q8k_accum_kernel(
         out[row] = sum;
 }
 
+static __global__ void moe_q6k_down_routed_q8k_pair_8row_kernel(
+    float *pair_out,
+    const BnBlockQ6K *down,
+    const BnBlockQ8K *mid_q,
+    const float *route,
+    int dim,
+    int hidden,
+    int n_experts,
+    int k) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int lane_group = lane >> 2;
+    int sublane = lane & 3;
+    int row = (blockIdx.x * warps_per_block + warp) * 8 + lane_group;
+    int slot = blockIdx.y;
+    if (row >= dim || slot >= k) return;
+
+    int expert = (int)(route[k + slot] + 0.5f);
+    if (expert < 0) expert = 0;
+    if (expert >= n_experts) expert = n_experts - 1;
+    int n_bpr = hidden / BN_QK_K;
+    const BnBlockQ6K *row_blocks =
+        down + (((size_t)expert * (size_t)dim + (size_t)row) *
+                (size_t)n_bpr);
+    const BnBlockQ8K *slot_mid_q = mid_q + (size_t)slot * (size_t)n_bpr;
+    float sum = 0.0f;
+    for (int b = sublane; b < n_bpr; b += 4)
+        sum += cuda_vec_dot_q6k_q8k(&row_blocks[b], slot_mid_q + b);
+    unsigned mask = 0x0fu << (lane_group * 4);
+    sum += __shfl_down_sync(mask, sum, 2);
+    sum += __shfl_down_sync(mask, sum, 1);
+    if (sublane == 0)
+        pair_out[(size_t)slot * (size_t)dim + (size_t)row] =
+            route[slot] * sum;
+}
+
+static __global__ void moe_sum_pairs_kernel(float *out,
+                                            const float *pair_out,
+                                            int dim,
+                                            int k) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= dim) return;
+    float sum = 0.0f;
+    for (int slot = 0; slot < k; slot++)
+        sum += pair_out[(size_t)slot * (size_t)dim + (size_t)idx];
+    out[idx] = sum;
+}
+
 static __global__ void moe_q6k_down_routed_float_accum_row_kernel(
     float *out,
     const BnBlockQ6K *down,
@@ -13239,7 +13288,29 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (down_type == BN_GGUF_TENSOR_Q6_K) {
                         int use_q6_float_down =
                             getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN") == NULL;
-                        if (down->f32_data &&
+                        int use_q6_pair_down =
+                            getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN") == NULL;
+                        if (use_q6_pair_down) {
+                            if (cuda_ensure_q8_k(ctx, hidden, k) != 0 ||
+                                cuda_ensure_prefill(ctx,
+                                    (size_t)k * (size_t)dim) != 0)
+                                return -1;
+                            BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
+                            float *pair_out = ctx->d_prefill;
+                            BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                                dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
+                                mid_q, mid, hidden, k);
+                            int pair_blocks =
+                                ((dim + 7) / 8 + warps - 1) / warps;
+                            BN_CUDA_LAUNCH(ctx,
+                                moe_q6k_down_routed_q8k_pair_8row_kernel,
+                                dim3(pair_blocks, k, 1), route_threads, 0,
+                                pair_out, (const BnBlockQ6K *)down->data,
+                                mid_q, route, dim, hidden, n_experts, k);
+                            BN_CUDA_LAUNCH(ctx, moe_sum_pairs_kernel,
+                                (dim + threads - 1) / threads, threads, 0,
+                                out, pair_out, dim, k);
+                        } else if (down->f32_data &&
                             getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
                             BN_CUDA_LAUNCH(ctx,
                                 moe_q6k_down_routed_f32_cache_warp_kernel,
