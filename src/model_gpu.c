@@ -700,12 +700,39 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 gpu->buffer_destroy(gpu->ctx, moe_up_all_gpu);
             if (moe_down_all_gpu)
                 gpu->buffer_destroy(gpu->ctx, moe_down_all_gpu);
-            fprintf(stderr,
-                    "[bn:gpu] failed full CUDA MoE residency upload at "
-                    "layer=%d; aborting upload instead of mixing resident "
-                    "and fallback MoE paths\n", l);
-            bn_model_release_gpu(model);
-            return -1;
+            moe_gate_all_gpu = NULL;
+            moe_up_all_gpu = NULL;
+            moe_down_all_gpu = NULL;
+            if (upload_moe_all_q8_f16_cache) {
+                fprintf(stderr,
+                        "[bn:gpu] full CUDA MoE residency aux-cache upload "
+                        "failed at layer=%d; retrying quant-only resident "
+                        "experts for this and later layers\n", l);
+                upload_moe_all_q8_f16_cache = 0;
+                moe_gate_all_gpu =
+                    upload_moe_all_proj(model, gpu, &lw->moe.expert_map, 0,
+                                        c->n_experts, 0);
+                moe_up_all_gpu =
+                    upload_moe_all_proj(model, gpu, &lw->moe.expert_map, 1,
+                                        c->n_experts, 0);
+                moe_down_all_gpu =
+                    upload_moe_all_proj(model, gpu, &lw->moe.expert_map, 2,
+                                        c->n_experts, 0);
+            }
+            if (!moe_gate_all_gpu || !moe_up_all_gpu || !moe_down_all_gpu) {
+                if (moe_gate_all_gpu)
+                    gpu->buffer_destroy(gpu->ctx, moe_gate_all_gpu);
+                if (moe_up_all_gpu)
+                    gpu->buffer_destroy(gpu->ctx, moe_up_all_gpu);
+                if (moe_down_all_gpu)
+                    gpu->buffer_destroy(gpu->ctx, moe_down_all_gpu);
+                fprintf(stderr,
+                        "[bn:gpu] failed full CUDA MoE residency upload at "
+                        "layer=%d; aborting upload instead of mixing "
+                        "resident and fallback MoE paths\n", l);
+                bn_model_release_gpu(model);
+                return -1;
+            }
         }
         void *shared_expert_gate_gpu = lw->shared.shared_expert_gate
             ? gpu->buffer_create(
