@@ -1119,24 +1119,29 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     int packed_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
     int use_packed_q5_split =
         use_packed_qkv &&
+        !c->kv_f16 &&
         packed_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
         bn_transformer_gpu_can_matvec_split(res->gpu, lw->ssm.wqkv.type);
 
     int qkv_split_op_code = bn_gpu_quant_split_op_code(lw->attn.wq.type);
     int qkv_split_disabled = getenv("BN_GPU_DISABLE_QKV_SPLIT") != NULL;
-    int use_split = !qkv_split_disabled && qkv_stacked && !q_gated &&
+    int use_split = !qkv_split_disabled && !c->kv_f16 &&
+                    qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     qkv_split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
                     bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_q8_split = !qkv_split_disabled && qkv_stacked && !q_gated &&
+    int use_q8_split = !qkv_split_disabled && !c->kv_f16 &&
+                       qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_q5_split = !qkv_split_disabled && qkv_stacked && !q_gated &&
+    int use_q5_split = !qkv_split_disabled && !c->kv_f16 &&
+                       qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_qk_split = !qkv_split_disabled && qk_stacked && !q_gated &&
+    int use_qk_split = !qkv_split_disabled && !c->kv_f16 &&
+                       qk_stacked && !q_gated &&
                        lw->attn.wq.rows == q_dim &&
                        lw->attn.wk.rows == kv_dim &&
                        lw->attn.wq.cols == lw->attn.wk.cols &&

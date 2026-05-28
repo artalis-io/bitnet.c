@@ -1155,6 +1155,35 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     gpu_debug_compare_vec_local("moe_routed_state_compare",
                                                 l, pos, moe_cpu_x, moe_gpu_x,
                                                 dim);
+                    if (getenv("BN_GPU_COMPARE_MOE_NORM")) {
+                        float *moe_cpu_norm =
+                            (float *)malloc((size_t)dim * sizeof(float));
+                        float *moe_gpu_norm =
+                            (float *)malloc((size_t)dim * sizeof(float));
+                        if (moe_cpu_norm && moe_gpu_norm &&
+                            bn_transformer_gpu_read_xb(
+                                gpu, moe_gpu_norm,
+                                (size_t)dim * sizeof(float)) == 0) {
+                            const float *nw = (l + 1 < c->n_layers)
+                                ? w->layers[l + 1].norm.attn_norm
+                                : w->output_norm;
+                            if (nw) {
+                                float ss = 0.0f;
+                                for (int i = 0; i < dim; i++)
+                                    ss += moe_cpu_x[i] * moe_cpu_x[i];
+                                float scale = 1.0f /
+                                    sqrtf(ss / (float)dim + c->norm_eps);
+                                for (int i = 0; i < dim; i++)
+                                    moe_cpu_norm[i] =
+                                        moe_cpu_x[i] * scale * nw[i];
+                                gpu_debug_compare_vec_local(
+                                    "moe_routed_norm_compare", l, pos,
+                                    moe_cpu_norm, moe_gpu_norm, dim);
+                            }
+                        }
+                        free(moe_cpu_norm);
+                        free(moe_gpu_norm);
+                    }
                     free(moe_cpu_x);
                     free(moe_gpu_x);
                 }
@@ -1263,6 +1292,35 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     }
                     gpu_debug_compare_vec_local("moe_state_compare", l, pos,
                                                 moe_cpu_x, moe_gpu_x, dim);
+                    if (getenv("BN_GPU_COMPARE_MOE_NORM")) {
+                        float *moe_cpu_norm =
+                            (float *)malloc((size_t)dim * sizeof(float));
+                        float *moe_gpu_norm =
+                            (float *)malloc((size_t)dim * sizeof(float));
+                        if (moe_cpu_norm && moe_gpu_norm &&
+                            bn_transformer_gpu_read_xb(
+                                gpu, moe_gpu_norm,
+                                (size_t)dim * sizeof(float)) == 0) {
+                            const float *nw = (l + 1 < c->n_layers)
+                                ? w->layers[l + 1].norm.attn_norm
+                                : w->output_norm;
+                            if (nw) {
+                                float ss = 0.0f;
+                                for (int i = 0; i < dim; i++)
+                                    ss += moe_cpu_x[i] * moe_cpu_x[i];
+                                float scale = 1.0f /
+                                    sqrtf(ss / (float)dim + c->norm_eps);
+                                for (int i = 0; i < dim; i++)
+                                    moe_cpu_norm[i] =
+                                        moe_cpu_x[i] * scale * nw[i];
+                                gpu_debug_compare_vec_local(
+                                    "moe_norm_compare", l, pos,
+                                    moe_cpu_norm, moe_gpu_norm, dim);
+                            }
+                        }
+                        free(moe_cpu_norm);
+                        free(moe_gpu_norm);
+                    }
                     free(moe_cpu_x);
                     free(moe_gpu_x);
                 }

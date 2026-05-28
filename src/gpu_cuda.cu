@@ -4547,6 +4547,45 @@ static __global__ void moe_q4k_gateup_routed_mid_kernel(
     }
 }
 
+static __global__ void moe_q4k_gateup_all2_mid_kernel(
+    float *mid,
+    const BnBlockQ4K *gate,
+    const BnBlockQ4K *up,
+    const BnCudaBlockQ8_1 *xq,
+    int hidden,
+    int cols) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int task = blockIdx.x * warps_per_block + warp;
+    if (task >= hidden * 2) return;
+
+    int slot = task / hidden;
+    int row = task - slot * hidden;
+    int n_bpr = cols / BN_QK_K;
+    int kbx = lane / 16;
+    int iqs = 2 * (lane & 15);
+    size_t expert_row = ((size_t)slot * (size_t)hidden + (size_t)row);
+    const BnBlockQ4K *gate_blocks = gate + expert_row * (size_t)n_bpr;
+    const BnBlockQ4K *up_blocks = up + expert_row * (size_t)n_bpr;
+    float gate_sum = 0.0f;
+    float up_sum = 0.0f;
+    for (int b = kbx; b < n_bpr; b += 2) {
+        const BnCudaBlockQ8_1 *xqb = xq + (size_t)b * 8;
+        gate_sum += cuda_vec_dot_q4k_q8_1(&gate_blocks[b], xqb, iqs);
+        up_sum += cuda_vec_dot_q4k_q8_1(&up_blocks[b], xqb, iqs);
+    }
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        gate_sum += __shfl_down_sync(0xffffffffu, gate_sum, offset);
+        up_sum += __shfl_down_sync(0xffffffffu, up_sum, offset);
+    }
+    if (lane == 0) {
+        float silu = gate_sum / (1.0f + __expf(-gate_sum));
+        mid[(size_t)slot * (size_t)hidden + (size_t)row] =
+            silu * up_sum;
+    }
+}
+
 static __global__ void moe_q4k_gateup_routed_mid_batch_kernel(
     float *mid,
     const BnBlockQ4K *gate,
@@ -5104,6 +5143,36 @@ static __global__ void moe_q6k_down_routed_f32_cache_warp_kernel(
         if (expert >= n_experts) expert = n_experts - 1;
         const float *row_w =
             down + ((size_t)expert * (size_t)dim + (size_t)row) *
+                       (size_t)hidden;
+        const float *slot_mid = mid + (size_t)slot * (size_t)hidden;
+        float slot_sum = 0.0f;
+        for (int c = lane; c < hidden; c += 32)
+            slot_sum += row_w[c] * slot_mid[c];
+        sum += route[slot] * slot_sum;
+    }
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        out[row] = sum;
+}
+
+static __global__ void moe_q6k_down_all2_f32_cache_warp_kernel(
+    float *out,
+    const float *down,
+    const float *mid,
+    const float *route,
+    int dim,
+    int hidden) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row = blockIdx.x * warps_per_block + warp;
+    if (row >= dim) return;
+
+    float sum = 0.0f;
+    for (int slot = 0; slot < 2; slot++) {
+        const float *row_w =
+            down + ((size_t)slot * (size_t)dim + (size_t)row) *
                        (size_t)hidden;
         const float *slot_mid = mid + (size_t)slot * (size_t)hidden;
         float slot_sum = 0.0f;
@@ -13990,12 +14059,22 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                         BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
                             (dim + 31) / 32, 32, 0, xq, in, dim);
-                        BN_CUDA_LAUNCH(ctx,
-                            moe_q4k_gateup_routed_mid_kernel,
-                            gateup_blocks, route_threads, 0,
-                            mid, (const BnBlockQ4K *)gate->data,
-                            (const BnBlockQ4K *)up->data, xq, route, hidden,
-                            dim, n_experts, k);
+                        if (n_experts == 2 && k == 2 &&
+                            getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST") == NULL) {
+                            BN_CUDA_LAUNCH(ctx,
+                                moe_q4k_gateup_all2_mid_kernel,
+                                gateup_blocks, route_threads, 0,
+                                mid, (const BnBlockQ4K *)gate->data,
+                                (const BnBlockQ4K *)up->data, xq, hidden,
+                                dim);
+                        } else {
+                            BN_CUDA_LAUNCH(ctx,
+                                moe_q4k_gateup_routed_mid_kernel,
+                                gateup_blocks, route_threads, 0,
+                                mid, (const BnBlockQ4K *)gate->data,
+                                (const BnBlockQ4K *)up->data, xq, route,
+                                hidden, dim, n_experts, k);
+                        }
                     }
                     if (profile_moe_internal) {
                         cudaEventRecord(moe_ev_stop, ctx->exec_stream);
@@ -14014,7 +14093,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int prefer_q6_f32_down =
                             down->f32_data && hidden >= 4096 &&
                             getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
-                        if (prefer_q6_f32_down) {
+                        if (prefer_q6_f32_down && n_experts == 2 && k == 2 &&
+                            getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST") == NULL) {
+                            BN_CUDA_LAUNCH(ctx,
+                                moe_q6k_down_all2_f32_cache_warp_kernel,
+                                down_blocks, route_threads, 0,
+                                out, (const float *)down->f32_data, mid,
+                                route, dim, hidden);
+                        } else if (prefer_q6_f32_down) {
                             BN_CUDA_LAUNCH(ctx,
                                 moe_q6k_down_routed_f32_cache_warp_kernel,
                                 down_blocks, route_threads, 0,
