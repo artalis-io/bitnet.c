@@ -13683,9 +13683,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             float *in = cuda_act(ctx, op->buf_in);
             float *out = cuda_act(ctx, op->buf_out);
             int n = (int)op->p[0];
+            int norm_threads = n >= 2048 ? 512 : threads;
             if (!w || !w->data || !in || !out || n <= 0) return -1;
-            BN_CUDA_LAUNCH_STATIC(ctx, rmsnorm_kernel, 1, threads,
-                (size_t)threads * sizeof(float),
+            BN_CUDA_LAUNCH_STATIC(ctx, rmsnorm_kernel, 1, norm_threads,
+                (size_t)norm_threads * sizeof(float),
                 out, in, (const float *)w->data, n,
                 cuda_u32_to_f32(op->p[1]));
             break;
@@ -13696,10 +13697,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             float *aux = cuda_act(ctx, op->buf_aux);
             float *out = cuda_act(ctx, op->buf_out);
             int n = (int)op->p[0];
+            int norm_threads = n >= 2048 ? 512 : threads;
             if (!w || !w->data || !in || !aux || !out || n <= 0)
                 return -1;
             BN_CUDA_LAUNCH_STATIC(ctx, residual_rmsnorm_kernel, 1,
-                threads, (size_t)threads * sizeof(float),
+                norm_threads, (size_t)norm_threads * sizeof(float),
                 in, aux, out, (const float *)w->data, n,
                 cuda_u32_to_f32(op->p[1]));
             break;
