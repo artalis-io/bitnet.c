@@ -564,7 +564,7 @@ static __global__ void quantize_q8_1_kernel(BnCudaBlockQ8_1 *out,
     }
     amax = __shfl_sync(0xffffffffu, amax, 0);
     float d = amax / 127.0f;
-    int q = d == 0.0f ? 0 : (int)rintf(v / d);
+    int q = d == 0.0f ? 0 : (int)roundf(v / d);
     q = q < -128 ? -128 : (q > 127 ? 127 : q);
 
     out[block].qs[lane] = (int8_t)q;
@@ -594,7 +594,7 @@ static __global__ void quantize_q8_1_batch_kernel(BnCudaBlockQ8_1 *out,
     }
     amax = __shfl_sync(0xffffffffu, amax, 0);
     float d = amax / 127.0f;
-    int q = d == 0.0f ? 0 : (int)rintf(v / d);
+    int q = d == 0.0f ? 0 : (int)roundf(v / d);
     q = q < -128 ? -128 : (q > 127 ? 127 : q);
 
     BnCudaBlockQ8_1 *dst = out + (size_t)token * n_blocks + block;
@@ -12974,7 +12974,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     up_rows, cols);
             } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot &&
-                       getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+                       getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
+                       getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST") != NULL) {
                 if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                 BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
