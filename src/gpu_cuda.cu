@@ -7127,6 +7127,44 @@ static int cuda_ensure_argmax(BnCudaCtx *ctx, int n, int n_penalty_tokens) {
     return 0;
 }
 
+static int cuda_ensure_argmax_partials(BnCudaCtx *ctx, int n_partials,
+                                        int n_penalty_tokens) {
+    if (!ctx || n_partials <= 0) return -1;
+    if (cuda_ctx_set_device(ctx) != 0) return -1;
+    size_t bytes = (size_t)n_partials * sizeof(BnCudaArgmaxPair) +
+                   sizeof(int);
+    if (bytes > ctx->d_argmax_bytes) {
+        if (ctx->d_argmax) cudaFree(ctx->d_argmax);
+        ctx->d_argmax = NULL;
+        ctx->d_argmax_bytes = 0;
+        cudaError_t err = cudaMalloc(&ctx->d_argmax, bytes);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[bn:gpu:cuda] argmax scratch alloc failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+        ctx->d_argmax_bytes = bytes;
+    }
+    if (n_penalty_tokens > 0) {
+        size_t penalty_bytes = (size_t)n_penalty_tokens * sizeof(int);
+        if (penalty_bytes > ctx->d_penalty_tokens_bytes) {
+            if (ctx->d_penalty_tokens) cudaFree(ctx->d_penalty_tokens);
+            ctx->d_penalty_tokens = NULL;
+            ctx->d_penalty_tokens_bytes = 0;
+            cudaError_t err = cudaMalloc(&ctx->d_penalty_tokens,
+                                         penalty_bytes);
+            if (err != cudaSuccess) {
+                fprintf(stderr,
+                        "[bn:gpu:cuda] penalty token scratch alloc failed: %s\n",
+                        cudaGetErrorString(err));
+                return -1;
+            }
+            ctx->d_penalty_tokens_bytes = penalty_bytes;
+        }
+    }
+    return 0;
+}
+
 static int cuda_ensure_host_out(BnCudaCtx *ctx, size_t bytes) {
     if (!ctx) return -1;
     if (bytes <= ctx->h_out_bytes) return 0;
@@ -8592,7 +8630,8 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
 
     int threads = 256;
     int blocks = (rows + 31) / 32;
-    if (cuda_ensure_argmax(ctx, blocks, n_penalty_tokens) != 0) return -1;
+    if (cuda_ensure_argmax_partials(ctx, blocks, n_penalty_tokens) != 0)
+        return -1;
     cudaStream_t stream = ctx->exec_stream ? ctx->exec_stream : ctx->stream;
     if (n_penalty_tokens > 0) {
         cudaError_t copy_err = cudaMemcpyAsync(
