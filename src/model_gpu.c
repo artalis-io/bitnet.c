@@ -15,8 +15,14 @@ static int checked_mul_size(size_t a, size_t b, size_t *out) {
     return 0;
 }
 
-static int cuda_moe_all_f16_cache_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE") != NULL;
+static int cuda_moe_all_f16_cache_enabled_for_type(const BnGPUBackend *gpu,
+                                                   int type) {
+    if (!gpu || !gpu->buffer_create_f16_cache ||
+        getenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE"))
+        return 0;
+    if (getenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE"))
+        return 1;
+    return type == BN_GGUF_TENSOR_Q8_0;
 }
 
 BnGPUBackend *bn_model_gpu(const BnModel *model) {
@@ -124,7 +130,8 @@ static void *upload_moe_all_proj(BnModel *model,
         return NULL;
     if ((size_t)n_experts > (size_t)INT_MAX / (size_t)rows)
         return NULL;
-    int force_f16_cache = cuda_moe_all_f16_cache_enabled();
+    int force_f16_cache =
+        cuda_moe_all_f16_cache_enabled_for_type(gpu, type);
     int prefer_q6_f32_cache =
         proj == 2 && type == BN_GGUF_TENSOR_Q6_K &&
         !force_f16_cache &&
@@ -136,6 +143,8 @@ static void *upload_moe_all_proj(BnModel *model,
         (proj == 2 && type == BN_GGUF_TENSOR_Q6_K &&
          getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE"));
     void *(*create_buffer)(void *, const void *, size_t, int, int, int) =
+        force_f16_cache
+            ? gpu->buffer_create_f16_cache :
         prefer_q6_f32_cache
             ? gpu->buffer_create_q6_f32_cache :
         (!force_full_buffer && gpu->buffer_create_quant_only)
@@ -331,19 +340,23 @@ static size_t estimate_cuda_moe_all_bytes(const BnConfig *c,
         size_t aux = cuda_q6_down_f32_cache_bytes(gpu, em, c->n_experts);
         if (aux == SIZE_MAX || add_size_checked(&layer, aux) != 0)
             return SIZE_MAX;
-        if (cuda_moe_all_f16_cache_enabled()) {
+        if (cuda_moe_all_f16_cache_enabled_for_type(gpu, em->gate_type)) {
             if (mul3_size((size_t)c->n_experts,
                           (size_t)em->gate_rows,
                           (size_t)em->gate_cols, &aux) != 0 ||
                 checked_mul_size(aux, sizeof(uint16_t), &aux) != 0 ||
                 add_size_checked(&layer, aux) != 0)
                 return SIZE_MAX;
+        }
+        if (cuda_moe_all_f16_cache_enabled_for_type(gpu, em->up_type)) {
             if (mul3_size((size_t)c->n_experts,
                           (size_t)em->up_rows,
                           (size_t)em->up_cols, &aux) != 0 ||
                 checked_mul_size(aux, sizeof(uint16_t), &aux) != 0 ||
                 add_size_checked(&layer, aux) != 0)
                 return SIZE_MAX;
+        }
+        if (cuda_moe_all_f16_cache_enabled_for_type(gpu, em->down_type)) {
             if (mul3_size((size_t)c->n_experts,
                           (size_t)em->down_rows,
                           (size_t)em->down_cols, &aux) != 0 ||

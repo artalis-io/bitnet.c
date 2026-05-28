@@ -7252,7 +7252,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
 }
 
 static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
-                                        int force_q6_f32) {
+                                        int aux_cache_mode) {
     if (!buf || !buf->data || buf->rows <= 0 || buf->cols <= 0 ||
         (buf->cols & 31) != 0)
         return 0;
@@ -7265,8 +7265,10 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     if (getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
         return 0;
 
+    int force_q6_f32 = aux_cache_mode == 2;
+    int force_f16 = aux_cache_mode == 3;
     int q6_as_f16 = buf->type == BN_GGUF_TENSOR_Q6_K &&
-                    !force_q6_f32 &&
+                    (force_f16 || !force_q6_f32) &&
                     getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
                     getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
@@ -7275,7 +7277,9 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
                         : sizeof(__half));
     int max_mb = 128;
     const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
-    if (max_env && *max_env) {
+    if (force_f16) {
+        max_mb = 0;
+    } else if (max_env && *max_env) {
         max_mb = atoi(max_env);
     } else if (force_q6_f32 &&
                getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE")) {
@@ -7389,7 +7393,7 @@ static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
         return NULL;
     }
     if (create_aux_cache)
-        cuda_buffer_create_f16_cache(buf, create_aux_cache == 2);
+        cuda_buffer_create_f16_cache(buf, create_aux_cache);
     return buf;
 }
 
@@ -7408,6 +7412,12 @@ static void *cuda_buffer_create_q6_f32_cache(void *vctx, const void *data,
                                              size_t size, int type, int rows,
                                              int cols) {
     return cuda_buffer_create_impl(vctx, data, size, type, rows, cols, 2);
+}
+
+static void *cuda_buffer_create_force_f16_cache(void *vctx, const void *data,
+                                                size_t size, int type,
+                                                int rows, int cols) {
+    return cuda_buffer_create_impl(vctx, data, size, type, rows, cols, 3);
 }
 
 static void *cuda_buffer_create_stacked2(void *vctx,
@@ -9709,9 +9719,11 @@ static int cuda_moe_route_routed_ffn_batch(
     size_t idx_bytes = route_items * sizeof(int);
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_grouped =
-        ((routed_q4 && down_type == BN_GGUF_TENSOR_Q6_K) || routed_q8) &&
         gate->f16_data && up->f16_data && down->f16_data &&
-        getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED") != NULL;
+        ((routed_q8 &&
+          getenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GROUPED") == NULL) ||
+         (routed_q4 && down_type == BN_GGUF_TENSOR_Q6_K &&
+          getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED") != NULL));
     int use_sorted_slots =
         (routed_q4 || routed_q8) && n_tokens > 1 &&
         (use_cublas_grouped ||
@@ -13821,6 +13833,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->buffer_create = cuda_buffer_create;
     gpu->buffer_create_quant_only = cuda_buffer_create_quant_only;
     gpu->buffer_create_q6_f32_cache = cuda_buffer_create_q6_f32_cache;
+    gpu->buffer_create_f16_cache = cuda_buffer_create_force_f16_cache;
     gpu->buffer_create_stacked2 = cuda_buffer_create_stacked2;
     gpu->buffer_create_stacked3 = cuda_buffer_create_stacked3;
     gpu->buffer_destroy = cuda_buffer_destroy;

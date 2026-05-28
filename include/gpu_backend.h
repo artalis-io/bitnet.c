@@ -49,6 +49,12 @@ struct BnGPUBackend {
     void *(*buffer_create_q6_f32_cache)(void *ctx, const void *data,
                                         size_t size, int type,
                                         int rows, int cols);
+    // Upload quantized weight data and force an FP16 auxiliary cache when the
+    // backend can allocate it. Optional; callers use this only after their own
+    // memory fit check for resident CUDA layouts.
+    void *(*buffer_create_f16_cache)(void *ctx, const void *data,
+                                     size_t size, int type,
+                                     int rows, int cols);
     void  (*buffer_destroy)(void *ctx, void *buffer);
 
     // Upload quantized weight data with fused bias. Returns opaque buffer handle.
