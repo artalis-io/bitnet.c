@@ -69,7 +69,7 @@ run_case() {
             if [ "$RUN_COHERENCE" = "1" ] && [ "$RUN_SHARDED_MOE_COHERENCE" = "1" ]; then
                 "$COHERENCE" "$path" --cuda --require-all-tokens || fail=1
             elif [ "$RUN_SHARDED_MOE_SMOKE" = "1" ]; then
-                "$BITNET" "$path" -n 0 --maxseq 32 --quiet || fail=1
+                "$BITNET" "$path" --cuda -n 0 --maxseq 32 --quiet || fail=1
             fi
             return
         fi

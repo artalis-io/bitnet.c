@@ -429,6 +429,24 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
             *out_auto_resident = 1;
         return all_experts;
     }
+    if (!args->gpu_cache_mb_set && free_bytes > reserve + requested) {
+        size_t lazy_budget = free_bytes - reserve;
+        if (all_experts > 0 && lazy_budget > all_experts)
+            lazy_budget = all_experts;
+        if (lazy_budget > requested) {
+            char budget_mb[32], free_mb[32], reserve_mb_s[32];
+            snprintf(budget_mb, sizeof(budget_mb), "%zu",
+                     lazy_budget / (1024u * 1024u));
+            snprintf(free_mb, sizeof(free_mb), "%zu",
+                     free_bytes / (1024u * 1024u));
+            snprintf(reserve_mb_s, sizeof(reserve_mb_s), "%zu", reserve_mb);
+            SH_LOG_INFO("GPU MoE cache auto-sized",
+                        "budget_MB", budget_mb,
+                        "free_MB", free_mb,
+                        "reserve_MB", reserve_mb_s);
+            return lazy_budget;
+        }
+    }
     (void)total_bytes;
     return requested;
 }
