@@ -2588,6 +2588,44 @@ static __global__ void q6k_dot_argmax32_kernel(
     }
 }
 
+static __global__ void f32_matvec_warp_kernel(
+    float *out, const float *w, const float *x, const float *bias,
+    int rows, int cols, size_t out_offset) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row = blockIdx.x * warps_per_block + warp;
+    if (row >= rows) return;
+
+    float sum = 0.0f;
+    const float *wr = w + (size_t)row * (size_t)cols;
+    for (int c = lane; c < cols; c += 32)
+        sum += wr[c] * x[c];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        out[out_offset + (size_t)row] = sum + (bias ? bias[row] : 0.0f);
+}
+
+static __global__ void f16_matvec_warp_kernel(
+    float *out, const __half *w, const float *x, const float *bias,
+    int rows, int cols, size_t out_offset) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int row = blockIdx.x * warps_per_block + warp;
+    if (row >= rows) return;
+
+    float sum = 0.0f;
+    const __half *wr = w + (size_t)row * (size_t)cols;
+    for (int c = lane; c < cols; c += 32)
+        sum += __half2float(wr[c]) * x[c];
+    for (int offset = 16; offset > 0; offset >>= 1)
+        sum += __shfl_down_sync(0xffffffffu, sum, offset);
+    if (lane == 0)
+        out[out_offset + (size_t)row] = sum + (bias ? bias[row] : 0.0f);
+}
+
 static __global__ void q6k_dot_matmul_kernel(float *out,
                                              const BnBlockQ6K *blocks,
                                              const BnBlockQ8K *xq,
@@ -7480,6 +7518,11 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                                   int rows, int cols, int n_tokens,
                                   int type);
 
+static int cuda_force_quant_matmul_for_type(int type) {
+    return type == BN_GGUF_TENSOR_Q4_K &&
+           getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL") != NULL;
+}
+
 static int cuda_cublas_matmul_f16(BnCudaCtx *ctx, float *d_out,
                                   const BnCudaBuffer *w,
                                   const float *d_x,
@@ -7790,7 +7833,8 @@ static int cuda_matmul_device_out_preconverted_f16(
         BnCudaCtx *ctx, float *d_dst, const BnCudaBuffer *w,
         const float *d_x, const void *d_x_f16,
         int rows, int cols, int n_tokens, int type) {
-    if (w && w->f16_data && d_x_f16 &&
+    if (!cuda_force_quant_matmul_for_type(type) &&
+        w && w->f16_data && d_x_f16 &&
         cuda_cublas_matmul_f16_preconverted(ctx, d_dst, w, d_x_f16,
                                             rows, cols, n_tokens) == 0)
         return 0;
@@ -7809,7 +7853,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
     int threads = 256;
     int warps = threads / 32;
     cudaError_t err = cudaSuccess;
-    if ((w->f16_data || w->f32_data) && n_tokens > 1 &&
+    if (!cuda_force_quant_matmul_for_type(type) &&
+        (w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, d_dst, w, d_x, rows, cols,
                                n_tokens) == 0) {
         err = cudaSuccess;
@@ -8044,7 +8089,8 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
 
     int threads = 256;
     int warps = threads / 32;
-    if ((w->f16_data || w->f32_data) && n_tokens > 1 &&
+    if (!cuda_force_quant_matmul_for_type(type) &&
+        (w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out, w, ctx->d_x, rows, cols,
                                n_tokens) == 0) {
         err = cudaSuccess;
@@ -8237,12 +8283,14 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         int rows = ops[i].rows;
         int type = ops[i].type;
-        if (w->f16_data && x_f16_ready &&
+        if (!cuda_force_quant_matmul_for_type(type) &&
+            w->f16_data && x_f16_ready &&
             cuda_cublas_matmul_f16_preconverted(
                 ctx, ctx->d_out + out_offset, w, ctx->d_x_f16, rows,
                 x_cols, n_tokens) == 0) {
             err = cudaSuccess;
-        } else if ((w->f16_data || w->f32_data) &&
+        } else if (!cuda_force_quant_matmul_for_type(type) &&
+            (w->f16_data || w->f32_data) &&
             cuda_cublas_matmul_f16(ctx, ctx->d_out + out_offset, w,
                                    ctx->d_x, rows, x_cols,
                                    n_tokens) == 0) {
@@ -12177,6 +12225,30 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         ctx, out, w, ctx->d_x_f16, op->rows, op->cols, 1) == 0) {
                     break;
                 }
+            }
+            if (is_logits_op && w->f32_data && out_offset == 0 &&
+                bias == NULL && bias_idx < 0 &&
+                op->type == BN_GGUF_TENSOR_Q6_K && op->rows >= 65536 &&
+                getenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC") != NULL) {
+                int q_threads = 256;
+                int q_warps = q_threads / 32;
+                int q_blocks = (op->rows + q_warps - 1) / q_warps;
+                BN_CUDA_LAUNCH(ctx, f32_matvec_warp_kernel, q_blocks,
+                    q_threads, 0, out, (const float *)w->f32_data, in,
+                    (const float *)NULL, op->rows, op->cols, out_offset);
+                break;
+            }
+            if (is_logits_op && w->f16_data && out_offset == 0 &&
+                bias == NULL && bias_idx < 0 &&
+                op->type == BN_GGUF_TENSOR_Q6_K && op->rows >= 65536 &&
+                getenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC") != NULL) {
+                int q_threads = 256;
+                int q_warps = q_threads / 32;
+                int q_blocks = (op->rows + q_warps - 1) / q_warps;
+                BN_CUDA_LAUNCH(ctx, f16_matvec_warp_kernel, q_blocks,
+                    q_threads, 0, out, (const __half *)w->f16_data, in,
+                    (const float *)NULL, op->rows, op->cols, out_offset);
+                break;
             }
             if (!direct_kv_f16 && next && op->type == BN_GGUF_TENSOR_Q4_K &&
                 next->op_code == BN_GPU_CODE_MATVEC &&

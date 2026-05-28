@@ -42,6 +42,18 @@ static void *upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
     return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
 }
 
+static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
+    if (!w->data) return NULL;
+    size_t sz = bn_qweight_data_size(w);
+    if (sz == 0) return NULL;
+    if (gpu->kind == BN_GPU_BACKEND_CUDA && gpu->buffer_create_f16_cache &&
+        getenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE")) {
+        return gpu->buffer_create_f16_cache(
+            gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
+    }
+    return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
+}
+
 static int upload_qweight_owned(BnModel *model, BnBackendModel *backend,
                                 BnGPUBackend *gpu, BnQWeight *w) {
     (void)model;
@@ -593,7 +605,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     }
 
     if (w->output_weight.data) {
-        void *output_weight_gpu = upload_qweight(gpu, &w->output_weight);
+        void *output_weight_gpu = upload_qweight_logits(gpu, &w->output_weight);
         if (!output_weight_gpu ||
             bn_backend_model_register_qweight(backend, &w->output_weight,
                                               output_weight_gpu) != 0) {
@@ -609,8 +621,14 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         size_t emb_size = 0;
         if (checked_mul_size((size_t)c->vocab_size, (size_t)c->dim, &nelements) == 0 &&
             bn_gguf_tensor_size((uint32_t)w->emb_type, (uint64_t)nelements, &emb_size)) {
-            void *emb_gpu_buf = gpu->buffer_create(gpu->ctx, w->token_embedding,
-                emb_size, w->emb_type, c->vocab_size, c->dim);
+            BnQWeight tied = {
+                .data = w->token_embedding,
+                .type = w->emb_type,
+                .rows = c->vocab_size,
+                .cols = c->dim,
+                .scale = 1.0f,
+            };
+            void *emb_gpu_buf = upload_qweight_logits(gpu, &tied);
             if (register_gpu_handle(model, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING,
                                     emb_gpu_buf) != 0) {
                 if (emb_gpu_buf) gpu->buffer_destroy(gpu->ctx, emb_gpu_buf);

@@ -736,7 +736,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         gpu->kind == BN_GPU_BACKEND_CUDA &&
         (!policy.has_moe || cacheable_resident_moe ||
          getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE")) &&
-        !policy.has_ssm && !getenv("BN_CUDA_DISABLE_DECODE_CACHE") &&
+        !getenv("BN_CUDA_DISABLE_DECODE_CACHE") &&
         cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
         cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0 &&
         cpu_fallback_ffn_layer < 0 && cpu_fallback_ffn_from_layer < 0 &&
