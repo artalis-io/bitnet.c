@@ -3962,6 +3962,37 @@ static __global__ void moe_route_topk_batch_warp_kernel(
         indices[(size_t)token * (size_t)k + (size_t)i] = selected[i];
 }
 
+static __global__ void moe_route_count_experts_kernel(
+    int *counts, const int *indices, int route_items, int n_experts) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= route_items) return;
+    int e = indices[idx];
+    if (e >= 0 && e < n_experts)
+        atomicAdd(counts + e, 1);
+}
+
+static __global__ void moe_route_offsets_kernel(
+    int *offsets, int *fill, const int *counts, int n_experts) {
+    if (blockIdx.x != 0 || threadIdx.x != 0) return;
+    int sum = 0;
+    for (int e = 0; e < n_experts; e++) {
+        offsets[e] = sum;
+        fill[e] = sum;
+        sum += counts[e];
+    }
+}
+
+static __global__ void moe_route_fill_slots_kernel(
+    int *slot_order, int *fill, const int *indices, int route_items,
+    int n_experts) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= route_items) return;
+    int e = indices[idx];
+    if (e < 0 || e >= n_experts) return;
+    int pos = atomicAdd(fill + e, 1);
+    slot_order[pos] = idx;
+}
+
 static __global__ void moe_route_topk_warp_kernel(float *route,
                                                   const float *logits,
                                                   int n_experts,
@@ -4251,6 +4282,53 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel(
     int slot = slot_task % k;
     int token = slot_task / k;
     int expert = indices[token * k + slot];
+    if (expert < 0) expert = 0;
+    if (expert >= n_experts) expert = n_experts - 1;
+
+    int n_bpr = cols / BN_QK_K;
+    size_t expert_row = ((size_t)expert * (size_t)hidden + (size_t)row);
+    const BnBlockQ4K *gate_blocks = gate + expert_row * (size_t)n_bpr;
+    const BnBlockQ4K *up_blocks = up + expert_row * (size_t)n_bpr;
+    const BnBlockQ8K *token_xq = xq + (size_t)token * (size_t)n_bpr;
+    float gate_sum = 0.0f;
+    float up_sum = 0.0f;
+    for (int b = sublane; b < n_bpr; b += 8) {
+        gate_sum += cuda_vec_dot_q4k_q8k(&gate_blocks[b], token_xq + b);
+        up_sum += cuda_vec_dot_q4k_q8k(&up_blocks[b], token_xq + b);
+    }
+    unsigned mask = 0xffu << (lane_group * 8);
+    gate_sum += __shfl_down_sync(mask, gate_sum, 4);
+    gate_sum += __shfl_down_sync(mask, gate_sum, 2);
+    gate_sum += __shfl_down_sync(mask, gate_sum, 1);
+    up_sum += __shfl_down_sync(mask, up_sum, 4);
+    up_sum += __shfl_down_sync(mask, up_sum, 2);
+    up_sum += __shfl_down_sync(mask, up_sum, 1);
+    if (sublane == 0) {
+        float silu = gate_sum / (1.0f + __expf(-gate_sum));
+        mid[((size_t)token * (size_t)k + (size_t)slot) *
+            (size_t)hidden + (size_t)row] = silu * up_sum;
+    }
+}
+
+static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_sorted_batch_kernel(
+    float *mid, const BnBlockQ4K *gate, const BnBlockQ4K *up,
+    const BnBlockQ8K *xq, const int *indices, const int *slot_order,
+    int hidden, int cols, int n_experts, int k, int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int lane_group = lane >> 3;
+    int sublane = lane & 7;
+    int task = (blockIdx.x * warps_per_block + warp) * 4 + lane_group;
+    int total_tasks = n_tokens * k * hidden;
+    if (task >= total_tasks) return;
+
+    int row = task % hidden;
+    int sorted_slot = task / hidden;
+    int route_pos = slot_order[sorted_slot];
+    int slot = route_pos % k;
+    int token = route_pos / k;
+    int expert = indices[route_pos];
     if (expert < 0) expert = 0;
     if (expert >= n_experts) expert = n_experts - 1;
 
@@ -4750,6 +4828,101 @@ static __global__ void moe_q6k_down_routed_q8k_scatter_8row_batch_kernel(
         sum += cuda_vec_dot_q6k_q8k(&row_blocks[b], slot_mid_q + b);
     unsigned mask = 0x0fu << (lane_group * 4);
     sum += __shfl_down_sync(mask, sum, 2);
+    sum += __shfl_down_sync(mask, sum, 1);
+    if (sublane == 0) {
+        float w = weights[token * k + slot];
+        atomicAdd(out + (size_t)token * (size_t)dim + (size_t)row, w * sum);
+    }
+}
+
+static __global__ void moe_q6k_down_routed_q8k_scatter_8row_sorted_batch_kernel(
+    float *out,
+    const BnBlockQ6K *down,
+    const BnBlockQ8K *mid_q,
+    const int *indices,
+    const float *weights,
+    const int *slot_order,
+    int dim,
+    int hidden,
+    int n_experts,
+    int k,
+    int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int lane_group = lane >> 2;
+    int sublane = lane & 3;
+    int task = (blockIdx.x * warps_per_block + warp) * 8 + lane_group;
+    int total_tasks = n_tokens * k * dim;
+    if (task >= total_tasks) return;
+
+    int row = task % dim;
+    int sorted_slot = task / dim;
+    int route_pos = slot_order[sorted_slot];
+    int slot = route_pos % k;
+    int token = route_pos / k;
+    int expert = indices[route_pos];
+    if (expert < 0) expert = 0;
+    if (expert >= n_experts) expert = n_experts - 1;
+
+    int n_bpr = hidden / BN_QK_K;
+    const BnBlockQ6K *row_blocks =
+        down + (((size_t)expert * (size_t)dim + (size_t)row) *
+                (size_t)n_bpr);
+    const BnBlockQ8K *slot_mid_q =
+        mid_q + ((size_t)token * (size_t)k + (size_t)slot) *
+            (size_t)n_bpr;
+    float sum = 0.0f;
+    for (int b = sublane; b < n_bpr; b += 4)
+        sum += cuda_vec_dot_q6k_q8k(&row_blocks[b], slot_mid_q + b);
+    unsigned mask = 0x0fu << (lane_group * 4);
+    sum += __shfl_down_sync(mask, sum, 2);
+    sum += __shfl_down_sync(mask, sum, 1);
+    if (sublane == 0) {
+        float w = weights[route_pos];
+        atomicAdd(out + (size_t)token * (size_t)dim + (size_t)row, w * sum);
+    }
+}
+
+static __global__ void moe_q6k_down_routed_q8k_scatter_16row_batch_kernel(
+    float *out,
+    const BnBlockQ6K *down,
+    const BnBlockQ8K *mid_q,
+    const int *indices,
+    const float *weights,
+    int dim,
+    int hidden,
+    int n_experts,
+    int k,
+    int n_tokens) {
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int warps_per_block = blockDim.x >> 5;
+    int lane_group = lane >> 1;
+    int sublane = lane & 1;
+    int task = (blockIdx.x * warps_per_block + warp) * 16 + lane_group;
+    int total_tasks = n_tokens * k * dim;
+    if (task >= total_tasks) return;
+
+    int row = task % dim;
+    int slot_task = task / dim;
+    int slot = slot_task % k;
+    int token = slot_task / k;
+    int expert = indices[token * k + slot];
+    if (expert < 0) expert = 0;
+    if (expert >= n_experts) expert = n_experts - 1;
+
+    int n_bpr = hidden / BN_QK_K;
+    const BnBlockQ6K *row_blocks =
+        down + (((size_t)expert * (size_t)dim + (size_t)row) *
+                (size_t)n_bpr);
+    const BnBlockQ8K *slot_mid_q =
+        mid_q + ((size_t)token * (size_t)k + (size_t)slot) *
+            (size_t)n_bpr;
+    float sum = 0.0f;
+    for (int b = sublane; b < n_bpr; b += 2)
+        sum += cuda_vec_dot_q6k_q8k(&row_blocks[b], slot_mid_q + b);
+    unsigned mask = 0x03u << (lane_group * 2);
     sum += __shfl_down_sync(mask, sum, 1);
     if (sublane == 0) {
         float w = weights[token * k + slot];
@@ -9027,12 +9200,23 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                 int use_scatter =
                     down_type == BN_GGUF_TENSOR_Q6_K &&
                     getenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER") == NULL;
+                int use_scatter_16row =
+                    use_scatter && hidden_dim <= 768 &&
+                    getenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW") != NULL;
                 int down8_tasks = use_scatter ? n_tokens * k * dim : down4_tasks;
                 int down8_blocks = (down8_tasks + warps * 8 - 1) / (warps * 8);
                 if (use_scatter) {
-                    moe_q6k_down_routed_q8k_scatter_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
-                        d_full_out, (const BnBlockQ6K *)down->data, mid_q,
-                        d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+                    if (use_scatter_16row) {
+                        int down16_blocks =
+                            (down8_tasks + warps * 16 - 1) / (warps * 16);
+                        moe_q6k_down_routed_q8k_scatter_16row_batch_kernel<<<down16_blocks, threads, 0>>>(
+                            d_full_out, (const BnBlockQ6K *)down->data, mid_q,
+                            d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+                    } else {
+                        moe_q6k_down_routed_q8k_scatter_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
+                            d_full_out, (const BnBlockQ6K *)down->data, mid_q,
+                            d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+                    }
                 } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
                     moe_q6k_down_routed_q8k_accum_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
                         d_full_out, (const BnBlockQ6K *)down->data, mid_q,
@@ -9129,7 +9313,13 @@ static int cuda_moe_route_routed_ffn_batch(
     size_t route_items = (size_t)n_tokens * (size_t)k;
     size_t idx_bytes = route_items * sizeof(int);
     size_t weight_bytes = route_items * sizeof(float);
-    if (cuda_ensure_ops(ctx, idx_bytes + weight_bytes) != 0)
+    int use_sorted_slots =
+        routed_q4 && n_tokens > 1 &&
+        getenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT") != NULL;
+    size_t route_aux_bytes = use_sorted_slots
+        ? (route_items * sizeof(int) + (size_t)n_experts * 3u * sizeof(int))
+        : 0u;
+    if (cuda_ensure_ops(ctx, idx_bytes + weight_bytes + route_aux_bytes) != 0)
         return -1;
 
     float *d_full_x = ctx->d_prefill;
@@ -9138,6 +9328,14 @@ static int cuda_moe_route_routed_ffn_batch(
     float *d_mid = ctx->d_out;
     int *d_indices = (int *)ctx->d_ops;
     float *d_weights = (float *)((uint8_t *)ctx->d_ops + idx_bytes);
+    uint8_t *d_route_aux = (uint8_t *)ctx->d_ops + idx_bytes + weight_bytes;
+    int *d_slot_order = use_sorted_slots ? (int *)d_route_aux : NULL;
+    int *d_expert_counts = use_sorted_slots
+        ? (int *)(d_route_aux + route_items * sizeof(int)) : NULL;
+    int *d_expert_offsets = use_sorted_slots
+        ? d_expert_counts + n_experts : NULL;
+    int *d_expert_fill = use_sorted_slots
+        ? d_expert_offsets + n_experts : NULL;
     int profile_prefill_moe =
         getenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL") != NULL;
     static double profile_totals[7] = {0.0};
@@ -9185,6 +9383,80 @@ static int cuda_moe_route_routed_ffn_batch(
                 cudaGetErrorString(err));
         return -1;
     }
+    if (use_sorted_slots) {
+        err = cudaMemset(d_expert_counts, 0,
+                         (size_t)n_experts * sizeof(int));
+        if (err == cudaSuccess) {
+            int sort_threads = 128;
+            int sort_blocks =
+                ((int)route_items + sort_threads - 1) / sort_threads;
+            moe_route_count_experts_kernel<<<sort_blocks, sort_threads>>>(
+                d_expert_counts, d_indices, (int)route_items, n_experts);
+            err = cudaGetLastError();
+            if (err == cudaSuccess) {
+                moe_route_offsets_kernel<<<1, 1>>>(
+                    d_expert_offsets, d_expert_fill, d_expert_counts,
+                    n_experts);
+                err = cudaGetLastError();
+            }
+            if (err == cudaSuccess) {
+                moe_route_fill_slots_kernel<<<sort_blocks, sort_threads>>>(
+                    d_slot_order, d_expert_fill, d_indices, (int)route_items,
+                    n_experts);
+                err = cudaGetLastError();
+            }
+        }
+        if (err != cudaSuccess) {
+            fprintf(stderr,
+                    "[bn:gpu:cuda] routed moe route sort failed: %s\n",
+                    cudaGetErrorString(err));
+            return -1;
+        }
+    }
+    if (getenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST")) {
+        int *h_indices = (int *)malloc(route_items * sizeof(int));
+        int *h_counts = (int *)calloc((size_t)n_experts, sizeof(int));
+        if (h_indices && h_counts &&
+            cudaMemcpy(h_indices, d_indices, idx_bytes,
+                       cudaMemcpyDeviceToHost) == cudaSuccess) {
+            int active = 0;
+            int max_count = 0;
+            int singleton = 0;
+            for (size_t i = 0; i < route_items; i++) {
+                int e = h_indices[i];
+                if (e >= 0 && e < n_experts)
+                    h_counts[e]++;
+            }
+            for (int e = 0; e < n_experts; e++) {
+                if (h_counts[e] > 0) {
+                    active++;
+                    if (h_counts[e] == 1) singleton++;
+                    if (h_counts[e] > max_count) max_count = h_counts[e];
+                }
+            }
+            static unsigned long long dist_calls = 0;
+            static unsigned long long dist_active = 0;
+            static unsigned long long dist_singleton = 0;
+            static unsigned long long dist_max_sum = 0;
+            dist_calls++;
+            dist_active += (unsigned long long)active;
+            dist_singleton += (unsigned long long)singleton;
+            dist_max_sum += (unsigned long long)max_count;
+            int every = cuda_env_int("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY", 48);
+            if (every <= 0) every = 48;
+            if ((dist_calls % (unsigned long long)every) == 0) {
+                fprintf(stderr,
+                        "[bn:gpu:cuda:moe-route-dist] calls=%llu assign=%zu avg_active=%.2f avg_singleton=%.2f avg_max_per_expert=%.2f experts=%d\n",
+                        dist_calls, route_items,
+                        (double)dist_active / (double)dist_calls,
+                        (double)dist_singleton / (double)dist_calls,
+                        (double)dist_max_sum / (double)dist_calls,
+                        n_experts);
+            }
+        }
+        if (h_counts) free(h_counts);
+        if (h_indices) free(h_indices);
+    }
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(1);
 
     int gateup_tasks = n_tokens * k * hidden_dim;
@@ -9218,10 +9490,17 @@ static int cuda_moe_route_routed_ffn_batch(
             } else {
                 int gateup4_tasks = (gateup_tasks + 3) / 4;
                 int gateup4_blocks = (gateup4_tasks + warps - 1) / warps;
-                moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel<<<gateup4_blocks, threads, 0>>>(
-                    d_mid, (const BnBlockQ4K *)gate->data,
-                    (const BnBlockQ4K *)up->data, xq, d_indices,
-                    hidden_dim, dim, n_experts, k, n_tokens);
+                if (use_sorted_slots) {
+                    moe_q4k_gateup_routed_mid_q8k_4row_sorted_batch_kernel<<<gateup4_blocks, threads, 0>>>(
+                        d_mid, (const BnBlockQ4K *)gate->data,
+                        (const BnBlockQ4K *)up->data, xq, d_indices,
+                        d_slot_order, hidden_dim, dim, n_experts, k, n_tokens);
+                } else {
+                    moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel<<<gateup4_blocks, threads, 0>>>(
+                        d_mid, (const BnBlockQ4K *)gate->data,
+                        (const BnBlockQ4K *)up->data, xq, d_indices,
+                        hidden_dim, dim, n_experts, k, n_tokens);
+                }
             }
     } else {
         int x_blocks = (dim + 31) / 32;
@@ -9276,12 +9555,30 @@ static int cuda_moe_route_routed_ffn_batch(
                 int use_scatter =
                     down_type == BN_GGUF_TENSOR_Q6_K &&
                     getenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER") == NULL;
+                int use_scatter_16row =
+                    use_scatter && hidden_dim <= 768 &&
+                    getenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW") != NULL;
                 int down8_tasks = use_scatter ? n_tokens * k * dim : down4_tasks;
                 int down8_blocks = (down8_tasks + warps * 8 - 1) / (warps * 8);
                 if (use_scatter) {
-                    moe_q6k_down_routed_q8k_scatter_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
-                        d_full_out, (const BnBlockQ6K *)down->data, mid_q,
-                        d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+                    if (use_scatter_16row) {
+                        int down16_blocks =
+                            (down8_tasks + warps * 16 - 1) / (warps * 16);
+                        moe_q6k_down_routed_q8k_scatter_16row_batch_kernel<<<down16_blocks, threads, 0>>>(
+                            d_full_out, (const BnBlockQ6K *)down->data, mid_q,
+                            d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+                    } else {
+                        if (use_sorted_slots) {
+                            moe_q6k_down_routed_q8k_scatter_8row_sorted_batch_kernel<<<down8_blocks, threads, 0>>>(
+                                d_full_out, (const BnBlockQ6K *)down->data, mid_q,
+                                d_indices, d_weights, d_slot_order, dim,
+                                hidden_dim, n_experts, k, n_tokens);
+                        } else {
+                            moe_q6k_down_routed_q8k_scatter_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
+                                d_full_out, (const BnBlockQ6K *)down->data, mid_q,
+                                d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
+                        }
+                    }
                 } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
                     moe_q6k_down_routed_q8k_accum_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
                         d_full_out, (const BnBlockQ6K *)down->data, mid_q,
