@@ -270,7 +270,8 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     int route_buf,
     int dim,
     int n_experts,
-    int k);
+    int k,
+    uint32_t flags);
 int bn_transformer_gpu_emit_context_moe_routed_ffn(
     BnTransformerGPUEmitContext *ctx,
     void *gate_all_buf,

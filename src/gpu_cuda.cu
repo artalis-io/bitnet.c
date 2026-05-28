@@ -12543,6 +12543,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         out_host, out_len);
     int q8_preq_logits_default = !disable_q8_preq_logits;
     int moe_graph = cuda_ops_have_moe(ops, n_ops);
+    int q8_moe_graph = cuda_ops_have_q8_moe_routed_ffn(ops, n_ops);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_building = 0;
@@ -13517,7 +13518,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH(ctx, moe_route_diff2_kernel, 1, threads,
                     (size_t)threads * sizeof(float),
                     route, (const float *)w->data, in, dim);
-            } else if (getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP")) {
+            } else if ((op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK) ||
+                       q8_moe_graph ||
+                       getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP")) {
                 BN_CUDA_LAUNCH(ctx, moe_router_logits_kernel, n_experts,
                     threads, (size_t)threads * sizeof(float),
                     logits, (const float *)w->data, in, n_experts, dim);

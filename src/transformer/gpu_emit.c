@@ -518,7 +518,8 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     int route_buf,
     int dim,
     int n_experts,
-    int k) {
+    int k,
+    uint32_t flags) {
     if (!ctx || !router_buf || dim <= 0 || n_experts <= 0 || k <= 0)
         return -1;
     if (bn_transformer_gpu_emit_context_lower_pending(ctx) != 0)
@@ -536,6 +537,7 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     op->buf_aux = logits_buf;
     op->rows = n_experts;
     op->cols = dim;
+    op->flags = flags;
     op->p[0] = (uint32_t)n_experts;
     op->p[1] = (uint32_t)k;
     return 0;

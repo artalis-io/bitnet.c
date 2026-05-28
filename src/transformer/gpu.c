@@ -722,27 +722,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         policy.has_moe &&
         !getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") &&
         gpu_cuda_moe_decode_cacheable(c, w, backend);
-    if (cacheable_resident_moe && c->n_experts > 2 &&
-        getenv("BN_CUDA_ENABLE_Q8_MOE_GPU_ROUTER") == NULL) {
-        /* Q8 MoE router logits are close enough that CUDA reduction order can
-           select a different expert set from the CPU reference. Keep the
-           expert FFN resident on GPU, but route through the CPU path below. */
-        int all_q8_moe = 1;
-        for (int l = 0; l < c->n_layers; l++) {
-            const BnLayerWeights *lw = &w->layers[l];
-            if (!lw->moe.router_weight)
-                continue;
-            const BnMoEExpertMap *em = &lw->moe.expert_map;
-            if (em->gate_type != BN_GGUF_TENSOR_Q8_0 ||
-                em->up_type != BN_GGUF_TENSOR_Q8_0 ||
-                em->down_type != BN_GGUF_TENSOR_Q8_0) {
-                all_q8_moe = 0;
-                break;
-            }
-        }
-        if (all_q8_moe)
-            cacheable_resident_moe = 0;
-    }
     int gpu_logits_need_cpu =
         bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);
     int use_matvec_argmax =
@@ -1047,9 +1026,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q8_0 &&
                 lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q8_0 &&
                 lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q8_0;
-            if (moe_routed_q8 && c->n_experts > 2 &&
-                getenv("BN_CUDA_ENABLE_Q8_MOE_GPU_ROUTER") == NULL)
-                gpu_route_topk = 0;
+            uint32_t moe_route_flags =
+                moe_routed_q8 && c->n_experts > 2
+                    ? BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK : 0u;
             int cpu_route_resident_ffn =
                 !gpu_route_topk && moe_routed_q8 && c->n_experts > 2 &&
                 !getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT");
@@ -1133,7 +1112,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 } else if (bn_transformer_gpu_emit_context_moe_route_topk(
                                &emit, moe_router, BN_GPU_VALUE_XB,
                                BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
-                               dim, c->n_experts, c->n_experts_active) != 0) {
+                               dim, c->n_experts, c->n_experts_active,
+                               moe_route_flags) != 0) {
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route emit failed");
                 }
@@ -1185,7 +1165,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 if (bn_transformer_gpu_emit_context_moe_route_topk(
                         &emit, moe_router, BN_GPU_VALUE_XB,
                         BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
-                        dim, c->n_experts, c->n_experts_active) != 0)
+                        dim, c->n_experts, c->n_experts_active,
+                        moe_route_flags) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route emit failed");
                 if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
