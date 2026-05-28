@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include "threadpool.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BN_QK_K 256
 
 // FP16 bit field constants
@@ -391,6 +395,10 @@ void bn_quant_rmsnorm_q8k_avx2(const float *x, const float *w, int dim, float ep
                                   float *xb_out, int8_t *x_q, float *x_d,
                                   int16_t *x_bsums);
 #endif
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif // BN_QUANT_H

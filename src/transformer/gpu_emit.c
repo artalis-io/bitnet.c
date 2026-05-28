@@ -1489,6 +1489,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
 
     int ssm_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
     if (ssm_qkvz_stacked &&
+        !getenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT") &&
         ssm_split_op_code != BN_GPU_CODE_UNKNOWN &&
         bn_transformer_gpu_can_matvec_split(res->gpu, lw->ssm.wqkv.type)) {
         int total_rows = lw->ssm.wqkv.rows + lw->ssm.wz.rows;
@@ -1521,6 +1522,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                      ssm_l2_params);
 
     if (ssm_ab_stacked &&
+        !getenv("BN_GPU_DISABLE_SSM_AB_STACK") &&
         lw->ssm.ssm_alpha.rows == lw->ssm.ssm_beta.rows &&
         lw->ssm.ssm_alpha.cols == lw->ssm.ssm_beta.cols) {
         int ab_rows = lw->ssm.ssm_alpha.rows + lw->ssm.ssm_beta.rows;
@@ -1682,7 +1684,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
                 lw->shared.shared_gate.rows, lw->shared.shared_up.rows,
                 lw->shared.shared_gate.cols, 0);
-        } else if (shared->shared_gateup_stacked) {
+        } else if (shared->shared_gateup_stacked &&
+                   bn_transformer_gpu_can_matvec_split(
+                       shared->gpu, lw->shared.shared_gate.type)) {
             emit_context_matvec_split(
                 ctx, lw->shared.shared_gate.type,
                 shared->shared_gateup_stacked,

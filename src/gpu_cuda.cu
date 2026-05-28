@@ -322,6 +322,13 @@ static __device__ float cuda_fp16_to_fp32(uint16_t h) {
     return out;
 }
 
+static __device__ float cuda_bf16_to_fp32(uint16_t h) {
+    uint32_t bits = (uint32_t)h << 16;
+    float out;
+    memcpy(&out, &bits, sizeof(out));
+    return out;
+}
+
 static __device__ uint16_t cuda_fp32_to_fp16_bits(float f) {
     return __half_as_ushort(__float2half_rn(f));
 }
@@ -370,6 +377,66 @@ static __global__ void dequant_q5_0_to_f16_kernel(
         : (int)((qs >> 4) | (((qh >> j) & 1u) << 4)) - 16;
     float v = cuda_fp16_to_fp32(blk->d) * (float)q;
     out[i] = __float2half_rn(v);
+}
+
+static __global__ void dequant_bf16_to_f16_kernel(
+    __half *out, const uint16_t *src, int rows, int cols) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n = (size_t)rows * (size_t)cols;
+    if (i >= n) return;
+    out[i] = __float2half_rn(cuda_bf16_to_fp32(src[i]));
+}
+
+static __device__ __forceinline__ float cuda_q3k_value(const BnBlockQ3K *blk,
+                                                       int i) {
+    uint32_t aux0 = (uint32_t)blk->scales[0] |
+                    ((uint32_t)blk->scales[1] << 8) |
+                    ((uint32_t)blk->scales[2] << 16) |
+                    ((uint32_t)blk->scales[3] << 24);
+    uint32_t aux1 = (uint32_t)blk->scales[4] |
+                    ((uint32_t)blk->scales[5] << 8) |
+                    ((uint32_t)blk->scales[6] << 16) |
+                    ((uint32_t)blk->scales[7] << 24);
+    uint32_t tmp = (uint32_t)blk->scales[8] |
+                   ((uint32_t)blk->scales[9] << 8) |
+                   ((uint32_t)blk->scales[10] << 16) |
+                   ((uint32_t)blk->scales[11] << 24);
+    uint32_t aux2 = ((aux0 >> 4) & 0x0f0f0f0fu) |
+                    (((tmp >> 4) & 0x03030303u) << 4);
+    uint32_t aux3 = ((aux1 >> 4) & 0x0f0f0f0fu) |
+                    (((tmp >> 6) & 0x03030303u) << 4);
+    aux0 = (aux0 & 0x0f0f0f0fu) |
+           (((tmp >> 0) & 0x03030303u) << 4);
+    aux1 = (aux1 & 0x0f0f0f0fu) |
+           (((tmp >> 2) & 0x03030303u) << 4);
+    uint32_t aux[4] = { aux0, aux1, aux2, aux3 };
+
+    int group = i >> 4;
+    int scale = (int)((aux[group >> 2] >> ((group & 3) * 8)) & 0xffu) - 32;
+    int half = i >> 7;
+    int in_half = i & 127;
+    int j = in_half >> 5;
+    int l = in_half & 15;
+    int shift = j * 2;
+    const uint8_t *q = blk->qs + half * 32;
+    const uint8_t *hm = blk->hmask + half * 16;
+    uint8_t m = (uint8_t)(1u << (group >> 1));
+    int qoff = (group & 1) ? l + 16 : l;
+    int q3 = ((q[qoff] >> shift) & 3) - ((hm[qoff] & m) ? 0 : 4);
+    return cuda_fp16_to_fp32(blk->d) * (float)scale * (float)q3;
+}
+
+static __global__ void dequant_q3k_to_f16_kernel(
+    __half *out, const BnBlockQ3K *blocks, int rows, int cols) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t n = (size_t)rows * (size_t)cols;
+    if (i >= n) return;
+    int row = (int)(i / (size_t)cols);
+    int col = (int)(i - (size_t)row * (size_t)cols);
+    int n_bpr = cols / BN_QK_K;
+    const BnBlockQ3K *blk = &blocks[(size_t)row * n_bpr +
+                                    col / BN_QK_K];
+    out[i] = __float2half_rn(cuda_q3k_value(blk, col & (BN_QK_K - 1)));
 }
 
 static __global__ void dequant_q4k_to_f16_kernel(
@@ -2096,6 +2163,10 @@ static __global__ void matvec_kernel(void *out, const void *wdata,
         const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
         for (int c = tid; c < cols; c += blockDim.x)
             sum += cuda_fp16_to_fp32(w[c]) * x_token[c];
+    } else if (type == BN_GGUF_TENSOR_BF16) {
+        const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
+        for (int c = tid; c < cols; c += blockDim.x)
+            sum += cuda_bf16_to_fp32(w[c]) * x_token[c];
     } else if (type == BN_GGUF_TENSOR_Q8_0) {
         const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)wdata;
         int n_bpr = cols / 32;
@@ -2135,6 +2206,15 @@ static __global__ void matvec_kernel(void *out, const void *wdata,
                 ? (int)((qs & 15) | (((qh >> i) & 1u) << 4)) - 16
                 : (int)((qs >> 4) | (((qh >> i) & 1u) << 4)) - 16;
             sum += d * (float)q * x_token[c];
+        }
+    } else if (type == BN_GGUF_TENSOR_Q3_K) {
+        const BnBlockQ3K *blocks = (const BnBlockQ3K *)wdata;
+        int n_bpr = cols / BN_QK_K;
+        for (int c = tid; c < cols; c += blockDim.x) {
+            int b = c / BN_QK_K;
+            int i = c & (BN_QK_K - 1);
+            const BnBlockQ3K *blk = &blocks[(size_t)row * n_bpr + b];
+            sum += cuda_q3k_value(blk, i) * x_token[c];
         }
     } else if (type == BN_GGUF_TENSOR_Q4_K) {
         const BnBlockQ4K *blocks = (const BnBlockQ4K *)wdata;
@@ -7221,10 +7301,14 @@ static int cuda_type_supported(int type) {
     if (type == BN_GGUF_TENSOR_Q8_K && disable_q8_k)
         return 0;
     return type == BN_GGUF_TENSOR_F32 || type == BN_GGUF_TENSOR_F16 ||
+           type == BN_GGUF_TENSOR_BF16 ||
            type == BN_GGUF_TENSOR_Q8_0 || type == BN_GGUF_TENSOR_Q4_0 ||
-           type == BN_GGUF_TENSOR_Q5_0 || type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_0 || type == BN_GGUF_TENSOR_Q3_K ||
+           type == BN_GGUF_TENSOR_Q4_K ||
            type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K || type == BN_GGUF_TENSOR_Q8_K;
+           type == BN_GGUF_TENSOR_Q6_K || type == BN_GGUF_TENSOR_Q8_K ||
+           type == BN_GGUF_TENSOR_IQ3_XXS ||
+           type == BN_GGUF_TENSOR_IQ4_XS;
 }
 
 static int cuda_ensure_scratch(BnCudaCtx *ctx, size_t x_bytes,
@@ -7490,6 +7574,14 @@ static int cuda_alloc_activation(BnCudaCtx *ctx, int idx, size_t bytes) {
                 idx, aligned, cudaGetErrorString(err));
         return -1;
     }
+    err = cudaMemset(ctx->act_bufs[idx], 0, aligned);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bn:gpu:cuda] activation zero failed idx=%d bytes=%zu: %s\n",
+                idx, aligned, cudaGetErrorString(err));
+        cudaFree(ctx->act_bufs[idx]);
+        ctx->act_bufs[idx] = NULL;
+        return -1;
+    }
     ctx->act_sizes[idx] = aligned;
     return 0;
 }
@@ -7535,6 +7627,11 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
     {
         size_t qkv_size = (size_t)(q_dim + 2 * c->kv_dim) * sizeof(float);
         size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);
+        if (c->full_attn_interval > 0 && c->n_experts > 0) {
+            size_t hybrid_q_size = (size_t)(4 * q_dim) * sizeof(float);
+            if (hybrid_q_size > gated_q_size)
+                gated_q_size = hybrid_q_size;
+        }
         sizes[BN_GPU_VALUE_QKV] = qkv_size > gated_q_size
             ? qkv_size
             : gated_q_size;
@@ -7682,6 +7779,8 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         return 0;
     if (buf->type != BN_GGUF_TENSOR_Q8_0 &&
         buf->type != BN_GGUF_TENSOR_Q5_0 &&
+        buf->type != BN_GGUF_TENSOR_BF16 &&
+        buf->type != BN_GGUF_TENSOR_Q3_K &&
         buf->type != BN_GGUF_TENSOR_Q4_K &&
         buf->type != BN_GGUF_TENSOR_Q5_K &&
         buf->type != BN_GGUF_TENSOR_Q6_K)
@@ -7739,13 +7838,21 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     }
     int threads = 256;
     int blocks = (int)((n + (size_t)threads - 1u) / (size_t)threads);
-    if (buf->type == BN_GGUF_TENSOR_Q8_0) {
+    if (buf->type == BN_GGUF_TENSOR_BF16) {
+        dequant_bf16_to_f16_kernel<<<blocks, threads>>>(
+            (__half *)buf->f16_data, (const uint16_t *)buf->data,
+            buf->rows, buf->cols);
+    } else if (buf->type == BN_GGUF_TENSOR_Q8_0) {
         dequant_q8_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ8_0 *)buf->data,
             buf->rows, buf->cols);
     } else if (buf->type == BN_GGUF_TENSOR_Q5_0) {
         dequant_q5_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5_0 *)buf->data,
+            buf->rows, buf->cols);
+    } else if (buf->type == BN_GGUF_TENSOR_Q3_K) {
+        dequant_q3k_to_f16_kernel<<<blocks, threads>>>(
+            (__half *)buf->f16_data, (const BnBlockQ3K *)buf->data,
             buf->rows, buf->cols);
     } else if (buf->type == BN_GGUF_TENSOR_Q4_K) {
         dequant_q4k_to_f16_kernel<<<blocks, threads>>>(
@@ -7787,6 +7894,86 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     return 0;
 }
 
+static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
+                                           const void *host_data) {
+    if (!buf || !host_data || !buf->data || buf->rows <= 0 ||
+        buf->cols <= 0 || (buf->cols % BN_QK_K) != 0)
+        return 0;
+    if (buf->type != BN_GGUF_TENSOR_IQ3_XXS &&
+        buf->type != BN_GGUF_TENSOR_IQ4_XS)
+        return 0;
+    if (getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
+        return 0;
+
+    size_t n = (size_t)buf->rows * (size_t)buf->cols;
+    size_t bytes = n * sizeof(uint16_t);
+    int max_mb = 128;
+    const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
+    if (max_env && *max_env)
+        max_mb = atoi(max_env);
+    if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
+        return 0;
+    size_t free_mem = 0;
+    size_t total_mem = 0;
+    if (cudaMemGetInfo(&free_mem, &total_mem) == cudaSuccess) {
+        int reserve_mb = cuda_env_int("BN_CUDA_CUBLAS_CACHE_RESERVE_MB", 4096);
+        size_t reserve = reserve_mb > 0
+            ? (size_t)reserve_mb * 1024u * 1024u : 0u;
+        if (free_mem <= bytes + reserve)
+            return 0;
+    }
+
+    uint16_t *h_f16 = (uint16_t *)malloc(bytes);
+    if (!h_f16)
+        return 0;
+    float tmp[BN_QK_K];
+    int blocks_per_row = buf->cols / BN_QK_K;
+    for (int r = 0; r < buf->rows; r++) {
+        for (int b = 0; b < blocks_per_row; b++) {
+            size_t block_idx = (size_t)r * (size_t)blocks_per_row + (size_t)b;
+            if (buf->type == BN_GGUF_TENSOR_IQ3_XXS) {
+                const BnBlockIQ3XXS *blocks =
+                    (const BnBlockIQ3XXS *)host_data;
+                bn_quant_dequant_iq3xxs(&blocks[block_idx], tmp);
+            } else {
+                const BnBlockIQ4XS *blocks =
+                    (const BnBlockIQ4XS *)host_data;
+                bn_quant_dequant_iq4xs(&blocks[block_idx], tmp);
+            }
+            size_t out = ((size_t)r * (size_t)buf->cols +
+                          (size_t)b * BN_QK_K);
+            for (int i = 0; i < BN_QK_K; i++)
+                h_f16[out + (size_t)i] = bn_fp32_to_fp16(tmp[i]);
+        }
+    }
+
+    cudaError_t err = cudaMalloc(&buf->f16_data, bytes);
+    if (err == cudaSuccess) {
+        err = cudaMemcpy(buf->f16_data, h_f16, bytes, cudaMemcpyHostToDevice);
+        if (err == cudaSuccess)
+            buf->f16_size = bytes;
+    }
+    free(h_f16);
+    if (err != cudaSuccess) {
+        if (buf->f16_data)
+            cudaFree(buf->f16_data);
+        buf->f16_data = NULL;
+        buf->f16_size = 0;
+        if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+            fprintf(stderr,
+                    "[bn:gpu:cuda] iq f16 cache skipped type=%d rows=%d "
+                    "cols=%d bytes=%zu: %s\n",
+                    buf->type, buf->rows, buf->cols, bytes,
+                    cudaGetErrorString(err));
+    } else if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE")) {
+        fprintf(stderr,
+                "[bn:gpu:cuda] iq f16 cache ready type=%d rows=%d cols=%d "
+                "bytes=%zu\n",
+                buf->type, buf->rows, buf->cols, bytes);
+    }
+    return 0;
+}
+
 static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
                                      int type, int rows, int cols,
                                      int create_aux_cache) {
@@ -7816,8 +8003,13 @@ static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
         free(buf);
         return NULL;
     }
-    if (create_aux_cache)
-        cuda_buffer_create_f16_cache(buf, create_aux_cache);
+    if (create_aux_cache) {
+        if (type == BN_GGUF_TENSOR_IQ3_XXS ||
+            type == BN_GGUF_TENSOR_IQ4_XS)
+            cuda_buffer_create_iq_f16_cache(buf, data);
+        else
+            cuda_buffer_create_f16_cache(buf, create_aux_cache);
+    }
     return buf;
 }
 
@@ -8390,7 +8582,15 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
     }
 
     int threads = 256;
-    if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
+    if ((type == BN_GGUF_TENSOR_Q3_K ||
+         type == BN_GGUF_TENSOR_IQ3_XXS ||
+         type == BN_GGUF_TENSOR_IQ4_XS) && w->f16_data) {
+        int warps = threads / 32;
+        int blocks = (rows + warps - 1) / warps;
+        f16_matvec_warp_kernel<<<blocks, threads>>>(
+            ctx->d_out, (const __half *)w->f16_data, ctx->d_x, NULL,
+            rows, cols, 0);
+    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
         getenv("BN_CUDA_ENABLE_Q5_MATVEC4")) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
@@ -11940,7 +12140,8 @@ static int cuda_prefill_ssm_layer(
                 }
             }
 
-            if (head_k_dim == 128 && head_v_dim == 128) {
+            if (head_k_dim == 128 && head_v_dim == 128 &&
+                getenv("BN_CUDA_DISABLE_SSM_DELTA_128_WARP") == NULL) {
                 ssm_delta_128_warp_kernel<<<dim3(num_v_heads, 32, 1),
                                             dim3(32, 4, 1), 0>>>(
                     cuda_act(ctx, BN_GPU_VALUE_SSM_STATE), out_t, qkv_t,
@@ -12323,6 +12524,46 @@ static int cuda_op_reads_buf(const BnGPUOp *op, int buf) {
     }
 }
 
+static void cuda_debug_scan_activation(BnCudaCtx *ctx, int buf,
+                                       const char *label, int op_index) {
+    if (!ctx || buf < 0 || buf >= BN_GPU_VALUE_COUNT || !ctx->act_bufs[buf])
+        return;
+    size_t n = ctx->act_sizes[buf] / sizeof(float);
+    if (n == 0) return;
+    if (cudaStreamSynchronize(ctx->exec_stream) != cudaSuccess)
+        return;
+    float *tmp = (float *)malloc(n * sizeof(float));
+    if (!tmp) return;
+    cudaError_t err = cudaMemcpy(tmp, ctx->act_bufs[buf], n * sizeof(float),
+                                 cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        free(tmp);
+        return;
+    }
+    int bad = 0;
+    size_t first_bad = 0;
+    float min_v = INFINITY;
+    float max_v = -INFINITY;
+    for (size_t i = 0; i < n; i++) {
+        float v = tmp[i];
+        if (!isfinite(v)) {
+            if (bad == 0) first_bad = i;
+            bad++;
+            continue;
+        }
+        if (v < min_v) min_v = v;
+        if (v > max_v) max_v = v;
+    }
+    if (bad || getenv("BN_CUDA_DEBUG_NAN_VERBOSE")) {
+        fprintf(stderr,
+                "[bn:gpu:cuda:nan] op=%d %s buf=%d n=%zu bad=%d first=%zu "
+                "min=%.9g max=%.9g first_v=%.9g\n",
+                op_index, label ? label : "?", buf, n, bad, first_bad,
+                min_v, max_v, bad ? tmp[first_bad] : 0.0f);
+    }
+    free(tmp);
+}
+
 static int cuda_ops_look_like_decode_graph(const BnGPUOp *ops, int n_ops,
                                            int readback_buf,
                                            const float *out_host,
@@ -12432,6 +12673,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int debug_exec_fail = getenv("BN_CUDA_DEBUG_EXEC_FAIL") != NULL;
     const int debug_sync_each_op =
         getenv("BN_CUDA_DEBUG_SYNC_EACH_OP") != NULL;
+    const int debug_nan = getenv("BN_CUDA_DEBUG_NAN") != NULL;
     static unsigned long long profile_calls = 0;
     static unsigned long long profile_ops[BN_CUDA_PROFILE_MAX] = {0};
     static double profile_ms[BN_CUDA_PROFILE_MAX] = {0.0};
@@ -12462,7 +12704,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
 
     if (getenv("BN_CUDA_DUMP_OPS") && n_ops > 0) {
         static int dumped = 0;
-        if (!dumped) {
+        if (!dumped || getenv("BN_CUDA_DUMP_OPS_EVERY")) {
             int dump_limit = cuda_env_int("BN_CUDA_DUMP_OPS_LIMIT", 256);
             if (dump_limit <= 0 || dump_limit > n_ops) dump_limit = n_ops;
             int limit = n_ops < dump_limit ? n_ops : dump_limit;
@@ -12572,15 +12814,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         return -1;
     }
     memset(skip_ops, 0, (size_t)n_ops);
+    int moe_graph = cuda_ops_have_moe(ops, n_ops);
+    int q8_moe_graph = cuda_ops_have_q8_moe_routed_ffn(ops, n_ops);
     int default_graph_exec =
         getenv("BN_CUDA_DISABLE_GRAPH_EXEC") == NULL &&
         getenv("BN_CUDA_ENABLE_MOE_FFN") == NULL &&
-        !cuda_ops_have_q8_moe_routed_ffn(ops, n_ops) &&
+        !moe_graph &&
+        !q8_moe_graph &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
     int q8_preq_logits_default = !disable_q8_preq_logits;
-    int moe_graph = cuda_ops_have_moe(ops, n_ops);
-    int q8_moe_graph = cuda_ops_have_q8_moe_routed_ffn(ops, n_ops);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_building = 0;
@@ -12749,8 +12992,17 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             size_t out_offset = (size_t)op->p[5];
             if (!w || !w->data || !in || !out ||
                 !cuda_type_supported(op->type) ||
-                op->rows <= 0 || op->cols <= 0)
+                op->rows <= 0 || op->cols <= 0) {
+                if (debug_exec_fail) {
+                    fprintf(stderr,
+                            "[bn:gpu:cuda:matvec-invalid] w=%p wdata=%p "
+                            "in=%p out=%p type=%d supported=%d\n",
+                            (void *)w, w ? w->data : NULL, (void *)in,
+                            (void *)out, op->type,
+                            cuda_type_supported(op->type));
+                }
                 BN_CUDA_EXEC_FAIL("matvec invalid args");
+            }
             if (next && i + 2 < n_ops &&
                 next->op_code == BN_GPU_CODE_BIAS_ADD &&
                 next->buf_in == op->buf_out &&
@@ -12862,6 +13114,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC") != NULL ||
                 (getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC") == NULL &&
                  op->rows <= 2048 && op->cols >= 8192);
+            if (!is_logits_op && w->f16_data && out_offset == 0 &&
+                bias == NULL && bias_idx < 0 &&
+                ((op->type == BN_GGUF_TENSOR_Q8_0 && op->cols <= 2048) ||
+                 op->type == BN_GGUF_TENSOR_Q3_K ||
+                 op->type == BN_GGUF_TENSOR_IQ3_XXS ||
+                 op->type == BN_GGUF_TENSOR_IQ4_XS)) {
+                int q_threads = 256;
+                int q_warps = q_threads / 32;
+                int q_blocks = (op->rows + q_warps - 1) / q_warps;
+                BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
+                    f16_matvec_warp_kernel, q_blocks,
+                    q_threads, 0, out, (const __half *)w->f16_data, in,
+                    (const float *)NULL, op->rows, op->cols, out_offset);
+                break;
+            }
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 op->type == BN_GGUF_TENSOR_Q6_K && use_f16_q6k_matvec) {
@@ -14422,6 +14689,53 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             BN_CUDA_EXEC_FAIL("unsupported op");
         }
 #undef BN_CUDA_EXEC_FAIL
+        if (debug_nan) {
+            switch (op->op_code) {
+            case BN_GPU_CODE_MATVEC:
+            case BN_GPU_CODE_MATVEC_SPLIT:
+            case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
+            case BN_GPU_CODE_Q8_MATVEC_SPLIT:
+            case BN_GPU_CODE_Q5K_MATVEC_SPLIT:
+            case BN_GPU_CODE_SILU_GATE:
+            case BN_GPU_CODE_RELU2_GATE:
+            case BN_GPU_CODE_SIGMOID_GATE:
+            case BN_GPU_CODE_WEIGHTED_ADD:
+            case BN_GPU_CODE_WEIGHTED_ADD_SIGMOID:
+            case BN_GPU_CODE_SSM_CONV_SILU:
+            case BN_GPU_CODE_SSM_L2NORM:
+            case BN_GPU_CODE_SSM_ALPHA_BETA:
+            case BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT:
+            case BN_GPU_CODE_SSM_DELTA:
+            case BN_GPU_CODE_SSM_GATE:
+                if (op->buf_out >= 0)
+                    cuda_debug_scan_activation(ctx, op->buf_out,
+                                               cuda_op_name(op->op_code), i);
+                if (op->buf_aux >= 0 &&
+                    op->op_code != BN_GPU_CODE_SSM_L2NORM &&
+                    op->op_code != BN_GPU_CODE_SSM_GATE)
+                    cuda_debug_scan_activation(ctx, op->buf_aux,
+                                               cuda_op_name(op->op_code), i);
+                if (op->op_code == BN_GPU_CODE_SSM_CONV_SILU ||
+                    op->op_code == BN_GPU_CODE_SSM_L2NORM ||
+                    op->op_code == BN_GPU_CODE_SILU_GATE ||
+                    op->op_code == BN_GPU_CODE_RELU2_GATE ||
+                    op->op_code == BN_GPU_CODE_SIGMOID_GATE ||
+                    op->op_code == BN_GPU_CODE_WEIGHTED_ADD ||
+                    op->op_code == BN_GPU_CODE_WEIGHTED_ADD_SIGMOID)
+                    cuda_debug_scan_activation(ctx, op->buf_in,
+                                               cuda_op_name(op->op_code), i);
+                if (op->op_code == BN_GPU_CODE_SSM_ALPHA_BETA ||
+                    op->op_code == BN_GPU_CODE_SSM_ALPHA_BETA_SPLIT) {
+                    cuda_debug_scan_activation(ctx, BN_GPU_VALUE_SSM_ALPHA,
+                                               cuda_op_name(op->op_code), i);
+                    cuda_debug_scan_activation(ctx, BN_GPU_VALUE_SSM_BETA,
+                                               cuda_op_name(op->op_code), i);
+                }
+                break;
+            default:
+                break;
+            }
+        }
         exec_launches++;
         if (profile_code >= 0 && profile_code < BN_CUDA_PROFILE_MAX)
             exec_launch_by_code[profile_code]++;

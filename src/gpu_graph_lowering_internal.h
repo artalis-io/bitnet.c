@@ -5,6 +5,8 @@
 #include "gpu_quant_lowering_internal.h"
 #include "gpu_shader_ir_internal.h"
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define BN_GPU_IR_NO_SHADER_SLOT (-1)
 
@@ -205,8 +207,19 @@ static inline int bn_gpu_ir_lower_one_to_shader(
                 ? bn_gpu_quant_split_op_code(weight->tensor_type)
                 : BN_GPU_CODE_UNKNOWN;
             if (in0 < 0 || out0 < 0 || out1 < 0 || !weight ||
-                !weight->weight_buf || op_code == BN_GPU_CODE_UNKNOWN)
+                !weight->weight_buf || op_code == BN_GPU_CODE_UNKNOWN) {
+                if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+                    fprintf(stderr,
+                            "[gpu:fallback] matvec_split lower invalid "
+                            "in0=%d out0=%d out1=%d out2=%d weight=%p "
+                            "wbuf=%p type=%d op_code=%d n_outputs=%d\n",
+                            in0, out0, out1, out2, (const void *)weight,
+                            weight ? weight->weight_buf : NULL,
+                            weight ? weight->tensor_type : -1, op_code,
+                            ir_op->n_outputs);
+                }
                 return -1;
+            }
             shader_op->op_kind = BN_GPU_OP_MATVEC;
             shader_op->op_code = op_code;
             shader_op->type = weight->tensor_type;
@@ -406,8 +419,21 @@ static inline int bn_gpu_value_graph_lower_to_shader(
     int n = 0;
     for (int i = 0; i < graph->n_ops; i++) {
         if (bn_gpu_ir_lower_one_to_shader(graph, map, &graph->ops[i],
-                                          &ops[n]) != 0)
+                                          &ops[n]) != 0) {
+            if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+                const BnGPUIROp *op = &graph->ops[i];
+                fprintf(stderr,
+                        "[gpu:fallback] lower op failed i=%d kind=%d "
+                        "label=%s in0=%d in1=%d out0=%d rows=%d cols=%d "
+                        "aux0=%d aux1=%d\n",
+                        i, op->kind, op->label ? op->label : "",
+                        op->n_inputs > 0 ? op->inputs[0] : -1,
+                        op->n_inputs > 1 ? op->inputs[1] : -1,
+                        op->n_outputs > 0 ? op->outputs[0] : -1,
+                        op->rows, op->cols, op->aux0, op->aux1);
+            }
             return -1;
+        }
         n++;
     }
     *n_ops = n;

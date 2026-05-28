@@ -347,9 +347,13 @@ static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
         return 0;
     if (w->type != BN_GGUF_TENSOR_Q8_0 &&
         w->type != BN_GGUF_TENSOR_Q5_0 &&
+        w->type != BN_GGUF_TENSOR_BF16 &&
+        w->type != BN_GGUF_TENSOR_Q3_K &&
         w->type != BN_GGUF_TENSOR_Q4_K &&
         w->type != BN_GGUF_TENSOR_Q5_K &&
-        w->type != BN_GGUF_TENSOR_Q6_K)
+        w->type != BN_GGUF_TENSOR_Q6_K &&
+        w->type != BN_GGUF_TENSOR_IQ3_XXS &&
+        w->type != BN_GGUF_TENSOR_IQ4_XS)
         return 0;
     int q6_as_f16 = w->type == BN_GGUF_TENSOR_Q6_K &&
                     getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
