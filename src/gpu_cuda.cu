@@ -9229,18 +9229,32 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
             return -1;
         }
 
+        int identity_tokens = count == n_tokens;
+        if (identity_tokens) {
+            for (int i = 0; i < count; i++) {
+                if (token_ids[expert_offsets[e] + i] != i) {
+                    identity_tokens = 0;
+                    break;
+                }
+            }
+        }
+
         int gather_total = count * dim;
-        moe_gather_kernel<<<(gather_total + threads - 1) / threads,
-                            threads>>>(
-            ctx->d_x, d_full_x, d_token_ids, expert_offsets[e], count, dim);
-        err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            fprintf(stderr, "[bn:gpu:cuda] moe ffn gather failed: %s\n",
-                    cudaGetErrorString(err));
-            return -1;
+        const float *expert_x = d_full_x;
+        if (!identity_tokens) {
+            moe_gather_kernel<<<(gather_total + threads - 1) / threads,
+                                threads>>>(
+                ctx->d_x, d_full_x, d_token_ids, expert_offsets[e], count, dim);
+            err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                fprintf(stderr, "[bn:gpu:cuda] moe ffn gather failed: %s\n",
+                        cudaGetErrorString(err));
+                return -1;
+            }
+            expert_x = ctx->d_x;
         }
         if (cuda_dense_ffn_batch_device(ctx, ctx->d_out, gate, up, down,
-                                        ctx->d_x, count, dim, hidden_dim,
+                                        expert_x, count, dim, hidden_dim,
                                         gate_type, up_type, down_type,
                                         act_type) != 0) {
             return -1;
