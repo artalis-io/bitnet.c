@@ -8267,7 +8267,7 @@ static int cuda_cublas_matmul_f16_preconverted(BnCudaCtx *ctx, float *d_out,
         d_x_f16, CUDA_R_16F, cols,
         &beta,
         d_out, CUDA_R_32F, rows,
-        CUDA_R_32F,
+        CUBLAS_COMPUTE_32F_FAST_16F,
         CUBLAS_GEMM_DEFAULT_TENSOR_OP);
     if (st != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[bn:gpu:cuda] cublas matmul failed: status %d\n",
@@ -8442,7 +8442,8 @@ static int cuda_moe_cublas_grouped_prefill(
         (const void *const *)d_gate_a, CUDA_R_16F, dim,
         (const void *const *)d_gate_b, CUDA_R_16F, dim,
         &beta, (void *const *)d_gate_c, CUDA_R_32F, hidden_dim,
-        n_active, CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+        n_active, CUBLAS_COMPUTE_32F_FAST_16F,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP);
     if (st == CUBLAS_STATUS_SUCCESS) {
         st = cublasGemmBatchedEx(
             ctx->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
@@ -8450,7 +8451,8 @@ static int cuda_moe_cublas_grouped_prefill(
             (const void *const *)d_up_a, CUDA_R_16F, dim,
             (const void *const *)d_up_b, CUDA_R_16F, dim,
             &beta, (void *const *)d_up_c, CUDA_R_32F, hidden_dim,
-            n_active, CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+            n_active, CUBLAS_COMPUTE_32F_FAST_16F,
+            CUBLAS_GEMM_DEFAULT_TENSOR_OP);
     }
     if (st != CUBLAS_STATUS_SUCCESS)
         return -1;
@@ -8470,7 +8472,8 @@ static int cuda_moe_cublas_grouped_prefill(
         (const void *const *)d_down_a, CUDA_R_16F, hidden_dim,
         (const void *const *)d_down_b, CUDA_R_16F, hidden_dim,
         &beta, (void *const *)d_down_c, CUDA_R_32F, dim,
-        n_active, CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+        n_active, CUBLAS_COMPUTE_32F_FAST_16F,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP);
     if (st != CUBLAS_STATUS_SUCCESS)
         return -1;
 

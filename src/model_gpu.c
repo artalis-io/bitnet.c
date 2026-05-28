@@ -35,13 +35,6 @@ void bn_model_set_gpu_disabled(BnModel *model, int disabled) {
     bn_backend_model_set_gpu_disabled(bn_model_backend(model), disabled);
 }
 
-static void *upload_qweight(BnGPUBackend *gpu, BnQWeight *w) {
-    if (!w->data) return NULL;
-    size_t sz = bn_qweight_data_size(w);
-    if (sz == 0) return NULL;
-    return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
-}
-
 static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     if (!w->data) return NULL;
     size_t sz = bn_qweight_data_size(w);
@@ -54,10 +47,23 @@ static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
 }
 
-static int upload_qweight_owned(BnModel *model, BnBackendModel *backend,
-                                BnGPUBackend *gpu, BnQWeight *w) {
+static void *upload_qweight_mode(BnGPUBackend *gpu, BnQWeight *w,
+                                 int quant_only) {
+    if (!w->data) return NULL;
+    size_t sz = bn_qweight_data_size(w);
+    if (sz == 0) return NULL;
+    if (quant_only && gpu->buffer_create_quant_only)
+        return gpu->buffer_create_quant_only(gpu->ctx, w->data, sz, w->type,
+                                             w->rows, w->cols);
+    return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows,
+                              w->cols);
+}
+
+static int upload_qweight_owned_mode(BnModel *model, BnBackendModel *backend,
+                                     BnGPUBackend *gpu, BnQWeight *w,
+                                     int quant_only) {
     (void)model;
-    void *handle = upload_qweight(gpu, w);
+    void *handle = upload_qweight_mode(gpu, w, quant_only);
     if (!w->data) return 0;
     if (!handle) return -1;
     if (bn_backend_model_register_qweight(backend, w, handle) != 0) {
@@ -277,6 +283,11 @@ static size_t qweight_pair_bytes(const BnQWeight *a, const BnQWeight *b) {
     if (a_sz > SIZE_MAX - b_sz)
         return SIZE_MAX;
     return a_sz + b_sz;
+}
+
+static int qweight_pair_stackable(const BnQWeight *a, const BnQWeight *b) {
+    return a && b && a->data && b->data && a->type == b->type &&
+           a->cols == b->cols && a->rows > 0 && b->rows > 0;
 }
 
 static size_t qweight_triple_bytes(const BnQWeight *a, const BnQWeight *b,
@@ -702,11 +713,27 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
             &lw->ssm.wqkv, &lw->ssm.wz,
             &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta, &lw->ssm.ssm_out,
-            &lw->shared.shared_gate, &lw->shared.shared_up, &lw->shared.shared_down,
+            &lw->shared.shared_gate, &lw->shared.shared_up,
+            &lw->shared.shared_down,
         };
+        int quant_only_individual[15] = {0};
+        if (gpu->kind == BN_GPU_BACKEND_CUDA && gpu->buffer_create_quant_only &&
+            getenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE") == NULL) {
+            if (lw->ssm.wqkv.data &&
+                qweight_pair_stackable(&lw->ffn.ffn_gate,
+                                       &lw->ffn.ffn_up)) {
+                quant_only_individual[4] = 1;
+                quant_only_individual[5] = 1;
+            }
+            if (qweight_pair_stackable(&lw->ssm.wqkv, &lw->ssm.wz)) {
+                quant_only_individual[7] = 1;
+                quant_only_individual[8] = 1;
+            }
+        }
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (upload_qweight_owned(model, backend, gpu, weights[i]) != 0) {
+            if (upload_qweight_owned_mode(model, backend, gpu, weights[i],
+                                          quant_only_individual[i]) != 0) {
                 bn_model_release_gpu(model);
                 return -1;
             }
