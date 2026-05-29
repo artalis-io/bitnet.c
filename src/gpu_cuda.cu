@@ -4263,7 +4263,8 @@ static __global__ void moe_router_logits_batch_warp_kernel(
 static __global__ void moe_route_topk_kernel(float *route,
                                              const float *logits,
                                              int n_experts,
-                                             int k) {
+                                             int k,
+                                             int norm_topk) {
     if (threadIdx.x != 0 || blockIdx.x != 0) return;
     if (n_experts <= 0 || k <= 0) return;
     if (k > BN_MAX_MOE_K) k = BN_MAX_MOE_K;
@@ -4296,11 +4297,25 @@ static __global__ void moe_route_topk_kernel(float *route,
     for (int i = 1; i < k; i++)
         if (selected_logits[i] > max_selected)
             max_selected = selected_logits[i];
+    float max_all = max_selected;
+    if (!norm_topk) {
+        max_all = logits[0];
+        for (int e = 1; e < n_experts; e++)
+            if (logits[e] > max_all)
+                max_all = logits[e];
+    }
     float sum = 0.0f;
-    for (int i = 0; i < k; i++) {
-        float w = expf(selected_logits[i] - max_selected);
-        route[i] = w;
-        sum += w;
+    if (norm_topk) {
+        for (int i = 0; i < k; i++) {
+            float w = expf(selected_logits[i] - max_selected);
+            route[i] = w;
+            sum += w;
+        }
+    } else {
+        for (int e = 0; e < n_experts; e++)
+            sum += expf(logits[e] - max_all);
+        for (int i = 0; i < k; i++)
+            route[i] = expf(selected_logits[i] - max_all);
     }
     if (sum > 0.0f) {
         for (int i = 0; i < k; i++)
@@ -4413,7 +4428,8 @@ static __global__ void moe_route_fill_slots_kernel(
 static __global__ void moe_route_topk_warp_kernel(float *route,
                                                   const float *logits,
                                                   int n_experts,
-                                                  int k) {
+                                                  int k,
+                                                  int norm_topk) {
     int lane = threadIdx.x & 31;
     if (blockIdx.x != 0 || threadIdx.x >= 32) return;
     if (n_experts <= 0 || k <= 0) return;
@@ -4457,16 +4473,41 @@ static __global__ void moe_route_topk_warp_kernel(float *route,
         selected_logits[i] = best_val;
     }
 
-    if (lane != 0) return;
     float max_selected = selected_logits[0];
     for (int i = 1; i < k; i++)
         if (selected_logits[i] > max_selected)
             max_selected = selected_logits[i];
+    float max_all = max_selected;
+    if (!norm_topk) {
+        float local_max = -INFINITY;
+        for (int e = lane; e < n_experts; e += 32)
+            if (logits[e] > local_max)
+                local_max = logits[e];
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            float other = __shfl_down_sync(0xffffffffu, local_max, offset);
+            if (other > local_max)
+                local_max = other;
+        }
+        max_all = __shfl_sync(0xffffffffu, local_max, 0);
+    }
     float sum = 0.0f;
-    for (int i = 0; i < k; i++) {
-        float w = expf(selected_logits[i] - max_selected);
-        route[i] = w;
-        sum += w;
+    if (norm_topk) {
+        if (lane != 0) return;
+        for (int i = 0; i < k; i++) {
+            float w = expf(selected_logits[i] - max_selected);
+            route[i] = w;
+            sum += w;
+        }
+    } else {
+        float local_sum = 0.0f;
+        for (int e = lane; e < n_experts; e += 32)
+            local_sum += expf(logits[e] - max_all);
+        for (int offset = 16; offset > 0; offset >>= 1)
+            local_sum += __shfl_down_sync(0xffffffffu, local_sum, offset);
+        sum = __shfl_sync(0xffffffffu, local_sum, 0);
+        if (lane != 0) return;
+        for (int i = 0; i < k; i++)
+            route[i] = expf(selected_logits[i] - max_all);
     }
     if (sum > 0.0f) {
         for (int i = 0; i < k; i++)
@@ -11027,13 +11068,18 @@ static int cuda_moe_route_routed_ffn_batch(
     err = cudaGetLastError();
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(5);
 moe_route_routed_readback:
-    if (err == cudaSuccess)
-        err = cudaMemcpy(out, d_full_out, full_bytes, cudaMemcpyDeviceToHost);
+    if (err == cudaSuccess) {
+        if (cuda_ensure_host_out(ctx, full_bytes) != 0)
+            return -1;
+        err = cudaMemcpy(ctx->h_out, d_full_out, full_bytes,
+                         cudaMemcpyDeviceToHost);
+    }
     if (err != cudaSuccess) {
         fprintf(stderr, "[bn:gpu:cuda] routed moe combined down failed: %s\n",
                 cudaGetErrorString(err));
         return -1;
     }
+    memcpy(out, ctx->h_out, full_bytes);
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(6);
     if (profile_prefill_moe) {
         profile_calls++;
@@ -14137,7 +14183,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     threads, (size_t)threads * sizeof(float),
                     logits, (const float *)w->data, in, n_experts, dim);
                 BN_CUDA_LAUNCH(ctx, moe_route_topk_kernel, 1, 1, 0,
-                    route, logits, n_experts, k);
+                    route, logits, n_experts, k,
+                    (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0);
             } else {
                 int warps = threads / 32;
                 int blocks = (n_experts + warps - 1) / warps;
@@ -14147,10 +14194,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (n_experts <= 256 &&
                     !getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP_TOPK")) {
                     BN_CUDA_LAUNCH(ctx, moe_route_topk_warp_kernel, 1, 32, 0,
-                        route, logits, n_experts, k);
+                        route, logits, n_experts, k,
+                        (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0);
                 } else {
                     BN_CUDA_LAUNCH(ctx, moe_route_topk_kernel, 1, 1, 0,
-                        route, logits, n_experts, k);
+                        route, logits, n_experts, k,
+                        (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0);
                 }
             }
             break;

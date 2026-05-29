@@ -36,7 +36,7 @@ static void test_moe_route(void) {
     for (int e = 0; e < n_experts; e++)
         router_w[e * dim + 0] = (float)e;
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k, NULL);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 1, 0.0f, NULL);
 
     // Top-3 should be experts 7, 6, 5 (highest logits)
     assert(ms.expert_indices[0] == 7);
@@ -54,6 +54,13 @@ static void test_moe_route(void) {
     // Weight[0] (expert 7) should be largest
     assert(ms.expert_weights[0] > ms.expert_weights[1]);
     assert(ms.expert_weights[1] > ms.expert_weights[2]);
+
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 0, 2.0f, NULL);
+    wsum = 0.0f;
+    for (int i = 0; i < k; i++)
+        wsum += ms.expert_weights[i];
+    assert(wsum < 2.0f);
+    assert(wsum > 1.0f);
 
     printf("PASSED\n");
 }
@@ -213,7 +220,7 @@ static void test_route_uniform(void) {
     float x[2] = {1.0f, 0.0f};
     float router_w[8] = {1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f};
 
-    bn_moe_route(&ms, x, router_w, dim, n_experts, k, NULL);
+    bn_moe_route(&ms, x, router_w, dim, n_experts, k, 1, 0.0f, NULL);
 
     // All logits equal → after softmax all 0.25
     // Top-2 picks should still have normalized weights summing to 1.0

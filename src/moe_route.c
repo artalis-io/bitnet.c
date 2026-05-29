@@ -99,7 +99,8 @@ static void moe_router_range(void *ctx, int start, int end) {
 
 // Router: SIMD matvec -> softmax -> top-K selection
 void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
-                  int dim, int n_experts, int k, BnThreadPool *pool) {
+                  int dim, int n_experts, int k, int norm_topk_prob,
+                  float expert_weights_scale, BnThreadPool *pool) {
     // Router matvec: vectorized + thread-dispatched
     BnRouterCtx rctx = { ms->router_logits, router_w, x, dim };
     BnTPTask rtask = { moe_router_range, &rctx, n_experts };
@@ -133,13 +134,17 @@ void bn_moe_route(BnMoEState *ms, const float *x, const float *router_w,
         ms->router_logits[best] = -1.0f;
     }
 
-    // Normalize selected weights to sum to 1.0
-    float wsum = 0.0f;
-    for (int i = 0; i < k; i++)
-        wsum += ms->expert_weights[i];
-    if (wsum > 0.0f) {
+    if (norm_topk_prob) {
+        float wsum = 0.0f;
         for (int i = 0; i < k; i++)
-            ms->expert_weights[i] /= wsum;
+            wsum += ms->expert_weights[i];
+        if (wsum > 0.0f) {
+            for (int i = 0; i < k; i++)
+                ms->expert_weights[i] /= wsum;
+        }
+    }
+    if (expert_weights_scale != 0.0f && expert_weights_scale != 1.0f) {
+        for (int i = 0; i < k; i++)
+            ms->expert_weights[i] *= expert_weights_scale;
     }
 }
-

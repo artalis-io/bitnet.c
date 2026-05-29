@@ -1113,6 +1113,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q8_0 &&
                 lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q8_0;
             uint32_t moe_route_flags = 0u;
+            if (!c->moe_norm_topk_prob)
+                moe_route_flags |= BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
             int cpu_route_resident_ffn =
                 !gpu_route_topk && moe_routed_q8 && c->n_experts > 2 &&
                 !getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT");
@@ -1161,6 +1163,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_moe_route(sess->moe_state, s->xb,
                                  lw->moe.router_weight, dim,
                                  c->n_experts, c->n_experts_active,
+                                 c->moe_norm_topk_prob,
+                                 c->moe_expert_weights_scale,
                                  bn_model_pool(m));
                     if (gpu_debug_compute_moe_cpu_from_xb(
                             m, sess, lw, dim, s->x, s->xb, moe_cpu_x) != 0) {
@@ -1179,6 +1183,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_moe_route(sess->moe_state, s->xb,
                                  lw->moe.router_weight, dim,
                                  c->n_experts, c->n_experts_active,
+                                 c->moe_norm_topk_prob,
+                                 c->moe_expert_weights_scale,
                                  bn_model_pool(m));
                     float route_tmp[BN_MAX_MOE_K * 2];
                     int K = c->n_experts_active;
@@ -1366,6 +1372,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             if (!did_gpu_route_topk) {
                 bn_moe_route(sess->moe_state, s->xb, lw->moe.router_weight,
                              dim, c->n_experts, c->n_experts_active,
+                             c->moe_norm_topk_prob,
+                             c->moe_expert_weights_scale,
                              bn_model_pool(m));
             }
             double moe_prof_t3 = getenv("BN_GPU_MOE_ROUTE_PROFILE")

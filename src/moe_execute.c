@@ -103,7 +103,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
     // 2. Route: select top-K experts (SIMD + threaded)
     t0 = bn_moe_time_ms();
-    bn_moe_route(ms, s->xb, lw->moe.router_weight, dim, c->n_experts, K, bn_model_pool(m));
+    bn_moe_route(ms, s->xb, lw->moe.router_weight, dim, c->n_experts, K,
+                 c->moe_norm_topk_prob, c->moe_expert_weights_scale,
+                 bn_model_pool(m));
     ms->stats.route_time_ms += bn_moe_time_ms() - t0;
 
     // 3. Zero output accumulator

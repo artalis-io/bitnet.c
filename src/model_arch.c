@@ -172,6 +172,9 @@ void bn_model_arch_load_moe_config(BnConfig *c,
     c->n_experts_active = (int)bn_gguf_get_u32(f, key);
 
     if (c->n_experts <= 0) return;
+    c->moe_norm_topk_prob = strcmp(prefix, "qwen2moe") != 0;
+    snprintf(key, sizeof(key), "%s.expert_weights_scale", prefix);
+    c->moe_expert_weights_scale = bn_gguf_get_f32(f, key);
 
     snprintf(key, sizeof(key), "%s.expert_feed_forward_length", prefix);
     c->moe_intermediate_size = (int)bn_gguf_get_u32(f, key);

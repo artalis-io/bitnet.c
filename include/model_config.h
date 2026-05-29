@@ -37,6 +37,8 @@ typedef struct {
     int n_experts;              // total experts per layer (e.g. 256 for Qwen3.5-35B)
     int n_experts_active;       // top-K active per token (e.g. 8)
     int moe_intermediate_size;  // per-expert hidden dim
+    int moe_norm_topk_prob;     // normalize selected expert weights to sum 1
+    float moe_expert_weights_scale; // optional post-routing expert weight scale
     int has_shared_expert;      // 1 if shared expert exists
     int shared_expert_intermediate_size; // shared expert hidden dim
     // TurboQuant KV compression (0=disabled, 2-4 = bits)

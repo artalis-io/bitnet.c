@@ -102,6 +102,7 @@ typedef struct BnGPUOp {
 } BnGPUOp;
 
 #define BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK 1u
+#define BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM 2u
 
 static inline BnGPUOpKind bn_gpu_op_kind_from_code(int code) {
     switch (code) {
