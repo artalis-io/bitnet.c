@@ -13102,6 +13102,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     if (graph_exec) {
         int reserve_q8_1_cols = 0;
         int reserve_q8_k_cols = 0;
+        int reserve_q8_k_batch = 1;
         for (int ri = 0; ri < n_ops; ri++) {
             const BnGPUOp *rop = &ops[ri];
             if (rop->op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT ||
@@ -13136,13 +13137,36 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (rop->cols > reserve_q8_1_cols)
                         reserve_q8_1_cols = rop->cols;
                 }
+            } else if (rop->op_code == BN_GPU_CODE_MOE_ROUTED_FFN) {
+                int hidden = (int)rop->p[0];
+                int k = (int)rop->p[2];
+                int down_type = (int)rop->p[3];
+                if (hidden > 0 && k > 0) {
+                    int mid_elems = hidden * k;
+                    if (rop->type == BN_GGUF_TENSOR_Q8_0) {
+                        int elems = mid_elems > rop->cols ? mid_elems : rop->cols;
+                        if (elems > reserve_q8_1_cols)
+                            reserve_q8_1_cols = elems;
+                    } else if (rop->type == BN_GGUF_TENSOR_Q4_K) {
+                        if (rop->cols > reserve_q8_1_cols)
+                            reserve_q8_1_cols = rop->cols;
+                        if (down_type == BN_GGUF_TENSOR_Q6_K ||
+                            down_type == BN_GGUF_TENSOR_Q4_K) {
+                            if (hidden > reserve_q8_k_cols)
+                                reserve_q8_k_cols = hidden;
+                            if (k > reserve_q8_k_batch)
+                                reserve_q8_k_batch = k;
+                        }
+                    }
+                }
             }
         }
         if (reserve_q8_1_cols > 0 &&
             cuda_ensure_q8_1(ctx, reserve_q8_1_cols) != 0)
             return -1;
         if (reserve_q8_k_cols > 0 &&
-            cuda_ensure_q8_k(ctx, reserve_q8_k_cols, 1) != 0)
+            cuda_ensure_q8_k(ctx, reserve_q8_k_cols,
+                             reserve_q8_k_batch) != 0)
             return -1;
     }
     if (graph_exec) {
@@ -13340,7 +13364,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                         BN_CUDA_EXEC_FAIL("q6k/q4k pair q8k scratch alloc failed");
                     BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                    BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                         dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, op->cols, 1);
                     int pair_threads = 256;
@@ -13463,7 +13487,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                         BN_CUDA_EXEC_FAIL("q4k pair q8k scratch alloc failed");
                     BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                    BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                    BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                         dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, op->cols, 1);
                     int q4_threads = 256;
@@ -13501,7 +13525,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                     BN_CUDA_EXEC_FAIL("q6k q8k scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                     dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                     xq, in, op->cols, 1);
                 int q6_threads = 256;
@@ -13548,7 +13572,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                     BN_CUDA_EXEC_FAIL("q4k q8k scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                     dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                     xq, in, op->cols, 1);
                 int q4_threads = 256;
@@ -13575,7 +13599,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q4k q8_1 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
                 if (enable_q4k_4warp && op->cols <= 8192) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
@@ -13599,7 +13623,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q5k q8_1 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
@@ -13616,7 +13640,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q8 preq scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
                 int q8_threads = 256;
                 int blocks = (op->rows + (q8_threads / 32) - 1) /
@@ -13754,7 +13778,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             BN_CUDA_EXEC_FAIL("qkv mixed q8 scratch alloc failed");
                         BnCudaBlockQ8_1 *xq =
                             (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                        BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                             (cols + 31) / 32, 32, 0, xq, in, cols);
                         xq_mixed = xq;
                     }
@@ -13841,7 +13865,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q4k split q8 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q4_threads = 256;
                 int warps = q4_threads / 32;
@@ -13937,7 +13961,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q5k split q8 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
@@ -13953,7 +13977,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_EXEC_FAIL("q8 split q8 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q8_threads = 256;
                 int warps = q8_threads / 32;
@@ -14013,7 +14037,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                        getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST") != NULL) {
                 if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                     dim3(cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                     xq, in, cols, 1);
                 int q4_gateup_threads = 256;
@@ -14039,7 +14063,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 if (enable_q4k_4warp && cols <= 4096 &&
                     getenv("BN_CUDA_DISABLE_Q4K_GATEUP_2WARP") == NULL) {
@@ -14069,7 +14093,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q5_gateup_threads = 256;
                 int warps = q5_gateup_threads / 32;
@@ -14185,7 +14209,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             return -1;
                         BnCudaBlockQ8_1 *xq =
                             (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                        BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                             (dim + 31) / 32, 32, 0, xq, in, dim);
                         BN_CUDA_LAUNCH(ctx,
                             moe_q8_0_gateup_routed_mid_q8_1_kernel,
@@ -14195,7 +14219,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             hidden, dim, n_experts, k);
                         BnCudaBlockQ8_1 *mid_q =
                             (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                        BN_CUDA_LAUNCH(ctx, quantize_q8_1_batch_kernel,
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_batch_kernel,
                             dim3(hidden / 32, k, 1), 32, 0, mid_q, mid,
                             hidden, k);
                         BN_CUDA_LAUNCH(ctx,
@@ -14233,7 +14257,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (use_q4k_q8k_dot) {
                         if (cuda_ensure_q8_k(ctx, dim, 1) != 0) return -1;
                         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                        BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                             dim3(dim / BN_QK_K, 1, 1), BN_QK_K, 0,
                             xq, in, dim, 1);
                         if (getenv("BN_CUDA_DISABLE_MOE_Q4K_GATEUP_4ROW")) {
@@ -14258,7 +14282,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         if (cuda_ensure_q8_1(ctx, dim) != 0) return -1;
                         BnCudaBlockQ8_1 *xq =
                             (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                        BN_CUDA_LAUNCH(ctx, quantize_q8_1_kernel,
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                             (dim + 31) / 32, 32, 0, xq, in, dim);
                         if (n_experts == 2 && k == 2 &&
                             getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST") == NULL) {
@@ -14328,7 +14352,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 return -1;
                             BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
                             float *pair_out = ctx->d_prefill;
-                            BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                            BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                                 dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                                 mid_q, mid, hidden, k);
                             int pair_blocks =
@@ -14366,7 +14390,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             if (cuda_ensure_q8_k(ctx, hidden, k) != 0)
                                 return -1;
                             BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
-                            BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                            BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                                 dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                                 mid_q, mid, hidden, k);
                             BN_CUDA_LAUNCH(ctx,
@@ -14378,7 +14402,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     } else {
                         if (cuda_ensure_q8_k(ctx, hidden, k) != 0) return -1;
                         BnBlockQ8K *mid_q = (BnBlockQ8K *)ctx->d_q8_k;
-                        BN_CUDA_LAUNCH(ctx, quantize_q8k_batch_kernel,
+                        BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                             dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                             mid_q, mid, hidden, k);
                         BN_CUDA_LAUNCH(ctx, moe_q4k_down_routed_q8k_accum_kernel,
