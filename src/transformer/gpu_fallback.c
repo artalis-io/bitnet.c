@@ -79,7 +79,9 @@ int bn_transformer_gpu_fallback_moe_layer(
     if (bn_transformer_gpu_read_x(gpu, s->x,
                                   (size_t)dim * sizeof(float)) != 0)
         return -1;
+    bn_model_set_gpu_disabled(m, 1);
     bn_moe_forward(m, sess, lw, layer);
+    bn_model_set_gpu_disabled(m, 0);
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;
@@ -930,6 +932,24 @@ int bn_transformer_gpu_debug_compare_qkv(
                              cpu_k + (size_t)h * head_size,
                              lw->attn.k_norm + (size_t)h * qk_stride,
                              head_size, m->config.norm_eps);
+    }
+    if (lw->attn.k_bias) {
+        int head_size = m->config.head_size;
+        int rope_dims = m->config.rope_dim_count > 0
+            ? m->config.rope_dim_count : head_size;
+        int half = rope_dims / 2;
+        for (int h = 0; h < m->config.n_kv_heads; h++) {
+            float *kh = cpu_k + (size_t)h * head_size;
+            for (int i = 0; i < half; i++) {
+                float angle = (float)pos * s->rope_freq[i];
+                float cosv = cosf(angle);
+                float sinv = sinf(angle);
+                float x0 = kh[i];
+                float x1 = kh[i + half];
+                kh[i] = x0 * cosv - x1 * sinv;
+                kh[i + half] = x0 * sinv + x1 * cosv;
+            }
+        }
     }
 
     debug_compare_vec("qkv_q_compare", layer, pos, cpu_q, gpu_q, q_dim);

@@ -1187,11 +1187,12 @@ int main(int argc, char **argv) {
             char np[16]; snprintf(np, sizeof(np), "%d", n_prompt);
             SH_LOG_INFO("Prompt encoded", "n_tokens", np);
         }
-#ifdef DEBUG
-        fprintf(stderr, "DBG tokens:");
-        for (int i = 0; i < n_prompt; i++) fprintf(stderr, " %d", prompt_tokens[i]);
-        fprintf(stderr, "\n");
-#endif
+        if (getenv("BN_DEBUG_PROMPT_TOKENS")) {
+            fprintf(stderr, "DBG prompt tokens:");
+            for (int i = 0; i < n_prompt; i++)
+                fprintf(stderr, " %d", prompt_tokens[i]);
+            fprintf(stderr, "\n");
+        }
 
         // Generation loop
         {

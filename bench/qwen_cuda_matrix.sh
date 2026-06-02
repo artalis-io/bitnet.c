@@ -22,11 +22,39 @@ RUN_BENCH="${RUN_BENCH:-0}"
 N_TOKENS="${N_TOKENS:-8}"
 THREADS="${THREADS:-8}"
 MAXSEQ="${MAXSEQ:-512}"
+CASE_FILTERS=("$@")
+BITNET_CUDA_KV_ARGS="${BITNET_CUDA_KV_ARGS:-}"
+read -r -a BITNET_CUDA_KV_EXTRA <<< "$BITNET_CUDA_KV_ARGS"
 
 fail=0
 ran=0
 missing=0
 bench_models=""
+
+case_key() {
+    printf '%s\n' "$1" |
+        tr '[:upper:]' '[:lower:]' |
+        sed 's/qwen 2\.5/qwen25/g; s/qwen 3\.5/qwen35/g; s/qwen 3\.6/qwen36/g; s/qwen 3/qwen3/g; s/[^a-z0-9]/_/g; s/_\+/_/g; s/^_//; s/_$//'
+}
+
+case_selected() {
+    [ "${#CASE_FILTERS[@]}" -eq 0 ] && return 0
+    name_key=$(case_key "$1")
+    for filter in "${CASE_FILTERS[@]}"; do
+        filter_key=$(case_key "$filter")
+        [ "$name_key" = "$filter_key" ] && return 0
+        case "$name_key" in
+            *"$filter_key"*) return 0 ;;
+        esac
+        compact_name=${name_key/_sparse_/_}
+        compact_name=${compact_name/_dense_/_}
+        [ "$compact_name" = "$filter_key" ] && return 0
+        case "$compact_name" in
+            *"$filter_key"*) return 0 ;;
+        esac
+    done
+    return 1
+}
 
 find_model() {
     env_name=$1
@@ -59,7 +87,15 @@ run_case() {
     rel_dir=$3
     shift 3
 
+    if ! case_selected "$name"; then
+        return
+    fi
+
     if path=$(find_model "$env_name" "$rel_dir" "$@"); then
+        case_kv_args=("${BITNET_CUDA_KV_EXTRA[@]}")
+        if [ "$name" = "Qwen 2.5 dense" ] && [ -z "$BITNET_CUDA_KV_ARGS" ]; then
+            case_kv_args=(--kv16)
+        fi
         if [[ "$path" == *-of-*.gguf ]]; then
             echo "RUN $name sharded mmap: $path"
             ran=$((ran + 1))
@@ -67,9 +103,9 @@ run_case() {
                 bench_models="${bench_models}${bench_models:+ }$path"
             fi
             if [ "$RUN_COHERENCE" = "1" ] && [ "$RUN_SHARDED_MOE_COHERENCE" = "1" ]; then
-                "$COHERENCE" "$path" --cuda --require-all-tokens || fail=1
+                "$COHERENCE" "$path" --cuda "${case_kv_args[@]}" --require-all-tokens || fail=1
             elif [ "$RUN_SHARDED_MOE_SMOKE" = "1" ]; then
-                "$BITNET" "$path" --cuda -n 0 --maxseq 32 --quiet || fail=1
+                "$BITNET" "$path" --cuda "${case_kv_args[@]}" -n 0 --maxseq 32 --quiet || fail=1
             fi
             return
         fi
@@ -80,10 +116,10 @@ run_case() {
             echo "  using default small dense Q4_K/Q6_K CUDA graph correctness fallback"
         fi
         if [ "$RUN_COHERENCE" = "1" ]; then
-            "$COHERENCE" "$path" --cuda --require-all-tokens || fail=1
+            "$COHERENCE" "$path" --cuda "${case_kv_args[@]}" --require-all-tokens || fail=1
         fi
         if [ "$RUN_LLAMA_COMPARE" = "1" ]; then
-            "$COMPARE_LLAMA" "$path" --cuda --llama-cuda -n "$N_TOKENS" -t "$THREADS" --maxseq "$MAXSEQ" || fail=1
+            "$COMPARE_LLAMA" "$path" --cuda "${case_kv_args[@]}" --llama-cuda -n "$N_TOKENS" -t "$THREADS" --maxseq "$MAXSEQ" || fail=1
         fi
     else
         echo "SKIP $name: set $env_name or BN_MODEL_ROOT=$ROOT"
@@ -118,7 +154,7 @@ run_case "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" \
     "Qwen3.6-*A*B*.gguf" "qwen3.6*a*b*.gguf"
 
 if [ "$RUN_BENCH" = "1" ] && [ -n "$bench_models" ]; then
-    MODELS="$bench_models" "$CUDA_COMPARE" || fail=1
+    MODELS="$bench_models" BITNET_BENCH_EXTRA_ARGS="${BITNET_BENCH_EXTRA_ARGS:-$BITNET_CUDA_KV_ARGS}" BITNET_CLI_EXTRA_ARGS="${BITNET_CLI_EXTRA_ARGS:-$BITNET_CUDA_KV_ARGS}" "$CUDA_COMPARE" || fail=1
 fi
 
 if [ "$REQUIRE_MODELS" = "1" ] && [ "$missing" -ne 0 ]; then

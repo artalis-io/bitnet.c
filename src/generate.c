@@ -30,8 +30,14 @@ static int use_gpu_batch_prefill(const BnModel *model) {
     if (c->kv_tq_bits != 0)
         return 0;
     BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
-    if (c->full_attn_interval > 0)
-        return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+    if (c->full_attn_interval > 0) {
+        if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+            gpu->prefill_ssm_layer &&
+            !getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") &&
+            !getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER"))
+            return 1;
+        return 0;
+    }
     if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c->n_experts > 0)
         return 1;
     if (c->n_experts > 0)
@@ -88,6 +94,27 @@ static void dump_top_logits(const float *logits, int vocab_size, int top_k,
                 step, k + 1, top[k], logits[top[k]]);
 }
 
+static void dump_selected_logits(const float *logits, int vocab_size,
+                                 const char *ids, int step) {
+    if (!ids || !*ids) return;
+    const char *p = ids;
+    while (*p) {
+        char *end = NULL;
+        long id = strtol(p, &end, 10);
+        if (end == p) {
+            p++;
+            continue;
+        }
+        if (id >= 0 && id < vocab_size) {
+            fprintf(stderr, "selected_logit step=%d token=%ld logit=%.9g\n",
+                    step, id, logits[id]);
+        }
+        p = end;
+        while (*p == ',' || *p == ' ' || *p == '\t')
+            p++;
+    }
+}
+
 int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampler,
                 int max_tokens, int *pos,
                 bn_token_callback cb, void *user_data,
@@ -115,6 +142,7 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
     float *logits = s->state.logits;
     if (!logits) return -2;
     const char *top_env = getenv("BN_TOP_LOGITS");
+    const char *logit_ids_env = getenv("BN_LOGIT_IDS");
     int top_logits = top_env ? atoi(top_env) : 0;
     int have_gpu_next = 0;
     int gpu_next = -1;
@@ -123,6 +151,9 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
         if (!have_gpu_next && top_logits > 0)
             dump_top_logits(logits, model->config.vocab_size, top_logits,
                             "generate", i);
+        if (!have_gpu_next && logit_ids_env)
+            dump_selected_logits(logits, model->config.vocab_size,
+                                 logit_ids_env, i);
         int next;
         if (have_gpu_next) {
             next = gpu_next;

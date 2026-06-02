@@ -28,6 +28,12 @@ static int emit_context_utility(BnTransformerGPUEmitContext *ctx,
                                 void *weight,
                                 const uint32_t params[8]);
 
+static uint32_t emit_f32_bits(float v) {
+    uint32_t bits;
+    memcpy(&bits, &v, sizeof(bits));
+    return bits;
+}
+
 void bn_transformer_gpu_finalize_op_kinds(void *ops, int n) {
     BnGPUOp *shader_ops = (BnGPUOp *)ops;
     for (int i = 0; i < n; i++) {
@@ -519,6 +525,7 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     int dim,
     int n_experts,
     int k,
+    float expert_weights_scale,
     uint32_t flags) {
     if (!ctx || !router_buf || dim <= 0 || n_experts <= 0 || k <= 0)
         return -1;
@@ -540,6 +547,7 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     op->flags = flags;
     op->p[0] = (uint32_t)n_experts;
     op->p[1] = (uint32_t)k;
+    op->p[2] = emit_f32_bits(expert_weights_scale);
     return 0;
 }
 
@@ -1678,6 +1686,11 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
     }
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
+        int use_shared_q4_q8 =
+            lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q4_K &&
+            lw->shared.shared_up.type == BN_GGUF_TENSOR_Q4_K &&
+            lw->shared.shared_gate.cols % 256 == 0 &&
+            getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
         int prefer_shared_gateup_split =
             lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q8_0;
         int use_shared_fused_gateup =
@@ -1695,8 +1708,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 shared->shared_gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
                 lw->shared.shared_gate.rows, lw->shared.shared_up.rows,
-                lw->shared.shared_gate.cols, 0);
-        } else if (shared->shared_gateup_stacked &&
+                lw->shared.shared_gate.cols, use_shared_q4_q8);
+        } else if (!getenv("BN_GPU_DISABLE_GATEUP_SPLIT") &&
+                   shared->shared_gateup_stacked &&
                    bn_transformer_gpu_can_matvec_split(
                        shared->gpu, lw->shared.shared_gate.type)) {
             emit_context_matvec_split(
@@ -1708,9 +1722,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 0, 0, 0, 0);
         } else {
             uint32_t shared_gate_flags =
-                lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q4_K ? 1u : 0u;
+                use_shared_q4_q8 ? 1u : 0u;
             uint32_t shared_up_flags =
-                lw->shared.shared_up.type == BN_GGUF_TENSOR_Q4_K ? 1u : 0u;
+                use_shared_q4_q8 ? 1u : 0u;
             emit_context_matvec_flags(
                 ctx, lw->shared.shared_gate.type,
                 shared->shared_gate,
@@ -1729,11 +1743,14 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
                 lw->shared.shared_gate.rows, 0, BN_GPU_IR_ACTIVATION_SILU);
         }
-        bn_transformer_gpu_emit_context_matvec(
+        uint32_t shared_down_flags =
+            lw->shared.shared_down.type == BN_GGUF_TENSOR_Q6_K &&
+            use_shared_q4_q8 ? 2u : 0u;
+        emit_context_matvec_flags(
             ctx, lw->shared.shared_down.type,
             shared->shared_down,
             BN_GPU_VALUE_HB, BN_GPU_VALUE_XB2, lw->shared.shared_down.rows,
-            lw->shared.shared_down.cols, 0);
+            lw->shared.shared_down.cols, 0, shared_down_flags);
         uint32_t u_one;
         { float one = 1.0f; memcpy(&u_one, &one, 4); }
         if (lw->shared.shared_expert_gate && shared->shared_expert_gate &&

@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
         --metal) BITNET_ARGS+=(--metal); shift ;;
         --llama-metal) LLAMA_ARGS=(-ngl 99); shift ;;
         --cuda) BITNET_ARGS+=(--cuda); shift ;;
+        --kv16) BITNET_ARGS+=(--kv16); shift ;;
         --llama-cuda) LLAMA_ARGS=(-ngl 99); shift ;;
         --llama-gpu-layers) LLAMA_ARGS=(-ngl "$2"); shift 2 ;;
         --webgpu|--gpu) BITNET_ARGS+=(--webgpu); shift ;;

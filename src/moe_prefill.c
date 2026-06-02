@@ -67,6 +67,7 @@ static void moe_batch_router_range(void *ctx, int start, int end) {
 static void moe_batch_route(float *logits, int *all_indices, float *all_weights,
                             const float *x, const float *router_w,
                             int n_tokens, int dim, int n_experts, int k,
+                            int norm_topk_prob, float expert_weights_scale,
                             BnThreadPool *pool) {
     BnMoEBatchRouterCtx rctx = { logits, router_w, x, dim, n_experts };
     BnTPTask rtask = { moe_batch_router_range, &rctx, n_tokens * n_experts };
@@ -115,12 +116,16 @@ static void moe_batch_route(float *logits, int *all_indices, float *all_weights,
         float wsum = 0.0f;
         for (int i = 0; i < k; i++)
             wsum += all_weights[(size_t)t * k + i];
-        if (wsum > 0.0f)
+        if (norm_topk_prob && wsum > 0.0f)
             for (int i = 0; i < k; i++)
                 all_weights[(size_t)t * k + i] /= wsum;
         else if (picked == 0 && n_experts > 0) {
             all_indices[(size_t)t * k] = 0;
             all_weights[(size_t)t * k] = 1.0f;
+        }
+        if (expert_weights_scale != 0.0f && expert_weights_scale != 1.0f) {
+            for (int i = 0; i < k; i++)
+                all_weights[(size_t)t * k + i] *= expert_weights_scale;
         }
     }
 }
@@ -140,17 +145,80 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int n_experts = c->n_experts;
     const BnMoEExpertMap *map = &lw->moe.expert_map;
 
-    // 1. Batch RMSNorm
-    t0 = bn_moe_time_ms();
-    for (int t = 0; t < n_tokens; t++)
-        bn_moe_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
-                    lw->norm.ffn_norm, dim, c->norm_eps);
-    ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
-
     BnAllocator a = bn_allocator_default();
+    int did_input_norm = 0;
     if (n_experts > 2) {
         BnGPUBackend *gpu = bn_model_gpu(m);
         BnBackendModel *backend = bn_model_backend(m);
+        if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+            gpu->moe_route_routed_ffn_batch_norm_resid && backend) {
+            void *router = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
+            void *gate_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+            void *up_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
+            void *down_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+            void *norm = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_FFN_NORM);
+            void *shared_gate = NULL;
+            void *shared_up = NULL;
+            void *shared_down = NULL;
+            void *shared_gate_weight = NULL;
+            int shared_hidden = 0;
+            int shared_gate_type = 0;
+            int shared_up_type = 0;
+            int shared_down_type = 0;
+            if (c->has_shared_expert && lw->shared.shared_gate.data) {
+                shared_gate = bn_backend_model_qweight_buf(
+                    backend, &lw->shared.shared_gate);
+                shared_up = bn_backend_model_qweight_buf(
+                    backend, &lw->shared.shared_up);
+                shared_down = bn_backend_model_qweight_buf(
+                    backend, &lw->shared.shared_down);
+                shared_gate_weight = bn_backend_model_handle(
+                    backend, l, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
+                if (shared_gate && shared_up && shared_down) {
+                    shared_hidden = c->shared_expert_intermediate_size;
+                    shared_gate_type = lw->shared.shared_gate.type;
+                    shared_up_type = lw->shared.shared_up.type;
+                    shared_down_type = lw->shared.shared_down.type;
+                } else {
+                    shared_gate = NULL;
+                    shared_up = NULL;
+                    shared_down = NULL;
+                    shared_gate_weight = NULL;
+                }
+            }
+            if (router && gate_all && up_all && down_all && norm) {
+                t0 = bn_moe_time_ms();
+                if (gpu->moe_route_routed_ffn_batch_norm_resid(
+                        gpu->ctx, act, router, gate_all, up_all, down_all,
+                        shared_gate, shared_up, shared_down,
+                        shared_gate_weight, norm, act, n_tokens, dim,
+                        moe_hidden, n_experts, K,
+                        map->gate_type, map->up_type, map->down_type,
+                        c->act_type, shared_hidden, shared_gate_type,
+                        shared_up_type, shared_down_type,
+                        c->norm_eps, c->moe_norm_topk_prob,
+                        c->moe_expert_weights_scale) == 0) {
+                    ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
+                    ms->stats.compute_time_ms +=
+                        bn_moe_time_ms() - t_compute;
+                    return 0;
+                }
+            }
+        }
+
+        // Batch RMSNorm for the host/GPU split MoE prefill paths below.
+        t0 = bn_moe_time_ms();
+        for (int t = 0; t < n_tokens; t++)
+            bn_moe_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
+                           lw->norm.ffn_norm, dim, c->norm_eps);
+        ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
+        did_input_norm = 1;
+
         if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
             gpu->moe_route_routed_ffn_batch && backend) {
             void *router = bn_backend_model_handle(
@@ -169,7 +237,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         gpu->ctx, moe_out, router, gate_all, up_all, down_all,
                         Xb, n_tokens, dim, moe_hidden, n_experts, K,
                         map->gate_type, map->up_type, map->down_type,
-                        c->act_type) == 0) {
+                        c->act_type, c->moe_norm_topk_prob,
+                        c->moe_expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     int shared_ok = 1;
                     if (c->has_shared_expert && lw->shared.shared_gate.data) {
@@ -233,6 +302,15 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         }
     }
 
+    // 1. Batch RMSNorm
+    if (!did_input_norm) {
+        t0 = bn_moe_time_ms();
+        for (int t = 0; t < n_tokens; t++)
+            bn_moe_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
+                           lw->norm.ffn_norm, dim, c->norm_eps);
+        ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
+    }
+
     // 2. Batch routing: route each token individually (reuse existing router)
     // Allocate routing results: [n_tokens][K] indices and weights
     size_t sz_idx = (size_t)n_tokens * K * sizeof(int);
@@ -262,7 +340,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         int route_rc = router_gpu
             ? route_gpu->moe_route_batch(route_gpu->ctx, all_indices,
                                          all_weights, router_gpu, Xb,
-                                         n_tokens, dim, n_experts, K)
+                                         n_tokens, dim, n_experts, K,
+                                         c->moe_norm_topk_prob,
+                                         c->moe_expert_weights_scale)
             : -1;
         if (route_rc == 0)
             used_gpu_route = 1;
@@ -275,7 +355,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     if (!used_gpu_route) {
         moe_batch_route(batch_logits, all_indices, all_weights, Xb,
                         lw->moe.router_weight, n_tokens, dim, n_experts, K,
-                        bn_model_pool(m));
+                        c->moe_norm_topk_prob,
+                        c->moe_expert_weights_scale, bn_model_pool(m));
     }
     ms->stats.route_time_ms += bn_moe_time_ms() - t0;
 
@@ -449,15 +530,24 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     c->has_shared_expert && lw->shared.shared_gate.data;
                 if (can_fuse_shared && backend &&
                     getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE") == NULL) {
-                    shared_gate = bn_backend_model_qweight_buf(
-                        backend, &lw->shared.shared_gate);
-                    shared_up = bn_backend_model_qweight_buf(
-                        backend, &lw->shared.shared_up);
+                    shared_gate = bn_backend_model_handle(
+                        backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
+                    if (shared_gate) {
+                        shared_up = NULL;
+                    } else {
+                        shared_gate = bn_backend_model_qweight_buf(
+                            backend, &lw->shared.shared_gate);
+                        shared_up = bn_backend_model_qweight_buf(
+                            backend, &lw->shared.shared_up);
+                    }
                     shared_down = bn_backend_model_qweight_buf(
                         backend, &lw->shared.shared_down);
                     shared_gate_weight = bn_backend_model_handle(
                         backend, l, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
-                    if (shared_gate && shared_up && shared_down) {
+                    if (shared_gate && shared_down &&
+                        (shared_up || bn_backend_model_handle(
+                            backend, l,
+                            BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED))) {
                         shared_hidden = c->shared_expert_intermediate_size;
                         shared_gate_type = lw->shared.shared_gate.type;
                         shared_up_type = lw->shared.shared_up.type;
@@ -479,8 +569,11 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         shared_gate_weight, shared_hidden, shared_gate_type,
                         shared_up_type, shared_down_type) == 0) {
                     used_gpu_moe_batch = 1;
-                    used_gpu_shared_batch = shared_gate && shared_up &&
-                                            shared_down;
+                    used_gpu_shared_batch =
+                        shared_gate && shared_down &&
+                        (shared_up || bn_backend_model_handle(
+                            backend, l,
+                            BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED));
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                 }
             }
@@ -632,13 +725,21 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             int gpu_min_tokens = moe_cuda_prefill_min_tokens();
             if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
                 gpu->dense_ffn_batch && backend && n_tokens >= gpu_min_tokens) {
-                void *gate_gpu = bn_backend_model_qweight_buf(
-                    backend, &lw->shared.shared_gate);
-                void *up_gpu = bn_backend_model_qweight_buf(
-                    backend, &lw->shared.shared_up);
+                void *gate_gpu = bn_backend_model_handle(
+                    backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
+                void *up_gpu = NULL;
+                if (!gate_gpu) {
+                    gate_gpu = bn_backend_model_qweight_buf(
+                        backend, &lw->shared.shared_gate);
+                    up_gpu = bn_backend_model_qweight_buf(
+                        backend, &lw->shared.shared_up);
+                }
                 void *down_gpu = bn_backend_model_qweight_buf(
                     backend, &lw->shared.shared_down);
-                if (gate_gpu && up_gpu && down_gpu &&
+                if (gate_gpu && down_gpu &&
+                    (up_gpu || bn_backend_model_handle(
+                        backend, l,
+                        BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED)) &&
                     gpu->dense_ffn_batch(
                         gpu->ctx, sh_d, gate_gpu, up_gpu, down_gpu, Xb,
                         n_tokens, dim, shared_hidden,

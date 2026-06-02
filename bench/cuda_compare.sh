@@ -28,6 +28,13 @@ BITNET_TG_MODE="${BITNET_TG_MODE:-generate}"
 REQUIRE_PARITY="${REQUIRE_PARITY:-1}"
 LLAMA_NGL="${LLAMA_NGL:-99}"
 LLAMA_NGL_SHARDED_RETRY="${LLAMA_NGL_SHARDED_RETRY:-32}"
+BITNET_BENCH_EXTRA_ARGS="${BITNET_BENCH_EXTRA_ARGS:-}"
+BITNET_CLI_EXTRA_ARGS="${BITNET_CLI_EXTRA_ARGS:-}"
+LLAMA_BENCH_EXTRA_ARGS="${LLAMA_BENCH_EXTRA_ARGS:-}"
+
+read -r -a BITNET_BENCH_EXTRA <<< "$BITNET_BENCH_EXTRA_ARGS"
+read -r -a BITNET_CLI_EXTRA <<< "$BITNET_CLI_EXTRA_ARGS"
+read -r -a LLAMA_BENCH_EXTRA <<< "$LLAMA_BENCH_EXTRA_ARGS"
 
 LLAMA_CUDA_ENV=()
 if [ "$CUDA_DEVICE" != "auto" ] && [ -n "$CUDA_DEVICE" ]; then
@@ -93,7 +100,7 @@ for model in $MODELS; do
     if ! bitnet_out=$(BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_BENCH" "$model" \
         --cuda --iters "$ITERS" --toks "$TOKS" --prefill-toks "$PREFILL_TOKS" \
         --prefill-iters 1 --prefill-no-logits --threads "$THREADS" \
-        --random-gen 2>&1); then
+        --random-gen "${BITNET_BENCH_EXTRA[@]}" 2>&1); then
         echo -e "$(basename "$model")\tERROR\tbitnet bench failed\t0\tFAIL"
         printf '%s\n' "$bitnet_out" >&2
         continue
@@ -104,7 +111,7 @@ for model in $MODELS; do
     if [ "$BITNET_TG_MODE" = "generate" ]; then
         if ! bitnet_tg_out=$(BN_CUDA_DEVICE="$CUDA_DEVICE" "$BITNET_CLI" \
             "$model" --cuda -n "$TOKS" -t "$THREADS" \
-            --maxseq "$MAXSEQ" --quiet 2>&1); then
+            --maxseq "$MAXSEQ" --quiet "${BITNET_CLI_EXTRA[@]}" 2>&1); then
             echo -e "$(basename "$model")\t$bitnet_pp\tSKIP\t0\tERROR\tbitnet generate failed\t0\tFAIL"
             printf '%s\n' "$bitnet_tg_out" >&2
             continue
@@ -129,14 +136,16 @@ for model in $MODELS; do
     llama_ngl="$LLAMA_NGL"
     if ! llama_out=$(env "${LLAMA_CUDA_ENV[@]}" \
         LD_LIBRARY_PATH="$LLAMA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$LLAMA_BENCH" -m "$model" -p "$PREFILL_TOKS" -n "$LLAMA_TOKS" -t "$THREADS" -ngl "$llama_ngl" 2>&1); then
+        "$LLAMA_BENCH" -m "$model" -p "$PREFILL_TOKS" -n "$LLAMA_TOKS" -t "$THREADS" -ngl "$llama_ngl" \
+        "${LLAMA_BENCH_EXTRA[@]}" 2>&1); then
         if [[ "$model" == *-of-*.gguf ]] &&
            [ -n "$LLAMA_NGL_SHARDED_RETRY" ]; then
             echo "WARN: llama-bench full offload failed for sharded model; retrying -ngl $LLAMA_NGL_SHARDED_RETRY" >&2
             llama_ngl="$LLAMA_NGL_SHARDED_RETRY"
             llama_out=$(env "${LLAMA_CUDA_ENV[@]}" \
                 LD_LIBRARY_PATH="$LLAMA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-                "$LLAMA_BENCH" -m "$model" -p "$PREFILL_TOKS" -n "$LLAMA_TOKS" -t "$THREADS" -ngl "$llama_ngl" 2>&1)
+                "$LLAMA_BENCH" -m "$model" -p "$PREFILL_TOKS" -n "$LLAMA_TOKS" -t "$THREADS" -ngl "$llama_ngl" \
+                "${LLAMA_BENCH_EXTRA[@]}" 2>&1)
             llama_rc=$?
         else
             llama_rc=1

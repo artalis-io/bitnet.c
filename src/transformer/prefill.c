@@ -287,6 +287,8 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
 static int prefill_gpu_attention_min_tokens(void);
 static int prefill_dense_chain_min_tokens(const BnConfig *c,
                                           const BnGPUBackend *gpu);
+static int prefill_moe_chain_min_tokens(const BnConfig *c,
+                                        const BnGPUBackend *gpu);
 
 static int prefill_dense_layer_gpu_batch(const BnModel *m,
                                          float *out,
@@ -395,6 +397,249 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         kv_cache_off, kv_cache_stride, attention_scale);
 }
 
+static int prefill_moe_layer_gpu_batch(const BnModel *m,
+                                       float *out,
+                                       const BnLayerWeights *lw,
+                                       const float *X,
+                                       float *K_out,
+                                       float *V_out,
+                                       int n_tokens,
+                                       int dim,
+                                       int moe_hidden_dim,
+                                       int n_heads,
+                                       int n_kv_heads,
+                                       int head_size,
+                                       int kv_mul,
+                                       int kv_dim,
+                                       int rope_dims,
+                                       int layer,
+                                       int pos0,
+                                       uint32_t kv_cache_off,
+                                       int kv_cache_stride,
+                                       float attention_scale) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    const BnBackendModel *backend = bn_model_backend(m);
+    if (!gpu || !gpu->prefill_moe_layer || !backend ||
+        !lw->moe.router_weight || !lw->attn.wq.data ||
+        !lw->attn.wk.data || !lw->attn.wv.data || !lw->attn.wo.data)
+        return -1;
+
+    void *qk_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
+    void *wv_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
+    if (!wv_buf)
+        wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
+    void *wo_buf = prefill_backend_role_or_qweight(
+        backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
+    void *router_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    void *gate_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    void *up_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    void *down_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    void *shared_gate_buf = NULL;
+    void *shared_up_buf = NULL;
+    void *shared_down_buf = NULL;
+    void *shared_gate_weight_buf = NULL;
+    int shared_hidden_dim = 0;
+    int shared_gate_type = 0;
+    int shared_up_type = 0;
+    int shared_down_type = 0;
+    if (m->config.has_shared_expert && lw->shared.shared_gate.data) {
+        shared_gate_buf =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_gate);
+        shared_up_buf =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_up);
+        shared_down_buf =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_down);
+        shared_gate_weight_buf = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
+        shared_hidden_dim = m->config.shared_expert_intermediate_size;
+        shared_gate_type = lw->shared.shared_gate.type;
+        shared_up_type = lw->shared.shared_up.type;
+        shared_down_type = lw->shared.shared_down.type;
+        if (!shared_gate_buf || !shared_up_buf || !shared_down_buf)
+            return -1;
+    }
+    void *attn_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
+    void *ffn_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    void *q_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_Q_NORM);
+    void *k_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_K_NORM);
+    void *q_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
+    void *k_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_K_BIAS);
+    void *v_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_V_BIAS);
+    if (!qk_buf || !wv_buf || !wo_buf || !router_buf || !gate_all_buf ||
+        !up_all_buf || !down_all_buf || !attn_norm_buf || !ffn_norm_buf ||
+        (lw->attn.q_bias && !q_bias_buf) ||
+        (lw->attn.k_bias && !k_bias_buf) ||
+        (lw->attn.v_bias && !v_bias_buf))
+        return -1;
+
+    return gpu->prefill_moe_layer(
+        gpu->ctx, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
+        up_all_buf, down_all_buf, shared_gate_buf, shared_up_buf,
+        shared_down_buf, shared_gate_weight_buf, attn_norm_buf, ffn_norm_buf,
+        q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf,
+        X, K_out, V_out, n_tokens, dim, moe_hidden_dim,
+        m->config.n_experts, m->config.n_experts_active, n_heads,
+        n_kv_heads, head_size, kv_mul, kv_dim,
+        lw->attn.wq.rows + lw->attn.wk.rows, lw->attn.wq.type,
+        lw->attn.wv.rows, lw->attn.wv.type, lw->attn.wo.rows,
+        lw->attn.wo.cols, lw->attn.wo.type,
+        lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
+        lw->moe.expert_map.down_type, m->config.act_type,
+        shared_hidden_dim, shared_gate_type, shared_up_type,
+        shared_down_type,
+        m->config.qk_norm_per_head, m->config.norm_eps, pos0, rope_dims,
+        kv_cache_off, kv_cache_stride,
+        attention_scale, m->config.moe_norm_topk_prob,
+        m->config.moe_expert_weights_scale);
+}
+
+static int prefill_moe_ffn_gpu_batch(const BnModel *m,
+                                     float *out,
+                                     const BnLayerWeights *lw,
+                                     const float *X,
+                                     int n_tokens,
+                                     int dim,
+                                     int layer) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    const BnBackendModel *backend = bn_model_backend(m);
+    const BnConfig *c = &m->config;
+    if (!gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
+        !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
+        !lw->moe.router_weight || n_tokens <= 0 || dim <= 0)
+        return -1;
+
+    void *router_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    void *gate_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    void *up_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    void *down_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    void *ffn_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    if (!router_buf || !gate_all_buf || !up_all_buf || !down_all_buf ||
+        !ffn_norm_buf)
+        return -1;
+
+    void *shared_gate_buf = NULL;
+    void *shared_up_buf = NULL;
+    void *shared_down_buf = NULL;
+    void *shared_gate_weight_buf = NULL;
+    int shared_hidden_dim = 0;
+    int shared_gate_type = 0;
+    int shared_up_type = 0;
+    int shared_down_type = 0;
+    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+        shared_gate_buf =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_gate);
+        shared_up_buf =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_up);
+        shared_down_buf =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_down);
+        shared_gate_weight_buf = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
+        if (!shared_gate_buf || !shared_up_buf || !shared_down_buf)
+            return -1;
+        shared_hidden_dim = c->shared_expert_intermediate_size;
+        shared_gate_type = lw->shared.shared_gate.type;
+        shared_up_type = lw->shared.shared_up.type;
+        shared_down_type = lw->shared.shared_down.type;
+    }
+
+    return gpu->moe_route_routed_ffn_batch_norm_resid(
+        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+        shared_gate_buf, shared_up_buf, shared_down_buf,
+        shared_gate_weight_buf, ffn_norm_buf, X, n_tokens, dim,
+        c->moe_intermediate_size, c->n_experts, c->n_experts_active,
+        lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
+        lw->moe.expert_map.down_type, c->act_type,
+        shared_hidden_dim, shared_gate_type, shared_up_type,
+        shared_down_type, c->norm_eps, c->moe_norm_topk_prob,
+        c->moe_expert_weights_scale);
+}
+
+static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
+                                             const BnLayerWeights *lw,
+                                             int layer,
+                                             int n_tokens) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    const BnBackendModel *backend = bn_model_backend(m);
+    const BnConfig *c = &m->config;
+    if (!gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
+        !gpu->prefill_ssm_layer ||
+        !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
+        getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") ||
+        n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
+        !lw || !lw->moe.router_weight ||
+        !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
+        !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
+        !lw->ssm.ssm_out.data || !lw->norm.attn_norm ||
+        !lw->ssm.ssm_conv1d || !lw->ssm.ssm_dt_bias ||
+        !lw->ssm.ssm_a || !lw->ssm.ssm_norm ||
+        lw->norm.ffn_sub_norm || lw->norm.layer_output_scale ||
+        ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+         (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
+        c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
+        c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
+        return 0;
+
+    void *wqkv_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
+    void *wz_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wz);
+    void *alpha_buf = prefill_qweight_backend_buf(backend,
+                                                  &lw->ssm.ssm_alpha);
+    void *beta_buf = prefill_qweight_backend_buf(backend,
+                                                 &lw->ssm.ssm_beta);
+    void *out_buf = prefill_qweight_backend_buf(backend, &lw->ssm.ssm_out);
+    void *attn_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
+    void *conv1d_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SSM_CONV1D);
+    void *dt_bias_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SSM_DT_BIAS);
+    void *a_log_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
+    void *ssm_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
+    void *router_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    void *gate_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    void *up_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    void *down_all_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    void *ffn_norm_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+
+    if (!(wqkv_buf && wz_buf && alpha_buf && beta_buf && out_buf &&
+          attn_norm_buf && conv1d_buf && dt_bias_buf && a_log_buf &&
+          ssm_norm_buf && router_buf && gate_all_buf && up_all_buf &&
+          down_all_buf && ffn_norm_buf))
+        return 0;
+
+    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+        if (!prefill_qweight_backend_buf(backend, &lw->shared.shared_gate) ||
+            !prefill_qweight_backend_buf(backend, &lw->shared.shared_up) ||
+            !prefill_qweight_backend_buf(backend, &lw->shared.shared_down))
+            return 0;
+    }
+    return 1;
+}
+
 static int prefill_dense_layer_chain_ready(const BnModel *m,
                                            const BnLayerWeights *lw,
                                            const BnLayerShapePlan *plan,
@@ -406,7 +651,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     const BnConfig *c = &m->config;
     if (!gpu || !gpu->prefill_dense_layer || !backend ||
         bn_model_tq_state(m) != NULL ||
-        n_tokens < prefill_dense_chain_min_tokens(c, gpu) ||
+        n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
         layer_rope_theta != c->rope_theta ||
         !plan->is_attn ||
         lw->moe.router_weight || !c->has_ffn_gate || !lw->ffn.ffn_up.data ||
@@ -471,6 +716,84 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
            (!lw->attn.q_bias || q_bias_buf) &&
            (!lw->attn.k_bias || k_bias_buf) &&
            (!lw->attn.v_bias || v_bias_buf);
+}
+
+static int prefill_moe_layer_chain_ready(const BnModel *m,
+                                         const BnLayerWeights *lw,
+                                         const BnLayerShapePlan *plan,
+                                         int layer,
+                                         int n_tokens,
+                                         float layer_rope_theta) {
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    const BnBackendModel *backend = bn_model_backend(m);
+    const BnConfig *c = &m->config;
+    if (!gpu || !gpu->prefill_moe_layer || !backend ||
+        bn_model_tq_state(m) != NULL ||
+        n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
+        layer_rope_theta != c->rope_theta ||
+        !plan->is_attn || !lw->moe.router_weight ||
+        lw->norm.attn_sub_norm ||
+        lw->norm.layer_output_scale) {
+        if (getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN"))
+            fprintf(stderr,
+                    "[bn:prefill:moe-chain] reject layer=%d basic gpu=%d hook=%d backend=%d tq=%d toks=%d min=%d theta=%d attn=%d moe=%d shared=%d bias=%d subnorm=%d scale=%d\n",
+                    layer, gpu != NULL,
+                    gpu && gpu->prefill_moe_layer ? 1 : 0,
+                    backend != NULL, bn_model_tq_state(m) != NULL,
+                    n_tokens, prefill_moe_chain_min_tokens(c, gpu),
+                    layer_rope_theta == c->rope_theta, plan->is_attn,
+                    lw->moe.router_weight != NULL, c->has_shared_expert,
+                    lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias,
+                    lw->norm.attn_sub_norm != NULL,
+                    lw->norm.layer_output_scale != NULL);
+        return 0;
+    }
+    if (!lw->attn.wq.data || !lw->attn.wk.data || !lw->attn.wv.data ||
+        !lw->attn.wo.data)
+        return 0;
+    void *wv_buf = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
+    if (!wv_buf)
+        wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
+    int ready =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_QK_STACKED) &&
+        wv_buf &&
+        prefill_backend_role_or_qweight(
+            backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo) &&
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER) &&
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL) &&
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL) &&
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL) &&
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM) &&
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM) &&
+        (!lw->attn.q_bias ||
+         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_BIAS)) &&
+        (!lw->attn.k_bias ||
+         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_BIAS)) &&
+        (!lw->attn.v_bias ||
+         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS));
+    if (ready && c->has_shared_expert && lw->shared.shared_gate.data) {
+        ready =
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_gate) &&
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_up) &&
+            prefill_qweight_backend_buf(backend, &lw->shared.shared_down);
+    }
+    if (!ready && getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN"))
+        fprintf(stderr,
+                "[bn:prefill:moe-chain] reject layer=%d handles qk=%d wv=%d wo=%d router=%d gate=%d up=%d down=%d anorm=%d fnorm=%d\n",
+                layer,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_QK_STACKED) != NULL,
+                wv_buf != NULL,
+                prefill_backend_role_or_qweight(
+                    backend, layer, BN_BACKEND_HANDLE_WO_PREFILL,
+                    &lw->attn.wo) != NULL,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER) != NULL,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL) != NULL,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL) != NULL,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL) != NULL,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM) != NULL,
+                bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM) != NULL);
+    return ready;
 }
 
 static int prefill_ssm_layer_gpu(const BnModel *m,
@@ -904,6 +1227,18 @@ static int prefill_dense_chain_min_tokens(const BnConfig *c,
     return prefill_gpu_attention_min_tokens();
 }
 
+static int prefill_moe_chain_min_tokens(const BnConfig *c,
+                                        const BnGPUBackend *gpu) {
+    const char *env = getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
+    if (env && *env) {
+        int n = atoi(env);
+        return n > 0 ? n : 1;
+    }
+    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c)
+        return 1;
+    return prefill_dense_chain_min_tokens(c, gpu);
+}
+
 static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                int n_tokens, int pos0, float *all_logits,
                                int need_last_logits) {
@@ -1061,7 +1396,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int layer_head_size = plan.head_size;
             float layer_rope_theta =
                 prefill_layer_rope_theta(c, layer_head_size);
-            if (!prefill_dense_layer_chain_ready(
+            if (!prefill_moe_layer_chain_ready(
+                    m, lw, &plan, l, n_tokens, layer_rope_theta) &&
+                !prefill_dense_layer_chain_ready(
                     m, lw, &plan, l, n_tokens, layer_rope_theta)) {
                 chain_ready = 0;
                 break;
@@ -1102,14 +1439,25 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 size_t loff = (size_t)plan.attn_idx * c->seq_len * kv_dim;
                 uint32_t kv_cache_off =
                     (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
-                if (prefill_dense_layer_gpu_batch(
-                        m, layer_out, lw, layer_in,
-                        direct_gpu_kv ? NULL : K_new,
-                        direct_gpu_kv ? NULL : V_new, n_tokens,
-                        dim, hidden_dim, c->n_heads, layer_n_kv_heads,
-                        layer_head_size, layer_kv_mul, layer_kv_dim,
-                        layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
-                        prefill_attention_scale(c, layer_head_size)) != 0) {
+                int layer_rc = lw->moe.router_weight
+                    ? prefill_moe_layer_gpu_batch(
+                          m, layer_out, lw, layer_in,
+                          direct_gpu_kv ? NULL : K_new,
+                          direct_gpu_kv ? NULL : V_new,
+                          n_tokens, dim, c->moe_intermediate_size,
+                          c->n_heads, layer_n_kv_heads, layer_head_size,
+                          layer_kv_mul, layer_kv_dim, layer_rope_dims,
+                          l, pos0, kv_cache_off, kv_dim,
+                          prefill_attention_scale(c, layer_head_size))
+                    : prefill_dense_layer_gpu_batch(
+                          m, layer_out, lw, layer_in,
+                          direct_gpu_kv ? NULL : K_new,
+                          direct_gpu_kv ? NULL : V_new, n_tokens,
+                          dim, hidden_dim, c->n_heads, layer_n_kv_heads,
+                          layer_head_size, layer_kv_mul, layer_kv_dim,
+                          layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
+                          prefill_attention_scale(c, layer_head_size));
+                if (layer_rc != 0) {
                     sh_arena_free(pf_arena);
                     return NULL;
                 }
@@ -1150,12 +1498,23 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 int layer_head_size = plan.head_size;
                 float layer_rope_theta =
                     prefill_layer_rope_theta(c, layer_head_size);
-                if (!prefill_dense_layer_chain_ready(
+                if (!prefill_moe_layer_chain_ready(
+                        m, lw, &plan, l, n_tokens, layer_rope_theta) &&
+                    !prefill_dense_layer_chain_ready(
                         m, lw, &plan, l, n_tokens, layer_rope_theta)) {
+                    if (getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN"))
+                        fprintf(stderr,
+                                "[bn:prefill:hybrid-chain] reject attn layer=%d\n",
+                                l);
                     chain_ready = 0;
                     break;
                 }
-            } else if (!prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
+            } else if (!prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens) &&
+                       !prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
+                if (getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN"))
+                    fprintf(stderr,
+                            "[bn:prefill:hybrid-chain] reject ssm layer=%d\n",
+                            l);
                 chain_ready = 0;
                 break;
             }
@@ -1184,14 +1543,25 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         (size_t)plan.attn_idx * c->seq_len * kv_dim;
                     uint32_t kv_cache_off =
                         (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
-                    if (prefill_dense_layer_gpu_batch(
-                            m, layer_out, lw, layer_in,
-                            direct_gpu_kv ? NULL : K_new,
-                            direct_gpu_kv ? NULL : V_new, n_tokens,
-                            dim, hidden_dim, c->n_heads, layer_n_kv_heads,
-                            layer_head_size, layer_kv_mul, layer_kv_dim,
-                            layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
-                            prefill_attention_scale(c, layer_head_size)) != 0) {
+                    int layer_rc = lw->moe.router_weight
+                        ? prefill_moe_layer_gpu_batch(
+                              m, layer_out, lw, layer_in,
+                              direct_gpu_kv ? NULL : K_new,
+                              direct_gpu_kv ? NULL : V_new,
+                              n_tokens, dim, c->moe_intermediate_size,
+                              c->n_heads, layer_n_kv_heads, layer_head_size,
+                              layer_kv_mul, layer_kv_dim, layer_rope_dims, l,
+                              pos0, kv_cache_off, kv_dim,
+                              prefill_attention_scale(c, layer_head_size))
+                        : prefill_dense_layer_gpu_batch(
+                              m, layer_out, lw, layer_in,
+                              direct_gpu_kv ? NULL : K_new,
+                              direct_gpu_kv ? NULL : V_new, n_tokens,
+                              dim, hidden_dim, c->n_heads, layer_n_kv_heads,
+                              layer_head_size, layer_kv_mul, layer_kv_dim,
+                              layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
+                              prefill_attention_scale(c, layer_head_size));
+                    if (layer_rc != 0) {
                         sh_arena_free(pf_arena);
                         return NULL;
                     }
@@ -1223,13 +1593,22 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int qkv_dim_ssm = key_dim_ssm * 2 + value_dim;
                     int kern_ssm =
                         c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
+                    int r_is_moe = lw->moe.router_weight != NULL;
+                    float *ssm_out =
+                        (!r_is_moe && l == c->n_layers - 1) ? act : NULL;
                     int ssm_did_ffn = 0;
                     if (prefill_ssm_layer_gpu(
-                            m, layer_out, lw, layer_in, n_tokens, dim,
+                            m, ssm_out, lw, layer_in, n_tokens, dim,
                             qkv_dim_ssm, value_dim, num_k_heads,
                             head_k_dim, num_v_heads, head_v_dim, kern_ssm,
-                            plan.ssm_idx, l, 1, c->norm_eps,
-                            &ssm_did_ffn) != 0 || !ssm_did_ffn) {
+                            plan.ssm_idx, l, !r_is_moe, c->norm_eps,
+                            &ssm_did_ffn) != 0 || (!r_is_moe && !ssm_did_ffn)) {
+                        sh_arena_free(pf_arena);
+                        return NULL;
+                    }
+                    if (r_is_moe &&
+                        prefill_moe_ffn_gpu_batch(
+                            m, layer_out, lw, NULL, n_tokens, dim, l) != 0) {
                         sh_arena_free(pf_arena);
                         return NULL;
                     }
@@ -1265,7 +1644,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             if (bn_model_gpu(m) &&
                 bn_model_tq_state(m) == NULL &&
-                n_tokens >= prefill_dense_chain_min_tokens(c, bn_model_gpu(m)) &&
+                n_tokens >= prefill_moe_chain_min_tokens(c, bn_model_gpu(m)) &&
                 pos0 == 0 &&
                 layer_rope_theta == c->rope_theta &&
                 !lw->moe.router_weight &&
@@ -1713,7 +2092,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
             if (!getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN") &&
                 cuda_hybrid_prefill &&
-                prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
+                (prefill_ssm_layer_chain_ready(m, lw, l, n_tokens) ||
+                 prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens))) {
                 int run_end = l + 1;
                 while (run_end < c->n_layers) {
                     BnLayerWeights *rlw = &w->layers[run_end];
@@ -1722,8 +2102,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         &rplan, c, rlw, run_end,
                         bn_model_tq_state(m) != NULL);
                     if (rplan.is_attn ||
-                        !prefill_ssm_layer_chain_ready(
-                            m, rlw, run_end, n_tokens))
+                        (!prefill_ssm_layer_chain_ready(
+                             m, rlw, run_end, n_tokens) &&
+                         !prefill_ssm_moe_layer_chain_ready(
+                             m, rlw, run_end, n_tokens)))
                         break;
                     run_end++;
                 }
@@ -1735,17 +2117,29 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             &rplan, c, rlw, rl,
                             bn_model_tq_state(m) != NULL);
                         int r_did_ffn = 0;
-                        float *layer_out = (rl == run_end - 1) ? act : NULL;
+                        int r_is_moe = rlw->moe.router_weight != NULL;
+                        float *layer_out =
+                            (!r_is_moe && rl == run_end - 1) ? act : NULL;
                         const float *layer_in = (rl == l) ? act : NULL;
                         if (prefill_ssm_layer_gpu(
                                 m, layer_out, rlw, layer_in, n_tokens, dim,
                                 qkv_dim_ssm, value_dim, num_k_heads,
                                 head_k_dim, num_v_heads, head_v_dim,
-                                kern_ssm, rplan.ssm_idx, rl, 1,
+                                kern_ssm, rplan.ssm_idx, rl, !r_is_moe,
                                 c->norm_eps, &r_did_ffn) != 0 ||
-                            !r_did_ffn) {
+                            (!r_is_moe && !r_did_ffn)) {
                             sh_arena_free(pf_arena);
                             return NULL;
+                        }
+                        if (r_is_moe) {
+                            float *moe_out =
+                                (rl == run_end - 1) ? act : NULL;
+                            if (prefill_moe_ffn_gpu_batch(
+                                    m, moe_out, rlw, NULL, n_tokens, dim,
+                                    rl) != 0) {
+                                sh_arena_free(pf_arena);
+                                return NULL;
+                            }
                         }
                     }
                     l = run_end - 1;
@@ -1763,7 +2157,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       qkv_dim_ssm, value_dim, num_k_heads,
                                       head_k_dim, num_v_heads, head_v_dim,
                                       kern_ssm, ssm_idx, l,
-                                      n_tokens >= prefill_dense_chain_min_tokens(c, bn_model_gpu(m)),
+                                      n_tokens >= prefill_moe_chain_min_tokens(c, bn_model_gpu(m)),
                                       c->norm_eps, &ssm_did_ffn) == 0) {
                 if (ssm_did_ffn)
                     goto prefill_layer_done;

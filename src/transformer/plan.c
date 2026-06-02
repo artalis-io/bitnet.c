@@ -22,7 +22,7 @@ static uint32_t gpu_fused_gateup_silu_cap(const BnGPUBackend *gpu,
         cap = BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
     } else if (cap == 0 && gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
                tensor_type == BN_GGUF_TENSOR_Q5_K) {
-        cap = BN_GPU_CAP_Q5_FUSED_GATEUP_SILU;
+        cap = BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU;
     }
     return cap;
 }
@@ -31,6 +31,10 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,
                                              int act_type) {
     if (getenv("BN_GPU_DISABLE_FUSED_GATEUP"))
+        return 0;
+    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+        tensor_type == BN_GGUF_TENSOR_Q5_K &&
+        getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
         return 0;
     uint32_t cap = gpu_fused_gateup_silu_cap(gpu, tensor_type);
     return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);

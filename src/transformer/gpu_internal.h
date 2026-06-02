@@ -271,6 +271,7 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     int dim,
     int n_experts,
     int k,
+    float expert_weights_scale,
     uint32_t flags);
 int bn_transformer_gpu_emit_context_moe_routed_ffn(
     BnTransformerGPUEmitContext *ctx,

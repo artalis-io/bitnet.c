@@ -248,8 +248,17 @@ const void *bn_moe_load_expert_proj_into(const BnMoEIO *io, BnMoEStats *stats,
 const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                          const BnMoEExpertMap *map,
                                          int expert_idx, int proj) {
+    uint8_t *buf = ms->buf;
+    size_t buf_size = ms->buf_size;
+    if (proj == 1) {
+        buf = ms->buf2;
+        buf_size = ms->buf2_size;
+    } else if (proj == 2) {
+        buf = ms->buf5;
+        buf_size = ms->buf5_size;
+    }
     return bn_moe_load_expert_proj_into(io, &ms->stats, map, expert_idx, proj,
-                                      ms->buf, ms->buf_size);
+                                      buf, buf_size);
 }
 
 // Public accessor for GPU path — wraps static bn_moe_load_expert_proj.

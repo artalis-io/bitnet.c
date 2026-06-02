@@ -189,7 +189,8 @@ struct BnGPUBackend {
     // Returns indices/weights as [n_tokens, k] on the host.
     int (*moe_route_batch)(void *ctx, int *indices, float *weights,
                            void *router_buf, const float *X,
-                           int n_tokens, int dim, int n_experts, int k);
+                           int n_tokens, int dim, int n_experts, int k,
+                           int norm_topk_prob, float expert_weights_scale);
 
     // Combined batched MoE routing and resident routed FFN for prompt
     // processing. Avoids route readback and re-upload.
@@ -202,7 +203,36 @@ struct BnGPUBackend {
                                       int n_tokens, int dim, int hidden_dim,
                                       int n_experts, int k,
                                       int gate_type, int up_type,
-                                      int down_type, int act_type);
+                                      int down_type, int act_type,
+                                      int norm_topk_prob,
+                                      float expert_weights_scale);
+
+    // Same as moe_route_routed_ffn_batch, with input RMSNorm fused before
+    // routing and residual add fused into the returned output:
+    // out = X + MoE(norm(X)).
+    int (*moe_route_routed_ffn_batch_norm_resid)(
+                                      void *ctx, float *out,
+                                      void *router_buf,
+                                      void *gate_all_buf,
+                                      void *up_all_buf,
+                                      void *down_all_buf,
+                                      void *shared_gate_buf,
+                                      void *shared_up_buf,
+                                      void *shared_down_buf,
+                                      void *shared_gate_weight_buf,
+                                      void *norm_buf,
+                                      const float *X,
+                                      int n_tokens, int dim, int hidden_dim,
+                                      int n_experts, int k,
+                                      int gate_type, int up_type,
+                                      int down_type, int act_type,
+                                      int shared_hidden_dim,
+                                      int shared_gate_type,
+                                      int shared_up_type,
+                                      int shared_down_type,
+                                      float norm_eps,
+                                      int norm_topk_prob,
+                                      float expert_weights_scale);
 
     // Batched causal attention for prompt processing:
     // out[n_tokens, n_heads * head_size] =
@@ -310,6 +340,46 @@ struct BnGPUBackend {
                                     int kv_cache_stride,
                                     float attention_scale);
 
+    // Full MoE transformer layer prefill fast path:
+    // X + Attention(norm(X)) + MoE(norm(...)). CUDA may accept X == NULL to
+    // reuse the previous device-resident output, and out == NULL to leave the
+    // new output resident for the next layer.
+    int (*prefill_moe_layer)(
+                                    void *ctx, float *out,
+                                    void *qk_buf, void *wv_buf, void *wo_buf,
+                                    void *router_buf, void *gate_all_buf,
+                                    void *up_all_buf, void *down_all_buf,
+                                    void *shared_gate_buf,
+                                    void *shared_up_buf,
+                                    void *shared_down_buf,
+                                    void *shared_gate_weight_buf,
+                                    void *attn_norm_buf,
+                                    void *ffn_norm_buf,
+                                    void *q_norm_buf, void *k_norm_buf,
+                                    void *q_bias_buf, void *k_bias_buf,
+                                    void *v_bias_buf,
+                                    const float *X, float *K_out,
+                                    float *V_out, int n_tokens, int dim,
+                                    int moe_hidden_dim, int n_experts,
+                                    int experts_active, int n_heads,
+                                    int n_kv_heads, int head_size,
+                                    int kv_mul, int kv_dim, int qk_rows,
+                                    int qk_type, int wv_rows, int wv_type,
+                                    int wo_rows, int wo_cols, int wo_type,
+                                    int gate_type, int up_type,
+                                    int down_type, int act_type,
+                                    int shared_hidden_dim,
+                                    int shared_gate_type,
+                                    int shared_up_type,
+                                    int shared_down_type,
+                                    int qk_norm_per_head, float norm_eps,
+                                    int pos0, int rope_dims,
+                                    uint32_t kv_cache_off,
+                                    int kv_cache_stride,
+                                    float attention_scale,
+                                    int norm_topk_prob,
+                                    float expert_weights_scale);
+
     // Hybrid/SSM prompt block fast path:
     // out[n_tokens, dim] = X + ssm_out(SSM(norm(X))). Backend owns and updates
     // its resident SSM recurrent state. Optional CUDA-oriented hook.
@@ -405,5 +475,6 @@ struct BnGPUBackend {
 #define BN_GPU_CAP_Q5_FUSED_GATEUP_SILU (1u << 6) // fused Q5_0 gate/up SiLU shader available
 #define BN_GPU_CAP_Q5_MATVEC_SPLIT (1u << 7) // stacked Q5_0 split matvec shader available
 #define BN_GPU_CAP_Q8_FUSED_GATEUP_SILU (1u << 8) // fused Q8_0 gate/up SiLU shader available
+#define BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU (1u << 9) // fused Q5_K gate/up SiLU shader available
 
 #endif // BN_GPU_BACKEND_H
