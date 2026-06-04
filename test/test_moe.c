@@ -1,6 +1,7 @@
 #include "moe.h"
 #include "model.h"
 #include "quant.h"
+#include "../src/moe_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -186,14 +187,15 @@ static void test_swiglu(void) {
     printf("test_swiglu... ");
 
     // SwiGLU: SiLU(gate) * up = (gate / (1 + exp(-gate))) * up
-    float gate = 2.0f;
-    float up = 3.0f;
-    float expected = (gate / (1.0f + expf(-gate))) * up;
+    float gate[8] = {-5.0f, -2.0f, -0.5f, 0.0f, 0.5f, 2.0f, 5.0f, 9.0f};
+    float up[8] = {1.0f, -3.0f, 0.25f, 4.0f, -2.0f, 3.0f, 0.5f, -1.0f};
+    float out[8];
 
-    // Compute manually
-    float silu = gate / (1.0f + expf(-gate));
-    float result = silu * up;
-    assert(fabsf(result - expected) < 1e-6f);
+    bn_moe_swiglu(out, gate, up, 8, 1);
+    for (int i = 0; i < 8; i++) {
+        float expected = (gate[i] / (1.0f + expf(-gate[i]))) * up[i];
+        assert(fabsf(out[i] - expected) < 1e-6f);
+    }
 
     printf("PASSED\n");
 }

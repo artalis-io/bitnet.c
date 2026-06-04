@@ -94,7 +94,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
             down_data, em->down_type, em->down_rows, em->down_cols);
         bn_quant_matvec(hb, &wgate, xb_in, sess->state.x_q, bn_model_pool(m));
         bn_quant_matvec(hb2, &wup, xb_in, sess->state.x_q, bn_model_pool(m));
-        bn_moe_swiglu(hb, hb, hb2, moe_hidden);
+        bn_moe_swiglu(hb, hb, hb2, moe_hidden, c->moe_exact_silu);
         bn_quant_matvec(down, &wdown, hb, sess->state.x_q, bn_model_pool(m));
         bn_moe_weighted_add(expert_out, down, weight, dim);
     }
@@ -105,7 +105,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
                         sess->state.x_q, bn_model_pool(m));
         bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
                         sess->state.x_q, bn_model_pool(m));
-        bn_moe_swiglu(hb, hb, hb2, shared_hidden);
+        bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
         bn_quant_matvec(down, &lw->shared.shared_down, hb,
                         sess->state.x_q, bn_model_pool(m));
         if (lw->shared.shared_expert_gate) {
@@ -184,7 +184,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
             down_data, em->down_type, em->down_rows, em->down_cols);
         bn_quant_matvec(hb, &wgate, xb_in, sess->state.x_q, bn_model_pool(m));
         bn_quant_matvec(hb2, &wup, xb_in, sess->state.x_q, bn_model_pool(m));
-        bn_moe_swiglu(hb, hb, hb2, moe_hidden);
+        bn_moe_swiglu(hb, hb, hb2, moe_hidden, c->moe_exact_silu);
         bn_quant_matvec(down, &wdown, hb, sess->state.x_q, bn_model_pool(m));
         bn_moe_weighted_add(routed_out, down, weight, dim);
     }
@@ -195,7 +195,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
                         sess->state.x_q, bn_model_pool(m));
         bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
                         sess->state.x_q, bn_model_pool(m));
-        bn_moe_swiglu(hb, hb, hb2, shared_hidden);
+        bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
         bn_quant_matvec(down, &lw->shared.shared_down, hb,
                         sess->state.x_q, bn_model_pool(m));
         if (lw->shared.shared_expert_gate) {
@@ -260,7 +260,7 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
                         bn_model_pool(m));
         bn_quant_matvec(hb2, &wup, xb_in, sess->state.x_q,
                         bn_model_pool(m));
-        bn_moe_swiglu(hb, hb, hb2, moe_hidden);
+        bn_moe_swiglu(hb, hb, hb2, moe_hidden, c->moe_exact_silu);
         memcpy(mid_out + (size_t)k * (size_t)moe_hidden, hb,
                (size_t)moe_hidden * sizeof(float));
     }
@@ -288,7 +288,7 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
                     sess->state.x_q, bn_model_pool(m));
     bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
                     sess->state.x_q, bn_model_pool(m));
-    bn_moe_swiglu(mid_out, mid_out, hb2, hidden);
+    bn_moe_swiglu(mid_out, mid_out, hb2, hidden, c->moe_exact_silu);
     free(hb2);
     return 0;
 }

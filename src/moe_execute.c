@@ -63,7 +63,8 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
 
     t0 = bn_moe_time_ms();
     bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                  m->config.moe_intermediate_size);
+                  m->config.moe_intermediate_size,
+                  m->config.moe_exact_silu);
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
@@ -93,6 +94,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
     int moe_hidden = c->moe_intermediate_size;
+    int exact_silu = c->moe_exact_silu;
     int K = c->n_experts_active;
     double t0;
 
@@ -193,7 +195,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 swiglu_ctxs[k] = (BnSwiGLUCtx){
                     ms->expert_hb_batch[k],
                     ms->expert_hb_batch[k],
-                    ms->expert_hb2_batch[k]
+                    ms->expert_hb2_batch[k],
+                    exact_silu
                 };
                 swiglu_tasks[k] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[k], moe_hidden };
             }
@@ -351,7 +354,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 swiglu_ctxs[h] = (BnSwiGLUCtx){
                     ms->expert_hb_batch[h],
                     ms->expert_hb_batch[h],
-                    ms->expert_hb2_batch[h]
+                    ms->expert_hb2_batch[h],
+                    exact_silu
                 };
                 swiglu_tasks[h] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[h], moe_hidden };
             }
@@ -471,7 +475,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
             // SwiGLU
             t0 = bn_moe_time_ms();
-            bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
+            bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
+                          moe_hidden, exact_silu);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Wait for down I/O
@@ -535,7 +540,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
             // SwiGLU activation
             t0 = bn_moe_time_ms();
-            bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2, moe_hidden);
+            bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
+                          moe_hidden, exact_silu);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Down projection
@@ -569,7 +575,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             };
             bn_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q, bn_model_pool(m));
         }
-        bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden);
+        bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden, exact_silu);
         bn_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q, bn_model_pool(m));
 
         // Apply shared expert sigmoid gate if present (Qwen3.5 MoE):

@@ -57,6 +57,7 @@ typedef struct {
     float *hb;
     const float *gate;
     const float *up;
+    int exact_silu;
 } BnSwiGLUCtx;
 
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
@@ -79,7 +80,8 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     int expert_idx, int proj);
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
 void bn_moe_swiglu_range(void *ctx, int start, int end);
-void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n);
+void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
+                   int exact_silu);
 double bn_moe_time_ms(void);
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n);
 void bn_moe_residual_add(float *x, const float *r, int n);

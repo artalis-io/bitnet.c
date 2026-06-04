@@ -24,10 +24,12 @@ void bn_moe_swiglu_range(void *ctx, int start, int end) {
     BnSwiGLUCtx *c = (BnSwiGLUCtx *)ctx;
     int i = start;
 #ifdef __AVX2__
-    for (; i + 7 < end; i += 8) {
-        __m256 g = _mm256_loadu_ps(c->gate + i);
-        __m256 u = _mm256_loadu_ps(c->up + i);
-        _mm256_storeu_ps(c->hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+    if (!c->exact_silu) {
+        for (; i + 7 < end; i += 8) {
+            __m256 g = _mm256_loadu_ps(c->gate + i);
+            __m256 u = _mm256_loadu_ps(c->up + i);
+            _mm256_storeu_ps(c->hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+        }
     }
 #endif
     for (; i < end; i++) {
@@ -37,13 +39,16 @@ void bn_moe_swiglu_range(void *ctx, int start, int end) {
 }
 
 // Vectorized SwiGLU for pread path (single expert, no dispatch overhead)
-void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n) {
+void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
+                   int exact_silu) {
     int i = 0;
 #ifdef __AVX2__
-    for (; i + 7 < n; i += 8) {
-        __m256 g = _mm256_loadu_ps(gate + i);
-        __m256 u = _mm256_loadu_ps(up + i);
-        _mm256_storeu_ps(hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+    if (!exact_silu) {
+        for (; i + 7 < n; i += 8) {
+            __m256 g = _mm256_loadu_ps(gate + i);
+            __m256 u = _mm256_loadu_ps(up + i);
+            _mm256_storeu_ps(hb + i, _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+        }
     }
 #elif defined(__ARM_NEON)
     // No fast_silu for NEON — use scalar (expf is the bottleneck either way)
@@ -97,4 +102,3 @@ void bn_moe_residual_add(float *x, const float *r, int n) {
     for (; i < n; i++)
         x[i] += r[i];
 }
-
