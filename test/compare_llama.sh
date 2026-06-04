@@ -72,7 +72,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check dependencies
-BITNET="./bitnet"
+BITNET="${BITNET:-./bitnet}"
 LLAMA="${LLAMA:-llama-completion}"
 LLAMA_TOKENIZE="${LLAMA_TOKENIZE:-llama-tokenize}"
 if [[ "$LLAMA" == "llama-completion" && -x "$LLAMA_BIN_DIR/llama-completion" ]]; then
