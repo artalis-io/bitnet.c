@@ -22,6 +22,29 @@ static BnAllocator *resolve_alloc(BnAllocator *a) {
     return &def;
 }
 
+static int cuda_prefill_needs_decode_fallback(const BnConfig *c,
+                                              const BnGPUBackend *gpu) {
+    if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
+        return 0;
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) &&
+        getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_FFN") == NULL &&
+        getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") == NULL)
+        return 1;
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) &&
+        c->n_experts <= 0 &&
+        c->full_attn_interval <= 0 &&
+        c->dim <= 2560 &&
+        getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE") == NULL)
+        return 1;
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+        c->n_experts <= 0 &&
+        c->full_attn_interval <= 0 &&
+        c->dim <= 2560 &&
+        getenv("BN_CUDA_ENABLE_SMALL_QWEN_PREFILL") == NULL)
+        return 1;
+    return 0;
+}
+
 static int use_gpu_batch_prefill(const BnModel *model) {
     if (!model) return 0;
     if (getenv("BN_GPU_DISABLE_PREFILL_MATMUL")) return 0;
@@ -30,6 +53,8 @@ static int use_gpu_batch_prefill(const BnModel *model) {
     if (c->kv_tq_bits != 0)
         return 0;
     BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
+    if (cuda_prefill_needs_decode_fallback(c, gpu))
+        return 0;
     if (c->full_attn_interval > 0) {
         if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
             gpu->prefill_ssm_layer &&

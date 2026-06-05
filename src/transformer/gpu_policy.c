@@ -95,6 +95,18 @@ static int small_dense_cuda_q8_native_by_default(
     return 1;
 }
 
+static int small_dense_cuda_requires_kquant_opt_in(
+    const BnConfig *c,
+    const BnWeights *w) {
+    if (!c || !w)
+        return 0;
+    if (!(c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3))
+        return 0;
+    if (small_dense_cuda_q8_native_by_default(c, w))
+        return 0;
+    return getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE") == NULL;
+}
+
 void bn_transformer_gpu_report_fallback(const char *reason) {
     if (!getenv("BN_GPU_DEBUG_FALLBACK"))
         return;
@@ -161,7 +173,9 @@ int bn_transformer_gpu_validate_forward(
 
     if (gpu->kind == BN_GPU_BACKEND_CUDA && c->dim <= 2560 &&
         c->n_experts <= 0 && c->full_attn_interval <= 0) {
-        if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")) {
+        if (small_dense_cuda_requires_kquant_opt_in(c, w)) {
+            GPU_POLICY_REJECT("qwen3 small dense cuda kquant native disabled");
+        } else if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")) {
             if (!small_dense_cuda_q8_native_by_default(c, w))
                 GPU_POLICY_REJECT("small dense cuda graph disabled");
         } else if (!small_dense_cuda_native_by_default(c, w)) {
@@ -203,7 +217,10 @@ int bn_transformer_gpu_validate_forward(
 
     if (out->has_moe &&
         (gpu->kind != BN_GPU_BACKEND_CUDA ||
-         getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL))
+         getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL ||
+         ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) &&
+          getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_FFN") == NULL &&
+          getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") == NULL)))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
     if (out->has_ssm && (!gpu->read_activation || !gpu->write_activation))
         GPU_POLICY_REJECT("ssm needs read/write activation");
