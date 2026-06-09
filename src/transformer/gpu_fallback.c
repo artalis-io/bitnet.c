@@ -210,6 +210,17 @@ int bn_transformer_gpu_fallback_cpu_attention(
     bn_quant_matvec(s->xb2, &lw->attn.wo, s->xb, s->x_q, bn_model_pool(m));
     bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
+    size_t kv_row_bytes = (size_t)c->kv_dim * sizeof(float);
+    size_t kv_row_off = (loff + (size_t)cache_pos * (size_t)c->kv_dim) *
+                        sizeof(float);
+    if (!gpu->write_activation ||
+        gpu->write_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE,
+                              key_cache_row, kv_row_bytes, kv_row_off) != 0 ||
+        gpu->write_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE,
+                              value_cache_row, kv_row_bytes,
+                              kv_row_off) != 0)
+        return -1;
+
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;

@@ -261,7 +261,8 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int gate_rows,
     int up_rows,
     int cols,
-    int use_q4_q8);
+    int use_q4_q8,
+    uint32_t flags);
 int bn_transformer_gpu_emit_context_moe_route_topk(
     BnTransformerGPUEmitContext *ctx,
     void *router_buf,
@@ -287,7 +288,8 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     int dim,
     int hidden,
     int n_experts,
-    int k);
+    int k,
+    int exact_silu);
 int bn_transformer_gpu_fallback_ssm_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -534,6 +536,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                                          const BnLayerWeights *lw,
                                          int dim,
                                          uint32_t u_eps,
-                                         void *next_norm);
+                                         void *next_norm,
+                                         int exact_silu);
 
 #endif // BN_TRANSFORMER_GPU_INTERNAL_H

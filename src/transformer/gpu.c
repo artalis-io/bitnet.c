@@ -39,6 +39,64 @@ static void gpu_debug_compare_vec_local(const char *label,
             sum_abs / (double)n, sqrt(sum_sq / (double)n));
 }
 
+static void gpu_debug_rmsnorm_scalar_local(float *out,
+                                           const float *x,
+                                           const float *w,
+                                           int n,
+                                           float eps) {
+    float ss = 0.0f;
+    for (int i = 0; i < n; i++)
+        ss += x[i] * x[i];
+    float scale = 1.0f / sqrtf(ss / (float)n + eps);
+    for (int i = 0; i < n; i++)
+        out[i] = x[i] * scale * w[i];
+}
+
+static int gpu_debug_compute_moe_actual_cpu_from_state(
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int layer,
+    int dim,
+    float *x_out) {
+    if (!m || !sess || !lw || !x_out || !sess->moe_state)
+        return -1;
+    BnRunState *s = &sess->state;
+    int K = m->config.n_experts_active;
+    if (K > BN_MAX_MOE_K)
+        K = BN_MAX_MOE_K;
+    float *save_x = (float *)malloc((size_t)dim * sizeof(float));
+    float *save_xb = (float *)malloc((size_t)dim * sizeof(float));
+    int save_indices[BN_MAX_MOE_K];
+    float save_weights[BN_MAX_MOE_K];
+    if (!save_x || !save_xb) {
+        free(save_x);
+        free(save_xb);
+        return -1;
+    }
+    memcpy(save_x, s->x, (size_t)dim * sizeof(float));
+    memcpy(save_xb, s->xb, (size_t)dim * sizeof(float));
+    for (int k = 0; k < K; k++) {
+        save_indices[k] = sess->moe_state->expert_indices[k];
+        save_weights[k] = sess->moe_state->expert_weights[k];
+    }
+
+    bn_model_set_gpu_disabled(m, 1);
+    bn_moe_forward(m, sess, lw, layer);
+    bn_model_set_gpu_disabled(m, 0);
+    memcpy(x_out, s->x, (size_t)dim * sizeof(float));
+
+    memcpy(s->x, save_x, (size_t)dim * sizeof(float));
+    memcpy(s->xb, save_xb, (size_t)dim * sizeof(float));
+    for (int k = 0; k < K; k++) {
+        sess->moe_state->expert_indices[k] = save_indices[k];
+        sess->moe_state->expert_weights[k] = save_weights[k];
+    }
+    free(save_x);
+    free(save_xb);
+    return 0;
+}
+
 static int gpu_debug_compute_moe_cpu_from_xb(
     BnModel *m,
     BnSession *sess,
@@ -215,6 +273,54 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
     return 0;
 }
 
+static int gpu_compute_shared_expert_cpu_from_xb(
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int dim,
+    const float *xb_in,
+    float *shared_out) {
+    if (!m || !sess || !lw || !xb_in || !shared_out ||
+        !lw->shared.shared_gate.data)
+        return -1;
+    BnConfig *c = &m->config;
+    int shared_hidden = c->shared_expert_intermediate_size;
+    if (shared_hidden <= 0)
+        return -1;
+    float *hb = (float *)malloc((size_t)shared_hidden * sizeof(float));
+    float *hb2 = (float *)malloc((size_t)shared_hidden * sizeof(float));
+    float *down = (float *)malloc((size_t)dim * sizeof(float));
+    if (!hb || !hb2 || !down) {
+        free(hb);
+        free(hb2);
+        free(down);
+        return -1;
+    }
+
+    bn_quant_matvec(hb, &lw->shared.shared_gate, xb_in,
+                    sess->state.x_q, bn_model_pool(m));
+    bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
+                    sess->state.x_q, bn_model_pool(m));
+    bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
+    bn_quant_matvec(down, &lw->shared.shared_down, hb,
+                    sess->state.x_q, bn_model_pool(m));
+    memset(shared_out, 0, (size_t)dim * sizeof(float));
+    if (lw->shared.shared_expert_gate) {
+        float gate_dot = 0.0f;
+        for (int d = 0; d < dim; d++)
+            gate_dot += xb_in[d] * lw->shared.shared_expert_gate[d];
+        float gate = 1.0f / (1.0f + expf(-gate_dot));
+        bn_moe_weighted_add(shared_out, down, gate, dim);
+    } else {
+        bn_moe_weighted_add(shared_out, down, 1.0f, dim);
+    }
+
+    free(hb);
+    free(hb2);
+    free(down);
+    return 0;
+}
+
 static int gpu_debug_compute_moe_mid_cpu_from_xb(
     BnModel *m,
     BnSession *sess,
@@ -289,6 +395,39 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
     bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
                     sess->state.x_q, bn_model_pool(m));
     bn_moe_swiglu(mid_out, mid_out, hb2, hidden, c->moe_exact_silu);
+    free(hb2);
+    return 0;
+}
+
+static int gpu_debug_compute_shared_down_cpu_from_xb(
+    BnModel *m,
+    BnSession *sess,
+    BnLayerWeights *lw,
+    int dim,
+    const float *xb_in,
+    float *down_out) {
+    if (!m || !sess || !lw || !xb_in || !down_out || dim <= 0 ||
+        !lw->shared.shared_gate.data)
+        return -1;
+    BnConfig *c = &m->config;
+    int hidden = c->shared_expert_intermediate_size;
+    if (hidden <= 0)
+        return -1;
+    float *hb = (float *)malloc((size_t)hidden * sizeof(float));
+    float *hb2 = (float *)malloc((size_t)hidden * sizeof(float));
+    if (!hb || !hb2) {
+        free(hb);
+        free(hb2);
+        return -1;
+    }
+    bn_quant_matvec(hb, &lw->shared.shared_gate, xb_in,
+                    sess->state.x_q, bn_model_pool(m));
+    bn_quant_matvec(hb2, &lw->shared.shared_up, xb_in,
+                    sess->state.x_q, bn_model_pool(m));
+    bn_moe_swiglu(hb, hb, hb2, hidden, c->moe_exact_silu);
+    bn_quant_matvec(down_out, &lw->shared.shared_down, hb,
+                    sess->state.x_q, bn_model_pool(m));
+    free(hb);
     free(hb2);
     return 0;
 }
@@ -994,7 +1133,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int use_q4_q8_layer = q4_q8_from_layer >= 0 &&
                                l >= q4_q8_from_layer &&
                                (q4_q8_to_layer < 0 || l <= q4_q8_to_layer);
-        int use_q4_q8_attn = use_q4_q8_layer && !q4_q8_ffn_only;
+        int qwen2moe_cuda_exact_attn =
+            gpu->kind == BN_GPU_BACKEND_CUDA &&
+            (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) &&
+            !getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
+        int use_q4_q8_attn =
+            (use_q4_q8_layer || qwen2moe_cuda_exact_attn) && !q4_q8_ffn_only;
         int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
 
         // ---- SSM layer ----
@@ -1164,7 +1308,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_transformer_gpu_resolve_moe_shared_resources(
                         gpu, backend, lw, l);
                 bn_transformer_gpu_emit_context_moe(
-                    &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm);
+                    &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
+                    c->moe_exact_silu);
                 if (moe_temporaries.n_buffers > 0) {
                     if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
                         return bn_transformer_gpu_reject_forward(
@@ -1219,6 +1364,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 lw->moe.expert_map.down_cols == c->moe_intermediate_size &&
                 !getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
             if (gpu_routed_ffn) {
+                int override_moe_cpu_actual =
+                    getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
                 int compare_moe = 0;
                 const char *compare_moe_env =
                     getenv("BN_GPU_COMPARE_MOE_LAYER");
@@ -1235,6 +1382,23 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 float *moe_cpu_routed_part = NULL;
                 float *moe_cpu_shared_part = NULL;
                 float *moe_gpu_routed_part = NULL;
+                float *moe_override_x = NULL;
+                if (override_moe_cpu_actual) {
+                    moe_override_x =
+                        (float *)malloc((size_t)dim * sizeof(float));
+                    if (!moe_override_x ||
+                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                        bn_transformer_gpu_read_x(
+                            gpu, s->x, (size_t)dim * sizeof(float)) != 0 ||
+                        bn_transformer_gpu_read_xb(
+                            gpu, s->xb, (size_t)dim * sizeof(float)) != 0 ||
+                        gpu_debug_compute_moe_actual_cpu_from_state(
+                            m, sess, lw, l, dim, moe_override_x) != 0) {
+                        free(moe_override_x);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu routed moe cpu override setup failed");
+                    }
+                }
                 if (compare_moe) {
                     moe_cpu_x = (float *)malloc((size_t)dim * sizeof(float));
                     moe_gpu_x = (float *)malloc((size_t)dim * sizeof(float));
@@ -1249,18 +1413,50 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu routed moe compare setup failed");
                     }
-                    bn_moe_route(sess->moe_state, s->xb,
-                                 lw->moe.router_weight, dim,
-                                 c->n_experts, c->n_experts_active,
-                                 c->moe_norm_topk_prob,
-                                 c->moe_expert_weights_scale,
-                                 bn_model_pool(m));
-                    if (gpu_debug_compute_moe_cpu_from_xb(
-                            m, sess, lw, dim, s->x, s->xb, moe_cpu_x) != 0) {
-                        free(moe_cpu_x);
-                        free(moe_gpu_x);
-                        return bn_transformer_gpu_reject_forward(
-                            &emit, "gpu routed moe compare setup failed");
+                    if (getenv("BN_GPU_COMPARE_MOE_INPUT_NORM") &&
+                        lw->norm.ffn_norm) {
+                        float *moe_cpu_xb =
+                            (float *)malloc((size_t)dim * sizeof(float));
+                        if (!moe_cpu_xb) {
+                            free(moe_cpu_x);
+                            free(moe_gpu_x);
+                            free(moe_override_x);
+                            return bn_transformer_gpu_reject_forward(
+                                &emit, "gpu routed moe compare setup failed");
+                        }
+                        gpu_debug_rmsnorm_scalar_local(
+                            moe_cpu_xb, s->x, lw->norm.ffn_norm, dim,
+                            c->norm_eps);
+                        gpu_debug_compare_vec_local(
+                            "moe_input_norm_compare", l, pos,
+                            moe_cpu_xb, s->xb, dim);
+                        free(moe_cpu_xb);
+                    }
+                    if (getenv("BN_GPU_COMPARE_MOE_ACTUAL")) {
+                        if (gpu_debug_compute_moe_actual_cpu_from_state(
+                                m, sess, lw, l, dim, moe_cpu_x) != 0) {
+                            free(moe_cpu_x);
+                            free(moe_gpu_x);
+                            free(moe_override_x);
+                            return bn_transformer_gpu_reject_forward(
+                                &emit, "gpu routed moe compare setup failed");
+                        }
+                    } else {
+                        bn_moe_route(sess->moe_state, s->xb,
+                                     lw->moe.router_weight, dim,
+                                     c->n_experts, c->n_experts_active,
+                                     c->moe_norm_topk_prob,
+                                     c->moe_expert_weights_scale,
+                                     bn_model_pool(m));
+                        if (gpu_debug_compute_moe_cpu_from_xb(
+                                m, sess, lw, dim, s->x, s->xb,
+                                moe_cpu_x) != 0) {
+                            free(moe_cpu_x);
+                            free(moe_gpu_x);
+                            free(moe_override_x);
+                            return bn_transformer_gpu_reject_forward(
+                                &emit, "gpu routed moe compare setup failed");
+                        }
                     }
                 }
                 if (cpu_route_resident_ffn) {
@@ -1327,7 +1523,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         lw->moe.expert_map.gate_type,
                         lw->moe.expert_map.down_type, dim,
                         c->moe_intermediate_size, c->n_experts,
-                        c->n_experts_active) != 0)
+                        c->n_experts_active, c->moe_exact_silu) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed ffn emit failed");
                 if (compare_moe && getenv("BN_GPU_COMPARE_MOE_MID")) {
@@ -1392,7 +1588,51 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                 l, pos, moe_cpu_routed_part,
                                                 moe_gpu_routed_part, dim);
                 }
-                if (c->has_shared_expert && lw->shared.shared_gate.data) {
+                int cpu_shared_fallback =
+                    c->has_shared_expert && lw->shared.shared_gate.data &&
+                    getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK") != NULL &&
+                    getenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK") == NULL;
+                if (cpu_shared_fallback) {
+                    size_t dim_bytes = (size_t)dim * sizeof(float);
+                    float *shared_cpu_xb = (float *)malloc(dim_bytes);
+                    float *shared_cpu_out = (float *)malloc(dim_bytes);
+                    float *shared_gpu_out = (float *)malloc(dim_bytes);
+                    if (!shared_cpu_xb || !shared_cpu_out ||
+                        !shared_gpu_out ||
+                        bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                        bn_transformer_gpu_read_xb(
+                            gpu, shared_cpu_xb, dim_bytes) != 0 ||
+                        bn_transformer_gpu_read_activation_buf(
+                            gpu, BN_GPU_VALUE_MOE_OUT, shared_gpu_out,
+                            dim_bytes) != 0 ||
+                        gpu_compute_shared_expert_cpu_from_xb(
+                            m, sess, lw, dim, shared_cpu_xb,
+                            shared_cpu_out) != 0) {
+                        free(shared_cpu_xb);
+                        free(shared_cpu_out);
+                        free(shared_gpu_out);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu shared moe cpu fallback failed");
+                    }
+                    for (int si = 0; si < dim; si++)
+                        shared_gpu_out[si] += shared_cpu_out[si];
+                    if (!gpu->write_activation ||
+                        gpu->write_activation(
+                            gpu->ctx, BN_GPU_VALUE_MOE_OUT,
+                            shared_gpu_out, dim_bytes, 0) != 0) {
+                        free(shared_cpu_xb);
+                        free(shared_cpu_out);
+                        free(shared_gpu_out);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu shared moe cpu fallback upload failed");
+                    }
+                    free(shared_cpu_xb);
+                    free(shared_cpu_out);
+                    free(shared_gpu_out);
+                    bn_transformer_gpu_emit_context_residual_rmsnorm(
+                        &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
+                        BN_GPU_VALUE_XB, dim, u_eps, next_norm);
+                } else if (c->has_shared_expert && lw->shared.shared_gate.data) {
                     BnTransformerGPUMoESharedResources moe_shared =
                         bn_transformer_gpu_resolve_moe_shared_resources(
                             gpu, backend, lw, l);
@@ -1402,7 +1642,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     };
                     bn_transformer_gpu_emit_context_moe(
                         &emit, &shared_only, &moe_shared, lw, dim, u_eps,
-                        next_norm);
+                        next_norm, c->moe_exact_silu);
                 } else {
                     bn_transformer_gpu_emit_context_residual_rmsnorm(
                         &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
@@ -1460,6 +1700,29 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         free(moe_cpu_shared_mid);
                         free(moe_gpu_shared_mid);
                     }
+                    if (getenv("BN_GPU_COMPARE_MOE_SHARED_DOWN") &&
+                        c->has_shared_expert && lw->shared.shared_gate.data) {
+                        size_t shared_down_bytes =
+                            (size_t)dim * sizeof(float);
+                        float *moe_cpu_shared_down =
+                            (float *)malloc(shared_down_bytes);
+                        float *moe_gpu_shared_down =
+                            (float *)malloc(shared_down_bytes);
+                        if (moe_cpu_shared_down && moe_gpu_shared_down &&
+                            gpu_debug_compute_shared_down_cpu_from_xb(
+                                m, sess, lw, dim, s->xb,
+                                moe_cpu_shared_down) == 0 &&
+                            bn_transformer_gpu_read_activation_buf(
+                                gpu, BN_GPU_VALUE_XB2, moe_gpu_shared_down,
+                                shared_down_bytes) == 0) {
+                            gpu_debug_compare_vec_local(
+                                "moe_shared_down_compare", l, pos,
+                                moe_cpu_shared_down, moe_gpu_shared_down,
+                                dim);
+                        }
+                        free(moe_cpu_shared_down);
+                        free(moe_gpu_shared_down);
+                    }
                     if (getenv("BN_GPU_COMPARE_MOE_NORM")) {
                         float *moe_cpu_norm =
                             (float *)malloc((size_t)dim * sizeof(float));
@@ -1495,6 +1758,19 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     free(moe_cpu_x);
                     free(moe_gpu_x);
                 }
+                if (override_moe_cpu_actual) {
+                    if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
+                        bn_transformer_gpu_write_x(
+                            gpu, moe_override_x,
+                            (size_t)dim * sizeof(float)) != 0 ||
+                        bn_transformer_gpu_emit_context_x_to_xb_rmsnorm(
+                            &emit, next_norm, dim, u_eps) != 0) {
+                        free(moe_override_x);
+                        return bn_transformer_gpu_reject_forward(
+                            &emit, "gpu routed moe cpu override apply failed");
+                    }
+                }
+                free(moe_override_x);
                 continue;
             }
             int did_gpu_route_topk = 0;
@@ -1587,7 +1863,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 bn_transformer_gpu_resolve_moe_shared_resources(
                     gpu, backend, lw, l);
             bn_transformer_gpu_emit_context_moe(
-                &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm);
+                &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
+                c->moe_exact_silu);
             if (moe_temporaries.n_buffers > 0 || compare_moe) {
                 if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
                     return bn_transformer_gpu_reject_forward(

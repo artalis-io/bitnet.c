@@ -429,7 +429,7 @@ static void bench_gpu_fused_gateup(const BnLayerWeights *L,
                     getenv("BN_GPU_Q4_Q8_ATTN_ONLY") == NULL;
     int rc = bn_transformer_gpu_emit_context_fused_gateup_silu(
         &emit, L->ffn.ffn_gate.type, gateup, BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
-        L->ffn.ffn_gate.rows, L->ffn.ffn_up.rows, cols, use_q4_q8);
+        L->ffn.ffn_gate.rows, L->ffn.ffn_up.rows, cols, use_q4_q8, 0);
     if (rc == 0)
         rc = bn_transformer_gpu_emit_context_lower_pending(&emit);
     if (rc != 0 || emit.n <= 0)
