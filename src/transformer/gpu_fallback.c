@@ -34,6 +34,40 @@ static void fallback_rmsnorm(float *out,
 #endif
 }
 
+static const BnPreparedWeight *fallback_cpu_prepared_qweight(
+    const BnModel *m,
+    const BnQWeight *w) {
+    if (getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS"))
+        return NULL;
+    return bn_backend_model_prepared_qweight(bn_model_backend(m), w);
+}
+
+static void fallback_cpu_matvec_batch(const BnModel *m,
+                                      const BnMatvecTask *tasks,
+                                      int n_tasks,
+                                      const float *x,
+                                      int8_t *x_q_buf) {
+    BnMatvecTask inline_tasks[8];
+    BnMatvecTask *prepared = inline_tasks;
+    if (n_tasks > 8) {
+        prepared = (BnMatvecTask *)malloc((size_t)n_tasks * sizeof(*prepared));
+        if (!prepared) {
+            bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
+            return;
+        }
+    }
+    for (int i = 0; i < n_tasks; i++) {
+        prepared[i] = tasks[i];
+        prepared[i].prepared =
+            fallback_cpu_prepared_qweight(m, tasks[i].W);
+        if (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3)
+            prepared[i].flags |= BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
+    }
+    bn_quant_matvec_batch(prepared, n_tasks, x, x_q_buf, bn_model_pool(m));
+    if (prepared != inline_tasks)
+        free(prepared);
+}
+
 int bn_transformer_gpu_fallback_ssm_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -164,11 +198,14 @@ int bn_transformer_gpu_fallback_cpu_attention(
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
     fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
-    bn_quant_matvec(s->q, &lw->attn.wq, s->xb, s->x_q, bn_model_pool(m));
-    bn_quant_matvec(key_cache_row, &lw->attn.wk, s->xb, s->x_q,
-                    bn_model_pool(m));
-    bn_quant_matvec(value_cache_row, &lw->attn.wv, s->xb, s->x_q,
-                    bn_model_pool(m));
+    {
+        BnMatvecTask qkv[3] = {
+            { s->q, &lw->attn.wq, NULL, 0 },
+            { key_cache_row, &lw->attn.wk, NULL, 0 },
+            { value_cache_row, &lw->attn.wv, NULL, 0 },
+        };
+        fallback_cpu_matvec_batch(m, qkv, 3, s->xb, s->x_q);
+    }
 
     if (lw->attn.q_bias) {
         for (int i = 0; i < shape.q_dim; i++) s->q[i] += lw->attn.q_bias[i];
@@ -207,7 +244,10 @@ int bn_transformer_gpu_fallback_cpu_attention(
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
-    bn_quant_matvec(s->xb2, &lw->attn.wo, s->xb, s->x_q, bn_model_pool(m));
+    {
+        BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
+        fallback_cpu_matvec_batch(m, wo, 1, s->xb, s->x_q);
+    }
     bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
     size_t kv_row_bytes = (size_t)c->kv_dim * sizeof(float);
@@ -542,6 +582,9 @@ int bn_transformer_gpu_debug_compare_ffn_state(
         free(cpu_xb);
         free(gpu_x);
         free(gpu_xb);
+        free(cpu_hb);
+        free(cpu_hb2);
+        free(gpu_hb);
         return -1;
     }
 

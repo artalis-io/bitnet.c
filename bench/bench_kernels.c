@@ -561,19 +561,16 @@ static int bench_sync_gpu_prompt(BnModel *m) {
     return 0;
 }
 
-static int bench_cuda_prefill_needs_decode_fallback(const BnConfig *c,
+static int bench_cuda_prefill_needs_decode_fallback(const BnModel *m,
                                                     const BnGPUBackend *gpu) {
+    const BnConfig *c = m ? &m->config : NULL;
     if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
         return 0;
-    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) &&
-        getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_FFN") == NULL &&
-        getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") == NULL)
-        return 1;
     if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
         c->n_experts <= 0 &&
         c->full_attn_interval <= 0 &&
         c->dim <= 2560 &&
-        getenv("BN_CUDA_ENABLE_SMALL_QWEN_PREFILL") == NULL)
+        getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL)
         return 1;
     return 0;
 }
@@ -586,12 +583,12 @@ static int bench_use_gpu_batch_prefill(const BnModel *m) {
     if (c->kv_tq_bits != 0)
         return 0;
     BnGPUBackend *gpu = bn_model_gpu((BnModel *)m);
-    if (bench_cuda_prefill_needs_decode_fallback(c, gpu))
+    if (bench_cuda_prefill_needs_decode_fallback(m, gpu))
         return 0;
     if (c->full_attn_interval > 0)
         return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
     if (c->n_experts > 0)
-        return 1;
+        return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
     return c->dim <= 2560;
 }
 

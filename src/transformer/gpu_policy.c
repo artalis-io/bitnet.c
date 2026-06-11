@@ -40,6 +40,32 @@ static int small_dense_cuda_qweight_supported(int type) {
            type == BN_GGUF_TENSOR_Q8_K;
 }
 
+static int cuda_qwen2moe_all2_q4q6_model(const BnConfig *c,
+                                         const BnWeights *w) {
+    if (!c || !w || c->n_experts != 2 ||
+        c->n_experts_active != 2 ||
+        c->moe_intermediate_size < 4096 ||
+        c->dim > 2048)
+        return 0;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        if (!lw->moe.router_weight)
+            continue;
+        if (lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q4_K &&
+            lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q4_K &&
+            lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K)
+            return 1;
+    }
+    return 0;
+}
+
+static int cuda_all2_q4q6_moe_requires_opt_in(const BnConfig *c,
+                                              const BnWeights *w) {
+    return cuda_qwen2moe_all2_q4q6_model(c, w) &&
+           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
+           getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") != NULL;
+}
+
 static int small_dense_cuda_native_by_default(
     const BnConfig *c,
     const BnWeights *w) {
@@ -93,6 +119,22 @@ static int small_dense_cuda_q8_native_by_default(
         }
     }
     return 1;
+}
+
+int bn_transformer_gpu_cuda_qwen2moe_all2_q4q6_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w) {
+    return cuda_qwen2moe_all2_q4q6_model(c, w) &&
+           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
+           getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") == NULL;
+}
+
+int bn_transformer_gpu_cuda_small_qwen_q8_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w) {
+    return c && (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+           small_dense_cuda_q8_native_by_default(c, w) &&
+           getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
 }
 
 void bn_transformer_gpu_report_fallback(const char *reason) {
@@ -203,11 +245,12 @@ int bn_transformer_gpu_validate_forward(
 
     if (out->has_moe &&
         (gpu->kind != BN_GPU_BACKEND_CUDA ||
-         getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL ||
-         ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) &&
-          getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_FFN") == NULL &&
-          getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") == NULL)))
+         getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
+    if (out->has_moe &&
+        gpu->kind == BN_GPU_BACKEND_CUDA &&
+        cuda_all2_q4q6_moe_requires_opt_in(c, w))
+        GPU_POLICY_REJECT("all2 q4/q6 moe gpu-resident forward requires opt-in");
     if (out->has_ssm && (!gpu->read_activation || !gpu->write_activation))
         GPU_POLICY_REJECT("ssm needs read/write activation");
 

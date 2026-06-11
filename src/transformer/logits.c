@@ -7,6 +7,8 @@
 #include "session.h"
 #include "sh_log.h"
 #include "transformer_backend_internal.h"
+#include "gpu_backend.h"
+#include "quant.h"
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
@@ -27,6 +29,104 @@
 #endif
 
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
+#define BN_LOGITS_REFINE_MAX_SCALE_BLOCKS 512
+
+static float logits_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
+                                         const int8_t *x_q,
+                                         const float *x_scales) {
+    int n_blocks_per_row = W->cols / 32;
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
+    float row_sum = 0.0f;
+
+    for (int b = 0; b < n_blocks_per_row; b++) {
+        const BnBlockQ8_0 *blk =
+            &blocks[(size_t)row * n_blocks_per_row + b];
+        const int8_t *xb = x_q + b * 32;
+        int32_t sumi = 0;
+        for (int i = 0; i < 32; i++)
+            sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
+        row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
+    }
+    return row_sum;
+}
+
+static int logits_refine_q8_top(float *logits, int n_logits,
+                                const BnQWeight *W, const float *x,
+                                int8_t *x_q, int top_n) {
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+    if (!logits || !W || !W->data || !x || !x_q ||
+        W->type != BN_GGUF_TENSOR_Q8_0)
+        return 0;
+    if (top_n <= 0) return 0;
+    if (top_n > 128) top_n = 128;
+    if (top_n > n_logits) top_n = n_logits;
+    int n_blocks = W->cols / 32;
+    if (n_blocks <= 0 || n_blocks > BN_LOGITS_REFINE_MAX_SCALE_BLOCKS)
+        return 0;
+
+    int ids[128];
+    float vals[128];
+    int n_top = 0;
+    for (int i = 0; i < n_logits; i++) {
+        float v = logits[i];
+        int j = n_top;
+        if (j == top_n && v <= vals[j - 1]) continue;
+        if (j < top_n) {
+            ids[j] = i;
+            vals[j] = v;
+            n_top++;
+        } else {
+            j--;
+        }
+        while (j > 0 && v > vals[j - 1]) {
+            ids[j] = ids[j - 1];
+            vals[j] = vals[j - 1];
+            j--;
+        }
+        ids[j] = i;
+        vals[j] = v;
+    }
+
+    float x_scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
+    for (int i = 0; i < n_top; i++)
+        logits[ids[i]] =
+            logits_exact_q8_row_dot_q8x(W, ids[i], x_q, x_scales);
+    return n_top;
+#else
+    (void)logits; (void)n_logits; (void)W; (void)x; (void)x_q; (void)top_n;
+    return 0;
+#endif
+}
+
+static int logits_small_qwen_cuda_q8_refine_enabled(const BnModel *m,
+                                                    const BnQWeight *W) {
+    if (!m || !W || W->type != BN_GGUF_TENSOR_Q8_0)
+        return 0;
+    BnGPUBackend *gpu = bn_model_gpu(m);
+    const BnConfig *c = &m->config;
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+           c->n_experts <= 0 &&
+           c->full_attn_interval <= 0 &&
+           c->dim <= 2560 &&
+           getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
+           getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
+}
+
+static void logits_refine_small_qwen_cuda_q8(const BnModel *m,
+                                             BnRunState *s,
+                                             const BnQWeight *W) {
+    if (!logits_small_qwen_cuda_q8_refine_enabled(m, W))
+        return;
+    int refine_top = 16;
+    const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
+    if (env) refine_top = atoi(env);
+    if (refine_top > 0)
+        logits_refine_q8_top(s->logits, m->config.vocab_size, W, s->x,
+                             s->x_q, refine_top);
+}
 
 #if !((defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__))
 static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
@@ -139,6 +239,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             logits_f16_dispatch(m, s, (const uint16_t *)w->output_weight.data, n_rows, dim);
     } else if (w->output_weight.data) {
         logits_quant_matvec_gpu(m, s->logits, &w->output_weight, s->x, s->x_q);
+        logits_refine_small_qwen_cuda_q8(m, s, &w->output_weight);
     } else if (bn_quant_format_supported(w->emb_type) &&
                w->emb_type != BN_GGUF_TENSOR_F16 &&
                w->emb_type != BN_GGUF_TENSOR_F32) {
@@ -148,6 +249,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             bn_transformer_backend_handle_or(bn_model_backend(m), -1,
                                              BN_BACKEND_HANDLE_TIED_EMBEDDING),
             s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
+        logits_refine_small_qwen_cuda_q8(m, s, &tied);
     } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
         if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
             logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,

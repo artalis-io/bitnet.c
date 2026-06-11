@@ -119,6 +119,12 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
+int bn_transformer_gpu_cuda_qwen2moe_all2_q4q6_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_cuda_small_qwen_q8_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
 void bn_transformer_gpu_report_fallback(const char *reason);
 float *bn_transformer_gpu_reject_forward(
     BnTransformerGPUEmitContext *emit,
@@ -252,6 +258,16 @@ int bn_transformer_gpu_emit_context_matvec(BnTransformerGPUEmitContext *ctx,
                                            int rows,
                                            int cols,
                                            int output_offset);
+int bn_transformer_gpu_emit_context_matvec_flags(
+    BnTransformerGPUEmitContext *ctx,
+    int type,
+    void *weight_buf,
+    int buf_in,
+    int buf_out,
+    int rows,
+    int cols,
+    int output_offset,
+    uint32_t flags);
 int bn_transformer_gpu_emit_context_fused_gateup_silu(
     BnTransformerGPUEmitContext *ctx,
     int type,
@@ -289,7 +305,8 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     int hidden,
     int n_experts,
     int k,
-    int exact_silu);
+    int exact_silu,
+    int layer);
 int bn_transformer_gpu_fallback_ssm_layer(
     BnTransformerGPUEmitContext *emit,
     const BnGPUBackend *gpu,
@@ -465,7 +482,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     void *next_norm,
     int skip_down,
     int *down_input_buf,
-    int use_q4_q8);
+    int use_q4_q8,
+    int use_q4_q8_down);
 void bn_transformer_gpu_emit_context_attention(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,

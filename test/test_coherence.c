@@ -16,6 +16,7 @@
 #include "model.h"
 #include "session.h"
 #include "transformer.h"
+#include "generate.h"
 #include "tokenizer.h"
 #include "sampler.h"
 #include "moe.h"
@@ -107,7 +108,7 @@ static void print_vec_delta(const char *label,
 }
 #endif
 
-#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL)
+#if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
 static int compare_prefill_kv_cache(BnGPUBackend *gpu,
                                     const BnConfig *config,
                                     const float *cpu_key,
@@ -387,11 +388,39 @@ static int test_gpu_moe_expert_weight(const char *backend_name,
 }
 #endif
 
+static float *coherence_prefill_prompt(BnModel *model, BnSession *s,
+                                       const int *tokens, int n_tokens,
+                                       int use_batch_prefill,
+                                       int *pos_out) {
+    if (!model || !s || !tokens || n_tokens <= 0 || !pos_out)
+        return NULL;
+    if (use_batch_prefill) {
+        float *logits = bn_prefill(model, s, tokens, n_tokens, 0, 0);
+        if (logits)
+            *pos_out = n_tokens;
+        return logits;
+    }
+
+    int token = tokens[0];
+    int pos = 0;
+    float *logits = NULL;
+    for (int i = 0; i < n_tokens; i++) {
+        logits = bn_transformer_forward(model, s, token, pos);
+        if (!logits)
+            return NULL;
+        if (i < n_tokens - 1)
+            token = tokens[i + 1];
+        pos++;
+    }
+    *pos_out = pos;
+    return logits;
+}
+
 /* ── Main ─────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--cuda] [--prompt <text>] [--require-all-tokens] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-tail-native N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash] [--kv16]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.gguf> [--webgpu] [--metal] [--cuda] [--prompt <text>] [--batch-prefill] [--require-all-tokens] [--cpu-fallback-layer N] [--cpu-fallback-from-layer N] [--cpu-attn-layer N] [--cpu-attn-from-layer N] [--cpu-ffn-layer N] [--cpu-ffn-from-layer N] [--cpu-ffn-down-from-layer N] [--compare-attention-layer N] [--compare-attention-pos N] [--compare-gqa-layer N] [--compare-gqa-pos N] [--compare-qkv-layer N] [--compare-qkv-pos N] [--compare-ffn-down-layer N] [--compare-ffn-down-pos N] [--compare-ffn-state-layer N] [--compare-ffn-state-pos N] [--compare-logits] [--compare-hidden] [--compare-kv-cache] [--cpu-disable-prepared-qweights] [--metal-q4-prepared] [--metal-full-barriers] [--metal-disable-barriers] [--metal-disable-q4-q8] [--metal-cpu-rmsnorm] [--q4-q8-from-layer N] [--q4-q8-to-layer N] [--q4-q8-tail-native N] [--q4-q8-attn-only] [--q4-q8-ffn-only] [--disable-qkv-split] [--disable-gateup-split] [--disable-fused-gateup] [--split-residual-rmsnorm] [--flash] [--kv16]\n", argv[0]);
         fprintf(stderr, "Coherence test: WebGPU/Metal/CUDA vs CPU forward pass, SIMD vs scalar matvec\n");
         return 1;
     }
@@ -434,6 +463,7 @@ int main(int argc, char **argv) {
     int disable_fused_gateup = 0;
     int split_residual_rmsnorm = 0;
     int kv16 = 0;
+    int use_batch_prefill = 0;
     int require_all_tokens = 0;
     const char *prompt = "Hello";
     for (int i = 2; i < argc; i++) {
@@ -445,6 +475,8 @@ int main(int argc, char **argv) {
             use_cuda = 1;
         } else if (strcmp(argv[i], "--prompt") == 0 && i + 1 < argc) {
             prompt = argv[++i];
+        } else if (strcmp(argv[i], "--batch-prefill") == 0) {
+            use_batch_prefill = 1;
         } else if (strcmp(argv[i], "--require-all-tokens") == 0) {
             require_all_tokens = 1;
         } else if (strcmp(argv[i], "--cpu-fallback-layer") == 0 && i + 1 < argc) {
@@ -760,16 +792,16 @@ int main(int argc, char **argv) {
         BnSampler sampler;
         bn_sampler_init(&sampler, model.config.vocab_size, 0.0f, 0.0f, 42);
 
-        int token = prompt_tokens[0];
         int pos = 0;
-        float *logits = NULL;
-
-        /* Prefill prompt tokens */
-        for (int i = 0; i < n_prompt; i++) {
-            logits = bn_transformer_forward(&model, s, token, pos);
-            if (i < n_prompt - 1)
-                token = prompt_tokens[i + 1];
-            pos++;
+        int token = prompt_tokens[n_prompt - 1];
+        float *logits = coherence_prefill_prompt(
+            &model, s, prompt_tokens, n_prompt, use_batch_prefill, &pos);
+        if (!logits) {
+            fprintf(stderr, "CPU prompt prefill failed\n");
+            bn_sampler_free(&sampler);
+            bn_session_free(s, NULL);
+            bn_model_set_gpu_disabled(&model, 0);
+            return 1;
         }
 
         if (compare_kv_cache && model.config.kv_tq_bits == 0 &&
@@ -853,15 +885,19 @@ int main(int argc, char **argv) {
                     return 1;
                 }
 
-                int token = prompt_tokens[0];
                 int pos = 0;
-                float *logits = NULL;
-
-                for (int i = 0; i < n_prompt; i++) {
-                    logits = bn_transformer_forward(&model, s, token, pos);
-                    if (i < n_prompt - 1)
-                        token = prompt_tokens[i + 1];
-                    pos++;
+                int token = prompt_tokens[n_prompt - 1];
+                float *logits = coherence_prefill_prompt(
+                    &model, s, prompt_tokens, n_prompt, use_batch_prefill,
+                    &pos);
+                if (!logits) {
+                    fprintf(stderr, "GPU prompt prefill failed\n");
+                    free(gpu_step_logits);
+                    free(gpu_step_hidden);
+                    bn_sampler_free(&sampler);
+                    bn_session_free(s, NULL);
+                    bn_gpu_wgpu_destroy(gpu);
+                    return 1;
                 }
 
                 if (compare_kv_cache &&
@@ -979,15 +1015,20 @@ int main(int argc, char **argv) {
                     return 1;
                 }
 
-                int token = prompt_tokens[0];
                 int pos = 0;
-                float *logits = NULL;
-
-                for (int i = 0; i < n_prompt; i++) {
-                    logits = bn_transformer_forward(&model, s, token, pos);
-                    if (i < n_prompt - 1)
-                        token = prompt_tokens[i + 1];
-                    pos++;
+                int token = prompt_tokens[n_prompt - 1];
+                float *logits = coherence_prefill_prompt(
+                    &model, s, prompt_tokens, n_prompt, use_batch_prefill,
+                    &pos);
+                if (!logits) {
+                    fprintf(stderr, "Metal prompt prefill failed\n");
+                    free(gpu_step_logits);
+                    free(gpu_step_hidden);
+                    bn_sampler_free(&sampler);
+                    bn_session_free(s, NULL);
+                    bn_model_release_gpu(&model);
+                    bn_gpu_metal_destroy(gpu);
+                    return 1;
                 }
 
                 if (compare_kv_cache &&
@@ -1106,15 +1147,28 @@ int main(int argc, char **argv) {
                     return 1;
                 }
 
-                int token = prompt_tokens[0];
                 int pos = 0;
-                float *logits = NULL;
+                int token = prompt_tokens[n_prompt - 1];
+                float *logits = coherence_prefill_prompt(
+                    &model, s, prompt_tokens, n_prompt, use_batch_prefill,
+                    &pos);
+                if (!logits) {
+                    fprintf(stderr, "CUDA prompt prefill failed\n");
+                    free(gpu_step_logits);
+                    free(gpu_step_hidden);
+                    bn_sampler_free(&sampler);
+                    bn_session_free(s, NULL);
+                    bn_model_release_gpu(&model);
+                    bn_gpu_cuda_destroy(gpu);
+                    return 1;
+                }
 
-                for (int i = 0; i < n_prompt; i++) {
-                    logits = bn_transformer_forward(&model, s, token, pos);
-                    if (i < n_prompt - 1)
-                        token = prompt_tokens[i + 1];
-                    pos++;
+                if (compare_kv_cache && model.config.kv_tq_bits == 0 &&
+                    !model.config.kv_f16) {
+                    compare_prefill_kv_cache(gpu, &model.config,
+                                             cpu_prefill_key,
+                                             cpu_prefill_value,
+                                             n_attn, n_prompt);
                 }
 
                 for (int i = 0; i < N_DECODE_STEPS; i++) {
