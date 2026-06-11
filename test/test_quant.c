@@ -1077,6 +1077,85 @@ static void test_kquant_preq8k_matmul_correctness(void) {
     printf("PASSED\n");
 }
 
+static void test_q6k_prepared_matmul_correctness(void) {
+    printf("test_q6k_prepared_matmul_correctness... ");
+
+#if defined(__AVX2__) || \
+    (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
+    int rows = 2048, cols = 4096, n_tokens = 3;
+    int n_bpr = cols / BN_QK_K;
+    BnBlockQ6K *q6 =
+        (BnBlockQ6K *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ6K));
+    float *X = (float *)malloc((size_t)n_tokens * cols * sizeof(float));
+    int8_t *x_q = (int8_t *)malloc((size_t)n_tokens * cols);
+    float *x_d =
+        (float *)malloc((size_t)n_tokens * n_bpr * sizeof(float));
+    int16_t *x_bsums =
+        (int16_t *)malloc((size_t)n_tokens * n_bpr * 16 * sizeof(int16_t));
+    float *raw = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *prepared_out =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *preq_prepared =
+        (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    assert(q6 && X && x_q && x_d && x_bsums &&
+           raw && prepared_out && preq_prepared);
+
+    fill_q6k_blocks(q6, rows, n_bpr, 41);
+    for (int t = 0; t < n_tokens; t++) {
+        for (int i = 0; i < cols; i++) {
+            X[(size_t)t * cols + i] =
+                0.01875f * (float)((t * 19 + i * 13 + 7) % 47) - 0.42f;
+        }
+        bn_quant_x_to_q8k(X + (size_t)t * cols,
+                          x_q + (size_t)t * cols,
+                          x_d + (size_t)t * n_bpr,
+                          x_bsums + (size_t)t * n_bpr * 16, cols);
+    }
+
+    BnQWeight W6 = {
+        .data = q6, .type = BN_GGUF_TENSOR_Q6_K,
+        .rows = rows, .cols = cols, .scale = 1.0f
+    };
+    BnPreparedWeightKind kind = BN_PREPARED_WEIGHT_NONE;
+    size_t prep_bytes = bn_quant_prepared_qweight_size(&W6, &kind);
+    assert(kind == BN_PREPARED_WEIGHT_Q6_K_EXPANDED);
+    assert(prep_bytes > 0);
+    SHArena *arena = sh_arena_create(prep_bytes + SH_ARENA_ALIGN);
+    assert(arena != NULL);
+    BnPreparedWeight prepared = { 0 };
+    assert(bn_quant_prepare_qweight(&prepared, &W6, arena) == 0);
+    assert(prepared.kind == BN_PREPARED_WEIGHT_Q6_K_EXPANDED);
+
+    bn_quant_matmul_prepared(raw, &W6, NULL, X, n_tokens, x_q, NULL);
+    bn_quant_matmul_prepared(prepared_out, &W6, &prepared, X, n_tokens,
+                             x_q, NULL);
+
+    float *outs[1] = { preq_prepared };
+    const BnQWeight *weights[1] = { &W6 };
+    const BnPreparedWeight *prepared_weights[1] = { &prepared };
+    bn_quant_matmul_preq8k_multi(outs, weights, prepared_weights, 1,
+                                 n_tokens, x_q, x_d, x_bsums, X, NULL);
+
+    for (int i = 0; i < rows * n_tokens; i++) {
+        assert(fabsf(prepared_out[i] - raw[i]) < 1e-4f);
+        assert(fabsf(preq_prepared[i] - raw[i]) < 1e-4f);
+    }
+
+    free(q6);
+    free(X);
+    free(x_q);
+    free(x_d);
+    free(x_bsums);
+    free(raw);
+    free(prepared_out);
+    free(preq_prepared);
+    sh_arena_free(arena);
+    printf("PASSED\n");
+#else
+    printf("SKIPPED\n");
+#endif
+}
+
 static void test_activation_quant_rounding(void) {
     printf("test_activation_quant_rounding... ");
 
@@ -1138,6 +1217,7 @@ int main(void) {
     test_mixed_kquant_matvec_batch_correctness();
     test_mixed_kquant_matvec_multi_correctness();
     test_kquant_preq8k_matmul_correctness();
+    test_q6k_prepared_matmul_correctness();
     test_activation_quant_rounding();
     printf("All quant integration tests passed!\n");
     return 0;

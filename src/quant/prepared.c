@@ -46,7 +46,9 @@ size_t bn_quant_prepared_qweight_size(const BnQWeight *w,
     }
     if (w->type == BN_GGUF_TENSOR_Q6_K) {
         int n_blocks_per_row = w->cols / BN_QK_K;
-        if (w->rows < 4096 || n_blocks_per_row <= 0) return 0;
+        int large_projection =
+            w->rows >= 4096 || (w->rows >= 2048 && w->cols >= 4096);
+        if (!large_projection || n_blocks_per_row <= 0) return 0;
         if (kind) *kind = BN_PREPARED_WEIGHT_Q6_K_EXPANDED;
         return (size_t)w->rows * n_blocks_per_row *
                sizeof(BnBlockQ6KPrepared) + SH_ARENA_ALIGN;
@@ -266,7 +268,9 @@ static int prepare_q6_k(BnPreparedWeight *prepared, const BnQWeight *w,
 #if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
     if (w->type != BN_GGUF_TENSOR_Q6_K || !w->data) return -1;
     int n_blocks_per_row = w->cols / BN_QK_K;
-    if (w->rows < 4096 || n_blocks_per_row <= 0) return -1;
+    int large_projection =
+        w->rows >= 4096 || (w->rows >= 2048 && w->cols >= 4096);
+    if (!large_projection || n_blocks_per_row <= 0) return -1;
     size_t n_blocks = (size_t)w->rows * n_blocks_per_row;
 
     prepared->kind = BN_PREPARED_WEIGHT_Q6_K_EXPANDED;
