@@ -1171,9 +1171,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     int qkv_split_op_code = bn_gpu_quant_split_op_code(lw->attn.wq.type);
     int qkv_split_env_disabled = getenv("BN_GPU_DISABLE_QKV_SPLIT") != NULL;
     int qkv_split_disabled = use_q4_q8 || qkv_split_env_disabled;
-    int qk_split_disabled = qkv_split_env_disabled ||
-                            (use_q4_q8 &&
-                             qkv_split_op_code != BN_GPU_CODE_Q4K_MATVEC_SPLIT);
+    int qk_split_disabled = qkv_split_env_disabled;
     int use_split = !qkv_split_disabled && !c->kv_f16 &&
                     qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&

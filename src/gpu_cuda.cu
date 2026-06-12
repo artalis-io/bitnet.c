@@ -18450,8 +18450,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
     int q8_preq_logits_default =
-        getenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS") != NULL &&
-        !disable_q8_preq_logits;
+        !disable_q8_preq_logits &&
+        (getenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS") != NULL ||
+         getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") == NULL);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
@@ -19702,11 +19703,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
                 }
+                int value_rows = 0;
+                if (total_rows == 4608 && cols == 2048)
+                    value_rows = 512;
+                else if (total_rows == 2304 && cols == 2048)
+                    value_rows = 256;
+                else if (total_rows == 1792 && cols == 1536 &&
+                         getenv("BN_CUDA_ENABLE_Q4K_SPLIT_VALUE_FUSE_1792") != NULL)
+                    value_rows = 256;
                 if (getenv("BN_CUDA_DISABLE_Q4K_SPLIT_VALUE_FUSE") == NULL &&
-                    ((total_rows == 4608 && cols == 2048) ||
-                     (total_rows == 1792 && cols == 1536 &&
-                      getenv("BN_CUDA_ENABLE_Q4K_SPLIT_VALUE_FUSE_1792") != NULL))) {
-                    int value_rows = total_rows == 1792 ? 256 : 512;
+                    value_rows > 0) {
                     int v_idx = -1;
                     for (int si = i + 1; si < n_ops && si <= i + 6; si++) {
                         const BnGPUOp *scan = &ops[si];
