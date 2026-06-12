@@ -154,6 +154,49 @@ static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
     return sess->state.x;
 }
 
+static int prefill_force_float_kquant(const BnModel *m) {
+    return m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3);
+}
+
+#ifdef __AVX2__
+static int prefill_qweight_is_kquant(const BnQWeight *w) {
+    return w && (w->type == BN_GGUF_TENSOR_Q4_K ||
+                 w->type == BN_GGUF_TENSOR_Q5_K ||
+                 w->type == BN_GGUF_TENSOR_Q6_K);
+}
+
+static int prefill_all_kquant(const BnQWeight *const *W, int n) {
+    if (n <= 0)
+        return 0;
+    for (int i = 0; i < n; i++) {
+        if (!prefill_qweight_is_kquant(W[i]))
+            return 0;
+    }
+    return 1;
+}
+
+static void prefill_quant_matmul_forced_kquant(
+        const BnModel *m, float **out, const BnQWeight **W, int n,
+        const float *X, int n_tokens, int8_t *x_q_buf) {
+    const BnBackendModel *backend = bn_model_backend(m);
+    BnMatvecTask tasks[4];
+    if (n > 4)
+        return;
+    for (int t = 0; t < n_tokens; t++) {
+        for (int i = 0; i < n; i++) {
+            tasks[i] = (BnMatvecTask){
+                out[i] + (size_t)t * W[i]->rows,
+                W[i],
+                bn_backend_model_prepared_qweight(backend, W[i]),
+                BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
+            };
+        }
+        bn_quant_matvec_batch(tasks, n, X + (size_t)t * W[0]->cols,
+                              x_q_buf, bn_model_pool(m));
+    }
+}
+#endif
+
 static void prefill_quant_matmul_gpu(const BnModel *m,
                                      float *out,
                                      const BnQWeight *W,
@@ -161,6 +204,15 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      int n_tokens,
                                      int8_t *x_q_buf) {
     if (!bn_model_gpu(m)) {
+#ifdef __AVX2__
+        if (prefill_force_float_kquant(m) && prefill_qweight_is_kquant(W)) {
+            float *outs[1] = { out };
+            const BnQWeight *weights[1] = { W };
+            prefill_quant_matmul_forced_kquant(
+                m, outs, weights, 1, X, n_tokens, x_q_buf);
+            return;
+        }
+#endif
         const BnBackendModel *backend = bn_model_backend(m);
         bn_quant_matmul_prepared(out, W,
                                  bn_backend_model_prepared_qweight(backend, W),
@@ -194,6 +246,14 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        int n_tokens,
                                        int8_t *x_q_buf) {
     if (!bn_model_gpu(m)) {
+#ifdef __AVX2__
+        if (n <= 4 && prefill_force_float_kquant(m) &&
+            prefill_all_kquant(W, n)) {
+            prefill_quant_matmul_forced_kquant(
+                m, out, W, n, X, n_tokens, x_q_buf);
+            return;
+        }
+#endif
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
         if (n > 4) {
@@ -1225,46 +1285,12 @@ static void prefill_ffn_activation_range(void *ctx, int start, int end) {
                 hb_t[i] = hb2_t ? g * g * hb2_t[i] : g * g;
             }
         } else if (c->act_type == 2) {
-            int i = 0;
-#ifdef __ARM_NEON
-            for (; i + 3 < hidden_dim; i += 4) {
-                float32x4_t v = bn_neon_fast_gelu_f32(vld1q_f32(hb_t + i));
-                if (hb2_t)
-                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
-                vst1q_f32(hb_t + i, v);
-            }
-#endif
-#ifdef __AVX2__
-            for (; i + 7 < hidden_dim; i += 8) {
-                __m256 v = bn_avx2_fast_gelu_ps(_mm256_loadu_ps(hb_t + i));
-                if (hb2_t)
-                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
-                _mm256_storeu_ps(hb_t + i, v);
-            }
-#endif
-            for (; i < hidden_dim; i++) {
+            for (int i = 0; i < hidden_dim; i++) {
                 float v = prefill_gelu(hb_t[i]);
                 hb_t[i] = hb2_t ? v * hb2_t[i] : v;
             }
         } else {
-            int i = 0;
-#ifdef __ARM_NEON
-            for (; i + 3 < hidden_dim; i += 4) {
-                float32x4_t v = bn_neon_fast_silu_f32(vld1q_f32(hb_t + i));
-                if (hb2_t)
-                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
-                vst1q_f32(hb_t + i, v);
-            }
-#endif
-#ifdef __AVX2__
-            for (; i + 7 < hidden_dim; i += 8) {
-                __m256 v = bn_avx2_fast_silu_ps(_mm256_loadu_ps(hb_t + i));
-                if (hb2_t)
-                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
-                _mm256_storeu_ps(hb_t + i, v);
-            }
-#endif
-            for (; i < hidden_dim; i++) {
+            for (int i = 0; i < hidden_dim; i++) {
                 float v = hb_t[i] / (1.0f + expf(-hb_t[i]));
                 hb_t[i] = hb2_t ? v * hb2_t[i] : v;
             }
@@ -1967,6 +1993,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
 #ifdef __AVX2__
             if (pf_xq && !bn_model_gpu(m) &&
+                !prefill_force_float_kquant(m) &&
                 prefill_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type)) {
                 t_prof = prefill_profile_now(&prof);
                 int n_bpr = dim / BN_QK_K;
@@ -2346,6 +2373,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 #ifdef __AVX2__
             int ssm_preq8k = 0;
             if (pf_xq && !bn_model_gpu(m) &&
+                !prefill_force_float_kquant(m) &&
                 prefill_quant_can_preq8k_pair(lw->ssm.wqkv.type,
                                               lw->ssm.wz.type)) {
                 int n_bpr = dim / BN_QK_K;
@@ -2500,6 +2528,7 @@ prefill_ssm_done:
                     double t_ffn_step = prefill_profile_now(&prof);
 #ifdef __AVX2__
                 if (pf_xq && !bn_model_gpu(m) &&
+                    !prefill_force_float_kquant(m) &&
                     prefill_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
                     int n_bpr = dim / BN_QK_K;
                     for (int t = 0; t < n_tokens; t++)

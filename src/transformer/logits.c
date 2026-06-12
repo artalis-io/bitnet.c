@@ -9,6 +9,7 @@
 #include "transformer_backend_internal.h"
 #include "gpu_backend.h"
 #include "quant.h"
+#include <stdlib.h>
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
@@ -31,25 +32,6 @@
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
 #define BN_LOGITS_REFINE_MAX_SCALE_BLOCKS 512
 
-static float logits_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
-                                         const int8_t *x_q,
-                                         const float *x_scales) {
-    int n_blocks_per_row = W->cols / 32;
-    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
-    float row_sum = 0.0f;
-
-    for (int b = 0; b < n_blocks_per_row; b++) {
-        const BnBlockQ8_0 *blk =
-            &blocks[(size_t)row * n_blocks_per_row + b];
-        const int8_t *xb = x_q + b * 32;
-        int32_t sumi = 0;
-        for (int i = 0; i < 32; i++)
-            sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
-        row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
-    }
-    return row_sum;
-}
-
 static int logits_refine_q8_top(float *logits, int n_logits,
                                 const BnQWeight *W, const float *x,
                                 int8_t *x_q, int top_n) {
@@ -64,6 +46,7 @@ static int logits_refine_q8_top(float *logits, int n_logits,
     int n_blocks = W->cols / 32;
     if (n_blocks <= 0 || n_blocks > BN_LOGITS_REFINE_MAX_SCALE_BLOCKS)
         return 0;
+    int n_blocks_per_row = n_blocks;
 
     int ids[128];
     float vals[128];
@@ -90,9 +73,21 @@ static int logits_refine_q8_top(float *logits, int n_logits,
 
     float x_scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
     bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
-    for (int i = 0; i < n_top; i++)
-        logits[ids[i]] =
-            logits_exact_q8_row_dot_q8x(W, ids[i], x_q, x_scales);
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
+    for (int i = 0; i < n_top; i++) {
+        int row = ids[i];
+        float row_sum = 0.0f;
+        for (int b = 0; b < n_blocks_per_row; b++) {
+            const BnBlockQ8_0 *blk =
+                &blocks[(size_t)row * (size_t)n_blocks_per_row + (size_t)b];
+            const int8_t *xb = x_q + b * 32;
+            int32_t sumi = 0;
+            for (int j = 0; j < 32; j++)
+                sumi += (int32_t)blk->qs[j] * (int32_t)xb[j];
+            row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
+        }
+        logits[row] = row_sum;
+    }
     return n_top;
 #else
     (void)logits; (void)n_logits; (void)W; (void)x; (void)x_q; (void)top_n;

@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
 #include "platform.h"
+#include "quant_dispatch_internal.h"
 #include "session.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../moe_internal.h"
@@ -711,7 +712,12 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
         return 0;
     float x_d[n_blocks];
     int16_t x_bsums[n_blocks * 16];
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     bn_quant_x_to_q8k(x, x_q_buf, x_d, x_bsums, W->cols);
+#else
+    bn_quant_x_to_q8k_scalar(x, x_q_buf, x_d, x_bsums, W->cols);
+#endif
 
     int ids[4096];
     float vals[4096];
