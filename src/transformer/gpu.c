@@ -40,6 +40,9 @@ static int gpu_cuda_large_hybrid_cpu_attn_safe_default(
         getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") != NULL ||
         getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
         return 0;
+    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
+        getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL)
+        return 0;
     if (c->full_attn_interval > 0)
         return 1;
     for (int l = 0; l < c->n_layers; l++) {

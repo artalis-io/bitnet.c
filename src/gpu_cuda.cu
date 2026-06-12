@@ -18923,10 +18923,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC") != NULL ||
                 (getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC") == NULL &&
                  op->rows <= 2048 && op->cols >= 8192));
+            int q8_small_ssm_matvec =
+                op->type == BN_GGUF_TENSOR_Q8_0 &&
+                op->rows <= 256 && op->cols >= 4096 &&
+                (op->buf_out == BN_GPU_VALUE_SSM_V ||
+                 op->buf_out == BN_GPU_VALUE_SSM_ALPHA ||
+                 op->buf_out == BN_GPU_VALUE_SSM_BETA) &&
+                getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") == NULL;
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                ((op->type == BN_GGUF_TENSOR_Q8_0 && op->cols <= 2048 &&
-                  getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL &&
+                ((op->type == BN_GGUF_TENSOR_Q8_0 &&
+                  ((q8_small_ssm_matvec &&
+                    getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC") != NULL &&
+                    getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC") == NULL) ||
+                   (op->cols <= 2048 &&
+                    getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL)) &&
                   getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL) ||
                  op->type == BN_GGUF_TENSOR_Q3_K ||
                  op->type == BN_GGUF_TENSOR_IQ3_XXS ||
@@ -19326,6 +19337,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         op->rows, op->cols, out_offset);
                 }
             } else if ((enable_q8_preq_all ||
+                        (q8_small_ssm_matvec &&
+                         getenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ") == NULL) ||
                         (is_logits_op && q8_preq_logits_default)) &&
                        op->type == BN_GGUF_TENSOR_Q8_0 &&
                        (op->cols & 31) == 0) {
