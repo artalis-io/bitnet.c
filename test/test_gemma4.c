@@ -84,6 +84,12 @@ static void add_tensors(ModelSpec *s) {
         snprintf(name, sizeof(name), "blk.%d.ffn_norm.weight", l);
         add_tensor(s, name, dim, 0, 0);
         if (s->moe) {
+            snprintf(name, sizeof(name), "blk.%d.ffn_gate.weight", l);
+            add_tensor(s, name, dim, hidden, 0);
+            snprintf(name, sizeof(name), "blk.%d.ffn_up.weight", l);
+            add_tensor(s, name, dim, hidden, 0);
+            snprintf(name, sizeof(name), "blk.%d.ffn_down.weight", l);
+            add_tensor(s, name, hidden, dim, 0);
             snprintf(name, sizeof(name), "blk.%d.ffn_gate_inp.weight", l);
             add_tensor(s, name, dim, experts, 0);
             snprintf(name, sizeof(name), "blk.%d.ffn_gate_up_exps.weight", l);

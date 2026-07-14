@@ -61,7 +61,7 @@ static void model_quant_f16_rows_to_i8_scalar(const uint16_t *f16,
             float v = bn_fp16_to_fp32(src[c]) * inv;
             int q = (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
             if (q > 127) q = 127;
-            if (q < -128) q = -128;
+            if (q < -127) q = -127;
             dst[c] = (int8_t)q;
         }
     }
@@ -283,6 +283,29 @@ static int tensor_dim0(BnGGUFFile *f, const char *name) {
     return (int)f->tensors[ti].dims[0];
 }
 
+static int gguf_get_bool_array(BnGGUFFile *f, const char *key, int idx) {
+    int ki = bn_gguf_find_key(f, key);
+    if (ki < 0 || idx < 0) return 0;
+    BnGGUFKeyValue *kv = &f->kvs[ki];
+    if (kv->type == BN_GGUF_TYPE_BOOL) return kv->value.b ? 1 : 0;
+    if (kv->type != BN_GGUF_TYPE_ARRAY) return 0;
+    BnGGUFArray *a = &kv->value.arr;
+    if ((uint64_t)idx >= a->n || !a->data) return 0;
+    if (a->elem_type == BN_GGUF_TYPE_BOOL)
+        return ((const uint8_t *)a->data)[idx] ? 1 : 0;
+    if (a->elem_type == BN_GGUF_TYPE_INT32) {
+        int32_t v;
+        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
+        return v != 0;
+    }
+    if (a->elem_type == BN_GGUF_TYPE_UINT32) {
+        uint32_t v;
+        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
+        return v != 0;
+    }
+    return 0;
+}
+
 // --- Model loading ---
 
 int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits) {
@@ -317,6 +340,10 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     snprintf(key, sizeof(key), "%s.block_count", prefix);
     c->n_layers = (int)bn_gguf_get_u32(f, key);
+    snprintf(key, sizeof(key), "%s.nextn_predict_layers", prefix);
+    int n_nextn_layers = (int)bn_gguf_get_u32(f, key);
+    if (n_nextn_layers > 0 && n_nextn_layers < c->n_layers)
+        c->n_layers -= n_nextn_layers;
 
     snprintf(key, sizeof(key), "%s.attention.head_count", prefix);
     c->n_heads = (int)bn_gguf_get_u32(f, key);
@@ -399,6 +426,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             const int32_t *sections = (const int32_t *)bn_gguf_get_arr_data(f, key);
             c->rope_text_dims =
                 bn_model_arch_rope_text_dims(c->rope_dim_count, sections, nsect);
+            if (arch && (strcmp(arch, "qwen35") == 0 ||
+                         strcmp(arch, "qwen35moe") == 0))
+                c->rope_text_dims = c->rope_dim_count;
         }
     }
 
@@ -419,6 +449,24 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     snprintf(key, sizeof(key), "%s.ssm.group_count", prefix);
     c->ssm_group_count = (int)bn_gguf_get_u32(f, key);
+
+    if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) {
+        snprintf(key, sizeof(key), "%s.attention.shared_kv_layers", prefix);
+        int shared_kv_layers = (int)bn_gguf_get_u32(f, key);
+        c->gemma4_kv_layer_count = c->n_layers - shared_kv_layers;
+        if (c->gemma4_kv_layer_count <= 0 || c->gemma4_kv_layer_count > c->n_layers)
+            c->gemma4_kv_layer_count = c->n_layers;
+        snprintf(key, sizeof(key), "%s.attention.sliding_window_pattern", prefix);
+        int max_swa = c->n_layers < (int)(sizeof(c->gemma4_swa_pattern) / sizeof(c->gemma4_swa_pattern[0]))
+                    ? c->n_layers
+                    : (int)(sizeof(c->gemma4_swa_pattern) / sizeof(c->gemma4_swa_pattern[0]));
+        for (int i = 0; i < max_swa; i++)
+            c->gemma4_swa_pattern[i] = gguf_get_bool_array(f, key, i);
+        snprintf(key, sizeof(key), "%s.embedding_length_per_layer_input", prefix);
+        c->gemma4_per_layer_dim = (int)bn_gguf_get_u32(f, key);
+        snprintf(key, sizeof(key), "%s.final_logit_softcapping", prefix);
+        c->final_logit_softcap = bn_gguf_get_f32(f, key);
+    }
 
     // Validate SSM config when hybrid model
     if (c->full_attn_interval > 0) {
@@ -550,6 +598,23 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         SH_LOG_ERROR("output_norm.weight not found");
         return -1;
     }
+    w->rope_freqs = load_f32_tensor(f, "rope_freqs.weight");
+    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+        c->gemma4_per_layer_dim > 0) {
+        if (load_qweight(&w->per_layer_model_proj, f,
+                         "per_layer_model_proj.weight",
+                         "per_layer_model_proj.scale") != 0)
+            return -1;
+        if (load_qweight(&w->per_layer_token_embd, f,
+                         "per_layer_token_embd.weight",
+                         "per_layer_token_embd.scale") != 0)
+            return -1;
+        w->per_layer_proj_norm = load_f32_tensor(f, "per_layer_proj_norm.weight");
+        if (!w->per_layer_proj_norm) {
+            SH_LOG_ERROR("per_layer_proj_norm.weight not found");
+            return -1;
+        }
+    }
 
     // Allocate per-layer weights
     w->layers = (BnLayerWeights *)calloc(c->n_layers, sizeof(BnLayerWeights));
@@ -645,6 +710,19 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (load_qweight(&lw->ssm.ssm_out, f, wname, sname) != 0) goto fail_layers;
         } else {
             // --- Attention layer weights ---
+            int gemma4_shared_kv =
+                (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                c->gemma4_kv_layer_count > 0 &&
+                i >= c->gemma4_kv_layer_count;
+            lw->attn.has_kv = !gemma4_shared_kv;
+            lw->attn.kv_reuse_layer = -1;
+            if (gemma4_shared_kv) {
+                int is_swa = (i < (int)(sizeof(c->gemma4_swa_pattern) / sizeof(c->gemma4_swa_pattern[0])))
+                    ? c->gemma4_swa_pattern[i]
+                    : 0;
+                lw->attn.kv_reuse_layer = c->gemma4_kv_layer_count - (is_swa ? 2 : 1);
+                if (lw->attn.kv_reuse_layer < 0) lw->attn.kv_reuse_layer = 0;
+            }
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_Q) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
@@ -657,7 +735,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
                                                     BN_MODEL_TENSOR_ATTN_K) != 0)
                 goto fail_layers;
-            if (load_qweight(&lw->attn.wk, f, wname, sname) != 0) goto fail_layers;
+            if (bn_gguf_find_tensor(f, wname) >= 0) {
+                if (load_qweight(&lw->attn.wk, f, wname, sname) != 0) goto fail_layers;
+                lw->attn.has_kv = 1;
+            } else if (!gemma4_shared_kv) {
+                SH_LOG_ERROR("Tensor not found", "name", wname);
+                goto fail_layers;
+            }
 
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_V) != 0 ||
@@ -666,8 +750,10 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
             if (bn_gguf_find_tensor(f, wname) >= 0) {
                 if (load_qweight(&lw->attn.wv, f, wname, sname) != 0) goto fail_layers;
-            } else if (arch_ops->attention_value_shares_key(arch)) {
+            } else if (lw->attn.wk.data && arch_ops->attention_value_shares_key(arch)) {
                 lw->attn.wv = lw->attn.wk;
+            } else if (gemma4_shared_kv) {
+                memset(&lw->attn.wv, 0, sizeof(lw->attn.wv));
             } else {
                 SH_LOG_ERROR("Tensor not found", "name", wname);
                 goto fail_layers;
@@ -769,11 +855,39 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                                           BN_MODEL_TENSOR_FFN_POST_NORM) != 0)
             goto fail_layers;
         lw->norm.ffn_post_norm = load_f32_tensor(f, wname);  // optional
+        if (!lw->norm.ffn_post_norm && (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)) {
+            snprintf(wname, sizeof(wname), "blk.%d.post_ffw_norm.weight", i);
+            lw->norm.ffn_post_norm = load_f32_tensor(f, wname);
+        }
+        if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) {
+            snprintf(wname, sizeof(wname), "blk.%d.post_ffw_norm_1.weight", i);
+            lw->norm.ffn_post_norm_1 = load_f32_tensor(f, wname);
+            snprintf(wname, sizeof(wname), "blk.%d.post_ffw_norm_2.weight", i);
+            lw->norm.ffn_post_norm_2 = load_f32_tensor(f, wname);
+        }
 
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                           BN_MODEL_TENSOR_LAYER_OUTPUT_SCALE) != 0)
             goto fail_layers;
         lw->norm.layer_output_scale = load_f32_tensor(f, wname);  // optional
+
+        if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+            c->gemma4_per_layer_dim > 0) {
+            snprintf(wname, sizeof(wname), "blk.%d.inp_gate.weight", i);
+            snprintf(sname, sizeof(sname), "blk.%d.inp_gate.scale", i);
+            if (load_qweight(&lw->per_layer.inp_gate, f, wname, sname) != 0)
+                goto fail_layers;
+            snprintf(wname, sizeof(wname), "blk.%d.proj.weight", i);
+            snprintf(sname, sizeof(sname), "blk.%d.proj.scale", i);
+            if (load_qweight(&lw->per_layer.proj, f, wname, sname) != 0)
+                goto fail_layers;
+            snprintf(wname, sizeof(wname), "blk.%d.post_norm.weight", i);
+            lw->per_layer.post_norm = load_f32_tensor(f, wname);
+            if (!lw->per_layer.post_norm) {
+                SH_LOG_ERROR("Gemma4 per-layer post_norm not found", "name", wname);
+                goto fail_layers;
+            }
+        }
 
         // FFN weights: MoE or dense
         if (c->n_experts > 0) {
@@ -787,6 +901,35 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (!lw->moe.router_weight) {
                 SH_LOG_ERROR("Router weight not found", "name", wname);
                 goto fail_layers;
+            }
+            if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) {
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_inp.scale", i);
+                lw->moe.router_scale = load_f32_tensor(f, wname);
+                snprintf(wname, sizeof(wname), "blk.%d.ffn_down_exps.scale", i);
+                lw->moe.expert_down_scale = load_f32_tensor(f, wname);
+            }
+
+            if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) {
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_FFN_GATE) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_FFN_GATE) != 0)
+                    goto fail_layers;
+                if (load_qweight(&lw->ffn.ffn_gate, f, wname, sname) != 0) goto fail_layers;
+
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_FFN_UP) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_FFN_UP) != 0)
+                    goto fail_layers;
+                if (load_qweight(&lw->ffn.ffn_up, f, wname, sname) != 0) goto fail_layers;
+
+                if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
+                                                  BN_MODEL_TENSOR_FFN_DOWN) != 0 ||
+                    bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
+                                                        BN_MODEL_TENSOR_FFN_DOWN) != 0)
+                    goto fail_layers;
+                if (load_qweight(&lw->ffn.ffn_down, f, wname, sname) != 0) goto fail_layers;
             }
 
             char gate_name[256], up_name[256], gate_up_name[256], down_name[256];

@@ -4,6 +4,11 @@
 #include <string.h>
 #include <arm_neon.h>
 
+static inline float q5k_fp16_to_f32(uint16_t h) {
+    return vgetq_lane_f32(
+        vcvt_f32_f16(vld1_dup_f16((const float16_t *)&h)), 0);
+}
+
 // Extract high bits for 16 consecutive l-positions from qh, testing bit `bit_pos`.
 // qh[l] stores high bits for position l: bits are interleaved as lo/hi pairs per group.
 // bit_pos = group*2 (0,2,4,6) for first half, group*2+1 (1,3,5,7) for second half.
@@ -33,8 +38,8 @@ void bn_quant_q5k_neon_range(void *ctx, int row_start, int row_end) {
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ5K *blk = &blocks[row * n_blocks_per_row + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d    = bn_fp16_to_fp32(blk->d);
-            float dmin = bn_fp16_to_fp32(blk->dmin);
+            float d    = q5k_fp16_to_f32(blk->d);
+            float dmin = q5k_fp16_to_f32(blk->dmin);
             const uint8_t *qs = blk->qs;
             const uint8_t *qh = blk->qh;
             const float *xb = x + b * BN_QK_K;
@@ -105,8 +110,8 @@ void bn_quant_q5k_neon_sdot_range(void *ctx, int row_start, int row_end) {
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ5K *blk = &blocks[(size_t)row * n_blocks_per_row + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d    = bn_fp16_to_fp32(blk->d);
-            float dmin = bn_fp16_to_fp32(blk->dmin);
+            float d    = q5k_fp16_to_f32(blk->d);
+            float dmin = q5k_fp16_to_f32(blk->dmin);
             float dx   = x_d[b];
             const uint8_t *qs = blk->qs;
             const uint8_t *qh = blk->qh;
@@ -188,8 +193,8 @@ void bn_quant_q5k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
         for (int b = 0; b < n_bpr; b++) {
             const BnBlockQ5K *blk = &blocks[(size_t)row * n_bpr + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d    = bn_fp16_to_fp32(blk->d);
-            float dmin = bn_fp16_to_fp32(blk->dmin);
+            float d    = q5k_fp16_to_f32(blk->d);
+            float dmin = q5k_fp16_to_f32(blk->dmin);
 
             uint32_t utmp[3];
             memcpy(utmp, blk->scales, 12);

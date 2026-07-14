@@ -14,6 +14,7 @@ typedef struct {
 
 typedef struct {
     float *q, *k;          // [key_dim] each
+    float eps;
     int head_dim;
 } BnSSML2NormCtx;
 

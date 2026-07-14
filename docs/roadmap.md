@@ -327,9 +327,10 @@ Do not add model, quant, or backend support as isolated one-offs. Each milestone
 
 The current model-family gate is top-logit coherence plus generation throughput
 against `llama-server -fa on -np 1` with the same model, context, prompt, and
-CPU/GPU placement. The local fixture set covers Qwen3 dense, Qwen3 MoE,
-Qwen3.5 dense, and Qwen3.5 MoE. No Qwen3.6 GGUF is currently present under
-`models/`, so Qwen3.6 remains unverified until a fixture is added.
+CPU/GPU placement. The local fixture set covers Qwen2.5 dense, Qwen3 dense,
+Qwen3 MoE, Qwen3.5 dense, Qwen3.5 MoE, and Qwen3.6 dense. No Gemma4 GGUF is
+currently present under `models/`, so Gemma4 real-model parity remains
+unverified until dense and sparse fixtures are added.
 
 Latest local measurements:
 
@@ -344,26 +345,43 @@ Latest local measurements:
 | `Qwen3.5-35B-A3B-Q4_K_M` | ARM NEON / CPU | 8/8 top-1, mean top-10 9.62 | 3.91 | 4.34 | 0.901 |
 | `Qwen3.5-35B-A3B-Q4_K_M` | Metal | 8/8 top-1, mean top-10 9.88 | 0.61 | 48.82 | 0.012 |
 
-Immediate interpretation: dense Qwen3 Metal is healthy, dense Qwen3.5 CPU is
-close, Qwen3 CPU has one near-tie top-1 swap, and Metal placement for Qwen3.5
-Q4_K_M plus both large MoE models is not competitive. The MoE Metal numbers are
-so far below llama.cpp that the first fix is placement/fallback visibility, not
-micro-optimizing a single matvec shader.
+Immediate interpretation: dense Qwen3 and Qwen3.5 CPU parity is clean on the
+strict decoded-token gate after aligning scalar Q8_0 accumulation and activation
+quantization with the NEON path. Dense Qwen3 Metal remains healthy. Metal
+placement for Qwen3.5 Q4_K_M plus both large MoE models is not competitive. The
+MoE Metal numbers are so far below llama.cpp that the first fix is
+placement/fallback visibility, not micro-optimizing a single matvec shader.
 
 ARM NEON / CPU plan:
 
-- [ ] **Qwen-family CPU parity gate** — add a repeatable target or script that
-  runs the same top-k/throughput gate for `Qwen3-0.6B-Q8_0`,
-  `Qwen3.5-9B-Q4_K_M`, `Qwen3-30B-A3B-Q4_K_M`, and
-  `Qwen3.5-35B-A3B-Q4_K_M`, with `--ngl 0`, fixed `--maxseq 512`, and a
-  small/large model token budget split. Store the latest rows in
-  `docs/benchmarks.md`.
-- [ ] **Investigate Qwen3 dense top-1 near-tie** — for
-  `Qwen3-0.6B-Q8_0` CPU, compare the `"Python is a programming language
-  created by"` logits against llama.cpp at higher precision. The top-10 set
-  matched exactly but tokens 12157 and 279 swapped rank, so this should be
-  treated as a numerical parity issue in logits accumulation, normalization,
-  RoPE, or final sampling penalties before calling CPU coherence clean.
+- [x] **Requested-family CPU parity gate** — `make test_cpu_parity` builds
+  `bitnet` and `bitnet_scalar`, then runs the Qwen and Gemma4 CPU parity gates
+  in sequence. Use `make test_cpu_parity_required` for the final no-skips
+  proof once the Qwen3.6 sparse, Gemma4 dense, and Gemma4 sparse fixtures are
+  present; it checks llama.cpp tools, upstream fixture metadata, all requested
+  fixture presence, and known download sizes before building.
+  `make check-cpu-parity-fixtures` reports
+  local fixture status, `make check-cpu-parity-remote-fixtures` verifies the
+  current Hugging Face repos, selected filenames, GGUF architectures, and file
+  sizes, and `make fetch-cpu-parity-fixtures` runs that remote check before
+  fetching missing large fixtures.
+- [x] **Qwen-family CPU parity gate** — `make test_qwen_cpu_parity` runs
+  `test/qwen_cpu_parity.sh`, which compares NEON and scalar output against
+  llama.cpp for discovered Qwen2.5, Qwen3, Qwen3.5, and Qwen3.6 fixtures. The
+  standard level uses 5-token dense gates and 1-token large/MoE smoke gates;
+  `QWEN_CPU_PARITY_LEVEL=full` raises the token budget for deeper checks, and
+  `QWEN_CPU_PARITY_CASES=qwen25,qwen3_dense` supports focused reruns.
+- [x] **Gemma4 CPU parity gate wiring** — `make test_gemma4_cpu_parity` runs
+  `test/gemma4_cpu_parity.sh`, which discovers dense E2B/E4B/31B and sparse
+  26B-A4B Gemma4 GGUFs while excluding mmproj sidecars, then compares both
+  NEON and scalar backends against llama.cpp with `--maxseq 512` by default.
+  The gate skips when fixtures are absent and fails missing fixtures when
+  `REQUIRE_MODELS=1` is set; real Gemma4 parity still requires local GGUFs.
+- [x] **Investigate Qwen3 dense top-1 near-tie** — the Q8_0 scalar path now
+  pre-quantizes batch inputs, uses NEON-matching activation inverse arithmetic,
+  and reduces Q8 blocks in four-block groups. Fresh scalar and NEON strict
+  decoded-token gates for `Qwen3-0.6B-Q8_0` pass 40/40 generated token IDs
+  against llama.cpp.
 - [ ] **Profile CPU k-quant hot paths by model family** — collect per-op timing
   for Q8_0 dense, Q4_K_M dense, and Q4_K_M MoE. Break down attention QKV/O,
   FFN gate/up/down, routed expert gate/up/down, shared expert work, logits, and
@@ -383,9 +401,28 @@ ARM NEON / CPU plan:
   sensitive to tiny per-expert jobs and thread wake overhead. Add a benchmark
   sweep for thread count, expert batch size, and pread cache size, then encode
   the best default policy in MoE execution rather than relying on CLI tuning.
-- [ ] **Add Qwen3.6 CPU fixture before claiming support** — once a Qwen3.6
-  dense or MoE GGUF is available, add it to `test/model_matrix.sh` through
-  `BN_MODEL_QWEN36_*` and run the same CPU gate before updating support status.
+- [x] **Add Qwen3.6 CPU fixture before claiming support** — the local
+  `Qwen3.6-27B-UD-Q4_K_XL` fixture is discoverable through
+  `BN_MODEL_QWEN36_DENSE` / `BN_MODEL_ROOT`, and scalar plus NEON one-token
+  llama.cpp parity smoke checks pass on the current tree.
+- [ ] **Add Qwen3.6 sparse CPU fixture** — current public GGUF candidate is
+  `unsloth/Qwen3.6-35B-A3B-GGUF`
+  (`Qwen3.6-35B-A3B-UD-Q4_K_M.gguf`, about 22.13 GB GGUF payload) for sparse
+  MoE coverage. Use `make fetch-qwen36-sparse-fixture`, then run
+  `REQUIRE_MODELS=1 make test_qwen_cpu_parity` to verify both backends.
+- [ ] **Add Gemma4 real-model fixtures** — current public GGUF candidates are
+  `google/gemma-4-E4B-it-qat-q4_0-gguf` (`gemma-4-E4B_q4_0-it.gguf`, about
+  5.15 GB GGUF payload) for dense coverage and
+  `google/gemma-4-26B-A4B-it-qat-q4_0-gguf`
+  (`gemma-4-26B_q4_0-it.gguf`, about 14.44 GB GGUF payload) for sparse MoE
+  coverage. Larger Unsloth quant collections are also available under
+  `unsloth/gemma-4-E4B-it-GGUF` and `unsloth/gemma-4-26B-A4B-it-GGUF`, but
+  should not be fetched automatically in routine gates. Use
+  `make fetch-cpu-parity-fixtures` to fetch all missing requested-family
+  fixtures, `make fetch-gemma4-fixtures` for only the two Gemma4 fixtures, or
+  `GEMMA4_FETCH_CASE=dense make fetch-gemma4-fixtures` for a focused download.
+  After download, run `REQUIRE_MODELS=1 make test_gemma4_cpu_parity` to verify
+  both backends.
 
 Metal plan:
 

@@ -89,7 +89,7 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
     p->kv_mul = lw->attn.kv_mul > 0 ? lw->attn.kv_mul : c->kv_mul;
     p->q_dim = c->n_heads * p->head_size;
     p->q_gated = lw->attn.wq.data && lw->attn.wq.rows > p->q_dim;
-    p->q_wide = !p->q_gated && lw->attn.wq.data && lw->attn.wq.rows > c->dim;
+    p->q_wide = !p->q_gated && lw->attn.wq.data && lw->attn.wq.rows != c->dim;
     p->qk_stride = c->qk_norm_per_head ? p->head_size : 0;
     p->has_qk_norm = (lw->attn.q_norm || lw->attn.k_norm) ? 1 : 0;
     p->has_bias = (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias) ? 1 : 0;
@@ -195,6 +195,8 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->activation = c->act_type;
     p->has_gate = c->has_ffn_gate;
     p->has_sub_norm = lw->norm.ffn_sub_norm ? 1 : 0;
+    p->scalar_exact_activation =
+        (c->arch_flags & (BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2)) != 0;
 
     void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
                                                             BN_BACKEND_HANDLE_GATEUP_STACKED);

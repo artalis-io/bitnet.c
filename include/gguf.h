@@ -54,6 +54,7 @@ enum {
     BN_GGUF_TENSOR_TQ1_0    = 34,
     BN_GGUF_TENSOR_TQ2_0    = 35,
     BN_GGUF_TENSOR_I2_S     = 36,
+    BN_GGUF_TENSOR_MXFP4    = 39,
 };
 
 typedef struct {

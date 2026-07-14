@@ -58,6 +58,11 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     int hb_size = c->hidden_dim;
     int hb2_size = c->hidden_dim;
     int xb2_size = c->dim;
+    int attn_tmp = 2 * q_dim;
+    if (attn_tmp < c->kv_dim) attn_tmp = c->kv_dim;
+    if (attn_tmp > hb_size) hb_size = attn_tmp;
+    int kv_pair_tmp = 2 * c->kv_dim;
+    if (kv_pair_tmp > hb2_size) hb2_size = kv_pair_tmp;
     if (c->full_attn_interval > 0) {
         size_t qkv_tmp = 0;
         if (checked_mul3_size((size_t)c->ssm_group_count,
@@ -78,6 +83,23 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         hb2_size = c->shared_expert_intermediate_size;
     if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
+    if (c->gemma4_per_layer_dim > 0) {
+        size_t per_layer_total = 0;
+        if (checked_mul_size((size_t)c->n_layers,
+                             (size_t)c->gemma4_per_layer_dim,
+                             &per_layer_total) != 0 ||
+            per_layer_total > (size_t)INT_MAX)
+            return 0;
+        if ((int)per_layer_total > hb_size)
+            hb_size = (int)per_layer_total;
+    }
+
+    size_t per_layer_input_size = 0;
+    if (c->gemma4_per_layer_dim > 0 &&
+        checked_mul3_size((size_t)c->n_layers,
+                          (size_t)c->gemma4_per_layer_dim,
+                          sizeof(float), &per_layer_input_size) != 0)
+        return 0;
 
     size_t ssm_state_size_total = 0;
     size_t ssm_conv_state_total = 0;
@@ -164,6 +186,8 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         checked_add_size(&arena_size, tmp) != 0 ||
         checked_mul_size((size_t)c->vocab_size, sizeof(float), &tmp) != 0 ||
         checked_add_size(&arena_size, tmp) != 0)
+        return 0;
+    if (checked_add_size(&arena_size, per_layer_input_size) != 0)
         return 0;
     size_t kv_elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     if (checked_mul3_size(2, kv_cache_size, kv_elem_size, &tmp) != 0 ||
@@ -259,6 +283,11 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     int hb_size = c->hidden_dim;
     int hb2_size = c->hidden_dim;
     int xb2_size = c->dim;
+    int attn_tmp = 2 * q_dim;
+    if (attn_tmp < c->kv_dim) attn_tmp = c->kv_dim;
+    if (attn_tmp > hb_size) hb_size = attn_tmp;
+    int kv_pair_tmp = 2 * c->kv_dim;
+    if (kv_pair_tmp > hb2_size) hb2_size = kv_pair_tmp;
     if (c->full_attn_interval > 0) {
         int qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
         if (qkv_dim > hb_size) hb_size = qkv_dim;
@@ -274,6 +303,23 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         hb2_size = c->shared_expert_intermediate_size;
     if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
+    if (c->gemma4_per_layer_dim > 0) {
+        size_t per_layer_total = 0;
+        if (checked_mul_size((size_t)c->n_layers,
+                             (size_t)c->gemma4_per_layer_dim,
+                             &per_layer_total) != 0 ||
+            per_layer_total > (size_t)INT_MAX)
+            return -1;
+        if ((int)per_layer_total > hb_size)
+            hb_size = (int)per_layer_total;
+    }
+
+    size_t per_layer_input_size = 0;
+    if (c->gemma4_per_layer_dim > 0 &&
+        checked_mul_size((size_t)c->n_layers,
+                         (size_t)c->gemma4_per_layer_dim,
+                         &per_layer_input_size) != 0)
+        return -1;
 
     size_t kv_elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     BnRunState *s = state;
@@ -290,6 +336,9 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     s->value_cache = (float *)sh_arena_calloc(arena, kv_cache_size, kv_elem_size);
     s->x_q         = (int8_t *)sh_arena_calloc(arena, x_q_size, sizeof(int8_t));
     s->rope_freq   = (float *)sh_arena_alloc(arena, half_head * sizeof(float));
+    s->per_layer_input = per_layer_input_size > 0
+        ? (float *)sh_arena_calloc(arena, per_layer_input_size, sizeof(float))
+        : NULL;
 
     s->ssm_state = NULL;
     s->ssm_conv_state = NULL;
@@ -345,6 +394,8 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (!s->x || !s->xb || !s->xb2 || !s->hb || !s->hb2 ||
         !s->q || !s->att || !s->logits || !s->key_cache || !s->value_cache ||
         !s->x_q || !s->rope_freq)
+        return -1;
+    if (per_layer_input_size > 0 && !s->per_layer_input)
         return -1;
     if (ssm_state_size_total > 0 && (!s->ssm_state || !s->ssm_conv_state))
         return -1;

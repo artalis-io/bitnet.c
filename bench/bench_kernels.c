@@ -66,6 +66,7 @@ static int bench_cuda_routed_moe_resident_layers(const BnModel *model,
 }
 #endif
 
+#ifdef BN_ENABLE_CUDA
 static size_t bench_env_mb_or_default(const char *name, int default_mb) {
     const char *s = getenv(name);
     if (!s || !*s)
@@ -76,6 +77,7 @@ static size_t bench_env_mb_or_default(const char *name, int default_mb) {
         return 0;
     return (size_t)v;
 }
+#endif
 
 static const char *type_name(int type) {
     switch (type) {

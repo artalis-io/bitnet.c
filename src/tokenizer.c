@@ -135,6 +135,8 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     // add_bos_token: use GGUF value if present, otherwise add BOS only if bos_token_id is defined
     idx = bn_gguf_find_key(f, "tokenizer.ggml.add_bos_token");
     t->add_bos = (idx >= 0) ? (int)f->kvs[idx].value.b : has_bos;
+    if (t->metaspace && has_bos)
+        t->add_bos = 1;
 
     // #16: Build sorted index for binary search
     if ((size_t)t->vocab_size > SIZE_MAX / sizeof(int)) {

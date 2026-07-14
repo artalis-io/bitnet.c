@@ -89,6 +89,42 @@ static uint32_t moe_kquant_gateup_flags(const BnConfig *c) {
         : 0u;
 }
 
+static float moe_expert_weight_scale(const BnLayerWeights *lw, int expert_idx) {
+    if (!lw || !lw->moe.expert_down_scale || expert_idx < 0)
+        return 1.0f;
+    float scale = lw->moe.expert_down_scale[expert_idx];
+    return scale != 0.0f ? scale : 1.0f;
+}
+
+static void moe_gemma4_dense_ffn(BnModel *m, BnSession *sess,
+                                 BnLayerWeights *lw) {
+    BnConfig *c = &m->config;
+    BnRunState *s = &sess->state;
+    BnMoEState *ms = sess->moe_state;
+    if (!lw->ffn.ffn_gate.data || !lw->ffn.ffn_up.data || !lw->ffn.ffn_down.data)
+        return;
+    bn_moe_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, c->dim, c->norm_eps);
+    BnMatvecTask gu[2] = {
+        { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
+        { s->hb2, &lw->ffn.ffn_up,   NULL, 0 },
+    };
+    bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
+    bn_moe_swiglu(s->hb, s->hb, s->hb2, c->hidden_dim, -1);
+    bn_quant_matvec(s->xb2, &lw->ffn.ffn_down, s->hb, s->x_q, bn_model_pool(m));
+    if (lw->norm.ffn_post_norm_1)
+        bn_moe_rmsnorm(s->xb2, s->xb2, lw->norm.ffn_post_norm_1, c->dim, c->norm_eps);
+    bn_moe_weighted_add(ms->expert_out, s->xb2, 1.0f, c->dim);
+}
+
+static void moe_rmsnorm_unit(float *out, const float *x, int size, float eps) {
+    float ss = 0.0f;
+    for (int i = 0; i < size; i++)
+        ss += x[i] * x[i];
+    ss = 1.0f / sqrtf(ss / (float)size + eps);
+    for (int i = 0; i < size; i++)
+        out[i] = x[i] * ss;
+}
+
 // Full MoE FFN block
 void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     struct BnLayerWeights *lw, int l) {
@@ -100,19 +136,31 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
     int moe_hidden = c->moe_intermediate_size;
-    int exact_silu = c->moe_exact_silu;
+    int is_gemma4 = (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0;
+    int exact_silu = is_gemma4 ? -1 : c->moe_exact_silu;
     int K = c->n_experts_active;
     uint32_t gateup_flags = moe_kquant_gateup_flags(c);
     double t0;
 
     // 1. RMSNorm input
     t0 = bn_moe_time_ms();
-    bn_moe_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
+    bn_moe_rmsnorm(s->xb, s->x,
+                   (is_gemma4 && lw->norm.ffn_sub_norm) ? lw->norm.ffn_sub_norm : lw->norm.ffn_norm,
+                   dim, c->norm_eps);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     // 2. Route: select top-K experts (SIMD + threaded)
     t0 = bn_moe_time_ms();
-    bn_moe_route(ms, s->xb, lw->moe.router_weight, dim, c->n_experts, K,
+    const float *router_x = s->xb;
+    if (is_gemma4) {
+        float inv_sqrt_dim = 1.0f / sqrtf((float)dim);
+        moe_rmsnorm_unit(s->xb2, s->x, dim, c->norm_eps);
+        for (int d = 0; d < dim; d++)
+            s->xb2[d] *= inv_sqrt_dim *
+                         (lw->moe.router_scale ? lw->moe.router_scale[d] : 1.0f);
+        router_x = s->xb2;
+    }
+    bn_moe_route(ms, router_x, lw->moe.router_weight, dim, c->n_experts, K,
                  c->moe_norm_topk_prob, c->moe_expert_weights_scale,
                  bn_model_pool(m));
     ms->stats.route_time_ms += bn_moe_time_ms() - t0;
@@ -155,7 +203,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             wups[valid_k]   = bn_moe_make_qweight(up_data, lw->moe.expert_map.up_type,
                                                 lw->moe.expert_map.up_rows, lw->moe.expert_map.up_cols);
             valid_indices[valid_k] = eidx;
-            valid_weights[valid_k] = ms->expert_weights[k];
+            valid_weights[valid_k] = ms->expert_weights[k] *
+                                     moe_expert_weight_scale(lw, eidx);
             valid_k++;
         }
 
@@ -296,7 +345,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             if (cache) {
                 const uint8_t *cached = bn_moe_cache_lookup_internal(cache, l, eidx);
                 if (cached) {
-                    hit_weights[n_hits] = ms->expert_weights[k];
+                    hit_weights[n_hits] = ms->expert_weights[k] *
+                                          moe_expert_weight_scale(lw, eidx);
                     hit_ptrs[n_hits] = cached;
                     n_hits++;
                     ms->stats.cache_hits++;
@@ -305,7 +355,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 ms->stats.cache_misses++;
             }
             miss_indices[n_misses] = eidx;
-            miss_weights[n_misses] = ms->expert_weights[k];
+            miss_weights[n_misses] = ms->expert_weights[k] *
+                                     moe_expert_weight_scale(lw, eidx);
             n_misses++;
         }
 
@@ -522,7 +573,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         // --- Serial fallback (mmap K > BN_MAX_MOE_K or EMSCRIPTEN) ---
         for (int k = 0; k < K; k++) {
             int eidx = ms->expert_indices[k];
-            float weight = ms->expert_weights[k];
+            float weight = ms->expert_weights[k] *
+                           moe_expert_weight_scale(lw, eidx);
             if (eidx < 0) continue;
             if (moe_try_gpu_serial_expert(m, sess, lw, l, eidx, weight) == 0)
                 continue;
@@ -598,6 +650,16 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         }
     }
     ms->stats.shared_time_ms += bn_moe_time_ms() - t0;
+
+    if (is_gemma4) {
+        if (lw->norm.ffn_post_norm_2)
+            bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
+                           lw->norm.ffn_post_norm_2, dim, c->norm_eps);
+        moe_gemma4_dense_ffn(m, sess, lw);
+        if (lw->norm.ffn_post_norm)
+            bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
+                           lw->norm.ffn_post_norm, dim, c->norm_eps);
+    }
 
     ms->stats.compute_time_ms += bn_moe_time_ms() - t_compute;
 

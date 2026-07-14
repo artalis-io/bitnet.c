@@ -55,6 +55,12 @@ typedef struct {
     uint8_t  qs[16];  // packed nibbles (2 values per byte)
 } BnBlockQ4_0;
 
+// MXFP4: 32 E2M1 values sharing one E8M0 power-of-two scale.
+typedef struct {
+    uint8_t e;
+    uint8_t qs[16];
+} BnBlockMXFP4;
+
 // Q5_0: 5-bit quantization, 32 elements per block
 // FP16 per-block scale + 4 high-bit bytes + 16 packed nibble bytes = 22 bytes
 typedef struct {
@@ -313,9 +319,15 @@ void     bn_quant_matvec_prepared(float *out, const BnQWeight *W,
                                   const BnPreparedWeight *prepared,
                                   const float *x, int8_t *x_q_buf,
                                   BnThreadPool *pool);
+void     bn_quant_matvec_prepared_flags(float *out, const BnQWeight *W,
+                                        const BnPreparedWeight *prepared,
+                                        const float *x, int8_t *x_q_buf,
+                                        BnThreadPool *pool, uint32_t flags);
 
 // Batch matvec: run multiple independent matvecs with a single dispatch
 #define BN_MATVEC_TASK_FORCE_FLOAT_KQUANT 1u
+#define BN_MATVEC_TASK_LLAMA_DOT          2u
+#define BN_MATVEC_TASK_NATIVE_QUANT       4u
 
 typedef struct {
     float *out;

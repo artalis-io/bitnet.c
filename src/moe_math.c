@@ -23,6 +23,16 @@ BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols) {
 void bn_moe_swiglu_range(void *ctx, int start, int end) {
     BnSwiGLUCtx *c = (BnSwiGLUCtx *)ctx;
     int i = start;
+    if (c->exact_silu < 0) {
+        for (; i < end; i++) {
+            float g = c->gate[i];
+            float gelu = 0.5f * g *
+                         (1.0f + tanhf(0.7978845608028654f * g *
+                                       (1.0f + 0.044715f * g * g)));
+            c->hb[i] = gelu * c->up[i];
+        }
+        return;
+    }
 #ifdef __AVX2__
     if (!c->exact_silu) {
         for (; i + 7 < end; i += 8) {
@@ -42,6 +52,19 @@ void bn_moe_swiglu_range(void *ctx, int start, int end) {
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
                    int exact_silu) {
     int i = 0;
+    if (exact_silu < 0) {
+        for (; i < n; i++) {
+            float g = gate[i];
+            float gelu = 0.5f * g *
+                         (1.0f + tanhf(0.7978845608028654f * g *
+                                       (1.0f + 0.044715f * g * g)));
+            hb[i] = gelu * up[i];
+        }
+        return;
+    }
+#ifndef __AVX2__
+    (void)exact_silu;
+#endif
 #ifdef __AVX2__
     if (!exact_silu) {
         for (; i + 7 < n; i += 8) {

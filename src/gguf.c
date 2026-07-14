@@ -576,6 +576,7 @@ int bn_gguf_tensor_size(uint32_t type, uint64_t nelements, size_t *out) {
         case BN_GGUF_TENSOR_Q5_0:    return tensor_blocks(nelements, 32, 22, out);
         case BN_GGUF_TENSOR_Q5_1:    return tensor_blocks(nelements, 32, 24, out);
         case BN_GGUF_TENSOR_Q8_0:    return tensor_blocks(nelements, 32, 34, out);
+        case BN_GGUF_TENSOR_MXFP4:   return tensor_blocks(nelements, 32, 17, out);
         case BN_GGUF_TENSOR_I2_S:
             if (nelements % 4 != 0 || nelements / 4 > SIZE_MAX - 4) return 0;
             *out = (size_t)(nelements / 4) + 4;

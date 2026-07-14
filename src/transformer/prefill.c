@@ -154,11 +154,11 @@ static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
     return sess->state.x;
 }
 
+#ifdef __AVX2__
 static int prefill_force_float_kquant(const BnModel *m) {
     return m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3);
 }
 
-#ifdef __AVX2__
 static int prefill_qweight_is_kquant(const BnQWeight *w) {
     return w && (w->type == BN_GGUF_TENSOR_Q4_K ||
                  w->type == BN_GGUF_TENSOR_Q5_K ||
@@ -1206,9 +1206,12 @@ static int prefill_use_shared_all2_decode_fallback(const BnModel *m) {
 
 static int prefill_layer_rope_dims(const BnConfig *c, int layer_head_size) {
     int use_swa_rope = c->rope_theta_swa > 0.0f && layer_head_size < c->head_size;
+    int base_rope_dims = c->rope_text_dims > 0
+        ? c->rope_text_dims
+        : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
     int rope_dims = use_swa_rope && c->rope_dim_count_swa > 0
         ? c->rope_dim_count_swa
-        : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
+        : base_rope_dims;
     return rope_dims > layer_head_size ? layer_head_size : rope_dims;
 }
 
@@ -1538,7 +1541,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return NULL;
     }
 
-    int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
+    int rope_dims = c->rope_text_dims > 0
+        ? c->rope_text_dims
+        : (c->rope_dim_count > 0 ? c->rope_dim_count : head_size);
     int half_rope = rope_dims / 2;
     if (half_rope > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("RoPE dimensions too large for stack VLAs");
@@ -2415,6 +2420,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             float *QKV_all = Q_buf;
             float *Z_all = Xb2;
             float *Out_all = Hb;
+            int qwen_hybrid = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+                              c->full_attn_interval > 0;
 
 #ifdef __AVX2__
             int ssm_preq8k = 0;
@@ -2453,15 +2460,23 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                 BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm.ssm_conv1d,
                                           qkv_dim_ssm, kern_ssm };
-                BnTPTask conv_task = { prefill_ssm_conv_silu, &conv_ctx, qkv_dim_ssm };
+                BnTPTask conv_task = {
+                    qwen_hybrid ? bn_transformer_ssm_conv_silu_scalar_range
+                                : prefill_ssm_conv_silu,
+                    &conv_ctx, qkv_dim_ssm
+                };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
                 float *q_raw = qkv_t;
                 float *k_raw = qkv_t + key_dim_ssm;
                 float *v_raw = qkv_t + 2 * key_dim_ssm;
 
-                BnSSML2NormCtx norm_ctx = { q_raw, k_raw, head_k_dim };
-                BnTPTask norm_task = { prefill_ssm_l2norm, &norm_ctx, num_k_heads };
+                BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
+                BnTPTask norm_task = {
+                    qwen_hybrid ? bn_transformer_ssm_l2norm_scalar_range
+                                : prefill_ssm_l2norm,
+                    &norm_ctx, num_k_heads
+                };
                 bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
 
                 if (num_v_heads > BN_MAX_VLA_ELEMS) continue;
@@ -2500,12 +2515,20 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     alpha_arr, beta_arr,
                     num_k_heads, head_k_dim, head_v_dim, q_scale
                 };
-                BnTPTask delta_task = { prefill_ssm_delta, &delta_ctx, num_v_heads };
+                BnTPTask delta_task = {
+                    qwen_hybrid ? bn_transformer_ssm_delta_scalar_range
+                                : prefill_ssm_delta,
+                    &delta_ctx, num_v_heads
+                };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
                                           c->norm_eps, head_v_dim };
-                BnTPTask gate_task = { prefill_ssm_gate, &gate_ctx, num_v_heads };
+                BnTPTask gate_task = {
+                    qwen_hybrid ? bn_transformer_ssm_gate_scalar_range
+                                : prefill_ssm_gate,
+                    &gate_ctx, num_v_heads
+                };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
             }
 

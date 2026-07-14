@@ -105,6 +105,7 @@ typedef struct {
     int activation;
     int has_gate;
     int has_sub_norm;
+    int scalar_exact_activation;
     int use_fused_gateup_silu;
     int use_gateup_split;
     int needs_cpu_fallback;

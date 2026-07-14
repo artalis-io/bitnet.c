@@ -39,6 +39,7 @@ void bn_transformer_ssm_conv_silu_avx2_range(void *ctx, int start, int end) {
 void bn_transformer_ssm_l2norm_avx2_range(void *ctx, int start, int end) {
     BnSSML2NormCtx *c = (BnSSML2NormCtx *)ctx;
     int hd = c->head_dim;
+    float eps = c->eps;
 
     for (int h = start; h < end; h++) {
         float *qh = c->q + h * hd;
@@ -59,8 +60,8 @@ void bn_transformer_ssm_l2norm_avx2_range(void *ctx, int start, int end) {
         }
         float qn = bn_ssm_avx2_hsum_ggml_ps(_mm256_add_ps(qss0, qss1));
         float kn = bn_ssm_avx2_hsum_ggml_ps(_mm256_add_ps(kss0, kss1));
-        __m256 qscale = _mm256_set1_ps(1.0f / (sqrtf(qn) + 1e-6f));
-        __m256 kscale = _mm256_set1_ps(1.0f / (sqrtf(kn) + 1e-6f));
+        __m256 qscale = _mm256_set1_ps(1.0f / fmaxf(sqrtf(qn), eps));
+        __m256 kscale = _mm256_set1_ps(1.0f / fmaxf(sqrtf(kn), eps));
         for (int d = 0; d < hd; d += 8) {
             _mm256_storeu_ps(qh + d, _mm256_mul_ps(_mm256_loadu_ps(qh + d), qscale));
             _mm256_storeu_ps(kh + d, _mm256_mul_ps(_mm256_loadu_ps(kh + d), kscale));

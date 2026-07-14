@@ -36,6 +36,7 @@ void bn_transformer_ssm_conv_silu_neon_range(void *ctx, int start, int end) {
 void bn_transformer_ssm_l2norm_neon_range(void *ctx, int start, int end) {
     BnSSML2NormCtx *c = (BnSSML2NormCtx *)ctx;
     int hd = c->head_dim;
+    float eps = c->eps;
 
     for (int h = start; h < end; h++) {
         float *qh = c->q + h * hd;
@@ -66,8 +67,8 @@ void bn_transformer_ssm_l2norm_neon_range(void *ctx, int start, int end) {
         }
         float qn = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(qss0, qss1), vaddq_f32(qss2, qss3)));
         float kn = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(kss0, kss1), vaddq_f32(kss2, kss3)));
-        float32x4_t qscale = vdupq_n_f32(1.0f / (sqrtf(qn) + 1e-6f));
-        float32x4_t kscale = vdupq_n_f32(1.0f / (sqrtf(kn) + 1e-6f));
+        float32x4_t qscale = vdupq_n_f32(1.0f / fmaxf(sqrtf(qn), eps));
+        float32x4_t kscale = vdupq_n_f32(1.0f / fmaxf(sqrtf(kn), eps));
         for (int d = 0; d < hd; d += 4) {
             vst1q_f32(qh + d, vmulq_f32(vld1q_f32(qh + d), qscale));
             vst1q_f32(kh + d, vmulq_f32(vld1q_f32(kh + d), kscale));

@@ -13,6 +13,7 @@ typedef struct {
     float *value_cache;           // [n_attn_layers * seq_len * kv_dim]
     int8_t *x_q;                  // [max(dim, hidden_dim)] scratch for int8 quantized x
     float *rope_freq;             // [head_size/2] precomputed RoPE frequencies
+    float *per_layer_input;       // optional Gemma4 [n_layers * per_layer_dim]
     // TurboQuant compressed KV cache (NULL if kv_tq_bits == 0)
     uint8_t *key_cache_tq;        // [n_attn_layers * seq_len * n_kv_heads * key_bytes]
     uint8_t *value_cache_tq;      // [n_attn_layers * seq_len * n_kv_heads * val_bytes]

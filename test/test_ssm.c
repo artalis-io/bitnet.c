@@ -91,10 +91,10 @@ static void test_l2norm(void) {
     memcpy(q_test, q_ref, total * sizeof(float));
     memcpy(k_test, k_ref, total * sizeof(float));
 
-    BnSSML2NormCtx ctx_ref = { q_ref, k_ref, head_dim };
+    BnSSML2NormCtx ctx_ref = { q_ref, k_ref, 1e-6f, head_dim };
     bn_transformer_ssm_l2norm_scalar_range(&ctx_ref, 0, num_heads);
 
-    BnSSML2NormCtx ctx_test = { q_test, k_test, head_dim };
+    BnSSML2NormCtx ctx_test = { q_test, k_test, 1e-6f, head_dim };
 #ifdef __ARM_NEON
     bn_transformer_ssm_l2norm_neon_range(&ctx_test, 0, num_heads);
 #elif defined(__AVX2__)

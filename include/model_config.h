@@ -12,6 +12,7 @@
 #define BN_MODEL_ARCH_FLAG_BITNET 8u
 #define BN_MODEL_ARCH_FLAG_QWEN3 16u
 #define BN_MODEL_ARCH_FLAG_QWEN2MOE 32u
+#define BN_MODEL_ARCH_FLAG_QWEN2 64u
 
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
@@ -43,6 +44,11 @@ typedef struct {
     float moe_expert_weights_scale; // optional post-routing expert weight scale
     int has_shared_expert;      // 1 if shared expert exists
     int shared_expert_intermediate_size; // shared expert hidden dim
+    // Gemma4 shared-KV / logits metadata (zero = disabled)
+    int gemma4_kv_layer_count;  // first N layers own KV cache, later layers reuse
+    int gemma4_swa_pattern[128];
+    int gemma4_per_layer_dim;
+    float final_logit_softcap;
     // TurboQuant KV compression (0=disabled, 2-4 = bits)
     int kv_tq_bits;
 } BnConfig;

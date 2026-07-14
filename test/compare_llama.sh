@@ -165,9 +165,9 @@ if (( ${#BITNET_ARGS[@]} > 0 )); then
     echo "bitnet args: ${BITNET_ARGS[*]}"
 fi
 if (( ${#LLAMA_FLASH[@]} > 0 )); then
-    echo "llama args:  ${LLAMA_ARGS[*]} ${LLAMA_FLASH[*]} -t $LLAMA_THREADS ${LLAMA_THREADS_BATCH[*]}"
+    echo "llama args:  ${LLAMA_ARGS[*]} ${LLAMA_FLASH[*]} -t $LLAMA_THREADS ${LLAMA_THREADS_BATCH[*]-}"
 else
-    echo "llama args:  ${LLAMA_ARGS[*]} -t $LLAMA_THREADS ${LLAMA_THREADS_BATCH[*]}"
+    echo "llama args:  ${LLAMA_ARGS[*]} -t $LLAMA_THREADS ${LLAMA_THREADS_BATCH[*]-}"
 fi
 echo "---"
 
@@ -196,7 +196,7 @@ for prompt in "${PROMPTS[@]}"; do
     llama_out=$(LD_LIBRARY_PATH="$LLAMA_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$LLAMA" -m "$MODEL" "${llama_run_args[@]}" -p "$prompt" -n "$N_TOKENS" \
         --temp 0 --no-display-prompt -no-cnv --simple-io --verbosity 1 \
-        -t "$LLAMA_THREADS" "${LLAMA_THREADS_BATCH[@]}" \
+        -t "$LLAMA_THREADS" ${LLAMA_THREADS_BATCH[@]+"${LLAMA_THREADS_BATCH[@]}"} \
         2>"$llama_stderr" | sed 's/> EOF by user$//') || true
 
     if [[ -z "$bitnet_out" || -z "$llama_out" ]]; then
@@ -274,6 +274,8 @@ for prompt in "${PROMPTS[@]}"; do
     prompt_short="${prompt:0:45}"
     if (( match == max_cmp && max_cmp > 0 )); then
         echo -e "${GREEN}MATCH${RESET}   ${DIM}[$match/$max_cmp words]${RESET}  \"$prompt_short\""
+    elif (( STRICT && max_cmp == 0 && token_id_cmp > 0 && token_id_match == token_id_cmp )); then
+        echo -e "${GREEN}MATCH${RESET}   ${DIM}[$token_id_match/$token_id_cmp token IDs]${RESET}  \"$prompt_short\""
     elif (( match >= 1 )); then
         echo -e "${YELLOW}PARTIAL${RESET} ${DIM}[$match/$max_cmp words]${RESET}  \"$prompt_short\""
         # Show context around divergence point

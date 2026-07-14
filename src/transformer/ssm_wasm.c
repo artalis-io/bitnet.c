@@ -31,6 +31,7 @@ void bn_transformer_ssm_conv_silu_wasm_range(void *ctx, int start, int end) {
 void bn_transformer_ssm_l2norm_wasm_range(void *ctx, int start, int end) {
     BnSSML2NormCtx *c = (BnSSML2NormCtx *)ctx;
     int hd = c->head_dim;
+    float eps = c->eps;
 
     for (int h = start; h < end; h++) {
         float *qh = c->q + h * hd;
@@ -61,8 +62,8 @@ void bn_transformer_ssm_l2norm_wasm_range(void *ctx, int start, int end) {
         }
         float qn = bn_wasm_hsum_f32x4(wasm_f32x4_add(qss0, qss1));
         float kn = bn_wasm_hsum_f32x4(wasm_f32x4_add(kss0, kss1));
-        v128_t qscale = wasm_f32x4_splat(1.0f / (sqrtf(qn) + 1e-6f));
-        v128_t kscale = wasm_f32x4_splat(1.0f / (sqrtf(kn) + 1e-6f));
+        v128_t qscale = wasm_f32x4_splat(1.0f / fmaxf(sqrtf(qn), eps));
+        v128_t kscale = wasm_f32x4_splat(1.0f / fmaxf(sqrtf(kn), eps));
         for (int d = 0; d < hd; d += 4) {
             wasm_v128_store(qh + d, wasm_f32x4_mul(wasm_v128_load(qh + d), qscale));
             wasm_v128_store(kh + d, wasm_f32x4_mul(wasm_v128_load(kh + d), kscale));

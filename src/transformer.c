@@ -10,6 +10,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
@@ -18,6 +19,85 @@
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
 #endif
+
+static int gemma4_dequant_per_layer_token(const BnQWeight *W, int token,
+                                          float *out, int n) {
+    if (!W || !W->data || token < 0 || token >= W->rows || n != W->cols)
+        return -1;
+    if (W->type == BN_GGUF_TENSOR_F32) {
+        memcpy(out, (const float *)W->data + (size_t)token * n,
+               (size_t)n * sizeof(float));
+        return 0;
+    }
+    if (W->type == BN_GGUF_TENSOR_F16) {
+        const uint16_t *row = (const uint16_t *)W->data + (size_t)token * n;
+        for (int i = 0; i < n; i++)
+            out[i] = bn_fp16_to_fp32(row[i]);
+        return 0;
+    }
+    if (W->type == BN_GGUF_TENSOR_Q6_K) {
+        int n_blocks = n / BN_QK_K;
+        const BnBlockQ6K *row = (const BnBlockQ6K *)W->data +
+                                (size_t)token * n_blocks;
+        for (int b = 0; b < n_blocks; b++)
+            bn_quant_dequant_q6k(&row[b], out + b * BN_QK_K);
+        return 0;
+    }
+    return -1;
+}
+
+static void gemma4_rmsnorm_slice(float *x, const float *w, int n, float eps) {
+    float ss = 0.0f;
+    for (int i = 0; i < n; i++)
+        ss += x[i] * x[i];
+    ss = 1.0f / sqrtf(ss / (float)n + eps);
+    for (int i = 0; i < n; i++)
+        x[i] *= ss * w[i];
+}
+
+static int gemma4_prepare_per_layer_input(BnModel *m, BnSession *sess,
+                                          int token) {
+    BnConfig *c = &m->config;
+    BnWeights *w = &m->weights;
+    BnRunState *s = &sess->state;
+    int per_dim = c->gemma4_per_layer_dim;
+    if (!(c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) || per_dim <= 0)
+        return 0;
+    int total = per_dim * c->n_layers;
+    if (!s->per_layer_input || !w->per_layer_model_proj.data ||
+        !w->per_layer_token_embd.data || !w->per_layer_proj_norm)
+        return -1;
+
+    bn_quant_matvec(s->per_layer_input, &w->per_layer_model_proj,
+                    s->x, s->x_q, bn_model_pool(m));
+
+    float proj_scale = 1.0f / sqrtf((float)c->dim);
+    for (int i = 0; i < total; i++)
+        s->per_layer_input[i] *= proj_scale;
+    for (int l = 0; l < c->n_layers; l++)
+        gemma4_rmsnorm_slice(s->per_layer_input + (size_t)l * per_dim,
+                             w->per_layer_proj_norm, per_dim, c->norm_eps);
+
+    if (gemma4_dequant_per_layer_token(&w->per_layer_token_embd, token,
+                                       s->hb, total) != 0)
+        return -1;
+    float tok_scale = sqrtf((float)per_dim);
+    float input_scale = 1.0f / sqrtf(2.0f);
+    for (int i = 0; i < total; i++)
+        s->per_layer_input[i] =
+            (s->per_layer_input[i] + s->hb[i] * tok_scale) * input_scale;
+    return 0;
+}
+
+static int gemma4_divide_rope_freqs(const BnConfig *c, int layer) {
+    if (!c || !(c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4))
+        return 0;
+    if (c->gemma4_per_layer_dim > 0)
+        return 1;
+    if (c->n_experts > 0 && c->n_layers == 30)
+        return layer == 5 || layer == 23 || layer == 29;
+    return 0;
+}
 
 // Per-layer timing instrumentation (compile with -DBN_BENCH_LAYERS)
 #ifdef BN_BENCH_LAYERS
@@ -92,6 +172,10 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
 
     // Embed the token
     bn_model_embed_token(m, s->x, token);
+    if (gemma4_prepare_per_layer_input(m, sess, token) != 0) {
+        SH_LOG_ERROR("Gemma4 per-layer input preparation failed");
+        return -1;
+    }
 
     // Process each layer
     int cache_pos = pos % c->seq_len;
@@ -99,15 +183,25 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
         BnLayerWeights *lw = &m->weights.layers[l];
         int layer_head_size = lw->attn.head_size > 0 ? lw->attn.head_size : head_size;
         int use_swa_rope = c->rope_theta_swa > 0.0f && layer_head_size < c->head_size;
+        int base_rope_dims = c->rope_text_dims > 0
+            ? c->rope_text_dims
+            : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
         int rope_dims = use_swa_rope && c->rope_dim_count_swa > 0
             ? c->rope_dim_count_swa
-            : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
+            : base_rope_dims;
         if (rope_dims > layer_head_size) rope_dims = layer_head_size;
         int half_rope = rope_dims / 2;
         float rope_cos[half_rope], rope_sin[half_rope];
         float theta = use_swa_rope ? c->rope_theta_swa : c->rope_theta;
         for (int i = 0; i < half_rope; i++) {
             float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
+            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                !use_swa_rope && m->weights.rope_freqs) {
+                if (gemma4_divide_rope_freqs(c, l))
+                    freq /= m->weights.rope_freqs[i];
+                else
+                    freq *= m->weights.rope_freqs[i];
+            }
             float angle = pos * freq;
             rope_cos[i] = cosf(angle);
             rope_sin[i] = sinf(angle);

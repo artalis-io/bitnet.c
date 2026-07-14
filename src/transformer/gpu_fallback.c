@@ -89,7 +89,7 @@ int bn_transformer_gpu_fallback_ssm_layer(
     if (lw->moe.router_weight)
         bn_moe_forward(m, sess, lw, layer);
     else
-        bn_transformer_cpu_forward_ffn_block(m, sess, lw, NULL);
+        bn_transformer_cpu_forward_ffn_block(m, sess, lw, layer, sess->pos, NULL);
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
         return -1;

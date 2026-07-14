@@ -19,7 +19,7 @@ CFLAGS += -D_GNU_SOURCE
 LDFLAGS += -lpthread
 endif
 
-QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c
+QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c src/quant/mxfp4_scalar.c
 
 UNAME_M := $(shell uname -m)
 ifneq ($(filter arm% aarch%,$(UNAME_M)),)
@@ -30,6 +30,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/quant/tq1_neon_sdot.c src/quant/tq1_neon.c src/quant/tq1_scalar.c \
     src/quant/q8_neon_sdot.c src/quant/q8_neon.c src/quant/q8_scalar.c \
     src/quant/q4_neon_sdot.c src/quant/q4_neon.c src/quant/q4_scalar.c \
+    src/quant/mxfp4_neon.c \
     src/quant/q4_1_neon.c src/quant/q4_1_scalar.c \
     src/quant/f32_neon.c src/quant/f32_scalar.c \
     src/quant/f16_neon.c src/quant/f16_scalar.c \
@@ -284,7 +285,7 @@ bench_layers: CFLAGS += -DBN_BENCH_LAYERS
 bench_layers: $(BENCH_SRCS) $(BENCH_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_qwen_cuda_matrix bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_gguf test_quant test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check fetch-wgpu clean
+.PHONY: debug asan bench bench_suite bench_llama_compare bench_llama_topk bench_llama_topk_server bench_cuda_compare bench_qwen_cuda_matrix bench_kernels_run bitnet_scalar bench_scalar bench_scalar_layers bench_avx2 bench_webgpu bench_layers test test_architecture test_backend_matrix test_model_matrix test_cpu_parity test_cpu_parity_required test_qwen_cpu_parity test_gemma4_cpu_parity test_gguf test_quant test_avx512_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_prefill test_kv_f16 test_q2k test_ssm test_gguf_fuzz test_moe test_qwen36 test_qwen36_cuda test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda test_gemma4_backend_matrix test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend test_cuda_backend test_gpu_wgpu test_gpu_validate test_coherence pgo avx2-check avx512-check check-cpu-parity-tools check-cpu-parity-fixtures check-cpu-parity-remote-fixtures fetch-cpu-parity-fixtures fetch-qwen36-sparse-fixture fetch-gemma4-fixtures fetch-wgpu clean
 
 bench: $(MAIN_TARGET)
 	./bench/bench_suite.sh
@@ -312,6 +313,24 @@ bench_llama_topk_server: bitnet
 
 bench_kernels_run: bench_kernels
 
+GEMMA4_FETCH_CASE ?= all
+fetch-gemma4-fixtures:
+	./scripts/fetch_gemma4_fixtures.sh $(GEMMA4_FETCH_CASE)
+
+fetch-qwen36-sparse-fixture:
+	./scripts/fetch_qwen36_sparse_fixture.sh
+
+fetch-cpu-parity-fixtures: check-cpu-parity-remote-fixtures fetch-qwen36-sparse-fixture fetch-gemma4-fixtures
+
+check-cpu-parity-fixtures:
+	./scripts/check_cpu_parity_fixtures.sh
+
+check-cpu-parity-tools:
+	./scripts/check_cpu_parity_tools.sh
+
+check-cpu-parity-remote-fixtures:
+	./scripts/check_cpu_parity_remote_fixtures.sh
+
 test: test_architecture test_gguf test_quant test_tokenizer test_transformer test_threadpool test_safety test_arena test_ssm test_gguf_fuzz test_moe test_qwen36 test_gemma4 test_generate test_session test_prompt_cache test_turboquant test_gpu_graph_ir test_gpu_backend
 
 test_architecture: test_backend_matrix test_model_matrix
@@ -321,6 +340,22 @@ test_backend_matrix:
 
 test_model_matrix: test_coherence
 	./test/model_matrix.sh
+
+test_cpu_parity: bitnet bitnet_scalar
+	./test/cpu_parity.sh
+
+test_cpu_parity_required:
+	$(MAKE) check-cpu-parity-tools
+	$(MAKE) check-cpu-parity-remote-fixtures
+	$(MAKE) REQUIRE_MODELS=1 check-cpu-parity-fixtures
+	$(MAKE) bitnet bitnet_scalar
+	REQUIRE_MODELS=1 ./test/cpu_parity.sh
+
+test_qwen_cpu_parity: bitnet bitnet_scalar
+	./test/qwen_cpu_parity.sh
+
+test_gemma4_cpu_parity: bitnet bitnet_scalar
+	./test/gemma4_cpu_parity.sh
 
 test_gguf: test/test_gguf.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@

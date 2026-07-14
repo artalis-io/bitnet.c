@@ -14,18 +14,20 @@ missing=0
 
 find_model() {
     env_name=$1
-    pattern=$2
+    shift
     value=$(eval "printf '%s' \"\${$env_name:-}\"")
     if [ -n "$value" ]; then
         printf '%s\n' "$value"
         return 0
     fi
     if [ -n "$ROOT" ] && [ -d "$ROOT" ]; then
-        found=$(find "$ROOT" -type f -iname "$pattern" 2>/dev/null | head -n 1 || true)
-        if [ -n "$found" ]; then
-            printf '%s\n' "$found"
-            return 0
-        fi
+        for pattern in "$@"; do
+            found=$(find "$ROOT" -type f -iname "$pattern" ! -iname "*mmproj*" 2>/dev/null | head -n 1 || true)
+            if [ -n "$found" ]; then
+                printf '%s\n' "$found"
+                return 0
+            fi
+        done
     fi
     return 1
 }
@@ -33,9 +35,9 @@ find_model() {
 run_case() {
     name=$1
     env_name=$2
-    pattern=$3
+    shift 2
 
-    if path=$(find_model "$env_name" "$pattern"); then
+    if path=$(find_model "$env_name" "$@"); then
         echo "RUN $name: $path"
         ran=$((ran + 1))
         args=$path
@@ -58,14 +60,14 @@ run_case "Llama 2 dense" "BN_MODEL_LLAMA2" "*llama*2*.gguf"
 run_case "Llama 3 dense" "BN_MODEL_LLAMA3" "*llama*3*.gguf"
 run_case "Microsoft BitNet 1.58" "BN_MODEL_BITNET158" "*bitnet*b1.58*.gguf"
 run_case "Qwen 2.5 dense" "BN_MODEL_QWEN25" "*qwen2.5*.gguf"
-run_case "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" "*qwen3-4b*.gguf"
+run_case "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" "*qwen3-[0-9.]*b-q*.gguf"
 run_case "Qwen 3 sparse MoE" "BN_MODEL_QWEN3_MOE" "*qwen3-*a3b*.gguf"
-run_case "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" "*qwen3*5*27b*.gguf"
+run_case "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" "*qwen3*5*9b-q*.gguf"
 run_case "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" "*qwen3.5*35b*a3b*.gguf"
 run_case "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" "*qwen3.6*27b*.gguf"
 run_case "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" "*qwen3.6*35b*a3b*.gguf"
-run_case "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" "*gemma*4*31b*.gguf"
-run_case "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" "*gemma*4*a4b*.gguf"
+run_case "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" "*gemma*4*e*b*q*.gguf" "*gemma*4*31b*q*.gguf"
+run_case "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" "*gemma*4*26b*q*.gguf" "*gemma*4*a4b*q*.gguf" "*gemma*4*a4b*mxfp4*.gguf"
 
 if [ "$REQUIRE_MODELS" = "1" ] && [ "$missing" -ne 0 ]; then
     echo "Model matrix FAILED: $missing required model case(s) missing"

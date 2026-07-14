@@ -2,6 +2,29 @@
 
 #ifdef __ARM_NEON
 
+static inline float gqa_neon_dot_ggml_order(const float *x,
+                                            const float *y,
+                                            int n) {
+    int i = 0;
+    float32x4_t sum0 = vdupq_n_f32(0.0f);
+    float32x4_t sum1 = vdupq_n_f32(0.0f);
+    float32x4_t sum2 = vdupq_n_f32(0.0f);
+    float32x4_t sum3 = vdupq_n_f32(0.0f);
+    int np = n & ~15;
+    for (; i < np; i += 16) {
+        sum0 = vfmaq_f32(sum0, vld1q_f32(x + i),      vld1q_f32(y + i));
+        sum1 = vfmaq_f32(sum1, vld1q_f32(x + i + 4),  vld1q_f32(y + i + 4));
+        sum2 = vfmaq_f32(sum2, vld1q_f32(x + i + 8),  vld1q_f32(y + i + 8));
+        sum3 = vfmaq_f32(sum3, vld1q_f32(x + i + 12), vld1q_f32(y + i + 12));
+    }
+    float32x4_t sum = vaddq_f32(vaddq_f32(sum0, sum1),
+                                vaddq_f32(sum2, sum3));
+    float out = vaddvq_f32(sum);
+    for (; i < n; i++)
+        out = fmaf(x[i], y[i], out);
+    return out;
+}
+
 void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
     BnGQACtx *g = (BnGQACtx *)ctx;
     const BnConfig *c = g->c;
@@ -24,27 +47,18 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
-            float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
-            float32x4_t a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
             if (kv_f16) {
                 const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                for (int d = 0; d < head_size; d += 16) {
-                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d))));
-                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d + 4))));
-                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d + 8))));
-                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d + 12))));
+                float k_buf[head_size];
+                for (int d = 0; d < head_size; d += 4) {
+                    vst1q_f32(k_buf + d,
+                              vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k_f16 + d))));
                 }
+                att[i] = gqa_neon_dot_ggml_order(q_h, k_buf, head_size) * attn_scale;
             } else {
                 const float *k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
-                for (int d = 0; d < head_size; d += 16) {
-                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vld1q_f32(k_t + d));
-                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vld1q_f32(k_t + d + 4));
-                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
-                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
-                }
+                att[i] = gqa_neon_dot_ggml_order(q_h, k_t, head_size) * attn_scale;
             }
-            float32x4_t sum = vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3));
-            att[i] = bn_transformer_neon_hsum_f32(sum) * attn_scale;
         }
 
         bn_transformer_softmax(att, n_kv);
@@ -134,15 +148,8 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
                 }
 
                 // Score: dot(Q, K) * scale
-                float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
-                float32x4_t a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
-                for (int d = 0; d < head_size; d += 16) {
-                    a0 = vmlaq_f32(a0, vld1q_f32(q_h + d),      vld1q_f32(k_t + d));
-                    a1 = vmlaq_f32(a1, vld1q_f32(q_h + d + 4),  vld1q_f32(k_t + d + 4));
-                    a2 = vmlaq_f32(a2, vld1q_f32(q_h + d + 8),  vld1q_f32(k_t + d + 8));
-                    a3 = vmlaq_f32(a3, vld1q_f32(q_h + d + 12), vld1q_f32(k_t + d + 12));
-                }
-                float score = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3))) * attn_scale;
+                float score = gqa_neon_dot_ggml_order(q_h, k_t, head_size) *
+                              attn_scale;
 
                 // Online softmax update
                 float v_buf[head_size];

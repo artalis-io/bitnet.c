@@ -8,7 +8,8 @@ void bn_quant_matvec_impl(float *out,
                           const float *x,
                           int8_t *x_q_buf,
                           BnThreadPool *pool,
-                          const BnPreparedWeight *prepared);
+                          const BnPreparedWeight *prepared,
+                          uint32_t flags);
 
 void bn_quant_x_to_q8k_scalar(const float *x,
                               int8_t *x_q,

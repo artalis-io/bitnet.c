@@ -17,6 +17,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
 void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                                           BnSession *sess,
                                           BnLayerWeights *lw,
+                                          int layer,
+                                          int pos,
                                           const BnFFNPlan *ffn_plan);
 int bn_transformer_cpu_forward_layer(BnModel *m,
                                      BnSession *sess,

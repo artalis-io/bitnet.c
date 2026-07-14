@@ -58,6 +58,7 @@ for trial in $(seq 1 "$TRIALS"); do
     LLAMA_OUT="$OUT_DIR/llama.$trial.out"
 
     ./bench_avx2 "$MODEL" --iters "$ITERS" --threads "$THREADS" --toks "$TOKENS" \
+        --prefill-toks 0 \
         > "$BITNET_OUT" 2>&1
     "$LLAMA_BENCH" -m "$MODEL" -p 0 -n "$TOKENS" -t "$THREADS" -r 1 -o csv -ngl 0 -dev none \
         > "$LLAMA_OUT" 2>&1

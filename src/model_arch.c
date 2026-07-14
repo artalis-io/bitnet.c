@@ -203,6 +203,21 @@ static void bn_model_arch_apply_gemma4_shapes(BnConfig *c,
     c->kv_mul = c->n_heads / c->n_kv_heads;
 }
 
+static int bn_model_arch_gemma4_tensor_name(char *out, size_t out_size,
+                                            int layer, int role) {
+    const char *suffix = NULL;
+    switch ((BnModelTensorRole)role) {
+        case BN_MODEL_TENSOR_FFN_SUB_NORM:
+            suffix = "pre_ffw_norm_2.weight";
+            break;
+        default:
+            return bn_model_arch_default_tensor_name(out, out_size, layer, role);
+    }
+    if (!out || out_size == 0 || layer < 0) return -1;
+    int n = snprintf(out, out_size, "blk.%d.%s", layer, suffix);
+    return (n < 0 || (size_t)n >= out_size) ? -1 : 0;
+}
+
 static void bn_model_arch_apply_default_shapes(BnConfig *c,
                                                int max_head_size,
                                                int max_kv_dim) {
@@ -217,6 +232,10 @@ static int bn_model_arch_match_gemma4(const char *arch) {
 
 static int bn_model_arch_match_qwen(const char *arch) {
     return arch && strncmp(arch, "qwen", 4) == 0;
+}
+
+static int bn_model_arch_match_qwen2(const char *arch) {
+    return arch && strncmp(arch, "qwen2", 5) == 0;
 }
 
 static int bn_model_arch_match_qwen3(const char *arch) {
@@ -242,13 +261,24 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             bn_model_arch_activation,
             bn_model_arch_attention_value_shares_key,
             bn_model_arch_is_ssm_layer,
-            bn_model_arch_default_tensor_name,
+            bn_model_arch_gemma4_tensor_name,
             bn_model_arch_apply_gemma4_shapes,
         },
         {
             "qwen3",
             BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3,
             bn_model_arch_match_qwen3,
+            bn_model_arch_prefix,
+            bn_model_arch_activation,
+            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_is_ssm_layer,
+            bn_model_arch_default_tensor_name,
+            bn_model_arch_apply_default_shapes,
+        },
+        {
+            "qwen2",
+            BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2,
+            bn_model_arch_match_qwen2,
             bn_model_arch_prefix,
             bn_model_arch_activation,
             bn_model_arch_attention_value_shares_key,

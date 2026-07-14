@@ -31,8 +31,16 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
             } else {
                 k_t = s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
             }
-            float score = 0.0f;
-            for (int d = 0; d < head_size; d++) score += q_h[d] * k_t[d];
+            float lane[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            int d = 0;
+            for (; d + 3 < head_size; d += 4) {
+                lane[0] = fmaf(q_h[d + 0], k_t[d + 0], lane[0]);
+                lane[1] = fmaf(q_h[d + 1], k_t[d + 1], lane[1]);
+                lane[2] = fmaf(q_h[d + 2], k_t[d + 2], lane[2]);
+                lane[3] = fmaf(q_h[d + 3], k_t[d + 3], lane[3]);
+            }
+            float score = (lane[0] + lane[1]) + (lane[2] + lane[3]);
+            for (; d < head_size; d++) score = fmaf(q_h[d], k_t[d], score);
             att[i] = score * attn_scale;
         }
 
@@ -52,7 +60,8 @@ void bn_transformer_gqa_scalar_range(void *ctx, int h_start, int h_end) {
                 v_t = s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
             }
             float a = att[i];
-            for (int d = 0; d < head_size; d++) xb_h[d] += a * v_t[d];
+            for (int d = 0; d < head_size; d++)
+                xb_h[d] = fmaf(a, v_t[d], xb_h[d]);
         }
     }
 }
@@ -129,7 +138,8 @@ void bn_transformer_flash_gqa_scalar_range(void *ctx, int h_start, int h_end) {
 
                 float w = expf(score - running_max);
                 running_sum += w;
-                for (int d = 0; d < head_size; d++) out_buf[d] += w * v_t[d];
+                for (int d = 0; d < head_size; d++)
+                    out_buf[d] = fmaf(w, v_t[d], out_buf[d]);
             }
         }
 

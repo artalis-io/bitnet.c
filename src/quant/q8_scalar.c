@@ -9,7 +9,20 @@ void bn_quant_q8_scalar_sdot_range(void *ctx, int row_start, int row_end) {
 
     for (int row = row_start; row < row_end; row++) {
         float row_sum = 0.0f;
-        for (int b = 0; b < n_blocks_per_row; b++) {
+        int b = 0;
+        for (; b + 3 < n_blocks_per_row; b += 4) {
+            float group_sum = 0.0f;
+            for (int k = 0; k < 4; k++) {
+                const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b + k];
+                const int8_t *xb = x_q + (b + k) * 32;
+                int32_t sumi = 0;
+                for (int i = 0; i < 32; i++)
+                    sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
+                group_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b + k];
+            }
+            row_sum += group_sum;
+        }
+        for (; b < n_blocks_per_row; b++) {
             const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
             const int8_t *xb = x_q + b * 32;
             int32_t sumi = 0;
@@ -72,6 +85,45 @@ void bn_quant_q8_scalar_matmul_range(void *ctx, int row_start, int row_end) {
 
             for (int ti = 0; ti < tile_n; ti++)
                 c->out[(size_t)(t0 + ti) * rows + row] += sums[ti];
+        }
+    }
+}
+
+void bn_quant_q8_scalar_sdot_matmul_range(void *ctx, int row_start, int row_end) {
+    BnQ8MatmulCtx *c = (BnQ8MatmulCtx *)ctx;
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)c->W->data;
+    int n_blocks_per_row = c->cols / 32;
+    int rows = c->W->rows;
+    int n_tokens = c->n_tokens;
+
+    (void)c->prepared;
+    for (int row = row_start; row < row_end; row++) {
+        for (int t = 0; t < n_tokens; t++) {
+            const int8_t *x_q = c->x_q + (size_t)t * c->cols;
+            const float *x_scales = c->x_scales + (size_t)t * n_blocks_per_row;
+            float row_sum = 0.0f;
+            int b = 0;
+            for (; b + 3 < n_blocks_per_row; b += 4) {
+                float group_sum = 0.0f;
+                for (int k = 0; k < 4; k++) {
+                    const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b + k];
+                    const int8_t *xb = x_q + (b + k) * 32;
+                    int32_t sumi = 0;
+                    for (int i = 0; i < 32; i++)
+                        sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
+                    group_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b + k];
+                }
+                row_sum += group_sum;
+            }
+            for (; b < n_blocks_per_row; b++) {
+                const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_blocks_per_row + b];
+                const int8_t *xb = x_q + b * 32;
+                int32_t sumi = 0;
+                for (int i = 0; i < 32; i++)
+                    sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
+                row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
+            }
+            c->out[(size_t)t * rows + row] = row_sum;
         }
     }
 }

@@ -178,6 +178,30 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
     // Q8_0/Q4_0 SDOT path
     if (all_same_type && (type0 == BN_GGUF_TENSOR_Q8_0 || type0 == BN_GGUF_TENSOR_Q4_0)
         && n_tasks <= BN_MAX_BATCH) {
+        if (type0 == BN_GGUF_TENSOR_Q4_0) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+            BnQ4Ctx ctxs[BN_MAX_BATCH];
+            BnTPTask tp_tasks[BN_MAX_BATCH];
+            for (int t = 0; t < n_tasks; t++) {
+                (void)tasks[t].prepared;
+                ctxs[t] = (BnQ4Ctx){ tasks[t].out, tasks[t].W, tasks[t].x };
+                tp_tasks[t] = (BnTPTask){ bn_quant_q4_neon_range, &ctxs[t], tasks[t].W->rows };
+            }
+            bn_tp_dispatch(pool, tp_tasks, n_tasks);
+            return;
+#elif !defined(__AVX512F__) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
+            BnQ4Ctx ctxs[BN_MAX_BATCH];
+            BnTPTask tp_tasks[BN_MAX_BATCH];
+            for (int t = 0; t < n_tasks; t++) {
+                (void)tasks[t].prepared;
+                ctxs[t] = (BnQ4Ctx){ tasks[t].out, tasks[t].W, tasks[t].x };
+                tp_tasks[t] = (BnTPTask){ bn_quant_q4_scalar_range, &ctxs[t], tasks[t].W->rows };
+            }
+            bn_tp_dispatch(pool, tp_tasks, n_tasks);
+            return;
+#endif
+        }
+
         int n_blocks = cols / 32;
         if (n_blocks <= BN_MAX_SCALE_BLOCKS) {
             float x_scales_all[n_tasks * n_blocks];  // VLA sized by actual dims
@@ -210,7 +234,11 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                            ? bn_quant_q4_repacked_wasm_sdot_8row_range
                            : bn_quant_q4_wasm_sdot_range);
 #else
-                    void (*fn)(void *, int, int) = bn_quant_q4_scalar_range;
+                    void (*fn)(void *, int, int) =
+                        (tasks[t].prepared && tasks[t].prepared->qs &&
+                         tasks[t].prepared->scales)
+                        ? bn_quant_q4_repacked_scalar_sdot_range
+                        : bn_quant_q4_scalar_sdot_range;
 #endif
                     int n_items = tasks[t].W->rows;
 #if defined(__AVX512F__) || defined(__AVX2__)
@@ -228,6 +256,17 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
             }
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX512F__) || defined(__AVX2__)
             if (type0 == BN_GGUF_TENSOR_Q8_0) {
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+                BnQ8Ctx ctxs[BN_MAX_BATCH];
+                BnTPTask tp_tasks[BN_MAX_BATCH];
+                for (int t = 0; t < n_tasks; t++) {
+                    (void)tasks[t].prepared;
+                    ctxs[t] = (BnQ8Ctx){ tasks[t].out, tasks[t].W, tasks[t].x };
+                    tp_tasks[t] = (BnTPTask){ bn_quant_q8_neon_range, &ctxs[t], tasks[t].W->rows };
+                }
+                bn_tp_dispatch(pool, tp_tasks, n_tasks);
+                return;
+#else
                 BnQ8SdotCtx ctxs[BN_MAX_BATCH];
                 BnTPTask tp_tasks[BN_MAX_BATCH];
                 for (int t = 0; t < n_tasks; t++) {
@@ -249,6 +288,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
                 }
                 bn_tp_dispatch(pool, tp_tasks, n_tasks);
                 return;
+#endif
             }
 #endif
         }
@@ -327,5 +367,5 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
     for (int t = 0; t < n_tasks; t++)
         bn_quant_matvec_impl(tasks[t].out, tasks[t].W, tasks[t].x,
                              x_q_bufs + (size_t)t * cols, pool,
-                             tasks[t].prepared);
+                             tasks[t].prepared, 0);
 }

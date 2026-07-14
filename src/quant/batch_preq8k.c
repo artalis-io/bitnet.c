@@ -78,7 +78,8 @@ void bn_quant_matvec_batch_preq8k(const BnMatvecTask *tasks, int n_tasks,
     if (x_float) {
         for (int t = 0; t < n_tasks; t++) {
             bn_quant_matvec_impl(tasks[t].out, tasks[t].W, x_float,
-                                 (int8_t *)x_q, pool, tasks[t].prepared);
+                                 (int8_t *)x_q, pool, tasks[t].prepared,
+                                 tasks[t].flags);
         }
     }
 }

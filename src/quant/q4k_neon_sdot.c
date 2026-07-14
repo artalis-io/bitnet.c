@@ -2,6 +2,11 @@
 #include <arm_neon.h>
 #include <string.h>
 
+static inline float q4k_fp16_to_f32(uint16_t h) {
+    return vgetq_lane_f32(
+        vcvt_f32_f16(vld1_dup_f16((const float16_t *)&h)), 0);
+}
+
 // Q4_K SDOT kernel with Q8_K x quantization:
 // - Unsigned nibbles (no bias subtract)
 // - Integer accumulation within super-block (one x_d per 256 elements)
@@ -29,8 +34,8 @@ void bn_quant_q4k_neon_sdot_range(void *ctx, int row_start, int row_end) {
         for (int b = 0; b < n_blocks_per_row; b++) {
             const BnBlockQ4K *blk = &blocks[(size_t)row * n_blocks_per_row + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d    = bn_fp16_to_fp32(blk->d);
-            float dmin = bn_fp16_to_fp32(blk->dmin);
+            float d    = q4k_fp16_to_f32(blk->d);
+            float dmin = q4k_fp16_to_f32(blk->dmin);
             float dx   = x_d[b];
             const uint8_t *qs = blk->qs;
             const int8_t *xb = x_q + b * BN_QK_K;
@@ -119,8 +124,8 @@ void bn_quant_q4k_neon_sdot_matmul_range(void *ctx, int row_start, int row_end) 
             // Load weight block ONCE for all tokens
             const BnBlockQ4K *blk = &blocks[(size_t)row * n_bpr + b];
             __builtin_prefetch(blk + 1, 0, 0);
-            float d    = bn_fp16_to_fp32(blk->d);
-            float dmin = bn_fp16_to_fp32(blk->dmin);
+            float d    = q4k_fp16_to_f32(blk->d);
+            float dmin = q4k_fp16_to_f32(blk->dmin);
             const uint8_t *qs = blk->qs;
 
             // Decode scales and mins once

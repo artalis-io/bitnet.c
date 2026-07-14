@@ -9,6 +9,7 @@
 #include "transformer_backend_internal.h"
 #include "gpu_backend.h"
 #include "quant.h"
+#include <math.h>
 #include <stdlib.h>
 
 #ifdef BN_FORCE_SCALAR
@@ -31,6 +32,21 @@
 
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
 #define BN_LOGITS_REFINE_MAX_SCALE_BLOCKS 512
+
+static void logits_rmsnorm_model(const BnModel *m, float *out,
+                                 const float *x, const float *w,
+                                 int size, float eps) {
+    if (m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN2)) {
+        double ss = 0.0;
+        for (int i = 0; i < size; i++)
+            ss += (double)(x[i] * x[i]);
+        float scale = 1.0f / sqrtf((float)(ss / (double)size) + eps);
+        for (int i = 0; i < size; i++)
+            out[i] = x[i] * scale * w[i];
+        return;
+    }
+    rmsnorm(out, x, w, size, eps);
+}
 
 static int logits_refine_q8_top(float *logits, int n_logits,
                                 const BnQWeight *W, const float *x,
@@ -95,6 +111,148 @@ static int logits_refine_q8_top(float *logits, int n_logits,
 #endif
 }
 
+static int logits_top_ids(const float *logits, int n_logits,
+                          int *ids, float *vals, int top_n) {
+    if (!logits || !ids || !vals || n_logits <= 0 || top_n <= 0)
+        return 0;
+    if (top_n > 128) top_n = 128;
+    if (top_n > n_logits) top_n = n_logits;
+
+    int n_top = 0;
+    for (int i = 0; i < n_logits; i++) {
+        float v = logits[i];
+        int j = n_top;
+        if (j == top_n && v <= vals[j - 1]) continue;
+        if (j < top_n) {
+            ids[j] = i;
+            vals[j] = v;
+            n_top++;
+        } else {
+            j--;
+        }
+        while (j > 0 && v > vals[j - 1]) {
+            ids[j] = ids[j - 1];
+            vals[j] = vals[j - 1];
+            j--;
+        }
+        ids[j] = i;
+        vals[j] = v;
+    }
+    return n_top;
+}
+
+static float logits_q6k_row_native(const BnQWeight *W, const float *x,
+                                   int row) {
+    int n_blocks_per_row = W->cols / BN_QK_K;
+    const BnBlockQ6K *blocks = (const BnBlockQ6K *)W->data;
+    float row_sum = 0.0f;
+
+    for (int b = 0; b < n_blocks_per_row; b++) {
+        const BnBlockQ6K *blk =
+            &blocks[(size_t)row * (size_t)n_blocks_per_row + (size_t)b];
+        float d = bn_fp16_to_fp32(blk->d);
+        const uint8_t *ql = blk->ql;
+        const uint8_t *qh = blk->qh;
+        const int8_t *sc = blk->scales;
+        const float *xb = x + b * BN_QK_K;
+
+        for (int n = 0; n < BN_QK_K; n += 128) {
+            for (int is = 0; is < 2; is++) {
+                float sum1 = 0.0f;
+                float sum2 = 0.0f;
+                float sum3 = 0.0f;
+                float sum4 = 0.0f;
+                int l0 = is * 16;
+                for (int i = 0; i < 16; i++) {
+                    int l = l0 + i;
+                    int q1 = (int)((ql[l]      & 0xF) |
+                                   (((qh[l] >> 0) & 3) << 4)) - 32;
+                    int q2 = (int)((ql[l + 32] & 0xF) |
+                                   (((qh[l] >> 2) & 3) << 4)) - 32;
+                    int q3 = (int)((ql[l]      >> 4) |
+                                   (((qh[l] >> 4) & 3) << 4)) - 32;
+                    int q4 = (int)((ql[l + 32] >> 4) |
+                                   (((qh[l] >> 6) & 3) << 4)) - 32;
+                    sum1 += (float)q1 * xb[l +  0];
+                    sum2 += (float)q2 * xb[l + 32];
+                    sum3 += (float)q3 * xb[l + 64];
+                    sum4 += (float)q4 * xb[l + 96];
+                }
+                row_sum += d * ((float)sc[is + 0] * sum1 +
+                                (float)sc[is + 2] * sum2 +
+                                (float)sc[is + 4] * sum3 +
+                                (float)sc[is + 6] * sum4);
+            }
+            xb += 128;
+            ql += 64;
+            qh += 32;
+            sc += 8;
+        }
+    }
+    return row_sum;
+}
+
+static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
+                                       const BnQWeight *W) {
+    if (!m || !s || !W || W->type != BN_GGUF_TENSOR_Q6_K ||
+        !getenv("BN_CPU_TIED_Q6K_REFINE_TOP"))
+        return;
+
+    int refine_top = atoi(getenv("BN_CPU_TIED_Q6K_REFINE_TOP"));
+    if (refine_top <= 0) return;
+    if (refine_top > 128) refine_top = 128;
+
+    int ids[128];
+    float vals[128];
+    int n_top = logits_top_ids(s->logits, m->config.vocab_size,
+                               ids, vals, refine_top);
+    for (int i = 0; i < n_top; i++)
+        s->logits[ids[i]] = logits_q6k_row_native(W, s->x, ids[i]);
+}
+
+static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
+                                       const BnQWeight *W) {
+    const char *env = getenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
+    if (!m || !s || !W || W->type != BN_GGUF_TENSOR_Q6_K || !env)
+        return;
+
+    int top_n = atoi(env);
+    if (top_n < 2) return;
+    if (top_n > 128) top_n = 128;
+
+    int ids[128];
+    float vals[128];
+    int n_top = logits_top_ids(s->logits, m->config.vocab_size,
+                               ids, vals, top_n);
+    if (n_top < 2) return;
+
+    float native_vals[128];
+    int native_best = 0;
+    int native_second = 1;
+    for (int i = 0; i < n_top; i++) {
+        native_vals[i] = logits_q6k_row_native(W, s->x, ids[i]);
+        if (i == 0) continue;
+        if (native_vals[i] > native_vals[native_best]) {
+            native_second = native_best;
+            native_best = i;
+        } else if (native_second == native_best ||
+                   native_vals[i] > native_vals[native_second]) {
+            native_second = i;
+        }
+    }
+
+    if (native_best == 0)
+        return;
+
+    float backend_margin = vals[0] - vals[1];
+    float native_margin = native_vals[native_best] - native_vals[native_second];
+    if (native_margin <= backend_margin)
+        return;
+
+    for (int i = 0; i < n_top; i++)
+        s->logits[ids[i]] = native_vals[i];
+}
+
 static int logits_small_qwen_cuda_q8_refine_enabled(const BnModel *m,
                                                     const BnQWeight *W) {
     if (!m || !W || W->type != BN_GGUF_TENSOR_Q8_0)
@@ -135,7 +293,7 @@ static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
     for (int i = 0; i < n; i++) {
         int q = (int)(x[i] * inv + (x[i] >= 0.0f ? 0.5f : -0.5f));
         if (q > 127) q = 127;
-        if (q < -128) q = -128;
+        if (q < -127) q = -127;
         x_q[i] = (int8_t)q;
     }
     return scale;
@@ -231,7 +389,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         return NULL;
     }
 
-    rmsnorm(s->x, s->x, w->output_norm, dim, c->norm_eps);
+    logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim, c->norm_eps);
 
     if (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16) {
         int n_rows = w->output_weight.rows;
@@ -247,11 +405,19 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared =
             bn_backend_model_prepared_qweight(backend, tied);
-        bn_backend_quant_matvec_gpu_buf_prepared(
-            s->logits, tied, prepared,
-            bn_transformer_backend_handle_or(bn_model_backend(m), -1,
-                                             BN_BACKEND_HANDLE_TIED_EMBEDDING),
-            s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
+        if (getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL) {
+            bn_quant_matvec_prepared_flags(
+                s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
+                BN_MATVEC_TASK_NATIVE_QUANT);
+        } else {
+            bn_backend_quant_matvec_gpu_buf_prepared(
+                s->logits, tied, prepared,
+                bn_transformer_backend_handle_or(bn_model_backend(m), -1,
+                                                 BN_BACKEND_HANDLE_TIED_EMBEDDING),
+                s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
+            logits_hybrid_tied_q6k_top(m, s, tied);
+            logits_refine_tied_q6k_top(m, s, tied);
+        }
         logits_refine_small_qwen_cuda_q8(m, s, tied);
     } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
         if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
@@ -262,6 +428,13 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
         BnTPTask logits_task = { bn_transformer_logits_f32_range, &lctx, c->vocab_size };
         bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
+    }
+
+    if (c->final_logit_softcap != 0.0f) {
+        float cap = c->final_logit_softcap;
+        float inv = 1.0f / cap;
+        for (int i = 0; i < c->vocab_size; i++)
+            s->logits[i] = tanhf(s->logits[i] * inv) * cap;
     }
 
     return s->logits;

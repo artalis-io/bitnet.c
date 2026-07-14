@@ -10,7 +10,10 @@
 #include "moe.h"
 #include "session.h"
 #include "sh_log.h"
+#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
@@ -140,6 +143,27 @@ static int cpu_quant_can_preq8k_triple(int a, int b, int c) {
 #define cpu_rmsnorm bn_transformer_rmsnorm_scalar
 #endif
 
+static void cpu_rmsnorm_scalar_qwen2(float *out, const float *x,
+                                     const float *w, int size, float eps) {
+    double ss = 0.0;
+    for (int i = 0; i < size; i++)
+        ss += (double)(x[i] * x[i]);
+    float scale = 1.0f / sqrtf((float)(ss / (double)size) + eps);
+    for (int i = 0; i < size; i++)
+        out[i] = x[i] * scale * w[i];
+}
+
+static inline void cpu_rmsnorm_model(const BnModel *m, float *out,
+                                     const float *x, const float *w,
+                                     int size, float eps) {
+    (void)m;
+    if (m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN2)) {
+        cpu_rmsnorm_scalar_qwen2(out, x, w, size, eps);
+        return;
+    }
+    cpu_rmsnorm(out, x, w, size, eps);
+}
+
 #ifdef __ARM_NEON
 #define cpu_ssm_conv_silu bn_transformer_ssm_conv_silu_neon_range
 #define cpu_ssm_l2norm    bn_transformer_ssm_l2norm_neon_range
@@ -181,6 +205,40 @@ static void cpu_rmsnorm_unit_heads(float *x, int n_heads, int head_size, float e
     for (int h = 0; h < n_heads; h++)
         cpu_rmsnorm_unit(x + h * head_size, x + h * head_size, head_size, eps);
 }
+
+#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+static float cpu_fast_exp_scalar(float x) {
+    const float log2e = 1.4426950409f;
+    const float ln2 = 0.6931471806f;
+    if (x < -87.3f) x = -87.3f;
+    if (x > 88.7f) x = 88.7f;
+    float nf = floorf(fmaf(x, log2e, 0.5f));
+    int ni = (int)nf;
+    float r = fmaf(-nf, ln2, x);
+    float poly = fmaf(0.04166664f, r, 0.16666667f);
+    poly = fmaf(poly, r, 0.49999994f);
+    poly = fmaf(poly, r, 1.0f);
+    poly = fmaf(poly, r, 1.0f);
+    union {
+        uint32_t u;
+        float f;
+    } e2n = { (uint32_t)(ni + 127) << 23 };
+    return poly * e2n.f;
+}
+
+static float cpu_fast_silu_scalar(float x) {
+    return x / (1.0f + cpu_fast_exp_scalar(-x));
+}
+
+static float cpu_fast_tanh_scalar(float x) {
+    return 2.0f / (1.0f + cpu_fast_exp_scalar(-2.0f * x)) - 1.0f;
+}
+
+static float cpu_fast_gelu_scalar(float x) {
+    float inner = 0.7978845608028654f * x * (1.0f + 0.044715f * x * x);
+    return 0.5f * x * (1.0f + cpu_fast_tanh_scalar(inner));
+}
+#endif
 
 void bn_transformer_cpu_gqa_dispatch(BnModel *m,
                                      BnGQACtx *gctx,
@@ -253,6 +311,148 @@ void bn_transformer_cpu_residual_add(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i++)
         x[i] += r[i];
 #endif
+}
+
+static void cpu_debug_dump_array_n(int n_values,
+                                   const float *x,
+                                   const char *tag,
+                                   int layer,
+                                   int pos) {
+    const char *path = getenv("BN_DUMP_LAYER_INP");
+    if (!path || !path[0]) return;
+
+    const char *pos_env = getenv("BN_DUMP_LAYER_POS");
+    if (pos_env && pos_env[0] && atoi(pos_env) != pos) return;
+
+    float sum = 0.0f;
+    float ss = 0.0f;
+    float minv = x[0];
+    float maxv = x[0];
+    for (int i = 0; i < n_values; i++) {
+        float v = x[i];
+        sum += v;
+        ss += v * v;
+        if (v < minv) minv = v;
+        if (v > maxv) maxv = v;
+    }
+
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    fprintf(f, "%s pos=%d layer=%d dim=%d sum=%.9g ss=%.9g min=%.9g max=%.9g first=",
+            tag, pos, layer, n_values, sum, ss, minv, maxv);
+    int n = n_values < 16 ? n_values : 16;
+    for (int i = 0; i < n; i++)
+        fprintf(f, "%s%.9g", i ? "," : "", x[i]);
+    fputc('\n', f);
+    fclose(f);
+}
+
+static void cpu_debug_dump_attn_weights(const BnRunState *s,
+                                        int n_heads,
+                                        int n_kv,
+                                        int seq_len,
+                                        const char *tag,
+                                        int layer,
+                                        int pos) {
+    const char *path = getenv("BN_DUMP_LAYER_INP");
+    if (!path || !path[0]) return;
+    if (n_heads <= 0 || n_kv <= 0 || seq_len <= 0) return;
+
+    int n_values = n_heads * n_kv;
+    float *tmp = (float *)malloc((size_t)n_values * sizeof(*tmp));
+    if (!tmp) return;
+    for (int h = 0; h < n_heads; h++)
+        memcpy(tmp + (size_t)h * n_kv, s->att + (size_t)h * seq_len,
+               (size_t)n_kv * sizeof(*tmp));
+    cpu_debug_dump_array_n(n_values, tmp, tag, layer, pos);
+    free(tmp);
+}
+
+static void cpu_debug_dump_heads(const float *x,
+                                 int n_heads,
+                                 int head_size,
+                                 const char *tag,
+                                 int layer,
+                                 int pos) {
+    const char *enabled = getenv("BN_DUMP_ALL_HEADS");
+    if (!enabled || !enabled[0]) return;
+    char head_tag[96];
+    for (int h = 0; h < n_heads; h++) {
+        snprintf(head_tag, sizeof(head_tag), "%s_h%d", tag, h);
+        cpu_debug_dump_array_n(head_size, x + (size_t)h * head_size,
+                               head_tag, layer, pos);
+    }
+}
+
+static void cpu_debug_dump_attn_weight_heads(const BnRunState *s,
+                                             int n_heads,
+                                             int n_kv,
+                                             int seq_len,
+                                             const char *tag,
+                                             int layer,
+                                             int pos) {
+    const char *enabled = getenv("BN_DUMP_ALL_HEADS");
+    if (!enabled || !enabled[0]) return;
+    if (n_heads <= 0 || n_kv <= 0 || seq_len <= 0) return;
+    char head_tag[96];
+    for (int h = 0; h < n_heads; h++) {
+        snprintf(head_tag, sizeof(head_tag), "%s_h%d", tag, h);
+        cpu_debug_dump_array_n(n_kv, s->att + (size_t)h * seq_len,
+                               head_tag, layer, pos);
+    }
+}
+
+static void cpu_debug_dump_array(const BnConfig *c,
+                                 const float *x,
+                                 const char *tag,
+                                 int layer,
+                                 int pos) {
+    cpu_debug_dump_array_n(c->dim, x, tag, layer, pos);
+}
+
+static void cpu_debug_dump_vector(const BnModel *m,
+                                  const BnSession *sess,
+                                  const char *tag,
+                                  int layer,
+                                  int pos) {
+    cpu_debug_dump_array(&m->config, sess->state.x, tag, layer, pos);
+}
+
+static void cpu_debug_dump_layer_input(const BnModel *m,
+                                       const BnSession *sess,
+                                       int layer,
+                                       int pos) {
+    cpu_debug_dump_vector(m, sess, "bitnet_inp", layer, pos);
+}
+
+static void cpu_gemma4_apply_per_layer_embedding(BnModel *m,
+                                                 BnSession *sess,
+                                                 BnLayerWeights *lw,
+                                                 int layer) {
+    BnConfig *c = &m->config;
+    BnRunState *s = &sess->state;
+    int per_dim = c->gemma4_per_layer_dim;
+    if (!(c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) || per_dim <= 0 ||
+        !s->per_layer_input || !lw->per_layer.inp_gate.data ||
+        !lw->per_layer.proj.data || !lw->per_layer.post_norm)
+        return;
+
+    memcpy(s->xb2, s->x, (size_t)c->dim * sizeof(float));
+
+    BnMatvecTask gate[1] = {{ s->hb, &lw->per_layer.inp_gate, NULL, 0 }};
+    cpu_quant_matvec_batch_prepared(m, gate, 1, s->x, s->x_q);
+    for (int i = 0; i < per_dim; i++) {
+        float g = s->hb[i];
+        float gelu = 0.5f * g *
+                     (1.0f + tanhf(0.7978845608028654f * g *
+                                   (1.0f + 0.044715f * g * g)));
+        s->hb[i] = gelu * s->per_layer_input[(size_t)layer * per_dim + i];
+    }
+
+    BnMatvecTask proj[1] = {{ s->x, &lw->per_layer.proj, NULL, 0 }};
+    cpu_quant_matvec_batch_prepared(m, proj, 1, s->hb, s->x_q);
+    cpu_rmsnorm_model(m, s->x, s->x, lw->per_layer.post_norm, c->dim, c->norm_eps);
+    bn_transformer_cpu_residual_add(s->x, s->xb2, c->dim);
 }
 
 void bn_transformer_cpu_apply_rope_heads(float *buf,
@@ -356,18 +556,29 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
 #else
             for (int i = 0; i < hidden_dim; i++) {
                 float x = s->hb[i];
-                float g = 0.5f * x *
-                          (1.0f + tanhf(0.7978845608028654f * x *
-                                        (1.0f + 0.044715f * x * x)));
+                float g;
+                if (ffn_plan->scalar_exact_activation)
+                    g = 0.5f * x *
+                        (1.0f + tanhf(0.7978845608028654f * x *
+                                      (1.0f + 0.044715f * x * x)));
+                else
+                    g = cpu_fast_gelu_scalar(x);
                 s->hb[i] = g * s->hb2[i];
             }
 #endif
         } else {
 #ifdef __ARM_NEON
-            for (int i = 0; i < hidden_dim; i += 4) {
-                float32x4_t g = vld1q_f32(s->hb + i);
-                float32x4_t u = vld1q_f32(s->hb2 + i);
-                vst1q_f32(s->hb + i, vmulq_f32(bn_neon_fast_silu_f32(g), u));
+            if (ffn_plan->scalar_exact_activation) {
+                for (int i = 0; i < hidden_dim; i++) {
+                    float g = s->hb[i];
+                    s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
+                }
+            } else {
+                for (int i = 0; i < hidden_dim; i += 4) {
+                    float32x4_t g = vld1q_f32(s->hb + i);
+                    float32x4_t u = vld1q_f32(s->hb2 + i);
+                    vst1q_f32(s->hb + i, vmulq_f32(bn_neon_fast_silu_f32(g), u));
+                }
             }
 #elif defined(__AVX2__)
             for (int i = 0; i < hidden_dim; i += 8) {
@@ -379,7 +590,10 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
 #else
             for (int i = 0; i < hidden_dim; i++) {
                 float g = s->hb[i];
-                s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
+                if (ffn_plan->scalar_exact_activation)
+                    s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
+                else
+                    s->hb[i] = cpu_fast_silu_scalar(g) * s->hb2[i];
             }
 #endif
         }
@@ -401,16 +615,28 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
                 _mm256_storeu_ps(s->hb + i, bn_avx2_fast_gelu_ps(v));
             }
 #else
-            for (int i = 0; i < hidden_dim; i++)
-                s->hb[i] = 0.5f * s->hb[i] *
-                           (1.0f + tanhf(0.7978845608028654f * s->hb[i] *
-                                         (1.0f + 0.044715f * s->hb[i] * s->hb[i])));
+            for (int i = 0; i < hidden_dim; i++) {
+                float x = s->hb[i];
+                if (ffn_plan->scalar_exact_activation)
+                    s->hb[i] = 0.5f * x *
+                               (1.0f + tanhf(0.7978845608028654f * x *
+                                             (1.0f + 0.044715f * x * x)));
+                else
+                    s->hb[i] = cpu_fast_gelu_scalar(x);
+            }
 #endif
         } else {
 #ifdef __ARM_NEON
-            for (int i = 0; i < hidden_dim; i += 4) {
-                float32x4_t v = vld1q_f32(s->hb + i);
-                vst1q_f32(s->hb + i, bn_neon_fast_silu_f32(v));
+            if (ffn_plan->scalar_exact_activation) {
+                for (int i = 0; i < hidden_dim; i++) {
+                    float v = s->hb[i];
+                    s->hb[i] = v / (1.0f + expf(-v));
+                }
+            } else {
+                for (int i = 0; i < hidden_dim; i += 4) {
+                    float32x4_t v = vld1q_f32(s->hb + i);
+                    vst1q_f32(s->hb + i, bn_neon_fast_silu_f32(v));
+                }
             }
 #elif defined(__AVX2__)
             for (int i = 0; i < hidden_dim; i += 8) {
@@ -420,7 +646,10 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
 #else
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i];
-                s->hb[i] = v / (1.0f + expf(-v));
+                if (ffn_plan->scalar_exact_activation)
+                    s->hb[i] = v / (1.0f + expf(-v));
+                else
+                    s->hb[i] = cpu_fast_silu_scalar(v);
             }
 #endif
         }
@@ -459,12 +688,18 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
     int qk_stride = shape->qk_stride; // per-head norm offset
     int is_attn = shape->is_attn;
 
+    cpu_debug_dump_layer_input(m, sess, l, pos);
+
     if (is_attn) {
         // ---- Attention block ----
 
         // KV cache offset: contiguous among attention layers only
         int attn_idx = shape->attn_idx;
+        int kv_read_idx = attn_idx;
+        if (!lw->attn.has_kv && lw->attn.kv_reuse_layer >= 0)
+            kv_read_idx = bn_transformer_attn_index(c, lw->attn.kv_reuse_layer);
         size_t loff = (size_t)attn_idx * c->seq_len * kv_cache_stride;
+        size_t read_loff = (size_t)kv_read_idx * c->seq_len * kv_cache_stride;
 
         // Q projection width detection:
         // q_dim = n_heads * head_size (total Q output elements)
@@ -492,8 +727,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         } else
 #endif
         {
-            cpu_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
+            cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
         }
+        cpu_debug_dump_array(c, s->xb, "bitnet_attn_norm", l, pos);
 
         /* no-op */
 
@@ -535,7 +771,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
              * avoiding a separate memcpy + reload. */
             if (lw->attn.q_norm) {
                 for (int h = 0; h < n_heads; h++)
-                    cpu_rmsnorm(s->q + h*head_size,
+                    cpu_rmsnorm_model(m, s->q + h*head_size,
                             q_full + h * 2 * head_size,
                             lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
             } else {
@@ -546,7 +782,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
             if (lw->attn.k_norm)
                 for (int h = 0; h < n_kv_heads; h++)
-                    cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
+                    cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
             if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
                 cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
@@ -609,18 +845,19 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
             // wo projection + residual
             if (lw->norm.attn_sub_norm)
-                cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
+                cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
             {
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
             if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
-                cpu_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
+                cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
         } else if (q_wide) {
             // --- Wide Q path (Qwen3 MoE: head_size > dim/n_heads, no gate) ---
             float *k_tmp = s->hb, *v_tmp = s->hb2;
+            int has_kv = lw->attn.has_kv;
 
             // Q matvec: xb[dim] → q[q_dim]
             {
@@ -629,7 +866,10 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
             // K/V matvec: xb[dim] -> kv_dim. Compact KV formats need temp
             // FP32 rows before packing into the cache.
-            if ((c->kv_tq_bits > 0 && bn_model_tq_state(m)) || c->kv_f16) {
+            if (!has_kv) {
+                /* Gemma4 shared-KV layer: Q-only projection, then attend to the
+                 * reused cache layer selected by llama.cpp's SWA pattern rule. */
+            } else if ((c->kv_tq_bits > 0 && bn_model_tq_state(m)) || c->kv_f16) {
                 BnMatvecTask kv[2] = {
                      { k_tmp, &lw->attn.wk, NULL, 0 },
                      { v_tmp, &lw->attn.wv, NULL, 0 },
@@ -649,27 +889,28 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
             if (lw->attn.q_norm)
                 for (int h = 0; h < n_heads; h++)
-                    cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                    cpu_rmsnorm_model(m, s->q + h*head_size, s->q + h*head_size,
                             lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
-            if (lw->attn.k_norm)
+            if (has_kv && lw->attn.k_norm)
                 for (int h = 0; h < n_kv_heads; h++)
-                    cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
+                    cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
-            if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+            if (has_kv && (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4))
                 cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                              layer_rope_dims, rope_cos, rope_sin);
-            bn_transformer_cpu_apply_rope_heads(k_tmp, n_kv_heads, head_size,
-                             layer_rope_dims, rope_cos, rope_sin);
+            if (has_kv)
+                bn_transformer_cpu_apply_rope_heads(k_tmp, n_kv_heads, head_size,
+                                 layer_rope_dims, rope_cos, rope_sin);
 
-            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
+            if (has_kv && c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
                 // TQ write + GQA
                 bn_transformer_tq_write_kv(bn_model_tq_state(m), s, k_tmp, v_tmp,
                             n_kv_heads, head_size, attn_idx, cache_pos, c->seq_len);
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
-            } else if (c->kv_f16) {
+            } else if (has_kv && c->kv_f16) {
                 bn_transformer_write_kv_fp16(s, loff, cache_pos,
                                              kv_cache_stride, k_tmp, v_tmp,
                                              kv_dim);
@@ -681,20 +922,20 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             } else {
                 // Standard GQA
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-                BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
+                BnGQACtx gctx = { c, s, has_kv ? loff : read_loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len, cpu_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
             // wo projection (q_dim → dim) + residual
             if (lw->norm.attn_sub_norm)
-                cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, q_dim, c->norm_eps);
+                cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.attn_sub_norm, q_dim, c->norm_eps);
             {
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
             if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
-                cpu_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
+                cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
         } else {
@@ -722,11 +963,11 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
                 if (lw->attn.q_norm)
                     for (int h = 0; h < n_heads; h++)
-                        cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                        cpu_rmsnorm_model(m, s->q + h*head_size, s->q + h*head_size,
                                 lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->attn.k_norm)
                     for (int h = 0; h < n_kv_heads; h++)
-                        cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
+                        cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
                 if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
                     cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
@@ -762,11 +1003,11 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
                 if (lw->attn.q_norm)
                     for (int h = 0; h < n_heads; h++)
-                        cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                        cpu_rmsnorm_model(m, s->q + h*head_size, s->q + h*head_size,
                                 lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->attn.k_norm)
                     for (int h = 0; h < n_kv_heads; h++)
-                        cpu_rmsnorm(k_tmp + h*head_size, k_tmp + h*head_size,
+                        cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
                 if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
                     cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
@@ -815,11 +1056,11 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
                 if (lw->attn.q_norm)
                     for (int h = 0; h < n_heads; h++)
-                        cpu_rmsnorm(s->q + h*head_size, s->q + h*head_size,
+                        cpu_rmsnorm_model(m, s->q + h*head_size, s->q + h*head_size,
                                 lw->attn.q_norm + h*qk_stride, head_size, c->norm_eps);
                 if (lw->attn.k_norm)
                     for (int h = 0; h < n_kv_heads; h++)
-                        cpu_rmsnorm(key_cache_row + h*head_size, key_cache_row + h*head_size,
+                        cpu_rmsnorm_model(m, key_cache_row + h*head_size, key_cache_row + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
                 if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
                     cpu_rmsnorm_unit_heads(value_cache_row, n_kv_heads, head_size, c->norm_eps);
@@ -828,6 +1069,12 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                                  layer_rope_dims, rope_cos, rope_sin);
                 bn_transformer_cpu_apply_rope_heads(key_cache_row, n_kv_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
+
+                cpu_debug_dump_array_n(q_dim, s->q, "bitnet_attn_q", l, pos);
+                cpu_debug_dump_array_n(kv_dim, key_cache_row, "bitnet_attn_k", l, pos);
+                cpu_debug_dump_array_n(kv_dim, value_cache_row, "bitnet_attn_v", l, pos);
+                cpu_debug_dump_heads(s->q, n_heads, head_size,
+                                     "bitnet_attn_q", l, pos);
             }
 
             // GQA attention (standard path — TQ handled above)
@@ -836,17 +1083,24 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len, cpu_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
+                cpu_debug_dump_attn_weights(s, n_heads, n_kv, c->seq_len,
+                                            "bitnet_attn_softmax", l, pos);
+                cpu_debug_dump_attn_weight_heads(s, n_heads, n_kv, c->seq_len,
+                                                "bitnet_attn_softmax", l, pos);
             }
+            cpu_debug_dump_array_n(q_dim, s->xb, "bitnet_attn_out", l, pos);
+            cpu_debug_dump_heads(s->xb, n_heads, head_size,
+                                 "bitnet_attn_out", l, pos);
 
             // Attention sub-norm + wo projection + residual
             if (lw->norm.attn_sub_norm)
-                cpu_rmsnorm(s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
+                cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.attn_sub_norm, dim, c->norm_eps);
             {
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
             if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.attn_post_norm)
-                cpu_rmsnorm(s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
+                cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
         }
 
@@ -859,14 +1113,17 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
     // ---- FFN block ---- (shared by both layer types)
     /* no-op */
+    cpu_debug_dump_vector(m, sess, "bitnet_ffn_inp", l, pos);
     if (ffn_plan.kind == BN_FFN_MOE) {
         // MoE FFN — route, pread, compute, combine
         (void)moe_plan;
         bn_moe_forward(m, sess, lw, l);
     } else {
         // Dense FFN
-        bn_transformer_cpu_forward_ffn_block(m, sess, lw, &ffn_plan);
+        bn_transformer_cpu_forward_ffn_block(m, sess, lw, l, pos, &ffn_plan);
     }
+
+    cpu_gemma4_apply_per_layer_embedding(m, sess, lw, l);
 
     if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.layer_output_scale) {
         float scale = lw->norm.layer_output_scale[0];
@@ -916,7 +1173,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     } else
 #endif
     {
-        cpu_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
+        cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
     }
 
     float *qkv = s->hb;
@@ -931,16 +1188,26 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
+    int qwen_hybrid = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+                      c->full_attn_interval > 0;
     BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm.ssm_conv1d, qkv_dim, kern };
-    BnTPTask conv_task = { cpu_ssm_conv_silu, &conv_ctx, qkv_dim };
+    BnTPTask conv_task = {
+        qwen_hybrid ? bn_transformer_ssm_conv_silu_scalar_range
+                    : cpu_ssm_conv_silu,
+        &conv_ctx, qkv_dim
+    };
     bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
     float *q_raw = qkv;
     float *k_raw = qkv + key_dim;
     float *v_raw = qkv + 2 * key_dim;
 
-    BnSSML2NormCtx norm_ctx = { q_raw, k_raw, head_k_dim };
-    BnTPTask norm_task = { cpu_ssm_l2norm, &norm_ctx, num_k_heads };
+    BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
+    BnTPTask norm_task = {
+        qwen_hybrid ? bn_transformer_ssm_l2norm_scalar_range
+                    : cpu_ssm_l2norm,
+        &norm_ctx, num_k_heads
+    };
     bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
 
     if (num_v_heads > 8192 || head_v_dim > 8192) {
@@ -974,11 +1241,19 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
         alpha_arr, beta_arr,
         num_k_heads, head_k_dim, head_v_dim, q_scale
     };
-    BnTPTask delta_task = { cpu_ssm_delta, &delta_ctx, num_v_heads };
+    BnTPTask delta_task = {
+        qwen_hybrid ? bn_transformer_ssm_delta_scalar_range
+                    : cpu_ssm_delta,
+        &delta_ctx, num_v_heads
+    };
     bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
     BnSSMGateCtx gate_ctx = { out, z, lw->ssm.ssm_norm, c->norm_eps, head_v_dim };
-    BnTPTask gate_task = { cpu_ssm_gate, &gate_ctx, num_v_heads };
+    BnTPTask gate_task = {
+        qwen_hybrid ? bn_transformer_ssm_gate_scalar_range
+                    : cpu_ssm_gate,
+        &gate_ctx, num_v_heads
+    };
     bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
 
     BnMatvecTask proj[1] = {{ s->xb, &lw->ssm.ssm_out, NULL, 0 }};
@@ -988,6 +1263,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
 void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                                           BnSession *sess,
                                           BnLayerWeights *lw,
+                                          int layer,
+                                          int pos,
                                           const BnFFNPlan *ffn_plan) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
@@ -1010,14 +1287,14 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         void *up_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_up);
         void *down_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_down);
         if (gate_buf && up_buf && down_buf) {
-            cpu_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
+            cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
             if (gpu->dense_ffn(gpu->ctx, s->xb, gate_buf, up_buf, down_buf,
                                s->xb, dim, hidden_dim,
                                lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
                                lw->ffn.ffn_down.type, ffn_plan->activation) == 0) {
                 if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
                     lw->norm.ffn_post_norm)
-                    cpu_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm, dim,
+                    cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim,
                                 c->norm_eps);
                 bn_transformer_cpu_residual_add(s->x, s->xb, dim);
                 return;
@@ -1044,14 +1321,18 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 #endif
 
     if (!fused_gate_up) {
-        cpu_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
+        cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
+        cpu_debug_dump_array(c, s->xb, "bitnet_ffn_norm", layer, pos);
 
         if (ffn_plan->has_gate) {
             const BnPreparedWeight *gate_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_gate);
             const BnPreparedWeight *up_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
-            if (!bn_model_gpu(m) && ffn_plan->activation == 0 &&
+            if (!bn_model_gpu(m) && !ffn_plan->scalar_exact_activation &&
+                !getenv("BN_CPU_LLAMA_DOT") &&
+                !getenv("BN_CPU_LLAMA_Q4_DOT") &&
+                ffn_plan->activation == 0 &&
                 lw->ffn.ffn_gate.type == BN_GGUF_TENSOR_Q4_0 &&
                 lw->ffn.ffn_up.type == BN_GGUF_TENSOR_Q4_0 &&
                 dim % 32 == 0 &&
@@ -1067,6 +1348,10 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                 };
                 cpu_quant_matvec_batch_prepared(m, ffn, 2, s->xb, s->x_q);
             }
+            cpu_debug_dump_array_n(hidden_dim, s->hb2, "bitnet_ffn_up",
+                                   layer, pos);
+            cpu_debug_dump_array_n(hidden_dim, s->hb, "bitnet_ffn_gate",
+                                   layer, pos);
         } else {
             BnMatvecTask ffn[1] = {{ s->hb, &lw->ffn.ffn_up, NULL, 0 }};
             cpu_quant_matvec_batch_prepared(m, ffn, 1, s->xb, s->x_q);
@@ -1074,13 +1359,17 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     }
 
     bn_transformer_cpu_apply_ffn_activation(s, ffn_plan, hidden_dim, ffn_activated);
+    cpu_debug_dump_array_n(hidden_dim, s->hb, "bitnet_ffn_swiglu",
+                           layer, pos);
 
     if (ffn_plan->has_sub_norm)
-        cpu_rmsnorm(s->hb, s->hb, lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
+        cpu_rmsnorm_model(m, s->hb, s->hb, lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
 
     BnMatvecTask down[1] = {{ s->xb, &lw->ffn.ffn_down, NULL, 0 }};
     cpu_quant_matvec_batch_prepared(m, down, 1, s->hb, s->x_q);
     if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.ffn_post_norm)
-        cpu_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm, dim, c->norm_eps);
+        cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim, c->norm_eps);
+    cpu_debug_dump_array(c, s->xb, "bitnet_ffn_out", layer, pos);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);
+    cpu_debug_dump_vector(m, sess, "bitnet_lout", layer, pos);
 }

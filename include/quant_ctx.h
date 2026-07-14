@@ -59,6 +59,16 @@ typedef struct {
 typedef struct {
     float *out;
     const BnQWeight *W;
+    const int8_t *x_q;
+    const float *x_scales;
+    int n_tokens;
+    int cols;
+    const BnPreparedWeight *prepared;
+} BnQ8MatmulCtx;
+
+typedef struct {
+    float *out;
+    const BnQWeight *W;
     const float *x;
 } BnQ4Ctx;
 

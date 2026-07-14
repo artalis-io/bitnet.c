@@ -231,7 +231,7 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n
         }
 
         float inv_scale = 127.0f / amax;
-        x_scales[b] = amax / 127.0f;
+        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
 
         __m256 vinv = _mm256_set1_ps(inv_scale);
         __m256i i0 = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(xb), vinv));

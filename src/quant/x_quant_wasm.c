@@ -97,7 +97,7 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n
         }
 
         float inv_scale = 127.0f / amax;
-        x_scales[b] = amax / 127.0f;
+        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
         v128_t vinv = wasm_f32x4_splat(inv_scale);
 
         v128_t i0 = wasm_i32x4_trunc_sat_f32x4(wasm_f32x4_nearest(wasm_f32x4_mul(wasm_v128_load(xb), vinv)));

@@ -30,6 +30,7 @@ void bn_transformer_ssm_conv_silu_scalar_range(void *ctx, int start, int end) {
 void bn_transformer_ssm_l2norm_scalar_range(void *ctx, int start, int end) {
     BnSSML2NormCtx *c = (BnSSML2NormCtx *)ctx;
     int hd = c->head_dim;
+    float eps = c->eps;
 
     for (int h = start; h < end; h++) {
         float *qh = c->q + h * hd;
@@ -39,8 +40,8 @@ void bn_transformer_ssm_l2norm_scalar_range(void *ctx, int start, int end) {
             qn += qh[d] * qh[d];
             kn += kh[d] * kh[d];
         }
-        qn = 1.0f / (sqrtf(qn) + 1e-6f);
-        kn = 1.0f / (sqrtf(kn) + 1e-6f);
+        qn = 1.0f / fmaxf(sqrtf(qn), eps);
+        kn = 1.0f / fmaxf(sqrtf(kn), eps);
         for (int d = 0; d < hd; d++) {
             qh[d] *= qn;
             kh[d] *= kn;

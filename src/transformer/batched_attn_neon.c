@@ -13,47 +13,50 @@
 
 static inline float batched_dot_fp32_neon(const float *q, const float *k,
                                           int head_size) {
-    float32x4_t a0 = vdupq_n_f32(0.0f);
-    float32x4_t a1 = vdupq_n_f32(0.0f);
-    float32x4_t a2 = vdupq_n_f32(0.0f);
-    float32x4_t a3 = vdupq_n_f32(0.0f);
+    float32x4_t acc0 = vdupq_n_f32(0.0f);
+    float32x4_t acc1 = vdupq_n_f32(0.0f);
+    float32x4_t acc2 = vdupq_n_f32(0.0f);
+    float32x4_t acc3 = vdupq_n_f32(0.0f);
     int d = 0;
     for (; d + 15 < head_size; d += 16) {
-        a0 = vmlaq_f32(a0, vld1q_f32(q + d),      vld1q_f32(k + d));
-        a1 = vmlaq_f32(a1, vld1q_f32(q + d + 4),  vld1q_f32(k + d + 4));
-        a2 = vmlaq_f32(a2, vld1q_f32(q + d + 8),  vld1q_f32(k + d + 8));
-        a3 = vmlaq_f32(a3, vld1q_f32(q + d + 12), vld1q_f32(k + d + 12));
+        acc0 = vmlaq_f32(acc0, vld1q_f32(q + d),      vld1q_f32(k + d));
+        acc1 = vmlaq_f32(acc1, vld1q_f32(q + d + 4),  vld1q_f32(k + d + 4));
+        acc2 = vmlaq_f32(acc2, vld1q_f32(q + d + 8),  vld1q_f32(k + d + 8));
+        acc3 = vmlaq_f32(acc3, vld1q_f32(q + d + 12), vld1q_f32(k + d + 12));
     }
     for (; d + 3 < head_size; d += 4)
-        a0 = vmlaq_f32(a0, vld1q_f32(q + d), vld1q_f32(k + d));
-    float sum = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(a0, a1),
-                                                       vaddq_f32(a2, a3)));
+        acc0 = vmlaq_f32(acc0, vld1q_f32(q + d), vld1q_f32(k + d));
+    float32x4_t acc = vaddq_f32(vaddq_f32(acc0, acc1),
+                                vaddq_f32(acc2, acc3));
+    float sum = bn_transformer_neon_hsum_f32(acc);
     for (; d < head_size; d++) sum += q[d] * k[d];
     return sum;
 }
 
 static inline float batched_dot_fp16_neon(const float *q, const uint16_t *k,
                                           int head_size) {
-    float32x4_t a0 = vdupq_n_f32(0.0f);
-    float32x4_t a1 = vdupq_n_f32(0.0f);
-    float32x4_t a2 = vdupq_n_f32(0.0f);
-    float32x4_t a3 = vdupq_n_f32(0.0f);
+    float32x4_t acc0 = vdupq_n_f32(0.0f);
+    float32x4_t acc1 = vdupq_n_f32(0.0f);
+    float32x4_t acc2 = vdupq_n_f32(0.0f);
+    float32x4_t acc3 = vdupq_n_f32(0.0f);
     int d = 0;
     for (; d + 15 < head_size; d += 16) {
-        a0 = vmlaq_f32(a0, vld1q_f32(q + d),
-                       vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d))));
-        a1 = vmlaq_f32(a1, vld1q_f32(q + d + 4),
-                       vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d + 4))));
-        a2 = vmlaq_f32(a2, vld1q_f32(q + d + 8),
-                       vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d + 8))));
-        a3 = vmlaq_f32(a3, vld1q_f32(q + d + 12),
-                       vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d + 12))));
+        acc0 = vmlaq_f32(acc0, vld1q_f32(q + d),
+                         vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d))));
+        acc1 = vmlaq_f32(acc1, vld1q_f32(q + d + 4),
+                         vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d + 4))));
+        acc2 = vmlaq_f32(acc2, vld1q_f32(q + d + 8),
+                         vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d + 8))));
+        acc3 = vmlaq_f32(acc3, vld1q_f32(q + d + 12),
+                         vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d + 12))));
     }
     for (; d + 3 < head_size; d += 4)
-        a0 = vmlaq_f32(a0, vld1q_f32(q + d),
-                       vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d))));
-    float sum = bn_transformer_neon_hsum_f32(vaddq_f32(vaddq_f32(a0, a1),
-                                                       vaddq_f32(a2, a3)));
+        acc0 = vmlaq_f32(acc0, vld1q_f32(q + d),
+                         vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(k + d))));
+    float sum = bn_transformer_neon_hsum_f32(acc0) +
+                bn_transformer_neon_hsum_f32(acc1) +
+                bn_transformer_neon_hsum_f32(acc2) +
+                bn_transformer_neon_hsum_f32(acc3);
     for (; d < head_size; d++) {
         float16x4_t hv = vreinterpret_f16_u16(vdup_n_u16(k[d]));
         sum += q[d] * vgetq_lane_f32(vcvt_f32_f16(hv), 0);
@@ -189,7 +192,7 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
     int pos0 = b->pos0;
     size_t loff = b->loff;
     int kv_f16 = b->c->kv_f16;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -211,7 +214,7 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
                     int ki = (kv_start + i) % seq_len;
                     att[i] = batched_dot_fp16_neon(q_local,
                                                    kc_base + (size_t)ki * kv_dim + kv_h * head_size,
-                                                   head_size) * inv_sqrt_hs;
+                                                   head_size) * attn_scale;
                 }
             } else {
                 const float *kc_base = s->key_cache + loff;
@@ -219,7 +222,7 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
                     int ki = (kv_start + i) % seq_len;
                     att[i] = batched_dot_fp32_neon(q_local,
                                                    kc_base + (size_t)ki * kv_dim + kv_h * head_size,
-                                                   head_size) * inv_sqrt_hs;
+                                                   head_size) * attn_scale;
                 }
             }
 
@@ -259,7 +262,7 @@ void bn_transformer_batched_attn_flash_neon_range(void *ctx, int h_start,
     int pos0 = b->pos0;
     size_t loff = b->loff;
     int kv_f16 = b->c->kv_f16;
-    float inv_sqrt_hs = 1.0f / sqrtf((float)head_size);
+    float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -285,12 +288,12 @@ void bn_transformer_batched_attn_flash_neon_range(void *ctx, int h_start,
                         score = batched_dot_fp16_neon(q_local,
                                                       (const uint16_t *)s->key_cache + loff +
                                                       (size_t)ki * kv_dim + kv_h * head_size,
-                                                      head_size) * inv_sqrt_hs;
+                                                      head_size) * attn_scale;
                     } else {
                         score = batched_dot_fp32_neon(q_local,
                                                       s->key_cache + loff +
                                                       (size_t)ki * kv_dim + kv_h * head_size,
-                                                      head_size) * inv_sqrt_hs;
+                                                      head_size) * attn_scale;
                     }
 
                     float old_max = running_max;

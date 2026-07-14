@@ -17,8 +17,6 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
     const BnBlockQ6K *blocks = (const BnBlockQ6K *)c->W->data;
     const int8_t *x_q = c->x_q;
     const float *x_d = c->x_d;
-    const int16_t *x_bsums = c->x_bsums;
-
     const uint8x16_t mask_lo4 = vdupq_n_u8(0xF);
     const uint8x16_t mask_2 = vdupq_n_u8(3);
     const int32x4_t zero = vdupq_n_s32(0);
@@ -34,11 +32,8 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
             const uint8_t *qh = blk->qh;
             const int8_t  *sc = blk->scales;
             const int8_t *xb = x_q + b * BN_QK_K;
-            const int16_t *bsums = x_bsums + b * 16;
 
-            // Integer accumulation
-            int32x4_t acc = zero;
-            int32_t bias_corr = 0;
+            float block_scale = d * dx;
 
             for (int chunk = 0; chunk < 2; chunk++) {
                 uint8x16_t ql0 = vld1q_u8(ql);
@@ -74,43 +69,40 @@ void bn_quant_q6k_neon_sdot_range(void *ctx, int row_start, int row_end) {
                     vshrq_n_u8(ql3, 4),
                     vshlq_n_u8(vshrq_n_u8(qh1, 6), 4)));
 
-                // SDOT + integer scale accumulation (4 pairs × 2 sub-blocks each)
-                int32x4_t s0a = vdotq_s32(zero, w0a, vld1q_s8(xb));
-                int32x4_t s0b = vdotq_s32(zero, w0b, vld1q_s8(xb + 16));
-                acc = vmlaq_n_s32(acc, s0a, (int32_t)sc[0]);
-                acc = vmlaq_n_s32(acc, s0b, (int32_t)sc[1]);
+                const int8x16_t off = vdupq_n_s8(32);
+                w0a = vsubq_s8(w0a, off);
+                w0b = vsubq_s8(w0b, off);
+                w1a = vsubq_s8(w1a, off);
+                w1b = vsubq_s8(w1b, off);
+                w2a = vsubq_s8(w2a, off);
+                w2b = vsubq_s8(w2b, off);
+                w3a = vsubq_s8(w3a, off);
+                w3b = vsubq_s8(w3b, off);
 
-                int32x4_t s1a = vdotq_s32(zero, w1a, vld1q_s8(xb + 32));
-                int32x4_t s1b = vdotq_s32(zero, w1b, vld1q_s8(xb + 48));
-                acc = vmlaq_n_s32(acc, s1a, (int32_t)sc[2]);
-                acc = vmlaq_n_s32(acc, s1b, (int32_t)sc[3]);
+                int32_t s0a = vaddvq_s32(vdotq_s32(zero, w0a, vld1q_s8(xb)));
+                int32_t s0b = vaddvq_s32(vdotq_s32(zero, w0b, vld1q_s8(xb + 16)));
+                int32_t s1a = vaddvq_s32(vdotq_s32(zero, w1a, vld1q_s8(xb + 32)));
+                int32_t s1b = vaddvq_s32(vdotq_s32(zero, w1b, vld1q_s8(xb + 48)));
+                int32_t s2a = vaddvq_s32(vdotq_s32(zero, w2a, vld1q_s8(xb + 64)));
+                int32_t s2b = vaddvq_s32(vdotq_s32(zero, w2b, vld1q_s8(xb + 80)));
+                int32_t s3a = vaddvq_s32(vdotq_s32(zero, w3a, vld1q_s8(xb + 96)));
+                int32_t s3b = vaddvq_s32(vdotq_s32(zero, w3b, vld1q_s8(xb + 112)));
 
-                int32x4_t s2a = vdotq_s32(zero, w2a, vld1q_s8(xb + 64));
-                int32x4_t s2b = vdotq_s32(zero, w2b, vld1q_s8(xb + 80));
-                acc = vmlaq_n_s32(acc, s2a, (int32_t)sc[4]);
-                acc = vmlaq_n_s32(acc, s2b, (int32_t)sc[5]);
-
-                int32x4_t s3a = vdotq_s32(zero, w3a, vld1q_s8(xb + 96));
-                int32x4_t s3b = vdotq_s32(zero, w3b, vld1q_s8(xb + 112));
-                acc = vmlaq_n_s32(acc, s3a, (int32_t)sc[6]);
-                acc = vmlaq_n_s32(acc, s3b, (int32_t)sc[7]);
-
-                // Bias correction: sum(sc[g] * bsum[g]) for this chunk's 8 groups
-                for (int g = 0; g < 8; g++)
-                    bias_corr += (int32_t)sc[g] * (int32_t)bsums[chunk * 8 + g];
+                row_sum += block_scale *
+                    ((float)sc[0] * (float)s0a +
+                     (float)sc[1] * (float)s0b +
+                     (float)sc[2] * (float)s1a +
+                     (float)sc[3] * (float)s1b +
+                     (float)sc[4] * (float)s2a +
+                     (float)sc[5] * (float)s2b +
+                     (float)sc[6] * (float)s3a +
+                     (float)sc[7] * (float)s3b);
 
                 xb += 128;
                 ql += 64;
                 qh += 32;
                 sc += 8;
             }
-            int32_t sumi = vaddvq_s32(acc);
-
-            // Single float conversion per super-block
-            // val = d * sc * (w_unsigned - 32) * x_q * x_d
-            //     = d * x_d * (sc * w_unsigned * x_q - 32 * sc * sum(x_q))
-            //     = d * x_d * (sumi - 32 * bias_corr)
-            row_sum += d * dx * (float)(sumi - 32 * bias_corr);
         }
         c->out[row] = row_sum;
     }

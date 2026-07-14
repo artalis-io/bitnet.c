@@ -19,6 +19,7 @@ void bn_quant_q4_repacked_neon_sdot_matmul_group_range(void *ctx, int start, int
 void bn_quant_q4_repacked_neon_sdot_matmul_panel4_range(void *ctx, int start, int end);
 void bn_quant_q4_repacked_gate_up_silu_neon_range(void *ctx, int start, int end);
 void bn_quant_q4_neon_range(void *ctx, int start, int end);
+void bn_quant_mxfp4_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_neon_sdot_range(void *ctx, int start, int end);
 void bn_quant_q6k_neon_sdot_matmul_range(void *ctx, int start, int end);
 void bn_quant_q6k_neon_range(void *ctx, int start, int end);

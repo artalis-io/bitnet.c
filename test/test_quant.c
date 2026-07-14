@@ -1,6 +1,8 @@
 #include "quant.h"
 #include "gguf.h"
 #include "sh_arena.h"
+#include "quant_ctx.h"
+#include "quant_kernels_scalar.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -287,6 +289,10 @@ static void test_q4_matmul_correctness(void) {
     float *ref = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_llama_native = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_llama_prepared = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_llama_batch0 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out_llama_batch1 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out_multi0 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *out_multi1 = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     int8_t *x_q = (int8_t *)malloc((size_t)cols);
@@ -294,8 +300,10 @@ static void test_q4_matmul_correctness(void) {
     BnPreparedWeight prepared = { 0 };
     prepared.qs = (uint8_t *)calloc((size_t)n_groups * n_bpr * 64, 1);
     prepared.scales = (uint16_t *)calloc((size_t)n_groups * n_bpr * 4, sizeof(uint16_t));
-    assert(X && ref && out && out_prepared && out_multi0 && out_multi1 &&
-           x_q && prepared.qs && prepared.scales);
+    assert(X && ref && out && out_prepared && out_llama_native &&
+           out_llama_prepared && out_llama_batch0 && out_llama_batch1 &&
+           out_multi0 && out_multi1 && x_q && prepared.qs &&
+           prepared.scales);
 
     for (int g = 0; g < n_groups; g++) {
         for (int b = 0; b < n_bpr; b++) {
@@ -329,6 +337,21 @@ static void test_q4_matmul_correctness(void) {
 
     bn_quant_matmul(out, &W, X, n_tokens, x_q, NULL);
     bn_quant_matmul_prepared(out_prepared, &W, &prepared, X, n_tokens, x_q, NULL);
+    for (int t = 0; t < n_tokens; t++) {
+        bn_quant_matvec_prepared_flags(out_llama_native + (size_t)t * rows,
+                                       &W, NULL, X + (size_t)t * cols, x_q,
+                                       NULL, BN_MATVEC_TASK_LLAMA_DOT);
+        bn_quant_matvec_prepared_flags(out_llama_prepared + (size_t)t * rows,
+                                       &W, &prepared, X + (size_t)t * cols,
+                                       x_q, NULL, BN_MATVEC_TASK_LLAMA_DOT);
+        BnMatvecTask q4_batch[2] = {
+            { out_llama_batch0 + (size_t)t * rows, &W, &prepared,
+              BN_MATVEC_TASK_LLAMA_DOT },
+            { out_llama_batch1 + (size_t)t * rows, &W, &prepared,
+              BN_MATVEC_TASK_LLAMA_DOT },
+        };
+        bn_quant_matvec_batch(q4_batch, 2, X + (size_t)t * cols, x_q, NULL);
+    }
     {
         float *multi_out[2] = { out_multi0, out_multi1 };
         const BnQWeight *multi_w[2] = { &W, &W };
@@ -348,12 +371,76 @@ static void test_q4_matmul_correctness(void) {
             assert(diff / mag < 0.01f || diff < 1e-4f);
             diff = fabsf(out_multi1[(size_t)t * rows + r] - ref[(size_t)t * rows + r]);
             assert(diff / mag < 0.01f || diff < 1e-4f);
+            diff = fabsf(out_llama_prepared[(size_t)t * rows + r] -
+                         out_llama_native[(size_t)t * rows + r]);
+            assert(diff < 1e-5f);
+            diff = fabsf(out_llama_batch0[(size_t)t * rows + r] -
+                         out_llama_native[(size_t)t * rows + r]);
+            assert(diff < 1e-5f);
+            diff = fabsf(out_llama_batch1[(size_t)t * rows + r] -
+                         out_llama_native[(size_t)t * rows + r]);
+            assert(diff < 1e-5f);
         }
     }
 
     free(blocks); free(X); free(ref); free(out); free(out_prepared);
+    free(out_llama_native); free(out_llama_prepared);
+    free(out_llama_batch0); free(out_llama_batch1);
     free(out_multi0); free(out_multi1);
     free(x_q); free(prepared.qs); free(prepared.scales);
+    printf("PASSED\n");
+}
+
+static void test_q8_matmul_correctness(void) {
+    printf("test_q8_matmul_correctness... ");
+
+    int rows = 7, cols = 96, n_tokens = 5;
+    int n_bpr = cols / 32;
+    BnBlockQ8_0 *blocks = (BnBlockQ8_0 *)calloc((size_t)rows * n_bpr, sizeof(BnBlockQ8_0));
+    assert(blocks);
+
+    for (int r = 0; r < rows; r++) {
+        for (int b = 0; b < n_bpr; b++) {
+            BnBlockQ8_0 *blk = &blocks[(size_t)r * n_bpr + b];
+            blk->d = bn_fp32_to_fp16(0.03125f * (float)(1 + ((r + b) % 7)));
+            for (int i = 0; i < 32; i++)
+                blk->qs[i] = (int8_t)(((r * 17 + b * 11 + i * 5) % 63) - 31);
+        }
+    }
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_Q8_0, rows, cols, 1.0f };
+    float *X = (float *)malloc((size_t)n_tokens * cols * sizeof(float));
+    float *ref = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    float *out = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
+    int8_t *x_q = (int8_t *)malloc((size_t)cols);
+    assert(X && ref && out && x_q);
+
+    for (int t = 0; t < n_tokens; t++) {
+        for (int i = 0; i < cols; i++) {
+            int v = (t * 23 + i * 19 + 5) % 53;
+            X[(size_t)t * cols + i] = 0.0625f * (float)(v - 26);
+        }
+    }
+
+    for (int t = 0; t < n_tokens; t++)
+        bn_quant_matvec(ref + (size_t)t * rows, &W,
+                        X + (size_t)t * cols, x_q, NULL);
+
+    bn_quant_matmul(out, &W, X, n_tokens, x_q, NULL);
+
+    for (int t = 0; t < n_tokens; t++) {
+        for (int r = 0; r < rows; r++) {
+            float diff = fabsf(out[(size_t)t * rows + r] -
+                               ref[(size_t)t * rows + r]);
+            assert(diff < 1e-5f);
+        }
+    }
+
+    free(blocks);
+    free(X);
+    free(ref);
+    free(out);
+    free(x_q);
     printf("PASSED\n");
 }
 
@@ -1038,6 +1125,7 @@ static void test_kquant_preq8k_matmul_correctness(void) {
     bn_quant_matmul_preq8k_multi(multi_out, multi_w, NULL, 3, n_tokens,
                                  x_q, x_d, x_bsums, X, NULL);
 
+#if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
     BnPreparedWeight prepared4a = { 0 };
     BnPreparedWeight prepared4b = { 0 };
     BnPreparedWeightKind kind4a = BN_PREPARED_WEIGHT_NONE;
@@ -1058,14 +1146,17 @@ static void test_kquant_preq8k_matmul_correctness(void) {
     const BnPreparedWeight *prepared[2] = { &prepared4a, &prepared4b };
     bn_quant_matmul_preq8k_multi(prepared_out, prepared_w, prepared, 2,
                                  n_tokens, x_q, x_d, x_bsums, X, NULL);
+#endif
 
     for (int i = 0; i < rows * n_tokens; i++) {
         assert(fabsf(out4[i] - ref4[i]) < 1e-3f);
         assert(fabsf(out6[i] - ref6[i]) < 1e-3f);
         assert(fabsf(out4[i] - force4[i]) < 1e-3f);
         assert(fabsf(out6[i] - force6[i]) < 1e-3f);
+#if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
         assert(fabsf(out4_prepared[i] - out4[i]) < 1e-5f);
         assert(fabsf(out4b_prepared[i] - out4b[i]) < 1e-5f);
+#endif
     }
 
     free(q4a); free(q4b); free(q6);
@@ -1073,7 +1164,9 @@ static void test_kquant_preq8k_matmul_correctness(void) {
     free(ref4); free(ref6); free(force4); free(force6);
     free(out4); free(out4b); free(out6);
     free(out4_prepared); free(out4b_prepared);
+#if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
     sh_arena_free(prep_arena);
+#endif
     printf("PASSED\n");
 }
 
@@ -1184,15 +1277,57 @@ static void test_activation_quant_rounding(void) {
     assert(x_i8[6] == -3);
 
     bn_quant_x_to_q8k(x, x_q8k, x_d, x_bsums, BN_QK_K);
-    assert(fabsf(x_d[0] - 1.0f) < 1e-6f);
-    assert(x_q8k[0] == 127);
-    assert(x_q8k[1] == 1);
-    assert(x_q8k[2] == -1);
-    assert(x_q8k[3] == 2);
-    assert(x_q8k[4] == -2);
-    assert(x_q8k[5] == 3);
-    assert(x_q8k[6] == -3);
+    assert(fabsf(x_d[0] + 1.0f) < 1e-6f);
+    assert(x_q8k[0] == -127);
+    assert(x_q8k[1] == 0);
+    assert(x_q8k[2] == 0);
+    assert(x_q8k[3] == -2);
+    assert(x_q8k[4] == 2);
+    assert(x_q8k[5] == -2);
+    assert(x_q8k[6] == 2);
 
+    printf("PASSED\n");
+}
+
+static void test_mxfp4_matvec_correctness(void) {
+    printf("test_mxfp4_matvec_correctness... ");
+    static const int8_t values[16] = {
+        0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12
+    };
+    BnBlockMXFP4 blocks[2] = {0};
+    float x[32] = {0};
+    int8_t x_q[32];
+    float x_scales[1];
+    float out[2] = {0};
+    float scalar[2] = {0};
+    float ref[2] = {0};
+
+    x[0] = 127.0f;
+    for (int i = 1; i < 32; i++) x[i] = (float)((i % 13) - 6);
+    for (int row = 0; row < 2; row++) {
+        blocks[row].e = 127;
+        for (int i = 0; i < 16; i++) {
+            uint8_t lo = (uint8_t)((i + row) & 15);
+            uint8_t hi = (uint8_t)((15 - i + row) & 15);
+            blocks[row].qs[i] = (uint8_t)(lo | (hi << 4));
+            ref[row] += 0.5f * (float)values[lo] * x[i];
+            ref[row] += 0.5f * (float)values[hi] * x[i + 16];
+        }
+    }
+
+    BnQWeight W = { blocks, BN_GGUF_TENSOR_MXFP4, 2, 32, 1.0f };
+    assert(bn_quant_format_supported(BN_GGUF_TENSOR_MXFP4));
+    assert(bn_quant_format_data_size(BN_GGUF_TENSOR_MXFP4, 2, 32) ==
+           sizeof(blocks));
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, 32);
+    assert(fabsf(x_scales[0] - 1.0f) < 1e-6f);
+    BnQ4SdotCtx ctx = { scalar, &W, x_q, x_scales, NULL };
+    bn_quant_mxfp4_scalar_sdot_range(&ctx, 0, 2);
+    bn_quant_matvec(out, &W, x, x_q, NULL);
+    for (int row = 0; row < 2; row++) {
+        assert(fabsf(scalar[row] - ref[row]) < 1e-5f);
+        assert(fabsf(out[row] - ref[row]) < 1e-5f);
+    }
     printf("PASSED\n");
 }
 
@@ -1204,6 +1339,7 @@ int main(void) {
     test_matvec_threaded();
     test_matmul_correctness();
     test_q4_matmul_correctness();
+    test_q8_matmul_correctness();
     test_q5k_matmul_correctness();
     test_q5k_matvec_multi_correctness();
     test_q5k_matvec_batch_correctness();
@@ -1219,6 +1355,7 @@ int main(void) {
     test_kquant_preq8k_matmul_correctness();
     test_q6k_prepared_matmul_correctness();
     test_activation_quant_rounding();
+    test_mxfp4_matvec_correctness();
     printf("All quant integration tests passed!\n");
     return 0;
 }

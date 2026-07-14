@@ -748,6 +748,8 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
     return n_top;
 }
 
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 static float gpu_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
                                       const int8_t *x_q,
                                       const float *x_scales) {
@@ -766,6 +768,7 @@ static float gpu_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
     }
     return row_sum;
 }
+#endif
 
 static int gpu_refine_q8_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
@@ -1015,7 +1018,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int head_size = c->head_size;
     int n_heads = c->n_heads;
     int q_dim = n_heads * head_size;
-    int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : head_size;
+    int rope_dims = c->rope_text_dims > 0
+        ? c->rope_text_dims
+        : (c->rope_dim_count > 0 ? c->rope_dim_count : head_size);
     int half_rope = rope_dims / 2;
     float rope_cos[half_rope], rope_sin[half_rope];
     for (int i = 0; i < half_rope; i++) {

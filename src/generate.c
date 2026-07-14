@@ -101,18 +101,20 @@ static void dump_top_logits(const float *logits, int vocab_size, int top_k,
     if (top_k <= 0) return;
     if (top_k > BN_MAX_TOP_LOGITS) top_k = BN_MAX_TOP_LOGITS;
     int top[BN_MAX_TOP_LOGITS];
-    for (int k = 0; k < top_k; k++) top[k] = 0;
+    int n_top = 0;
     for (int v = 0; v < vocab_size; v++) {
-        for (int k = 0; k < top_k; k++) {
-            if (logits[v] > logits[top[k]]) {
-                for (int j = top_k - 1; j > k; j--) top[j] = top[j - 1];
-                top[k] = v;
-                break;
-            }
+        int k = n_top;
+        if (k == top_k && logits[v] <= logits[top[k - 1]]) continue;
+        if (k < top_k) n_top++;
+        else k--;
+        while (k > 0 && logits[v] > logits[top[k - 1]]) {
+            top[k] = top[k - 1];
+            k--;
         }
+        top[k] = v;
     }
-    fprintf(stderr, "top_logits %s step=%d k=%d\n", label, step, top_k);
-    for (int k = 0; k < top_k; k++)
+    fprintf(stderr, "top_logits %s step=%d k=%d\n", label, step, n_top);
+    for (int k = 0; k < n_top; k++)
         fprintf(stderr, "top_logit step=%d rank=%d token=%d logit=%.9g\n",
                 step, k + 1, top[k], logits[top[k]]);
 }
@@ -407,10 +409,16 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                   int pos0, int no_prefill) {
     float *logits = NULL;
     int gpu_attached = bn_model_gpu(model) != NULL;
+    uint32_t parity_cpu_flags = BN_MODEL_ARCH_FLAG_GEMMA4 |
+                                BN_MODEL_ARCH_FLAG_QWEN |
+                                BN_MODEL_ARCH_FLAG_QWEN3 |
+                                BN_MODEL_ARCH_FLAG_QWEN2MOE;
+    int parity_cpu = (model->config.arch_flags & parity_cpu_flags) &&
+                     !gpu_attached;
     /* GPU decode reads backend-resident KV buffers. For conservative small
      * dense models, batch prefill is followed by a CPU->GPU KV upload.
      */
-    if (!no_prefill && n_tokens > 1 &&
+    if (!no_prefill && !parity_cpu && n_tokens > 1 &&
         (!gpu_attached || use_gpu_batch_prefill(model))) {
         logits = bn_transformer_prefill(model, s, tokens, n_tokens, pos0);
         if (logits && gpu_attached &&
@@ -439,7 +447,13 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
 int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
                          int n_tokens, int pos0, int no_prefill) {
     int gpu_attached = bn_model_gpu(model) != NULL;
-    if (!no_prefill && n_tokens > 1 &&
+    uint32_t parity_cpu_flags = BN_MODEL_ARCH_FLAG_GEMMA4 |
+                                BN_MODEL_ARCH_FLAG_QWEN |
+                                BN_MODEL_ARCH_FLAG_QWEN3 |
+                                BN_MODEL_ARCH_FLAG_QWEN2MOE;
+    int parity_cpu = (model->config.arch_flags & parity_cpu_flags) &&
+                     !gpu_attached;
+    if (!no_prefill && !parity_cpu && n_tokens > 1 &&
         (!gpu_attached || use_gpu_batch_prefill(model))) {
         int rc = bn_transformer_prefill_no_logits(model, s, tokens,
                                                   n_tokens, pos0);

@@ -4,6 +4,21 @@
 #include <assert.h>
 #include <math.h>
 
+static inline int32x4_t bn_neon_round_half_away_s32(float32x4_t v) {
+    const uint32x4_t sign = vandq_u32(vreinterpretq_u32_f32(v),
+                                     vdupq_n_u32(0x80000000u));
+    const float32x4_t half = vreinterpretq_f32_u32(
+        vorrq_u32(sign, vdupq_n_u32(0x3f000000u)));
+    return vcvtq_s32_f32(vaddq_f32(v, half));
+}
+
+static inline int bn_nearest_int_ggml(float fval) {
+    float val = fval + 12582912.0f;
+    int i;
+    memcpy(&i, &val, sizeof(i));
+    return (i & 0x007fffff) - 0x00400000;
+}
+
 // Quantize float vector x[n] to int8, returning scale = amax/127.
 // x_q[n] = round(x[i] / scale), clamped to [-127, 127].
 float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n) {
@@ -35,10 +50,10 @@ float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n) {
 
     i = 0;
     for (; i + 15 < n; i += 16) {
-        int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(x + i),      vinv));
-        int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(x + i + 4),  vinv));
-        int32x4_t i2 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(x + i + 8),  vinv));
-        int32x4_t i3 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(x + i + 12), vinv));
+        int32x4_t i0 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(x + i),      vinv));
+        int32x4_t i1 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(x + i + 4),  vinv));
+        int32x4_t i2 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(x + i + 8),  vinv));
+        int32x4_t i3 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(x + i + 12), vinv));
         int16x4_t s0 = vqmovn_s32(i0);
         int16x4_t s1 = vqmovn_s32(i1);
         int16x4_t s2 = vqmovn_s32(i2);
@@ -94,10 +109,10 @@ void bn_quant_f16_rows_to_i8(const uint16_t *f16, int8_t *i8_out,
         for (; d + 15 < dim; d += 16) {
             float16x8_t h0 = vreinterpretq_f16_u16(vld1q_u16(row + d));
             float16x8_t h1 = vreinterpretq_f16_u16(vld1q_u16(row + d + 8));
-            int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vcvt_f32_f16(vget_low_f16(h0)), vinv));
-            int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vcvt_f32_f16(vget_high_f16(h0)), vinv));
-            int32x4_t i2 = vcvtnq_s32_f32(vmulq_f32(vcvt_f32_f16(vget_low_f16(h1)), vinv));
-            int32x4_t i3 = vcvtnq_s32_f32(vmulq_f32(vcvt_f32_f16(vget_high_f16(h1)), vinv));
+            int32x4_t i0 = bn_neon_round_half_away_s32(vmulq_f32(vcvt_f32_f16(vget_low_f16(h0)), vinv));
+            int32x4_t i1 = bn_neon_round_half_away_s32(vmulq_f32(vcvt_f32_f16(vget_high_f16(h0)), vinv));
+            int32x4_t i2 = bn_neon_round_half_away_s32(vmulq_f32(vcvt_f32_f16(vget_low_f16(h1)), vinv));
+            int32x4_t i3 = bn_neon_round_half_away_s32(vmulq_f32(vcvt_f32_f16(vget_high_f16(h1)), vinv));
             int16x4_t s0 = vqmovn_s32(i0);
             int16x4_t s1 = vqmovn_s32(i1);
             int16x4_t s2 = vqmovn_s32(i2);
@@ -128,15 +143,15 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
         const float *xb = x + sb * BN_QK_K;
         int8_t *qb = x_q + sb * BN_QK_K;
 
-        // Find amax over 256 elements
-        float32x4_t vmax = vdupq_n_f32(0);
-        for (int i = 0; i < BN_QK_K; i += 16) {
-            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i)));
-            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i + 4)));
-            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i + 8)));
-            vmax = vmaxq_f32(vmax, vabsq_f32(vld1q_f32(xb + i + 12)));
+        float max = 0.0f;
+        float amax = 0.0f;
+        for (int i = 0; i < BN_QK_K; i++) {
+            float ax = fabsf(xb[i]);
+            if (ax > amax) {
+                amax = ax;
+                max = xb[i];
+            }
         }
-        float amax = vmaxvq_f32(vmax);
 
         if (amax == 0.0f) {
             memset(qb, 0, BN_QK_K);
@@ -145,29 +160,20 @@ void bn_quant_x_to_q8k(const float *x, int8_t *x_q, float *x_d,
             continue;
         }
 
-        float inv_scale = 127.0f / amax;
-        x_d[sb] = amax / 127.0f;
-        float32x4_t vinv = vdupq_n_f32(inv_scale);
-
-        // Quantize 256 elements and compute bsums in one pass
+        float iscale = -127.0f / max;
+        x_d[sb] = 1.0f / iscale;
         int16_t *bsums = x_bsums + sb * 16;
         for (int g = 0; g < 16; g++) {
             const float *gx = xb + g * 16;
             int8_t *gq = qb + g * 16;
-
-            int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx),      vinv));
-            int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx + 4),  vinv));
-            int32x4_t i2 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx + 8),  vinv));
-            int32x4_t i3 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(gx + 12), vinv));
-
-            int8x8_t r0 = vqmovn_s16(vcombine_s16(vqmovn_s32(i0), vqmovn_s32(i1)));
-            int8x8_t r1 = vqmovn_s16(vcombine_s16(vqmovn_s32(i2), vqmovn_s32(i3)));
-            vst1_s8(gq, r0);
-            vst1_s8(gq + 8, r1);
-
-            // bsum: sum of 16 int8 values
-            int8x16_t qv = vld1q_s8(gq);
-            bsums[g] = (int16_t)vaddlvq_s8(qv);
+            int sum = 0;
+            for (int i = 0; i < 16; i++) {
+                int q = bn_nearest_int_ggml(iscale * gx[i]);
+                if (q > 127) q = 127;
+                gq[i] = (int8_t)q;
+                sum += q;
+            }
+            bsums[g] = (int16_t)sum;
         }
     }
 }
@@ -200,17 +206,17 @@ void bn_quant_x_to_q8_blocks(const float *x, int8_t *x_q, float *x_scales, int n
         }
 
         float inv_scale = 127.0f / amax;
-        x_scales[b] = amax / 127.0f;
+        x_scales[b] = bn_fp16_to_fp32(bn_fp32_to_fp16(amax / 127.0f));
 
         float32x4_t vinv = vdupq_n_f32(inv_scale);
-        int32x4_t i0 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb),      vinv));
-        int32x4_t i1 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 4),  vinv));
-        int32x4_t i2 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 8),  vinv));
-        int32x4_t i3 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 12), vinv));
-        int32x4_t i4 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 16), vinv));
-        int32x4_t i5 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 20), vinv));
-        int32x4_t i6 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 24), vinv));
-        int32x4_t i7 = vcvtnq_s32_f32(vmulq_f32(vld1q_f32(xb + 28), vinv));
+        int32x4_t i0 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb),      vinv));
+        int32x4_t i1 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 4),  vinv));
+        int32x4_t i2 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 8),  vinv));
+        int32x4_t i3 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 12), vinv));
+        int32x4_t i4 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 16), vinv));
+        int32x4_t i5 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 20), vinv));
+        int32x4_t i6 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 24), vinv));
+        int32x4_t i7 = bn_neon_round_half_away_s32(vmulq_f32(vld1q_f32(xb + 28), vinv));
 
         int8x8_t r0 = vqmovn_s16(vcombine_s16(vqmovn_s32(i0), vqmovn_s32(i1)));
         int8x8_t r1 = vqmovn_s16(vcombine_s16(vqmovn_s32(i2), vqmovn_s32(i3)));
