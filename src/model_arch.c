@@ -151,11 +151,19 @@ int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
            c->full_attn_interval > 0;
 }
 
-int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
+int bn_model_arch_is_qwen2_moe(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) != 0);
+}
+
+int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
            c->n_experts <= 0 &&
            c->full_attn_interval <= 0 &&
            c->dim <= 2560;
+}
+
+int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
+    return bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c);
 }
 
 int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c) {
@@ -166,6 +174,11 @@ int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c) {
 
 int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0);
+}
+
+int bn_model_arch_ffn_uses_exact_scalar_activation(const BnConfig *c) {
+    return c && (c->arch_flags &
+                 (BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2)) != 0;
 }
 
 int bn_model_arch_rope_text_dims(int rope_dim_count,

@@ -16,6 +16,9 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #undef __AVX2__
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
@@ -53,6 +56,16 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_logits_f16_neon_range,
     0,
 #endif
+};
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
+      defined(__AVX512VNNI__) && defined(__AVX2__)
+static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
+    bn_transformer_rmsnorm_avx2,
+    bn_transformer_logits_i8_avx2_range,
+    1,
+    1,
+    bn_transformer_logits_f16_avx2_range,
+    0,
 };
 #elif defined(__AVX2__)
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {

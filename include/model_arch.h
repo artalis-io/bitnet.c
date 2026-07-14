@@ -90,9 +90,12 @@ int bn_model_arch_uses_attention_post_norm(const BnConfig *c);
 int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
 int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c);
+int bn_model_arch_is_qwen2_moe(const BnConfig *c);
+int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c);
 int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c);
 int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c);
+int bn_model_arch_ffn_uses_exact_scalar_activation(const BnConfig *c);
 int bn_model_arch_rope_text_dims(int rope_dim_count,
                                  const int32_t *sections,
                                  uint64_t n_sections);

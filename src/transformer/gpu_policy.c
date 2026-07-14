@@ -132,7 +132,7 @@ int bn_transformer_gpu_cuda_qwen2moe_all2_q4q6_cpu_attn_safe_default(
 int bn_transformer_gpu_cuda_small_qwen_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    return c && (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
+    return bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
            small_dense_cuda_q8_native_by_default(c, w) &&
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
 }

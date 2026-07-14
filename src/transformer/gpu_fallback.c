@@ -4,6 +4,7 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_rmsnorm_internal.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "platform.h"
 #include "quant.h"
@@ -16,6 +17,10 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
+#undef __AVX2__
 #endif
 
 static void fallback_rmsnorm(float *out,
@@ -60,7 +65,7 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
         prepared[i] = tasks[i];
         prepared[i].prepared =
             fallback_cpu_prepared_qweight(m, tasks[i].W);
-        if (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3)
+        if (bn_model_arch_cpu_force_float_kquant(&m->config))
             prepared[i].flags |= BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
     }
     bn_quant_matvec_batch(prepared, n_tasks, x, x_q_buf, bn_model_pool(m));
@@ -240,7 +245,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) ? 1.0f : 1.0f / sqrtf((float)head_size)
+        bn_model_arch_attention_scale(c, head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
@@ -291,7 +296,7 @@ static void fallback_cpu_forward_ffn_from_xb(BnModel *m,
                          hidden_dim, m->config.norm_eps);
     bn_quant_matvec(s->xb, &lw->ffn.ffn_down, s->hb, s->x_q,
                     bn_model_pool(m));
-    if ((m->config.arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+    if (bn_model_arch_uses_ffn_post_norm(&m->config) &&
         lw->norm.ffn_post_norm)
         fallback_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm,
                          dim, m->config.norm_eps);
@@ -773,7 +778,7 @@ int bn_transformer_gpu_debug_compare_attention(
 
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) ? 1.0f : 1.0f / sqrtf((float)head_size)
+        bn_model_arch_attention_scale(c, head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
@@ -897,7 +902,7 @@ int bn_transformer_gpu_debug_compare_gqa(
 
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) ? 1.0f : 1.0f / sqrtf((float)head_size)
+        bn_model_arch_attention_scale(c, head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 

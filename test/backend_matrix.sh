@@ -12,11 +12,19 @@ require_file() {
 
 quant_formats="i2s tq2 tq1 q8 q4 q4_1 f32 f16 bf16 q6k q8k q4k q5k q3k q2k iq4nl iq4xs iq3xxs iq3s iq2xxs iq2xs iq2s"
 cpu_backends="scalar avx2 neon wasm"
+avx512_quant_formats="q8 q4 q4k q5k q6k"
 
 for fmt in $quant_formats; do
     for backend in $cpu_backends; do
         require_file "src/quant/${fmt}_${backend}.c"
     done
+done
+
+for fmt in $avx512_quant_formats; do
+    case "$fmt" in
+        q5k) require_file "src/quant/${fmt}_avx512.c" ;;
+        *) require_file "src/quant/${fmt}_avx512_vnni.c" ;;
+    esac
 done
 
 transformer_kernels="rmsnorm gqa logits ssm"
@@ -51,6 +59,27 @@ if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "GPU emit must use BN_GPU_CODE_* and backend lowering, not BN_GPU_SHADER_*"
     fail=1
 fi
+
+if ! grep -n '"avx512"' src/transformer/cpu.c >/dev/null 2>&1 ||
+   ! grep -n 'BN_CPU_BACKEND_AVX512' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "CPU backend matrix must expose AVX512 as an explicit backend"
+    fail=1
+fi
+
+for file in \
+    src/transformer/cpu.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/logits.c \
+    src/transformer/plan.c \
+    src/transformer/prefill.c
+do
+    if grep -n 'BN_MODEL_ARCH_FLAG_\|arch_flags' "$file" >/dev/null 2>&1; then
+        echo "$file must use model_arch policy helpers, not direct architecture flags"
+        fail=1
+    fi
+done
 
 if [ "$fail" -ne 0 ]; then
     echo "Backend matrix FAILED"

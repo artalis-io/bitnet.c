@@ -19,6 +19,9 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #undef __AVX2__
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
@@ -149,8 +152,10 @@ typedef struct {
                         int16_t *x_bsums);
 } BnCPUBackendOps;
 
+#ifndef __AVX2__
 static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
                                           int size);
+#endif
 static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
                                         int head_size, int rope_dims,
                                         const float *rc, const float *rs);
@@ -231,6 +236,27 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     cpu_apply_rope_heads_scalar,
     0,
     NULL,
+};
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
+      defined(__AVX512VNNI__) && defined(__AVX2__)
+static const BnCPUBackendOps BN_CPU_BACKEND = {
+    "avx512",
+    bn_transformer_rmsnorm_avx2,
+    bn_transformer_gqa_avx2_range,
+    bn_transformer_flash_gqa_avx2_range,
+    bn_transformer_batched_attn_naive_avx2_range,
+    bn_transformer_batched_attn_flash_avx2_range,
+    bn_transformer_batched_attn_flash_avx2_pair_range,
+    cpu_residual_add_avx2,
+    bn_transformer_ssm_conv_silu_avx2_range,
+    bn_transformer_ssm_l2norm_avx2_range,
+    bn_transformer_ssm_delta_avx2_range,
+    bn_transformer_ssm_gate_avx2_range,
+    cpu_apply_ffn_activation_avx2,
+    cpu_apply_sigmoid_gate_avx2,
+    cpu_apply_rope_heads_avx2,
+    1,
+    bn_quant_rmsnorm_q8k_avx2,
 };
 #elif defined(__AVX2__)
 static const BnCPUBackendOps BN_CPU_BACKEND = {
@@ -375,11 +401,13 @@ static float cpu_fast_gelu_scalar(float x) {
 }
 #endif
 
+#ifndef __AVX2__
 static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
                                           int size) {
     for (int i = 0; i < size; i++)
         x[i] *= 1.0f / (1.0f + expf(-gate[i]));
 }
+#endif
 
 static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
                                         int head_size, int rope_dims,

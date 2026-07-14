@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
+#include "model_arch.h"
 #include "platform.h"
 #include "quant_dispatch_internal.h"
 #include "session.h"
@@ -153,7 +154,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     int hidden_cap = moe_hidden;
@@ -253,7 +254,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     int hidden_cap = moe_hidden;
@@ -345,7 +346,7 @@ static int gpu_compute_shared_expert_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int shared_hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     if (shared_hidden <= 0)
@@ -398,7 +399,7 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     float *hb = (float *)malloc((size_t)moe_hidden * sizeof(float));
@@ -462,7 +463,7 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
     int moe_hidden = c->moe_intermediate_size;
     if (n_experts <= 0 || moe_hidden <= 0)
         return -1;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
 
@@ -509,7 +510,7 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     float *hb2 = (float *)malloc((size_t)hidden * sizeof(float));
@@ -538,7 +539,7 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE)
+    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     if (hidden <= 0)
@@ -1262,10 +1263,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int small_qwen_cuda_exact_q4_q8_default =
         q4_q8_from_layer < 0 &&
         gpu->kind == BN_GPU_BACKEND_CUDA &&
-        (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
-        c->n_experts <= 0 &&
-        c->full_attn_interval <= 0 &&
-        c->dim <= 2560 &&
+        bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
         !getenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
     int small_qwen_cuda_q8_logits_refine_default =
         cuda_backend &&
@@ -1391,7 +1389,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             use_q4_q8_layer = 1;
         int qwen2moe_cuda_exact_attn =
             gpu->kind == BN_GPU_BACKEND_CUDA &&
-            (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) &&
+            bn_model_arch_is_qwen2_moe(c) &&
             !getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
         int use_q4_q8_attn =
             (use_q4_q8_layer || qwen2moe_cuda_exact_attn) && !q4_q8_ffn_only;

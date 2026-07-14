@@ -1,6 +1,7 @@
 #include "transformer_plan_internal.h"
 #include "backend_quant.h"
 #include "gpu_backend.h"
+#include "model_arch.h"
 #include "transformer_backend_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -121,7 +122,8 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
 BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
 #ifdef BN_FORCE_SCALAR
     return BN_CPU_BACKEND_SCALAR;
-#elif defined(__AVX512F__)
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
+      defined(__AVX512VNNI__) && defined(__AVX2__)
     return BN_CPU_BACKEND_AVX512;
 #elif defined(__AVX2__)
     return BN_CPU_BACKEND_AVX2;
@@ -196,7 +198,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->has_gate = c->has_ffn_gate;
     p->has_sub_norm = lw->norm.ffn_sub_norm ? 1 : 0;
     p->scalar_exact_activation =
-        (c->arch_flags & (BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2)) != 0;
+        bn_model_arch_ffn_uses_exact_scalar_activation(c);
 
     void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
                                                             BN_BACKEND_HANDLE_GATEUP_STACKED);
