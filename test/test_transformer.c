@@ -477,6 +477,15 @@ static void test_model_arch_registry(void) {
     BnConfig c = {0};
     c.arch_flags = gemma->flags;
     assert(bn_model_arch_requires_large_gpu_graph_fallback(&c));
+    assert(!bn_model_arch_cpu_force_float_kquant(&c));
+    assert(bn_model_arch_attention_scale(&c, 128) == 1.0f);
+    assert(bn_model_arch_rmsnorm_mode(&c) ==
+           BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER);
+    assert(bn_model_arch_attention_value_shares_key_config(&c));
+    assert(bn_model_arch_uses_per_layer_embedding(&c));
+    assert(bn_model_arch_uses_attention_post_norm(&c));
+    assert(bn_model_arch_uses_ffn_post_norm(&c));
+    assert(bn_model_arch_uses_layer_output_scale(&c));
 
     const BnModelArchOps *bitnet = bn_model_arch_ops_for("bitnet");
     assert(bitnet);
@@ -493,6 +502,31 @@ static void test_model_arch_registry(void) {
     assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
     assert(qwen->activation("qwen35") == 0);
     assert(!qwen->attention_value_shares_key("qwen35"));
+
+    memset(&c, 0, sizeof(c));
+    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    assert(bn_model_arch_cpu_force_float_kquant(&c));
+    assert(fabsf(bn_model_arch_attention_scale(&c, 128) -
+                 (1.0f / sqrtf(128.0f))) < 1e-7f);
+    assert(bn_model_arch_rmsnorm_mode(&c) ==
+           BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER);
+    assert(!bn_model_arch_attention_value_shares_key_config(&c));
+    assert(!bn_model_arch_uses_per_layer_embedding(&c));
+    assert(!bn_model_arch_uses_attention_post_norm(&c));
+    assert(!bn_model_arch_uses_ffn_post_norm(&c));
+    assert(!bn_model_arch_uses_layer_output_scale(&c));
+    assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
+
+    c.full_attn_interval = 4;
+    assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(!bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
+
+    memset(&c, 0, sizeof(c));
+    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
+    assert(!bn_model_arch_cpu_force_float_kquant(&c));
+    assert(bn_model_arch_rmsnorm_mode(&c) ==
+           BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER);
 
     char name[128];
     char scale[128];

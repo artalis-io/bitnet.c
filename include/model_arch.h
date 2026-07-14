@@ -18,6 +18,11 @@ typedef struct {
 } BnModelArchOps;
 
 typedef enum {
+    BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER = 0,
+    BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER,
+} BnModelArchRMSNormMode;
+
+typedef enum {
     BN_MODEL_TENSOR_ATTN_NORM = 0,
     BN_MODEL_TENSOR_ATTN_Q,
     BN_MODEL_TENSOR_ATTN_K,
@@ -76,6 +81,16 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
                                         int layer,
                                         BnModelTensorRole role);
 int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c);
+int bn_model_arch_cpu_force_float_kquant(const BnConfig *c);
+float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
+BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
+int bn_model_arch_attention_value_shares_key_config(const BnConfig *c);
+int bn_model_arch_uses_per_layer_embedding(const BnConfig *c);
+int bn_model_arch_uses_attention_post_norm(const BnConfig *c);
+int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
+int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
+int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c);
+int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c);
 int bn_model_arch_rope_text_dims(int rope_dim_count,
                                  const int32_t *sections,
                                  uint64_t n_sections);

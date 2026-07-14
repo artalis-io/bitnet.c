@@ -4,6 +4,7 @@
 #include "backend_model.h"
 #include "backend_quant.h"
 #include "model.h"
+#include "model_arch.h"
 #include "session.h"
 #include "sh_log.h"
 #include "transformer_backend_internal.h"
@@ -36,7 +37,9 @@
 static void logits_rmsnorm_model(const BnModel *m, float *out,
                                  const float *x, const float *w,
                                  int size, float eps) {
-    if (m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN2)) {
+    if (m &&
+        bn_model_arch_rmsnorm_mode(&m->config) ==
+            BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER) {
         double ss = 0.0;
         for (int i = 0; i < size; i++)
             ss += (double)(x[i] * x[i]);
@@ -260,10 +263,7 @@ static int logits_small_qwen_cuda_q8_refine_enabled(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnConfig *c = &m->config;
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-           (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
-           c->n_experts <= 0 &&
-           c->full_attn_interval <= 0 &&
-           c->dim <= 2560 &&
+           bn_model_arch_allows_small_cuda_q8_logit_refine(c) &&
            getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
 }

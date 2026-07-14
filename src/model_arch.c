@@ -1,4 +1,5 @@
 #include "model_arch.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -107,6 +108,54 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
 
 int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK) != 0);
+}
+
+int bn_model_arch_cpu_force_float_kquant(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0);
+}
+
+float bn_model_arch_attention_scale(const BnConfig *c, int head_size) {
+    if (c && (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4))
+        return 1.0f;
+    return 1.0f / sqrtf((float)head_size);
+}
+
+BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c) {
+    if (c && (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2))
+        return BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER;
+    return BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER;
+}
+
+int bn_model_arch_attention_value_shares_key_config(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+}
+
+int bn_model_arch_uses_per_layer_embedding(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+}
+
+int bn_model_arch_uses_attention_post_norm(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+}
+
+int bn_model_arch_uses_ffn_post_norm(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+}
+
+int bn_model_arch_uses_layer_output_scale(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+}
+
+int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
+           c->full_attn_interval > 0;
+}
+
+int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
+           c->n_experts <= 0 &&
+           c->full_attn_interval <= 0 &&
+           c->dim <= 2560;
 }
 
 int bn_model_arch_rope_text_dims(int rope_dim_count,
