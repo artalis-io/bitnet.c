@@ -4,6 +4,7 @@
 #include "transformer.h"
 #include "transformer_internal.h"
 #include "gpu_backend.h"
+#include "model_arch.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -27,10 +28,7 @@ static int cuda_prefill_needs_decode_fallback(const BnModel *m,
     const BnConfig *c = m ? &m->config : NULL;
     if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
         return 0;
-    if ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
-        c->n_experts <= 0 &&
-        c->full_attn_interval <= 0 &&
-        c->dim <= 2560 &&
+    if (bn_model_arch_allows_small_cuda_prefill_decode_fallback(c) &&
         getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL)
         return 1;
     if (c->n_experts <= 0 &&
@@ -409,11 +407,8 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                   int pos0, int no_prefill) {
     float *logits = NULL;
     int gpu_attached = bn_model_gpu(model) != NULL;
-    uint32_t parity_cpu_flags = BN_MODEL_ARCH_FLAG_GEMMA4 |
-                                BN_MODEL_ARCH_FLAG_QWEN |
-                                BN_MODEL_ARCH_FLAG_QWEN3 |
-                                BN_MODEL_ARCH_FLAG_QWEN2MOE;
-    int parity_cpu = (model->config.arch_flags & parity_cpu_flags) &&
+    int parity_cpu =
+        bn_model_arch_cpu_prefill_uses_decode_for_parity(&model->config) &&
                      !gpu_attached;
     /* GPU decode reads backend-resident KV buffers. For conservative small
      * dense models, batch prefill is followed by a CPU->GPU KV upload.
@@ -447,11 +442,8 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
 int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
                          int n_tokens, int pos0, int no_prefill) {
     int gpu_attached = bn_model_gpu(model) != NULL;
-    uint32_t parity_cpu_flags = BN_MODEL_ARCH_FLAG_GEMMA4 |
-                                BN_MODEL_ARCH_FLAG_QWEN |
-                                BN_MODEL_ARCH_FLAG_QWEN3 |
-                                BN_MODEL_ARCH_FLAG_QWEN2MOE;
-    int parity_cpu = (model->config.arch_flags & parity_cpu_flags) &&
+    int parity_cpu =
+        bn_model_arch_cpu_prefill_uses_decode_for_parity(&model->config) &&
                      !gpu_attached;
     if (!no_prefill && !parity_cpu && n_tokens > 1 &&
         (!gpu_attached || use_gpu_batch_prefill(model))) {

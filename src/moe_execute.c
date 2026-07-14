@@ -1,6 +1,7 @@
 #include "moe_internal.h"
 #include "backend_quant.h"
 #include "gpu_moe_bridge.h"
+#include "model_arch.h"
 
 static const void *moe_mmap_expert_proj(const BnMoEIO *io,
                                         const BnMoEExpertMap *map,
@@ -84,7 +85,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
 }
 
 static uint32_t moe_kquant_gateup_flags(const BnConfig *c) {
-    return (c && (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE))
+    return bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
 }
@@ -136,8 +137,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
     int moe_hidden = c->moe_intermediate_size;
-    int is_gemma4 = (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0;
-    int exact_silu = is_gemma4 ? -1 : c->moe_exact_silu;
+    int uses_gemma4_block = bn_model_arch_moe_uses_gemma4_block(c);
+    int exact_silu = uses_gemma4_block ? -1 : c->moe_exact_silu;
     int K = c->n_experts_active;
     uint32_t gateup_flags = moe_kquant_gateup_flags(c);
     double t0;
@@ -145,14 +146,14 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     // 1. RMSNorm input
     t0 = bn_moe_time_ms();
     bn_moe_rmsnorm(s->xb, s->x,
-                   (is_gemma4 && lw->norm.ffn_sub_norm) ? lw->norm.ffn_sub_norm : lw->norm.ffn_norm,
+                   (uses_gemma4_block && lw->norm.ffn_sub_norm) ? lw->norm.ffn_sub_norm : lw->norm.ffn_norm,
                    dim, c->norm_eps);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     // 2. Route: select top-K experts (SIMD + threaded)
     t0 = bn_moe_time_ms();
     const float *router_x = s->xb;
-    if (is_gemma4) {
+    if (uses_gemma4_block) {
         float inv_sqrt_dim = 1.0f / sqrtf((float)dim);
         moe_rmsnorm_unit(s->xb2, s->x, dim, c->norm_eps);
         for (int d = 0; d < dim; d++)
@@ -651,7 +652,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     }
     ms->stats.shared_time_ms += bn_moe_time_ms() - t0;
 
-    if (is_gemma4) {
+    if (uses_gemma4_block) {
         if (lw->norm.ffn_post_norm_2)
             bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
                            lw->norm.ffn_post_norm_2, dim, c->norm_eps);

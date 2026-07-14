@@ -1,4 +1,5 @@
 #include "model.h"
+#include "model_arch.h"
 #include "sh_log.h"
 #include <math.h>
 #include <string.h>
@@ -159,7 +160,7 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
         return;
     }
 
-    if (m->config.arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) {
+    if (bn_model_arch_uses_per_layer_embedding(&m->config)) {
         float scale = sqrtf((float)dim);
         for (int i = 0; i < dim; i++)
             out[i] *= scale;

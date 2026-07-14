@@ -61,7 +61,7 @@ static int gemma4_prepare_per_layer_input(BnModel *m, BnSession *sess,
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
     int per_dim = c->gemma4_per_layer_dim;
-    if (!(c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) || per_dim <= 0)
+    if (!bn_model_arch_uses_per_layer_embedding(c) || per_dim <= 0)
         return 0;
     int total = per_dim * c->n_layers;
     if (!s->per_layer_input || !w->per_layer_model_proj.data ||
@@ -86,16 +86,6 @@ static int gemma4_prepare_per_layer_input(BnModel *m, BnSession *sess,
     for (int i = 0; i < total; i++)
         s->per_layer_input[i] =
             (s->per_layer_input[i] + s->hb[i] * tok_scale) * input_scale;
-    return 0;
-}
-
-static int gemma4_divide_rope_freqs(const BnConfig *c, int layer) {
-    if (!c || !(c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4))
-        return 0;
-    if (c->gemma4_per_layer_dim > 0)
-        return 1;
-    if (c->n_experts > 0 && c->n_layers == 30)
-        return layer == 5 || layer == 23 || layer == 29;
     return 0;
 }
 
@@ -195,9 +185,9 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
         float theta = use_swa_rope ? c->rope_theta_swa : c->rope_theta;
         for (int i = 0; i < half_rope; i++) {
             float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
-            if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+            if (bn_model_arch_uses_per_layer_embedding(c) &&
                 !use_swa_rope && m->weights.rope_freqs) {
-                if (gemma4_divide_rope_freqs(c, l))
+                if (bn_model_arch_gemma4_divides_rope_freqs(c, l))
                     freq /= m->weights.rope_freqs[i];
                 else
                     freq *= m->weights.rope_freqs[i];
@@ -221,7 +211,7 @@ static int should_disable_cuda_matvec_fallback(const BnModel *m,
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 0;
     if (!getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") &&
-        !(m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3))
+        !bn_model_arch_cpu_force_float_kquant(&m->config))
         return 0;
     if (m->config.n_experts > 0 || m->config.full_attn_interval > 0 ||
         m->config.dim > 2560)

@@ -151,8 +151,41 @@ int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
            c->full_attn_interval > 0;
 }
 
+int bn_model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
+    if (!c || ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) == 0))
+        return 0;
+    if (c->gemma4_per_layer_dim > 0)
+        return 1;
+    if (c->n_experts > 0 && c->n_layers == 30)
+        return layer == 5 || layer == 23 || layer == 29;
+    return 0;
+}
+
+int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
+           c->n_experts <= 0 &&
+           c->full_attn_interval <= 0 &&
+           c->dim <= 2560;
+}
+
+int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
+    return c && (c->arch_flags &
+                 (BN_MODEL_ARCH_FLAG_GEMMA4 |
+                  BN_MODEL_ARCH_FLAG_QWEN |
+                  BN_MODEL_ARCH_FLAG_QWEN3 |
+                  BN_MODEL_ARCH_FLAG_QWEN2MOE)) != 0;
+}
+
 int bn_model_arch_is_qwen2_moe(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) != 0);
+}
+
+int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
+    return bn_model_arch_is_qwen2_moe(c);
+}
+
+int bn_model_arch_moe_uses_gemma4_block(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
 }
 
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {

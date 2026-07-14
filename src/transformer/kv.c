@@ -6,10 +6,97 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #undef __AVX2__
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
 #endif
+
+typedef struct {
+    const char *name;
+    bn_tp_fn tq_gqa;
+    void (*write_kv_fp16)(uint16_t *kc, uint16_t *vc,
+                          const float *k_tmp, const float *v_tmp,
+                          int kv_dim);
+} BnKVCPUOps;
+
+#if !defined(__ARM_NEON) && !defined(__AVX2__)
+static void kv_write_fp16_scalar(uint16_t *kc,
+                                 uint16_t *vc,
+                                 const float *k_tmp,
+                                 const float *v_tmp,
+                                 int kv_dim) {
+    for (int i = 0; i < kv_dim; i++) {
+        kc[i] = bn_fp32_to_fp16(k_tmp[i]);
+        vc[i] = bn_fp32_to_fp16(v_tmp[i]);
+    }
+}
+#endif
+
+#ifdef __ARM_NEON
+static void kv_write_fp16_neon(uint16_t *kc,
+                               uint16_t *vc,
+                               const float *k_tmp,
+                               const float *v_tmp,
+                               int kv_dim) {
+    for (int i = 0; i < kv_dim; i += 4) {
+        vst1_u16(kc + i,
+                 vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(k_tmp + i))));
+        vst1_u16(vc + i,
+                 vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(v_tmp + i))));
+    }
+}
+#endif
+
+#ifdef __AVX2__
+static void kv_write_fp16_avx2(uint16_t *kc,
+                               uint16_t *vc,
+                               const float *k_tmp,
+                               const float *v_tmp,
+                               int kv_dim) {
+    for (int i = 0; i < kv_dim; i += 8) {
+        _mm_storeu_si128((__m128i *)(kc + i),
+                         _mm256_cvtps_ph(_mm256_loadu_ps(k_tmp + i),
+                                         _MM_FROUND_TO_NEAREST_INT));
+        _mm_storeu_si128((__m128i *)(vc + i),
+                         _mm256_cvtps_ph(_mm256_loadu_ps(v_tmp + i),
+                                         _MM_FROUND_TO_NEAREST_INT));
+    }
+}
+#endif
+
+#ifdef __ARM_NEON
+static const BnKVCPUOps BN_KV_CPU_OPS = {
+    "neon",
+    bn_transformer_gqa_tq_neon_range,
+    kv_write_fp16_neon,
+};
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
+      defined(__AVX512VNNI__) && defined(__AVX2__)
+static const BnKVCPUOps BN_KV_CPU_OPS = {
+    "avx512",
+    bn_transformer_gqa_tq_scalar_range,
+    kv_write_fp16_avx2,
+};
+#elif defined(__AVX2__)
+static const BnKVCPUOps BN_KV_CPU_OPS = {
+    "avx2",
+    bn_transformer_gqa_tq_scalar_range,
+    kv_write_fp16_avx2,
+};
+#else
+static const BnKVCPUOps BN_KV_CPU_OPS = {
+    "scalar",
+    bn_transformer_gqa_tq_scalar_range,
+    kv_write_fp16_scalar,
+};
+#endif
+
+static const BnKVCPUOps *kv_cpu_ops(void) {
+    return &BN_KV_CPU_OPS;
+}
 
 void bn_transformer_tq_write_kv(const BnTQState *tq,
                                 BnRunState *s,
@@ -65,12 +152,7 @@ void bn_transformer_tq_gqa_dispatch(BnModel *m,
         .head_size = head_size, .seq_len = c->seq_len,
         .n_kv_heads = n_kv_heads
     };
-#ifdef __ARM_NEON
-    bn_tp_fn attn_fn = bn_transformer_gqa_tq_neon_range;
-#else
-    bn_tp_fn attn_fn = bn_transformer_gqa_tq_scalar_range;
-#endif
-    BnTPTask gqa = { attn_fn, &tctx, n_heads };
+    BnTPTask gqa = { kv_cpu_ops()->tq_gqa, &tctx, n_heads };
     bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
 }
 
@@ -85,26 +167,7 @@ void bn_transformer_write_kv_fp16(BnRunState *s,
                    loff + (size_t)cache_pos * kv_cache_stride;
     uint16_t *vc = (uint16_t *)s->value_cache +
                    loff + (size_t)cache_pos * kv_cache_stride;
-#ifdef __ARM_NEON
-    for (int i = 0; i < kv_dim; i += 4) {
-        vst1_u16(kc + i, vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(k_tmp + i))));
-        vst1_u16(vc + i, vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(v_tmp + i))));
-    }
-#elif defined(__AVX2__)
-    for (int i = 0; i < kv_dim; i += 8) {
-        _mm_storeu_si128((__m128i *)(kc + i),
-                         _mm256_cvtps_ph(_mm256_loadu_ps(k_tmp + i),
-                                         _MM_FROUND_TO_NEAREST_INT));
-        _mm_storeu_si128((__m128i *)(vc + i),
-                         _mm256_cvtps_ph(_mm256_loadu_ps(v_tmp + i),
-                                         _MM_FROUND_TO_NEAREST_INT));
-    }
-#else
-    for (int i = 0; i < kv_dim; i++) {
-        kc[i] = bn_fp32_to_fp16(k_tmp[i]);
-        vc[i] = bn_fp32_to_fp16(v_tmp[i]);
-    }
-#endif
+    kv_cpu_ops()->write_kv_fp16(kc, vc, k_tmp, v_tmp, kv_dim);
 }
 
 void bn_transformer_kv_cache_rows(BnRunState *s,

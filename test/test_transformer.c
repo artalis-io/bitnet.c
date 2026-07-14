@@ -486,7 +486,20 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_attention_post_norm(&c));
     assert(bn_model_arch_uses_ffn_post_norm(&c));
     assert(bn_model_arch_uses_layer_output_scale(&c));
+    c.gemma4_per_layer_dim = 128;
+    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 0));
+    assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_exact_scalar_activation(&c));
+    assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(bn_model_arch_moe_uses_gemma4_block(&c));
+
+    c.gemma4_per_layer_dim = 0;
+    c.n_experts = 4;
+    c.n_layers = 30;
+    assert(!bn_model_arch_gemma4_divides_rope_freqs(&c, 0));
+    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 5));
+    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 23));
+    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 29));
 
     const BnModelArchOps *bitnet = bn_model_arch_ops_for("bitnet");
     assert(bitnet);
@@ -518,6 +531,10 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_layer_output_scale(&c));
     assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(!bn_model_arch_is_qwen2_moe(&c));
+    assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(!bn_model_arch_moe_uses_gemma4_block(&c));
+    assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
+    assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));
     assert(bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 7);
@@ -526,6 +543,7 @@ static void test_model_arch_registry(void) {
 
     c.full_attn_interval = 4;
     assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(!bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(!bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));
     assert(!bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 0);
@@ -542,6 +560,7 @@ static void test_model_arch_registry(void) {
 
     c.arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
     assert(bn_model_arch_is_qwen2_moe(&c));
+    assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
 
     char name[128];
     char scale[128];

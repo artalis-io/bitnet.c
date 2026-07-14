@@ -22,6 +22,9 @@
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
 #undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
 #undef __AVX2__
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
@@ -1128,14 +1131,6 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
 }
 
 #ifdef __AVX2__
-static int prefill_quant_can_preq8k_pair(int a, int b) {
-    return bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
-}
-
-static int prefill_quant_can_preq8k_triple(int a, int b, int c) {
-    return prefill_quant_can_preq8k_pair(a, b) && bn_quant_format_can_preq8k(c);
-}
-
 static void prefill_quant_matmul_preq8k_multi(const BnModel *m,
                                               float **out,
                                               const BnQWeight **W,
@@ -1159,36 +1154,214 @@ static void prefill_quant_matmul_preq8k_multi(const BnModel *m,
 }
 #endif
 
+typedef struct {
+    const char *name;
+    void (*rmsnorm)(float *out, const float *x, const float *w,
+                    int size, float eps);
+    bn_tp_fn ffn_activation;
+    bn_tp_fn ssm_conv_silu;
+    bn_tp_fn ssm_l2norm;
+    bn_tp_fn ssm_delta;
+    bn_tp_fn ssm_gate;
+    int supports_preq8k;
+} BnPrefillCPUOps;
+
+static float prefill_gelu(float x) {
+    return 0.5f * x *
+           (1.0f + tanhf(0.7978845608028654f * x *
+                         (1.0f + 0.044715f * x * x)));
+}
+
+typedef struct {
+    float *hb;
+    const float *hb2;
+    int hidden_dim;
+    int act_type;
+    int fast_approx;
+} BnPrefillFFNActCtx;
+
+static void prefill_ffn_activation_scalar_range(void *ctx, int start, int end) {
+    BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
+    int hidden_dim = c->hidden_dim;
+    for (int t = start; t < end; t++) {
+        float *hb_t = c->hb + (size_t)t * hidden_dim;
+        const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
+        if (c->act_type == 1) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float g = hb_t[i] > 0 ? hb_t[i] : 0;
+                hb_t[i] = hb2_t ? g * g * hb2_t[i] : g * g;
+            }
+        } else if (c->act_type == 2) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = prefill_gelu(hb_t[i]);
+                hb_t[i] = hb2_t ? v * hb2_t[i] : v;
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = hb_t[i] / (1.0f + expf(-hb_t[i]));
+                hb_t[i] = hb2_t ? v * hb2_t[i] : v;
+            }
+        }
+    }
+}
+
 #ifdef __ARM_NEON
-#define prefill_rmsnorm bn_transformer_rmsnorm_neon
-#elif defined(__AVX2__)
-#define prefill_rmsnorm bn_transformer_rmsnorm_avx2
-#elif defined(__wasm_simd128__)
-#define prefill_rmsnorm bn_transformer_rmsnorm_wasm
-#else
-#define prefill_rmsnorm bn_transformer_rmsnorm_scalar
+static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
+    BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
+    int hidden_dim = c->hidden_dim;
+    for (int t = start; t < end; t++) {
+        float *hb_t = c->hb + (size_t)t * hidden_dim;
+        const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
+        int i = 0;
+        if (c->act_type == 1) {
+            float32x4_t zero_v = vdupq_n_f32(0.0f);
+            for (; i + 3 < hidden_dim; i += 4) {
+                float32x4_t g = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
+                float32x4_t v = vmulq_f32(g, g);
+                if (hb2_t)
+                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
+                vst1q_f32(hb_t + i, v);
+            }
+        } else if (c->act_type == 2 && c->fast_approx) {
+            for (; i + 3 < hidden_dim; i += 4) {
+                float32x4_t v =
+                    bn_neon_fast_gelu_f32(vld1q_f32(hb_t + i));
+                if (hb2_t)
+                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
+                vst1q_f32(hb_t + i, v);
+            }
+        } else if (c->act_type != 1 && c->act_type != 2 && c->fast_approx) {
+            for (; i + 3 < hidden_dim; i += 4) {
+                float32x4_t v =
+                    bn_neon_fast_silu_f32(vld1q_f32(hb_t + i));
+                if (hb2_t)
+                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
+                vst1q_f32(hb_t + i, v);
+            }
+        }
+        BnPrefillFFNActCtx tail = {
+            hb_t + i, hb2_t ? hb2_t + i : NULL,
+            hidden_dim - i, c->act_type, c->fast_approx
+        };
+        prefill_ffn_activation_scalar_range(&tail, 0, 1);
+    }
+}
+#endif
+
+#ifdef __AVX2__
+static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
+    BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
+    int hidden_dim = c->hidden_dim;
+    for (int t = start; t < end; t++) {
+        float *hb_t = c->hb + (size_t)t * hidden_dim;
+        const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
+        int i = 0;
+        if (c->act_type == 1) {
+            __m256 zero_v = _mm256_setzero_ps();
+            for (; i + 7 < hidden_dim; i += 8) {
+                __m256 g = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
+                __m256 v = _mm256_mul_ps(g, g);
+                if (hb2_t)
+                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
+                _mm256_storeu_ps(hb_t + i, v);
+            }
+        } else if (c->act_type == 2 && c->fast_approx) {
+            for (; i + 7 < hidden_dim; i += 8) {
+                __m256 v =
+                    bn_avx2_fast_gelu_ps(_mm256_loadu_ps(hb_t + i));
+                if (hb2_t)
+                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
+                _mm256_storeu_ps(hb_t + i, v);
+            }
+        } else if (c->act_type != 1 && c->act_type != 2 && c->fast_approx) {
+            for (; i + 7 < hidden_dim; i += 8) {
+                __m256 v =
+                    bn_avx2_fast_silu_ps(_mm256_loadu_ps(hb_t + i));
+                if (hb2_t)
+                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
+                _mm256_storeu_ps(hb_t + i, v);
+            }
+        }
+        BnPrefillFFNActCtx tail = {
+            hb_t + i, hb2_t ? hb2_t + i : NULL,
+            hidden_dim - i, c->act_type, c->fast_approx
+        };
+        prefill_ffn_activation_scalar_range(&tail, 0, 1);
+    }
+}
 #endif
 
 #ifdef __ARM_NEON
-#define prefill_ssm_conv_silu bn_transformer_ssm_conv_silu_neon_range
-#define prefill_ssm_l2norm    bn_transformer_ssm_l2norm_neon_range
-#define prefill_ssm_delta     bn_transformer_ssm_delta_neon_range
-#define prefill_ssm_gate      bn_transformer_ssm_gate_neon_range
+static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
+    "neon",
+    bn_transformer_rmsnorm_neon,
+    prefill_ffn_activation_neon_range,
+    bn_transformer_ssm_conv_silu_neon_range,
+    bn_transformer_ssm_l2norm_neon_range,
+    bn_transformer_ssm_delta_neon_range,
+    bn_transformer_ssm_gate_neon_range,
+    0,
+};
+#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
+      defined(__AVX512VNNI__) && defined(__AVX2__)
+static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
+    "avx512",
+    bn_transformer_rmsnorm_avx2,
+    prefill_ffn_activation_avx2_range,
+    bn_transformer_ssm_conv_silu_avx2_range,
+    bn_transformer_ssm_l2norm_avx2_range,
+    bn_transformer_ssm_delta_avx2_range,
+    bn_transformer_ssm_gate_avx2_range,
+    1,
+};
 #elif defined(__AVX2__)
-#define prefill_ssm_conv_silu bn_transformer_ssm_conv_silu_avx2_range
-#define prefill_ssm_l2norm    bn_transformer_ssm_l2norm_avx2_range
-#define prefill_ssm_delta     bn_transformer_ssm_delta_avx2_range
-#define prefill_ssm_gate      bn_transformer_ssm_gate_avx2_range
+static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
+    "avx2",
+    bn_transformer_rmsnorm_avx2,
+    prefill_ffn_activation_avx2_range,
+    bn_transformer_ssm_conv_silu_avx2_range,
+    bn_transformer_ssm_l2norm_avx2_range,
+    bn_transformer_ssm_delta_avx2_range,
+    bn_transformer_ssm_gate_avx2_range,
+    1,
+};
 #elif defined(__wasm_simd128__)
-#define prefill_ssm_conv_silu bn_transformer_ssm_conv_silu_wasm_range
-#define prefill_ssm_l2norm    bn_transformer_ssm_l2norm_wasm_range
-#define prefill_ssm_delta     bn_transformer_ssm_delta_wasm_range
-#define prefill_ssm_gate      bn_transformer_ssm_gate_wasm_range
+static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
+    "wasm",
+    bn_transformer_rmsnorm_wasm,
+    prefill_ffn_activation_scalar_range,
+    bn_transformer_ssm_conv_silu_wasm_range,
+    bn_transformer_ssm_l2norm_wasm_range,
+    bn_transformer_ssm_delta_wasm_range,
+    bn_transformer_ssm_gate_wasm_range,
+    0,
+};
 #else
-#define prefill_ssm_conv_silu bn_transformer_ssm_conv_silu_scalar_range
-#define prefill_ssm_l2norm    bn_transformer_ssm_l2norm_scalar_range
-#define prefill_ssm_delta     bn_transformer_ssm_delta_scalar_range
-#define prefill_ssm_gate      bn_transformer_ssm_gate_scalar_range
+static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
+    "scalar",
+    bn_transformer_rmsnorm_scalar,
+    prefill_ffn_activation_scalar_range,
+    bn_transformer_ssm_conv_silu_scalar_range,
+    bn_transformer_ssm_l2norm_scalar_range,
+    bn_transformer_ssm_delta_scalar_range,
+    bn_transformer_ssm_gate_scalar_range,
+    0,
+};
+#endif
+
+static const BnPrefillCPUOps *prefill_cpu_ops(void) {
+    return &BN_PREFILL_CPU_OPS;
+}
+
+#ifdef __AVX2__
+static int prefill_quant_can_preq8k_pair(int a, int b) {
+    return prefill_cpu_ops()->supports_preq8k &&
+           bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
+}
+
+static int prefill_quant_can_preq8k_triple(int a, int b, int c) {
+    return prefill_quant_can_preq8k_pair(a, b) && bn_quant_format_can_preq8k(c);
+}
 #endif
 
 static float *prefill_logits(BnModel *m, BnSession *sess) {
@@ -1241,108 +1414,6 @@ static void prefill_rmsnorm_unit_heads(float *x, int n_heads,
                              head_size, eps);
 }
 
-static float prefill_gelu(float x) {
-    return 0.5f * x *
-           (1.0f + tanhf(0.7978845608028654f * x *
-                         (1.0f + 0.044715f * x * x)));
-}
-
-typedef struct {
-    float *hb;
-    const float *hb2;
-    int hidden_dim;
-    int act_type;
-    int fast_approx;
-} BnPrefillFFNActCtx;
-
-static void prefill_ffn_activation_range(void *ctx, int start, int end) {
-    BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
-    int hidden_dim = c->hidden_dim;
-    for (int t = start; t < end; t++) {
-        float *hb_t = c->hb + (size_t)t * hidden_dim;
-        const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
-        if (c->act_type == 1) {
-            int i = 0;
-#ifdef __ARM_NEON
-            float32x4_t zero_v = vdupq_n_f32(0.0f);
-            for (; i + 3 < hidden_dim; i += 4) {
-                float32x4_t g = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
-                float32x4_t v = vmulq_f32(g, g);
-                if (hb2_t)
-                    v = vmulq_f32(v, vld1q_f32(hb2_t + i));
-                vst1q_f32(hb_t + i, v);
-            }
-#endif
-#ifdef __AVX2__
-            __m256 zero_v = _mm256_setzero_ps();
-            for (; i + 7 < hidden_dim; i += 8) {
-                __m256 g = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
-                __m256 v = _mm256_mul_ps(g, g);
-                if (hb2_t)
-                    v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
-                _mm256_storeu_ps(hb_t + i, v);
-            }
-#endif
-            for (; i < hidden_dim; i++) {
-                float g = hb_t[i] > 0 ? hb_t[i] : 0;
-                hb_t[i] = hb2_t ? g * g * hb2_t[i] : g * g;
-            }
-        } else if (c->act_type == 2) {
-            int i = 0;
-            if (c->fast_approx) {
-#ifdef __ARM_NEON
-                for (; i + 3 < hidden_dim; i += 4) {
-                    float32x4_t v =
-                        bn_neon_fast_gelu_f32(vld1q_f32(hb_t + i));
-                    if (hb2_t)
-                        v = vmulq_f32(v, vld1q_f32(hb2_t + i));
-                    vst1q_f32(hb_t + i, v);
-                }
-#endif
-#ifdef __AVX2__
-                for (; i + 7 < hidden_dim; i += 8) {
-                    __m256 v =
-                        bn_avx2_fast_gelu_ps(_mm256_loadu_ps(hb_t + i));
-                    if (hb2_t)
-                        v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
-                    _mm256_storeu_ps(hb_t + i, v);
-                }
-#endif
-            }
-            for (; i < hidden_dim; i++) {
-                float v = prefill_gelu(hb_t[i]);
-                hb_t[i] = hb2_t ? v * hb2_t[i] : v;
-            }
-        } else {
-            int i = 0;
-            if (c->fast_approx) {
-#ifdef __ARM_NEON
-                for (; i + 3 < hidden_dim; i += 4) {
-                    float32x4_t v =
-                        bn_neon_fast_silu_f32(vld1q_f32(hb_t + i));
-                    if (hb2_t)
-                        v = vmulq_f32(v, vld1q_f32(hb2_t + i));
-                    vst1q_f32(hb_t + i, v);
-                }
-#endif
-#ifdef __AVX2__
-                for (; i + 7 < hidden_dim; i += 8) {
-                    __m256 v =
-                        bn_avx2_fast_silu_ps(_mm256_loadu_ps(hb_t + i));
-                    if (hb2_t)
-                        v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
-                    _mm256_storeu_ps(hb_t + i, v);
-                }
-#endif
-            }
-            for (; i < hidden_dim; i++) {
-                float v = hb_t[i] / (1.0f + expf(-hb_t[i]));
-                hb_t[i] = hb2_t ? v * hb2_t[i] : v;
-            }
-        }
-    }
-}
-
 static void prefill_fill_rope(float *rope_cos_buf, float *rope_sin_buf,
                               int rope_stride, int n_tokens, int pos0,
                               int rope_dims, float theta) {
@@ -1381,9 +1452,10 @@ static int prefill_prepare_q_for_gpu_attention(BnBatchedAttnCtx *b) {
         if (b->q_norm) {
             int stride = b->qk_norm_per_head ? head_size : 0;
             for (int h = 0; h < n_heads; h++)
-                prefill_rmsnorm(row + h * head_size, row + h * head_size,
-                                b->q_norm + h * stride, head_size,
-                                b->norm_eps);
+                prefill_cpu_ops()->rmsnorm(row + h * head_size,
+                                           row + h * head_size,
+                                           b->q_norm + h * stride, head_size,
+                                           b->norm_eps);
         }
         bn_transformer_cpu_apply_rope_heads(
             row, n_heads, head_size, b->rope_dims,
@@ -1949,8 +2021,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             if (!can_fuse_attn_input_norm) {
                 t_prof = prefill_profile_now(&prof);
                 for (int t = 0; t < n_tokens; t++)
-                    prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
-                                    lw->norm.attn_norm, dim, c->norm_eps);
+                    prefill_cpu_ops()->rmsnorm(Xb + t * dim,
+                                               act + (size_t)t * dim,
+                                               lw->norm.attn_norm, dim,
+                                               c->norm_eps);
                 prefill_profile_add(&prof.attn_norm_ms, t_prof);
                 attn_norm_ready = 1;
             }
@@ -1995,7 +2069,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     if (qkv_fused_rc != 0) {
                         t_prof = prefill_profile_now(&prof);
                         for (int t = 0; t < n_tokens; t++)
-                            prefill_rmsnorm(
+                            prefill_cpu_ops()->rmsnorm(
                                 Xb + t * dim, act + (size_t)t * dim,
                                 lw->norm.attn_norm, dim, c->norm_eps);
                         prefill_profile_add(&prof.attn_norm_ms, t_prof);
@@ -2027,10 +2101,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 if (!attn_norm_ready) {
                     t_prof = prefill_profile_now(&prof);
                     for (int t = 0; t < n_tokens; t++)
-                        prefill_rmsnorm(Xb + t * dim,
-                                        act + (size_t)t * dim,
-                                        lw->norm.attn_norm, dim,
-                                        c->norm_eps);
+                        prefill_cpu_ops()->rmsnorm(Xb + t * dim,
+                                                   act + (size_t)t * dim,
+                                                   lw->norm.attn_norm, dim,
+                                                   c->norm_eps);
                     prefill_profile_add(&prof.attn_norm_ms, t_prof);
                     attn_norm_ready = 1;
                 }
@@ -2106,9 +2180,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         if (lw->attn.k_norm) {
                             int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
                             for (int h = 0; h < layer_n_kv_heads; h++)
-                                prefill_rmsnorm(k_t + h * layer_head_size, k_t + h * layer_head_size,
-                                                lw->attn.k_norm + h * qk_stride,
-                                                layer_head_size, c->norm_eps);
+                                prefill_cpu_ops()->rmsnorm(
+                                    k_t + h * layer_head_size,
+                                    k_t + h * layer_head_size,
+                                    lw->attn.k_norm + h * qk_stride,
+                                    layer_head_size, c->norm_eps);
                         }
                         if (bn_model_arch_attention_value_shares_key_config(c))
                             prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
@@ -2226,18 +2302,20 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     if (lw->attn.q_norm) {
                         int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
                         for (int h = 0; h < c->n_heads; h++)
-                            prefill_rmsnorm(s->q + h * layer_head_size,
-                                            s->q + h * layer_head_size,
-                                            lw->attn.q_norm + h * qk_stride,
-                                            layer_head_size, c->norm_eps);
+                            prefill_cpu_ops()->rmsnorm(
+                                s->q + h * layer_head_size,
+                                s->q + h * layer_head_size,
+                                lw->attn.q_norm + h * qk_stride,
+                                layer_head_size, c->norm_eps);
                     }
                     if (lw->attn.k_norm) {
                         int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
                         for (int h = 0; h < layer_n_kv_heads; h++)
-                            prefill_rmsnorm(k_t + h * layer_head_size,
-                                            k_t + h * layer_head_size,
-                                            lw->attn.k_norm + h * qk_stride,
-                                            layer_head_size, c->norm_eps);
+                            prefill_cpu_ops()->rmsnorm(
+                                k_t + h * layer_head_size,
+                                k_t + h * layer_head_size,
+                                lw->attn.k_norm + h * qk_stride,
+                                layer_head_size, c->norm_eps);
                     }
                     if (bn_model_arch_attention_value_shares_key_config(c))
                         prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
@@ -2289,9 +2367,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 t_prof = prefill_profile_now(&prof);
                 if (!used_fused_attn_wo && lw->norm.attn_sub_norm)
                     for (int t = 0; t < n_tokens; t++)
-                        prefill_rmsnorm(Q_buf + (size_t)t * wo_cols,
-                                        Q_buf + (size_t)t * wo_cols,
-                                        lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
+                        prefill_cpu_ops()->rmsnorm(
+                            Q_buf + (size_t)t * wo_cols,
+                            Q_buf + (size_t)t * wo_cols,
+                            lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
                 if (!used_fused_attn_wo) {
                     void *wo_buf = prefill_backend_role_or_qweight(
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
@@ -2306,9 +2385,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     bn_model_arch_uses_attention_post_norm(c) &&
                     lw->norm.attn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
-                        prefill_rmsnorm(Xb2 + (size_t)t * dim,
-                                        Xb2 + (size_t)t * dim,
-                                        lw->norm.attn_post_norm, dim, c->norm_eps);
+                        prefill_cpu_ops()->rmsnorm(Xb2 + (size_t)t * dim,
+                                                   Xb2 + (size_t)t * dim,
+                                                   lw->norm.attn_post_norm,
+                                                   dim, c->norm_eps);
                 prefill_profile_add(&prof.wo_ms, t_prof);
             }
 
@@ -2405,8 +2485,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
 
             for (int t = 0; t < n_tokens; t++)
-                prefill_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
-                                lw->norm.attn_norm, dim, c->norm_eps);
+                prefill_cpu_ops()->rmsnorm(Xb + (size_t)t * dim,
+                                           act + (size_t)t * dim,
+                                           lw->norm.attn_norm, dim,
+                                           c->norm_eps);
 
             if (q_buf_stride < qkv_dim_ssm) { sh_arena_free(pf_arena); return NULL; }
             float *QKV_all = Q_buf;
@@ -2453,7 +2535,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                           qkv_dim_ssm, kern_ssm };
                 BnTPTask conv_task = {
                     scalar_hybrid_ssm ? bn_transformer_ssm_conv_silu_scalar_range
-                                      : prefill_ssm_conv_silu,
+                                      : prefill_cpu_ops()->ssm_conv_silu,
                     &conv_ctx, qkv_dim_ssm
                 };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -2465,7 +2547,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
                 BnTPTask norm_task = {
                     scalar_hybrid_ssm ? bn_transformer_ssm_l2norm_scalar_range
-                                      : prefill_ssm_l2norm,
+                                      : prefill_cpu_ops()->ssm_l2norm,
                     &norm_ctx, num_k_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
@@ -2508,7 +2590,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 };
                 BnTPTask delta_task = {
                     scalar_hybrid_ssm ? bn_transformer_ssm_delta_scalar_range
-                                      : prefill_ssm_delta,
+                                      : prefill_cpu_ops()->ssm_delta,
                     &delta_ctx, num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
@@ -2517,7 +2599,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                           c->norm_eps, head_v_dim };
                 BnTPTask gate_task = {
                     scalar_hybrid_ssm ? bn_transformer_ssm_gate_scalar_range
-                                      : prefill_ssm_gate,
+                                      : prefill_cpu_ops()->ssm_gate,
                     &gate_ctx, num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
@@ -2568,8 +2650,10 @@ prefill_ssm_done:
                 prefill_profile_add(&prof.ffn_ms, t_prof);
                 t_prof = prefill_profile_now(&prof);
                 for (int t = 0; t < n_tokens; t++)
-                    prefill_rmsnorm(Xb + t * dim, act + (size_t)t * dim,
-                                    lw->norm.ffn_norm, dim, c->norm_eps);
+                    prefill_cpu_ops()->rmsnorm(Xb + t * dim,
+                                               act + (size_t)t * dim,
+                                               lw->norm.ffn_norm, dim,
+                                               c->norm_eps);
                 prefill_profile_add(&prof.ffn_norm_ms, t_prof);
 
                 t_prof = prefill_profile_now(&prof);
@@ -2618,7 +2702,9 @@ prefill_ssm_done:
                     Hb, Hb2, hidden_dim, c->act_type,
                     bn_model_arch_prefill_uses_exact_activation(c)
                 };
-                BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
+                BnTPTask act_task = {
+                    prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
+                };
                 bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
                 prefill_profile_add(&prof.ffn_act_ms, t_ffn_step);
             } else {
@@ -2630,7 +2716,9 @@ prefill_ssm_done:
                     Hb, NULL, hidden_dim, c->act_type,
                     bn_model_arch_prefill_uses_exact_activation(c)
                 };
-                BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
+                BnTPTask act_task = {
+                    prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
+                };
                 bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
                 prefill_profile_add(&prof.ffn_act_ms, t_ffn_step);
                 }
@@ -2639,10 +2727,10 @@ prefill_ssm_done:
             if (!used_gpu_batch_ffn) {
                 if (lw->norm.ffn_sub_norm)
                     for (int t = 0; t < n_tokens; t++)
-                        prefill_rmsnorm(Hb + (size_t)t * hidden_dim,
-                                        Hb + (size_t)t * hidden_dim,
-                                        lw->norm.ffn_sub_norm, hidden_dim,
-                                        c->norm_eps);
+                        prefill_cpu_ops()->rmsnorm(
+                            Hb + (size_t)t * hidden_dim,
+                            Hb + (size_t)t * hidden_dim,
+                            lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
 
                 double t_ffn_step = prefill_profile_now(&prof);
                 prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb,
@@ -2651,10 +2739,10 @@ prefill_ssm_done:
                 if (bn_model_arch_uses_ffn_post_norm(c) &&
                     lw->norm.ffn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
-                        prefill_rmsnorm(Xb + (size_t)t * dim,
-                                        Xb + (size_t)t * dim,
-                                        lw->norm.ffn_post_norm, dim,
-                                        c->norm_eps);
+                        prefill_cpu_ops()->rmsnorm(Xb + (size_t)t * dim,
+                                                   Xb + (size_t)t * dim,
+                                                   lw->norm.ffn_post_norm,
+                                                   dim, c->norm_eps);
             }
             prefill_profile_add(&prof.ffn_ms, t_prof);
 

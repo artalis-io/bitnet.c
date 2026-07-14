@@ -61,8 +61,31 @@ if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
 fi
 
 if ! grep -n '"avx512"' src/transformer/cpu.c >/dev/null 2>&1 ||
-   ! grep -n 'BN_CPU_BACKEND_AVX512' src/transformer/plan.c >/dev/null 2>&1; then
+   ! grep -n 'BN_CPU_BACKEND_AVX512' src/transformer/plan.c >/dev/null 2>&1 ||
+   ! grep -n '"avx512"' src/transformer/prefill.c >/dev/null 2>&1 ||
+   ! grep -n '"avx512"' src/transformer/kv.c >/dev/null 2>&1; then
     echo "CPU backend matrix must expose AVX512 as an explicit backend"
+    fail=1
+fi
+
+if ! grep -n 'BnPrefillCPUOps' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill must dispatch CPU kernels through an explicit backend ops table"
+    fail=1
+fi
+
+if ! grep -n 'ffn_activation' src/transformer/prefill.c >/dev/null 2>&1 ||
+   grep -n 'prefill_ffn_activation_range' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill FFN activation must be selected through the backend ops table"
+    fail=1
+fi
+
+if ! grep -n 'BnKVCPUOps' src/transformer/kv.c >/dev/null 2>&1; then
+    echo "KV helpers must dispatch CPU kernels through an explicit backend ops table"
+    fail=1
+fi
+
+if ! grep -n 'prepare_f16_x' src/transformer/logits.c >/dev/null 2>&1; then
+    echo "Logits FP16 input conversion must be selected through backend ops"
     fail=1
 fi
 
@@ -73,7 +96,12 @@ for file in \
     src/transformer/gpu_policy.c \
     src/transformer/logits.c \
     src/transformer/plan.c \
-    src/transformer/prefill.c
+    src/transformer/prefill.c \
+    src/transformer/kv.c \
+    src/model_embed.c \
+    src/moe_execute.c \
+    src/transformer.c \
+    src/generate.c
 do
     if grep -n 'BN_MODEL_ARCH_FLAG_\|arch_flags' "$file" >/dev/null 2>&1; then
         echo "$file must use model_arch policy helpers, not direct architecture flags"

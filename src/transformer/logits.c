@@ -34,8 +34,20 @@ typedef struct {
     int i8_uses_standard_quant;
     int supports_q8_refine;
     bn_tp_fn f16_logits;
-    int f16_native_x;
+    void (*prepare_f16_x)(uint16_t *dst, const float *src, int dim);
 } BnLogitsBackendOps;
+
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+static void logits_prepare_f16_x_neon(uint16_t *dst,
+                                      const float *src,
+                                      int dim) {
+    for (int d = 0; d < dim; d += 8) {
+        float16x4_t lo = vcvt_f16_f32(vld1q_f32(src + d));
+        float16x4_t hi = vcvt_f16_f32(vld1q_f32(src + d + 4));
+        vst1q_u16(dst + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
+    }
+}
+#endif
 
 #ifdef __ARM_NEON
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
@@ -51,10 +63,10 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
 #endif
 #ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
     bn_transformer_logits_f16_native_neon_range,
-    1,
+    logits_prepare_f16_x_neon,
 #else
     bn_transformer_logits_f16_neon_range,
-    0,
+    NULL,
 #endif
 };
 #elif defined(__AVX512F__) && defined(__AVX512BW__) && \
@@ -65,7 +77,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     1,
     1,
     bn_transformer_logits_f16_avx2_range,
-    0,
+    NULL,
 };
 #elif defined(__AVX2__)
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
@@ -74,7 +86,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     1,
     1,
     bn_transformer_logits_f16_avx2_range,
-    0,
+    NULL,
 };
 #elif defined(__wasm_relaxed_simd__)
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
@@ -83,7 +95,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     1,
     1,
     bn_transformer_logits_f16_wasm_range,
-    0,
+    NULL,
 };
 #elif defined(__wasm_simd128__)
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
@@ -92,7 +104,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     0,
     0,
     bn_transformer_logits_f16_wasm_range,
-    0,
+    NULL,
 };
 #else
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
@@ -101,7 +113,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     0,
     0,
     bn_transformer_logits_f16_scalar_range,
-    0,
+    NULL,
 };
 #endif
 
@@ -409,17 +421,11 @@ static void logits_f16_dispatch(BnModel *m,
                                 int dim) {
     const BnLogitsBackendOps *ops = logits_backend_ops();
     const float *x = s->x;
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
     uint16_t x_f16[dim > 0 ? dim : 1];
-    if (ops->f16_native_x) {
-        for (int d = 0; d < dim; d += 8) {
-            float16x4_t lo = vcvt_f16_f32(vld1q_f32(s->x + d));
-            float16x4_t hi = vcvt_f16_f32(vld1q_f32(s->x + d + 4));
-            vst1q_u16(x_f16 + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
-        }
+    if (ops->prepare_f16_x) {
+        ops->prepare_f16_x(x_f16, s->x, dim);
         x = (const float *)(void *)x_f16;
     }
-#endif
     BnLogitsCtx lctx = { s->logits, x, emb, dim };
     BnTPTask logits_task = { ops->f16_logits, &lctx, rows };
     bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
