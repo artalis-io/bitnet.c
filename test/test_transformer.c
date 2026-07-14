@@ -517,16 +517,21 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_layer_output_scale(&c));
     assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
+    assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 7);
+    assert(bn_model_arch_prefill_uses_exact_activation(&c));
 
     c.full_attn_interval = 4;
     assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(!bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
+    assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 0);
 
     memset(&c, 0, sizeof(c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
     assert(!bn_model_arch_cpu_force_float_kquant(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER);
+    assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 2);
+    assert(!bn_model_arch_prefill_uses_exact_activation(&c));
 
     char name[128];
     char scale[128];

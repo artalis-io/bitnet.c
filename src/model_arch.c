@@ -158,6 +158,16 @@ int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
            c->dim <= 2560;
 }
 
+int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c) {
+    if (!bn_model_arch_allows_small_cuda_q8_logit_refine(c))
+        return 0;
+    return (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) ? 7 : 2;
+}
+
+int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0);
+}
+
 int bn_model_arch_rope_text_dims(int rope_dim_count,
                                  const int32_t *sections,
                                  uint64_t n_sections) {

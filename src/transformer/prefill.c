@@ -9,6 +9,7 @@
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
 #include "backend_quant.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"
@@ -156,7 +157,7 @@ static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
 
 #ifdef __AVX2__
 static int prefill_force_float_kquant(const BnModel *m) {
-    return m && (m->config.arch_flags & BN_MODEL_ARCH_FLAG_QWEN3);
+    return m && bn_model_arch_cpu_force_float_kquant(&m->config);
 }
 
 static int prefill_qweight_is_kquant(const BnQWeight *w) {
@@ -755,7 +756,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         !lw->ssm.ssm_conv1d || !lw->ssm.ssm_dt_bias ||
         !lw->ssm.ssm_a || !lw->ssm.ssm_norm ||
         lw->norm.ffn_sub_norm || lw->norm.layer_output_scale ||
-        ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+        (bn_model_arch_uses_attention_post_norm(c) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
         c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
         c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
@@ -823,7 +824,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         !lw->ffn.ffn_down.data ||
         lw->norm.attn_sub_norm || lw->norm.ffn_sub_norm ||
         lw->norm.layer_output_scale ||
-        ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+        (bn_model_arch_uses_attention_post_norm(c) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)))
         return 0;
     int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
@@ -1017,7 +1018,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         lw->ffn.ffn_down.data && m->config.has_ffn_gate &&
         !lw->norm.ffn_sub_norm &&
         !lw->norm.layer_output_scale &&
-        !((m->config.arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+        !(bn_model_arch_uses_ffn_post_norm(&m->config) &&
           lw->norm.ffn_post_norm)) {
         gateup_buf = bn_backend_model_handle(
             backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
@@ -1079,7 +1080,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         !lw->ffn.ffn_down.data || !c->has_ffn_gate ||
         lw->moe.router_weight || lw->norm.ffn_sub_norm ||
         lw->norm.layer_output_scale ||
-        ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+        (bn_model_arch_uses_attention_post_norm(c) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
         c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
         c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
@@ -1221,9 +1222,7 @@ static float prefill_layer_rope_theta(const BnConfig *c, int layer_head_size) {
 }
 
 static float prefill_attention_scale(const BnConfig *c, int head_size) {
-    return (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
-        ? 1.0f
-        : 1.0f / sqrtf((float)head_size);
+    return bn_model_arch_attention_scale(c, head_size);
 }
 
 static void prefill_rmsnorm_unit(float *out, const float *x, int size, float eps) {
@@ -1409,14 +1408,10 @@ static int prefill_dense_chain_min_tokens(const BnConfig *c,
     const char *env = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
     if (env && *env)
         return prefill_gpu_attention_min_tokens();
-    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c &&
-        (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
-        c->n_experts <= 0 &&
-        c->full_attn_interval <= 0 &&
-        c->dim <= 2560) {
-        if (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3)
-            return 7;
-        return 2;
+    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c) {
+        int arch_min = bn_model_arch_small_cuda_dense_prefill_min_tokens(c);
+        if (arch_min > 0)
+            return arch_min;
     }
     if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c)
         return 16;
@@ -1499,10 +1494,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         c->n_experts > 0 && c->full_attn_interval <= 0;
     int cuda_small_dense_qwen_prefill =
         prefill_gpu && prefill_gpu->kind == BN_GPU_BACKEND_CUDA &&
-        (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
-        c->n_experts <= 0 &&
-        c->full_attn_interval <= 0 &&
-        c->dim <= 2560;
+        bn_model_arch_small_cuda_dense_prefill_min_tokens(c) > 0;
     if (cuda_moe_prefill &&
         (!getenv("BN_CUDA_ENABLE_MOE_PREFILL") ||
          n_tokens < prefill_moe_chain_min_tokens(c, prefill_gpu))) {
@@ -1898,7 +1890,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm && !lw->norm.ffn_sub_norm &&
                 !lw->norm.layer_output_scale &&
-                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                !(bn_model_arch_uses_attention_post_norm(c) &&
                   (lw->norm.attn_post_norm || lw->norm.ffn_post_norm))) {
                 t_prof = prefill_profile_now(&prof);
                 if (prefill_dense_layer_gpu_batch(
@@ -1951,7 +1943,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 layer_rope_theta == c->rope_theta &&
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm &&
-                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                !(bn_model_arch_uses_attention_post_norm(c) &&
                   lw->norm.attn_post_norm);
             int attn_norm_ready = 0;
             if (!can_fuse_attn_input_norm) {
@@ -1968,7 +1960,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 layer_rope_theta == c->rope_theta &&
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm &&
-                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                !(bn_model_arch_uses_attention_post_norm(c) &&
                   lw->norm.attn_post_norm)) {
                 void *qk_buf = backend ? bn_backend_model_handle(
                     backend, l, BN_BACKEND_HANDLE_QK_STACKED) : NULL;
@@ -2118,7 +2110,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                 lw->attn.k_norm + h * qk_stride,
                                                 layer_head_size, c->norm_eps);
                         }
-                        if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                        if (bn_model_arch_attention_value_shares_key_config(c))
                             prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                        layer_head_size, c->norm_eps);
                         bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
@@ -2182,7 +2174,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         &lw->attn.wo);
                     if (gpu->prefill_attention_wo && wo_buf &&
                         !lw->norm.attn_sub_norm &&
-                        !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                        !(bn_model_arch_uses_attention_post_norm(c) &&
                           lw->norm.attn_post_norm) &&
                         gpu->prefill_attention_wo(
                             gpu->ctx, Xb2, wo_buf, Q_buf, K_new, V_new,
@@ -2247,7 +2239,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                             lw->attn.k_norm + h * qk_stride,
                                             layer_head_size, c->norm_eps);
                     }
-                    if (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4)
+                    if (bn_model_arch_attention_value_shares_key_config(c))
                         prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                    layer_head_size, c->norm_eps);
 
@@ -2311,7 +2303,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                  Q_buf, n_tokens, s->x_q);
                 }
                 if (!used_fused_attn_wo &&
-                    (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                    bn_model_arch_uses_attention_post_norm(c) &&
                     lw->norm.attn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_rmsnorm(Xb2 + (size_t)t * dim,
@@ -2420,8 +2412,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             float *QKV_all = Q_buf;
             float *Z_all = Xb2;
             float *Out_all = Hb;
-            int qwen_hybrid = (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) &&
-                              c->full_attn_interval > 0;
+            int scalar_hybrid_ssm = bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);
 
 #ifdef __AVX2__
             int ssm_preq8k = 0;
@@ -2461,8 +2452,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm.ssm_conv1d,
                                           qkv_dim_ssm, kern_ssm };
                 BnTPTask conv_task = {
-                    qwen_hybrid ? bn_transformer_ssm_conv_silu_scalar_range
-                                : prefill_ssm_conv_silu,
+                    scalar_hybrid_ssm ? bn_transformer_ssm_conv_silu_scalar_range
+                                      : prefill_ssm_conv_silu,
                     &conv_ctx, qkv_dim_ssm
                 };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -2473,8 +2464,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                 BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
                 BnTPTask norm_task = {
-                    qwen_hybrid ? bn_transformer_ssm_l2norm_scalar_range
-                                : prefill_ssm_l2norm,
+                    scalar_hybrid_ssm ? bn_transformer_ssm_l2norm_scalar_range
+                                      : prefill_ssm_l2norm,
                     &norm_ctx, num_k_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
@@ -2516,8 +2507,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     num_k_heads, head_k_dim, head_v_dim, q_scale
                 };
                 BnTPTask delta_task = {
-                    qwen_hybrid ? bn_transformer_ssm_delta_scalar_range
-                                : prefill_ssm_delta,
+                    scalar_hybrid_ssm ? bn_transformer_ssm_delta_scalar_range
+                                      : prefill_ssm_delta,
                     &delta_ctx, num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
@@ -2525,8 +2516,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
                                           c->norm_eps, head_v_dim };
                 BnTPTask gate_task = {
-                    qwen_hybrid ? bn_transformer_ssm_gate_scalar_range
-                                : prefill_ssm_gate,
+                    scalar_hybrid_ssm ? bn_transformer_ssm_gate_scalar_range
+                                      : prefill_ssm_gate,
                     &gate_ctx, num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
@@ -2560,7 +2551,7 @@ prefill_ssm_done:
                 backend_ffn ? bn_backend_model_handle(
                     backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
             if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
-                !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                !(bn_model_arch_uses_ffn_post_norm(c) &&
                   lw->norm.ffn_post_norm) &&
                 can_use_dense_ffn_batch &&
                 gpu_ffn && gpu_ffn->dense_ffn_batch_norm_resid &&
@@ -2583,7 +2574,7 @@ prefill_ssm_done:
 
                 t_prof = prefill_profile_now(&prof);
                 if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
-                    !((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                    !(bn_model_arch_uses_ffn_post_norm(c) &&
                       lw->norm.ffn_post_norm) &&
                     can_use_dense_ffn_batch &&
                     (c->full_attn_interval <= 0 ||
@@ -2625,7 +2616,7 @@ prefill_ssm_done:
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
                     Hb, Hb2, hidden_dim, c->act_type,
-                    (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0
+                    bn_model_arch_prefill_uses_exact_activation(c)
                 };
                 BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
                 bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
@@ -2637,7 +2628,7 @@ prefill_ssm_done:
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
                     Hb, NULL, hidden_dim, c->act_type,
-                    (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0
+                    bn_model_arch_prefill_uses_exact_activation(c)
                 };
                 BnTPTask act_task = { prefill_ffn_activation_range, &act_ctx, n_tokens };
                 bn_tp_dispatch(bn_model_pool(m), &act_task, 1);
@@ -2657,7 +2648,7 @@ prefill_ssm_done:
                 prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb,
                                          n_tokens, s->x_q);
                 prefill_profile_add(&prof.ffn_down_ms, t_ffn_step);
-                if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) &&
+                if (bn_model_arch_uses_ffn_post_norm(c) &&
                     lw->norm.ffn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_rmsnorm(Xb + (size_t)t * dim,
@@ -2677,7 +2668,7 @@ prefill_ssm_done:
             prefill_profile_add(&prof.residual_ms, t_prof);
         }
 
-        if ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) && lw->norm.layer_output_scale) {
+        if (bn_model_arch_uses_layer_output_scale(c) && lw->norm.layer_output_scale) {
             float scale = lw->norm.layer_output_scale[0];
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)

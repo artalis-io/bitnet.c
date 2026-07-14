@@ -123,22 +123,187 @@ static int cpu_quant_can_preq8k_pair(int a, int b) {
     return bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
 }
 
+typedef struct {
+    const char *name;
+    void (*rmsnorm)(float *out, const float *x, const float *w,
+                    int size, float eps);
+    bn_tp_fn gqa;
+    bn_tp_fn flash_gqa;
+    bn_tp_fn batched_attn_naive;
+    bn_tp_fn batched_attn_flash;
+    bn_tp_fn batched_attn_flash_pair;
+    void (*residual_add)(float *x, const float *r, int dim);
+    bn_tp_fn ssm_conv_silu;
+    bn_tp_fn ssm_l2norm;
+    bn_tp_fn ssm_delta;
+    bn_tp_fn ssm_gate;
+    void (*apply_ffn_activation)(BnRunState *s, const BnFFNPlan *ffn_plan,
+                                 int hidden_dim);
+    void (*apply_sigmoid_gate)(float *x, const float *gate, int size);
+    void (*apply_rope_heads)(float *buf, int n_heads, int head_size,
+                             int rope_dims, const float *rc,
+                             const float *rs);
+    int supports_preq8k;
+    void (*rmsnorm_q8k)(const float *x, const float *w, int dim, float eps,
+                        float *out, int8_t *x_q, float *x_d,
+                        int16_t *x_bsums);
+} BnCPUBackendOps;
+
+static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
+                                          int size);
+static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
+                                        int head_size, int rope_dims,
+                                        const float *rc, const float *rs);
+#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+static void cpu_apply_ffn_activation_scalar(BnRunState *s,
+                                            const BnFFNPlan *ffn_plan,
+                                            int hidden_dim);
+#endif
+#ifdef __ARM_NEON
+static void cpu_apply_ffn_activation_neon(BnRunState *s,
+                                          const BnFFNPlan *ffn_plan,
+                                          int hidden_dim);
+#endif
 #ifdef __AVX2__
-static int cpu_quant_can_preq8k_triple(int a, int b, int c) {
-    return cpu_quant_can_preq8k_pair(a, b) &&
-           bn_quant_format_can_preq8k(c);
+static void cpu_apply_ffn_activation_avx2(BnRunState *s,
+                                          const BnFFNPlan *ffn_plan,
+                                          int hidden_dim);
+static void cpu_apply_sigmoid_gate_avx2(float *x, const float *gate,
+                                        int size);
+static void cpu_apply_rope_heads_avx2(float *buf, int n_heads,
+                                      int head_size, int rope_dims,
+                                      const float *rc, const float *rs);
+#endif
+#ifdef __wasm_simd128__
+static void cpu_apply_ffn_activation_wasm(BnRunState *s,
+                                          const BnFFNPlan *ffn_plan,
+                                          int hidden_dim);
+#endif
+
+#ifdef __ARM_NEON
+static void cpu_residual_add_neon(float *x, const float *r, int dim) {
+    for (int i = 0; i < dim; i += 4)
+        vst1q_f32(x + i, vaddq_f32(vld1q_f32(x + i), vld1q_f32(r + i)));
+}
+#endif
+
+#ifdef __AVX2__
+static void cpu_residual_add_avx2(float *x, const float *r, int dim) {
+    for (int i = 0; i < dim; i += 8)
+        _mm256_storeu_ps(x + i,
+                         _mm256_add_ps(_mm256_loadu_ps(x + i),
+                                       _mm256_loadu_ps(r + i)));
+}
+#endif
+
+#ifdef __wasm_simd128__
+static void cpu_residual_add_wasm(float *x, const float *r, int dim) {
+    for (int i = 0; i < dim; i += 4)
+        wasm_v128_store(x + i,
+                        wasm_f32x4_add(wasm_v128_load(x + i),
+                                       wasm_v128_load(r + i)));
+}
+#endif
+
+#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+static void cpu_residual_add_scalar(float *x, const float *r, int dim) {
+    for (int i = 0; i < dim; i++)
+        x[i] += r[i];
 }
 #endif
 
 #ifdef __ARM_NEON
-#define cpu_rmsnorm bn_transformer_rmsnorm_neon
+static const BnCPUBackendOps BN_CPU_BACKEND = {
+    "neon",
+    bn_transformer_rmsnorm_neon,
+    bn_transformer_gqa_neon_range,
+    bn_transformer_flash_gqa_neon_range,
+    bn_transformer_batched_attn_naive_neon_range,
+    bn_transformer_batched_attn_flash_neon_range,
+    NULL,
+    cpu_residual_add_neon,
+    bn_transformer_ssm_conv_silu_neon_range,
+    bn_transformer_ssm_l2norm_neon_range,
+    bn_transformer_ssm_delta_neon_range,
+    bn_transformer_ssm_gate_neon_range,
+    cpu_apply_ffn_activation_neon,
+    cpu_apply_sigmoid_gate_scalar,
+    cpu_apply_rope_heads_scalar,
+    0,
+    NULL,
+};
 #elif defined(__AVX2__)
-#define cpu_rmsnorm bn_transformer_rmsnorm_avx2
+static const BnCPUBackendOps BN_CPU_BACKEND = {
+    "avx2",
+    bn_transformer_rmsnorm_avx2,
+    bn_transformer_gqa_avx2_range,
+    bn_transformer_flash_gqa_avx2_range,
+    bn_transformer_batched_attn_naive_avx2_range,
+    bn_transformer_batched_attn_flash_avx2_range,
+    bn_transformer_batched_attn_flash_avx2_pair_range,
+    cpu_residual_add_avx2,
+    bn_transformer_ssm_conv_silu_avx2_range,
+    bn_transformer_ssm_l2norm_avx2_range,
+    bn_transformer_ssm_delta_avx2_range,
+    bn_transformer_ssm_gate_avx2_range,
+    cpu_apply_ffn_activation_avx2,
+    cpu_apply_sigmoid_gate_avx2,
+    cpu_apply_rope_heads_avx2,
+    1,
+    bn_quant_rmsnorm_q8k_avx2,
+};
 #elif defined(__wasm_simd128__)
-#define cpu_rmsnorm bn_transformer_rmsnorm_wasm
+static const BnCPUBackendOps BN_CPU_BACKEND = {
+    "wasm",
+    bn_transformer_rmsnorm_wasm,
+    bn_transformer_gqa_wasm_range,
+    bn_transformer_flash_gqa_wasm_range,
+    bn_transformer_batched_attn_naive_scalar_range,
+    bn_transformer_batched_attn_flash_scalar_range,
+    NULL,
+    cpu_residual_add_wasm,
+    bn_transformer_ssm_conv_silu_wasm_range,
+    bn_transformer_ssm_l2norm_wasm_range,
+    bn_transformer_ssm_delta_wasm_range,
+    bn_transformer_ssm_gate_wasm_range,
+    cpu_apply_ffn_activation_wasm,
+    cpu_apply_sigmoid_gate_scalar,
+    cpu_apply_rope_heads_scalar,
+    0,
+    NULL,
+};
 #else
-#define cpu_rmsnorm bn_transformer_rmsnorm_scalar
+static const BnCPUBackendOps BN_CPU_BACKEND = {
+    "scalar",
+    bn_transformer_rmsnorm_scalar,
+    bn_transformer_gqa_scalar_range,
+    bn_transformer_flash_gqa_scalar_range,
+    bn_transformer_batched_attn_naive_scalar_range,
+    bn_transformer_batched_attn_flash_scalar_range,
+    NULL,
+    cpu_residual_add_scalar,
+    bn_transformer_ssm_conv_silu_scalar_range,
+    bn_transformer_ssm_l2norm_scalar_range,
+    bn_transformer_ssm_delta_scalar_range,
+    bn_transformer_ssm_gate_scalar_range,
+    cpu_apply_ffn_activation_scalar,
+    cpu_apply_sigmoid_gate_scalar,
+    cpu_apply_rope_heads_scalar,
+    0,
+    NULL,
+};
 #endif
+
+static const BnCPUBackendOps *cpu_backend_ops(void) {
+    return &BN_CPU_BACKEND;
+}
+
+static int cpu_quant_can_preq8k_triple(const BnCPUBackendOps *ops,
+                                       int a, int b, int c) {
+    return ops->supports_preq8k &&
+           cpu_quant_can_preq8k_pair(a, b) &&
+           bn_quant_format_can_preq8k(c);
+}
 
 static void cpu_rmsnorm_scalar_qwen2(float *out, const float *x,
                                      const float *w, int size, float eps) {
@@ -159,30 +324,8 @@ static inline void cpu_rmsnorm_model(const BnModel *m, float *out,
         cpu_rmsnorm_scalar_qwen2(out, x, w, size, eps);
         return;
     }
-    cpu_rmsnorm(out, x, w, size, eps);
+    cpu_backend_ops()->rmsnorm(out, x, w, size, eps);
 }
-
-#ifdef __ARM_NEON
-#define cpu_ssm_conv_silu bn_transformer_ssm_conv_silu_neon_range
-#define cpu_ssm_l2norm    bn_transformer_ssm_l2norm_neon_range
-#define cpu_ssm_delta     bn_transformer_ssm_delta_neon_range
-#define cpu_ssm_gate      bn_transformer_ssm_gate_neon_range
-#elif defined(__AVX2__)
-#define cpu_ssm_conv_silu bn_transformer_ssm_conv_silu_avx2_range
-#define cpu_ssm_l2norm    bn_transformer_ssm_l2norm_avx2_range
-#define cpu_ssm_delta     bn_transformer_ssm_delta_avx2_range
-#define cpu_ssm_gate      bn_transformer_ssm_gate_avx2_range
-#elif defined(__wasm_simd128__)
-#define cpu_ssm_conv_silu bn_transformer_ssm_conv_silu_wasm_range
-#define cpu_ssm_l2norm    bn_transformer_ssm_l2norm_wasm_range
-#define cpu_ssm_delta     bn_transformer_ssm_delta_wasm_range
-#define cpu_ssm_gate      bn_transformer_ssm_gate_wasm_range
-#else
-#define cpu_ssm_conv_silu bn_transformer_ssm_conv_silu_scalar_range
-#define cpu_ssm_l2norm    bn_transformer_ssm_l2norm_scalar_range
-#define cpu_ssm_delta     bn_transformer_ssm_delta_scalar_range
-#define cpu_ssm_gate      bn_transformer_ssm_gate_scalar_range
-#endif
 
 static void cpu_rmsnorm_unit(float *out, const float *x, int size, float eps) {
     float ss = 0.0f;
@@ -232,79 +375,321 @@ static float cpu_fast_gelu_scalar(float x) {
 }
 #endif
 
+static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
+                                          int size) {
+    for (int i = 0; i < size; i++)
+        x[i] *= 1.0f / (1.0f + expf(-gate[i]));
+}
+
+static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
+                                        int head_size, int rope_dims,
+                                        const float *rc, const float *rs) {
+    for (int h = 0; h < n_heads; h++) {
+        float *hd = buf + h * head_size;
+        int half_rope = rope_dims / 2;
+        for (int i = 0; i < half_rope; i++) {
+            int j = i + half_rope;
+            float v0 = hd[i], v1 = hd[j];
+            hd[i] = v0 * rc[i] - v1 * rs[i];
+            hd[j] = v0 * rs[i] + v1 * rc[i];
+        }
+    }
+}
+
+#ifdef __AVX2__
+static void cpu_apply_sigmoid_gate_avx2(float *x, const float *gate,
+                                        int size) {
+    for (int i = 0; i < size; i += 8) {
+        __m256 g = _mm256_loadu_ps(gate + i);
+        __m256 xv = _mm256_loadu_ps(x + i);
+        _mm256_storeu_ps(x + i,
+                         _mm256_mul_ps(xv, bn_avx2_fast_sigmoid_ps(g)));
+    }
+}
+
+static void cpu_apply_rope_heads_avx2(float *buf, int n_heads,
+                                      int head_size, int rope_dims,
+                                      const float *rc, const float *rs) {
+    if (rope_dims < 8) {
+        cpu_apply_rope_heads_scalar(buf, n_heads, head_size, rope_dims, rc, rs);
+        return;
+    }
+    for (int h = 0; h < n_heads; h++) {
+        float *hd = buf + h * head_size;
+        int half_rope = rope_dims / 2;
+        int i = 0;
+        for (; i + 7 < half_rope; i += 8) {
+            __m256 v0 = _mm256_loadu_ps(hd + i);
+            __m256 v1 = _mm256_loadu_ps(hd + half_rope + i);
+            __m256 cos_v = _mm256_loadu_ps(rc + i);
+            __m256 sin_v = _mm256_loadu_ps(rs + i);
+            __m256 out0 = _mm256_fmsub_ps(v0, cos_v,
+                                          _mm256_mul_ps(v1, sin_v));
+            __m256 out1 = _mm256_fmadd_ps(v0, sin_v,
+                                          _mm256_mul_ps(v1, cos_v));
+            _mm256_storeu_ps(hd + i, out0);
+            _mm256_storeu_ps(hd + half_rope + i, out1);
+        }
+        for (; i < half_rope; i++) {
+            int j = i + half_rope;
+            float v0 = hd[i], v1 = hd[j];
+            hd[i] = v0 * rc[i] - v1 * rs[i];
+            hd[j] = v0 * rs[i] + v1 * rc[i];
+        }
+    }
+}
+#endif
+
+#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+static void cpu_apply_ffn_activation_scalar(BnRunState *s,
+                                            const BnFFNPlan *ffn_plan,
+                                            int hidden_dim) {
+    if (ffn_plan->has_gate) {
+        if (ffn_plan->activation == 1) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float g = s->hb[i] > 0 ? s->hb[i] : 0;
+                s->hb[i] = g * g * s->hb2[i];
+            }
+        } else if (ffn_plan->activation == 2) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float x = s->hb[i];
+                float g;
+                if (ffn_plan->scalar_exact_activation)
+                    g = 0.5f * x *
+                        (1.0f + tanhf(0.7978845608028654f * x *
+                                      (1.0f + 0.044715f * x * x)));
+                else
+                    g = cpu_fast_gelu_scalar(x);
+                s->hb[i] = g * s->hb2[i];
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i++) {
+                float g = s->hb[i];
+                if (ffn_plan->scalar_exact_activation)
+                    s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
+                else
+                    s->hb[i] = cpu_fast_silu_scalar(g) * s->hb2[i];
+            }
+        }
+    } else {
+        if (ffn_plan->activation == 1) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = s->hb[i] > 0 ? s->hb[i] : 0;
+                s->hb[i] = v * v;
+            }
+        } else if (ffn_plan->activation == 2) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float x = s->hb[i];
+                if (ffn_plan->scalar_exact_activation)
+                    s->hb[i] = 0.5f * x *
+                               (1.0f + tanhf(0.7978845608028654f * x *
+                                             (1.0f + 0.044715f * x * x)));
+                else
+                    s->hb[i] = cpu_fast_gelu_scalar(x);
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = s->hb[i];
+                if (ffn_plan->scalar_exact_activation)
+                    s->hb[i] = v / (1.0f + expf(-v));
+                else
+                    s->hb[i] = cpu_fast_silu_scalar(v);
+            }
+        }
+    }
+}
+#endif
+
+#ifdef __ARM_NEON
+static void cpu_apply_ffn_activation_neon(BnRunState *s,
+                                          const BnFFNPlan *ffn_plan,
+                                          int hidden_dim) {
+    if (ffn_plan->has_gate) {
+        if (ffn_plan->activation == 1) {
+            float32x4_t zero = vdupq_n_f32(0);
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t g = vmaxq_f32(vld1q_f32(s->hb + i), zero);
+                vst1q_f32(s->hb + i, vmulq_f32(vmulq_f32(g, g),
+                                                vld1q_f32(s->hb2 + i)));
+            }
+        } else if (ffn_plan->activation == 2) {
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t g = vld1q_f32(s->hb + i);
+                float32x4_t u = vld1q_f32(s->hb2 + i);
+                vst1q_f32(s->hb + i,
+                          vmulq_f32(bn_neon_fast_gelu_f32(g), u));
+            }
+        } else if (ffn_plan->scalar_exact_activation) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float g = s->hb[i];
+                s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t g = vld1q_f32(s->hb + i);
+                float32x4_t u = vld1q_f32(s->hb2 + i);
+                vst1q_f32(s->hb + i,
+                          vmulq_f32(bn_neon_fast_silu_f32(g), u));
+            }
+        }
+    } else {
+        if (ffn_plan->activation == 1) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = s->hb[i] > 0 ? s->hb[i] : 0;
+                s->hb[i] = v * v;
+            }
+        } else if (ffn_plan->activation == 2) {
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t v = vld1q_f32(s->hb + i);
+                vst1q_f32(s->hb + i, bn_neon_fast_gelu_f32(v));
+            }
+        } else if (ffn_plan->scalar_exact_activation) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = s->hb[i];
+                s->hb[i] = v / (1.0f + expf(-v));
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i += 4) {
+                float32x4_t v = vld1q_f32(s->hb + i);
+                vst1q_f32(s->hb + i, bn_neon_fast_silu_f32(v));
+            }
+        }
+    }
+}
+#endif
+
+#ifdef __AVX2__
+static void cpu_apply_ffn_activation_avx2(BnRunState *s,
+                                          const BnFFNPlan *ffn_plan,
+                                          int hidden_dim) {
+    if (ffn_plan->has_gate) {
+        if (ffn_plan->activation == 1) {
+            __m256 zero = _mm256_setzero_ps();
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 g = _mm256_max_ps(_mm256_loadu_ps(s->hb + i), zero);
+                _mm256_storeu_ps(s->hb + i,
+                    _mm256_mul_ps(_mm256_mul_ps(g, g),
+                                  _mm256_loadu_ps(s->hb2 + i)));
+            }
+        } else if (ffn_plan->activation == 2) {
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 g = _mm256_loadu_ps(s->hb + i);
+                __m256 u = _mm256_loadu_ps(s->hb2 + i);
+                _mm256_storeu_ps(s->hb + i,
+                                 _mm256_mul_ps(bn_avx2_fast_gelu_ps(g), u));
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 g = _mm256_loadu_ps(s->hb + i);
+                __m256 u = _mm256_loadu_ps(s->hb2 + i);
+                _mm256_storeu_ps(s->hb + i,
+                                 _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
+            }
+        }
+    } else {
+        if (ffn_plan->activation == 1) {
+            for (int i = 0; i < hidden_dim; i++) {
+                float v = s->hb[i] > 0 ? s->hb[i] : 0;
+                s->hb[i] = v * v;
+            }
+        } else if (ffn_plan->activation == 2) {
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 v = _mm256_loadu_ps(s->hb + i);
+                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_gelu_ps(v));
+            }
+        } else {
+            for (int i = 0; i < hidden_dim; i += 8) {
+                __m256 v = _mm256_loadu_ps(s->hb + i);
+                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_silu_ps(v));
+            }
+        }
+    }
+}
+#endif
+
+#ifdef __wasm_simd128__
+static void cpu_apply_ffn_activation_wasm(BnRunState *s,
+                                          const BnFFNPlan *ffn_plan,
+                                          int hidden_dim) {
+    if (ffn_plan->has_gate && ffn_plan->activation == 1) {
+        v128_t zero = wasm_f32x4_splat(0);
+        for (int i = 0; i < hidden_dim; i += 4) {
+            v128_t g = wasm_f32x4_max(wasm_v128_load(s->hb + i), zero);
+            wasm_v128_store(s->hb + i,
+                wasm_f32x4_mul(wasm_f32x4_mul(g, g),
+                               wasm_v128_load(s->hb2 + i)));
+        }
+        return;
+    }
+
+    if (ffn_plan->has_gate) {
+        for (int i = 0; i < hidden_dim; i++) {
+            float x = s->hb[i];
+            float g;
+            if (ffn_plan->activation == 1) {
+                g = x > 0 ? x * x : 0.0f;
+            } else if (ffn_plan->activation == 2) {
+                g = 0.5f * x *
+                    (1.0f + tanhf(0.7978845608028654f * x *
+                                  (1.0f + 0.044715f * x * x)));
+            } else {
+                g = x / (1.0f + expf(-x));
+            }
+            s->hb[i] = g * s->hb2[i];
+        }
+        return;
+    }
+
+    for (int i = 0; i < hidden_dim; i++) {
+        float x = s->hb[i];
+        if (ffn_plan->activation == 1) {
+            float v = x > 0 ? x : 0.0f;
+            s->hb[i] = v * v;
+        } else if (ffn_plan->activation == 2) {
+            s->hb[i] = 0.5f * x *
+                       (1.0f + tanhf(0.7978845608028654f * x *
+                                     (1.0f + 0.044715f * x * x)));
+        } else {
+            s->hb[i] = x / (1.0f + expf(-x));
+        }
+    }
+}
+#endif
+
 void bn_transformer_cpu_gqa_dispatch(BnModel *m,
                                      BnGQACtx *gctx,
                                      int n_heads,
                                      int kv_mul) {
     (void)kv_mul;
+    const BnCPUBackendOps *ops = cpu_backend_ops();
     if (gctx->attention_scale == 0.0f)
         gctx->attention_scale =
             bn_model_arch_attention_scale(&m->config, gctx->head_size);
-#ifdef __ARM_NEON
-    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_neon_range : bn_transformer_gqa_neon_range;
-#elif defined(__AVX2__)
-    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_avx2_range : bn_transformer_gqa_avx2_range;
-#elif defined(__wasm_simd128__)
-    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_wasm_range : bn_transformer_gqa_wasm_range;
-#else
-    bn_tp_fn attn_fn = m->config.flash_attn ? bn_transformer_flash_gqa_scalar_range : bn_transformer_gqa_scalar_range;
-#endif
+    bn_tp_fn attn_fn = m->config.flash_attn ? ops->flash_gqa : ops->gqa;
     BnTPTask gqa = { attn_fn, gctx, n_heads };
     bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
 }
 
 void bn_transformer_batched_attn_dispatch(BnModel *m,
                                           BnBatchedAttnCtx *ctx) {
+    const BnCPUBackendOps *ops = cpu_backend_ops();
     if (ctx->attention_scale == 0.0f)
         ctx->attention_scale =
             bn_model_arch_attention_scale(&m->config, ctx->head_size);
-    bn_tp_fn fn;
-    if (m->config.flash_attn) {
-#ifdef __AVX2__
-        fn = ctx->n_tokens > 1
-            ? bn_transformer_batched_attn_flash_avx2_pair_range
-            : bn_transformer_batched_attn_flash_avx2_range;
-#elif defined(__ARM_NEON)
-        fn = bn_transformer_batched_attn_flash_neon_range;
-#else
-        fn = bn_transformer_batched_attn_flash_scalar_range;
-#endif
-    } else {
-#ifdef __AVX2__
-        fn = bn_transformer_batched_attn_naive_avx2_range;
-#elif defined(__ARM_NEON)
-        fn = bn_transformer_batched_attn_naive_neon_range;
-#else
-        fn = bn_transformer_batched_attn_naive_scalar_range;
-#endif
-    }
+    bn_tp_fn fn = m->config.flash_attn
+        ? ((ctx->n_tokens > 1 && ops->batched_attn_flash_pair)
+            ? ops->batched_attn_flash_pair
+            : ops->batched_attn_flash)
+        : ops->batched_attn_naive;
     int units = ctx->n_heads;
-#ifdef __AVX2__
-    if (fn == bn_transformer_batched_attn_flash_avx2_pair_range)
+    if (fn == ops->batched_attn_flash_pair)
         units = ctx->n_heads * ctx->n_tokens;
-#endif
     BnTPTask task = { fn, ctx, units };
     bn_tp_dispatch(bn_model_pool(m), &task, 1);
 }
 
 void bn_transformer_cpu_residual_add(float *x, const float *r, int dim) {
-#ifdef __ARM_NEON
-    for (int i = 0; i < dim; i += 4)
-        vst1q_f32(x + i, vaddq_f32(vld1q_f32(x + i), vld1q_f32(r + i)));
-#elif defined(__AVX2__)
-    for (int i = 0; i < dim; i += 8)
-        _mm256_storeu_ps(x + i,
-                         _mm256_add_ps(_mm256_loadu_ps(x + i),
-                                       _mm256_loadu_ps(r + i)));
-#elif defined(__wasm_simd128__)
-    for (int i = 0; i < dim; i += 4)
-        wasm_v128_store(x + i,
-                        wasm_f32x4_add(wasm_v128_load(x + i),
-                                       wasm_v128_load(r + i)));
-#else
-    for (int i = 0; i < dim; i++)
-        x[i] += r[i];
-#endif
+    cpu_backend_ops()->residual_add(x, r, dim);
 }
 
 static void cpu_debug_dump_array_n(int n_values,
@@ -455,44 +840,8 @@ void bn_transformer_cpu_apply_rope_heads(float *buf,
                                          int rope_dims,
                                          const float *rc,
                                          const float *rs) {
-#ifdef __AVX2__
-    if (rope_dims >= 8) {
-        for (int h = 0; h < n_heads; h++) {
-            float *hd = buf + h * head_size;
-            int half_rope = rope_dims / 2;
-            int i = 0;
-            for (; i + 7 < half_rope; i += 8) {
-                __m256 v0 = _mm256_loadu_ps(hd + i);
-                __m256 v1 = _mm256_loadu_ps(hd + half_rope + i);
-                __m256 cos_v = _mm256_loadu_ps(rc + i);
-                __m256 sin_v = _mm256_loadu_ps(rs + i);
-                __m256 out0 = _mm256_fmsub_ps(v0, cos_v,
-                                              _mm256_mul_ps(v1, sin_v));
-                __m256 out1 = _mm256_fmadd_ps(v0, sin_v,
-                                              _mm256_mul_ps(v1, cos_v));
-                _mm256_storeu_ps(hd + i, out0);
-                _mm256_storeu_ps(hd + half_rope + i, out1);
-            }
-            for (; i < half_rope; i++) {
-                int j = i + half_rope;
-                float v0 = hd[i], v1 = hd[j];
-                hd[i] = v0 * rc[i] - v1 * rs[i];
-                hd[j] = v0 * rs[i] + v1 * rc[i];
-            }
-        }
-        return;
-    }
-#endif
-    for (int h = 0; h < n_heads; h++) {
-        float *hd = buf + h * head_size;
-        int half_rope = rope_dims / 2;
-        for (int i = 0; i < half_rope; i++) {
-            int j = i + half_rope;
-            float v0 = hd[i], v1 = hd[j];
-            hd[i] = v0 * rc[i] - v1 * rs[i];
-            hd[j] = v0 * rs[i] + v1 * rc[i];
-        }
-    }
+    cpu_backend_ops()->apply_rope_heads(buf, n_heads, head_size,
+                                        rope_dims, rc, rs);
 }
 
 void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
@@ -501,153 +850,7 @@ void bn_transformer_cpu_apply_ffn_activation(BnRunState *s,
                                              int already_activated) {
     if (already_activated)
         return;
-
-    if (ffn_plan->has_gate) {
-        if (ffn_plan->activation == 1) {
-#ifdef __ARM_NEON
-            float32x4_t zero = vdupq_n_f32(0);
-            for (int i = 0; i < hidden_dim; i += 4) {
-                float32x4_t g = vmaxq_f32(vld1q_f32(s->hb + i), zero);
-                vst1q_f32(s->hb + i, vmulq_f32(vmulq_f32(g, g),
-                                                vld1q_f32(s->hb2 + i)));
-            }
-#elif defined(__AVX2__)
-            __m256 zero = _mm256_setzero_ps();
-            for (int i = 0; i < hidden_dim; i += 8) {
-                __m256 g = _mm256_max_ps(_mm256_loadu_ps(s->hb + i), zero);
-                _mm256_storeu_ps(s->hb + i,
-                    _mm256_mul_ps(_mm256_mul_ps(g, g),
-                                  _mm256_loadu_ps(s->hb2 + i)));
-            }
-#elif defined(__wasm_simd128__)
-            v128_t zero = wasm_f32x4_splat(0);
-            for (int i = 0; i < hidden_dim; i += 4) {
-                v128_t g = wasm_f32x4_max(wasm_v128_load(s->hb + i), zero);
-                wasm_v128_store(s->hb + i,
-                    wasm_f32x4_mul(wasm_f32x4_mul(g, g),
-                                   wasm_v128_load(s->hb2 + i)));
-            }
-#else
-            for (int i = 0; i < hidden_dim; i++) {
-                float g = s->hb[i] > 0 ? s->hb[i] : 0;
-                s->hb[i] = g * g * s->hb2[i];
-            }
-#endif
-        } else if (ffn_plan->activation == 2) {
-#ifdef __ARM_NEON
-            for (int i = 0; i < hidden_dim; i += 4) {
-                float32x4_t g = vld1q_f32(s->hb + i);
-                float32x4_t u = vld1q_f32(s->hb2 + i);
-                vst1q_f32(s->hb + i, vmulq_f32(bn_neon_fast_gelu_f32(g), u));
-            }
-#elif defined(__AVX2__)
-            for (int i = 0; i < hidden_dim; i += 8) {
-                __m256 g = _mm256_loadu_ps(s->hb + i);
-                __m256 u = _mm256_loadu_ps(s->hb2 + i);
-                _mm256_storeu_ps(s->hb + i,
-                                 _mm256_mul_ps(bn_avx2_fast_gelu_ps(g), u));
-            }
-#else
-            for (int i = 0; i < hidden_dim; i++) {
-                float x = s->hb[i];
-                float g;
-                if (ffn_plan->scalar_exact_activation)
-                    g = 0.5f * x *
-                        (1.0f + tanhf(0.7978845608028654f * x *
-                                      (1.0f + 0.044715f * x * x)));
-                else
-                    g = cpu_fast_gelu_scalar(x);
-                s->hb[i] = g * s->hb2[i];
-            }
-#endif
-        } else {
-#ifdef __ARM_NEON
-            if (ffn_plan->scalar_exact_activation) {
-                for (int i = 0; i < hidden_dim; i++) {
-                    float g = s->hb[i];
-                    s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
-                }
-            } else {
-                for (int i = 0; i < hidden_dim; i += 4) {
-                    float32x4_t g = vld1q_f32(s->hb + i);
-                    float32x4_t u = vld1q_f32(s->hb2 + i);
-                    vst1q_f32(s->hb + i, vmulq_f32(bn_neon_fast_silu_f32(g), u));
-                }
-            }
-#elif defined(__AVX2__)
-            for (int i = 0; i < hidden_dim; i += 8) {
-                __m256 g = _mm256_loadu_ps(s->hb + i);
-                __m256 u = _mm256_loadu_ps(s->hb2 + i);
-                _mm256_storeu_ps(s->hb + i,
-                                 _mm256_mul_ps(bn_avx2_fast_silu_ps(g), u));
-            }
-#else
-            for (int i = 0; i < hidden_dim; i++) {
-                float g = s->hb[i];
-                if (ffn_plan->scalar_exact_activation)
-                    s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
-                else
-                    s->hb[i] = cpu_fast_silu_scalar(g) * s->hb2[i];
-            }
-#endif
-        }
-    } else {
-        if (ffn_plan->activation == 1) {
-            for (int i = 0; i < hidden_dim; i++) {
-                float v = s->hb[i] > 0 ? s->hb[i] : 0;
-                s->hb[i] = v * v;
-            }
-        } else if (ffn_plan->activation == 2) {
-#ifdef __ARM_NEON
-            for (int i = 0; i < hidden_dim; i += 4) {
-                float32x4_t v = vld1q_f32(s->hb + i);
-                vst1q_f32(s->hb + i, bn_neon_fast_gelu_f32(v));
-            }
-#elif defined(__AVX2__)
-            for (int i = 0; i < hidden_dim; i += 8) {
-                __m256 v = _mm256_loadu_ps(s->hb + i);
-                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_gelu_ps(v));
-            }
-#else
-            for (int i = 0; i < hidden_dim; i++) {
-                float x = s->hb[i];
-                if (ffn_plan->scalar_exact_activation)
-                    s->hb[i] = 0.5f * x *
-                               (1.0f + tanhf(0.7978845608028654f * x *
-                                             (1.0f + 0.044715f * x * x)));
-                else
-                    s->hb[i] = cpu_fast_gelu_scalar(x);
-            }
-#endif
-        } else {
-#ifdef __ARM_NEON
-            if (ffn_plan->scalar_exact_activation) {
-                for (int i = 0; i < hidden_dim; i++) {
-                    float v = s->hb[i];
-                    s->hb[i] = v / (1.0f + expf(-v));
-                }
-            } else {
-                for (int i = 0; i < hidden_dim; i += 4) {
-                    float32x4_t v = vld1q_f32(s->hb + i);
-                    vst1q_f32(s->hb + i, bn_neon_fast_silu_f32(v));
-                }
-            }
-#elif defined(__AVX2__)
-            for (int i = 0; i < hidden_dim; i += 8) {
-                __m256 v = _mm256_loadu_ps(s->hb + i);
-                _mm256_storeu_ps(s->hb + i, bn_avx2_fast_silu_ps(v));
-            }
-#else
-            for (int i = 0; i < hidden_dim; i++) {
-                float v = s->hb[i];
-                if (ffn_plan->scalar_exact_activation)
-                    s->hb[i] = v / (1.0f + expf(-v));
-                else
-                    s->hb[i] = cpu_fast_silu_scalar(v);
-            }
-#endif
-        }
-    }
+    cpu_backend_ops()->apply_ffn_activation(s, ffn_plan, hidden_dim);
 }
 
 // Process a single layer (attention/SSM block + FFN). Reads/writes s->x.
@@ -681,6 +884,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
     int layer_rope_dims = rope_dims > head_size ? head_size : rope_dims;
     int qk_stride = shape->qk_stride; // per-head norm offset
     int is_attn = shape->is_attn;
+    const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
 
     cpu_debug_dump_layer_input(m, sess, l, pos);
 
@@ -706,20 +910,18 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
         /* Fused attn RMSNorm + Q8K: quantize s->xb once, reuse for Q and K+V */
         int attn_preq8k = 0;
-#ifdef __AVX2__
-        int attn_kquant = cpu_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
-                          !bn_model_gpu(m) && dim % BN_QK_K == 0;
-#endif
+        int attn_kquant = cpu_quant_can_preq8k_triple(
+            cpu_ops, lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
+            !bn_model_gpu(m) && dim % BN_QK_K == 0;
         int n_sb_attn = dim / BN_QK_K;
         float attn_q8k_d[n_sb_attn > 0 ? n_sb_attn : 1];
         int16_t attn_q8k_bsums[n_sb_attn > 0 ? n_sb_attn * 16 : 1];
-#ifdef __AVX2__
         if (attn_kquant) {
-            bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.attn_norm, dim, c->norm_eps,
-                                        s->xb, s->x_q, attn_q8k_d, attn_q8k_bsums);
+            cpu_ops->rmsnorm_q8k(s->x, lw->norm.attn_norm, dim, c->norm_eps,
+                                 s->xb, s->x_q, attn_q8k_d,
+                                 attn_q8k_bsums);
             attn_preq8k = 1;
         } else
-#endif
         {
             cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
         }
@@ -793,24 +995,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
             } else if (c->kv_f16) {
-                uint16_t *kc = (uint16_t *)s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
-                uint16_t *vc = (uint16_t *)s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
-#ifdef __ARM_NEON
-                for (int i = 0; i < kv_dim; i += 4) {
-                    vst1_u16(kc + i, vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(k_tmp + i))));
-                    vst1_u16(vc + i, vreinterpret_u16_f16(vcvt_f16_f32(vld1q_f32(v_tmp + i))));
-                }
-#elif defined(__AVX2__)
-                for (int i = 0; i < kv_dim; i += 8) {
-                    _mm_storeu_si128((__m128i *)(kc + i), _mm256_cvtps_ph(_mm256_loadu_ps(k_tmp + i), _MM_FROUND_TO_NEAREST_INT));
-                    _mm_storeu_si128((__m128i *)(vc + i), _mm256_cvtps_ph(_mm256_loadu_ps(v_tmp + i), _MM_FROUND_TO_NEAREST_INT));
-                }
-#else
-                for (int i = 0; i < kv_dim; i++) {
-                    kc[i] = bn_fp32_to_fp16(k_tmp[i]);
-                    vc[i] = bn_fp32_to_fp16(v_tmp[i]);
-                }
-#endif
+                bn_transformer_write_kv_fp16(s, loff, cache_pos,
+                                             kv_cache_stride, k_tmp, v_tmp,
+                                             kv_dim);
             }
             // FP32 path already wrote to cache directly
 
@@ -826,16 +1013,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             for (int h = 0; h < n_heads; h++) {
                 float *gate_h = q_full + h * 2 * head_size + head_size;
                 float *xb_h = s->xb + h * head_size;
-#ifdef __AVX2__
-                for (int d = 0; d < head_size; d += 8) {
-                    __m256 g = _mm256_loadu_ps(gate_h + d);
-                    __m256 xv = _mm256_loadu_ps(xb_h + d);
-                    _mm256_storeu_ps(xb_h + d, _mm256_mul_ps(xv, bn_avx2_fast_sigmoid_ps(g)));
-                }
-#else
-                for (int d = 0; d < head_size; d++)
-                    xb_h[d] *= 1.0f / (1.0f + expf(-gate_h[d]));
-#endif
+                cpu_ops->apply_sigmoid_gate(xb_h, gate_h, head_size);
             }
 
             // wo projection + residual
@@ -1015,28 +1193,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 bn_transformer_cpu_apply_rope_heads(k_tmp, n_kv_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
 
-                uint16_t *kc = (uint16_t *)s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
-                uint16_t *vc = (uint16_t *)s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
-#ifdef __ARM_NEON
-                for (int i = 0; i < kv_dim; i += 4) {
-                    float32x4_t kv4 = vld1q_f32(k_tmp + i);
-                    float16x4_t kh4 = vcvt_f16_f32(kv4);
-                    vst1_u16(kc + i, vreinterpret_u16_f16(kh4));
-                    float32x4_t vv4 = vld1q_f32(v_tmp + i);
-                    float16x4_t vh4 = vcvt_f16_f32(vv4);
-                    vst1_u16(vc + i, vreinterpret_u16_f16(vh4));
-                }
-#elif defined(__AVX2__)
-                for (int i = 0; i < kv_dim; i += 8) {
-                    _mm_storeu_si128((__m128i *)(kc + i), _mm256_cvtps_ph(_mm256_loadu_ps(k_tmp + i), _MM_FROUND_TO_NEAREST_INT));
-                    _mm_storeu_si128((__m128i *)(vc + i), _mm256_cvtps_ph(_mm256_loadu_ps(v_tmp + i), _MM_FROUND_TO_NEAREST_INT));
-                }
-#else
-                for (int i = 0; i < kv_dim; i++) {
-                    kc[i] = bn_fp32_to_fp16(k_tmp[i]);
-                    vc[i] = bn_fp32_to_fp16(v_tmp[i]);
-                }
-#endif
+                bn_transformer_write_kv_fp16(s, loff, cache_pos,
+                                             kv_cache_stride, k_tmp, v_tmp,
+                                             kv_dim);
             } else {
                 BnMatvecTask qkv[3] = {
                      { s->q,            &lw->attn.wq, NULL, 0 },
@@ -1159,20 +1318,20 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     float *state = s->ssm_state + (size_t)ssm_idx * state_per_layer;
     size_t conv_per_layer = (size_t)(kern - 1) * qkv_dim;
     float *conv_state = s->ssm_conv_state + (size_t)ssm_idx * conv_per_layer;
+    const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
 
     int ssm_preq8k = 0;
     int n_sb_ssm = dim / BN_QK_K;
     float ssm_q8k_d[n_sb_ssm > 0 ? n_sb_ssm : 1];
     int16_t ssm_q8k_bsums[n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
-#ifdef __AVX2__
-    int ssm_kquant = !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
+    int ssm_kquant = cpu_ops->supports_preq8k &&
+                     !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
                      cpu_quant_can_preq8k_pair(lw->ssm.wqkv.type, lw->ssm.wz.type);
     if (ssm_kquant) {
-        bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.attn_norm, dim, c->norm_eps,
-                                  s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
+        cpu_ops->rmsnorm_q8k(s->x, lw->norm.attn_norm, dim, c->norm_eps,
+                             s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
         ssm_preq8k = 1;
     } else
-#endif
     {
         cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
     }
@@ -1193,7 +1352,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm.ssm_conv1d, qkv_dim, kern };
     BnTPTask conv_task = {
         scalar_hybrid_ssm ? bn_transformer_ssm_conv_silu_scalar_range
-                          : cpu_ssm_conv_silu,
+                          : cpu_ops->ssm_conv_silu,
         &conv_ctx, qkv_dim
     };
     bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -1205,7 +1364,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
     BnTPTask norm_task = {
         scalar_hybrid_ssm ? bn_transformer_ssm_l2norm_scalar_range
-                          : cpu_ssm_l2norm,
+                          : cpu_ops->ssm_l2norm,
         &norm_ctx, num_k_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
@@ -1243,7 +1402,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     };
     BnTPTask delta_task = {
         scalar_hybrid_ssm ? bn_transformer_ssm_delta_scalar_range
-                          : cpu_ssm_delta,
+                          : cpu_ops->ssm_delta,
         &delta_ctx, num_v_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
@@ -1251,7 +1410,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     BnSSMGateCtx gate_ctx = { out, z, lw->ssm.ssm_norm, c->norm_eps, head_v_dim };
     BnTPTask gate_task = {
         scalar_hybrid_ssm ? bn_transformer_ssm_gate_scalar_range
-                          : cpu_ssm_gate,
+                          : cpu_ops->ssm_gate,
         &gate_ctx, num_v_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
@@ -1278,6 +1437,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     int hidden_dim = ffn_plan->hidden_dim;
     int ffn_activated = 0;
     int fused_gate_up = 0;
+    const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
 
     BnGPUBackend *gpu = bn_model_gpu(m);
     if (gpu && gpu->dense_ffn && ffn_plan->has_gate &&
@@ -1302,14 +1462,14 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         }
     }
 
-#ifdef __AVX2__
-    if (ffn_plan->has_gate && !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
+    if (cpu_ops->supports_preq8k &&
+        ffn_plan->has_gate && !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
         cpu_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
         int n_sb = dim / BN_QK_K;
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
-        bn_quant_rmsnorm_q8k_avx2(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
-                                  s->xb, s->x_q, q8k_d, q8k_bsums);
+        cpu_ops->rmsnorm_q8k(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
+                             s->xb, s->x_q, q8k_d, q8k_bsums);
         BnMatvecTask ffn[2] = {
              { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
             { s->hb2, &lw->ffn.ffn_up, NULL, 0 },
@@ -1318,7 +1478,6 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                                      s->xb);
         fused_gate_up = 1;
     }
-#endif
 
     if (!fused_gate_up) {
         cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);

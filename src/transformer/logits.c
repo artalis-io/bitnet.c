@@ -21,18 +21,80 @@
 #undef __wasm_simd128__
 #endif
 
-#ifdef __ARM_NEON
-#define rmsnorm bn_transformer_rmsnorm_neon
-#elif defined(__AVX2__)
-#define rmsnorm bn_transformer_rmsnorm_avx2
-#elif defined(__wasm_simd128__)
-#define rmsnorm bn_transformer_rmsnorm_wasm
-#else
-#define rmsnorm bn_transformer_rmsnorm_scalar
-#endif
-
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
 #define BN_LOGITS_REFINE_MAX_SCALE_BLOCKS 512
+
+typedef struct {
+    void (*rmsnorm)(float *out, const float *x, const float *w,
+                    int size, float eps);
+    bn_tp_fn i8_logits;
+    int i8_uses_standard_quant;
+    int supports_q8_refine;
+    bn_tp_fn f16_logits;
+    int f16_native_x;
+} BnLogitsBackendOps;
+
+#ifdef __ARM_NEON
+static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
+    bn_transformer_rmsnorm_neon,
+#ifdef __ARM_FEATURE_DOTPROD
+    bn_transformer_logits_i8_neon_range,
+    1,
+    1,
+#else
+    bn_transformer_logits_i8_scalar_range,
+    0,
+    0,
+#endif
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+    bn_transformer_logits_f16_native_neon_range,
+    1,
+#else
+    bn_transformer_logits_f16_neon_range,
+    0,
+#endif
+};
+#elif defined(__AVX2__)
+static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
+    bn_transformer_rmsnorm_avx2,
+    bn_transformer_logits_i8_avx2_range,
+    1,
+    1,
+    bn_transformer_logits_f16_avx2_range,
+    0,
+};
+#elif defined(__wasm_relaxed_simd__)
+static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
+    bn_transformer_rmsnorm_wasm,
+    bn_transformer_logits_i8_wasm_range,
+    1,
+    1,
+    bn_transformer_logits_f16_wasm_range,
+    0,
+};
+#elif defined(__wasm_simd128__)
+static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
+    bn_transformer_rmsnorm_wasm,
+    bn_transformer_logits_i8_scalar_range,
+    0,
+    0,
+    bn_transformer_logits_f16_wasm_range,
+    0,
+};
+#else
+static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
+    bn_transformer_rmsnorm_scalar,
+    bn_transformer_logits_i8_scalar_range,
+    0,
+    0,
+    bn_transformer_logits_f16_scalar_range,
+    0,
+};
+#endif
+
+static const BnLogitsBackendOps *logits_backend_ops(void) {
+    return &BN_LOGITS_BACKEND;
+}
 
 static void logits_rmsnorm_model(const BnModel *m, float *out,
                                  const float *x, const float *w,
@@ -48,14 +110,14 @@ static void logits_rmsnorm_model(const BnModel *m, float *out,
             out[i] = x[i] * scale * w[i];
         return;
     }
-    rmsnorm(out, x, w, size, eps);
+    logits_backend_ops()->rmsnorm(out, x, w, size, eps);
 }
 
 static int logits_refine_q8_top(float *logits, int n_logits,
                                 const BnQWeight *W, const float *x,
                                 int8_t *x_q, int top_n) {
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
-    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+    if (!logits_backend_ops()->supports_q8_refine)
+        return 0;
     if (!logits || !W || !W->data || !x || !x_q ||
         W->type != BN_GGUF_TENSOR_Q8_0)
         return 0;
@@ -108,10 +170,6 @@ static int logits_refine_q8_top(float *logits, int n_logits,
         logits[row] = row_sum;
     }
     return n_top;
-#else
-    (void)logits; (void)n_logits; (void)W; (void)x; (void)x_q; (void)top_n;
-    return 0;
-#endif
 }
 
 static int logits_top_ids(const float *logits, int n_logits,
@@ -281,7 +339,6 @@ static void logits_refine_small_qwen_cuda_q8(const BnModel *m,
                              s->x_q, refine_top);
 }
 
-#if !((defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__))
 static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
     float amax = 0.0f;
     for (int i = 0; i < n; i++) {
@@ -298,7 +355,6 @@ static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
     }
     return scale;
 }
-#endif
 
 static inline void *qweight_backend_buf(const BnBackendModel *backend,
                                         const BnQWeight *w) {
@@ -320,26 +376,15 @@ static void logits_quant_matvec_gpu(const BnModel *m,
 }
 
 static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
-    float x_scale;
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
-    bn_tp_fn fn = bn_transformer_logits_i8_neon_range;
-#elif defined(__AVX2__)
-    bn_tp_fn fn = bn_transformer_logits_i8_avx2_range;
-#elif defined(__wasm_relaxed_simd__)
-    bn_tp_fn fn = bn_transformer_logits_i8_wasm_range;
-    x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
-#else
-    bn_tp_fn fn = bn_transformer_logits_i8_scalar_range;
-    x_scale = logits_quant_x_to_i8_scalar(s->x, s->x_q, dim);
-#endif
+    const BnLogitsBackendOps *ops = logits_backend_ops();
     BnWeights *w = &m->weights;
     if (!w->emb_out_i8) return 0;
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__)
-    x_scale = bn_quant_x_to_i8(s->x, s->x_q, dim);
-#endif
+    float x_scale = ops->i8_uses_standard_quant
+        ? bn_quant_x_to_i8(s->x, s->x_q, dim)
+        : logits_quant_x_to_i8_scalar(s->x, s->x_q, dim);
     BnLogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
                            s->x_q, x_scale, dim };
-    BnTPTask logits_task = { fn, &lctx, rows };
+    BnTPTask logits_task = { ops->i8_logits, &lctx, rows };
     bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
     return 1;
 }
@@ -349,33 +394,22 @@ static void logits_f16_dispatch(BnModel *m,
                                 const uint16_t *emb,
                                 int rows,
                                 int dim) {
+    const BnLogitsBackendOps *ops = logits_backend_ops();
+    const float *x = s->x;
 #if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
-    uint16_t x_f16[dim];
-    for (int d = 0; d < dim; d += 8) {
-        float16x4_t lo = vcvt_f16_f32(vld1q_f32(s->x + d));
-        float16x4_t hi = vcvt_f16_f32(vld1q_f32(s->x + d + 4));
-        vst1q_u16(x_f16 + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
+    uint16_t x_f16[dim > 0 ? dim : 1];
+    if (ops->f16_native_x) {
+        for (int d = 0; d < dim; d += 8) {
+            float16x4_t lo = vcvt_f16_f32(vld1q_f32(s->x + d));
+            float16x4_t hi = vcvt_f16_f32(vld1q_f32(s->x + d + 4));
+            vst1q_u16(x_f16 + d, vreinterpretq_u16_f16(vcombine_f16(lo, hi)));
+        }
+        x = (const float *)(void *)x_f16;
     }
-    BnLogitsCtx lctx = { s->logits, (const float *)(void *)x_f16, emb, dim };
-    BnTPTask logits_task = { bn_transformer_logits_f16_native_neon_range, &lctx, rows };
-    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
-#elif defined(__ARM_NEON)
-    BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
-    BnTPTask logits_task = { bn_transformer_logits_f16_neon_range, &lctx, rows };
-    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
-#elif defined(__AVX2__)
-    BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
-    BnTPTask logits_task = { bn_transformer_logits_f16_avx2_range, &lctx, rows };
-    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
-#elif defined(__wasm_simd128__)
-    BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
-    BnTPTask logits_task = { bn_transformer_logits_f16_wasm_range, &lctx, rows };
-    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
-#else
-    BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
-    BnTPTask logits_task = { bn_transformer_logits_f16_scalar_range, &lctx, rows };
-    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 #endif
+    BnLogitsCtx lctx = { s->logits, x, emb, dim };
+    BnTPTask logits_task = { ops->f16_logits, &lctx, rows };
+    bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
 }
 
 float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
