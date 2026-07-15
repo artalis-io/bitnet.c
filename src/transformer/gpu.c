@@ -64,25 +64,6 @@ static int gpu_cuda_all2_q4q6_moe_layer(
            lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K;
 }
 
-static int gpu_cuda_all2_q4_moe_layer_requires_opt_in(
-    BnGPUBackendKind backend_kind,
-    const BnConfig *c,
-    const BnLayerWeights *lw,
-    int dim) {
-    if (backend_kind != BN_GPU_BACKEND_CUDA ||
-        !c || !lw ||
-        c->n_experts != 2 ||
-        c->n_experts_active != 2 ||
-        c->moe_intermediate_size < 4096 ||
-        dim > 2048 ||
-        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL)
-        return 0;
-    return lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q4_K &&
-           lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q4_K &&
-           (lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K ||
-            lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q4_K);
-}
-
 static int gpu_cuda_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
@@ -1572,8 +1553,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         ffn_block:;
         if (lw->moe.router_weight) {
             int all2_q4q6_moe_requires_opt_in =
-                gpu_cuda_all2_q4_moe_layer_requires_opt_in(
-                    gpu->kind, c, lw, dim);
+                gpu->kind == BN_GPU_BACKEND_CUDA &&
+                bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+                    c, &lw->moe.expert_map, dim, 1);
             int use_cpu_moe_fallback =
                 gpu->kind != BN_GPU_BACKEND_CUDA ||
                 getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL ||

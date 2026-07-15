@@ -148,6 +148,24 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
 }
 
+int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down) {
+    if (!c || !map ||
+        c->n_experts != 2 ||
+        c->n_experts_active != 2 ||
+        c->moe_intermediate_size < 4096 ||
+        dim > 2048 ||
+        map->gate_type != BN_GGUF_TENSOR_Q4_K ||
+        map->up_type != BN_GGUF_TENSOR_Q4_K ||
+        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL)
+        return 0;
+    return map->down_type == BN_GGUF_TENSOR_Q6_K ||
+           (allow_q4_down && map->down_type == BN_GGUF_TENSOR_Q4_K);
+}
+
 void bn_transformer_gpu_report_fallback(const char *reason) {
     if (!getenv("BN_GPU_DEBUG_FALLBACK"))
         return;

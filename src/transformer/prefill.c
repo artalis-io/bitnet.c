@@ -447,9 +447,6 @@ static int prefill_dense_chain_min_tokens(const BnConfig *c,
 static int prefill_moe_chain_min_tokens(const BnConfig *c,
                                         const BnGPUBackend *gpu);
 static int prefill_cuda_moe_route_routed_batch_allowed(const BnConfig *c);
-static int prefill_cuda_all2_q4q6_requires_opt_in(const BnConfig *c,
-                                                  const BnMoEExpertMap *map,
-                                                  int dim);
 
 static int prefill_dense_layer_gpu_batch(const BnModel *m,
                                          float *out,
@@ -584,8 +581,8 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         !lw->moe.router_weight || !lw->attn.wq.data ||
         !lw->attn.wk.data || !lw->attn.wv.data || !lw->attn.wo.data)
         return -1;
-    if (prefill_cuda_all2_q4q6_requires_opt_in(
-            &m->config, &lw->moe.expert_map, dim))
+    if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+            &m->config, &lw->moe.expert_map, dim, 0))
         return -1;
 
     void *qk_buf = bn_backend_model_handle(
@@ -684,8 +681,8 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
         !lw->moe.router_weight || n_tokens <= 0 || dim <= 0)
         return -1;
-    if (prefill_cuda_all2_q4q6_requires_opt_in(
-            c, &lw->moe.expert_map, dim))
+    if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+            c, &lw->moe.expert_map, dim, 0))
         return -1;
 
     void *router_buf = bn_backend_model_handle(
@@ -1644,20 +1641,6 @@ static int prefill_cuda_moe_route_routed_batch_allowed(const BnConfig *c) {
         return 0;
     return !c || c->n_experts <= 2 ||
            getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
-}
-
-static int prefill_cuda_all2_q4q6_requires_opt_in(const BnConfig *c,
-                                                  const BnMoEExpertMap *map,
-                                                  int dim) {
-    return c && map &&
-           c->n_experts == 2 &&
-           c->n_experts_active == 2 &&
-           c->moe_intermediate_size >= 4096 &&
-           dim <= 2048 &&
-           map->gate_type == BN_GGUF_TENSOR_Q4_K &&
-           map->up_type == BN_GGUF_TENSOR_Q4_K &&
-           map->down_type == BN_GGUF_TENSOR_Q6_K &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL;
 }
 
 static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
