@@ -105,9 +105,9 @@ static int small_dense_cuda_q8_native_by_default(
         c->dim > 2560)
         return 0;
     if (w->output_weight.data) {
-        if (w->output_weight.type != BN_GGUF_TENSOR_Q8_0)
+        if (!bn_backend_quant_cuda_small_dense_q8_supported(w->output_weight.type))
             return 0;
-    } else if (w->emb_type != BN_GGUF_TENSOR_Q8_0) {
+    } else if (!bn_backend_quant_cuda_small_dense_q8_supported(w->emb_type)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -118,7 +118,8 @@ static int small_dense_cuda_q8_native_by_default(
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (weights[i]->data && weights[i]->type != BN_GGUF_TENSOR_Q8_0)
+            if (weights[i]->data &&
+                !bn_backend_quant_cuda_small_dense_q8_supported(weights[i]->type))
                 return 0;
         }
     }

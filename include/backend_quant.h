@@ -44,6 +44,10 @@ static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
            type == BN_GGUF_TENSOR_Q8_K;
 }
 
+static inline int bn_backend_quant_cuda_small_dense_q8_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
 static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) {
     return type == BN_GGUF_TENSOR_Q4_K ||
            type == BN_GGUF_TENSOR_Q5_K ||
