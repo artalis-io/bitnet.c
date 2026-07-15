@@ -82,6 +82,12 @@ static inline int bn_backend_quant_moe_gateup_q4(int gate_type,
            up_type == BN_GGUF_TENSOR_Q4_K;
 }
 
+static inline int bn_backend_quant_cpu_fused_q4_gateup_silu(int gate_type,
+                                                            int up_type) {
+    return gate_type == BN_GGUF_TENSOR_Q4_0 &&
+           up_type == BN_GGUF_TENSOR_Q4_0;
+}
+
 static inline int bn_backend_quant_moe_route_q8(int gate_type,
                                                 int up_type,
                                                 int down_type) {
