@@ -1472,7 +1472,7 @@ static float prefill_layer_rope_theta(const BnConfig *c, int layer_head_size) {
 }
 
 static float prefill_attention_scale(const BnConfig *c, int head_size) {
-    return bn_model_arch_attention_scale(c, head_size);
+    return bn_transformer_attention_scale(c, head_size);
 }
 
 static void prefill_rmsnorm_unit(float *out, const float *x, int size, float eps) {

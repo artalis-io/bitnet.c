@@ -183,6 +183,9 @@ int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     int gpu_attached);
 int bn_transformer_rmsnorm_requires_llama_scalar_order(
     const BnConfig *c);
+float bn_transformer_attention_scale(
+    const BnConfig *c,
+    int head_size);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

@@ -246,7 +246,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        bn_model_arch_attention_scale(c, head_size)
+        bn_transformer_attention_scale(c, head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
@@ -779,7 +779,7 @@ int bn_transformer_gpu_debug_compare_attention(
 
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        bn_model_arch_attention_scale(c, head_size)
+        bn_transformer_attention_scale(c, head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
@@ -903,7 +903,7 @@ int bn_transformer_gpu_debug_compare_gqa(
 
     BnGQACtx gctx = {
         c, s, loff, pos, n_kv, kv_mul, head_size, c->kv_dim, c->seq_len,
-        bn_model_arch_attention_scale(c, head_size)
+        bn_transformer_attention_scale(c, head_size)
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 

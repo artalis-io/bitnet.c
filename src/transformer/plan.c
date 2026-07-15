@@ -152,6 +152,12 @@ int bn_transformer_rmsnorm_requires_llama_scalar_order(
                BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER;
 }
 
+float bn_transformer_attention_scale(
+    const BnConfig *c,
+    int head_size) {
+    return bn_model_arch_attention_scale(c, head_size);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

@@ -690,7 +690,7 @@ void bn_transformer_cpu_gqa_dispatch(BnModel *m,
     const BnCPUBackendOps *ops = cpu_backend_ops();
     if (gctx->attention_scale == 0.0f)
         gctx->attention_scale =
-            bn_model_arch_attention_scale(&m->config, gctx->head_size);
+            bn_transformer_attention_scale(&m->config, gctx->head_size);
     bn_tp_fn attn_fn = m->config.flash_attn ? ops->flash_gqa : ops->gqa;
     BnTPTask gqa = { attn_fn, gctx, n_heads };
     bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
@@ -701,7 +701,7 @@ void bn_transformer_batched_attn_dispatch(BnModel *m,
     const BnCPUBackendOps *ops = cpu_backend_ops();
     if (ctx->attention_scale == 0.0f)
         ctx->attention_scale =
-            bn_model_arch_attention_scale(&m->config, ctx->head_size);
+            bn_transformer_attention_scale(&m->config, ctx->head_size);
     bn_tp_fn fn = m->config.flash_attn
         ? ((ctx->n_tokens > 1 && ops->batched_attn_flash_pair)
             ? ops->batched_attn_flash_pair
@@ -1031,7 +1031,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len,
-                                  bn_model_arch_attention_scale(c, head_size) };
+                                  bn_transformer_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
@@ -1117,14 +1117,14 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size,
                                   kv_cache_stride, c->seq_len,
-                                  bn_model_arch_attention_scale(c, head_size) };
+                                  bn_transformer_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             } else {
                 // Standard GQA
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, has_kv ? loff : read_loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len,
-                                  bn_model_arch_attention_scale(c, head_size) };
+                                  bn_transformer_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
             }
 
@@ -1265,7 +1265,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len,
-                                  bn_model_arch_attention_scale(c, head_size) };
+                                  bn_transformer_attention_scale(c, head_size) };
                 bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
                 cpu_debug_dump_attn_weights(s, n_heads, n_kv, c->seq_len,
                                             "bitnet_attn_softmax", l, pos);
