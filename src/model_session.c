@@ -1,4 +1,5 @@
 #include "model.h"
+#include "model_arch.h"
 #include "sh_arena.h"
 #include "turboquant.h"
 #include <limits.h>
@@ -83,10 +84,10 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         hb2_size = c->shared_expert_intermediate_size;
     if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
-    if (c->gemma4_per_layer_dim > 0) {
+    int per_layer_dim = bn_model_arch_per_layer_embedding_dim(c);
+    if (per_layer_dim > 0) {
         size_t per_layer_total = 0;
-        if (checked_mul_size((size_t)c->n_layers,
-                             (size_t)c->gemma4_per_layer_dim,
+        if (checked_mul_size((size_t)c->n_layers, (size_t)per_layer_dim,
                              &per_layer_total) != 0 ||
             per_layer_total > (size_t)INT_MAX)
             return 0;
@@ -95,9 +96,8 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     }
 
     size_t per_layer_input_size = 0;
-    if (c->gemma4_per_layer_dim > 0 &&
-        checked_mul3_size((size_t)c->n_layers,
-                          (size_t)c->gemma4_per_layer_dim,
+    if (per_layer_dim > 0 &&
+        checked_mul3_size((size_t)c->n_layers, (size_t)per_layer_dim,
                           sizeof(float), &per_layer_input_size) != 0)
         return 0;
 
@@ -303,10 +303,10 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         hb2_size = c->shared_expert_intermediate_size;
     if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
-    if (c->gemma4_per_layer_dim > 0) {
+    int per_layer_dim = bn_model_arch_per_layer_embedding_dim(c);
+    if (per_layer_dim > 0) {
         size_t per_layer_total = 0;
-        if (checked_mul_size((size_t)c->n_layers,
-                             (size_t)c->gemma4_per_layer_dim,
+        if (checked_mul_size((size_t)c->n_layers, (size_t)per_layer_dim,
                              &per_layer_total) != 0 ||
             per_layer_total > (size_t)INT_MAX)
             return -1;
@@ -315,9 +315,8 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     }
 
     size_t per_layer_input_size = 0;
-    if (c->gemma4_per_layer_dim > 0 &&
-        checked_mul_size((size_t)c->n_layers,
-                         (size_t)c->gemma4_per_layer_dim,
+    if (per_layer_dim > 0 &&
+        checked_mul_size((size_t)c->n_layers, (size_t)per_layer_dim,
                          &per_layer_input_size) != 0)
         return -1;
 

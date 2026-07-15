@@ -166,6 +166,17 @@ int bn_model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
     return 0;
 }
 
+int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer) {
+    return bn_model_arch_gemma4_divides_rope_freqs(c, layer);
+}
+
+int bn_model_arch_per_layer_embedding_dim(const BnConfig *c) {
+    if (!bn_model_arch_uses_per_layer_embedding(c) ||
+        c->gemma4_per_layer_dim <= 0)
+        return 0;
+    return c->gemma4_per_layer_dim;
+}
+
 int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
            c->n_experts <= 0 &&

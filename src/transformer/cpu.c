@@ -331,8 +331,8 @@ static int cpu_quant_can_preq8k_triple(const BnCPUBackendOps *ops,
            bn_quant_format_can_preq8k(c);
 }
 
-static void cpu_rmsnorm_scalar_qwen2(float *out, const float *x,
-                                     const float *w, int size, float eps) {
+static void cpu_rmsnorm_llama_scalar_order(float *out, const float *x,
+                                           const float *w, int size, float eps) {
     double ss = 0.0;
     for (int i = 0; i < size; i++)
         ss += (double)(x[i] * x[i]);
@@ -347,7 +347,7 @@ static inline void cpu_rmsnorm_model(const BnModel *m, float *out,
     if (m &&
         bn_model_arch_rmsnorm_mode(&m->config) ==
             BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER) {
-        cpu_rmsnorm_scalar_qwen2(out, x, w, size, eps);
+        cpu_rmsnorm_llama_scalar_order(out, x, w, size, eps);
         return;
     }
     cpu_backend_ops()->rmsnorm(out, x, w, size, eps);
@@ -838,8 +838,8 @@ static void cpu_apply_arch_per_layer_embedding(BnModel *m,
                                                int layer) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
-    int per_dim = c->gemma4_per_layer_dim;
-    if (!bn_model_arch_uses_per_layer_embedding(c) || per_dim <= 0 ||
+    int per_dim = bn_model_arch_per_layer_embedding_dim(c);
+    if (per_dim <= 0 ||
         !s->per_layer_input || !lw->per_layer.inp_gate.data ||
         !lw->per_layer.proj.data || !lw->per_layer.post_norm)
         return;

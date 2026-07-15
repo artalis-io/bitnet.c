@@ -20,8 +20,8 @@
 #undef __wasm_simd128__
 #endif
 
-static int gemma4_dequant_per_layer_token(const BnQWeight *W, int token,
-                                          float *out, int n) {
+static int dequant_per_layer_token_embedding(const BnQWeight *W, int token,
+                                             float *out, int n) {
     if (!W || !W->data || token < 0 || token >= W->rows || n != W->cols)
         return -1;
     if (W->type == BN_GGUF_TENSOR_F32) {
@@ -46,7 +46,7 @@ static int gemma4_dequant_per_layer_token(const BnQWeight *W, int token,
     return -1;
 }
 
-static void gemma4_rmsnorm_slice(float *x, const float *w, int n, float eps) {
+static void rmsnorm_per_layer_slice(float *x, const float *w, int n, float eps) {
     float ss = 0.0f;
     for (int i = 0; i < n; i++)
         ss += x[i] * x[i];
@@ -55,13 +55,13 @@ static void gemma4_rmsnorm_slice(float *x, const float *w, int n, float eps) {
         x[i] *= ss * w[i];
 }
 
-static int gemma4_prepare_per_layer_input(BnModel *m, BnSession *sess,
-                                          int token) {
+static int prepare_arch_per_layer_input(BnModel *m, BnSession *sess,
+                                        int token) {
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
-    int per_dim = c->gemma4_per_layer_dim;
-    if (!bn_model_arch_uses_per_layer_embedding(c) || per_dim <= 0)
+    int per_dim = bn_model_arch_per_layer_embedding_dim(c);
+    if (per_dim <= 0)
         return 0;
     int total = per_dim * c->n_layers;
     if (!s->per_layer_input || !w->per_layer_model_proj.data ||
@@ -75,11 +75,11 @@ static int gemma4_prepare_per_layer_input(BnModel *m, BnSession *sess,
     for (int i = 0; i < total; i++)
         s->per_layer_input[i] *= proj_scale;
     for (int l = 0; l < c->n_layers; l++)
-        gemma4_rmsnorm_slice(s->per_layer_input + (size_t)l * per_dim,
-                             w->per_layer_proj_norm, per_dim, c->norm_eps);
+        rmsnorm_per_layer_slice(s->per_layer_input + (size_t)l * per_dim,
+                                w->per_layer_proj_norm, per_dim, c->norm_eps);
 
-    if (gemma4_dequant_per_layer_token(&w->per_layer_token_embd, token,
-                                       s->hb, total) != 0)
+    if (dequant_per_layer_token_embedding(&w->per_layer_token_embd, token,
+                                          s->hb, total) != 0)
         return -1;
     float tok_scale = sqrtf((float)per_dim);
     float input_scale = 1.0f / sqrtf(2.0f);
@@ -162,8 +162,8 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
 
     // Embed the token
     bn_model_embed_token(m, s->x, token);
-    if (gemma4_prepare_per_layer_input(m, sess, token) != 0) {
-        SH_LOG_ERROR("Gemma4 per-layer input preparation failed");
+    if (prepare_arch_per_layer_input(m, sess, token) != 0) {
+        SH_LOG_ERROR("Per-layer input preparation failed");
         return -1;
     }
 
@@ -187,7 +187,7 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
             float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
             if (bn_model_arch_uses_per_layer_embedding(c) &&
                 !use_swa_rope && m->weights.rope_freqs) {
-                if (bn_model_arch_gemma4_divides_rope_freqs(c, l))
+                if (bn_model_arch_divides_rope_freqs(c, l))
                     freq /= m->weights.rope_freqs[i];
                 else
                     freq *= m->weights.rope_freqs[i];

@@ -99,6 +99,7 @@ for file in \
     src/transformer/prefill.c \
     src/transformer/kv.c \
     src/model.c \
+    src/model_session.c \
     src/model_embed.c \
     src/moe_execute.c \
     src/transformer.c \
@@ -106,6 +107,17 @@ for file in \
 do
     if grep -n 'BN_MODEL_ARCH_FLAG_\|arch_flags' "$file" >/dev/null 2>&1; then
         echo "$file must use model_arch policy helpers, not direct architecture flags"
+        fail=1
+    fi
+done
+
+for file in \
+    src/transformer.c \
+    src/transformer/cpu.c \
+    src/model_session.c
+do
+    if grep -n 'gemma4_per_layer_dim\|bn_model_arch_gemma4_divides_rope_freqs\|static .*qwen\|static .*gemma' "$file" >/dev/null 2>&1; then
+        echo "$file must use model-neutral architecture policy helpers"
         fail=1
     fi
 done

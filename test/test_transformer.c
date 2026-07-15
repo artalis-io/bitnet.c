@@ -490,7 +490,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_loads_extra_metadata(&c));
     c.gemma4_per_layer_dim = 128;
     assert(bn_model_arch_loads_per_layer_input_weights(&c));
-    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 0));
+    assert(bn_model_arch_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_exact_scalar_activation(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
@@ -505,10 +505,10 @@ static void test_model_arch_registry(void) {
     c.gemma4_swa_pattern[20] = 0;
     c.gemma4_swa_pattern[21] = 1;
     assert(!bn_model_arch_loads_per_layer_input_weights(&c));
-    assert(!bn_model_arch_gemma4_divides_rope_freqs(&c, 0));
-    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 5));
-    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 23));
-    assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 29));
+    assert(!bn_model_arch_divides_rope_freqs(&c, 0));
+    assert(bn_model_arch_divides_rope_freqs(&c, 5));
+    assert(bn_model_arch_divides_rope_freqs(&c, 23));
+    assert(bn_model_arch_divides_rope_freqs(&c, 29));
     assert(!bn_model_arch_layer_reuses_kv(&c, 19));
     assert(bn_model_arch_layer_reuses_kv(&c, 20));
     assert(bn_model_arch_kv_reuse_layer(&c, 20) == 19);
