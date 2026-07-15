@@ -1564,7 +1564,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int cuda_moe_prefill =
         prefill_gpu && prefill_gpu->kind == BN_GPU_BACKEND_CUDA &&
         c->n_experts > 0 && c->full_attn_interval <= 0;
-    int cuda_small_dense_qwen_prefill =
+    int cuda_small_dense_arch_prefill =
         prefill_gpu && prefill_gpu->kind == BN_GPU_BACKEND_CUDA &&
         bn_model_arch_small_cuda_dense_prefill_min_tokens(c) > 0;
     if (cuda_moe_prefill &&
@@ -1573,7 +1573,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
-    if (cuda_small_dense_qwen_prefill &&
+    if (cuda_small_dense_arch_prefill &&
         n_tokens < prefill_dense_chain_min_tokens(c, prefill_gpu)) {
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
