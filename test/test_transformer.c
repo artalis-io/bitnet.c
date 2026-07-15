@@ -330,6 +330,12 @@ static void test_gpu_policy_helpers(void) {
     c.full_attn_interval = 0;
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
+    assert(bn_transformer_gpu_moe_gateup_task_flags(&c) == 0);
+    c.arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
+    assert(bn_transformer_gpu_moe_gateup_task_flags(&c) ==
+           BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
+    c.arch_flags = 0;
+
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;
     W.cols = 32;

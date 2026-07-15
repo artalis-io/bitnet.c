@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "backend_quant.h"
 #include "model_arch.h"
+#include "quant.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -16,6 +17,12 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c) {
 
 int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+}
+
+uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
+    return bn_model_arch_moe_forces_float_kquant_gateup(c)
+        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
+        : 0u;
 }
 
 int bn_transformer_gpu_logits_needs_cpu_fallback(

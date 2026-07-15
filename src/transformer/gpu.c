@@ -125,9 +125,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     int hidden_cap = moe_hidden;
     if (c->shared_expert_intermediate_size > hidden_cap)
         hidden_cap = c->shared_expert_intermediate_size;
@@ -225,9 +223,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     int hidden_cap = moe_hidden;
     if (c->shared_expert_intermediate_size > hidden_cap)
         hidden_cap = c->shared_expert_intermediate_size;
@@ -317,9 +313,7 @@ static int gpu_compute_shared_expert_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int shared_hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     if (shared_hidden <= 0)
         return -1;
     float *hb = (float *)malloc((size_t)shared_hidden * sizeof(float));
@@ -370,9 +364,7 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     float *hb = (float *)malloc((size_t)moe_hidden * sizeof(float));
     float *hb2 = (float *)malloc((size_t)moe_hidden * sizeof(float));
     if (!hb || !hb2) {
@@ -434,9 +426,7 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
     int moe_hidden = c->moe_intermediate_size;
     if (n_experts <= 0 || moe_hidden <= 0)
         return -1;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
 
     const BnMoEExpertMap *em = &lw->moe.expert_map;
     for (int eidx = 0; eidx < n_experts; eidx++) {
@@ -481,9 +471,7 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     float *hb2 = (float *)malloc((size_t)hidden * sizeof(float));
     if (!hb2)
         return -1;
@@ -510,9 +498,7 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     if (hidden <= 0)
         return -1;
     float *hb = (float *)malloc((size_t)hidden * sizeof(float));
