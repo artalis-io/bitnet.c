@@ -318,6 +318,18 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_backend_is_cuda(&gpu));
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
+    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    assert(!bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+        &gpu, &c));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+        &gpu, &c));
+    c.full_attn_interval = 4;
+    assert(!bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+        &gpu, &c));
+    c.full_attn_interval = 0;
+    gpu.kind = BN_GPU_BACKEND_UNKNOWN;
+
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;
     W.cols = 32;

@@ -192,6 +192,13 @@ int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL;
 }
 
+int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           bn_model_arch_small_cuda_dense_prefill_min_tokens(c) > 0;
+}
+
 int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c) {

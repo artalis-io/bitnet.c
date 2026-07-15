@@ -145,6 +145,9 @@ int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
 int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
