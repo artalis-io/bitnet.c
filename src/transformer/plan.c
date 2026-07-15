@@ -123,6 +123,13 @@ BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
 #endif
 }
 
+uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
+    const BnConfig *c) {
+    return bn_model_arch_cpu_force_float_kquant(c)
+        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
+        : 0u;
+}
+
 int bn_transformer_cpu_prefill_force_float_kquant_enabled(
     const BnConfig *c) {
     BnCPUBackendPlacement backend = bn_transformer_cpu_backend_placement();

@@ -48,8 +48,8 @@ static BnMatvecTask *cpu_prepare_matvec_tasks(const BnModel *m,
     for (int i = 0; i < n_tasks; i++) {
         prepared[i] = tasks[i];
         prepared[i].prepared = cpu_qweight_prepared(bn_model_backend(m), tasks[i].W);
-        if (bn_model_arch_cpu_force_float_kquant(&m->config))
-            prepared[i].flags |= BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
+        prepared[i].flags |=
+            bn_transformer_cpu_force_float_kquant_task_flags(&m->config);
     }
     return prepared;
 }
@@ -103,7 +103,7 @@ static void cpu_quant_matvec_batch_preq8k(const BnModel *m,
                                         (int8_t *)x_q);
         return;
     }
-    if (bn_model_arch_cpu_force_float_kquant(&m->config)) {
+    if (bn_transformer_cpu_force_float_kquant_task_flags(&m->config)) {
         cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
                                         (int8_t *)x_q);
         return;

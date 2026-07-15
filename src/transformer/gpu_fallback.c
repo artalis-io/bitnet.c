@@ -3,6 +3,7 @@
 #include "backend_model.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "model_arch.h"
 #include "moe.h"
@@ -65,8 +66,8 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
         prepared[i] = tasks[i];
         prepared[i].prepared =
             fallback_cpu_prepared_qweight(m, tasks[i].W);
-        if (bn_model_arch_cpu_force_float_kquant(&m->config))
-            prepared[i].flags |= BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
+        prepared[i].flags |=
+            bn_transformer_cpu_force_float_kquant_task_flags(&m->config);
     }
     bn_quant_matvec_batch(prepared, n_tasks, x, x_q_buf, bn_model_pool(m));
     if (prepared != inline_tasks)
