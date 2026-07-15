@@ -178,6 +178,21 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_q6_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q6_refine_default);
+int bn_transformer_gpu_q6_logits_refine_captures_xb(
+    const BnTransformerGPULogitResources *logits,
+    int refine_q6_logits,
+    int q6_refine_default);
+int bn_transformer_gpu_q6_logits_refine_top(int q6_refine_default);
+int bn_transformer_gpu_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q8_refine_default);
+int bn_transformer_gpu_q8_logits_refine_captures_xb(
+    const BnTransformerGPULogitResources *logits,
+    int refine_q8_logits);
+int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default);
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

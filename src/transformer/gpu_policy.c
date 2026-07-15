@@ -349,6 +349,62 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE") == NULL;
 }
 
+int bn_transformer_gpu_q6_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q6_refine_default) {
+    int cuda_backend = gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+    return q6_refine_default ||
+           getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL ||
+           (!cuda_backend &&
+            getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") == NULL);
+}
+
+int bn_transformer_gpu_q6_logits_refine_captures_xb(
+    const BnTransformerGPULogitResources *logits,
+    int refine_q6_logits,
+    int q6_refine_default) {
+    return refine_q6_logits &&
+           q6_refine_default &&
+           logits &&
+           logits->type == BN_GGUF_TENSOR_Q6_K &&
+           logits->cpu_weight != NULL;
+}
+
+int bn_transformer_gpu_q6_logits_refine_top(int q6_refine_default) {
+    int refine_top = q6_refine_default ? 64 : 8;
+    const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    if (env)
+        refine_top = atoi(env);
+    return refine_top;
+}
+
+int bn_transformer_gpu_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q8_refine_default) {
+    int cuda_backend = gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+    return getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL ||
+           q8_refine_default ||
+           (!cuda_backend &&
+            getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") == NULL);
+}
+
+int bn_transformer_gpu_q8_logits_refine_captures_xb(
+    const BnTransformerGPULogitResources *logits,
+    int refine_q8_logits) {
+    return refine_q8_logits &&
+           logits &&
+           logits->type == BN_GGUF_TENSOR_Q8_0 &&
+           logits->cpu_weight != NULL;
+}
+
+int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default) {
+    int refine_top = q8_refine_default ? 16 : 8;
+    const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
+    if (env)
+        refine_top = atoi(env);
+    return refine_top;
+}
+
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

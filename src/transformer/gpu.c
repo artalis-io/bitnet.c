@@ -1161,19 +1161,16 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_cuda_moe_decode_cacheable(c, w, backend);
     int gpu_logits_need_cpu =
         bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);
-    int cuda_backend = gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
     int all2_q4q6_moe_cuda_q6_logits_refine_default =
         bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
             gpu, c, w);
     int refine_q6_logits =
-        all2_q4q6_moe_cuda_q6_logits_refine_default ||
-        getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL ||
-        (!cuda_backend && getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") == NULL);
+        bn_transformer_gpu_q6_logits_refine_enabled(
+            gpu, all2_q4q6_moe_cuda_q6_logits_refine_default);
     int q6_logits_refine_captures_xb =
-        refine_q6_logits &&
-        all2_q4q6_moe_cuda_q6_logits_refine_default &&
-        logit_res->type == BN_GGUF_TENSOR_Q6_K &&
-        logit_res->cpu_weight != NULL;
+        bn_transformer_gpu_q6_logits_refine_captures_xb(
+            logit_res, refine_q6_logits,
+            all2_q4q6_moe_cuda_q6_logits_refine_default);
     int use_matvec_argmax =
         bn_transformer_gpu_matvec_argmax_enabled(
             gpu, c, logit_res, argmax_token != NULL, need_logits,
@@ -1186,13 +1183,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
             gpu, c, logit_res->type);
     int refine_q8_logits =
-        getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL ||
-        small_dense_cuda_q8_logits_refine_default ||
-        (!cuda_backend && getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") == NULL);
+        bn_transformer_gpu_q8_logits_refine_enabled(
+            gpu, small_dense_cuda_q8_logits_refine_default);
     int q8_logits_refine_captures_xb =
-        refine_q8_logits &&
-        logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
-        logit_res->cpu_weight != NULL;
+        bn_transformer_gpu_q8_logits_refine_captures_xb(
+            logit_res, refine_q8_logits);
     int small_dense_cuda_exact_q4_q8_to_layer = q4_q8_to_layer;
     if (small_dense_cuda_exact_q4_q8_default &&
         small_dense_cuda_exact_q4_q8_to_layer < 0 &&
@@ -2345,9 +2340,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             refine_q8_logits &&
             logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
             logit_res->cpu_weight) {
-            int refine_top = small_dense_cuda_q8_logits_refine_default ? 16 : 8;
-            const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
-            if (env) refine_top = atoi(env);
+            int refine_top = bn_transformer_gpu_q8_logits_refine_top(
+                small_dense_cuda_q8_logits_refine_default);
             if (refine_top > 0 &&
                 gpu->read_activation &&
                 gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
@@ -2440,9 +2434,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (refine_q6_logits &&
         logit_res->type == BN_GGUF_TENSOR_Q6_K &&
         logit_res->cpu_weight) {
-        int refine_top = all2_q4q6_moe_cuda_q6_logits_refine_default ? 64 : 8;
-        const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
-        if (env) refine_top = atoi(env);
+        int refine_top = bn_transformer_gpu_q6_logits_refine_top(
+            all2_q4q6_moe_cuda_q6_logits_refine_default);
         int has_xb = q6_logits_refine_has_xb_snapshot;
         if (!has_xb && refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
@@ -2457,9 +2450,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (refine_q8_logits &&
         logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
         logit_res->cpu_weight) {
-        int refine_top = small_dense_cuda_q8_logits_refine_default ? 16 : 8;
-        const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
-        if (env) refine_top = atoi(env);
+        int refine_top = bn_transformer_gpu_q8_logits_refine_top(
+            small_dense_cuda_q8_logits_refine_default);
         if (refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {
