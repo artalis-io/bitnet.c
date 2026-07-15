@@ -156,6 +156,7 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,
                                              int act_type);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
+int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu);
 
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer);
 int bn_transformer_attn_index(const BnConfig *c, int layer);
