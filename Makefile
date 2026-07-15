@@ -374,7 +374,7 @@ else
 	@echo "test_avx512_quant skipped: x86_64 only"
 endif
 
-test_tokenizer: test/test_tokenizer.c src/tokenizer.c src/gguf.c src/platform.c src/sh_log.c
+test_tokenizer: test/test_tokenizer.c src/tokenizer.c src/model_arch.c src/gguf.c src/platform.c src/sh_log.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_transformer: test/test_transformer.c $(TRANSFORMER_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \

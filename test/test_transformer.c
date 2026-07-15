@@ -475,7 +475,8 @@ static void test_model_arch_registry(void) {
     assert(gemma->activation("gemma4") == 2);
 
     BnConfig c = {0};
-    c.arch_flags = gemma->flags;
+    bn_model_arch_apply_config(&c, gemma);
+    assert(c.arch_flags == gemma->flags);
     assert(bn_model_arch_requires_large_gpu_graph_fallback(&c));
     assert(!bn_model_arch_cpu_force_float_kquant(&c));
     assert(bn_model_arch_attention_scale(&c, 128) == 1.0f);
@@ -486,20 +487,32 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_attention_post_norm(&c));
     assert(bn_model_arch_uses_ffn_post_norm(&c));
     assert(bn_model_arch_uses_layer_output_scale(&c));
+    assert(bn_model_arch_loads_extra_metadata(&c));
     c.gemma4_per_layer_dim = 128;
+    assert(bn_model_arch_loads_per_layer_input_weights(&c));
     assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_exact_scalar_activation(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(bn_model_arch_moe_uses_gemma4_block(&c));
+    assert(bn_model_arch_loads_extra_ffn_post_norms(&c));
+    assert(bn_model_arch_loads_moe_aux_weights(&c));
 
     c.gemma4_per_layer_dim = 0;
     c.n_experts = 4;
     c.n_layers = 30;
+    c.gemma4_kv_layer_count = 20;
+    c.gemma4_swa_pattern[20] = 0;
+    c.gemma4_swa_pattern[21] = 1;
+    assert(!bn_model_arch_loads_per_layer_input_weights(&c));
     assert(!bn_model_arch_gemma4_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 5));
     assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 23));
     assert(bn_model_arch_gemma4_divides_rope_freqs(&c, 29));
+    assert(!bn_model_arch_layer_reuses_kv(&c, 19));
+    assert(bn_model_arch_layer_reuses_kv(&c, 20));
+    assert(bn_model_arch_kv_reuse_layer(&c, 20) == 19);
+    assert(bn_model_arch_kv_reuse_layer(&c, 21) == 18);
 
     const BnModelArchOps *bitnet = bn_model_arch_ops_for("bitnet");
     assert(bitnet);
@@ -516,6 +529,11 @@ static void test_model_arch_registry(void) {
     assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
     assert(qwen->activation("qwen35") == 0);
     assert(!qwen->attention_value_shares_key("qwen35"));
+    assert(bn_model_arch_uses_full_rope_text_dims("qwen35"));
+    assert(bn_model_arch_uses_full_rope_text_dims("qwen35moe"));
+    assert(!bn_model_arch_uses_full_rope_text_dims("qwen3"));
+    assert(bn_model_arch_tokenizer_uses_metaspace("gemma4"));
+    assert(!bn_model_arch_tokenizer_uses_metaspace("llama"));
 
     memset(&c, 0, sizeof(c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;

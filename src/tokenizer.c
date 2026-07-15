@@ -1,4 +1,5 @@
 #include "tokenizer.h"
+#include "model_arch.h"
 #include "sh_log.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +120,7 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     }
 
     const char *model_name = bn_gguf_get_str(f, "tokenizer.ggml.model");
-    t->metaspace = (model_name && strcmp(model_name, "gemma4") == 0) ? 1 : 0;
+    t->metaspace = bn_model_arch_tokenizer_uses_metaspace(model_name);
 
     // Special token IDs
     int idx;

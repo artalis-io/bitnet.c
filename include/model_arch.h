@@ -80,6 +80,7 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
                                         size_t out_size,
                                         int layer,
                                         BnModelTensorRole role);
+void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops);
 int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c);
 int bn_model_arch_cpu_force_float_kquant(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
@@ -96,6 +97,14 @@ int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_is_qwen2_moe(const BnConfig *c);
 int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c);
 int bn_model_arch_moe_uses_gemma4_block(const BnConfig *c);
+int bn_model_arch_loads_extra_metadata(const BnConfig *c);
+int bn_model_arch_loads_per_layer_input_weights(const BnConfig *c);
+int bn_model_arch_layer_reuses_kv(const BnConfig *c, int layer);
+int bn_model_arch_kv_reuse_layer(const BnConfig *c, int layer);
+int bn_model_arch_loads_extra_ffn_post_norms(const BnConfig *c);
+int bn_model_arch_loads_moe_aux_weights(const BnConfig *c);
+int bn_model_arch_uses_full_rope_text_dims(const char *arch);
+int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model);
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c);
 int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c);
