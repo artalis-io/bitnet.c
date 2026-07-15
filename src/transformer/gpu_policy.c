@@ -145,6 +145,17 @@ int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL;
 }
 
+int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           c && c->n_experts <= 0 &&
+           c->full_attn_interval > 0 &&
+           c->ssm_inner_size > 0 &&
+           c->dim >= 4096 &&
+           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL") == NULL;
+}
+
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

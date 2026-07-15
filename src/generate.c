@@ -32,11 +32,8 @@ static int cuda_prefill_needs_decode_fallback(const BnModel *m,
     if (bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
             gpu, c))
         return 1;
-    if (c->n_experts <= 0 &&
-        c->full_attn_interval > 0 &&
-        c->ssm_inner_size > 0 &&
-        c->dim >= 4096 &&
-        getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL") == NULL)
+    if (bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
+            gpu, c))
         return 1;
     return 0;
 }
