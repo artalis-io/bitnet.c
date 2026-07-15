@@ -24,45 +24,10 @@ static BnAllocator *resolve_alloc(BnAllocator *a) {
     return &def;
 }
 
-static int cuda_prefill_needs_decode_fallback(const BnModel *m,
-                                              const BnGPUBackend *gpu) {
-    const BnConfig *c = m ? &m->config : NULL;
-    if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
-        return 0;
-    if (bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
-            gpu, c))
-        return 1;
-    if (bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
-            gpu, c))
-        return 1;
-    return 0;
-}
-
 static int use_gpu_batch_prefill(const BnModel *model) {
     if (!model) return 0;
-    if (getenv("BN_GPU_DISABLE_PREFILL_MATMUL")) return 0;
-    if (getenv("BN_GPU_PREFILL_MATMUL")) return 1;
-    const BnConfig *c = &model->config;
-    if (c->kv_tq_bits != 0)
-        return 0;
     BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
-    if (cuda_prefill_needs_decode_fallback(model, gpu))
-        return 0;
-    if (c->full_attn_interval > 0) {
-        if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-            gpu->prefill_ssm_layer &&
-            !getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") &&
-            !getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER"))
-            return 1;
-        return 0;
-    }
-    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c->n_experts > 0)
-        return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
-    if (c->n_experts > 0)
-        return 0;
-    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA)
-        return c->dim <= 8192;
-    return c->dim <= 2560;
+    return bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
 }
 
 // --- Stop string matching ---
