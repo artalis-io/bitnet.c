@@ -40,8 +40,8 @@ static int small_dense_cuda_qweight_supported(int type) {
            type == BN_GGUF_TENSOR_Q8_K;
 }
 
-static int cuda_qwen2moe_all2_q4q6_model(const BnConfig *c,
-                                         const BnWeights *w) {
+static int cuda_all2_q4q6_moe_model(const BnConfig *c,
+                                    const BnWeights *w) {
     if (!c || !w || c->n_experts != 2 ||
         c->n_experts_active != 2 ||
         c->moe_intermediate_size < 4096 ||
@@ -61,7 +61,7 @@ static int cuda_qwen2moe_all2_q4q6_model(const BnConfig *c,
 
 static int cuda_all2_q4q6_moe_requires_opt_in(const BnConfig *c,
                                               const BnWeights *w) {
-    return cuda_qwen2moe_all2_q4q6_model(c, w) &&
+    return cuda_all2_q4q6_moe_model(c, w) &&
            getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
            getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") != NULL;
 }
@@ -121,15 +121,15 @@ static int small_dense_cuda_q8_native_by_default(
     return 1;
 }
 
-int bn_transformer_gpu_cuda_qwen2moe_all2_q4q6_cpu_attn_safe_default(
+int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    return cuda_qwen2moe_all2_q4q6_model(c, w) &&
+    return cuda_all2_q4q6_moe_model(c, w) &&
            getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
            getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") == NULL;
 }
 
-int bn_transformer_gpu_cuda_small_qwen_q8_cpu_attn_safe_default(
+int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&

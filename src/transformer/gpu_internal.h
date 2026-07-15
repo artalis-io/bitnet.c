@@ -119,10 +119,10 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
-int bn_transformer_gpu_cuda_qwen2moe_all2_q4q6_cpu_attn_safe_default(
+int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_cuda_small_qwen_q8_cpu_attn_safe_default(
+int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
 void bn_transformer_gpu_report_fallback(const char *reason);

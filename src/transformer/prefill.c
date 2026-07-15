@@ -109,9 +109,9 @@ static int prefill_cuda_direct_gpu_kv_allowed(const BnConfig *c,
     if (getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV"))
         return 0;
     if ((prefill_gpu_cpu_decode_fallback_requested() ||
-         bn_transformer_gpu_cuda_qwen2moe_all2_q4q6_cpu_attn_safe_default(
+         bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
              c, w) ||
-         bn_transformer_gpu_cuda_small_qwen_q8_cpu_attn_safe_default(c, w) ||
+         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w) ||
          prefill_cuda_large_hybrid_cpu_attn_fallback(c, gpu)) &&
         !getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK"))
         return 0;
