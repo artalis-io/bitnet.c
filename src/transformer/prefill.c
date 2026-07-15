@@ -69,35 +69,6 @@ static inline void *prefill_backend_role_or_qweight(
     return buf ? buf : prefill_qweight_backend_buf(backend, w);
 }
 
-static int prefill_gpu_cpu_decode_fallback_requested(void) {
-    return getenv("BN_GPU_CPU_FALLBACK_LAYER") ||
-           getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER") ||
-           getenv("BN_GPU_CPU_ATTN_LAYER") ||
-           getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
-}
-
-static int prefill_cuda_direct_gpu_kv_allowed(const BnConfig *c,
-                                              const BnWeights *w,
-                                              const BnGPUBackend *gpu,
-                                              int pos0,
-                                              int n_tokens) {
-    if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
-        return 0;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV"))
-        return 0;
-    if ((prefill_gpu_cpu_decode_fallback_requested() ||
-         bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-             c, w) ||
-         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w) ||
-         bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
-             gpu, c)) &&
-        !getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK"))
-        return 0;
-    if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
-        return 0;
-    return 1;
-}
-
 static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
                                     const int *tokens, int n_tokens,
                                     int pos0, float *all_logits,
@@ -1798,8 +1769,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         }
         if (chain_ready) {
             int direct_gpu_kv =
-                prefill_cuda_direct_gpu_kv_allowed(c, w, bn_model_gpu(m),
-                                                   pos0, n_tokens);
+                bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+                    c, w, bn_model_gpu(m), pos0, n_tokens);
             sess->gpu_kv_direct_valid = 0;
             t_prof = prefill_profile_now(&prof);
             for (int l = 0; l < c->n_layers; l++) {
@@ -1912,8 +1883,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         }
         if (chain_ready) {
             int direct_gpu_kv =
-                prefill_cuda_direct_gpu_kv_allowed(c, w, bn_model_gpu(m),
-                                                   pos0, n_tokens);
+                bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+                    c, w, bn_model_gpu(m), pos0, n_tokens);
             sess->gpu_kv_direct_valid = 0;
             t_prof = prefill_profile_now(&prof);
             for (int l = 0; l < c->n_layers; l++) {

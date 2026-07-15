@@ -157,6 +157,12 @@ int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
 int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnGPUBackend *gpu,
+    int pos0,
+    int n_tokens);
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

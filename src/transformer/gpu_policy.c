@@ -261,6 +261,36 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
            getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN") == NULL;
 }
 
+static int gpu_cpu_decode_fallback_requested(void) {
+    return getenv("BN_GPU_CPU_FALLBACK_LAYER") ||
+           getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER") ||
+           getenv("BN_GPU_CPU_ATTN_LAYER") ||
+           getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+}
+
+int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnGPUBackend *gpu,
+    int pos0,
+    int n_tokens) {
+    if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
+        return 0;
+    if (getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV"))
+        return 0;
+    if ((gpu_cpu_decode_fallback_requested() ||
+         bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
+             c, w) ||
+         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w) ||
+         bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
+             gpu, c)) &&
+        !getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK"))
+        return 0;
+    if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
+        return 0;
+    return 1;
+}
+
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
