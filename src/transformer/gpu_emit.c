@@ -1757,8 +1757,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
         int use_shared_q4_q8 =
-            lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q4_K &&
-            lw->shared.shared_up.type == BN_GGUF_TENSOR_Q4_K &&
+            bn_backend_quant_moe_gateup_q4(lw->shared.shared_gate.type,
+                                           lw->shared.shared_up.type) &&
             lw->shared.shared_gate.cols % 256 == 0 &&
             getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
         int prefer_shared_gateup_split =

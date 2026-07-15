@@ -554,17 +554,17 @@ int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map) {
 int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
                                           int allow_q4_down) {
     return map &&
-           map->gate_type == BN_GGUF_TENSOR_Q4_K &&
-           map->up_type == BN_GGUF_TENSOR_Q4_K &&
-           (map->down_type == BN_GGUF_TENSOR_Q6_K ||
-            (allow_q4_down && map->down_type == BN_GGUF_TENSOR_Q4_K));
+           bn_backend_quant_moe_route_q4_down(map->gate_type,
+                                              map->up_type,
+                                              map->down_type,
+                                              allow_q4_down);
 }
 
 int bn_transformer_gpu_moe_routed_q8(const BnMoEExpertMap *map) {
     return map &&
-           map->gate_type == BN_GGUF_TENSOR_Q8_0 &&
-           map->up_type == BN_GGUF_TENSOR_Q8_0 &&
-           map->down_type == BN_GGUF_TENSOR_Q8_0;
+           bn_backend_quant_moe_route_q8(map->gate_type,
+                                         map->up_type,
+                                         map->down_type);
 }
 
 int bn_transformer_gpu_cuda_moe_route_topk_enabled(

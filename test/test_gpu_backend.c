@@ -513,6 +513,19 @@ static void test_quant_registry(void) {
            BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT);
     assert(bn_backend_quant_gpu_matvec_q8k_dot_flag(BN_GGUF_TENSOR_Q4_K, 0) == 0);
     assert(bn_backend_quant_gpu_matvec_q8k_dot_flag(BN_GGUF_TENSOR_Q8_0, 1) == 0);
+    assert(bn_backend_quant_moe_gateup_q4(BN_GGUF_TENSOR_Q4_K,
+                                          BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_moe_gateup_q4(BN_GGUF_TENSOR_Q4_K,
+                                           BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_moe_route_q4_down(BN_GGUF_TENSOR_Q4_K,
+                                              BN_GGUF_TENSOR_Q4_K,
+                                              BN_GGUF_TENSOR_Q6_K, 0));
+    assert(!bn_backend_quant_moe_route_q4_down(BN_GGUF_TENSOR_Q4_K,
+                                               BN_GGUF_TENSOR_Q4_K,
+                                               BN_GGUF_TENSOR_Q4_K, 0));
+    assert(bn_backend_quant_moe_route_q4_down(BN_GGUF_TENSOR_Q4_K,
+                                              BN_GGUF_TENSOR_Q4_K,
+                                              BN_GGUF_TENSOR_Q4_K, 1));
     assert(!bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q6_K));
@@ -533,6 +546,12 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU);
     assert(!bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_moe_route_q8(BN_GGUF_TENSOR_Q8_0,
+                                         BN_GGUF_TENSOR_Q8_0,
+                                         BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_moe_route_q8(BN_GGUF_TENSOR_Q8_0,
+                                          BN_GGUF_TENSOR_Q8_0,
+                                          BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q5_0, 1, 32) == 22);
     assert(bn_quant_format_data_size(99999, 1, 32) == 0);
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q4_K, 1, 128) == 0);

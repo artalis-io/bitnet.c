@@ -66,6 +66,30 @@ static inline int bn_backend_quant_gpu_prefers_gateup_split(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
 }
 
+static inline int bn_backend_quant_moe_route_q4_down(int gate_type,
+                                                     int up_type,
+                                                     int down_type,
+                                                     int allow_q4_down) {
+    return gate_type == BN_GGUF_TENSOR_Q4_K &&
+           up_type == BN_GGUF_TENSOR_Q4_K &&
+           (down_type == BN_GGUF_TENSOR_Q6_K ||
+            (allow_q4_down && down_type == BN_GGUF_TENSOR_Q4_K));
+}
+
+static inline int bn_backend_quant_moe_gateup_q4(int gate_type,
+                                                 int up_type) {
+    return gate_type == BN_GGUF_TENSOR_Q4_K &&
+           up_type == BN_GGUF_TENSOR_Q4_K;
+}
+
+static inline int bn_backend_quant_moe_route_q8(int gate_type,
+                                                int up_type,
+                                                int down_type) {
+    return gate_type == BN_GGUF_TENSOR_Q8_0 &&
+           up_type == BN_GGUF_TENSOR_Q8_0 &&
+           down_type == BN_GGUF_TENSOR_Q8_0;
+}
+
 static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
     return type == BN_GGUF_TENSOR_Q6_K;
 }
