@@ -560,6 +560,65 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
            getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") == NULL;
 }
 
+int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map) {
+    return map &&
+           map->gate_type == BN_GGUF_TENSOR_Q4_K &&
+           map->up_type == BN_GGUF_TENSOR_Q4_K &&
+           (map->down_type == BN_GGUF_TENSOR_Q6_K ||
+            map->down_type == BN_GGUF_TENSOR_Q4_K);
+}
+
+int bn_transformer_gpu_moe_routed_q8(const BnMoEExpertMap *map) {
+    return map &&
+           map->gate_type == BN_GGUF_TENSOR_Q8_0 &&
+           map->up_type == BN_GGUF_TENSOR_Q8_0 &&
+           map->down_type == BN_GGUF_TENSOR_Q8_0;
+}
+
+int bn_transformer_gpu_cuda_moe_route_topk_enabled(
+    void *moe_router,
+    int all2_q4q6_moe,
+    int all2_q4q6_moe_gpu_route_layer_selected) {
+    return moe_router &&
+           getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK") == NULL &&
+           (!all2_q4q6_moe || all2_q4q6_moe_gpu_route_layer_selected);
+}
+
+int bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
+    int all2_q4q6_moe,
+    int gpu_route_topk,
+    int moe_routed_q8,
+    int n_experts) {
+    if (all2_q4q6_moe && !gpu_route_topk &&
+        getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT") == NULL)
+        return 1;
+    return !gpu_route_topk && moe_routed_q8 && n_experts > 2 &&
+           getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT") == NULL;
+}
+
+int bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
+    int gpu_route_topk,
+    int cpu_route_resident_ffn,
+    void *moe_gate_all,
+    void *moe_up_all,
+    void *moe_down_all,
+    const BnMoEExpertMap *map,
+    int moe_hidden,
+    int dim) {
+    if ((!gpu_route_topk && !cpu_route_resident_ffn) ||
+        !moe_gate_all || !moe_up_all || !moe_down_all ||
+        (!bn_transformer_gpu_moe_routed_q4(map) &&
+         !bn_transformer_gpu_moe_routed_q8(map)) ||
+        getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN") != NULL)
+        return 0;
+    return map->gate_rows == moe_hidden &&
+           map->up_rows == moe_hidden &&
+           map->gate_cols == dim &&
+           map->up_cols == dim &&
+           map->down_rows == dim &&
+           map->down_cols == moe_hidden;
+}
+
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,

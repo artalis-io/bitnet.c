@@ -1514,42 +1514,24 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
             void *moe_down_all = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-            int moe_routed_q4 =
-                lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q4_K &&
-                lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q4_K &&
-                (lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K ||
-                 lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q4_K);
             int moe_routed_q8 =
-                lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q8_0 &&
-                lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q8_0 &&
-                lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q8_0;
+                bn_transformer_gpu_moe_routed_q8(&lw->moe.expert_map);
             uint32_t moe_route_flags = 0u;
             if (!c->moe_norm_topk_prob)
                 moe_route_flags |= BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
             int gpu_route_topk =
-                moe_router &&
-                !getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK") &&
-                (!all2_q4q6_moe ||
-                 all2_q4q6_moe_gpu_route_layer_selected);
-            int all2_q4q6_moe_cpu_route_resident_ffn =
-                all2_q4q6_moe &&
-                !gpu_route_topk &&
-                !getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT");
+                bn_transformer_gpu_cuda_moe_route_topk_enabled(
+                    moe_router, all2_q4q6_moe,
+                    all2_q4q6_moe_gpu_route_layer_selected);
             int cpu_route_resident_ffn =
-                all2_q4q6_moe_cpu_route_resident_ffn ||
-                (!gpu_route_topk && moe_routed_q8 && c->n_experts > 2 &&
-                 !getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT"));
+                bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
+                    all2_q4q6_moe, gpu_route_topk, moe_routed_q8,
+                    c->n_experts);
             int gpu_routed_ffn =
-                (gpu_route_topk || cpu_route_resident_ffn) &&
-                moe_gate_all && moe_up_all && moe_down_all &&
-                (moe_routed_q4 || moe_routed_q8) &&
-                lw->moe.expert_map.gate_rows == c->moe_intermediate_size &&
-                lw->moe.expert_map.up_rows == c->moe_intermediate_size &&
-                lw->moe.expert_map.gate_cols == dim &&
-                lw->moe.expert_map.up_cols == dim &&
-                lw->moe.expert_map.down_rows == dim &&
-                lw->moe.expert_map.down_cols == c->moe_intermediate_size &&
-                !getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
+                bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
+                    gpu_route_topk, cpu_route_resident_ffn, moe_gate_all,
+                    moe_up_all, moe_down_all, &lw->moe.expert_map,
+                    c->moe_intermediate_size, dim);
             if (gpu_routed_ffn) {
                 int all2_q4q6_moe_cpu_moe_safe =
                     bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
