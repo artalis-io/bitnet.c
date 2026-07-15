@@ -98,6 +98,7 @@ int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c);
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_is_qwen2_moe(const BnConfig *c);
 int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c);
+int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c);
 int bn_model_arch_moe_uses_gemma4_block(const BnConfig *c);
 int bn_model_arch_loads_extra_metadata(const BnConfig *c);
 int bn_model_arch_loads_per_layer_input_weights(const BnConfig *c);

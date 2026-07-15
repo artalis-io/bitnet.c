@@ -165,7 +165,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     int hidden_cap = moe_hidden;
@@ -265,7 +265,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     int hidden_cap = moe_hidden;
@@ -357,7 +357,7 @@ static int gpu_compute_shared_expert_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int shared_hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     if (shared_hidden <= 0)
@@ -410,7 +410,7 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
     BnConfig *c = &m->config;
     int K = c->n_experts_active;
     int moe_hidden = c->moe_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     float *hb = (float *)malloc((size_t)moe_hidden * sizeof(float));
@@ -474,7 +474,7 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
     int moe_hidden = c->moe_intermediate_size;
     if (n_experts <= 0 || moe_hidden <= 0)
         return -1;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
 
@@ -521,7 +521,7 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     float *hb2 = (float *)malloc((size_t)hidden * sizeof(float));
@@ -550,7 +550,7 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
-    uint32_t gateup_flags = bn_model_arch_is_qwen2_moe(c)
+    uint32_t gateup_flags = bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
     if (hidden <= 0)
@@ -1400,7 +1400,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             use_q4_q8_layer = 1;
         int all2_q4q6_moe_cuda_exact_attn =
             gpu->kind == BN_GPU_BACKEND_CUDA &&
-            bn_model_arch_is_qwen2_moe(c) &&
+            bn_model_arch_moe_prefers_cuda_exact_attention(c) &&
             !getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
         int use_q4_q8_attn =
             (use_q4_q8_layer || all2_q4q6_moe_cuda_exact_attn) && !q4_q8_ffn_only;

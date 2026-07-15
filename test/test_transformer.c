@@ -550,6 +550,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(!bn_model_arch_is_qwen2_moe(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_gemma4_block(&c));
     assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
@@ -579,6 +580,7 @@ static void test_model_arch_registry(void) {
     c.arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
     assert(bn_model_arch_is_qwen2_moe(&c));
     assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(bn_model_arch_moe_prefers_cuda_exact_attention(&c));
 
     char name[128];
     char scale[128];

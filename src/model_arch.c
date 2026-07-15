@@ -200,6 +200,10 @@ int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
     return bn_model_arch_is_qwen2_moe(c);
 }
 
+int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
+    return bn_model_arch_is_qwen2_moe(c);
+}
+
 int bn_model_arch_moe_uses_gemma4_block(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
 }
