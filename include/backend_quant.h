@@ -58,6 +58,14 @@ static inline int bn_backend_quant_supports_q8_logits_refine(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
 }
 
+static inline int bn_backend_quant_gpu_requires_exact_silu(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
+static inline int bn_backend_quant_gpu_prefers_gateup_split(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
 static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
     return type == BN_GGUF_TENSOR_Q6_K;
 }

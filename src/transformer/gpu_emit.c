@@ -1031,11 +1031,11 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
         uint32_t silu_flags =
             (ffn_plan->activation != 1 &&
-             lw->ffn.ffn_gate.type == BN_GGUF_TENSOR_Q8_0)
+             bn_backend_quant_gpu_requires_exact_silu(lw->ffn.ffn_gate.type))
             ? BN_GPU_OP_FLAG_EXACT_SILU
             : 0u;
         int prefer_gateup_split =
-            lw->ffn.ffn_gate.type == BN_GGUF_TENSOR_Q8_0 &&
+            bn_backend_quant_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
             c && c->n_experts > 0 && c->full_attn_interval > 0;
         int use_fused_gateup = !prefer_gateup_split &&
                                !getenv("BN_GPU_DISABLE_FUSED_GATEUP") &&
@@ -1111,7 +1111,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             : BN_GPU_IR_ACTIVATION_SILU;
         uint32_t silu_flags =
             (act_kind == BN_GPU_IR_ACTIVATION_SILU &&
-             lw->ffn.ffn_up.type == BN_GGUF_TENSOR_Q8_0)
+             bn_backend_quant_gpu_requires_exact_silu(lw->ffn.ffn_up.type))
             ? BN_GPU_OP_FLAG_EXACT_SILU
             : 0u;
         emit_context_activation_flags(
@@ -1762,7 +1762,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             lw->shared.shared_gate.cols % 256 == 0 &&
             getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
         int prefer_shared_gateup_split =
-            lw->shared.shared_gate.type == BN_GGUF_TENSOR_Q8_0;
+            bn_backend_quant_gpu_prefers_gateup_split(
+                lw->shared.shared_gate.type);
         int use_shared_fused_gateup =
             !prefer_shared_gateup_split &&
             !getenv("BN_GPU_DISABLE_FUSED_GATEUP") &&
