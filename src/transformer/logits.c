@@ -339,8 +339,8 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
         s->logits[ids[i]] = native_vals[i];
 }
 
-static int logits_small_qwen_cuda_q8_refine_enabled(const BnModel *m,
-                                                    const BnQWeight *W) {
+static int logits_small_cuda_q8_refine_enabled(const BnModel *m,
+                                               const BnQWeight *W) {
     if (!m || !W || W->type != BN_GGUF_TENSOR_Q8_0)
         return 0;
     BnGPUBackend *gpu = bn_model_gpu(m);
@@ -351,10 +351,10 @@ static int logits_small_qwen_cuda_q8_refine_enabled(const BnModel *m,
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
 }
 
-static void logits_refine_small_qwen_cuda_q8(const BnModel *m,
-                                             BnRunState *s,
-                                             const BnQWeight *W) {
-    if (!logits_small_qwen_cuda_q8_refine_enabled(m, W))
+static void logits_refine_small_cuda_q8(const BnModel *m,
+                                        BnRunState *s,
+                                        const BnQWeight *W) {
+    if (!logits_small_cuda_q8_refine_enabled(m, W))
         return;
     int refine_top = 16;
     const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
@@ -450,7 +450,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             logits_f16_dispatch(m, s, (const uint16_t *)w->output_weight.data, n_rows, dim);
     } else if (w->output_weight.data) {
         logits_quant_matvec_gpu(m, s->logits, &w->output_weight, s->x, s->x_q);
-        logits_refine_small_qwen_cuda_q8(m, s, &w->output_weight);
+        logits_refine_small_cuda_q8(m, s, &w->output_weight);
     } else if (bn_quant_format_supported(w->emb_type) &&
                w->emb_type != BN_GGUF_TENSOR_F16 &&
                w->emb_type != BN_GGUF_TENSOR_F32) {
@@ -471,7 +471,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             logits_hybrid_tied_q6k_top(m, s, tied);
             logits_refine_tied_q6k_top(m, s, tied);
         }
-        logits_refine_small_qwen_cuda_q8(m, s, tied);
+        logits_refine_small_cuda_q8(m, s, tied);
     } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
         if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
             logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,

@@ -114,6 +114,7 @@ done
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \
+    src/transformer/logits.c \
     src/model_session.c
 do
     if grep -n 'gemma4_per_layer_dim\|bn_model_arch_gemma4_divides_rope_freqs\|static .*qwen\|static .*gemma' "$file" >/dev/null 2>&1; then
