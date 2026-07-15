@@ -256,6 +256,13 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts) {
            getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
+    const BnGPUBackend *gpu,
+    int can_split) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA && can_split &&
+           getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
+}
+
 void bn_transformer_gpu_report_fallback(const char *reason) {
     if (!getenv("BN_GPU_DEBUG_FALLBACK"))
         return;
