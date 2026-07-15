@@ -6,6 +6,9 @@
 #include "gpu_backend.h"
 #include "quant.h"
 
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT 1u
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K 8u
+
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_MATVEC_SPLIT;
@@ -43,6 +46,20 @@ static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
 static inline int bn_backend_quant_can_gpu_gateup_split_activation(int type,
                                                                   int act_type) {
     return act_type != 1 || type != BN_GGUF_TENSOR_Q4_K;
+}
+
+static inline uint32_t bn_backend_quant_gpu_matvec_q8k_dot_flag(int type,
+                                                               int enabled) {
+    return enabled && type == BN_GGUF_TENSOR_Q4_K
+        ? BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT
+        : 0u;
+}
+
+static inline uint32_t bn_backend_quant_gpu_matvec_exact_q6k_flag(int type,
+                                                                 int enabled) {
+    return enabled && type == BN_GGUF_TENSOR_Q6_K
+        ? BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
+        : 0u;
 }
 
 void bn_backend_quant_matvec_gpu(float *out, const BnQWeight *W,
