@@ -332,6 +332,26 @@ static void test_gpu_policy_helpers(void) {
     logits.cpu_weight = NULL;
     assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
 
+    BnMoEExpertMap map;
+    memset(&map, 0, sizeof(map));
+    map.gate_type = BN_GGUF_TENSOR_Q4_K;
+    map.up_type = BN_GGUF_TENSOR_Q4_K;
+    map.down_type = BN_GGUF_TENSOR_Q6_K;
+    assert(bn_transformer_gpu_moe_routed_q4_down(&map, 0));
+    assert(bn_transformer_gpu_moe_routed_q4(&map));
+    assert(!bn_transformer_gpu_moe_routed_q8(&map));
+
+    map.down_type = BN_GGUF_TENSOR_Q4_K;
+    assert(!bn_transformer_gpu_moe_routed_q4_down(&map, 0));
+    assert(bn_transformer_gpu_moe_routed_q4_down(&map, 1));
+    assert(bn_transformer_gpu_moe_routed_q4(&map));
+
+    map.gate_type = BN_GGUF_TENSOR_Q8_0;
+    map.up_type = BN_GGUF_TENSOR_Q8_0;
+    map.down_type = BN_GGUF_TENSOR_Q8_0;
+    assert(!bn_transformer_gpu_moe_routed_q4(&map));
+    assert(bn_transformer_gpu_moe_routed_q8(&map));
+
     printf("PASSED\n");
 }
 

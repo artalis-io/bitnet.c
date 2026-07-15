@@ -43,9 +43,7 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
         c->moe_intermediate_size < 4096 ||
         dim > 2048)
         return 0;
-    return lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q4_K &&
-           lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q4_K &&
-           lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K;
+    return bn_transformer_gpu_moe_routed_q4_down(&lw->moe.expert_map, 0);
 }
 
 int bn_transformer_gpu_cuda_all2_q4q6_moe_model(const BnConfig *c,
@@ -436,13 +434,8 @@ int bn_transformer_gpu_cuda_moe_decode_cacheable(
         if (!lw->moe.router_weight)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
-        int routed_q4 = em->gate_type == BN_GGUF_TENSOR_Q4_K &&
-                        em->up_type == BN_GGUF_TENSOR_Q4_K &&
-                        (em->down_type == BN_GGUF_TENSOR_Q6_K ||
-                         em->down_type == BN_GGUF_TENSOR_Q4_K);
-        int routed_q8 = em->gate_type == BN_GGUF_TENSOR_Q8_0 &&
-                        em->up_type == BN_GGUF_TENSOR_Q8_0 &&
-                        em->down_type == BN_GGUF_TENSOR_Q8_0;
+        int routed_q4 = bn_transformer_gpu_moe_routed_q4(em);
+        int routed_q8 = bn_transformer_gpu_moe_routed_q8(em);
         int has_router =
             bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_ROUTER) ||
             bn_backend_model_handle(backend, l,
@@ -554,11 +547,16 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
 }
 
 int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map) {
+    return bn_transformer_gpu_moe_routed_q4_down(map, 1);
+}
+
+int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
+                                          int allow_q4_down) {
     return map &&
            map->gate_type == BN_GGUF_TENSOR_Q4_K &&
            map->up_type == BN_GGUF_TENSOR_Q4_K &&
            (map->down_type == BN_GGUF_TENSOR_Q6_K ||
-            map->down_type == BN_GGUF_TENSOR_Q4_K);
+            (allow_q4_down && map->down_type == BN_GGUF_TENSOR_Q4_K));
 }
 
 int bn_transformer_gpu_moe_routed_q8(const BnMoEExpertMap *map) {
@@ -672,12 +670,10 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
         c->n_experts_active != 2 ||
         c->moe_intermediate_size < 4096 ||
         dim > 2048 ||
-        map->gate_type != BN_GGUF_TENSOR_Q4_K ||
-        map->up_type != BN_GGUF_TENSOR_Q4_K ||
+        !bn_transformer_gpu_moe_routed_q4_down(map, allow_q4_down) ||
         getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL)
         return 0;
-    return map->down_type == BN_GGUF_TENSOR_Q6_K ||
-           (allow_q4_down && map->down_type == BN_GGUF_TENSOR_Q4_K);
+    return 1;
 }
 
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts) {
