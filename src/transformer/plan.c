@@ -15,19 +15,6 @@ int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type
     return cap != 0 && bn_transformer_gpu_has_cap(gpu, cap);
 }
 
-static uint32_t gpu_fused_gateup_silu_cap(const BnGPUBackend *gpu,
-                                          int tensor_type) {
-    uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
-    if (cap == 0 && gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-        tensor_type == BN_GGUF_TENSOR_Q4_K) {
-        cap = BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
-    } else if (cap == 0 && gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-               tensor_type == BN_GGUF_TENSOR_Q5_K) {
-        cap = BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU;
-    }
-    return cap;
-}
-
 int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,
                                              int act_type) {
@@ -37,7 +24,7 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
         tensor_type == BN_GGUF_TENSOR_Q5_K &&
         getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
         return 0;
-    uint32_t cap = gpu_fused_gateup_silu_cap(gpu, tensor_type);
+    uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
     return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);
 }
 
@@ -206,9 +193,9 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->use_fused_gateup_silu =
         p->placement == BN_EXEC_GPU &&
         c->has_ffn_gate &&
-        gpu_fused_gateup_silu_cap(gpu, lw->ffn.ffn_gate.type) != 0 &&
-        gpu_fused_gateup_silu_cap(gpu, lw->ffn.ffn_up.type) ==
-            gpu_fused_gateup_silu_cap(gpu, lw->ffn.ffn_gate.type) &&
+        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) != 0 &&
+        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_up.type) ==
+            bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) &&
         bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn.ffn_gate.type, c->act_type);
     p->use_gateup_split =
         p->placement == BN_EXEC_GPU &&
