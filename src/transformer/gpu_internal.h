@@ -163,6 +163,13 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
     const BnGPUBackend *gpu,
     int pos0,
     int n_tokens);
+int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void);
+int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
+    const BnConfig *c,
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
+    const BnConfig *c,
+    const BnGPUBackend *gpu);
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

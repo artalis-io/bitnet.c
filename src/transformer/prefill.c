@@ -390,12 +390,6 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
         lw->ffn.ffn_down.type, act_type);
 }
 
-static int prefill_gpu_attention_min_tokens(void);
-static int prefill_dense_chain_min_tokens(const BnConfig *c,
-                                          const BnGPUBackend *gpu);
-static int prefill_moe_chain_min_tokens(const BnConfig *c,
-                                        const BnGPUBackend *gpu);
-
 static int prefill_dense_layer_gpu_batch(const BnModel *m,
                                          float *out,
                                          const BnLayerWeights *lw,
@@ -697,7 +691,8 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") ||
         !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
             c ? c->n_experts : 0) ||
-        n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
+        n_tokens <
+            bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(c, gpu) ||
         !lw || !lw->moe.router_weight ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
@@ -765,7 +760,8 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     const BnConfig *c = &m->config;
     if (!gpu || !gpu->prefill_dense_layer || !backend ||
         bn_model_tq_state(m) != NULL ||
-        n_tokens < prefill_dense_chain_min_tokens(c, gpu) ||
+        n_tokens <
+            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu) ||
         layer_rope_theta != c->rope_theta ||
         !plan->is_attn ||
         lw->moe.router_weight || !c->has_ffn_gate || !lw->ffn.ffn_up.data ||
@@ -843,7 +839,8 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     const BnConfig *c = &m->config;
     if (!gpu || !gpu->prefill_moe_layer || !backend ||
         bn_model_tq_state(m) != NULL ||
-        n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
+        n_tokens <
+            bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(c, gpu) ||
         !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
             c ? c->n_experts : 0) ||
         layer_rope_theta != c->rope_theta ||
@@ -856,7 +853,9 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
                     layer, gpu != NULL,
                     gpu && gpu->prefill_moe_layer ? 1 : 0,
                     backend != NULL, bn_model_tq_state(m) != NULL,
-                    n_tokens, prefill_moe_chain_min_tokens(c, gpu),
+                    n_tokens,
+                    bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
+                        c, gpu),
                     layer_rope_theta == c->rope_theta, plan->is_attn,
                     lw->moe.router_weight != NULL, c->has_shared_expert,
                     lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias,
@@ -1020,7 +1019,8 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     if (!gpu || !gpu->prefill_ssm_layer || !backend ||
         gpu->kind != BN_GPU_BACKEND_CUDA ||
         getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") ||
-        n_tokens < prefill_dense_chain_min_tokens(c, gpu) ||
+        n_tokens <
+            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu) ||
         !lw || !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
         !lw->ssm.ssm_out.data || !lw->norm.attn_norm ||
@@ -1552,40 +1552,6 @@ static int prefill_prepare_q_for_gpu_attention(BnBatchedAttnCtx *b) {
     return 0;
 }
 
-static int prefill_gpu_attention_min_tokens(void) {
-    const char *env = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
-    if (!env || !*env) return 16;
-    int n = atoi(env);
-    return n > 0 ? n : 16;
-}
-
-static int prefill_dense_chain_min_tokens(const BnConfig *c,
-                                          const BnGPUBackend *gpu) {
-    const char *env = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
-    if (env && *env)
-        return prefill_gpu_attention_min_tokens();
-    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c) {
-        int arch_min = bn_model_arch_small_cuda_dense_prefill_min_tokens(c);
-        if (arch_min > 0)
-            return arch_min;
-    }
-    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c)
-        return 16;
-    return prefill_gpu_attention_min_tokens();
-}
-
-static int prefill_moe_chain_min_tokens(const BnConfig *c,
-                                        const BnGPUBackend *gpu) {
-    const char *env = getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
-    if (env && *env) {
-        int n = atoi(env);
-        return n > 0 ? n : 1;
-    }
-    if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c)
-        return 16;
-    return prefill_dense_chain_min_tokens(c, gpu);
-}
-
 static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                int n_tokens, int pos0, float *all_logits,
                                int need_last_logits) {
@@ -1632,12 +1598,16 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         bn_model_arch_small_cuda_dense_prefill_min_tokens(c) > 0;
     if (cuda_moe_prefill &&
         (!getenv("BN_CUDA_ENABLE_MOE_PREFILL") ||
-         n_tokens < prefill_moe_chain_min_tokens(c, prefill_gpu))) {
+         n_tokens <
+             bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
+                 c, prefill_gpu))) {
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
     if (cuda_small_dense_arch_prefill &&
-        n_tokens < prefill_dense_chain_min_tokens(c, prefill_gpu)) {
+        n_tokens <
+            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
+                c, prefill_gpu)) {
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
@@ -2001,7 +1971,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             if (bn_model_gpu(m) &&
                 bn_model_tq_state(m) == NULL &&
                 !getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") &&
-                n_tokens >= prefill_dense_chain_min_tokens(c, bn_model_gpu(m)) &&
+                n_tokens >=
+                    bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
+                        c, bn_model_gpu(m)) &&
                 pos0 == 0 &&
                 layer_rope_theta == c->rope_theta &&
                 !lw->moe.router_weight &&
@@ -2057,7 +2029,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int can_fuse_attn_input_norm =
                 gpu && gpu->prefill_qkv_attention_wo_norm_resid &&
                 attn_norm_buf &&
-                n_tokens >= prefill_gpu_attention_min_tokens() &&
+                n_tokens >=
+                    bn_transformer_gpu_cuda_prefill_attention_min_tokens() &&
                 bn_model_tq_state(m) == NULL &&
                 !q_gated && pos0 == 0 &&
                 layer_rope_theta == c->rope_theta &&
@@ -2278,7 +2251,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 if (!used_raw_prefill_attn_wo &&
                     gpu && gpu->prefill_attention &&
                     !getenv("BN_CUDA_DISABLE_PREFILL_ATTN") &&
-                    n_tokens >= prefill_gpu_attention_min_tokens() &&
+                    n_tokens >=
+                        bn_transformer_gpu_cuda_prefill_attention_min_tokens() &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
                     void *wo_buf = prefill_backend_role_or_qweight(
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
@@ -2512,7 +2486,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       qkv_dim_ssm, value_dim, num_k_heads,
                                       head_k_dim, num_v_heads, head_v_dim,
                                       kern_ssm, ssm_idx, l,
-                                      n_tokens >= prefill_moe_chain_min_tokens(c, bn_model_gpu(m)),
+                                      n_tokens >=
+                                          bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
+                                              c, bn_model_gpu(m)),
                                       c->norm_eps, &ssm_did_ffn) == 0) {
                 if (ssm_did_ffn)
                     goto prefill_layer_done;
@@ -2640,7 +2616,8 @@ prefill_ssm_done:
             BnGPUBackend *gpu_ffn = bn_model_gpu(m);
             const BnBackendModel *backend_ffn = bn_model_backend(m);
             int dense_ffn_batch_min_tokens =
-                prefill_dense_chain_min_tokens(c, gpu_ffn);
+                bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
+                    c, gpu_ffn);
             int can_use_dense_ffn_batch =
                 !gpu_ffn || gpu_ffn->kind != BN_GPU_BACKEND_CUDA ||
                 n_tokens >= dense_ffn_batch_min_tokens;
