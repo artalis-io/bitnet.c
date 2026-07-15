@@ -64,26 +64,6 @@ static int gpu_cuda_all2_q4q6_moe_layer(
            lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K;
 }
 
-static int gpu_cuda_large_hybrid_cpu_attn_safe_default(
-    const BnConfig *c,
-    const BnWeights *w) {
-    if (!c || !w || c->n_experts > 0 || c->dim < 4096 ||
-        getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") != NULL ||
-        getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
-        return 0;
-    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
-        getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL)
-        return 0;
-    if (c->full_attn_interval > 0)
-        return 1;
-    for (int l = 0; l < c->n_layers; l++) {
-        const BnLayerWeights *lw = &w->layers[l];
-        if (lw->block_kind == BN_LAYER_BLOCK_ATTENTION && lw->ssm.wqkv.data)
-            return 1;
-    }
-    return 0;
-}
-
 static void gpu_debug_compare_vec_local(const char *label,
                                         int layer,
                                         int pos,
@@ -1210,7 +1190,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w);
     int large_hybrid_safe_cpu_attn =
         gpu->kind == BN_GPU_BACKEND_CUDA &&
-        gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w);
+        bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w);
     if (all2_q4q6_moe_safe_cpu_attn &&
         cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
         cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0)

@@ -137,6 +137,26 @@ int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w) {
+    if (!c || !w || c->n_experts > 0 || c->dim < 4096 ||
+        getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") != NULL ||
+        getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
+        return 0;
+    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
+        getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL)
+        return 0;
+    if (c->full_attn_interval > 0)
+        return 1;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        if (lw->block_kind == BN_LAYER_BLOCK_ATTENTION && lw->ssm.wqkv.data)
+            return 1;
+    }
+    return 0;
+}
+
 int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
