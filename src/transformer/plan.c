@@ -21,7 +21,7 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
     if (getenv("BN_GPU_DISABLE_FUSED_GATEUP"))
         return 0;
     if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-        tensor_type == BN_GGUF_TENSOR_Q5_K &&
+        bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
         getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
         return 0;
     uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);

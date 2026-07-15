@@ -105,6 +105,10 @@ static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     }
 }
 
+static inline int bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(int type) {
+    return type == BN_GGUF_TENSOR_Q5_K;
+}
+
 static inline int bn_backend_quant_can_gpu_gateup_split_activation(int type,
                                                                   int act_type) {
     return act_type != 1 || type != BN_GGUF_TENSOR_Q4_K;

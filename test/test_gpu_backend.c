@@ -545,6 +545,8 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU);
+    assert(bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_moe_route_q8(BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0,
