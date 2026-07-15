@@ -47,41 +47,8 @@ static void moe_batch_router_range(void *ctx, int start, int end) {
         int e = idx - t * c->n_experts;
         const float *row = c->router_w + (size_t)e * c->dim;
         const float *x = c->x + (size_t)t * c->dim;
-        float sum = 0.0f;
-#ifdef __AVX2__
-        __m256 a0 = _mm256_setzero_ps();
-        __m256 a1 = _mm256_setzero_ps();
-        int d = 0;
-        for (; d + 15 < c->dim; d += 16) {
-            a0 = _mm256_fmadd_ps(_mm256_loadu_ps(row + d),
-                                 _mm256_loadu_ps(x + d), a0);
-            a1 = _mm256_fmadd_ps(_mm256_loadu_ps(row + d + 8),
-                                 _mm256_loadu_ps(x + d + 8), a1);
-        }
-        sum = bn_avx2_hsum_ps(_mm256_add_ps(a0, a1));
-        for (; d < c->dim; d++)
-            sum += row[d] * x[d];
-#elif defined(__ARM_NEON)
-        float32x4_t acc0 = vdupq_n_f32(0.0f);
-        float32x4_t acc1 = vdupq_n_f32(0.0f);
-        float32x4_t acc2 = vdupq_n_f32(0.0f);
-        float32x4_t acc3 = vdupq_n_f32(0.0f);
-        int d = 0;
-        for (; d + 15 < c->dim; d += 16) {
-            acc0 = vfmaq_f32(acc0, vld1q_f32(row + d), vld1q_f32(x + d));
-            acc1 = vfmaq_f32(acc1, vld1q_f32(row + d + 4), vld1q_f32(x + d + 4));
-            acc2 = vfmaq_f32(acc2, vld1q_f32(row + d + 8), vld1q_f32(x + d + 8));
-            acc3 = vfmaq_f32(acc3, vld1q_f32(row + d + 12), vld1q_f32(x + d + 12));
-        }
-        acc0 = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
-        sum = vaddvq_f32(acc0);
-        for (; d < c->dim; d++)
-            sum += row[d] * x[d];
-#else
-        for (int d = 0; d < c->dim; d++)
-            sum += row[d] * x[d];
-#endif
-        c->logits[(size_t)t * c->n_experts + e] = sum;
+        c->logits[(size_t)t * c->n_experts + e] =
+            bn_moe_dot_row(row, x, c->dim);
     }
 }
 

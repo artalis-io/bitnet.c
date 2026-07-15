@@ -83,6 +83,11 @@ void bn_moe_swiglu_range(void *ctx, int start, int end);
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
                    int exact_silu);
 double bn_moe_time_ms(void);
+float bn_moe_dot_row(const float *row, const float *x, int dim);
+int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
+                     int dim, int start_expert);
+void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
+                        int n, int exact_silu);
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n);
 void bn_moe_residual_add(float *x, const float *r, int n);
 

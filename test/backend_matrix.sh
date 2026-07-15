@@ -110,6 +110,17 @@ do
     fi
 done
 
+for file in \
+    src/moe_route.c \
+    src/moe_math.c \
+    src/moe_prefill.c
+do
+    if grep -n '__AVX\|__ARM_NEON\|float32x\|__m256\|_mm[0-9_]*\|vfmaq\|vld1q\|vaddvq' "$file" >/dev/null 2>&1; then
+        echo "$file must dispatch MoE CPU kernels through src/moe_cpu_kernels.c"
+        fail=1
+    fi
+done
+
 if [ "$fail" -ne 0 ]; then
     echo "Backend matrix FAILED"
     exit 1
