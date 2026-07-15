@@ -3,9 +3,9 @@
 #include "session.h"
 #include "transformer.h"
 #include "transformer_internal.h"
+#include "transformer_plan_internal.h"
 #include "transformer/gpu_internal.h"
 #include "gpu_backend.h"
-#include "model_arch.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -371,8 +371,8 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
     float *logits = NULL;
     int gpu_attached = bn_model_gpu(model) != NULL;
     int parity_cpu =
-        bn_model_arch_cpu_prefill_uses_decode_for_parity(&model->config) &&
-                     !gpu_attached;
+        bn_transformer_cpu_prefill_decode_for_parity_enabled(
+            &model->config, gpu_attached);
     /* GPU decode reads backend-resident KV buffers. For conservative small
      * dense models, batch prefill is followed by a CPU->GPU KV upload.
      */
@@ -406,8 +406,8 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
                          int n_tokens, int pos0, int no_prefill) {
     int gpu_attached = bn_model_gpu(model) != NULL;
     int parity_cpu =
-        bn_model_arch_cpu_prefill_uses_decode_for_parity(&model->config) &&
-                     !gpu_attached;
+        bn_transformer_cpu_prefill_decode_for_parity_enabled(
+            &model->config, gpu_attached);
     if (!no_prefill && !parity_cpu && n_tokens > 1 &&
         (!gpu_attached || use_gpu_batch_prefill(model))) {
         int rc = bn_transformer_prefill_no_logits(model, s, tokens,

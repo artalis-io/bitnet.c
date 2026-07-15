@@ -131,6 +131,13 @@ int bn_transformer_cpu_prefill_force_float_kquant_enabled(
             backend == BN_CPU_BACKEND_AVX512);
 }
 
+int bn_transformer_cpu_prefill_decode_for_parity_enabled(
+    const BnConfig *c,
+    int gpu_attached) {
+    return !gpu_attached &&
+           bn_model_arch_cpu_prefill_uses_decode_for_parity(c);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,
