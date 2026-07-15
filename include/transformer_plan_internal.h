@@ -181,6 +181,8 @@ int bn_transformer_cpu_prefill_force_float_kquant_enabled(
 int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,
     int gpu_attached);
+int bn_transformer_rmsnorm_requires_llama_scalar_order(
+    const BnConfig *c);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

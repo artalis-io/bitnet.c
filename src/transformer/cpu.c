@@ -344,9 +344,7 @@ static void cpu_rmsnorm_llama_scalar_order(float *out, const float *x,
 static inline void cpu_rmsnorm_model(const BnModel *m, float *out,
                                      const float *x, const float *w,
                                      int size, float eps) {
-    if (m &&
-        bn_model_arch_rmsnorm_mode(&m->config) ==
-            BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER) {
+    if (m && bn_transformer_rmsnorm_requires_llama_scalar_order(&m->config)) {
         cpu_rmsnorm_llama_scalar_order(out, x, w, size, eps);
         return;
     }

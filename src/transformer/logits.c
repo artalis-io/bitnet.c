@@ -4,7 +4,6 @@
 #include "backend_model.h"
 #include "backend_quant.h"
 #include "model.h"
-#include "model_arch.h"
 #include "session.h"
 #include "sh_log.h"
 #include "transformer_backend_internal.h"
@@ -125,9 +124,7 @@ static const BnLogitsBackendOps *logits_backend_ops(void) {
 static void logits_rmsnorm_model(const BnModel *m, float *out,
                                  const float *x, const float *w,
                                  int size, float eps) {
-    if (m &&
-        bn_model_arch_rmsnorm_mode(&m->config) ==
-            BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER) {
+    if (m && bn_transformer_rmsnorm_requires_llama_scalar_order(&m->config)) {
         double ss = 0.0;
         for (int i = 0; i < size; i++)
             ss += (double)(x[i] * x[i]);

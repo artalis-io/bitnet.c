@@ -1041,6 +1041,7 @@ static void test_block_planning(void) {
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
+    assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
     int force_float_kquant =
         bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
     assert(force_float_kquant ==
@@ -1049,11 +1050,14 @@ static void test_block_planning(void) {
     c.arch_flags = 0;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
+    assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
     c.arch_flags = 0;
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
+    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
+    assert(bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
 #if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif
