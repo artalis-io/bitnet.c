@@ -1006,7 +1006,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
-            if (bn_model_arch_attention_value_shares_key_config(c))
+            if (bn_transformer_attention_value_shares_key(c))
                 cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -1049,7 +1049,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
-            if (bn_model_arch_uses_attention_post_norm(c) &&
+            if (bn_transformer_attention_uses_post_norm(c) &&
                 lw->norm.attn_post_norm)
                 cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
@@ -1095,7 +1095,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
-            if (has_kv && bn_model_arch_attention_value_shares_key_config(c))
+            if (has_kv && bn_transformer_attention_value_shares_key(c))
                 cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -1135,7 +1135,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
-            if (bn_model_arch_uses_attention_post_norm(c) &&
+            if (bn_transformer_attention_uses_post_norm(c) &&
                 lw->norm.attn_post_norm)
                 cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
@@ -1171,7 +1171,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
-                if (bn_model_arch_attention_value_shares_key_config(c))
+                if (bn_transformer_attention_value_shares_key(c))
                     cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -1211,7 +1211,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
-                if (bn_model_arch_attention_value_shares_key_config(c))
+                if (bn_transformer_attention_value_shares_key(c))
                     cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -1245,7 +1245,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm_model(m, key_cache_row + h*head_size, key_cache_row + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, c->norm_eps);
-                if (bn_model_arch_attention_value_shares_key_config(c))
+                if (bn_transformer_attention_value_shares_key(c))
                     cpu_rmsnorm_unit_heads(value_cache_row, n_kv_heads, head_size, c->norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -1283,7 +1283,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
-            if (bn_model_arch_uses_attention_post_norm(c) &&
+            if (bn_transformer_attention_uses_post_norm(c) &&
                 lw->norm.attn_post_norm)
                 cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, c->norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);

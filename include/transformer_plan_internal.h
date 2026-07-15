@@ -186,6 +186,10 @@ int bn_transformer_rmsnorm_requires_llama_scalar_order(
 float bn_transformer_attention_scale(
     const BnConfig *c,
     int head_size);
+int bn_transformer_attention_value_shares_key(
+    const BnConfig *c);
+int bn_transformer_attention_uses_post_norm(
+    const BnConfig *c);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

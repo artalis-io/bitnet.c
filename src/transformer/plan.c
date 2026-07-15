@@ -158,6 +158,16 @@ float bn_transformer_attention_scale(
     return bn_model_arch_attention_scale(c, head_size);
 }
 
+int bn_transformer_attention_value_shares_key(
+    const BnConfig *c) {
+    return bn_model_arch_attention_value_shares_key_config(c);
+}
+
+int bn_transformer_attention_uses_post_norm(
+    const BnConfig *c) {
+    return bn_model_arch_uses_attention_post_norm(c);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

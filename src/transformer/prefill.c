@@ -693,7 +693,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         !lw->ssm.ssm_conv1d || !lw->ssm.ssm_dt_bias ||
         !lw->ssm.ssm_a || !lw->ssm.ssm_norm ||
         lw->norm.ffn_sub_norm || lw->norm.layer_output_scale ||
-        (bn_model_arch_uses_attention_post_norm(c) &&
+        (bn_transformer_attention_uses_post_norm(c) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
         c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
         c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
@@ -762,7 +762,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         !lw->ffn.ffn_down.data ||
         lw->norm.attn_sub_norm || lw->norm.ffn_sub_norm ||
         lw->norm.layer_output_scale ||
-        (bn_model_arch_uses_attention_post_norm(c) &&
+        (bn_transformer_attention_uses_post_norm(c) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)))
         return 0;
     int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
@@ -1023,7 +1023,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         !lw->ffn.ffn_down.data || !c->has_ffn_gate ||
         lw->moe.router_weight || lw->norm.ffn_sub_norm ||
         lw->norm.layer_output_scale ||
-        (bn_model_arch_uses_attention_post_norm(c) &&
+        (bn_transformer_attention_uses_post_norm(c) &&
          (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
         c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
         c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
@@ -1975,7 +1975,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm && !lw->norm.ffn_sub_norm &&
                 !lw->norm.layer_output_scale &&
-                !(bn_model_arch_uses_attention_post_norm(c) &&
+                !(bn_transformer_attention_uses_post_norm(c) &&
                   (lw->norm.attn_post_norm || lw->norm.ffn_post_norm))) {
                 t_prof = prefill_profile_now(&prof);
                 if (prefill_dense_layer_gpu_batch(
@@ -2029,7 +2029,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 layer_rope_theta == c->rope_theta &&
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm &&
-                !(bn_model_arch_uses_attention_post_norm(c) &&
+                !(bn_transformer_attention_uses_post_norm(c) &&
                   lw->norm.attn_post_norm);
             int attn_norm_ready = 0;
             if (!can_fuse_attn_input_norm) {
@@ -2048,7 +2048,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 layer_rope_theta == c->rope_theta &&
                 !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
                 !lw->norm.attn_sub_norm &&
-                !(bn_model_arch_uses_attention_post_norm(c) &&
+                !(bn_transformer_attention_uses_post_norm(c) &&
                   lw->norm.attn_post_norm)) {
                 void *qk_buf = backend ? bn_backend_model_handle(
                     backend, l, BN_BACKEND_HANDLE_QK_STACKED) : NULL;
@@ -2187,7 +2187,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                     lw->attn.k_norm + h * qk_stride,
                                     layer_head_size, c->norm_eps);
                         }
-                        if (bn_model_arch_attention_value_shares_key_config(c))
+                        if (bn_transformer_attention_value_shares_key(c))
                             prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                        layer_head_size, c->norm_eps);
                         bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
@@ -2252,7 +2252,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         &lw->attn.wo);
                     if (gpu->prefill_attention_wo && wo_buf &&
                         !lw->norm.attn_sub_norm &&
-                        !(bn_model_arch_uses_attention_post_norm(c) &&
+                        !(bn_transformer_attention_uses_post_norm(c) &&
                           lw->norm.attn_post_norm) &&
                         gpu->prefill_attention_wo(
                             gpu->ctx, Xb2, wo_buf, Q_buf, K_new, V_new,
@@ -2319,7 +2319,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 lw->attn.k_norm + h * qk_stride,
                                 layer_head_size, c->norm_eps);
                     }
-                    if (bn_model_arch_attention_value_shares_key_config(c))
+                    if (bn_transformer_attention_value_shares_key(c))
                         prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                    layer_head_size, c->norm_eps);
 
@@ -2384,7 +2384,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                  Q_buf, n_tokens, s->x_q);
                 }
                 if (!used_fused_attn_wo &&
-                    bn_model_arch_uses_attention_post_norm(c) &&
+                    bn_transformer_attention_uses_post_norm(c) &&
                     lw->norm.attn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_cpu_ops()->rmsnorm(Xb2 + (size_t)t * dim,
