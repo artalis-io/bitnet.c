@@ -3,6 +3,7 @@
 #include "session.h"
 #include "transformer.h"
 #include "transformer_internal.h"
+#include "transformer/gpu_internal.h"
 #include "gpu_backend.h"
 #include "model_arch.h"
 
@@ -28,8 +29,8 @@ static int cuda_prefill_needs_decode_fallback(const BnModel *m,
     const BnConfig *c = m ? &m->config : NULL;
     if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
         return 0;
-    if (bn_model_arch_allows_small_cuda_prefill_decode_fallback(c) &&
-        getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL)
+    if (bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
+            gpu, c))
         return 1;
     if (c->n_experts <= 0 &&
         c->full_attn_interval > 0 &&

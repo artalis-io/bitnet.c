@@ -137,6 +137,14 @@ int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           bn_model_arch_allows_small_cuda_prefill_decode_fallback(c) &&
+           getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL;
+}
+
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
