@@ -445,16 +445,22 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
 
     logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim, c->norm_eps);
 
-    if (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16) {
+    BnLogitsPlan plan;
+    bn_transformer_plan_logits(&plan, c, w, bn_model_gpu(m),
+                               bn_model_gpu(m) != NULL);
+
+    switch (plan.kind) {
+    case BN_LOGITS_UNTIED_F16: {
         int n_rows = w->output_weight.rows;
         if (!logits_i8_dispatch(m, s, n_rows, dim))
             logits_f16_dispatch(m, s, (const uint16_t *)w->output_weight.data, n_rows, dim);
-    } else if (w->output_weight.data) {
+        break;
+    }
+    case BN_LOGITS_UNTIED_QUANT:
         logits_quant_matvec_gpu(m, s->logits, &w->output_weight, s->x, s->x_q);
         logits_refine_small_cuda_q8(m, s, &w->output_weight);
-    } else if (bn_quant_format_supported(w->emb_type) &&
-               w->emb_type != BN_GGUF_TENSOR_F16 &&
-               w->emb_type != BN_GGUF_TENSOR_F32) {
+        break;
+    case BN_LOGITS_TIED_QUANT: {
         const BnQWeight *tied = &w->tied_embedding_weight;
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared =
@@ -473,15 +479,25 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             logits_refine_tied_q6k_top(m, s, tied);
         }
         logits_refine_small_cuda_q8(m, s, tied);
-    } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
+        break;
+    }
+    case BN_LOGITS_TIED_F16:
         if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
             logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,
                                 c->vocab_size, dim);
-    } else {
+        break;
+    case BN_LOGITS_TIED_I8:
+        if (!logits_i8_dispatch(m, s, c->vocab_size, dim))
+            logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,
+                                c->vocab_size, dim);
+        break;
+    case BN_LOGITS_TIED_F32: {
         const float *emb = (const float *)w->token_embedding;
         BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
         BnTPTask logits_task = { bn_transformer_logits_f32_range, &lctx, c->vocab_size };
         bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
+        break;
+    }
     }
 
     if (c->final_logit_softcap != 0.0f) {

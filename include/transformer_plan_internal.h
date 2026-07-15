@@ -53,7 +53,9 @@ typedef enum {
     BN_LOGITS_TIED_F32 = 0,
     BN_LOGITS_TIED_F16 = 1,
     BN_LOGITS_TIED_I8 = 2,
-    BN_LOGITS_UNTIED = 3,
+    BN_LOGITS_TIED_QUANT = 3,
+    BN_LOGITS_UNTIED_F16 = 4,
+    BN_LOGITS_UNTIED_QUANT = 5,
 } BnLogitsKind;
 
 typedef enum {

@@ -998,18 +998,36 @@ static void test_block_planning(void) {
 
     w.emb_out_i8 = NULL;
     w.output_weight.data = (void *)1;
+    w.output_weight.type = BN_GGUF_TENSOR_F16;
+    bn_transformer_plan_logits(&logits, &c, &w, NULL, 1);
+    assert(logits.kind == BN_LOGITS_UNTIED_F16);
+    assert(logits.weight_type == BN_GGUF_TENSOR_F16);
+
     w.output_weight.type = BN_GGUF_TENSOR_Q4_K;
     bn_transformer_plan_logits(&logits, &c, &w, NULL, 1);
-    assert(logits.kind == BN_LOGITS_UNTIED);
+    assert(logits.kind == BN_LOGITS_UNTIED_QUANT);
     assert(logits.placement == BN_EXEC_CPU);
     assert(logits.backend == BN_BACKEND_CPU);
     assert(logits.weight_type == BN_GGUF_TENSOR_Q4_K);
+
+    w.output_weight.data = NULL;
+    w.emb_type = BN_GGUF_TENSOR_Q6_K;
+    bn_transformer_plan_logits(&logits, &c, &w, NULL, 0);
+    assert(logits.kind == BN_LOGITS_TIED_QUANT);
+    assert(logits.weight_type == BN_GGUF_TENSOR_Q6_K);
+
+    w.emb_type = BN_GGUF_TENSOR_F32;
+    bn_transformer_plan_logits(&logits, &c, &w, NULL, 0);
+    assert(logits.kind == BN_LOGITS_TIED_F32);
+    assert(logits.weight_type == BN_GGUF_TENSOR_F32);
 
     gpu.kind = BN_GPU_BACKEND_WEBGPU;
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, NULL, 0, 0, 1);
     assert(attn.backend == BN_BACKEND_WEBGPU);
 
     gpu.kind = BN_GPU_BACKEND_CUDA;
+    w.output_weight.data = (void *)1;
+    w.output_weight.type = BN_GGUF_TENSOR_Q4_K;
     bn_transformer_plan_logits(&logits, &c, &w, &gpu, 1);
     assert(logits.backend == BN_BACKEND_CUDA);
 

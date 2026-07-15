@@ -297,11 +297,18 @@ void bn_transformer_plan_logits(BnLogitsPlan *p,
     p->dim = c->dim;
     p->use_i8_output = w->emb_out_i8 != NULL;
     if (w->output_weight.data) {
-        p->kind = BN_LOGITS_UNTIED;
         p->weight_type = w->output_weight.type;
+        p->kind = w->output_weight.type == BN_GGUF_TENSOR_F16
+            ? BN_LOGITS_UNTIED_F16
+            : BN_LOGITS_UNTIED_QUANT;
     } else if (w->emb_out_i8) {
         p->kind = BN_LOGITS_TIED_I8;
         p->weight_type = BN_GGUF_TENSOR_Q8_0;
+    } else if (bn_quant_format_supported(w->emb_type) &&
+               w->emb_type != BN_GGUF_TENSOR_F16 &&
+               w->emb_type != BN_GGUF_TENSOR_F32) {
+        p->kind = BN_LOGITS_TIED_QUANT;
+        p->weight_type = w->emb_type;
     } else if (w->emb_type == BN_GGUF_TENSOR_F16) {
         p->kind = BN_LOGITS_TIED_F16;
         p->weight_type = BN_GGUF_TENSOR_F16;
