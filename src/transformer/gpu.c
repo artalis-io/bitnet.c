@@ -1268,10 +1268,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
          getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL) &&
         logit_res->type == BN_GGUF_TENSOR_Q6_K;
     int small_dense_cuda_exact_q4_q8_default =
-        q4_q8_from_layer < 0 &&
-        gpu->kind == BN_GPU_BACKEND_CUDA &&
-        bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
-        !getenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
+        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+            gpu, c, q4_q8_from_layer);
     int small_dense_cuda_q8_logits_refine_default =
         small_dense_cuda_exact_q4_q8_default &&
         bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
@@ -1401,7 +1399,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
         int use_q4_q8_ffn_down = use_q4_q8_ffn;
         if (small_dense_cuda_exact_q4_q8 &&
-            !getenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN"))
+            !bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
+                gpu, c))
             use_q4_q8_ffn_down = 0;
 
         // ---- SSM layer ----

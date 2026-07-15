@@ -137,6 +137,24 @@ int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int q4_q8_from_layer) {
+    return q4_q8_from_layer < 0 &&
+           gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
+           getenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8") == NULL;
+}
+
+int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
+           getenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN") != NULL;
+}
+
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
