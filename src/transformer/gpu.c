@@ -1450,14 +1450,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             BnGPUMoEResources moe_res;
             void *router_diff = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
+            void *moe_gate_all = bn_backend_model_handle(
+                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
             int gpu_route_all2 =
-                router_diff && c->n_experts == 2 &&
-                c->n_experts_active == 2 &&
-                c->moe_norm_topk_prob &&
-                !bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL) &&
-                getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") != NULL &&
-                !getenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
+                bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
+                    c, router_diff, moe_gate_all);
             if (gpu_route_all2) {
                 if (gpu_resolve_moe_all2_resources(
                         &moe_res, expert_emit, m, sess, lw, l, router_diff,
@@ -1488,28 +1485,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             int all2_q4q6_moe =
                 gpu->kind == BN_GPU_BACKEND_CUDA &&
                 bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw, dim);
-            int all2_q4q6_moe_gpu_route_requested =
-                getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") != NULL ||
-                getenv("BN_CUDA_ENABLE_QWEN2MOE_EXACT_GPU_ROUTE") != NULL;
             int all2_q4q6_moe_gpu_route_layer_selected =
-                all2_q4q6_moe_gpu_route_requested &&
-                (all2_q4q6_moe_gpu_route_from_layer < 0 ||
-                 (l >= all2_q4q6_moe_gpu_route_from_layer &&
-                  (all2_q4q6_moe_gpu_route_to_layer < 0 ||
-                   l <= all2_q4q6_moe_gpu_route_to_layer)));
+                bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
+                    l, all2_q4q6_moe_gpu_route_from_layer,
+                    all2_q4q6_moe_gpu_route_to_layer);
             int all2_q4q6_moe_exact_gpu_route =
-                all2_q4q6_moe &&
-                all2_q4q6_moe_gpu_route_layer_selected &&
-                getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL &&
-                getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE") == NULL;
-            if (router_diff && c->n_experts == 2 &&
-                c->n_experts_active == 2 &&
-                all2_q4q6_moe_gpu_route_layer_selected &&
-                !getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2") &&
-                !all2_q4q6_moe_exact_gpu_route)
-                moe_router = router_diff;
-            void *moe_gate_all = bn_backend_model_handle(
-                backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+                bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
+                    all2_q4q6_moe,
+                    all2_q4q6_moe_gpu_route_layer_selected);
+            moe_router = bn_transformer_gpu_cuda_all2_q4q6_moe_router(
+                c, moe_router, router_diff,
+                all2_q4q6_moe_gpu_route_layer_selected,
+                all2_q4q6_moe_exact_gpu_route);
             void *moe_up_all = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
             void *moe_down_all = bn_backend_model_handle(
