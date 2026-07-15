@@ -1155,6 +1155,13 @@ static void prefill_quant_matmul_preq8k_multi(const BnModel *m,
 #endif
 
 typedef struct {
+    int8_t *xq;
+    float *xd;
+    int16_t *xbs;
+    int n_bpr;
+} BnPrefillPreQ8KBuffers;
+
+typedef struct {
     const char *name;
     void (*rmsnorm)(float *out, const float *x, const float *w,
                     int size, float eps);
@@ -1353,16 +1360,146 @@ static const BnPrefillCPUOps *prefill_cpu_ops(void) {
     return &BN_PREFILL_CPU_OPS;
 }
 
-#ifdef __AVX2__
 static int prefill_quant_can_preq8k_pair(int a, int b) {
+#ifdef __AVX2__
     return prefill_cpu_ops()->supports_preq8k &&
            bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
+#else
+    (void)a;
+    (void)b;
+    return 0;
+#endif
 }
 
 static int prefill_quant_can_preq8k_triple(int a, int b, int c) {
     return prefill_quant_can_preq8k_pair(a, b) && bn_quant_format_can_preq8k(c);
 }
+
+static size_t prefill_preq8k_arena_bytes(int dim, int n_tokens) {
+#ifdef __AVX2__
+    if (dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
+        return 0;
+    int n_bpr = dim / BN_QK_K;
+    return (size_t)n_tokens * (size_t)dim +
+           (size_t)n_tokens * (size_t)n_bpr * sizeof(float) +
+           (size_t)n_tokens * (size_t)n_bpr * 16 * sizeof(int16_t);
+#else
+    (void)dim;
+    (void)n_tokens;
+    return 0;
 #endif
+}
+
+static BnPrefillPreQ8KBuffers prefill_alloc_preq8k_buffers(SHArena *arena,
+                                                           int dim,
+                                                           int n_tokens) {
+    BnPrefillPreQ8KBuffers b = { NULL, NULL, NULL, 0 };
+#ifdef __AVX2__
+    if (!arena || dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
+        return b;
+    b.n_bpr = dim / BN_QK_K;
+    b.xq = (int8_t *)sh_arena_alloc(arena, (size_t)n_tokens * (size_t)dim);
+    b.xd = (float *)sh_arena_alloc(
+        arena, (size_t)n_tokens * (size_t)b.n_bpr * sizeof(float));
+    b.xbs = (int16_t *)sh_arena_alloc(
+        arena, (size_t)n_tokens * (size_t)b.n_bpr * 16 * sizeof(int16_t));
+    if (!b.xq || !b.xd || !b.xbs) {
+        b.xq = NULL;
+        b.xd = NULL;
+        b.xbs = NULL;
+        b.n_bpr = 0;
+    }
+#else
+    (void)arena;
+    (void)dim;
+    (void)n_tokens;
+#endif
+    return b;
+}
+
+#ifdef __AVX2__
+static int prefill_prepare_preq8k(BnPrefillPreQ8KBuffers *b,
+                                  const float *x,
+                                  int dim,
+                                  int n_tokens) {
+    if (!b || !b->xq || !b->xd || !b->xbs || !x || dim <= 0 ||
+        n_tokens <= 0 || b->n_bpr <= 0)
+        return 0;
+    for (int t = 0; t < n_tokens; t++)
+        bn_quant_x_to_q8k(x + (size_t)t * dim,
+                          b->xq + (size_t)t * dim,
+                          b->xd + (size_t)t * b->n_bpr,
+                          b->xbs + (size_t)t * b->n_bpr * 16, dim);
+    return 1;
+}
+#endif
+
+static int prefill_try_preq8k_multi(const BnModel *m,
+                                    BnPrefillPreQ8KBuffers *b,
+                                    float **out,
+                                    const BnQWeight **W,
+                                    int n,
+                                    const float *X,
+                                    int dim,
+                                    int n_tokens) {
+#ifdef __AVX2__
+    if (!m || bn_model_gpu(m) || prefill_force_float_kquant(m) ||
+        !b || !b->xq || !out || !W || !X || n <= 0 || n > 4)
+        return 0;
+    for (int i = 0; i < n; i++) {
+        if (!bn_quant_format_can_preq8k(W[i]->type))
+            return 0;
+    }
+    if (!prefill_prepare_preq8k(b, X, dim, n_tokens))
+        return 0;
+    prefill_quant_matmul_preq8k_multi(m, out, W, n, n_tokens,
+                                      b->xq, b->xd, b->xbs, X);
+    return 1;
+#else
+    (void)m;
+    (void)b;
+    (void)out;
+    (void)W;
+    (void)n;
+    (void)X;
+    (void)dim;
+    (void)n_tokens;
+    return 0;
+#endif
+}
+
+static int prefill_try_preq8k_matvec_batch(const BnModel *m,
+                                           BnPrefillPreQ8KBuffers *b,
+                                           BnMatvecTask *tasks,
+                                           int n,
+                                           const float *x,
+                                           int dim,
+                                           int token_index) {
+#ifdef __AVX2__
+    if (!m || bn_model_gpu(m) || prefill_force_float_kquant(m) ||
+        !b || !b->xq || !tasks || !x || n <= 0 || token_index < 0)
+        return 0;
+    for (int i = 0; i < n; i++) {
+        if (!bn_quant_format_can_preq8k(tasks[i].W->type))
+            return 0;
+    }
+    bn_quant_matvec_batch_preq8k(
+        tasks, n, b->xq + (size_t)token_index * dim,
+        b->xd + (size_t)token_index * b->n_bpr,
+        b->xbs + (size_t)token_index * b->n_bpr * 16,
+        x, bn_model_pool(m));
+    return 1;
+#else
+    (void)m;
+    (void)b;
+    (void)tasks;
+    (void)n;
+    (void)x;
+    (void)dim;
+    (void)token_index;
+    return 0;
+#endif
+}
 
 static float *prefill_logits(BnModel *m, BnSession *sess) {
     return bn_transformer_forward_logits(m, sess);
@@ -1645,13 +1782,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                       + batch_floats * sizeof(float)
                       + nt * half_rope * 2 * sizeof(float)
                       + 512;
-#ifdef __AVX2__
-    int n_bpr_pf = (dim % BN_QK_K == 0) ? dim / BN_QK_K : 0;
-    if (n_bpr_pf > 0)
-        arena_size += nt * (size_t)dim
-                    + nt * n_bpr_pf * sizeof(float)
-                    + nt * n_bpr_pf * 16 * sizeof(int16_t);
-#endif
+    arena_size += prefill_preq8k_arena_bytes(dim, n_tokens);
 
     SHArena *pf_arena = sh_arena_create(arena_size);
     if (!pf_arena) return NULL;
@@ -1666,18 +1797,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     float *batch_buf = (float *)sh_arena_alloc(pf_arena, batch_floats * sizeof(float));
     if (!batch_buf) { sh_arena_free(pf_arena); return NULL; }
 
-#ifdef __AVX2__
-    int8_t *pf_xq = NULL;
-    float *pf_xd = NULL;
-    int16_t *pf_xbs = NULL;
-    if (n_bpr_pf > 0) {
-        pf_xq = (int8_t *)sh_arena_alloc(pf_arena, nt * (size_t)dim);
-        pf_xd = (float *)sh_arena_alloc(pf_arena, nt * n_bpr_pf * sizeof(float));
-        pf_xbs = (int16_t *)sh_arena_alloc(pf_arena, nt * n_bpr_pf * 16 * sizeof(int16_t));
-        if (!pf_xq || !pf_xd || !pf_xbs)
-            pf_xq = NULL;
-    }
-#endif
+    BnPrefillPreQ8KBuffers preq8k =
+        prefill_alloc_preq8k_buffers(pf_arena, dim, n_tokens);
 
     float *Xb = batch_buf;
     float *Q_buf = Xb + nt * dim;
@@ -2108,30 +2229,21 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     prefill_profile_add(&prof.attn_norm_ms, t_prof);
                     attn_norm_ready = 1;
                 }
-#ifdef __AVX2__
-            if (pf_xq && !bn_model_gpu(m) &&
-                !prefill_force_float_kquant(m) &&
-                prefill_quant_can_preq8k_triple(lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type)) {
-                t_prof = prefill_profile_now(&prof);
-                int n_bpr = dim / BN_QK_K;
-                for (int t = 0; t < n_tokens; t++)
-                    bn_quant_x_to_q8k(Xb + (size_t)t * dim,
-                                      pf_xq + (size_t)t * dim,
-                                      pf_xd + (size_t)t * n_bpr,
-                                      pf_xbs + (size_t)t * n_bpr * 16, dim);
-                {
-                    float *qkv_out[3] = { Q_buf, K_new, V_new };
-                    const BnQWeight *qkv_w[3] = { &lw->attn.wq, &lw->attn.wk, &lw->attn.wv };
-                    prefill_quant_matmul_preq8k_multi(m, qkv_out, qkv_w, 3,
-                                                       n_tokens, pf_xq, pf_xd,
-                                                       pf_xbs, Xb);
-                }
-                prefill_profile_add(&prof.qkv_ms, t_prof);
-            } else
-#endif
             {
                 t_prof = prefill_profile_now(&prof);
-                if (prefill_qkv_stacked_batch_gpu(
+                float *qkv_out[3] = { Q_buf, K_new, V_new };
+                const BnQWeight *qkv_w[3] = {
+                    &lw->attn.wq, &lw->attn.wk, &lw->attn.wv
+                };
+                int used_preq8k =
+                    prefill_quant_can_preq8k_triple(
+                        lw->attn.wq.type, lw->attn.wk.type,
+                        lw->attn.wv.type) &&
+                    prefill_try_preq8k_multi(m, &preq8k, qkv_out, qkv_w,
+                                             3, Xb, dim, n_tokens);
+                if (used_preq8k) {
+                    /* handled by preq8k helper */
+                } else if (prefill_qkv_stacked_batch_gpu(
                         m, lw, Q_buf, K_new, V_new, Xb, n_tokens,
                         q_buf_stride, dim, l) == 0) {
                     q_read_stride = q_buf_stride;
@@ -2147,10 +2259,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_quant_matmul_gpu(m, V_new, &lw->attn.wv,
                                                  Xb, n_tokens, s->x_q);
                 } else {
-                    float *qkv_out[3] = { Q_buf, K_new, V_new };
-                    const BnQWeight *qkv_w[3] = {
-                        &lw->attn.wq, &lw->attn.wk, &lw->attn.wv
-                    };
                     prefill_quant_matmul_multi(m, qkv_out, qkv_w, 3, Xb,
                                                n_tokens, s->x_q);
                 }
@@ -2496,29 +2604,17 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             float *Out_all = Hb;
             int scalar_hybrid_ssm = bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);
 
-#ifdef __AVX2__
             int ssm_preq8k = 0;
-            if (pf_xq && !bn_model_gpu(m) &&
-                !prefill_force_float_kquant(m) &&
-                prefill_quant_can_preq8k_pair(lw->ssm.wqkv.type,
-                                              lw->ssm.wz.type)) {
-                int n_bpr = dim / BN_QK_K;
-                for (int t = 0; t < n_tokens; t++)
-                    bn_quant_x_to_q8k(Xb + (size_t)t * dim,
-                                      pf_xq + (size_t)t * dim,
-                                      pf_xd + (size_t)t * n_bpr,
-                                      pf_xbs + (size_t)t * n_bpr * 16, dim);
-                {
-                    float *qz_out[2] = { QKV_all, Z_all };
-                    const BnQWeight *qz_w[2] = { &lw->ssm.wqkv, &lw->ssm.wz };
-                    prefill_quant_matmul_preq8k_multi(m, qz_out, qz_w, 2,
-                                                       n_tokens, pf_xq, pf_xd,
-                                                       pf_xbs, Xb);
-                }
-                ssm_preq8k = 1;
-            } else
-#endif
             {
+                float *qz_out[2] = { QKV_all, Z_all };
+                const BnQWeight *qz_w[2] = { &lw->ssm.wqkv, &lw->ssm.wz };
+                ssm_preq8k =
+                    prefill_quant_can_preq8k_pair(lw->ssm.wqkv.type,
+                                                  lw->ssm.wz.type) &&
+                    prefill_try_preq8k_multi(m, &preq8k, qz_out, qz_w,
+                                             2, Xb, dim, n_tokens);
+            }
+            if (!ssm_preq8k) {
                 prefill_quant_matmul_gpu(m, QKV_all, &lw->ssm.wqkv, Xb,
                                          n_tokens, s->x_q);
                 prefill_quant_matmul_gpu(m, Z_all, &lw->ssm.wz, Xb,
@@ -2559,19 +2655,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     { alpha_arr, &lw->ssm.ssm_alpha, NULL, 0 },
                     { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
                 };
-#ifdef __AVX2__
-                if (ssm_preq8k &&
-                    prefill_quant_can_preq8k_pair(lw->ssm.ssm_alpha.type,
-                                                  lw->ssm.ssm_beta.type)) {
-                    int n_bpr = dim / BN_QK_K;
-                    bn_quant_matvec_batch_preq8k(
-                        ab, 2, pf_xq + (size_t)t * dim,
-                        pf_xd + (size_t)t * n_bpr,
-                        pf_xbs + (size_t)t * n_bpr * 16,
-                        xb_t, bn_model_pool(m));
-                } else
-#endif
-                {
+                if (!ssm_preq8k ||
+                    !prefill_quant_can_preq8k_pair(lw->ssm.ssm_alpha.type,
+                                                   lw->ssm.ssm_beta.type) ||
+                    !prefill_try_preq8k_matvec_batch(m, &preq8k, ab, 2,
+                                                     xb_t, dim, t)) {
                     bn_quant_matvec_batch(ab, 2, xb_t, s->x_q,
                                           bn_model_pool(m));
                 }
@@ -2670,31 +2758,16 @@ prefill_ssm_done:
                     used_gpu_batch_ffn = 1;
                 } else if (c->has_ffn_gate) {
                     double t_ffn_step = prefill_profile_now(&prof);
-#ifdef __AVX2__
-                if (pf_xq && !bn_model_gpu(m) &&
-                    !prefill_force_float_kquant(m) &&
-                    prefill_quant_can_preq8k_pair(lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
-                    int n_bpr = dim / BN_QK_K;
-                    for (int t = 0; t < n_tokens; t++)
-                        bn_quant_x_to_q8k(Xb + (size_t)t * dim,
-                                          pf_xq + (size_t)t * dim,
-                                          pf_xd + (size_t)t * n_bpr,
-                                          pf_xbs + (size_t)t * n_bpr * 16, dim);
-                    float *gu_out[2] = { Hb, Hb2 };
-                    const BnQWeight *gu_w[2] = { &lw->ffn.ffn_gate, &lw->ffn.ffn_up };
-                    prefill_quant_matmul_preq8k_multi(m, gu_out, gu_w, 2,
-                                                       n_tokens, pf_xq,
-                                                       pf_xd, pf_xbs, Xb);
-                } else
-#endif
-                {
                     float *gu_out[2] = { Hb, Hb2 };
                     const BnQWeight *gu_w[2] = {
                         &lw->ffn.ffn_gate, &lw->ffn.ffn_up
                     };
-                    prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,
-                                               n_tokens, s->x_q);
-                }
+                    if (!prefill_quant_can_preq8k_pair(lw->ffn.ffn_gate.type,
+                                                       lw->ffn.ffn_up.type) ||
+                        !prefill_try_preq8k_multi(m, &preq8k, gu_out, gu_w,
+                                                  2, Xb, dim, n_tokens))
+                        prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,
+                                                   n_tokens, s->x_q);
                 prefill_profile_add(&prof.ffn_gateup_ms, t_ffn_step);
 
                 t_ffn_step = prefill_profile_now(&prof);
