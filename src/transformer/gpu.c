@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "backend_quant.h"
 #include "backend_session.h"
 #include "model_arch.h"
 #include "platform.h"
@@ -673,7 +674,7 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
                                      int8_t *x_q_buf, int top_n) {
     if (!logits || !W || !W->data || !x || !x_q_buf ||
-        W->type != BN_GGUF_TENSOR_Q6_K)
+        !bn_backend_quant_supports_q6k_logits_refine(W->type))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 4096) top_n = 4096;
@@ -747,7 +748,7 @@ static int gpu_refine_q8_logits_top(float *logits, int n_logits,
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
     defined(__AVX2__) || defined(__wasm_relaxed_simd__)
     if (!logits || !W || !W->data || !x || !x_q ||
-        W->type != BN_GGUF_TENSOR_Q8_0)
+        !bn_backend_quant_supports_q8_logits_refine(W->type))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -2296,7 +2297,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (argmax_token) {
         if (!use_matvec_argmax &&
             refine_q8_logits &&
-            logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
+            bn_backend_quant_supports_q8_logits_refine(logit_res->type) &&
             logit_res->cpu_weight) {
             int refine_top = bn_transformer_gpu_q8_logits_refine_top(
                 small_dense_cuda_q8_logits_refine_default);
@@ -2390,7 +2391,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         return s->x;
     }
     if (refine_q6_logits &&
-        logit_res->type == BN_GGUF_TENSOR_Q6_K &&
+        bn_backend_quant_supports_q6k_logits_refine(logit_res->type) &&
         logit_res->cpu_weight) {
         int refine_top = bn_transformer_gpu_q6_logits_refine_top(
             all2_q4q6_moe_cuda_q6_logits_refine_default);
@@ -2406,7 +2407,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
     }
     if (refine_q8_logits &&
-        logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
+        bn_backend_quant_supports_q8_logits_refine(logit_res->type) &&
         logit_res->cpu_weight) {
         int refine_top = bn_transformer_gpu_q8_logits_refine_top(
             small_dense_cuda_q8_logits_refine_default);

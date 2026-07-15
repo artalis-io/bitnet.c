@@ -324,7 +324,7 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnConfig *c,
     int tensor_type) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-           tensor_type == BN_GGUF_TENSOR_Q8_0 &&
+           bn_backend_quant_supports_q8_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_cuda_q8_logit_refine(c) &&
            getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
@@ -357,7 +357,7 @@ int bn_transformer_gpu_q6_logits_refine_captures_xb(
     return refine_q6_logits &&
            q6_refine_default &&
            logits &&
-           logits->type == BN_GGUF_TENSOR_Q6_K &&
+           bn_backend_quant_supports_q6k_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
@@ -384,7 +384,7 @@ int bn_transformer_gpu_q8_logits_refine_captures_xb(
     int refine_q8_logits) {
     return refine_q8_logits &&
            logits &&
-           logits->type == BN_GGUF_TENSOR_Q8_0 &&
+           bn_backend_quant_supports_q8_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
@@ -408,7 +408,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         getenv("BN_GPU_CPU_LOGITS") != NULL ||
         gpu_logits_need_cpu ||
         getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL ||
-        logits->type != BN_GGUF_TENSOR_Q6_K)
+        !bn_backend_quant_supports_q6k_logits_refine(logits->type))
         return 0;
 
     if (c->n_experts <= 0) {
