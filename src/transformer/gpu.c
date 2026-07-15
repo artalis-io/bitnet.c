@@ -1193,28 +1193,17 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         small_dense_cuda_exact_q4_q8_to_layer < 0 &&
         c->n_layers > 33)
         small_dense_cuda_exact_q4_q8_to_layer = c->n_layers - 33 - 1;
-    int q4_q8_decode_cache_disabled =
-        getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL;
     int cacheable_decode =
-        (!emit_logits || argmax_token ||
-         (getenv("BN_CUDA_ENABLE_LOGITS_CACHE") &&
-          !gpu_logits_need_cpu)) &&
-        gpu->kind == BN_GPU_BACKEND_CUDA &&
-        (!policy.has_moe || cacheable_resident_moe ||
-         getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE")) &&
-        !getenv("BN_CUDA_DISABLE_DECODE_CACHE") &&
-        (!q6_logits_refine_captures_xb || (argmax_token && !need_logits)) &&
-        (!q8_logits_refine_captures_xb || (argmax_token && !need_logits)) &&
-        cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
-        cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0 &&
-        cpu_fallback_ffn_layer < 0 && cpu_fallback_ffn_from_layer < 0 &&
-        cpu_fallback_ffn_down_from_layer < 0 &&
-        compare_attention_layer < 0 && compare_gqa_layer < 0 &&
-        compare_qkv_layer < 0 && compare_ffn_down_layer < 0 &&
-        compare_ffn_state_layer < 0 &&
-        !q4_q8_decode_cache_disabled &&
-        !getenv("BN_GPU_CPU_LOGITS") && !getenv("BN_GPU_COMPARE_LOGITS") &&
-        !getenv("BN_METAL_ENABLE_Q6_Q8K");
+        bn_transformer_gpu_cuda_decode_cacheable(
+            gpu, emit_logits, argmax_token != NULL, gpu_logits_need_cpu,
+            policy.has_moe, cacheable_resident_moe,
+            q6_logits_refine_captures_xb, q8_logits_refine_captures_xb,
+            need_logits, cpu_fallback_layer, cpu_fallback_from_layer,
+            cpu_fallback_attn_layer, cpu_fallback_attn_from_layer,
+            cpu_fallback_ffn_layer, cpu_fallback_ffn_from_layer,
+            cpu_fallback_ffn_down_from_layer, compare_attention_layer,
+            compare_gqa_layer, compare_qkv_layer, compare_ffn_down_layer,
+            compare_ffn_state_layer);
     int cached_n = cacheable_decode
         ? bn_backend_session_gpu_cached_op_count(sess->backend)
         : 0;

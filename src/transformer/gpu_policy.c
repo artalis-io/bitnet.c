@@ -473,6 +473,60 @@ int bn_transformer_gpu_cuda_moe_decode_cacheable(
     return 1;
 }
 
+int bn_transformer_gpu_cuda_decode_cacheable(
+    const BnGPUBackend *gpu,
+    int emit_logits,
+    int want_argmax,
+    int gpu_logits_need_cpu,
+    int has_moe,
+    int cacheable_resident_moe,
+    int q6_logits_refine_captures_xb,
+    int q8_logits_refine_captures_xb,
+    int need_logits,
+    int cpu_fallback_layer,
+    int cpu_fallback_from_layer,
+    int cpu_fallback_attn_layer,
+    int cpu_fallback_attn_from_layer,
+    int cpu_fallback_ffn_layer,
+    int cpu_fallback_ffn_from_layer,
+    int cpu_fallback_ffn_down_from_layer,
+    int compare_attention_layer,
+    int compare_gqa_layer,
+    int compare_qkv_layer,
+    int compare_ffn_down_layer,
+    int compare_ffn_state_layer) {
+    if ((!emit_logits || want_argmax ||
+         (getenv("BN_CUDA_ENABLE_LOGITS_CACHE") &&
+          !gpu_logits_need_cpu)) == 0)
+        return 0;
+    if (!gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
+        return 0;
+    if (has_moe && !cacheable_resident_moe &&
+        getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE") == NULL)
+        return 0;
+    if (getenv("BN_CUDA_DISABLE_DECODE_CACHE") != NULL)
+        return 0;
+    if (q6_logits_refine_captures_xb && !(want_argmax && !need_logits))
+        return 0;
+    if (q8_logits_refine_captures_xb && !(want_argmax && !need_logits))
+        return 0;
+    if (cpu_fallback_layer >= 0 || cpu_fallback_from_layer >= 0 ||
+        cpu_fallback_attn_layer >= 0 || cpu_fallback_attn_from_layer >= 0 ||
+        cpu_fallback_ffn_layer >= 0 || cpu_fallback_ffn_from_layer >= 0 ||
+        cpu_fallback_ffn_down_from_layer >= 0)
+        return 0;
+    if (compare_attention_layer >= 0 || compare_gqa_layer >= 0 ||
+        compare_qkv_layer >= 0 || compare_ffn_down_layer >= 0 ||
+        compare_ffn_state_layer >= 0)
+        return 0;
+    if (getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL ||
+        getenv("BN_GPU_CPU_LOGITS") != NULL ||
+        getenv("BN_GPU_COMPARE_LOGITS") != NULL ||
+        getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL)
+        return 0;
+    return 1;
+}
+
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
