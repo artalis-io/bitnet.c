@@ -1124,8 +1124,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
         cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0)
         cpu_fallback_attn_from_layer = 0;
-    if (argmax_token && large_hybrid_safe_cpu_attn &&
-        getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") == NULL)
+    if (bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
+            gpu, c, w, argmax_token != NULL))
         return NULL;
 
     // Embed token on CPU, upload to GPU x buffer.
@@ -1302,9 +1302,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         if (small_dense_cuda_exact_q4_q8)
             use_q4_q8_layer = 1;
         int all2_q4q6_moe_cuda_exact_attn =
-            gpu->kind == BN_GPU_BACKEND_CUDA &&
-            bn_model_arch_moe_prefers_cuda_exact_attention(c) &&
-            !getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
+            bn_transformer_gpu_cuda_moe_exact_attention_enabled(gpu, c);
         int use_q4_q8_attn =
             (use_q4_q8_layer || all2_q4q6_moe_cuda_exact_attn) && !q4_q8_ffn_only;
         int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
@@ -1317,8 +1315,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         // ---- SSM layer ----
         if (!is_attn) {
             int use_cpu_ssm_fallback =
-                gpu->kind != BN_GPU_BACKEND_CUDA ||
-                getenv("BN_CUDA_DISABLE_SSM_GRAPH") != NULL;
+                bn_transformer_gpu_ssm_cpu_fallback_required(gpu);
             if (use_cpu_ssm_fallback) {
                 void *nn = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);

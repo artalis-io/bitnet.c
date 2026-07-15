@@ -425,6 +425,31 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
            getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           bn_model_arch_moe_prefers_cuda_exact_attention(c) &&
+           getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN") == NULL;
+}
+
+int bn_transformer_gpu_ssm_cpu_fallback_required(
+    const BnGPUBackend *gpu) {
+    return !gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
+           getenv("BN_CUDA_DISABLE_SSM_GRAPH") != NULL;
+}
+
+int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    int want_argmax) {
+    return want_argmax &&
+           gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w) &&
+           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") == NULL;
+}
+
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
