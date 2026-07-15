@@ -1262,10 +1262,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);
     int cuda_backend = gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
     int all2_q4q6_moe_cuda_q6_logits_refine_default =
-        cuda_backend &&
-        gpu_cuda_all2_q4q6_moe_model(c, w) &&
-        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL &&
-        getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE") == NULL;
+        bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+            gpu, c, w);
     int refine_q6_logits =
         all2_q4q6_moe_cuda_q6_logits_refine_default ||
         getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL ||

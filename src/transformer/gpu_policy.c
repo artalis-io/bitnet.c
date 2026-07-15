@@ -148,6 +148,16 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           cuda_all2_q4q6_moe_model(c, w) &&
+           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL &&
+           getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE") == NULL;
+}
+
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
