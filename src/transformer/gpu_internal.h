@@ -165,6 +165,10 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     int want_argmax,
     int need_logits,
     int gpu_logits_need_cpu);
+int bn_transformer_gpu_cuda_moe_decode_cacheable(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnBackendModel *backend);
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,

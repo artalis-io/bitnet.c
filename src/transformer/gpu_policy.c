@@ -296,6 +296,47 @@ int bn_transformer_gpu_matvec_argmax_enabled(
            getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") == NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_decode_cacheable(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnBackendModel *backend) {
+    if (!c || !w || !backend || c->n_experts <= 0)
+        return 0;
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        if (!lw->moe.router_weight)
+            continue;
+        const BnMoEExpertMap *em = &lw->moe.expert_map;
+        int routed_q4 = em->gate_type == BN_GGUF_TENSOR_Q4_K &&
+                        em->up_type == BN_GGUF_TENSOR_Q4_K &&
+                        (em->down_type == BN_GGUF_TENSOR_Q6_K ||
+                         em->down_type == BN_GGUF_TENSOR_Q4_K);
+        int routed_q8 = em->gate_type == BN_GGUF_TENSOR_Q8_0 &&
+                        em->up_type == BN_GGUF_TENSOR_Q8_0 &&
+                        em->down_type == BN_GGUF_TENSOR_Q8_0;
+        int has_router =
+            bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_ROUTER) ||
+            bn_backend_model_handle(backend, l,
+                                    BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
+        if (!has_router ||
+            !bn_backend_model_handle(backend, l,
+                                     BN_BACKEND_HANDLE_MOE_GATE_ALL) ||
+            !bn_backend_model_handle(backend, l,
+                                     BN_BACKEND_HANDLE_MOE_UP_ALL) ||
+            !bn_backend_model_handle(backend, l,
+                                     BN_BACKEND_HANDLE_MOE_DOWN_ALL) ||
+            (!routed_q4 && !routed_q8) ||
+            em->gate_rows != c->moe_intermediate_size ||
+            em->up_rows != c->moe_intermediate_size ||
+            em->gate_cols != c->dim ||
+            em->up_cols != c->dim ||
+            em->down_rows != c->dim ||
+            em->down_cols != c->moe_intermediate_size)
+            return 0;
+    }
+    return 1;
+}
+
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
