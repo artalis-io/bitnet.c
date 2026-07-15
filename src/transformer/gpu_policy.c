@@ -187,6 +187,29 @@ int bn_transformer_gpu_batch_prefill_enabled(
     return c->dim <= 2560;
 }
 
+int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
+        c->n_experts > 0 || c->dim < 4096 ||
+        c->full_attn_interval <= 0 || c->ssm_inner_size <= 0)
+        return 0;
+    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
+        return 1;
+    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") == NULL &&
+           getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
+           getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL;
+}
+
+int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return c && gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           c->n_experts <= 0 && c->dim >= 4096 &&
+           c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
+           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN") == NULL;
+}
+
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

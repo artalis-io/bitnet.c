@@ -76,29 +76,6 @@ static int prefill_gpu_cpu_decode_fallback_requested(void) {
            getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
 }
 
-static int prefill_cuda_large_hybrid_cpu_attn_fallback(
-        const BnConfig *c,
-        const BnGPUBackend *gpu) {
-    if (!c || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
-        c->n_experts > 0 || c->dim < 4096 ||
-        c->full_attn_interval <= 0 || c->ssm_inner_size <= 0)
-        return 0;
-    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
-        return 1;
-    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") == NULL &&
-           getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
-           getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL;
-}
-
-static int prefill_cuda_large_hybrid_disable_chain_default(
-        const BnConfig *c,
-        const BnGPUBackend *gpu) {
-    return c && gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-           c->n_experts <= 0 && c->dim >= 4096 &&
-           c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
-           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN") == NULL;
-}
-
 static int prefill_cuda_direct_gpu_kv_allowed(const BnConfig *c,
                                               const BnWeights *w,
                                               const BnGPUBackend *gpu,
@@ -112,7 +89,8 @@ static int prefill_cuda_direct_gpu_kv_allowed(const BnConfig *c,
          bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
              c, w) ||
          bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w) ||
-         prefill_cuda_large_hybrid_cpu_attn_fallback(c, gpu)) &&
+         bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
+             gpu, c)) &&
         !getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK"))
         return 0;
     if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
@@ -1897,7 +1875,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     }
 
     if (!getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") &&
-        !prefill_cuda_large_hybrid_disable_chain_default(c, prefill_gpu) &&
+        !bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
+            prefill_gpu, c) &&
         cuda_hybrid_prefill && pos0 == 0 && c->n_layers > 0 &&
         bn_model_tq_state(m) == NULL) {
         int chain_ready = 1;
