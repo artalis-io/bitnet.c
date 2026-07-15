@@ -12,6 +12,17 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX512F__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
 #define BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS 8192
 
 static int gpu_cuda_qwen2moe_all2_q4q6_model(

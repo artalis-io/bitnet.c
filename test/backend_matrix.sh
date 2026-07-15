@@ -113,9 +113,11 @@ done
 for file in \
     src/moe_route.c \
     src/moe_math.c \
-    src/moe_prefill.c
+    src/moe_prefill.c \
+    src/moe_execute.c \
+    src/moe_internal.h
 do
-    if grep -n '__AVX\|__ARM_NEON\|float32x\|__m256\|_mm[0-9_]*\|vfmaq\|vld1q\|vaddvq' "$file" >/dev/null 2>&1; then
+    if grep -n '__AVX\|__ARM_NEON\|float32x\|__m256\|_mm[0-9]*_\|vfmaq\|vld1q\|vaddvq' "$file" >/dev/null 2>&1; then
         echo "$file must dispatch MoE CPU kernels through src/moe_cpu_kernels.c"
         fail=1
     fi

@@ -1,5 +1,29 @@
 #include "moe_internal.h"
 
+#ifdef BN_FORCE_SCALAR
+#undef __ARM_NEON
+#undef __ARM_FEATURE_DOTPROD
+#undef __AVX2__
+#undef __wasm_relaxed_simd__
+#undef __wasm_simd128__
+#endif
+
+#include "simd_helpers.h"
+#include "transformer_rmsnorm_internal.h"
+
+void bn_moe_rmsnorm(float *out, const float *x, const float *w,
+                    int size, float eps) {
+#if defined(__ARM_NEON)
+    bn_transformer_rmsnorm_neon(out, x, w, size, eps);
+#elif defined(__AVX2__)
+    bn_transformer_rmsnorm_avx2(out, x, w, size, eps);
+#elif defined(__wasm_simd128__)
+    bn_transformer_rmsnorm_wasm(out, x, w, size, eps);
+#else
+    bn_transformer_rmsnorm_scalar(out, x, w, size, eps);
+#endif
+}
+
 float bn_moe_dot_row(const float *row, const float *x, int dim) {
     float sum = 0.0f;
 #if defined(__ARM_NEON)
@@ -106,6 +130,27 @@ void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
         float g = gate[i];
         hb[i] = (g / (1.0f + expf(-g))) * up[i];
     }
+}
+
+int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
+                                   int shared_gate_type, int shared_up_type) {
+    if (!tasks || n_tasks <= 0)
+        return 0;
+    int batch_type = tasks[0].W->type;
+    int can_batch = shared_gate_type == batch_type &&
+                    shared_up_type == batch_type;
+    for (int i = 1; can_batch && i < n_tasks; i++)
+        can_batch = tasks[i].W->type == batch_type;
+#if defined(__AVX2__)
+    if (!can_batch &&
+        bn_quant_format_can_preq8k(shared_gate_type) &&
+        bn_quant_format_can_preq8k(shared_up_type)) {
+        can_batch = 1;
+        for (int i = 0; can_batch && i < n_tasks; i++)
+            can_batch = bn_quant_format_can_preq8k(tasks[i].W->type);
+    }
+#endif
+    return can_batch;
 }
 
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n) {

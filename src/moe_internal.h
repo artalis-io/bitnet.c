@@ -6,7 +6,6 @@
 #include "session.h"
 #include "platform.h"
 #include "quant.h"
-#include "simd_helpers.h"
 #include "sh_log.h"
 #include "bn_alloc.h"
 #include <stdio.h>
@@ -16,38 +15,10 @@
 #include <stdint.h>
 #include <limits.h>
 
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
-
 #ifndef __EMSCRIPTEN__
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/mman.h>
-#endif
-
-#ifdef __ARM_NEON
-#include <arm_neon.h>
-#elif defined(__AVX2__)
-#include <immintrin.h>
-#endif
-
-#ifdef __ARM_NEON
-extern void bn_transformer_rmsnorm_neon(float *out, const float *x, const float *w, int size, float eps);
-#define bn_moe_rmsnorm bn_transformer_rmsnorm_neon
-#elif defined(__AVX2__)
-extern void bn_transformer_rmsnorm_avx2(float *out, const float *x, const float *w, int size, float eps);
-#define bn_moe_rmsnorm bn_transformer_rmsnorm_avx2
-#elif defined(__wasm_simd128__)
-extern void bn_transformer_rmsnorm_wasm(float *out, const float *x, const float *w, int size, float eps);
-#define bn_moe_rmsnorm bn_transformer_rmsnorm_wasm
-#else
-extern void bn_transformer_rmsnorm_scalar(float *out, const float *x, const float *w, int size, float eps);
-#define bn_moe_rmsnorm bn_transformer_rmsnorm_scalar
 #endif
 
 typedef struct BnMoECache BnMoECache;
@@ -83,11 +54,15 @@ void bn_moe_swiglu_range(void *ctx, int start, int end);
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
                    int exact_silu);
 double bn_moe_time_ms(void);
+void bn_moe_rmsnorm(float *out, const float *x, const float *w,
+                    int size, float eps);
 float bn_moe_dot_row(const float *row, const float *x, int dim);
 int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
                      int dim, int start_expert);
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
                         int n, int exact_silu);
+int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
+                                   int shared_gate_type, int shared_up_type);
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n);
 void bn_moe_residual_add(float *x, const float *r, int n);
 

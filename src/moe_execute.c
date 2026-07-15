@@ -219,22 +219,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]  , NULL, gateup_flags };
             }
             if (c->has_shared_expert && lw->shared.shared_gate.data) {
-                int batch_type = gu_tasks[0].W->type;
-                int can_batch_shared = (lw->shared.shared_gate.type == batch_type &&
-                                        lw->shared.shared_up.type == batch_type);
-                for (int i = 1; can_batch_shared && i < n_gu; i++)
-                    can_batch_shared = (gu_tasks[i].W->type == batch_type);
-#if defined(__AVX2__)
-                if (!can_batch_shared &&
-                    bn_quant_format_can_preq8k(lw->shared.shared_gate.type) &&
-                    bn_quant_format_can_preq8k(lw->shared.shared_up.type)) {
-                    can_batch_shared = 1;
-                    for (int i = 0; can_batch_shared && i < n_gu; i++) {
-                        int type = gu_tasks[i].W->type;
-                        can_batch_shared = bn_quant_format_can_preq8k(type);
-                    }
-                }
-#endif
+                int can_batch_shared = bn_moe_can_batch_shared_gateup(
+                    gu_tasks, n_gu, lw->shared.shared_gate.type,
+                    lw->shared.shared_up.type);
                 if (can_batch_shared) {
                     gu_tasks[n_gu++] = (BnMatvecTask){ s->hb,  &lw->shared.shared_gate, NULL, gateup_flags };
                     gu_tasks[n_gu++] = (BnMatvecTask){ s->hb2, &lw->shared.shared_up  , NULL, gateup_flags };
