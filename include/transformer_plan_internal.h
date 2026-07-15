@@ -190,6 +190,10 @@ int bn_transformer_attention_value_shares_key(
     const BnConfig *c);
 int bn_transformer_attention_uses_post_norm(
     const BnConfig *c);
+int bn_transformer_ffn_uses_post_norm(
+    const BnConfig *c);
+int bn_transformer_uses_layer_output_scale(
+    const BnConfig *c);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

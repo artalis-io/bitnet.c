@@ -168,6 +168,16 @@ int bn_transformer_attention_uses_post_norm(
     return bn_model_arch_uses_attention_post_norm(c);
 }
 
+int bn_transformer_ffn_uses_post_norm(
+    const BnConfig *c) {
+    return bn_model_arch_uses_ffn_post_norm(c);
+}
+
+int bn_transformer_uses_layer_output_scale(
+    const BnConfig *c) {
+    return bn_model_arch_uses_layer_output_scale(c);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

@@ -1045,6 +1045,8 @@ static void test_block_planning(void) {
                  (1.0f / sqrtf(128.0f))) < 1e-7f);
     assert(!bn_transformer_attention_value_shares_key(&c));
     assert(!bn_transformer_attention_uses_post_norm(&c));
+    assert(!bn_transformer_ffn_uses_post_norm(&c));
+    assert(!bn_transformer_uses_layer_output_scale(&c));
     assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
     int force_float_kquant =
         bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
@@ -1066,6 +1068,8 @@ static void test_block_planning(void) {
     assert(bn_transformer_attention_scale(&c, 128) == 1.0f);
     assert(bn_transformer_attention_value_shares_key(&c));
     assert(bn_transformer_attention_uses_post_norm(&c));
+    assert(bn_transformer_ffn_uses_post_norm(&c));
+    assert(bn_transformer_uses_layer_output_scale(&c));
 #if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif

@@ -297,7 +297,7 @@ static void fallback_cpu_forward_ffn_from_xb(BnModel *m,
                          hidden_dim, m->config.norm_eps);
     bn_quant_matvec(s->xb, &lw->ffn.ffn_down, s->hb, s->x_q,
                     bn_model_pool(m));
-    if (bn_model_arch_uses_ffn_post_norm(&m->config) &&
+    if (bn_transformer_ffn_uses_post_norm(&m->config) &&
         lw->norm.ffn_post_norm)
         fallback_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm,
                          dim, m->config.norm_eps);

@@ -1310,7 +1310,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
     cpu_apply_arch_per_layer_embedding(m, sess, lw, l);
 
-    if (bn_model_arch_uses_layer_output_scale(c) &&
+    if (bn_transformer_uses_layer_output_scale(c) &&
         lw->norm.layer_output_scale) {
         float scale = lw->norm.layer_output_scale[0];
         for (int i = 0; i < dim; i++)
@@ -1478,7 +1478,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                                s->xb, dim, hidden_dim,
                                lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
                                lw->ffn.ffn_down.type, ffn_plan->activation) == 0) {
-                if (bn_model_arch_uses_ffn_post_norm(c) &&
+                if (bn_transformer_ffn_uses_post_norm(c) &&
                     lw->norm.ffn_post_norm)
                     cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim,
                                 c->norm_eps);
@@ -1552,7 +1552,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 
     BnMatvecTask down[1] = {{ s->xb, &lw->ffn.ffn_down, NULL, 0 }};
     cpu_quant_matvec_batch_prepared(m, down, 1, s->hb, s->x_q);
-    if (bn_model_arch_uses_ffn_post_norm(c) && lw->norm.ffn_post_norm)
+    if (bn_transformer_ffn_uses_post_norm(c) && lw->norm.ffn_post_norm)
         cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim, c->norm_eps);
     cpu_debug_dump_array(c, s->xb, "bitnet_ffn_out", layer, pos);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);

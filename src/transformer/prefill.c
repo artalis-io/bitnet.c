@@ -960,7 +960,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         lw->ffn.ffn_down.data && m->config.has_ffn_gate &&
         !lw->norm.ffn_sub_norm &&
         !lw->norm.layer_output_scale &&
-        !(bn_model_arch_uses_ffn_post_norm(&m->config) &&
+        !(bn_transformer_ffn_uses_post_norm(&m->config) &&
           lw->norm.ffn_post_norm)) {
         gateup_buf = bn_backend_model_handle(
             backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
@@ -2618,7 +2618,7 @@ prefill_ssm_done:
                 backend_ffn ? bn_backend_model_handle(
                     backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
             if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
-                !(bn_model_arch_uses_ffn_post_norm(c) &&
+                !(bn_transformer_ffn_uses_post_norm(c) &&
                   lw->norm.ffn_post_norm) &&
                 can_use_dense_ffn_batch &&
                 gpu_ffn && gpu_ffn->dense_ffn_batch_norm_resid &&
@@ -2643,7 +2643,7 @@ prefill_ssm_done:
 
                 t_prof = prefill_profile_now(&prof);
                 if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
-                    !(bn_model_arch_uses_ffn_post_norm(c) &&
+                    !(bn_transformer_ffn_uses_post_norm(c) &&
                       lw->norm.ffn_post_norm) &&
                     can_use_dense_ffn_batch &&
                     (c->full_attn_interval <= 0 ||
@@ -2706,7 +2706,7 @@ prefill_ssm_done:
                 prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb,
                                          n_tokens, s->x_q);
                 prefill_profile_add(&prof.ffn_down_ms, t_ffn_step);
-                if (bn_model_arch_uses_ffn_post_norm(c) &&
+                if (bn_transformer_ffn_uses_post_norm(c) &&
                     lw->norm.ffn_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_cpu_ops()->rmsnorm(Xb + (size_t)t * dim,
@@ -2726,7 +2726,7 @@ prefill_ssm_done:
             prefill_profile_add(&prof.residual_ms, t_prof);
         }
 
-        if (bn_model_arch_uses_layer_output_scale(c) && lw->norm.layer_output_scale) {
+        if (bn_transformer_uses_layer_output_scale(c) && lw->norm.layer_output_scale) {
             float scale = lw->norm.layer_output_scale[0];
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)
