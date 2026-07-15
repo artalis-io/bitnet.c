@@ -395,7 +395,6 @@ static int prefill_dense_chain_min_tokens(const BnConfig *c,
                                           const BnGPUBackend *gpu);
 static int prefill_moe_chain_min_tokens(const BnConfig *c,
                                         const BnGPUBackend *gpu);
-static int prefill_cuda_moe_route_routed_batch_allowed(const BnConfig *c);
 
 static int prefill_dense_layer_gpu_batch(const BnModel *m,
                                          float *out,
@@ -696,7 +695,8 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         !gpu->prefill_ssm_layer ||
         !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
         getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") ||
-        !prefill_cuda_moe_route_routed_batch_allowed(c) ||
+        !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
+            c ? c->n_experts : 0) ||
         n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
         !lw || !lw->moe.router_weight ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
@@ -844,7 +844,8 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     if (!gpu || !gpu->prefill_moe_layer || !backend ||
         bn_model_tq_state(m) != NULL ||
         n_tokens < prefill_moe_chain_min_tokens(c, gpu) ||
-        !prefill_cuda_moe_route_routed_batch_allowed(c) ||
+        !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
+            c ? c->n_experts : 0) ||
         layer_rope_theta != c->rope_theta ||
         !plan->is_attn || !lw->moe.router_weight ||
         lw->norm.attn_sub_norm ||
@@ -1583,13 +1584,6 @@ static int prefill_moe_chain_min_tokens(const BnConfig *c,
     if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA && c)
         return 16;
     return prefill_dense_chain_min_tokens(c, gpu);
-}
-
-static int prefill_cuda_moe_route_routed_batch_allowed(const BnConfig *c) {
-    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
-        return 0;
-    return !c || c->n_experts <= 2 ||
-           getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
 }
 
 static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
