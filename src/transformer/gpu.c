@@ -1253,20 +1253,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         all2_q4q6_moe_cuda_q6_logits_refine_default &&
         logit_res->type == BN_GGUF_TENSOR_Q6_K &&
         logit_res->cpu_weight != NULL;
-    int prefer_cached_dense_logits_argmax =
-        c->n_experts <= 0 && logit_res->rows <= 262144 &&
-        !getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX");
     int use_matvec_argmax =
-        argmax_token && !need_logits && gpu->matvec_argmax_activation &&
-        !getenv("BN_GPU_CPU_LOGITS") && !gpu_logits_need_cpu &&
-        !getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") &&
-        !prefer_cached_dense_logits_argmax &&
-        (c->n_experts <= 0 ||
-         (c->n_experts == 2 && c->n_experts_active == 2) ||
-         (c->n_experts > 0 && logit_res->cols == 1536 &&
-          !getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")) ||
-         getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL) &&
-        logit_res->type == BN_GGUF_TENSOR_Q6_K;
+        bn_transformer_gpu_matvec_argmax_enabled(
+            gpu, c, logit_res, argmax_token != NULL, need_logits,
+            gpu_logits_need_cpu);
     int small_dense_cuda_exact_q4_q8_default =
         bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
             gpu, c, q4_q8_from_layer);

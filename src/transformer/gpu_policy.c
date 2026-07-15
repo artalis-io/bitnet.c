@@ -269,6 +269,33 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE") == NULL;
 }
 
+int bn_transformer_gpu_matvec_argmax_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPULogitResources *logits,
+    int want_argmax,
+    int need_logits,
+    int gpu_logits_need_cpu) {
+    if (!gpu || !c || !logits || !want_argmax || need_logits ||
+        !gpu->matvec_argmax_activation ||
+        getenv("BN_GPU_CPU_LOGITS") != NULL ||
+        gpu_logits_need_cpu ||
+        getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL ||
+        logits->type != BN_GGUF_TENSOR_Q6_K)
+        return 0;
+
+    if (c->n_experts <= 0) {
+        return logits->rows > 262144 ||
+               getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
+    }
+    if (c->n_experts == 2 && c->n_experts_active == 2)
+        return 1;
+    if (getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL)
+        return 1;
+    return logits->cols == 1536 &&
+           getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") == NULL;
+}
+
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,

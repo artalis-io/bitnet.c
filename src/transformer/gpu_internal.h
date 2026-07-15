@@ -158,6 +158,13 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_matvec_argmax_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPULogitResources *logits,
+    int want_argmax,
+    int need_logits,
+    int gpu_logits_need_cpu);
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
