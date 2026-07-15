@@ -2,6 +2,7 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
+#include "transformer/gpu_internal.h"
 #include <stdlib.h>
 
 static int moe_cuda_prefill_min_tokens(void) {
@@ -9,27 +10,6 @@ static int moe_cuda_prefill_min_tokens(void) {
     if (!env || !*env) return 1;
     int v = atoi(env);
     return v > 0 ? v : 1;
-}
-
-static int moe_cuda_route_routed_batch_allowed(int n_experts) {
-    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
-        return 0;
-    return n_experts <= 2 ||
-           getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
-}
-
-static int moe_cuda_all2_q4q6_requires_opt_in(const BnConfig *c,
-                                              const BnMoEExpertMap *map,
-                                              int dim) {
-    return c && map &&
-           c->n_experts == 2 &&
-           c->n_experts_active == 2 &&
-           c->moe_intermediate_size >= 4096 &&
-           dim <= 2048 &&
-           map->gate_type == BN_GGUF_TENSOR_Q4_K &&
-           map->up_type == BN_GGUF_TENSOR_Q4_K &&
-           map->down_type == BN_GGUF_TENSOR_Q6_K &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL;
 }
 
 typedef struct {
@@ -134,10 +114,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int force_matvec_prefill =
         n_experts == 2 && K == 2 && c->has_shared_expert;
     int allow_cuda_route_routed_batch =
-        moe_cuda_route_routed_batch_allowed(n_experts);
+        bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(n_experts);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
     int cuda_all2_q4q6_requires_opt_in =
-        moe_cuda_all2_q4q6_requires_opt_in(c, map, dim);
+        bn_transformer_gpu_all2_q4_moe_requires_opt_in(c, map, dim, 0);
 
     BnAllocator a = bn_allocator_default();
     int did_input_norm = 0;

@@ -249,6 +249,13 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
            (allow_q4_down && map->down_type == BN_GGUF_TENSOR_Q4_K);
 }
 
+int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts) {
+    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
+        return 0;
+    return n_experts <= 2 ||
+           getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
+}
+
 void bn_transformer_gpu_report_fallback(const char *reason) {
     if (!getenv("BN_GPU_DEBUG_FALLBACK"))
         return;

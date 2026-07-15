@@ -153,6 +153,7 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnMoEExpertMap *map,
     int dim,
     int allow_q4_down);
+int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
 void bn_transformer_gpu_report_fallback(const char *reason);
 float *bn_transformer_gpu_reject_forward(
     BnTransformerGPUEmitContext *emit,
