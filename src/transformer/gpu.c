@@ -25,45 +25,6 @@
 
 #define BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS 8192
 
-static int gpu_cuda_all2_q4q6_moe_layer(
-    const BnConfig *c,
-    const BnLayerWeights *lw,
-    int dim);
-
-static int gpu_cuda_all2_q4q6_moe_model(
-    const BnConfig *c,
-    const BnWeights *w) {
-    if (!c || !w ||
-        c->n_experts != 2 ||
-        c->n_experts_active != 2 ||
-        c->moe_intermediate_size < 4096 ||
-        c->dim > 2048)
-        return 0;
-    for (int l = 0; l < c->n_layers; l++) {
-        const BnLayerWeights *lw = &w->layers[l];
-        if (!lw->moe.router_weight)
-            continue;
-        if (gpu_cuda_all2_q4q6_moe_layer(c, lw, c->dim))
-            return 1;
-    }
-    return 0;
-}
-
-static int gpu_cuda_all2_q4q6_moe_layer(
-    const BnConfig *c,
-    const BnLayerWeights *lw,
-    int dim) {
-    if (!c || !lw ||
-        c->n_experts != 2 ||
-        c->n_experts_active != 2 ||
-        c->moe_intermediate_size < 4096 ||
-        dim > 2048)
-        return 0;
-    return lw->moe.expert_map.gate_type == BN_GGUF_TENSOR_Q4_K &&
-           lw->moe.expert_map.up_type == BN_GGUF_TENSOR_Q4_K &&
-           lw->moe.expert_map.down_type == BN_GGUF_TENSOR_Q6_K;
-}
-
 static void gpu_debug_compare_vec_local(const char *label,
                                         int layer,
                                         int pos,
@@ -1545,7 +1506,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
             int all2_q4q6_moe =
                 gpu->kind == BN_GPU_BACKEND_CUDA &&
-                gpu_cuda_all2_q4q6_moe_layer(c, lw, dim);
+                bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw, dim);
             int all2_q4q6_moe_gpu_route_requested =
                 getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") != NULL ||
                 getenv("BN_CUDA_ENABLE_QWEN2MOE_EXACT_GPU_ROUTE") != NULL;
@@ -1610,9 +1571,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 !getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
             if (gpu_routed_ffn) {
                 int all2_q4q6_moe_cpu_moe_safe =
-                    gpu_cuda_all2_q4q6_moe_model(c, w) &&
-                    getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
-                    getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE") == NULL;
+                    bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
+                        c, w);
                 int override_moe_cpu_actual =
                     all2_q4q6_moe_cpu_moe_safe ||
                     getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;

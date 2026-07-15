@@ -119,6 +119,13 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
+int bn_transformer_gpu_cuda_all2_q4q6_moe_model(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int dim);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
@@ -169,6 +176,9 @@ int bn_transformer_gpu_cuda_moe_decode_cacheable(
     const BnConfig *c,
     const BnWeights *w,
     const BnBackendModel *backend);
+int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
