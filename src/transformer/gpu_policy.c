@@ -137,6 +137,17 @@ int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int tensor_type) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           tensor_type == BN_GGUF_TENSOR_Q8_0 &&
+           bn_model_arch_allows_small_cuda_q8_logit_refine(c) &&
+           getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
+           getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
+}
+
 void bn_transformer_gpu_report_fallback(const char *reason) {
     if (!getenv("BN_GPU_DEBUG_FALLBACK"))
         return;

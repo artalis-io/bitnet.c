@@ -1314,11 +1314,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
         !getenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
     int small_dense_cuda_q8_logits_refine_default =
-        cuda_backend &&
         small_dense_cuda_exact_q4_q8_default &&
-        logit_res->type == BN_GGUF_TENSOR_Q8_0 &&
-        getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
-        !getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
+        bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+            gpu, c, logit_res->type);
     int refine_q8_logits =
         getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL ||
         small_dense_cuda_q8_logits_refine_default ||

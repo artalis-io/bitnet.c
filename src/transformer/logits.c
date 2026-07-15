@@ -8,6 +8,7 @@
 #include "session.h"
 #include "sh_log.h"
 #include "transformer_backend_internal.h"
+#include "gpu_internal.h"
 #include "gpu_backend.h"
 #include "quant.h"
 #include <math.h>
@@ -341,14 +342,12 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
 
 static int logits_small_cuda_q8_refine_enabled(const BnModel *m,
                                                const BnQWeight *W) {
-    if (!m || !W || W->type != BN_GGUF_TENSOR_Q8_0)
+    if (!m || !W)
         return 0;
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnConfig *c = &m->config;
-    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-           bn_model_arch_allows_small_cuda_q8_logit_refine(c) &&
-           getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
-           getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
+    return bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+        gpu, c, W->type);
 }
 
 static void logits_refine_small_cuda_q8(const BnModel *m,

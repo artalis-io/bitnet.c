@@ -125,6 +125,10 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int tensor_type);
 void bn_transformer_gpu_report_fallback(const char *reason);
 float *bn_transformer_gpu_reject_forward(
     BnTransformerGPUEmitContext *emit,
