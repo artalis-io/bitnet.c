@@ -547,6 +547,28 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
            getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") == NULL;
 }
 
+int bn_transformer_gpu_flash_attention_enabled(
+    const BnGPUBackend *gpu,
+    int config_flash_attn,
+    int has_moe,
+    int n_kv) {
+    int flash_min_kv = 0;
+    const char *flash_min_env = getenv("BN_GPU_FLASH_MIN_KV");
+    if (flash_min_env) flash_min_kv = atoi(flash_min_env);
+    int flash_max_kv = 0;
+    const char *flash_max_env = getenv("BN_GPU_FLASH_MAX_KV");
+    if (flash_max_env)
+        flash_max_kv = atoi(flash_max_env);
+    else if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA)
+        flash_max_kv = 2048;
+
+    return bn_transformer_gpu_can_flash_attn(gpu) &&
+           (has_moe || config_flash_attn ||
+            (gpu && gpu->kind == BN_GPU_BACKEND_CUDA)) &&
+           n_kv >= flash_min_kv &&
+           (flash_max_kv <= 0 || n_kv <= flash_max_kv);
+}
+
 int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map) {
     return bn_transformer_gpu_moe_routed_q4_down(map, 1);
 }

@@ -239,6 +239,11 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
     const BnConfig *c,
     const BnWeights *w,
     int want_argmax);
+int bn_transformer_gpu_flash_attention_enabled(
+    const BnGPUBackend *gpu,
+    int config_flash_attn,
+    int has_moe,
+    int n_kv);
 int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map);
 int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
                                           int allow_q4_down);

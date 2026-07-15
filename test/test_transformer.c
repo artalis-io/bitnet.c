@@ -332,6 +332,16 @@ static void test_gpu_policy_helpers(void) {
     logits.cpu_weight = NULL;
     assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
 
+    setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
+    setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
+    gpu.caps = BN_GPU_CAP_FLASH_ATTN;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_flash_attention_enabled(&gpu, 0, 0, 128));
+    assert(!bn_transformer_gpu_flash_attention_enabled(&gpu, 0, 0, 4096));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_flash_attention_enabled(&gpu, 0, 0, 128));
+    assert(bn_transformer_gpu_flash_attention_enabled(&gpu, 1, 0, 128));
+
     BnMoEExpertMap map;
     memset(&map, 0, sizeof(map));
     map.gate_type = BN_GGUF_TENSOR_Q4_K;
