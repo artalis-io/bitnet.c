@@ -1104,14 +1104,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             s_all2_q4q6_moe_gpu_route_to_layer;
     }
     int all2_q4q6_moe_safe_cpu_attn =
-        gpu->kind == BN_GPU_BACKEND_CUDA &&
+        bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
             c, w);
     int small_dense_q8_safe_cpu_attn =
-        gpu->kind == BN_GPU_BACKEND_CUDA &&
+        bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w);
     int large_hybrid_safe_cpu_attn =
-        gpu->kind == BN_GPU_BACKEND_CUDA &&
+        bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w);
     if (all2_q4q6_moe_safe_cpu_attn &&
         cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
@@ -1423,11 +1423,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         ffn_block:;
         if (lw->moe.router_weight) {
             int all2_q4q6_moe_requires_opt_in =
-                gpu->kind == BN_GPU_BACKEND_CUDA &&
+                bn_transformer_gpu_backend_is_cuda(gpu) &&
                 bn_transformer_gpu_all2_q4_moe_requires_opt_in(
                     c, &lw->moe.expert_map, dim, 1);
             int use_cpu_moe_fallback =
-                gpu->kind != BN_GPU_BACKEND_CUDA ||
+                !bn_transformer_gpu_backend_is_cuda(gpu) ||
                 getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL ||
                 all2_q4q6_moe_requires_opt_in ||
                 cpu_fallback_ffn_layer == l ||
@@ -1484,7 +1484,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             void *moe_router = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
             int all2_q4q6_moe =
-                gpu->kind == BN_GPU_BACKEND_CUDA &&
+                bn_transformer_gpu_backend_is_cuda(gpu) &&
                 bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw, dim);
             int all2_q4q6_moe_gpu_route_layer_selected =
                 bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(

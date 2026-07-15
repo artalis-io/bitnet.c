@@ -14,6 +14,10 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c) {
     return 80 * c->n_layers + 5 * BN_MAX_MOE_K + 100;
 }
 
+int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+}
+
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits) {
