@@ -113,9 +113,7 @@ static int prefill_force_float_kquant(const BnModel *m) {
 }
 
 static int prefill_qweight_is_kquant(const BnQWeight *w) {
-    return w && (w->type == BN_GGUF_TENSOR_Q4_K ||
-                 w->type == BN_GGUF_TENSOR_Q5_K ||
-                 w->type == BN_GGUF_TENSOR_Q6_K);
+    return w && bn_backend_quant_is_kquant_float_fallback_candidate(w->type);
 }
 
 static int prefill_all_kquant(const BnQWeight *const *W, int n) {

@@ -44,6 +44,12 @@ static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
            type == BN_GGUF_TENSOR_Q8_K;
 }
 
+static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) {
+    return type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_K ||
+           type == BN_GGUF_TENSOR_Q6_K;
+}
+
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
