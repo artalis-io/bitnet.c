@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "backend_quant.h"
 #include "model_arch.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,14 +31,6 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
     }
 
     return bn_qweight_data_size(logits->cpu_weight) > max_storage_binding;
-}
-
-static int small_dense_cuda_qweight_supported(int type) {
-    return type == BN_GGUF_TENSOR_F32 || type == BN_GGUF_TENSOR_F16 ||
-           type == BN_GGUF_TENSOR_Q8_0 || type == BN_GGUF_TENSOR_Q4_0 ||
-           type == BN_GGUF_TENSOR_Q5_0 || type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K || type == BN_GGUF_TENSOR_Q6_K ||
-           type == BN_GGUF_TENSOR_Q8_K;
 }
 
 int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
@@ -86,9 +79,9 @@ static int small_dense_cuda_native_by_default(
         c->dim > 2560)
         return 0;
     if (w->output_weight.data) {
-        if (!small_dense_cuda_qweight_supported(w->output_weight.type))
+        if (!bn_backend_quant_cuda_small_dense_supported(w->output_weight.type))
             return 0;
-    } else if (!small_dense_cuda_qweight_supported(w->emb_type)) {
+    } else if (!bn_backend_quant_cuda_small_dense_supported(w->emb_type)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -100,7 +93,7 @@ static int small_dense_cuda_native_by_default(
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
             if (weights[i]->data &&
-                !small_dense_cuda_qweight_supported(weights[i]->type))
+                !bn_backend_quant_cuda_small_dense_supported(weights[i]->type))
                 return 0;
         }
     }
