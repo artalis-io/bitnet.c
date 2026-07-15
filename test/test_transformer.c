@@ -1013,6 +1013,15 @@ static void test_block_planning(void) {
            cpu_backend == BN_CPU_BACKEND_AVX2 ||
            cpu_backend == BN_CPU_BACKEND_AVX512 ||
            cpu_backend == BN_CPU_BACKEND_WASM_SIMD);
+    memset(&c, 0, sizeof(c));
+    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    int force_float_kquant =
+        bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
+    assert(force_float_kquant ==
+           (cpu_backend == BN_CPU_BACKEND_AVX2 ||
+            cpu_backend == BN_CPU_BACKEND_AVX512));
+    c.arch_flags = 0;
+    assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
 #if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif

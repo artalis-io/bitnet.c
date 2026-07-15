@@ -123,6 +123,14 @@ BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
 #endif
 }
 
+int bn_transformer_cpu_prefill_force_float_kquant_enabled(
+    const BnConfig *c) {
+    BnCPUBackendPlacement backend = bn_transformer_cpu_backend_placement();
+    return bn_model_arch_cpu_force_float_kquant(c) &&
+           (backend == BN_CPU_BACKEND_AVX2 ||
+            backend == BN_CPU_BACKEND_AVX512);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

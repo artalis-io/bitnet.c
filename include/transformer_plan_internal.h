@@ -172,6 +172,8 @@ BnExecPlacement bn_transformer_preferred_placement(const BnGPUBackend *gpu,
 BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
                                                     BnExecPlacement placement);
 BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void);
+int bn_transformer_cpu_prefill_force_float_kquant_enabled(
+    const BnConfig *c);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

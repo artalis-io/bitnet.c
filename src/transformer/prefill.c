@@ -107,9 +107,9 @@ static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
     return sess->state.x;
 }
 
-#ifdef __AVX2__
 static int prefill_force_float_kquant(const BnModel *m) {
-    return m && bn_model_arch_cpu_force_float_kquant(&m->config);
+    return m && bn_transformer_cpu_prefill_force_float_kquant_enabled(
+        &m->config);
 }
 
 static int prefill_qweight_is_kquant(const BnQWeight *w) {
@@ -146,7 +146,6 @@ static void prefill_quant_matmul_forced_kquant(
                               x_q_buf, bn_model_pool(m));
     }
 }
-#endif
 
 static void prefill_quant_matmul_gpu(const BnModel *m,
                                      float *out,
@@ -155,7 +154,6 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      int n_tokens,
                                      int8_t *x_q_buf) {
     if (!bn_model_gpu(m)) {
-#ifdef __AVX2__
         if (prefill_force_float_kquant(m) && prefill_qweight_is_kquant(W)) {
             float *outs[1] = { out };
             const BnQWeight *weights[1] = { W };
@@ -163,7 +161,6 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                 m, outs, weights, 1, X, n_tokens, x_q_buf);
             return;
         }
-#endif
         const BnBackendModel *backend = bn_model_backend(m);
         bn_quant_matmul_prepared(out, W,
                                  bn_backend_model_prepared_qweight(backend, W),
@@ -197,14 +194,12 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        int n_tokens,
                                        int8_t *x_q_buf) {
     if (!bn_model_gpu(m)) {
-#ifdef __AVX2__
         if (n <= 4 && prefill_force_float_kquant(m) &&
             prefill_all_kquant(W, n)) {
             prefill_quant_matmul_forced_kquant(
                 m, out, W, n, X, n_tokens, x_q_buf);
             return;
         }
-#endif
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
         if (n > 4) {
