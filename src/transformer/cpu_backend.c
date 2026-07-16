@@ -500,3 +500,18 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void) {
     return &BN_CPU_BACKEND;
 }
+
+BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
+#if BN_TRANSFORMER_CPU_HAS_AVX512
+    return BN_CPU_BACKEND_AVX512;
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
+    return BN_CPU_BACKEND_AVX2;
+#elif BN_TRANSFORMER_CPU_HAS_NEON
+    return BN_CPU_BACKEND_NEON;
+#elif BN_TRANSFORMER_CPU_HAS_WASM_RELAXED_SIMD || \
+      BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
+    return BN_CPU_BACKEND_WASM_SIMD;
+#else
+    return BN_CPU_BACKEND_SCALAR;
+#endif
+}

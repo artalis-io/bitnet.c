@@ -3,7 +3,6 @@
 #include "gpu_backend.h"
 #include "model_arch.h"
 #include "transformer_backend_internal.h"
-#include "transformer_cpu_features_internal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -105,21 +104,6 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
         case BN_GPU_BACKEND_CUDA: return BN_BACKEND_CUDA;
         default: return BN_BACKEND_GPU_UNKNOWN;
     }
-}
-
-BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
-#if BN_TRANSFORMER_CPU_HAS_AVX512
-    return BN_CPU_BACKEND_AVX512;
-#elif BN_TRANSFORMER_CPU_HAS_AVX2
-    return BN_CPU_BACKEND_AVX2;
-#elif BN_TRANSFORMER_CPU_HAS_NEON
-    return BN_CPU_BACKEND_NEON;
-#elif BN_TRANSFORMER_CPU_HAS_WASM_RELAXED_SIMD || \
-      BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
-    return BN_CPU_BACKEND_WASM_SIMD;
-#else
-    return BN_CPU_BACKEND_SCALAR;
-#endif
 }
 
 uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
