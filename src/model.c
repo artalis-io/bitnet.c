@@ -349,7 +349,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // Derived dimensions (safe now — denominators validated above)
-    // Check for explicit head size (Qwen3 has key_length != dim/n_heads)
+    // Check for explicit head size when key length differs from dim/n_heads.
     snprintf(key, sizeof(key), "%s.attention.key_length", prefix);
     int explicit_head_size = (int)bn_gguf_get_u32(f, key);
     c->head_size = (explicit_head_size > 0) ? explicit_head_size : (c->dim / c->n_heads);
@@ -418,17 +418,17 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     if (bn_model_arch_loads_extra_metadata(c)) {
         snprintf(key, sizeof(key), "%s.attention.shared_kv_layers", prefix);
         int shared_kv_layers = (int)bn_gguf_get_u32(f, key);
-        c->gemma4_kv_layer_count = c->n_layers - shared_kv_layers;
-        if (c->gemma4_kv_layer_count <= 0 || c->gemma4_kv_layer_count > c->n_layers)
-            c->gemma4_kv_layer_count = c->n_layers;
+        c->kv_unique_layer_count = c->n_layers - shared_kv_layers;
+        if (c->kv_unique_layer_count <= 0 || c->kv_unique_layer_count > c->n_layers)
+            c->kv_unique_layer_count = c->n_layers;
         snprintf(key, sizeof(key), "%s.attention.sliding_window_pattern", prefix);
-        int max_swa = c->n_layers < (int)(sizeof(c->gemma4_swa_pattern) / sizeof(c->gemma4_swa_pattern[0]))
+        int max_swa = c->n_layers < (int)(sizeof(c->sliding_window_pattern) / sizeof(c->sliding_window_pattern[0]))
                     ? c->n_layers
-                    : (int)(sizeof(c->gemma4_swa_pattern) / sizeof(c->gemma4_swa_pattern[0]));
+                    : (int)(sizeof(c->sliding_window_pattern) / sizeof(c->sliding_window_pattern[0]));
         for (int i = 0; i < max_swa; i++)
-            c->gemma4_swa_pattern[i] = gguf_get_bool_array(f, key, i);
+            c->sliding_window_pattern[i] = gguf_get_bool_array(f, key, i);
         snprintf(key, sizeof(key), "%s.embedding_length_per_layer_input", prefix);
-        c->gemma4_per_layer_dim = (int)bn_gguf_get_u32(f, key);
+        c->per_layer_input_dim = (int)bn_gguf_get_u32(f, key);
         snprintf(key, sizeof(key), "%s.final_logit_softcapping", prefix);
         c->final_logit_softcap = bn_gguf_get_f32(f, key);
     }
@@ -724,7 +724,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
             if (load_qweight(&lw->attn.wo, f, wname, sname) != 0) goto fail_layers;
 
-            // Attention biases (optional, used by Qwen2)
+            // Optional attention biases.
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_Q_BIAS) != 0)
                 goto fail_layers;
@@ -738,7 +738,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
             lw->attn.v_bias = load_f32_tensor(f, wname);
 
-            // Q/K norms (Qwen3.5 / OLMoE attention)
+            // Optional Q/K norms.
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_Q_NORM) != 0)
                 goto fail_layers;
@@ -793,7 +793,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             goto fail_layers;
         lw->norm.ffn_norm = load_f32_tensor(f, wname);
         if (!lw->norm.ffn_norm) {
-            // Qwen3.5 uses post_attention_norm instead of ffn_norm
+            // Some model families use post_attention_norm instead of ffn_norm.
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_FFN_POST_ATTN_NORM) != 0)
                 goto fail_layers;
@@ -842,7 +842,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             snprintf(wname, sizeof(wname), "blk.%d.post_norm.weight", i);
             lw->per_layer.post_norm = load_f32_tensor(f, wname);
             if (!lw->per_layer.post_norm) {
-                SH_LOG_ERROR("Gemma4 per-layer post_norm not found", "name", wname);
+                SH_LOG_ERROR("Per-layer post_norm not found", "name", wname);
                 goto fail_layers;
             }
         }
@@ -940,7 +940,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     goto fail_layers;
                 if (load_qweight(&lw->shared.shared_down, f, wname, sname) != 0) goto fail_layers;
 
-                // Shared expert sigmoid gate (optional, Qwen3.5 MoE)
+                // Optional shared expert sigmoid gate.
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_SHARED_FFN_ROUTER) != 0)
                     goto fail_layers;

@@ -36,18 +36,18 @@ typedef struct {
     int ssm_time_step_rank;         // num_v_heads (32)
     int ssm_group_count;            // num_k_heads (16)
     // MoE config (all zero = dense FFN, backward compatible)
-    int n_experts;              // total experts per layer (e.g. 256 for Qwen3.5-35B)
-    int n_experts_active;       // top-K active per token (e.g. 8)
+    int n_experts;              // total experts per layer
+    int n_experts_active;       // top-K active per token
     int moe_intermediate_size;  // per-expert hidden dim
     int moe_norm_topk_prob;     // normalize selected expert weights to sum 1
     int moe_exact_silu;         // use exact SiLU in MoE FFN for parity-sensitive archs
     float moe_expert_weights_scale; // optional post-routing expert weight scale
     int has_shared_expert;      // 1 if shared expert exists
     int shared_expert_intermediate_size; // shared expert hidden dim
-    // Gemma4 shared-KV / logits metadata (zero = disabled)
-    int gemma4_kv_layer_count;  // first N layers own KV cache, later layers reuse
-    int gemma4_swa_pattern[128];
-    int gemma4_per_layer_dim;
+    // Shared-KV / per-layer input metadata (zero = disabled)
+    int kv_unique_layer_count;  // first N layers own KV cache, later layers reuse
+    int sliding_window_pattern[128];
+    int per_layer_input_dim;
     float final_logit_softcap;
     // TurboQuant KV compression (0=disabled, 2-4 = bits)
     int kv_tq_bits;

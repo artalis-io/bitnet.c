@@ -540,7 +540,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_ffn_post_norm(&c));
     assert(bn_model_arch_uses_layer_output_scale(&c));
     assert(bn_model_arch_loads_extra_metadata(&c));
-    c.gemma4_per_layer_dim = 128;
+    c.per_layer_input_dim = 128;
     assert(bn_model_arch_loads_per_layer_input_weights(&c));
     assert(bn_model_arch_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
@@ -551,12 +551,12 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_loads_extra_ffn_post_norms(&c));
     assert(bn_model_arch_loads_moe_aux_weights(&c));
 
-    c.gemma4_per_layer_dim = 0;
+    c.per_layer_input_dim = 0;
     c.n_experts = 4;
     c.n_layers = 30;
-    c.gemma4_kv_layer_count = 20;
-    c.gemma4_swa_pattern[20] = 0;
-    c.gemma4_swa_pattern[21] = 1;
+    c.kv_unique_layer_count = 20;
+    c.sliding_window_pattern[20] = 0;
+    c.sliding_window_pattern[21] = 1;
     assert(!bn_model_arch_loads_per_layer_input_weights(&c));
     assert(!bn_model_arch_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_divides_rope_freqs(&c, 5));
@@ -601,7 +601,6 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_ffn_post_norm(&c));
     assert(!bn_model_arch_uses_layer_output_scale(&c));
     assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
-    assert(!bn_model_arch_is_qwen2_moe(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
@@ -624,7 +623,8 @@ static void test_model_arch_registry(void) {
     memset(&c, 0, sizeof(c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
     assert(!bn_model_arch_cpu_force_float_kquant(&c));
-    assert(!bn_model_arch_is_qwen2_moe(&c));
+    assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER);
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 2);
@@ -632,7 +632,6 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
 
     c.arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
-    assert(bn_model_arch_is_qwen2_moe(&c));
     assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(bn_model_arch_moe_prefers_cuda_exact_attention(&c));
 
@@ -1070,7 +1069,7 @@ static void test_block_planning(void) {
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
     assert(bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_GEMMA4;
-    c.gemma4_per_layer_dim = 128;
+    c.per_layer_input_dim = 128;
     assert(bn_transformer_attention_scale(&c, 128) == 1.0f);
     assert(bn_transformer_attention_value_shares_key(&c));
     assert(bn_transformer_attention_uses_post_norm(&c));
@@ -1079,7 +1078,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_per_layer_embedding_dim(&c) == 128);
     assert(!bn_transformer_prefill_uses_exact_activation(&c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
-    c.gemma4_per_layer_dim = 0;
+    c.per_layer_input_dim = 0;
     c.full_attn_interval = 4;
     assert(bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
 #if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)

@@ -156,10 +156,10 @@ int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
            c->full_attn_interval > 0;
 }
 
-int bn_model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
+static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
     if (!c || ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) == 0))
         return 0;
-    if (c->gemma4_per_layer_dim > 0)
+    if (c->per_layer_input_dim > 0)
         return 1;
     if (c->n_experts > 0 && c->n_layers == 30)
         return layer == 5 || layer == 23 || layer == 29;
@@ -167,14 +167,14 @@ int bn_model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
 }
 
 int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer) {
-    return bn_model_arch_gemma4_divides_rope_freqs(c, layer);
+    return model_arch_gemma4_divides_rope_freqs(c, layer);
 }
 
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c) {
     if (!bn_model_arch_uses_per_layer_embedding(c) ||
-        c->gemma4_per_layer_dim <= 0)
+        c->per_layer_input_dim <= 0)
         return 0;
-    return c->gemma4_per_layer_dim;
+    return c->per_layer_input_dim;
 }
 
 int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
@@ -192,16 +192,16 @@ int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
                   BN_MODEL_ARCH_FLAG_QWEN2MOE)) != 0;
 }
 
-int bn_model_arch_is_qwen2_moe(const BnConfig *c) {
+static int model_arch_is_qwen2_moe(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) != 0);
 }
 
 int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
-    return bn_model_arch_is_qwen2_moe(c);
+    return model_arch_is_qwen2_moe(c);
 }
 
 int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
-    return bn_model_arch_is_qwen2_moe(c);
+    return model_arch_is_qwen2_moe(c);
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
@@ -218,24 +218,24 @@ int bn_model_arch_loads_extra_metadata(const BnConfig *c) {
 
 int bn_model_arch_loads_per_layer_input_weights(const BnConfig *c) {
     return bn_model_arch_uses_per_layer_embedding(c) &&
-           c->gemma4_per_layer_dim > 0;
+           c->per_layer_input_dim > 0;
 }
 
 int bn_model_arch_layer_reuses_kv(const BnConfig *c, int layer) {
     return bn_model_arch_attention_value_shares_key_config(c) &&
-           c->gemma4_kv_layer_count > 0 &&
-           layer >= c->gemma4_kv_layer_count;
+           c->kv_unique_layer_count > 0 &&
+           layer >= c->kv_unique_layer_count;
 }
 
 int bn_model_arch_kv_reuse_layer(const BnConfig *c, int layer) {
     if (!bn_model_arch_layer_reuses_kv(c, layer))
         return -1;
     int is_swa = (layer >= 0 &&
-                  layer < (int)(sizeof(c->gemma4_swa_pattern) /
-                                sizeof(c->gemma4_swa_pattern[0])))
-        ? c->gemma4_swa_pattern[layer]
+                  layer < (int)(sizeof(c->sliding_window_pattern) /
+                                sizeof(c->sliding_window_pattern[0])))
+        ? c->sliding_window_pattern[layer]
         : 0;
-    int reuse_layer = c->gemma4_kv_layer_count - (is_swa ? 2 : 1);
+    int reuse_layer = c->kv_unique_layer_count - (is_swa ? 2 : 1);
     return reuse_layer < 0 ? 0 : reuse_layer;
 }
 

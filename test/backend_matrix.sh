@@ -144,8 +144,16 @@ for file in \
     src/transformer/logits.c \
     src/model_session.c
 do
-    if grep -n 'gemma4_per_layer_dim\|bn_model_arch_gemma4_divides_rope_freqs\|static .*qwen\|static .*gemma' "$file" >/dev/null 2>&1; then
+    if grep -n 'bn_model_arch_gemma4_divides_rope_freqs\|static .*qwen\|static .*gemma' "$file" >/dev/null 2>&1; then
         echo "$file must use model-neutral architecture policy helpers"
+        fail=1
+    fi
+done
+
+for file in include/model_config.h include/model_weights.h
+do
+    if grep -n 'gemma4_\|qwen2_moe\|qwen2moe_' "$file" >/dev/null 2>&1; then
+        echo "$file must expose behavior-named fields, not family-prefixed fields"
         fail=1
     fi
 done
