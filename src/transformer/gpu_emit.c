@@ -1206,7 +1206,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        lw->attn.wq.rows == q_dim &&
                        lw->attn.wk.rows == kv_dim &&
                        lw->attn.wq.cols == lw->attn.wk.cols &&
-                       lw->attn.wq.type == lw->attn.wk.type &&
+                       bn_backend_quant_stacked_pair_same_format(
+                           lw->attn.wq.type, lw->attn.wk.type) &&
                        bn_gpu_quant_split_op_code(lw->attn.wq.type) !=
                            BN_GPU_CODE_UNKNOWN &&
                        bn_transformer_gpu_can_matvec_split(res->gpu,
@@ -1757,7 +1758,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             !prefer_shared_gateup_split &&
             !getenv("BN_GPU_DISABLE_FUSED_GATEUP") &&
             shared->shared_gateup_stacked &&
-            lw->shared.shared_gate.type == lw->shared.shared_up.type &&
+            bn_backend_quant_stacked_pair_same_format(
+                lw->shared.shared_gate.type, lw->shared.shared_up.type) &&
             lw->shared.shared_gate.rows == lw->shared.shared_up.rows &&
             lw->shared.shared_gate.cols == lw->shared.shared_up.cols &&
             bn_transformer_gpu_can_fused_gateup_silu(

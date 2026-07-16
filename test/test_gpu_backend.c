@@ -523,6 +523,10 @@ static void test_quant_registry(void) {
                                                      BN_GGUF_TENSOR_Q4_0));
     assert(!bn_backend_quant_cpu_fused_q4_gateup_silu(BN_GGUF_TENSOR_Q4_0,
                                                       BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_stacked_pair_same_format(BN_GGUF_TENSOR_Q4_K,
+                                                     BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_stacked_pair_same_format(BN_GGUF_TENSOR_Q4_K,
+                                                      BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_moe_route_q4_down(BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q6_K, 0));

@@ -99,6 +99,11 @@ static inline int bn_backend_quant_cpu_fused_q4_gateup_silu(int gate_type,
            up_type == BN_GGUF_TENSOR_Q4_0;
 }
 
+static inline int bn_backend_quant_stacked_pair_same_format(int left_type,
+                                                            int right_type) {
+    return left_type == right_type;
+}
+
 static inline int bn_backend_quant_moe_route_q8(int gate_type,
                                                 int up_type,
                                                 int down_type) {
