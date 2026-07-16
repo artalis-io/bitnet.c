@@ -1,18 +1,8 @@
 #include "transformer_kv_internal.h"
+#include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
 #include "model.h"
 #include "turboquant.h"
-
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX512F__
-#undef __AVX512BW__
-#undef __AVX512VNNI__
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
 
 typedef struct {
     const char *name;
@@ -22,7 +12,7 @@ typedef struct {
                           int kv_dim);
 } BnKVCPUOps;
 
-#if !defined(__ARM_NEON) && !defined(__AVX2__)
+#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2
 static void kv_write_fp16_scalar(uint16_t *kc,
                                  uint16_t *vc,
                                  const float *k_tmp,
@@ -35,7 +25,7 @@ static void kv_write_fp16_scalar(uint16_t *kc,
 }
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static void kv_write_fp16_neon(uint16_t *kc,
                                uint16_t *vc,
                                const float *k_tmp,
@@ -50,7 +40,7 @@ static void kv_write_fp16_neon(uint16_t *kc,
 }
 #endif
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void kv_write_fp16_avx2(uint16_t *kc,
                                uint16_t *vc,
                                const float *k_tmp,
@@ -67,20 +57,19 @@ static void kv_write_fp16_avx2(uint16_t *kc,
 }
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static const BnKVCPUOps BN_KV_CPU_OPS = {
     "neon",
     bn_transformer_gqa_tq_neon_range,
     kv_write_fp16_neon,
 };
-#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
-      defined(__AVX512VNNI__) && defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX512
 static const BnKVCPUOps BN_KV_CPU_OPS = {
     "avx512",
     bn_transformer_gqa_tq_scalar_range,
     kv_write_fp16_avx2,
 };
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnKVCPUOps BN_KV_CPU_OPS = {
     "avx2",
     bn_transformer_gqa_tq_scalar_range,
