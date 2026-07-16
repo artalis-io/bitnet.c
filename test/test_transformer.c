@@ -546,7 +546,8 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_exact_scalar_activation(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
-    assert(bn_model_arch_moe_uses_gemma4_block(&c));
+    assert(bn_model_arch_moe_uses_scaled_router_input(&c));
+    assert(bn_model_arch_moe_uses_dense_residual_branch(&c));
     assert(bn_model_arch_loads_extra_ffn_post_norms(&c));
     assert(bn_model_arch_loads_moe_aux_weights(&c));
 
@@ -603,7 +604,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_is_qwen2_moe(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
-    assert(!bn_model_arch_moe_uses_gemma4_block(&c));
+    assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
+    assert(!bn_model_arch_moe_uses_dense_residual_branch(&c));
     assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));

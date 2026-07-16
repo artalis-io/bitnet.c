@@ -899,7 +899,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 lw->moe.expert_down_scale = load_f32_tensor(f, wname);
             }
 
-            if (bn_model_arch_moe_uses_gemma4_block(c)) {
+            if (bn_model_arch_moe_uses_dense_residual_branch(c)) {
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_FFN_GATE) != 0 ||
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,

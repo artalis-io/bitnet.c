@@ -204,7 +204,11 @@ int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
     return bn_model_arch_is_qwen2_moe(c);
 }
 
-int bn_model_arch_moe_uses_gemma4_block(const BnConfig *c) {
+int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
+    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+}
+
+int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c) {
     return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
 }
 
@@ -240,7 +244,7 @@ int bn_model_arch_loads_extra_ffn_post_norms(const BnConfig *c) {
 }
 
 int bn_model_arch_loads_moe_aux_weights(const BnConfig *c) {
-    return bn_model_arch_moe_uses_gemma4_block(c);
+    return bn_model_arch_moe_uses_scaled_router_input(c);
 }
 
 int bn_model_arch_uses_full_rope_text_dims(const char *arch) {
