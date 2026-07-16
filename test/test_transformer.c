@@ -496,6 +496,24 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_q8_logits_refine_top(1) == 5);
     unsetenv("BN_GPU_Q8_REFINE_TOP");
 
+    unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
+    assert(bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed());
+    setenv("BN_CUDA_DISABLE_SSM_FFN_FUSE", "1", 1);
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed());
+    unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
+
+    unsetenv("BN_CUDA_ENABLE_MOE_PREFILL");
+    assert(!bn_transformer_gpu_cuda_moe_prefill_enabled());
+    setenv("BN_CUDA_ENABLE_MOE_PREFILL", "1", 1);
+    assert(bn_transformer_gpu_cuda_moe_prefill_enabled());
+    unsetenv("BN_CUDA_ENABLE_MOE_PREFILL");
+
+    unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
+    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
+    setenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL", "1", 1);
+    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
+    unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
+
     setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
     setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
     gpu.caps = BN_GPU_CAP_FLASH_ATTN;

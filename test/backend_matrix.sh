@@ -162,6 +162,11 @@ do
     fi
 done
 
+if grep -n 'BN_CUDA_DISABLE_SSM_FFN_FUSE\|BN_CUDA_ENABLE_MOE_PREFILL\|BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use GPU policy helpers for prefill compatibility env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_CUDA_ENABLE_Q5K_FUSED_GATEUP' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use GPU policy helpers for fused gate-up compatibility env vars"
     fail=1

@@ -952,7 +952,8 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
     void *up_buf = NULL;
     void *down_buf = NULL;
     void *ffn_norm_buf = NULL;
-    if (fuse_ffn && !getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE") &&
+    if (fuse_ffn &&
+        bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed() &&
         lw->ffn.ffn_gate.data && lw->ffn.ffn_up.data &&
         lw->ffn.ffn_down.data && m->config.has_ffn_gate &&
         !lw->norm.ffn_sub_norm &&
@@ -1354,7 +1355,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
             prefill_gpu, c);
     if (cuda_moe_prefill &&
-        (!getenv("BN_CUDA_ENABLE_MOE_PREFILL") ||
+        (!bn_transformer_gpu_cuda_moe_prefill_enabled() ||
          n_tokens <
              bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
                  c, prefill_gpu))) {
@@ -1371,7 +1372,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     if (cuda_hybrid_prefill &&
         c->n_experts <= 0 &&
         c->dim >= 4096 &&
-        getenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL") != NULL) {
+        bn_transformer_gpu_cuda_large_hybrid_prefill_disabled()) {
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
