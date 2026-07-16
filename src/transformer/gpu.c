@@ -890,7 +890,7 @@ static int gpu_dense_ffn_resources_missing(
 // GPU-resident forward pass: one submit per token, reads back logits only.
 // Supports classic transformer only (no MoE, no SSM, no gated-Q, no wide-Q,
 // no Q/K norms, no sub-norms, no FP16 KV cache).
-// Supports attention biases (Qwen2.5) and tied embeddings (BitNet).
+// Supports attention biases and tied embeddings.
 // Returns s->logits on success, NULL to fall back to CPU.
 static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                               int token, int pos,

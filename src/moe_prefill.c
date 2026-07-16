@@ -782,7 +782,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 bn_quant_matmul(sh_d, &lw->shared.shared_down, sh_g, n_tokens, x_q_scratch, bn_model_pool(m));
             }
 
-            // Apply shared expert sigmoid gate if present (Qwen3.5 MoE)
+            // Apply shared expert sigmoid gate if present
             if (lw->shared.shared_expert_gate) {
                 for (int t = 0; t < n_tokens; t++) {
                     float gate_dot = 0.0f;

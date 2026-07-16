@@ -625,7 +625,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden, exact_silu);
         bn_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q, bn_model_pool(m));
 
-        // Apply shared expert sigmoid gate if present (Qwen3.5 MoE):
+        // Apply shared expert sigmoid gate if present:
         // gate = sigmoid(dot(input, gate_weight)) — scalar per token
         if (lw->shared.shared_expert_gate) {
             float gate_dot = 0.0f;

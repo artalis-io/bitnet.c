@@ -919,8 +919,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
         // Q projection width detection:
         // q_dim = n_heads * head_size (total Q output elements)
-        // Gated Q (Qwen3.5): wq.rows = 2 * q_dim (interleaved [Q, gate] per head)
-        // Wide Q (Qwen3 MoE): wq.rows = q_dim > dim (head_size > dim/n_heads)
+        // Gated Q: wq.rows = 2 * q_dim (interleaved [Q, gate] per head)
+        // Wide Q: wq.rows = q_dim > dim (head_size > dim/n_heads)
         // Classic: wq.rows = dim = q_dim
         int q_dim = shape->q_dim;
         int q_gated = shape->q_gated;
@@ -948,7 +948,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         /* no-op */
 
         if (q_gated) {
-            // --- Gated Q path (Qwen3.5 attention) ---
+            // --- Gated Q attention path ---
             float *q_full = s->hb;  // [2*dim]
             float *k_tmp = s->hb2;
             float *v_tmp = s->hb2 + kv_dim;
@@ -1047,7 +1047,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
         } else if (q_wide) {
-            // --- Wide Q path (Qwen3 MoE: head_size > dim/n_heads, no gate) ---
+            // --- Wide Q attention path: head_size > dim/n_heads, no gate ---
             float *k_tmp = s->hb, *v_tmp = s->hb2;
             int has_kv = lw->attn.has_kv;
 
@@ -1059,8 +1059,8 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             // K/V matvec: xb[dim] -> kv_dim. Compact KV formats need temp
             // FP32 rows before packing into the cache.
             if (!has_kv) {
-                /* Gemma4 shared-KV layer: Q-only projection, then attend to the
-                 * reused cache layer selected by llama.cpp's SWA pattern rule. */
+                /* Shared-KV layer: Q-only projection, then attend to the
+                 * reused cache layer selected by the model-family policy. */
             } else if ((c->kv_tq_bits > 0 && bn_model_tq_state(m)) || c->kv_f16) {
                 BnMatvecTask kv[2] = {
                      { k_tmp, &lw->attn.wk, NULL, 0 },

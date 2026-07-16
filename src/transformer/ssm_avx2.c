@@ -10,7 +10,7 @@ static inline float bn_ssm_avx2_hsum_ggml_ps(__m256 v) {
 }
 
 // Conv1d + SiLU over channel range [start, end).
-// Keep scalar accumulation order here: recurrent Qwen3.5 layers are sensitive
+// Keep scalar accumulation order here: recurrent SSM layers are sensitive
 // enough that AVX2 FMA regrouping changes greedy token selection vs llama.cpp.
 void bn_transformer_ssm_conv_silu_avx2_range(void *ctx, int start, int end) {
     BnSSMConvCtx *c = (BnSSMConvCtx *)ctx;
