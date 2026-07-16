@@ -1345,16 +1345,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     }
 
     BnGPUBackend *prefill_gpu = bn_model_gpu(m);
-    int cuda_hybrid_prefill =
-        c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
-        bn_transformer_gpu_backend_is_cuda(prefill_gpu);
-    int cuda_moe_prefill =
-        bn_transformer_gpu_backend_is_cuda(prefill_gpu) &&
-        c->n_experts > 0 && c->full_attn_interval <= 0;
+    int gpu_hybrid_prefill =
+        bn_transformer_gpu_hybrid_prefill_chain_applicable(prefill_gpu, c);
+    int gpu_moe_prefill =
+        bn_transformer_gpu_moe_prefill_chain_applicable(prefill_gpu, c);
     int cuda_small_dense_prefill_chain =
         bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
             prefill_gpu, c);
-    if (cuda_moe_prefill &&
+    if (gpu_moe_prefill &&
         (!bn_transformer_gpu_cuda_moe_prefill_enabled() ||
          n_tokens <
              bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
@@ -1369,7 +1367,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
-    if (cuda_hybrid_prefill &&
+    if (gpu_hybrid_prefill &&
         c->n_experts <= 0 &&
         c->dim >= 4096 &&
         bn_transformer_gpu_cuda_large_hybrid_prefill_disabled()) {
@@ -1377,7 +1375,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                      all_logits, need_last_logits);
     }
     if (c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
-        !cuda_hybrid_prefill &&
+        !gpu_hybrid_prefill &&
         !bn_transformer_prefill_hybrid_batch_allowed()) {
         float *logits = NULL;
         for (int t = 0; t < n_tokens; t++) {
@@ -1569,7 +1567,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     }
 
     if (bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(prefill_gpu, c) &&
-        cuda_hybrid_prefill && pos0 == 0 && c->n_layers > 0 &&
+        gpu_hybrid_prefill && pos0 == 0 && c->n_layers > 0 &&
         bn_model_tq_state(m) == NULL) {
         int chain_ready = 1;
         for (int l = 0; l < c->n_layers; l++) {
@@ -1925,7 +1923,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
             int force_token_attn =
                 bn_transformer_prefill_force_token_attention_enabled() ||
-                cuda_hybrid_prefill;
+                gpu_hybrid_prefill;
             if (bn_model_tq_state(m) == NULL && !force_token_attn) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
                 t_prof = prefill_profile_now(&prof);
@@ -2177,7 +2175,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int ssm_idx = plan.ssm_idx;
 
             if (bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled() &&
-                cuda_hybrid_prefill &&
+                gpu_hybrid_prefill &&
                 (prefill_ssm_layer_chain_ready(m, lw, l, n_tokens) ||
                  prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens))) {
                 int run_end = l + 1;
@@ -2376,8 +2374,8 @@ prefill_ssm_done:
                 bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
                     c, gpu_ffn);
             int can_use_dense_ffn_batch =
-                !bn_transformer_gpu_backend_is_cuda(gpu_ffn) ||
-                n_tokens >= dense_ffn_batch_min_tokens;
+                bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
+                    gpu_ffn, c, n_tokens);
             void *ffn_norm_buf =
                 backend_ffn ? bn_backend_model_handle(
                     backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;

@@ -268,6 +268,20 @@ int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
            bn_model_arch_small_cuda_dense_prefill_min_tokens(c) > 0;
 }
 
+int bn_transformer_gpu_hybrid_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return c && c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
+           bn_transformer_gpu_backend_is_cuda(gpu);
+}
+
+int bn_transformer_gpu_moe_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return c && c->n_experts > 0 && c->full_attn_interval <= 0 &&
+           bn_transformer_gpu_backend_is_cuda(gpu);
+}
+
 int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
@@ -426,6 +440,15 @@ int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c)
         return 16;
     return bn_transformer_gpu_cuda_prefill_attention_min_tokens();
+}
+
+int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens) {
+    return !bn_transformer_gpu_backend_is_cuda(gpu) ||
+           n_tokens >=
+               bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
 }
 
 int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(

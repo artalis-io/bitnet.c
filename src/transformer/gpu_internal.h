@@ -179,6 +179,16 @@ int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
 int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_hybrid_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_moe_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);

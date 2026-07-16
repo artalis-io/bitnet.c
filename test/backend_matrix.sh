@@ -388,6 +388,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_small_de
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_backend_is_cuda(prefill_gpu)\|bn_transformer_gpu_backend_is_cuda(gpu_ffn)\|int cuda_hybrid_prefill\|int cuda_moe_prefill' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use GPU policy helpers for prefill chain policy"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \
