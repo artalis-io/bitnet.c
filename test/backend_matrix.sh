@@ -197,6 +197,11 @@ if grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS' src/transformer/cpu.c src/transfor
     fail=1
 fi
 
+if grep -n 'BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "src/transformer/cpu.c must use CPU backend policy helpers for debug and fused gate-up env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_Q4_Q8_DISABLE_GATEUP' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for Q4/Q8 fused gate-up compatibility env vars"
     fail=1

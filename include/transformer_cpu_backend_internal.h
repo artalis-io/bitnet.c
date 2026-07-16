@@ -34,5 +34,9 @@ typedef struct {
 
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
+const char *bn_transformer_cpu_debug_dump_path(void);
+int bn_transformer_cpu_debug_dump_pos_selected(int pos);
+int bn_transformer_cpu_debug_dump_heads_enabled(void);
+int bn_transformer_cpu_fused_q4_gateup_silu_allowed(void);
 
 #endif // BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H

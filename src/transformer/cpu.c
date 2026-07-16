@@ -201,11 +201,8 @@ static void cpu_debug_dump_array_n(int n_values,
                                    const char *tag,
                                    int layer,
                                    int pos) {
-    const char *path = getenv("BN_DUMP_LAYER_INP");
-    if (!path || !path[0]) return;
-
-    const char *pos_env = getenv("BN_DUMP_LAYER_POS");
-    if (pos_env && pos_env[0] && atoi(pos_env) != pos) return;
+    const char *path = bn_transformer_cpu_debug_dump_path();
+    if (!path || !bn_transformer_cpu_debug_dump_pos_selected(pos)) return;
 
     float sum = 0.0f;
     float ss = 0.0f;
@@ -237,8 +234,7 @@ static void cpu_debug_dump_attn_weights(const BnRunState *s,
                                         const char *tag,
                                         int layer,
                                         int pos) {
-    const char *path = getenv("BN_DUMP_LAYER_INP");
-    if (!path || !path[0]) return;
+    if (!bn_transformer_cpu_debug_dump_path()) return;
     if (n_heads <= 0 || n_kv <= 0 || seq_len <= 0) return;
 
     int n_values = n_heads * n_kv;
@@ -257,8 +253,7 @@ static void cpu_debug_dump_heads(const float *x,
                                  const char *tag,
                                  int layer,
                                  int pos) {
-    const char *enabled = getenv("BN_DUMP_ALL_HEADS");
-    if (!enabled || !enabled[0]) return;
+    if (!bn_transformer_cpu_debug_dump_heads_enabled()) return;
     char head_tag[96];
     for (int h = 0; h < n_heads; h++) {
         snprintf(head_tag, sizeof(head_tag), "%s_h%d", tag, h);
@@ -274,8 +269,7 @@ static void cpu_debug_dump_attn_weight_heads(const BnRunState *s,
                                              const char *tag,
                                              int layer,
                                              int pos) {
-    const char *enabled = getenv("BN_DUMP_ALL_HEADS");
-    if (!enabled || !enabled[0]) return;
+    if (!bn_transformer_cpu_debug_dump_heads_enabled()) return;
     if (n_heads <= 0 || n_kv <= 0 || seq_len <= 0) return;
     char head_tag[96];
     for (int h = 0; h < n_heads; h++) {
@@ -993,8 +987,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
             const BnPreparedWeight *up_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
             if (!bn_model_gpu(m) && !ffn_plan->scalar_exact_activation &&
-                !getenv("BN_CPU_LLAMA_DOT") &&
-                !getenv("BN_CPU_LLAMA_Q4_DOT") &&
+                bn_transformer_cpu_fused_q4_gateup_silu_allowed() &&
                 ffn_plan->activation == 0 &&
                 bn_quant_format_supports_cpu_fused_q4_gateup_silu(
                     lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) &&

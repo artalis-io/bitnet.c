@@ -1645,6 +1645,33 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_prepared_qweights_enabled());
     unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
 
+    unsetenv("BN_DUMP_LAYER_INP");
+    unsetenv("BN_DUMP_LAYER_POS");
+    unsetenv("BN_DUMP_ALL_HEADS");
+    assert(bn_transformer_cpu_debug_dump_path() == NULL);
+    assert(bn_transformer_cpu_debug_dump_pos_selected(3));
+    assert(!bn_transformer_cpu_debug_dump_heads_enabled());
+    setenv("BN_DUMP_LAYER_INP", "/tmp/bitnet-dump.txt", 1);
+    assert(bn_transformer_cpu_debug_dump_path() != NULL);
+    setenv("BN_DUMP_LAYER_POS", "7", 1);
+    assert(bn_transformer_cpu_debug_dump_pos_selected(7));
+    assert(!bn_transformer_cpu_debug_dump_pos_selected(6));
+    setenv("BN_DUMP_ALL_HEADS", "1", 1);
+    assert(bn_transformer_cpu_debug_dump_heads_enabled());
+    unsetenv("BN_DUMP_LAYER_INP");
+    unsetenv("BN_DUMP_LAYER_POS");
+    unsetenv("BN_DUMP_ALL_HEADS");
+
+    unsetenv("BN_CPU_LLAMA_DOT");
+    unsetenv("BN_CPU_LLAMA_Q4_DOT");
+    assert(bn_transformer_cpu_fused_q4_gateup_silu_allowed());
+    setenv("BN_CPU_LLAMA_DOT", "1", 1);
+    assert(!bn_transformer_cpu_fused_q4_gateup_silu_allowed());
+    unsetenv("BN_CPU_LLAMA_DOT");
+    setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
+    assert(!bn_transformer_cpu_fused_q4_gateup_silu_allowed());
+    unsetenv("BN_CPU_LLAMA_Q4_DOT");
+
     unsetenv("BN_PREFILL_PROFILE");
     assert(!bn_transformer_prefill_profile_enabled());
     setenv("BN_PREFILL_PROFILE", "1", 1);
