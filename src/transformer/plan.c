@@ -3,6 +3,7 @@
 #include "gpu_backend.h"
 #include "model_arch.h"
 #include "transformer_backend_internal.h"
+#include "transformer_cpu_features_internal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -107,16 +108,14 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
 }
 
 BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
-#ifdef BN_FORCE_SCALAR
-    return BN_CPU_BACKEND_SCALAR;
-#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
-      defined(__AVX512VNNI__) && defined(__AVX2__)
+#if BN_TRANSFORMER_CPU_HAS_AVX512
     return BN_CPU_BACKEND_AVX512;
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
     return BN_CPU_BACKEND_AVX2;
-#elif defined(__ARM_NEON)
+#elif BN_TRANSFORMER_CPU_HAS_NEON
     return BN_CPU_BACKEND_NEON;
-#elif defined(__wasm_relaxed_simd__) || defined(__wasm_simd128__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_RELAXED_SIMD || \
+      BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
     return BN_CPU_BACKEND_WASM_SIMD;
 #else
     return BN_CPU_BACKEND_SCALAR;
