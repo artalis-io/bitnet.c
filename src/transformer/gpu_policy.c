@@ -55,12 +55,20 @@ int bn_transformer_gpu_qk_split_enabled(void) {
     return getenv("BN_GPU_DISABLE_QKV_SPLIT") == NULL;
 }
 
+int bn_transformer_gpu_qkv_split_debug_enabled(void) {
+    return getenv("BN_GPU_DEBUG_QKV_SPLIT") != NULL;
+}
+
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void) {
     return getenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT") == NULL;
 }
 
 int bn_transformer_gpu_ssm_ab_stack_enabled(void) {
     return getenv("BN_GPU_DISABLE_SSM_AB_STACK") == NULL;
+}
+
+int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
+    return getenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM") != NULL;
 }
 
 int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible) {
@@ -958,10 +966,13 @@ int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
            getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
 }
 
-void bn_transformer_gpu_report_fallback(const char *reason) {
-    if (!getenv("BN_GPU_DEBUG_FALLBACK"))
-        return;
+int bn_transformer_gpu_debug_fallback_enabled(void) {
+    return getenv("BN_GPU_DEBUG_FALLBACK") != NULL;
+}
 
+void bn_transformer_gpu_report_fallback(const char *reason) {
+    if (!bn_transformer_gpu_debug_fallback_enabled())
+        return;
     fprintf(stderr, "[gpu:fallback] %s\n", reason ? reason : "unknown");
 }
 

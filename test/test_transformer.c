@@ -356,6 +356,12 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_qk_split_enabled());
     unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
 
+    unsetenv("BN_GPU_DEBUG_QKV_SPLIT");
+    assert(!bn_transformer_gpu_qkv_split_debug_enabled());
+    setenv("BN_GPU_DEBUG_QKV_SPLIT", "1", 1);
+    assert(bn_transformer_gpu_qkv_split_debug_enabled());
+    unsetenv("BN_GPU_DEBUG_QKV_SPLIT");
+
     unsetenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT");
     assert(bn_transformer_gpu_ssm_qkvz_split_enabled());
     setenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT", "1", 1);
@@ -367,6 +373,18 @@ static void test_gpu_capability_routing(void) {
     setenv("BN_GPU_DISABLE_SSM_AB_STACK", "1", 1);
     assert(!bn_transformer_gpu_ssm_ab_stack_enabled());
     unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
+
+    unsetenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM");
+    assert(!bn_transformer_gpu_split_residual_rmsnorm_enabled());
+    setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
+    assert(bn_transformer_gpu_split_residual_rmsnorm_enabled());
+    unsetenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM");
+
+    unsetenv("BN_GPU_DEBUG_FALLBACK");
+    assert(!bn_transformer_gpu_debug_fallback_enabled());
+    setenv("BN_GPU_DEBUG_FALLBACK", "1", 1);
+    assert(bn_transformer_gpu_debug_fallback_enabled());
+    unsetenv("BN_GPU_DEBUG_FALLBACK");
 
     unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");
     assert(!bn_transformer_gpu_shared_q4_q8_dot_enabled(0));

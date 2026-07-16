@@ -172,6 +172,12 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
 int bn_transformer_gpu_cuda_matvec_fallback_kept(
     const BnModel *m,
     const BnGPUBackend *gpu);
+int bn_transformer_gpu_qkv_split_enabled(int use_q4_q8);
+int bn_transformer_gpu_qk_split_enabled(void);
+int bn_transformer_gpu_qkv_split_debug_enabled(void);
+int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
+int bn_transformer_gpu_ssm_ab_stack_enabled(void);
+int bn_transformer_gpu_split_residual_rmsnorm_enabled(void);
 int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void);
 int bn_transformer_gpu_batch_prefill_enabled(
     const BnGPUBackend *gpu,
@@ -337,6 +343,7 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);
+int bn_transformer_gpu_debug_fallback_enabled(void);
 void bn_transformer_gpu_report_fallback(const char *reason);
 float *bn_transformer_gpu_reject_forward(
     BnTransformerGPUEmitContext *emit,

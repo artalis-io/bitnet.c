@@ -184,7 +184,7 @@ int bn_transformer_gpu_emit_context_lower_pending(
     if (ctx->graph->n_ops == 0) return 0;
     if (!ctx->lowered_ops || ctx->n < 0 || ctx->cap < ctx->n ||
         ctx->cap - ctx->n < ctx->graph->n_ops) {
-        if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+        if (bn_transformer_gpu_debug_fallback_enabled()) {
             fprintf(stderr,
                     "[gpu:fallback] lower capacity failed n=%d cap=%d "
                     "graph_ops=%d lowered_ops=%p\n",
@@ -201,7 +201,7 @@ int bn_transformer_gpu_emit_context_lower_pending(
                                            &((BnGPUOp *)ctx->lowered_ops)[ctx->n],
                                            ctx->cap - ctx->n,
                                            &lowered) != 0) {
-        if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+        if (bn_transformer_gpu_debug_fallback_enabled()) {
             fprintf(stderr,
                     "[gpu:fallback] lower shader failed graph_ops=%d "
                     "graph_values=%d n=%d cap=%d\n",
@@ -222,7 +222,7 @@ int bn_transformer_gpu_emit_context_execute(
     int readback_count) {
     if (!ctx) return -1;
     if (bn_transformer_gpu_emit_context_lower_pending(ctx) != 0) {
-        if (getenv("BN_GPU_DEBUG_FALLBACK"))
+        if (bn_transformer_gpu_debug_fallback_enabled())
             fprintf(stderr, "[gpu:fallback] gpu lower pending failed\n");
         return -1;
     }
@@ -231,7 +231,7 @@ int bn_transformer_gpu_emit_context_execute(
     int rc = bn_transformer_gpu_execute_ops(gpu, ctx->lowered_ops, ctx->n,
                                             readback_buf, readback,
                                             readback_count);
-    if (rc != 0 && getenv("BN_GPU_DEBUG_FALLBACK"))
+    if (rc != 0 && bn_transformer_gpu_debug_fallback_enabled())
         fprintf(stderr, "[gpu:fallback] gpu execute ops failed n=%d\n", ctx->n);
     if (rc == 0)
         ctx->n = 0;
@@ -380,7 +380,7 @@ int bn_transformer_gpu_emit_context_residual_rmsnorm(
     uint32_t u_eps,
     void *norm_weight) {
     if (!ctx) return -1;
-    if (getenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM")) {
+    if (bn_transformer_gpu_split_residual_rmsnorm_enabled()) {
         bn_transformer_gpu_emit_context_residual_add(
             ctx, x_buf, residual_buf, dim);
         return bn_transformer_gpu_emit_context_rmsnorm(
@@ -1211,7 +1211,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        bn_transformer_gpu_can_matvec_split(res->gpu,
                                                            lw->attn.wq.type);
     static int qkv_debug_printed = 0;
-    if (!qkv_debug_printed && getenv("BN_GPU_DEBUG_QKV_SPLIT")) {
+    if (!qkv_debug_printed && bn_transformer_gpu_qkv_split_debug_enabled()) {
         fprintf(stderr,
                 "[bn:gpu:debug] qkv_split disabled=%d stacked=%p qk=%p q_gated=%d "
                 "q_bias=%p k_bias=%p v_bias=%p op=%d can=%d use=%d qk_use=%d "
