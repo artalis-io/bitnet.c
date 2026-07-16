@@ -466,6 +466,12 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
 
+    unsetenv("BN_CUDA_DISABLE_MOE_FFN");
+    assert(!bn_transformer_gpu_cuda_moe_ffn_disabled());
+    setenv("BN_CUDA_DISABLE_MOE_FFN", "1", 1);
+    assert(bn_transformer_gpu_cuda_moe_ffn_disabled());
+    unsetenv("BN_CUDA_DISABLE_MOE_FFN");
+
     setenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE", "1", 1);
     assert(!bn_transformer_gpu_cuda_moe_decode_cacheable(
         &c, NULL, NULL));

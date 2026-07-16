@@ -1298,7 +1298,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     c, &lw->moe.expert_map, dim, 1);
             int use_cpu_moe_fallback =
                 !bn_transformer_gpu_backend_is_cuda(gpu) ||
-                getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL ||
+                bn_transformer_gpu_cuda_moe_ffn_disabled() ||
                 all2_q4q6_moe_requires_opt_in ||
                 cpu_fallback.ffn_layer == l ||
                 (cpu_fallback.ffn_from_layer >= 0 &&

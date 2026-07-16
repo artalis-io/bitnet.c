@@ -990,6 +990,10 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts) {
            getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_ffn_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
+}
+
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split) {
@@ -1128,7 +1132,7 @@ int bn_transformer_gpu_validate_forward(
 
     if (out->has_moe &&
         (!bn_transformer_gpu_backend_is_cuda(gpu) ||
-         getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL))
+         bn_transformer_gpu_cuda_moe_ffn_disabled()))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
     if (out->has_moe &&
         bn_transformer_gpu_backend_is_cuda(gpu) &&

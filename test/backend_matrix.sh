@@ -217,6 +217,11 @@ if grep -n 'BN_GPU_COMPARE_ATTENTION_LAYER\|BN_GPU_COMPARE_ATTENTION_POS\|BN_GPU
     fail=1
 fi
 
+if grep -n 'BN_CUDA_DISABLE_MOE_FFN' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for MoE FFN disable env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_fallback.c must use GPU policy helpers for GPU profile env vars"
     fail=1

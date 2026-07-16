@@ -357,6 +357,7 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     int dim,
     int allow_q4_down);
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
+int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);
