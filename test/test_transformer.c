@@ -344,6 +344,12 @@ static void test_gpu_policy_helpers(void) {
     c.full_attn_interval = 0;
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
+    assert(bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+
     BnModel model;
     BnLayerWeights layer;
     memset(&model, 0, sizeof(model));

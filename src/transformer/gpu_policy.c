@@ -18,6 +18,10 @@ int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
 }
 
+int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
+}
+
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
@@ -277,7 +281,7 @@ int bn_transformer_gpu_batch_prefill_enabled(
         return bn_transformer_gpu_backend_is_cuda(gpu) &&
                gpu->prefill_ssm_layer &&
                getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") == NULL &&
-               getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") == NULL;
+               !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled();
     }
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c->n_experts > 0)
         return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;

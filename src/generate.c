@@ -386,7 +386,7 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
             return NULL;
         if (logits && gpu_attached &&
             model->config.full_attn_interval > 0 &&
-            getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") &&
+            bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
             bn_transformer_gpu_upload_ssm_state(model, s) != 0)
             return NULL;
     } else {
@@ -417,7 +417,7 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
                                                     n_tokens);
         if (rc == 0 && gpu_attached &&
             model->config.full_attn_interval > 0 &&
-            getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER"))
+            bn_transformer_gpu_cuda_prefill_ssm_layer_disabled())
             rc = bn_transformer_gpu_upload_ssm_state(model, s);
         return rc;
     }

@@ -153,6 +153,16 @@ if grep -n 'BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER\|BN_CUDA_QWEN2MOE_GPU_ROUTE_TO
 fi
 
 for file in \
+    src/generate.c \
+    src/transformer/prefill.c
+do
+    if grep -n 'BN_CUDA_DISABLE_PREFILL_SSM_LAYER' "$file" >/dev/null 2>&1; then
+        echo "$file must use GPU policy helpers for prefill SSM layer compatibility env vars"
+        fail=1
+    fi
+done
+
+for file in \
     src/model.c \
     src/model_gpu.c \
     src/transformer/gpu_emit.c \

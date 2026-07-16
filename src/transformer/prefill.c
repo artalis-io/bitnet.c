@@ -676,7 +676,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
     if (!bn_transformer_gpu_backend_is_cuda(gpu) ||
         !gpu->prefill_ssm_layer ||
         !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
-        getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") ||
+        bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() ||
         !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
             c ? c->n_experts : 0) ||
         n_tokens <
@@ -1010,7 +1010,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     const BnConfig *c = &m->config;
     if (!bn_transformer_gpu_backend_is_cuda(gpu) ||
         !gpu->prefill_ssm_layer || !backend ||
-        getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") ||
+        bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() ||
         n_tokens <
             bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu) ||
         !lw || !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
