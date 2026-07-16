@@ -693,6 +693,67 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
            getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") == NULL;
 }
 
+static int gpu_policy_env_int(const char *name, int default_value) {
+    const char *env = getenv(name);
+    return env ? atoi(env) : default_value;
+}
+
+BnTransformerGPUCPUFallbackPolicy
+bn_transformer_gpu_cpu_fallback_policy(void) {
+    BnTransformerGPUCPUFallbackPolicy policy = {
+        .layer = gpu_policy_env_int("BN_GPU_CPU_FALLBACK_LAYER", -1),
+        .from_layer =
+            gpu_policy_env_int("BN_GPU_CPU_FALLBACK_FROM_LAYER", -1),
+        .attn_layer = gpu_policy_env_int("BN_GPU_CPU_ATTN_LAYER", -1),
+        .attn_from_layer =
+            gpu_policy_env_int("BN_GPU_CPU_ATTN_FROM_LAYER", -1),
+        .ffn_layer = gpu_policy_env_int("BN_GPU_CPU_FFN_LAYER", -1),
+        .ffn_from_layer =
+            gpu_policy_env_int("BN_GPU_CPU_FFN_FROM_LAYER", -1),
+        .ffn_down_from_layer =
+            gpu_policy_env_int("BN_GPU_CPU_FFN_DOWN_FROM_LAYER", -1),
+    };
+    return policy;
+}
+
+BnTransformerGPUQ4Q8LayerPolicy
+bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
+    int n_layers = c ? c->n_layers : 0;
+    BnTransformerGPUQ4Q8LayerPolicy policy = {
+        .from_layer = -1,
+        .to_layer = -1,
+        .attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL,
+        .ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL,
+    };
+
+    const char *env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
+    if (env) {
+        policy.from_layer = atoi(env);
+    } else if (getenv("BN_GPU_Q4_Q8")) {
+        policy.from_layer = n_layers - 1;
+    }
+
+    env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
+    if (env) {
+        policy.to_layer = atoi(env);
+    } else {
+        env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
+        if (env) {
+            int tail_native = atoi(env);
+            if (tail_native > 0) {
+                policy.to_layer = n_layers - tail_native - 1;
+                if (policy.to_layer < -1)
+                    policy.to_layer = -1;
+            }
+        } else if (getenv("BN_GPU_Q4_Q8") &&
+                   getenv("BN_METAL_Q4_PREPARED") == NULL &&
+                   n_layers > 33) {
+            policy.to_layer = n_layers - 33 - 1;
+        }
+    }
+    return policy;
+}
+
 int bn_transformer_gpu_flash_attention_enabled(
     const BnGPUBackend *gpu,
     int config_flash_attn,

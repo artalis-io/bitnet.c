@@ -106,6 +106,23 @@ typedef struct {
     int has_ssm;
 } BnTransformerGPUForwardPolicy;
 
+typedef struct {
+    int layer;
+    int from_layer;
+    int attn_layer;
+    int attn_from_layer;
+    int ffn_layer;
+    int ffn_from_layer;
+    int ffn_down_from_layer;
+} BnTransformerGPUCPUFallbackPolicy;
+
+typedef struct {
+    int from_layer;
+    int to_layer;
+    int attn_only;
+    int ffn_only;
+} BnTransformerGPUQ4Q8LayerPolicy;
+
 int bn_transformer_gpu_validate_forward(
     BnTransformerGPUForwardPolicy *out,
     const BnGPUBackend *gpu,
@@ -256,6 +273,10 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
     const BnConfig *c,
     const BnWeights *w,
     int want_argmax);
+BnTransformerGPUCPUFallbackPolicy
+bn_transformer_gpu_cpu_fallback_policy(void);
+BnTransformerGPUQ4Q8LayerPolicy
+bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
 int bn_transformer_gpu_flash_attention_enabled(
     const BnGPUBackend *gpu,
     int config_flash_attn,

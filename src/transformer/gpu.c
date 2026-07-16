@@ -934,13 +934,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         rope_sin[i] = sinf(angle);
     }
     int cache_pos = pos % c->seq_len;
-    int cpu_fallback_layer = -1;
-    int cpu_fallback_from_layer = -1;
-    int cpu_fallback_attn_layer = -1;
-    int cpu_fallback_attn_from_layer = -1;
-    int cpu_fallback_ffn_layer = -1;
-    int cpu_fallback_ffn_from_layer = -1;
-    int cpu_fallback_ffn_down_from_layer = -1;
     int compare_attention_layer = -1;
     int compare_attention_pos = -1;
     int compare_gqa_layer = -1;
@@ -951,21 +944,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int compare_ffn_down_pos = -1;
     int compare_ffn_state_layer = -1;
     int compare_ffn_state_pos = -1;
-    int q4_q8_from_layer = -1;
-    int q4_q8_to_layer = -1;
-    int q4_q8_attn_only = 0;
-    int q4_q8_ffn_only = 0;
+    BnTransformerGPUCPUFallbackPolicy cpu_fallback =
+        bn_transformer_gpu_cpu_fallback_policy();
+    BnTransformerGPUQ4Q8LayerPolicy q4_q8 =
+        bn_transformer_gpu_q4_q8_layer_policy(c);
     int all2_q4q6_moe_gpu_route_from_layer = -1;
     int all2_q4q6_moe_gpu_route_to_layer = -1;
     {
         static int init = 0;
-        static int s_cpu_fallback_layer = -1;
-        static int s_cpu_fallback_from_layer = -1;
-        static int s_cpu_fallback_attn_layer = -1;
-        static int s_cpu_fallback_attn_from_layer = -1;
-        static int s_cpu_fallback_ffn_layer = -1;
-        static int s_cpu_fallback_ffn_from_layer = -1;
-        static int s_cpu_fallback_ffn_down_from_layer = -1;
         static int s_compare_attention_layer = -1;
         static int s_compare_attention_pos = -1;
         static int s_compare_gqa_layer = -1;
@@ -976,28 +962,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         static int s_compare_ffn_down_pos = -1;
         static int s_compare_ffn_state_layer = -1;
         static int s_compare_ffn_state_pos = -1;
-        static int s_q4_q8_from_layer = -1;
-        static int s_q4_q8_to_layer = -1;
-        static int s_q4_q8_attn_only = 0;
-        static int s_q4_q8_ffn_only = 0;
         static int s_all2_q4q6_moe_gpu_route_from_layer = -1;
         static int s_all2_q4q6_moe_gpu_route_to_layer = -1;
         if (!init) {
-            const char *env = getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
-            if (env) s_cpu_fallback_from_layer = atoi(env);
-            env = getenv("BN_GPU_CPU_FALLBACK_LAYER");
-            if (env) s_cpu_fallback_layer = atoi(env);
-            env = getenv("BN_GPU_CPU_ATTN_LAYER");
-            if (env) s_cpu_fallback_attn_layer = atoi(env);
-            env = getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
-            if (env) s_cpu_fallback_attn_from_layer = atoi(env);
-            env = getenv("BN_GPU_CPU_FFN_LAYER");
-            if (env) s_cpu_fallback_ffn_layer = atoi(env);
-            env = getenv("BN_GPU_CPU_FFN_FROM_LAYER");
-            if (env) s_cpu_fallback_ffn_from_layer = atoi(env);
-            env = getenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
-            if (env) s_cpu_fallback_ffn_down_from_layer = atoi(env);
-            env = getenv("BN_GPU_COMPARE_ATTENTION_LAYER");
+            const char *env = getenv("BN_GPU_COMPARE_ATTENTION_LAYER");
             if (env) s_compare_attention_layer = atoi(env);
             env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
             if (env) s_compare_attention_pos = atoi(env);
@@ -1017,45 +985,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             if (env) s_compare_ffn_state_layer = atoi(env);
             env = getenv("BN_GPU_COMPARE_FFN_STATE_POS");
             if (env) s_compare_ffn_state_pos = atoi(env);
-            env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
-            if (env) {
-                s_q4_q8_from_layer = atoi(env);
-            } else if (getenv("BN_GPU_Q4_Q8")) {
-                s_q4_q8_from_layer = c->n_layers - 1;
-            }
-            env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
-            if (env) {
-                s_q4_q8_to_layer = atoi(env);
-            } else {
-                env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
-                if (env) {
-                    int tail_native = atoi(env);
-                    if (tail_native > 0) {
-                        s_q4_q8_to_layer = c->n_layers - tail_native - 1;
-                        if (s_q4_q8_to_layer < -1)
-                            s_q4_q8_to_layer = -1;
-                    }
-                } else if (getenv("BN_GPU_Q4_Q8") &&
-                           !getenv("BN_METAL_Q4_PREPARED") &&
-                           c->n_layers > 33) {
-                    s_q4_q8_to_layer = c->n_layers - 33 - 1;
-                }
-            }
-            s_q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
-            s_q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
             bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
                 &s_all2_q4q6_moe_gpu_route_from_layer,
                 &s_all2_q4q6_moe_gpu_route_to_layer);
             init = 1;
         }
-        cpu_fallback_layer = s_cpu_fallback_layer;
-        cpu_fallback_from_layer = s_cpu_fallback_from_layer;
-        cpu_fallback_attn_layer = s_cpu_fallback_attn_layer;
-        cpu_fallback_attn_from_layer = s_cpu_fallback_attn_from_layer;
-        cpu_fallback_ffn_layer = s_cpu_fallback_ffn_layer;
-        cpu_fallback_ffn_from_layer = s_cpu_fallback_ffn_from_layer;
-        cpu_fallback_ffn_down_from_layer =
-            s_cpu_fallback_ffn_down_from_layer;
         compare_attention_layer = s_compare_attention_layer;
         compare_attention_pos = s_compare_attention_pos;
         compare_gqa_layer = s_compare_gqa_layer;
@@ -1066,10 +1000,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         compare_ffn_down_pos = s_compare_ffn_down_pos;
         compare_ffn_state_layer = s_compare_ffn_state_layer;
         compare_ffn_state_pos = s_compare_ffn_state_pos;
-        q4_q8_from_layer = s_q4_q8_from_layer;
-        q4_q8_to_layer = s_q4_q8_to_layer;
-        q4_q8_attn_only = s_q4_q8_attn_only;
-        q4_q8_ffn_only = s_q4_q8_ffn_only;
         all2_q4q6_moe_gpu_route_from_layer =
             s_all2_q4q6_moe_gpu_route_from_layer;
         all2_q4q6_moe_gpu_route_to_layer =
@@ -1086,17 +1016,17 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w);
     if (all2_q4q6_moe_safe_cpu_attn &&
-        cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
-        cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0)
-        cpu_fallback_attn_from_layer = 0;
+        cpu_fallback.layer < 0 && cpu_fallback.from_layer < 0 &&
+        cpu_fallback.attn_layer < 0 && cpu_fallback.attn_from_layer < 0)
+        cpu_fallback.attn_from_layer = 0;
     if (small_dense_q8_safe_cpu_attn &&
-        cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
-        cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0)
-        cpu_fallback_attn_from_layer = 0;
+        cpu_fallback.layer < 0 && cpu_fallback.from_layer < 0 &&
+        cpu_fallback.attn_layer < 0 && cpu_fallback.attn_from_layer < 0)
+        cpu_fallback.attn_from_layer = 0;
     if (large_hybrid_safe_cpu_attn &&
-        cpu_fallback_layer < 0 && cpu_fallback_from_layer < 0 &&
-        cpu_fallback_attn_layer < 0 && cpu_fallback_attn_from_layer < 0)
-        cpu_fallback_attn_from_layer = 0;
+        cpu_fallback.layer < 0 && cpu_fallback.from_layer < 0 &&
+        cpu_fallback.attn_layer < 0 && cpu_fallback.attn_from_layer < 0)
+        cpu_fallback.attn_from_layer = 0;
     if (bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
             gpu, c, w, argmax_token != NULL))
         return NULL;
@@ -1149,7 +1079,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             gpu_logits_need_cpu);
     int small_dense_cuda_exact_q4_q8_default =
         bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
-            gpu, c, q4_q8_from_layer);
+            gpu, c, q4_q8.from_layer);
     int small_dense_cuda_q8_logits_refine_default =
         small_dense_cuda_exact_q4_q8_default &&
         bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
@@ -1160,7 +1090,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int q8_logits_refine_captures_xb =
         bn_transformer_gpu_q8_logits_refine_captures_xb(
             logit_res, refine_q8_logits);
-    int small_dense_cuda_exact_q4_q8_to_layer = q4_q8_to_layer;
+    int small_dense_cuda_exact_q4_q8_to_layer = q4_q8.to_layer;
     if (small_dense_cuda_exact_q4_q8_default &&
         small_dense_cuda_exact_q4_q8_to_layer < 0 &&
         c->n_layers > 33)
@@ -1170,10 +1100,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             gpu, emit_logits, argmax_token != NULL, gpu_logits_need_cpu,
             policy.has_moe, cacheable_resident_moe,
             q6_logits_refine_captures_xb, q8_logits_refine_captures_xb,
-            need_logits, cpu_fallback_layer, cpu_fallback_from_layer,
-            cpu_fallback_attn_layer, cpu_fallback_attn_from_layer,
-            cpu_fallback_ffn_layer, cpu_fallback_ffn_from_layer,
-            cpu_fallback_ffn_down_from_layer, compare_attention_layer,
+            need_logits, cpu_fallback.layer, cpu_fallback.from_layer,
+            cpu_fallback.attn_layer, cpu_fallback.attn_from_layer,
+            cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer,
+            cpu_fallback.ffn_down_from_layer, compare_attention_layer,
             compare_gqa_layer, compare_qkv_layer, compare_ffn_down_layer,
             compare_ffn_state_layer);
     int cached_n = cacheable_decode
@@ -1248,9 +1178,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 bn_transformer_gpu_resolve_dense_ffn_resources(
                     gpu, backend, lw, l);
         }
-        int use_q4_q8_layer = q4_q8_from_layer >= 0 &&
-                               l >= q4_q8_from_layer &&
-                               (q4_q8_to_layer < 0 || l <= q4_q8_to_layer);
+        int use_q4_q8_layer = q4_q8.from_layer >= 0 &&
+                               l >= q4_q8.from_layer &&
+                               (q4_q8.to_layer < 0 ||
+                                l <= q4_q8.to_layer);
         int small_dense_cuda_exact_q4_q8 =
             small_dense_cuda_exact_q4_q8_default &&
             (small_dense_cuda_exact_q4_q8_to_layer < 0 ||
@@ -1260,8 +1191,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int all2_q4q6_moe_cuda_exact_attn =
             bn_transformer_gpu_cuda_moe_exact_attention_enabled(gpu, c);
         int use_q4_q8_attn =
-            (use_q4_q8_layer || all2_q4q6_moe_cuda_exact_attn) && !q4_q8_ffn_only;
-        int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8_attn_only;
+            (use_q4_q8_layer || all2_q4q6_moe_cuda_exact_attn) &&
+            !q4_q8.ffn_only;
+        int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8.attn_only;
         int use_q4_q8_ffn_down = use_q4_q8_ffn;
         if (small_dense_cuda_exact_q4_q8 &&
             !bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
@@ -1295,8 +1227,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int attn_idx = plan.attn_idx;
         size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-        if ((cpu_fallback_layer >= 0 && l == cpu_fallback_layer) ||
-            (cpu_fallback_from_layer >= 0 && l >= cpu_fallback_from_layer)) {
+        if ((cpu_fallback.layer >= 0 && l == cpu_fallback.layer) ||
+            (cpu_fallback.from_layer >= 0 && l >= cpu_fallback.from_layer)) {
             void *next_norm = bn_transformer_gpu_resolve_next_norm(
                 backend, l, c->n_layers, output_norm);
             if (bn_transformer_gpu_fallback_cpu_layer(
@@ -1326,9 +1258,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu missing-qweight cpu-layer fallback failed");
             continue;
         }
-        if (cpu_fallback_attn_layer == l ||
-            (cpu_fallback_attn_from_layer >= 0 &&
-             l >= cpu_fallback_attn_from_layer)) {
+        if (cpu_fallback.attn_layer == l ||
+            (cpu_fallback.attn_from_layer >= 0 &&
+             l >= cpu_fallback.attn_from_layer)) {
             void *ffn_norm = attn_res.ffn_norm;
             if (bn_transformer_gpu_fallback_cpu_attention(
                     &emit, gpu, m, sess, lw, l, pos, cache_pos, rope_dims,
@@ -1401,9 +1333,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 !bn_transformer_gpu_backend_is_cuda(gpu) ||
                 getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL ||
                 all2_q4q6_moe_requires_opt_in ||
-                cpu_fallback_ffn_layer == l ||
-                (cpu_fallback_ffn_from_layer >= 0 &&
-                 l >= cpu_fallback_ffn_from_layer);
+                cpu_fallback.ffn_layer == l ||
+                (cpu_fallback.ffn_from_layer >= 0 &&
+                 l >= cpu_fallback.ffn_from_layer);
             if (use_cpu_moe_fallback) {
                 void *moe_next_norm = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);
@@ -2157,9 +2089,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             ffn_plan = layer_ffn_plan;
         else
             bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu, backend, l, 1);
-        if ((cpu_fallback_ffn_layer >= 0 && l == cpu_fallback_ffn_layer) ||
-            (cpu_fallback_ffn_from_layer >= 0 &&
-             l >= cpu_fallback_ffn_from_layer)) {
+        if ((cpu_fallback.ffn_layer >= 0 && l == cpu_fallback.ffn_layer) ||
+            (cpu_fallback.ffn_from_layer >= 0 &&
+             l >= cpu_fallback.ffn_from_layer)) {
             if (bn_transformer_gpu_fallback_cpu_ffn(
                     &emit, gpu, m, sess, lw, &ffn_plan, dim, u_eps,
                     next_norm) != 0)
@@ -2169,8 +2101,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
         BnTransformerGPUDenseFFNResources ffn_res = layer_ffn_res;
         int ffn_down_input_buf = -1;
-        int skip_ffn_down = cpu_fallback_ffn_down_from_layer >= 0 &&
-                            l >= cpu_fallback_ffn_down_from_layer;
+        int skip_ffn_down = cpu_fallback.ffn_down_from_layer >= 0 &&
+                            l >= cpu_fallback.ffn_down_from_layer;
         int compare_ffn_state = compare_ffn_state_layer == l &&
             (compare_ffn_state_pos < 0 || compare_ffn_state_pos == pos);
         if (compare_ffn_state) {
