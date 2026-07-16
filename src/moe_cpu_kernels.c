@@ -1,23 +1,15 @@
 #include "moe_internal.h"
-
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
-
+#include "transformer_cpu_features_internal.h"
 #include "simd_helpers.h"
 #include "transformer_rmsnorm_internal.h"
 
 void bn_moe_rmsnorm(float *out, const float *x, const float *w,
                     int size, float eps) {
-#if defined(__ARM_NEON)
+#if BN_TRANSFORMER_CPU_HAS_NEON
     bn_transformer_rmsnorm_neon(out, x, w, size, eps);
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
     bn_transformer_rmsnorm_avx2(out, x, w, size, eps);
-#elif defined(__wasm_simd128__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
     bn_transformer_rmsnorm_wasm(out, x, w, size, eps);
 #else
     bn_transformer_rmsnorm_scalar(out, x, w, size, eps);
@@ -26,7 +18,7 @@ void bn_moe_rmsnorm(float *out, const float *x, const float *w,
 
 float bn_moe_dot_row(const float *row, const float *x, int dim) {
     float sum = 0.0f;
-#if defined(__ARM_NEON)
+#if BN_TRANSFORMER_CPU_HAS_NEON
     float32x4_t acc0 = vdupq_n_f32(0.0f);
     float32x4_t acc1 = vdupq_n_f32(0.0f);
     float32x4_t acc2 = vdupq_n_f32(0.0f);
@@ -42,7 +34,7 @@ float bn_moe_dot_row(const float *row, const float *x, int dim) {
     sum = vaddvq_f32(acc0);
     for (; d < dim; d++)
         sum += row[d] * x[d];
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
     __m256 a0 = _mm256_setzero_ps();
     __m256 a1 = _mm256_setzero_ps();
     int d = 0;
@@ -64,7 +56,7 @@ float bn_moe_dot_row(const float *row, const float *x, int dim) {
 
 int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
                      int dim, int start_expert) {
-#if defined(__AVX2__)
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     const float *row0 = router_w + (size_t)(start_expert + 0) * dim;
     const float *row1 = router_w + (size_t)(start_expert + 1) * dim;
     const float *row2 = router_w + (size_t)(start_expert + 2) * dim;
@@ -115,7 +107,7 @@ int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
                         int n, int exact_silu) {
     int i = 0;
-#if defined(__AVX2__)
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     if (!exact_silu) {
         for (; i + 7 < n; i += 8) {
             __m256 g = _mm256_loadu_ps(gate + i);
@@ -141,7 +133,7 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
                     shared_up_type == batch_type;
     for (int i = 1; can_batch && i < n_tasks; i++)
         can_batch = tasks[i].W->type == batch_type;
-#if defined(__AVX2__)
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     if (!can_batch &&
         bn_quant_format_can_preq8k(shared_gate_type) &&
         bn_quant_format_can_preq8k(shared_up_type)) {
@@ -155,14 +147,14 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
 
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n) {
     int i = 0;
-#if defined(__AVX2__)
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     __m256 wv = _mm256_set1_ps(weight);
     for (; i + 7 < n; i += 8) {
         __m256 acc = _mm256_loadu_ps(dst + i);
         __m256 val = _mm256_mul_ps(wv, _mm256_loadu_ps(src + i));
         _mm256_storeu_ps(dst + i, _mm256_add_ps(acc, val));
     }
-#elif defined(__ARM_NEON)
+#elif BN_TRANSFORMER_CPU_HAS_NEON
     float32x4_t wv = vdupq_n_f32(weight);
     for (; i + 3 < n; i += 4) {
         float32x4_t acc = vld1q_f32(dst + i);
@@ -176,11 +168,11 @@ void bn_moe_weighted_add(float *dst, const float *src, float weight, int n) {
 
 void bn_moe_residual_add(float *x, const float *r, int n) {
     int i = 0;
-#if defined(__AVX2__)
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     for (; i + 7 < n; i += 8)
         _mm256_storeu_ps(x + i, _mm256_add_ps(_mm256_loadu_ps(x + i),
                                               _mm256_loadu_ps(r + i)));
-#elif defined(__ARM_NEON)
+#elif BN_TRANSFORMER_CPU_HAS_NEON
     for (; i + 3 < n; i += 4)
         vst1q_f32(x + i, vaddq_f32(vld1q_f32(x + i), vld1q_f32(r + i)));
 #endif
