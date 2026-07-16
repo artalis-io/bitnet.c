@@ -1696,9 +1696,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                 moe_gpu_routed_part, dim);
                 }
                 int cpu_shared_fallback =
-                    c->has_shared_expert && lw->shared.shared_gate.data &&
-                    getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK") != NULL &&
-                    getenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK") == NULL;
+                    bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(
+                        c->has_shared_expert &&
+                        lw->shared.shared_gate.data != NULL);
                 if (cpu_shared_fallback) {
                     size_t dim_bytes = (size_t)dim * sizeof(float);
                     float *shared_cpu_xb = (float *)malloc(dim_bytes);

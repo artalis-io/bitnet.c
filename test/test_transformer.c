@@ -472,6 +472,18 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_cuda_moe_ffn_disabled());
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
 
+    unsetenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK");
+    unsetenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK");
+    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
+    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
+    setenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK", "1", 1);
+    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
+    assert(bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
+    setenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK", "1", 1);
+    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
+    unsetenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK");
+    unsetenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK");
+
     setenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE", "1", 1);
     assert(!bn_transformer_gpu_cuda_moe_decode_cacheable(
         &c, NULL, NULL));

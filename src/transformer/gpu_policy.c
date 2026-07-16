@@ -994,6 +994,12 @@ int bn_transformer_gpu_cuda_moe_ffn_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
+    return eligible &&
+           getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK") == NULL;
+}
+
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split) {
