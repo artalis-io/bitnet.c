@@ -121,6 +121,7 @@ for file in \
     src/transformer/plan.c \
     src/transformer/prefill.c \
     src/transformer/kv.c \
+    src/model.c \
     src/model_session.c \
     src/model_embed.c \
     src/moe_execute.c \
