@@ -85,6 +85,18 @@ static inline int bn_backend_quant_tied_logits_uses_f16_path(int type) {
     return type == BN_GGUF_TENSOR_F16;
 }
 
+static inline int bn_backend_quant_tied_logits_i8_weight_type(void) {
+    return BN_GGUF_TENSOR_Q8_0;
+}
+
+static inline int bn_backend_quant_tied_logits_f16_weight_type(void) {
+    return BN_GGUF_TENSOR_F16;
+}
+
+static inline int bn_backend_quant_tied_logits_f32_weight_type(void) {
+    return BN_GGUF_TENSOR_F32;
+}
+
 static inline int bn_backend_quant_gpu_requires_exact_silu(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
 }

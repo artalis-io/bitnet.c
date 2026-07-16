@@ -350,15 +350,15 @@ void bn_transformer_plan_logits(BnLogitsPlan *p,
             : BN_LOGITS_UNTIED_QUANT;
     } else if (w->emb_out_i8) {
         p->kind = BN_LOGITS_TIED_I8;
-        p->weight_type = BN_GGUF_TENSOR_Q8_0;
+        p->weight_type = bn_backend_quant_tied_logits_i8_weight_type();
     } else if (bn_backend_quant_tied_logits_uses_quant_path(w->emb_type)) {
         p->kind = BN_LOGITS_TIED_QUANT;
         p->weight_type = w->emb_type;
     } else if (bn_backend_quant_tied_logits_uses_f16_path(w->emb_type)) {
         p->kind = BN_LOGITS_TIED_F16;
-        p->weight_type = BN_GGUF_TENSOR_F16;
+        p->weight_type = bn_backend_quant_tied_logits_f16_weight_type();
     } else {
         p->kind = BN_LOGITS_TIED_F32;
-        p->weight_type = BN_GGUF_TENSOR_F32;
+        p->weight_type = bn_backend_quant_tied_logits_f32_weight_type();
     }
 }
