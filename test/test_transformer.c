@@ -366,6 +366,20 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_ssm_ab_stack_enabled());
     unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
 
+    unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");
+    assert(!bn_transformer_gpu_shared_q4_q8_dot_enabled(0));
+    assert(bn_transformer_gpu_shared_q4_q8_dot_enabled(1));
+    setenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT", "1", 1);
+    assert(!bn_transformer_gpu_shared_q4_q8_dot_enabled(1));
+    unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");
+
+    unsetenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE");
+    assert(!bn_transformer_gpu_shared_expert_gate_enabled(0));
+    assert(bn_transformer_gpu_shared_expert_gate_enabled(1));
+    setenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE", "1", 1);
+    assert(!bn_transformer_gpu_shared_expert_gate_enabled(1));
+    unsetenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE");
+
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
 

@@ -63,6 +63,16 @@ int bn_transformer_gpu_ssm_ab_stack_enabled(void) {
     return getenv("BN_GPU_DISABLE_SSM_AB_STACK") == NULL;
 }
 
+int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible) {
+    return eligible &&
+           getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
+}
+
+int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
+    return eligible &&
+           getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE") == NULL;
+}
+
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT

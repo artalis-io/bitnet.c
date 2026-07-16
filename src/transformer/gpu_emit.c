@@ -1743,11 +1743,13 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
     }
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
-        int use_shared_q4_q8 =
+        int shared_q4_q8_eligible =
             bn_quant_format_supports_moe_q4_gateup(lw->shared.shared_gate.type,
                                            lw->shared.shared_up.type) &&
-            lw->shared.shared_gate.cols % 256 == 0 &&
-            getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
+            lw->shared.shared_gate.cols % 256 == 0;
+        int use_shared_q4_q8 =
+            bn_transformer_gpu_shared_q4_q8_dot_enabled(
+                shared_q4_q8_eligible);
         int prefer_shared_gateup_split =
             bn_quant_format_gpu_prefers_gateup_split(
                 lw->shared.shared_gate.type);
@@ -1815,8 +1817,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             lw->shared.shared_down.cols, 0, shared_down_flags);
         uint32_t u_one;
         { float one = 1.0f; memcpy(&u_one, &one, 4); }
-        if (lw->shared.shared_expert_gate && shared->shared_expert_gate &&
-            !getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE")) {
+        if (bn_transformer_gpu_shared_expert_gate_enabled(
+                lw->shared.shared_expert_gate &&
+                shared->shared_expert_gate)) {
             uint32_t weighted_add_params[8] = {
                 (uint32_t)dim, u_one,
                 (moe->n_experts == 0 && !moe->preserve_output) ? 1u : 0u,

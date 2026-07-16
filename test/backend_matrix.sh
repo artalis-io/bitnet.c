@@ -192,6 +192,11 @@ if grep -n 'BN_GPU_DISABLE_QKV_SPLIT\|BN_GPU_DISABLE_SSM_QKVZ_SPLIT\|BN_GPU_DISA
     fail=1
 fi
 
+if grep -n 'BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT\|BN_CUDA_DISABLE_SHARED_EXPERT_GATE' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use GPU policy helpers for shared MoE compatibility env vars"
+    fail=1
+fi
+
 for file in \
     src/model.c \
     src/model_gpu.c \
