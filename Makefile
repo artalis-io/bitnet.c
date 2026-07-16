@@ -62,7 +62,8 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
-    src/transformer/kv_backend.c src/transformer/kv.c src/transformer/prefill.c \
+    src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
   # x86: AVX512 VNNI where available, plus AVX2 + scalar fallback
@@ -103,7 +104,8 @@ else
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
-    src/transformer/kv_backend.c src/transformer/kv.c src/transformer/prefill.c \
+    src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 endif
 
@@ -253,7 +255,8 @@ SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c src/transformer/rm
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
-    src/transformer/kv_backend.c src/transformer/kv.c src/transformer/prefill.c \
+    src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_scalar.c
 
 SCALAR_SRCS = src/platform.c src/gguf.c $(QUANT_COMMON) $(SCALAR_QUANT_BACKEND) \
@@ -583,7 +586,8 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnor
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
-    src/transformer/kv_backend.c src/transformer/kv.c src/transformer/prefill.c \
+    src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 
 AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
