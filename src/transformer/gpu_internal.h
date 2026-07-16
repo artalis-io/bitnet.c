@@ -157,6 +157,11 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
     const BnConfig *c,
     const BnLayerWeights *lw,
     int dim);
+int bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int dim);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
@@ -388,6 +393,15 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     const BnMoEExpertMap *map,
     int dim,
     int allow_q4_down);
+int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int layer,
+    int cpu_fallback_ffn_layer,
+    int cpu_fallback_ffn_from_layer);
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
 int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
 int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);

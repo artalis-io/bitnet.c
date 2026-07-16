@@ -247,6 +247,11 @@ if grep -n 'BN_CUDA_DISABLE_MOE_FFN' src/transformer/gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU-aware MoE FFN fallback and route policy helpers"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK\|BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for shared MoE CPU fallback env vars"
     fail=1

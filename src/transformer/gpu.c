@@ -1211,17 +1211,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         // ---- FFN (MoE or dense) ----
         ffn_block:;
         if (lw->moe.router_weight) {
-            int all2_q4q6_moe_requires_opt_in =
-                bn_transformer_gpu_backend_is_cuda(gpu) &&
-                bn_transformer_gpu_all2_q4_moe_requires_opt_in(
-                    c, &lw->moe.expert_map, dim, 1);
             int use_cpu_moe_fallback =
-                !bn_transformer_gpu_backend_is_cuda(gpu) ||
-                bn_transformer_gpu_cuda_moe_ffn_disabled() ||
-                all2_q4q6_moe_requires_opt_in ||
-                cpu_fallback.ffn_layer == l ||
-                (cpu_fallback.ffn_from_layer >= 0 &&
-                 l >= cpu_fallback.ffn_from_layer);
+                bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
+                    gpu, c, &lw->moe.expert_map, dim, 1, l,
+                    cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer);
             if (use_cpu_moe_fallback) {
                 void *moe_next_norm = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);
@@ -1275,8 +1268,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             void *moe_router = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
             int all2_q4q6_moe =
-                bn_transformer_gpu_backend_is_cuda(gpu) &&
-                bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw, dim);
+                bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
+                    gpu, c, lw, dim);
             int all2_q4q6_moe_gpu_route_layer_selected =
                 bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
                     l, all2_q4q6_moe_gpu_route_from_layer,

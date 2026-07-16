@@ -119,6 +119,15 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
     return bn_transformer_gpu_moe_routed_q4_down(&lw->moe.expert_map, 0);
 }
 
+int bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int dim) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw, dim);
+}
+
 int bn_transformer_gpu_cuda_all2_q4q6_moe_model(const BnConfig *c,
                                                 const BnWeights *w) {
     if (!c || !w || c->n_experts != 2 ||
@@ -1066,6 +1075,27 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
         getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL)
         return 0;
     return 1;
+}
+
+int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int layer,
+    int cpu_fallback_ffn_layer,
+    int cpu_fallback_ffn_from_layer) {
+    if (!bn_transformer_gpu_backend_is_cuda(gpu))
+        return 1;
+    if (bn_transformer_gpu_cuda_moe_ffn_disabled())
+        return 1;
+    if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+            c, map, dim, allow_q4_down))
+        return 1;
+    return cpu_fallback_ffn_layer == layer ||
+           (cpu_fallback_ffn_from_layer >= 0 &&
+            layer >= cpu_fallback_ffn_from_layer);
 }
 
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts) {
