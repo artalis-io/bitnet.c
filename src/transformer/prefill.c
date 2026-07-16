@@ -1,5 +1,6 @@
 #include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
+#include "transformer_cpu_features_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "gpu_internal.h"
 #include "simd_helpers.h"
@@ -17,17 +18,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX512F__
-#undef __AVX512BW__
-#undef __AVX512VNNI__
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
 
 #define BN_MAX_VLA_ELEMS 8192
 
@@ -1079,7 +1069,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
            down_buf && ffn_norm_buf;
 }
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void prefill_quant_matmul_preq8k_multi(const BnModel *m,
                                               float **out,
                                               const BnQWeight **W,
@@ -1161,7 +1151,7 @@ static void prefill_ffn_activation_scalar_range(void *ctx, int start, int end) {
     }
 }
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
     BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
     int hidden_dim = c->hidden_dim;
@@ -1204,7 +1194,7 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
 }
 #endif
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
     BnPrefillFFNActCtx *c = (BnPrefillFFNActCtx *)ctx;
     int hidden_dim = c->hidden_dim;
@@ -1247,7 +1237,7 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
 }
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     "neon",
     bn_transformer_rmsnorm_neon,
@@ -1258,8 +1248,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_neon_range,
     0,
 };
-#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
-      defined(__AVX512VNNI__) && defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX512
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     "avx512",
     bn_transformer_rmsnorm_avx2,
@@ -1270,7 +1259,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_avx2_range,
     1,
 };
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     "avx2",
     bn_transformer_rmsnorm_avx2,
@@ -1281,7 +1270,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_gate_avx2_range,
     1,
 };
-#elif defined(__wasm_simd128__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     "wasm",
     bn_transformer_rmsnorm_wasm,
@@ -1310,7 +1299,7 @@ static const BnPrefillCPUOps *prefill_cpu_ops(void) {
 }
 
 static int prefill_quant_can_preq8k_pair(int a, int b) {
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     return prefill_cpu_ops()->supports_preq8k &&
            bn_quant_format_can_preq8k(a) && bn_quant_format_can_preq8k(b);
 #else
@@ -1325,7 +1314,7 @@ static int prefill_quant_can_preq8k_triple(int a, int b, int c) {
 }
 
 static size_t prefill_preq8k_arena_bytes(int dim, int n_tokens) {
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     if (dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
         return 0;
     int n_bpr = dim / BN_QK_K;
@@ -1343,7 +1332,7 @@ static BnPrefillPreQ8KBuffers prefill_alloc_preq8k_buffers(SHArena *arena,
                                                            int dim,
                                                            int n_tokens) {
     BnPrefillPreQ8KBuffers b = { NULL, NULL, NULL, 0 };
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     if (!arena || dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
         return b;
     b.n_bpr = dim / BN_QK_K;
@@ -1366,7 +1355,7 @@ static BnPrefillPreQ8KBuffers prefill_alloc_preq8k_buffers(SHArena *arena,
     return b;
 }
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static int prefill_prepare_preq8k(BnPrefillPreQ8KBuffers *b,
                                   const float *x,
                                   int dim,
@@ -1391,7 +1380,7 @@ static int prefill_try_preq8k_multi(const BnModel *m,
                                     const float *X,
                                     int dim,
                                     int n_tokens) {
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     if (!m || bn_model_gpu(m) || prefill_force_float_kquant(m) ||
         !b || !b->xq || !out || !W || !X || n <= 0 || n > 4)
         return 0;
@@ -1424,7 +1413,7 @@ static int prefill_try_preq8k_matvec_batch(const BnModel *m,
                                            const float *x,
                                            int dim,
                                            int token_index) {
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
     if (!m || bn_model_gpu(m) || prefill_force_float_kquant(m) ||
         !b || !b->xq || !tasks || !x || n <= 0 || token_index < 0)
         return 0;
