@@ -1130,7 +1130,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             &emit, "gpu graph allocation failed");
     int cacheable_resident_moe =
         policy.has_moe &&
-        !getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") &&
         bn_transformer_gpu_cuda_moe_decode_cacheable(c, w, backend);
     int gpu_logits_need_cpu =
         bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);

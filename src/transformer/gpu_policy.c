@@ -502,7 +502,8 @@ int bn_transformer_gpu_cuda_moe_decode_cacheable(
     const BnConfig *c,
     const BnWeights *w,
     const BnBackendModel *backend) {
-    if (!c || !w || !backend || c->n_experts <= 0)
+    if (getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") != NULL ||
+        !c || !w || !backend || c->n_experts <= 0)
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];

@@ -370,6 +370,11 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
 
+    setenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE", "1", 1);
+    assert(!bn_transformer_gpu_cuda_moe_decode_cacheable(
+        &c, NULL, NULL));
+    unsetenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE");
+
     BnModel model;
     BnLayerWeights layer;
     memset(&model, 0, sizeof(model));
