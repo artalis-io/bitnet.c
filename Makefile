@@ -54,7 +54,8 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/gqa_tq_scalar.c src/transformer/gqa_tq_neon.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_neon.c \
     src/transformer/batched_attn_scalar.c \
-    src/transformer/logits_neon.c src/transformer/logits_scalar.c src/transformer/logits.c \
+    src/transformer/logits_neon.c src/transformer/logits_scalar.c \
+    src/transformer/logits_backend.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
@@ -93,7 +94,8 @@ else
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
-    src/transformer/logits_avx2.c src/transformer/logits_scalar.c src/transformer/logits.c \
+    src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
+    src/transformer/logits_backend.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
@@ -230,7 +232,7 @@ SCALAR_CFLAGS = -O3 -Wall -Wextra -Wshadow -std=c11 -Iinclude -DBN_FORCE_SCALAR
 ifeq ($(UNAME_S),Linux)
 SCALAR_CFLAGS += -D_GNU_SOURCE
 endif
-SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
+SCALAR_QUANT_BACKEND = src/quant/x_quant_scalar.c src/quant/i2s_scalar.c \
     src/quant/tq2_scalar.c src/quant/tq1_scalar.c \
     src/quant/q8_scalar.c src/quant/q4_scalar.c src/quant/q4_1_scalar.c \
     src/quant/f32_scalar.c src/quant/f16_scalar.c src/quant/bf16_scalar.c \
@@ -243,7 +245,8 @@ SCALAR_QUANT_BACKEND = src/quant/i2s_scalar.c \
 SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c \
     src/transformer/gqa_scalar.c src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
-    src/transformer/logits_scalar.c src/transformer/logits.c src/transformer/cpu.c \
+    src/transformer/logits_scalar.c src/transformer/logits_backend.c \
+    src/transformer/logits.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
@@ -570,7 +573,8 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnor
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
-    src/transformer/logits_avx2.c src/transformer/logits_scalar.c src/transformer/logits.c \
+    src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
+    src/transformer/logits_backend.c src/transformer/logits.c \
     src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \

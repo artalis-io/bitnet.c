@@ -2,10 +2,21 @@
 #define BN_TRANSFORMER_LOGITS_INTERNAL_H
 
 #include "quant.h"
+#include "threadpool.h"
 #include "transformer_simd_internal.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+typedef struct {
+    void (*rmsnorm)(float *out, const float *x, const float *w,
+                    int size, float eps);
+    bn_tp_fn i8_logits;
+    int i8_uses_standard_quant;
+    int supports_q8_refine;
+    bn_tp_fn f16_logits;
+    void (*prepare_f16_x)(uint16_t *dst, const float *src, int dim);
+} BnLogitsBackendOps;
 
 typedef struct {
     float *logits;
@@ -33,5 +44,6 @@ void bn_transformer_logits_i8_wasm_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_wasm_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_scalar_range(void *ctx, int start, int end);
 void bn_transformer_logits_f32_range(void *ctx, int start, int end);
+const BnLogitsBackendOps *bn_transformer_logits_backend_ops(void);
 
 #endif // BN_TRANSFORMER_LOGITS_INTERNAL_H
