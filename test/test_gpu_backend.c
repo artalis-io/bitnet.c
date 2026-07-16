@@ -3,6 +3,7 @@
 #include "backend_layout.h"
 #include "backend_model.h"
 #include "quant.h"
+#include "transformer_cpu_features_internal.h"
 #include "model.h"
 #include "gguf.h"
 #include "sh_arena.h"
@@ -11,6 +12,15 @@
 #include <string.h>
 #include <math.h>
 #include <assert.h>
+
+#if defined(BN_FORCE_SCALAR)
+#define TEST_EXPECT_NATIVE_Q8X 0
+#elif (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+#define TEST_EXPECT_NATIVE_Q8X 1
+#else
+#define TEST_EXPECT_NATIVE_Q8X 0
+#endif
 
 // --- Mock GPU backend ---
 // Copies data on buffer_create, uses CPU scalar matvec through the vtable.
@@ -533,8 +543,8 @@ static void test_quant_registry(void) {
     assert(fabsf(f32_dst[1] + 2.0f) < 1e-3f);
     assert(bn_quant_format_convert_dense_to_f32(
                BN_GGUF_TENSOR_Q4_0, f16_src, f32_dst, 2) == -1);
-    assert(bn_backend_quant_has_native_q8x_quant() ==
-           BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT);
+    assert(BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT ==
+           TEST_EXPECT_NATIVE_Q8X);
     assert(bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));

@@ -150,11 +150,13 @@ do
 done
 
 for file in \
+    include/backend_quant.h \
     src/transformer/gpu.c \
-    src/transformer/gpu_fallback.c
+    src/transformer/gpu_fallback.c \
+    test/test_gpu_backend.c
 do
     if grep -n 'BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT\|bn_backend_quant_has_native_q8x_quant' "$file" >/dev/null 2>&1; then
-        echo "$file must use transformer CPU feature helpers for ISA policy"
+        echo "$file must use transformer CPU feature helpers for native Q8x ISA policy"
         fail=1
     fi
 done
