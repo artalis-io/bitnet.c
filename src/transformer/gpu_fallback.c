@@ -3,6 +3,7 @@
 #include "backend_model.h"
 #include "backend_quant.h"
 #include "transformer_cpu_internal.h"
+#include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
@@ -15,25 +16,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX512F__
-#undef __AVX512BW__
-#undef __AVX512VNNI__
-#undef __AVX2__
-#endif
-
 static void fallback_rmsnorm(float *out,
                              const float *x,
                              const float *w,
                              int size,
                              float eps) {
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
     bn_transformer_rmsnorm_neon(out, x, w, size, eps);
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
     bn_transformer_rmsnorm_avx2(out, x, w, size, eps);
-#elif defined(__wasm_simd128__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
     bn_transformer_rmsnorm_wasm(out, x, w, size, eps);
 #else
     bn_transformer_rmsnorm_scalar(out, x, w, size, eps);
