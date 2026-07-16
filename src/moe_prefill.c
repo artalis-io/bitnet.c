@@ -3,7 +3,6 @@
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
 #include "transformer/gpu_internal.h"
-#include <stdlib.h>
 
 typedef struct {
     float *logits;
@@ -316,7 +315,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             : -1;
         if (route_rc == 0)
             used_gpu_route = 1;
-        else if (getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH"))
+        else if (bn_transformer_gpu_cuda_moe_route_batch_debug_enabled())
             fprintf(stderr,
                     "[bn:cuda:moe-route-batch] fallback layer=%d handle=%d rc=%d tokens=%d experts=%d k=%d dim=%d\n",
                     l, router_gpu != NULL, route_rc, n_tokens, n_experts, K,

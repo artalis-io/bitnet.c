@@ -477,6 +477,10 @@ int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH") != NULL;
+}
+
 int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
     return getenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL") != NULL;
 }

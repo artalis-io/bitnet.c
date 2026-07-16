@@ -207,6 +207,11 @@ if grep -n 'BN_CUDA_MOE_PREFILL_MIN_TOKENS\|BN_CUDA_DISABLE_MOE_CACHE_PREFILL\|B
     fail=1
 fi
 
+if grep -n 'BN_CUDA_DEBUG_MOE_ROUTE_BATCH' src/moe_prefill.c >/dev/null 2>&1; then
+    echo "src/moe_prefill.c must use GPU policy helpers for MoE route debug env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_GPU_DISABLE_GATEUP_SPLIT\|BN_GPU_Q4_Q8_DISABLE_FFN_DOWN' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for fused gate-up and split compatibility env vars"
     fail=1
