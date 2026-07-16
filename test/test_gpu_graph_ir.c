@@ -260,7 +260,7 @@ static void test_graph_lower_simple_ops_to_shader(void) {
     BnGPUOp ops[8];
     int n_ops = -1;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 8,
-                                              &n_ops) == 0);
+                                              &n_ops, 0) == 0);
     assert(n_ops == 7);
 
     assert(ops[0].op_kind == BN_GPU_OP_RMSNORM);
@@ -356,16 +356,16 @@ static void test_graph_lowering_failures(void) {
     int n_ops = 0;
 
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 0,
-                                              &n_ops) == -1);
+                                              &n_ops, 0) == -1);
 
     graph.ops[0].kind = BN_GPU_IR_OP_SSM;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 1,
-                                              &n_ops) == -1);
+                                              &n_ops, 0) == -1);
 
     graph.ops[0].kind = BN_GPU_IR_OP_COPY;
     values[copy].shader_slot = BN_GPU_IR_NO_SHADER_SLOT;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 1,
-                                              &n_ops) == -1);
+                                              &n_ops, 0) == -1);
 
     bn_gpu_value_graph_free(&graph);
     printf("PASSED\n");
@@ -403,7 +403,7 @@ static void test_graph_lower_split_matvec_to_shader(void) {
     BnGPUOp ops[1];
     int n_ops = -1;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 1,
-                                              &n_ops) == 0);
+                                              &n_ops, 0) == 0);
     assert(n_ops == 1);
     assert(ops[0].op_kind == BN_GPU_OP_MATVEC);
     assert(ops[0].op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT);
@@ -468,7 +468,7 @@ static void test_graph_lower_attention_to_shader(void) {
     BnGPUOp ops[5];
     int n_ops = -1;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 5,
-                                              &n_ops) == 0);
+                                              &n_ops, 0) == 0);
     assert(n_ops == 5);
 
     assert(ops[0].op_kind == BN_GPU_OP_ROPE);
@@ -570,7 +570,7 @@ static void test_graph_lower_ssm_to_shader(void) {
     BnGPUOp ops[3];
     int n_ops = -1;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 3,
-                                              &n_ops) == 0);
+                                              &n_ops, 0) == 0);
     assert(n_ops == 3);
 
     assert(ops[0].op_kind == BN_GPU_OP_SSM);
@@ -658,7 +658,7 @@ static void test_graph_lower_utility_to_shader(void) {
     BnGPUOp ops[4];
     int n_ops = -1;
     assert(bn_gpu_value_graph_lower_to_shader(&graph, &map, ops, 4,
-                                              &n_ops) == 0);
+                                              &n_ops, 0) == 0);
     assert(n_ops == 4);
 
     assert(ops[0].op_kind == BN_GPU_OP_RESIDUAL);

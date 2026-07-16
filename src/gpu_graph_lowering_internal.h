@@ -109,7 +109,8 @@ static inline int bn_gpu_ir_lower_one_to_shader(
     const BnGPUValueGraph *graph,
     const BnGPUIRLoweringMap *map,
     const BnGPUIROp *ir_op,
-    BnGPUOp *shader_op) {
+    BnGPUOp *shader_op,
+    int debug_fallback) {
     if (!map || !ir_op || !shader_op) return -1;
     memset(shader_op, 0, sizeof(*shader_op));
     shader_op->type = -1;
@@ -208,7 +209,7 @@ static inline int bn_gpu_ir_lower_one_to_shader(
                 : BN_GPU_CODE_UNKNOWN;
             if (in0 < 0 || out0 < 0 || out1 < 0 || !weight ||
                 !weight->weight_buf || op_code == BN_GPU_CODE_UNKNOWN) {
-                if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+                if (debug_fallback) {
                     fprintf(stderr,
                             "[gpu:fallback] matvec_split lower invalid "
                             "in0=%d out0=%d out1=%d out2=%d weight=%p "
@@ -413,14 +414,15 @@ static inline int bn_gpu_value_graph_lower_to_shader(
     const BnGPUIRLoweringMap *map,
     BnGPUOp *ops,
     int cap_ops,
-    int *n_ops) {
+    int *n_ops,
+    int debug_fallback) {
     if (!graph || !map || !ops || !n_ops || cap_ops < graph->n_ops)
         return -1;
     int n = 0;
     for (int i = 0; i < graph->n_ops; i++) {
         if (bn_gpu_ir_lower_one_to_shader(graph, map, &graph->ops[i],
-                                          &ops[n]) != 0) {
-            if (getenv("BN_GPU_DEBUG_FALLBACK")) {
+                                          &ops[n], debug_fallback) != 0) {
+            if (debug_fallback) {
                 const BnGPUIROp *op = &graph->ops[i];
                 fprintf(stderr,
                         "[gpu:fallback] lower op failed i=%d kind=%d "

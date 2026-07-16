@@ -200,7 +200,8 @@ int bn_transformer_gpu_emit_context_lower_pending(
     if (bn_gpu_value_graph_lower_to_shader(ctx->graph, &map,
                                            &((BnGPUOp *)ctx->lowered_ops)[ctx->n],
                                            ctx->cap - ctx->n,
-                                           &lowered) != 0) {
+                                           &lowered,
+                                           bn_transformer_gpu_debug_fallback_enabled()) != 0) {
         if (bn_transformer_gpu_debug_fallback_enabled()) {
             fprintf(stderr,
                     "[gpu:fallback] lower shader failed graph_ops=%d "
