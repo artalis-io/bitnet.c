@@ -429,7 +429,8 @@ void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W,
 bn_tp_fn bn_quant_get_float_kernel(int type);
 
 // Quantize float vector to int8, returns scale = amax/127.
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 float bn_quant_x_to_i8(const float *x, int8_t *x_q, int n);
 
 // Quantize float vector to per-block Q8_0: 32-element blocks with per-block scales.
@@ -449,6 +450,11 @@ void bn_quant_rmsnorm_q8k_avx2(const float *x, const float *w, int dim, float ep
                                   int16_t *x_bsums);
 #endif
 #endif
+
+// Quantize F16 rows to INT8 + per-row scales, using the native quant backend
+// when available and a scalar fallback otherwise.
+void bn_quant_f16_rows_to_i8_dispatch(const uint16_t *f16, int8_t *i8_out,
+                                      float *scales_out, int n_rows, int dim);
 
 #ifdef __cplusplus
 }

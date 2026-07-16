@@ -11,14 +11,6 @@
 #include <string.h>
 #include <limits.h>
 
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
-
 static int model_ensure_runtime(BnModel *m) {
     if (!m) return -1;
     if (!m->runtime) {
@@ -38,35 +30,6 @@ static int model_ensure_io(BnModel *m) {
     }
     return 0;
 }
-
-#if !((defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__))
-static void model_quant_f16_rows_to_i8_scalar(const uint16_t *f16,
-                                              int8_t *i8_out,
-                                              float *scales,
-                                              int rows,
-                                              int cols) {
-    for (int r = 0; r < rows; r++) {
-        const uint16_t *src = f16 + (size_t)r * cols;
-        int8_t *dst = i8_out + (size_t)r * cols;
-        float amax = 0.0f;
-        for (int c = 0; c < cols; c++) {
-            float v = bn_fp16_to_fp32(src[c]);
-            float av = v < 0.0f ? -v : v;
-            if (av > amax) amax = av;
-        }
-        float scale = amax / 127.0f;
-        float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
-        scales[r] = scale;
-        for (int c = 0; c < cols; c++) {
-            float v = bn_fp16_to_fp32(src[c]) * inv;
-            int q = (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
-            if (q > 127) q = 127;
-            if (q < -127) q = -127;
-            dst[c] = (int8_t)q;
-        }
-    }
-}
-#endif
 
 static int model_ensure_backend_state(BnModel *m) {
     if (!m) return -1;
@@ -1059,14 +1022,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 const uint16_t *src = (w->output_weight.data && w->output_weight.type == BN_GGUF_TENSOR_F16)
                                       ? (const uint16_t *)w->output_weight.data
                                       : (const uint16_t *)w->token_embedding;
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__AVX2__) || defined(__wasm_relaxed_simd__)
-                bn_quant_f16_rows_to_i8(src, w->emb_out_i8, w->emb_out_scales,
-                                        i8_emb_rows, c->dim);
-#else
-                model_quant_f16_rows_to_i8_scalar(src, w->emb_out_i8,
-                                                  w->emb_out_scales,
-                                                  i8_emb_rows, c->dim);
-#endif
+                bn_quant_f16_rows_to_i8_dispatch(src, w->emb_out_i8,
+                                                 w->emb_out_scales,
+                                                 i8_emb_rows, c->dim);
                 char i8_mb[16]; snprintf(i8_mb, sizeof(i8_mb), "%.0f", (double)emb_i8_bytes / (1024*1024));
                 SH_LOG_INFO("INT8 output embeddings ready", "MB", i8_mb);
             } else {

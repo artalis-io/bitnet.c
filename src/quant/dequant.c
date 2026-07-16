@@ -4,6 +4,14 @@
 #include <assert.h>
 #include <string.h>
 
+#if !defined(BN_FORCE_SCALAR) && \
+    ((defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+     defined(__AVX2__) || defined(__wasm_relaxed_simd__))
+#define BN_QUANT_HAS_NATIVE_F16_ROWS_TO_I8 1
+#else
+#define BN_QUANT_HAS_NATIVE_F16_ROWS_TO_I8 0
+#endif
+
 // --- TQ2_0 dequantization ---
 
 void bn_quant_dequant_tq2(const BnBlockTQ2 *block, float *out) {
@@ -275,6 +283,47 @@ int bn_quant_dequant_row(int type, const void *data, int row, int n,
         default:
             return -1;
     }
+}
+
+#if !BN_QUANT_HAS_NATIVE_F16_ROWS_TO_I8
+static void bn_quant_f16_rows_to_i8_scalar(const uint16_t *f16,
+                                           int8_t *i8_out,
+                                           float *scales,
+                                           int rows,
+                                           int cols) {
+    for (int r = 0; r < rows; r++) {
+        const uint16_t *src = f16 + (size_t)r * cols;
+        int8_t *dst = i8_out + (size_t)r * cols;
+        float amax = 0.0f;
+        for (int c = 0; c < cols; c++) {
+            float v = bn_fp16_to_fp32(src[c]);
+            float av = v < 0.0f ? -v : v;
+            if (av > amax) amax = av;
+        }
+        float scale = amax / 127.0f;
+        float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
+        scales[r] = scale;
+        for (int c = 0; c < cols; c++) {
+            float v = bn_fp16_to_fp32(src[c]) * inv;
+            int q = (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
+            if (q > 127) q = 127;
+            if (q < -127) q = -127;
+            dst[c] = (int8_t)q;
+        }
+    }
+}
+#endif
+
+void bn_quant_f16_rows_to_i8_dispatch(const uint16_t *f16,
+                                      int8_t *i8_out,
+                                      float *scales_out,
+                                      int n_rows,
+                                      int dim) {
+#if BN_QUANT_HAS_NATIVE_F16_ROWS_TO_I8
+    bn_quant_f16_rows_to_i8(f16, i8_out, scales_out, n_rows, dim);
+#else
+    bn_quant_f16_rows_to_i8_scalar(f16, i8_out, scales_out, n_rows, dim);
+#endif
 }
 
 // --- Q8_0 dequantization ---

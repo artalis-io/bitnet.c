@@ -157,6 +157,17 @@ do
     fi
 done
 
+for file in \
+    src/model.c \
+    src/model_session.c \
+    src/model_embed.c
+do
+    if grep -n '__AVX\|__ARM_NEON\|__wasm_simd128__\|__wasm_relaxed_simd__' "$file" >/dev/null 2>&1; then
+        echo "$file must use backend/quant helpers, not direct CPU ISA checks"
+        fail=1
+    fi
+done
+
 if [ "$fail" -ne 0 ]; then
     echo "Backend matrix FAILED"
     exit 1
