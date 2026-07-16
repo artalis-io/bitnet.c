@@ -6,6 +6,7 @@
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
+#include "quant.h"
 #include "transformer_backend_internal.h"
 #include "session.h"
 #include <math.h>
@@ -1206,7 +1207,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        lw->attn.wq.rows == q_dim &&
                        lw->attn.wk.rows == kv_dim &&
                        lw->attn.wq.cols == lw->attn.wk.cols &&
-                       bn_backend_quant_stacked_pair_same_format(
+                       bn_quant_format_pair_same_format(
                            lw->attn.wq.type, lw->attn.wk.type) &&
                        bn_gpu_quant_split_op_code(lw->attn.wq.type) !=
                            BN_GPU_CODE_UNKNOWN &&
@@ -1747,7 +1748,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
         int use_shared_q4_q8 =
-            bn_backend_quant_moe_gateup_q4(lw->shared.shared_gate.type,
+            bn_quant_format_supports_moe_q4_gateup(lw->shared.shared_gate.type,
                                            lw->shared.shared_up.type) &&
             lw->shared.shared_gate.cols % 256 == 0 &&
             getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
@@ -1758,7 +1759,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             !prefer_shared_gateup_split &&
             !getenv("BN_GPU_DISABLE_FUSED_GATEUP") &&
             shared->shared_gateup_stacked &&
-            bn_backend_quant_stacked_pair_same_format(
+            bn_quant_format_pair_same_format(
                 lw->shared.shared_gate.type, lw->shared.shared_up.type) &&
             lw->shared.shared_gate.rows == lw->shared.shared_up.rows &&
             lw->shared.shared_gate.cols == lw->shared.shared_up.cols &&

@@ -309,6 +309,17 @@ int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);
+int      bn_quant_format_supports_moe_q4_down_route(int gate_type,
+                                                     int up_type,
+                                                     int down_type,
+                                                     int allow_q4_down);
+int      bn_quant_format_supports_moe_q4_gateup(int gate_type, int up_type);
+int      bn_quant_format_supports_cpu_fused_q4_gateup_silu(int gate_type,
+                                                           int up_type);
+int      bn_quant_format_pair_same_format(int left_type, int right_type);
+int      bn_quant_format_supports_moe_q8_route(int gate_type,
+                                               int up_type,
+                                               int down_type);
 BnQuantMatvecFn bn_quant_format_matvec(int type);
 BnQuantMatmulFn bn_quant_format_matmul(int type);
 size_t   bn_quant_format_data_size(int type, int rows, int cols);

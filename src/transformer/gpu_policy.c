@@ -594,7 +594,7 @@ int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map) {
 int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
                                           int allow_q4_down) {
     return map &&
-           bn_backend_quant_moe_route_q4_down(map->gate_type,
+           bn_quant_format_supports_moe_q4_down_route(map->gate_type,
                                               map->up_type,
                                               map->down_type,
                                               allow_q4_down);
@@ -602,7 +602,7 @@ int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
 
 int bn_transformer_gpu_moe_routed_q8(const BnMoEExpertMap *map) {
     return map &&
-           bn_backend_quant_moe_route_q8(map->gate_type,
+           bn_quant_format_supports_moe_q8_route(map->gate_type,
                                          map->up_type,
                                          map->down_type);
 }

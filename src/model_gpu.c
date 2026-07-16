@@ -4,6 +4,7 @@
 #include "backend_quant.h"
 #include "gpu_backend.h"
 #include "moe_internal.h"
+#include "quant.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
@@ -219,9 +220,9 @@ static int can_use_cuda_moe_routed_ffn(const BnConfig *c,
     if (!c || !lw || !lw->moe.router_weight)
         return 0;
     const BnMoEExpertMap *em = &lw->moe.expert_map;
-    int is_q4 = bn_backend_quant_moe_route_q4_down(
+    int is_q4 = bn_quant_format_supports_moe_q4_down_route(
         em->gate_type, em->up_type, em->down_type, 1);
-    int is_q8 = bn_backend_quant_moe_route_q8(
+    int is_q8 = bn_quant_format_supports_moe_q8_route(
         em->gate_type, em->up_type, em->down_type);
     return (is_q4 || is_q8) &&
            em->gate_rows == c->moe_intermediate_size &&

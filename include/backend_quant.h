@@ -139,35 +139,34 @@ static inline int bn_backend_quant_moe_route_q4_down(int gate_type,
                                                      int up_type,
                                                      int down_type,
                                                      int allow_q4_down) {
-    return gate_type == BN_GGUF_TENSOR_Q4_K &&
-           up_type == BN_GGUF_TENSOR_Q4_K &&
-           (down_type == BN_GGUF_TENSOR_Q6_K ||
-            (allow_q4_down && down_type == BN_GGUF_TENSOR_Q4_K));
+    return bn_quant_format_supports_moe_q4_down_route(gate_type,
+                                                      up_type,
+                                                      down_type,
+                                                      allow_q4_down);
 }
 
 static inline int bn_backend_quant_moe_gateup_q4(int gate_type,
                                                  int up_type) {
-    return gate_type == BN_GGUF_TENSOR_Q4_K &&
-           up_type == BN_GGUF_TENSOR_Q4_K;
+    return bn_quant_format_supports_moe_q4_gateup(gate_type, up_type);
 }
 
 static inline int bn_backend_quant_cpu_fused_q4_gateup_silu(int gate_type,
                                                             int up_type) {
-    return gate_type == BN_GGUF_TENSOR_Q4_0 &&
-           up_type == BN_GGUF_TENSOR_Q4_0;
+    return bn_quant_format_supports_cpu_fused_q4_gateup_silu(gate_type,
+                                                             up_type);
 }
 
 static inline int bn_backend_quant_stacked_pair_same_format(int left_type,
                                                             int right_type) {
-    return left_type == right_type;
+    return bn_quant_format_pair_same_format(left_type, right_type);
 }
 
 static inline int bn_backend_quant_moe_route_q8(int gate_type,
                                                 int up_type,
                                                 int down_type) {
-    return gate_type == BN_GGUF_TENSOR_Q8_0 &&
-           up_type == BN_GGUF_TENSOR_Q8_0 &&
-           down_type == BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_supports_moe_q8_route(gate_type,
+                                                 up_type,
+                                                 down_type);
 }
 
 static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {

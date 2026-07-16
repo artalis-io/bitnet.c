@@ -100,6 +100,10 @@ do
         echo "$file must use quant format capability helpers for quant-format policy"
         fail=1
     fi
+    if grep -n 'bn_backend_quant_moe_route_q4_down\|bn_backend_quant_moe_gateup_q4\|bn_backend_quant_cpu_fused_q4_gateup_silu\|bn_backend_quant_stacked_pair_same_format\|bn_backend_quant_moe_route_q8' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant format tuple helpers for quant-format policy"
+        fail=1
+    fi
 done
 
 for file in \

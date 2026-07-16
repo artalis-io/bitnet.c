@@ -108,6 +108,39 @@ int bn_quant_format_supports_q6_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q6_LOGITS_REFINE);
 }
 
+int bn_quant_format_supports_moe_q4_down_route(int gate_type,
+                                               int up_type,
+                                               int down_type,
+                                               int allow_q4_down) {
+    return gate_type == BN_GGUF_TENSOR_Q4_K &&
+           up_type == BN_GGUF_TENSOR_Q4_K &&
+           (down_type == BN_GGUF_TENSOR_Q6_K ||
+            (allow_q4_down && down_type == BN_GGUF_TENSOR_Q4_K));
+}
+
+int bn_quant_format_supports_moe_q4_gateup(int gate_type, int up_type) {
+    return gate_type == BN_GGUF_TENSOR_Q4_K &&
+           up_type == BN_GGUF_TENSOR_Q4_K;
+}
+
+int bn_quant_format_supports_cpu_fused_q4_gateup_silu(int gate_type,
+                                                      int up_type) {
+    return gate_type == BN_GGUF_TENSOR_Q4_0 &&
+           up_type == BN_GGUF_TENSOR_Q4_0;
+}
+
+int bn_quant_format_pair_same_format(int left_type, int right_type) {
+    return left_type == right_type;
+}
+
+int bn_quant_format_supports_moe_q8_route(int gate_type,
+                                          int up_type,
+                                          int down_type) {
+    return gate_type == BN_GGUF_TENSOR_Q8_0 &&
+           up_type == BN_GGUF_TENSOR_Q8_0 &&
+           down_type == BN_GGUF_TENSOR_Q8_0;
+}
+
 BnQuantMatvecFn bn_quant_format_matvec(int type) {
     const BnQuantFormatOps *ops = bn_quant_format_ops(type);
     return ops ? ops->matvec : NULL;
