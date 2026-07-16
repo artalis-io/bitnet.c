@@ -4,6 +4,7 @@
 #include "gpu_quant_lowering_internal.h"
 #include "gpu_moe_cache.h"
 #include "moe.h"
+#include "quant.h"
 #include "transformer/gpu_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -46,11 +47,11 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
         gpu->buffer_create_quant_only &&
         !allow_aux_cache &&
         getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") == NULL &&
-        bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(type)) {
+        bn_quant_format_cuda_lazy_moe_aux_cache_candidate(type)) {
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     }
-    if (bn_backend_quant_cuda_moe_prefers_quant_only(type) &&
+    if (bn_quant_format_cuda_moe_prefers_quant_only(type) &&
         gpu->buffer_create_quant_only)
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);

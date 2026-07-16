@@ -27,7 +27,7 @@ static int cuda_moe_all_f16_cache_enabled_for_type(const BnGPUBackend *gpu,
         return 1;
     if (!q8_f16_cache)
         return 0;
-    return bn_backend_quant_cuda_moe_all_f16_cache_supported(type);
+    return bn_quant_format_cuda_moe_all_f16_cache_supported(type);
 }
 
 BnGPUBackend *bn_model_gpu(const BnModel *model) {
@@ -45,7 +45,7 @@ static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     if (sz == 0) return NULL;
     if (gpu->kind == BN_GPU_BACKEND_CUDA &&
         gpu->buffer_create_q6_f32_cache &&
-        bn_backend_quant_cuda_logits_q6_f32_cache_supported(w->type) &&
+        bn_quant_format_cuda_logits_q6_f32_cache_supported(w->type) &&
         getenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE") != NULL &&
         !getenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE")) {
         return gpu->buffer_create_q6_f32_cache(
@@ -167,14 +167,14 @@ static void *upload_moe_all_proj(BnModel *model,
         cuda_moe_all_f16_cache_enabled_for_type(gpu, type, q8_f16_cache);
     int prefer_q6_f32_cache =
         proj == 2 &&
-        bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(type) &&
+        bn_quant_format_cuda_moe_down_q6_f32_cache_supported(type) &&
         cols > 1024 &&
         !force_f16_cache &&
         gpu->buffer_create_q6_f32_cache &&
         getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
     int prefer_q4_f32_cache =
         proj == 2 &&
-        bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(type) &&
+        bn_quant_format_cuda_moe_down_q4_f32_cache_supported(type) &&
         !force_f16_cache &&
         gpu->buffer_create_q6_f32_cache &&
         getenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE") != NULL &&
@@ -184,7 +184,7 @@ static void *upload_moe_all_proj(BnModel *model,
         prefer_q6_f32_cache ||
         prefer_q4_f32_cache ||
         (proj == 2 &&
-         bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(type) &&
+         bn_quant_format_cuda_moe_down_q6_f32_cache_supported(type) &&
          getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE"));
     void *(*create_buffer)(void *, const void *, size_t, int, int, int) =
         force_f16_cache
@@ -192,7 +192,7 @@ static void *upload_moe_all_proj(BnModel *model,
         (prefer_q6_f32_cache || prefer_q4_f32_cache)
             ? gpu->buffer_create_q6_f32_cache :
         ((!force_full_buffer ||
-          bn_backend_quant_cuda_moe_quant_only_after_cache(type,
+          bn_quant_format_cuda_moe_quant_only_after_cache(type,
                                                            q8_f16_cache)) &&
          gpu->buffer_create_quant_only)
             ? gpu->buffer_create_quant_only
@@ -346,7 +346,7 @@ static size_t cuda_q6_down_f32_cache_bytes(const BnGPUBackend *gpu,
                                            const BnMoEExpertMap *em,
                                            int n_experts) {
     if (!cuda_moe_down_q6_f32_cache_enabled(gpu) || !em ||
-        !bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(
+        !bn_quant_format_cuda_moe_down_q6_f32_cache_supported(
             em->down_type) ||
         n_experts <= 0)
         return 0;
@@ -383,14 +383,14 @@ static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
         (w->cols & 31) != 0 ||
         getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
         return 0;
-    if (!bn_backend_quant_cuda_aux_cache_supported(w->type))
+    if (!bn_quant_format_cuda_aux_cache_supported(w->type))
         return 0;
-    int q6_as_f16 = bn_backend_quant_cuda_aux_cache_can_use_f16(w->type) &&
+    int q6_as_f16 = bn_quant_format_cuda_aux_cache_can_use_f16(w->type) &&
                     getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
                     getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
     size_t bytes = 0;
     if (mul3_size((size_t)w->rows, (size_t)w->cols,
-                  bn_backend_quant_cuda_aux_cache_uses_f32(w->type, q6_as_f16)
+                  bn_quant_format_cuda_aux_cache_uses_f32(w->type, q6_as_f16)
                       ? sizeof(float) : sizeof(uint16_t),
                   &bytes) != 0)
         return SIZE_MAX;
@@ -399,7 +399,7 @@ static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
     const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
     if (max_env && *max_env) {
         max_mb = atoi(max_env);
-    } else if (bn_backend_quant_cuda_aux_cache_prefers_large_budget(w->type)) {
+    } else if (bn_quant_format_cuda_aux_cache_prefers_large_budget(w->type)) {
         max_mb = 512;
     }
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)

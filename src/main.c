@@ -1,9 +1,9 @@
 #include "platform.h"
-#include "backend_quant.h"
 #include "backend_model.h"
 #include "gguf.h"
 #include "model.h"
 #include "moe.h"
+#include "quant.h"
 #include "generate.h"
 #include "transformer.h"
 #include "tokenizer.h"
@@ -386,13 +386,13 @@ static size_t model_moe_entry_bytes(const BnModel *model,
         size_t entry = em->expert_gate_bytes + em->expert_up_bytes +
                        em->expert_down_bytes;
         if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-            bn_backend_quant_cuda_moe_down_cublas_cache_supported(em->down_type) &&
+            bn_quant_format_cuda_moe_down_cublas_cache_supported(em->down_type) &&
             getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL") == NULL) {
             size_t elems = (size_t)em->down_rows * (size_t)em->down_cols;
             int q6_as_f16 = getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
                             getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
             size_t elem_size =
-                (size_t)bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes(
+                (size_t)bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(
                     em->down_type, q6_as_f16);
             if (elems <= (SIZE_MAX - entry) / elem_size)
                 entry += elems * elem_size;

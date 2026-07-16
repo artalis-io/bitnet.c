@@ -172,79 +172,60 @@ static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
 }
 
 static inline int bn_backend_quant_cuda_logits_q6_f32_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_cuda_logits_q6_f32_cache_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_all_f16_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_cuda_moe_all_f16_cache_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_cuda_moe_down_q6_f32_cache_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_down_cublas_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_cuda_moe_down_cublas_cache_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes(
     int type, int q6_as_f16) {
-    if (!bn_backend_quant_cuda_moe_down_cublas_cache_supported(type))
-        return 0;
-    return q6_as_f16 ? (int)sizeof(uint16_t) : (int)sizeof(float);
+    return bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(type,
+                                                                 q6_as_f16);
 }
 
 static inline int bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q4_K;
+    return bn_quant_format_cuda_moe_down_q4_f32_cache_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_quant_only_after_cache(
     int type, int q8_f16_cache) {
-    return type != BN_GGUF_TENSOR_Q8_0 || !q8_f16_cache;
+    return bn_quant_format_cuda_moe_quant_only_after_cache(type,
+                                                           q8_f16_cache);
 }
 
 static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(int type) {
-    return type == BN_GGUF_TENSOR_Q3_K ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K ||
-           type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_IQ3_XXS ||
-           type == BN_GGUF_TENSOR_IQ4_XS;
+    return bn_quant_format_cuda_lazy_moe_aux_cache_candidate(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_prefers_quant_only(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_cuda_moe_prefers_quant_only(type);
 }
 
 static inline int bn_backend_quant_cuda_aux_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_Q5_0 ||
-           type == BN_GGUF_TENSOR_BF16 ||
-           type == BN_GGUF_TENSOR_Q3_K ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K ||
-           type == BN_GGUF_TENSOR_IQ3_XXS ||
-           type == BN_GGUF_TENSOR_IQ4_XS;
+    return bn_quant_format_cuda_aux_cache_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_aux_cache_can_use_f16(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_cuda_aux_cache_can_use_f16(type);
 }
 
 static inline int bn_backend_quant_cuda_aux_cache_uses_f32(int type,
                                                           int q6_as_f16) {
-    return type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16;
+    return bn_quant_format_cuda_aux_cache_uses_f32(type, q6_as_f16);
 }
 
 static inline int bn_backend_quant_cuda_aux_cache_prefers_large_budget(int type) {
-    return type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_cuda_aux_cache_prefers_large_budget(type);
 }
 
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {

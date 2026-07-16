@@ -127,6 +127,17 @@ do
 done
 
 for file in \
+    src/model_gpu.c \
+    src/gpu_moe_bridge.c \
+    src/main.c
+do
+    if grep -n 'bn_backend_quant_cuda_logits_q6_f32_cache_supported\|bn_backend_quant_cuda_moe_all_f16_cache_supported\|bn_backend_quant_cuda_moe_down_q6_f32_cache_supported\|bn_backend_quant_cuda_moe_down_cublas_cache_supported\|bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes\|bn_backend_quant_cuda_moe_down_q4_f32_cache_supported\|bn_backend_quant_cuda_moe_quant_only_after_cache\|bn_backend_quant_cuda_lazy_moe_aux_cache_candidate\|bn_backend_quant_cuda_moe_prefers_quant_only\|bn_backend_quant_cuda_aux_cache_supported\|bn_backend_quant_cuda_aux_cache_can_use_f16\|bn_backend_quant_cuda_aux_cache_uses_f32\|bn_backend_quant_cuda_aux_cache_prefers_large_budget' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant format CUDA cache helpers for quant-format policy"
+        fail=1
+    fi
+done
+
+for file in \
     src/transformer/cpu.c \
     src/transformer/gpu.c \
     src/transformer/gpu_emit.c \
