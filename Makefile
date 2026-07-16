@@ -50,6 +50,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/quant/iq2s_neon.c src/quant/iq2s_scalar.c
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_neon.c src/transformer/rmsnorm_scalar.c \
+    src/transformer/rmsnorm_backend.c \
     src/transformer/gqa_neon.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c src/transformer/gqa_tq_neon.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_neon.c \
@@ -91,6 +92,7 @@ else
     src/quant/iq2s_avx2.c src/quant/iq2s_scalar.c
 
   TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
+    src/transformer/rmsnorm_backend.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
@@ -242,7 +244,7 @@ SCALAR_QUANT_BACKEND = src/quant/x_quant_scalar.c src/quant/i2s_scalar.c \
     src/quant/iq3xxs_scalar.c src/quant/iq3s_scalar.c \
     src/quant/iq2xxs_scalar.c src/quant/iq2xs_scalar.c src/quant/iq2s_scalar.c
 
-SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c \
+SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c src/transformer/rmsnorm_backend.c \
     src/transformer/gqa_scalar.c src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_scalar.c src/transformer/logits_backend.c \
@@ -570,6 +572,7 @@ AVX512_QUANT_SRCS = $(AVX2_QUANT_SRCS) \
     src/quant/q6k_avx512_vnni.c
 
 AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnorm_scalar.c \
+    src/transformer/rmsnorm_backend.c \
     src/transformer/gqa_avx2.c src/transformer/gqa_scalar.c \
     src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \

@@ -3,7 +3,6 @@
 #include "backend_model.h"
 #include "backend_quant.h"
 #include "transformer_cpu_internal.h"
-#include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
@@ -21,15 +20,7 @@ static void fallback_rmsnorm(float *out,
                              const float *w,
                              int size,
                              float eps) {
-#if BN_TRANSFORMER_CPU_HAS_NEON
-    bn_transformer_rmsnorm_neon(out, x, w, size, eps);
-#elif BN_TRANSFORMER_CPU_HAS_AVX2
-    bn_transformer_rmsnorm_avx2(out, x, w, size, eps);
-#elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
-    bn_transformer_rmsnorm_wasm(out, x, w, size, eps);
-#else
-    bn_transformer_rmsnorm_scalar(out, x, w, size, eps);
-#endif
+    bn_transformer_rmsnorm_default(out, x, w, size, eps);
 }
 
 static const BnPreparedWeight *fallback_cpu_prepared_qweight(
