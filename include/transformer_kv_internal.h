@@ -2,10 +2,22 @@
 #define BN_TRANSFORMER_KV_INTERNAL_H
 
 #include "model_run_state.h"
+#include "threadpool.h"
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct BnModel BnModel;
 typedef struct BnTQState BnTQState;
+
+typedef struct {
+    const char *name;
+    bn_tp_fn tq_gqa;
+    void (*write_kv_fp16)(uint16_t *kc, uint16_t *vc,
+                          const float *k_tmp, const float *v_tmp,
+                          int kv_dim);
+} BnKVCPUOps;
+
+const BnKVCPUOps *bn_transformer_kv_cpu_ops(void);
 
 void bn_transformer_tq_write_kv(const BnTQState *tq,
                                 BnRunState *s,
