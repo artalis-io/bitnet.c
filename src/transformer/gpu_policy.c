@@ -1,5 +1,4 @@
 #include "gpu_internal.h"
-#include "backend_quant.h"
 #include "model_arch.h"
 #include "quant.h"
 #include <stdio.h>
@@ -715,6 +714,24 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
     return route_from_layer < 0 ||
            (layer >= route_from_layer &&
             (route_to_layer < 0 || layer <= route_to_layer));
+}
+
+void bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+    int *route_from_layer,
+    int *route_to_layer) {
+    const char *env;
+
+    if (route_from_layer)
+        *route_from_layer = -1;
+    if (route_to_layer)
+        *route_to_layer = -1;
+
+    env = getenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
+    if (env && route_from_layer)
+        *route_from_layer = atoi(env);
+    env = getenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+    if (env && route_to_layer)
+        *route_to_layer = atoi(env);
 }
 
 int bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(

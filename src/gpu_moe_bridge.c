@@ -1,5 +1,4 @@
 #include "gpu_moe_bridge.h"
-#include "backend_quant.h"
 #include "gpu_backend.h"
 #include "gpu_quant_lowering_internal.h"
 #include "gpu_moe_cache.h"

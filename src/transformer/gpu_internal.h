@@ -281,6 +281,9 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
     int layer,
     int route_from_layer,
     int route_to_layer);
+void bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+    int *route_from_layer,
+    int *route_to_layer);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
     int all2_q4q6_moe,
     int route_layer_selected);

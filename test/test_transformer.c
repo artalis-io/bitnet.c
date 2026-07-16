@@ -433,6 +433,24 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_moe_routed_q4(&map));
     assert(bn_transformer_gpu_moe_routed_q8(&map));
 
+    int route_from = 0;
+    int route_to = 0;
+    unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
+    unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+    bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+        &route_from, &route_to);
+    assert(route_from == -1);
+    assert(route_to == -1);
+
+    setenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER", "3", 1);
+    setenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER", "7", 1);
+    bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+        &route_from, &route_to);
+    assert(route_from == 3);
+    assert(route_to == 7);
+    unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
+    unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+
     printf("PASSED\n");
 }
 

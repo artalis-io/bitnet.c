@@ -1043,10 +1043,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             }
             s_q4_q8_attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
             s_q4_q8_ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
-            env = getenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
-            if (env) s_all2_q4q6_moe_gpu_route_from_layer = atoi(env);
-            env = getenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
-            if (env) s_all2_q4q6_moe_gpu_route_to_layer = atoi(env);
+            bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+                &s_all2_q4q6_moe_gpu_route_from_layer,
+                &s_all2_q4q6_moe_gpu_route_to_layer);
             init = 1;
         }
         cpu_fallback_layer = s_cpu_fallback_layer;
