@@ -305,6 +305,26 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 1));
     assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q5_0, 0));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q8_0, 0));
+    setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
+    assert(!bn_transformer_gpu_fused_gateup_silu_policy_allows(
+        &gpu, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_transformer_gpu_can_fused_gateup_silu(
+        &gpu, BN_GGUF_TENSOR_Q4_0, 0));
+    unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.caps |= BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU;
+    unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
+    assert(!bn_transformer_gpu_fused_gateup_silu_policy_allows(
+        &gpu, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_transformer_gpu_can_fused_gateup_silu(
+        &gpu, BN_GGUF_TENSOR_Q5_K, 0));
+    setenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP", "1", 1);
+    assert(bn_transformer_gpu_fused_gateup_silu_policy_allows(
+        &gpu, BN_GGUF_TENSOR_Q5_K));
+    assert(bn_transformer_gpu_can_fused_gateup_silu(
+        &gpu, BN_GGUF_TENSOR_Q5_K, 0));
+    unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
+    gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
 
     printf("PASSED\n");

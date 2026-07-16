@@ -22,6 +22,18 @@ int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }
 
+int bn_transformer_gpu_fused_gateup_silu_policy_allows(
+    const BnGPUBackend *gpu,
+    int tensor_type) {
+    if (getenv("BN_GPU_DISABLE_FUSED_GATEUP") != NULL)
+        return 0;
+    if (bn_transformer_gpu_backend_is_cuda(gpu) &&
+        bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
+        getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
+        return 0;
+    return 1;
+}
+
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT

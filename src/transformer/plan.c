@@ -18,11 +18,7 @@ int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type
 int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,
                                              int act_type) {
-    if (getenv("BN_GPU_DISABLE_FUSED_GATEUP"))
-        return 0;
-    if (bn_transformer_gpu_backend_is_cuda(gpu) &&
-        bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
-        getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
+    if (!bn_transformer_gpu_fused_gateup_silu_policy_allows(gpu, tensor_type))
         return 0;
     uint32_t cap = bn_quant_format_gpu_fused_gateup_silu_cap(tensor_type);
     return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);

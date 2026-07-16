@@ -162,6 +162,11 @@ do
     fi
 done
 
+if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_CUDA_ENABLE_Q5K_FUSED_GATEUP' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use GPU policy helpers for fused gate-up compatibility env vars"
+    fail=1
+fi
+
 for file in \
     src/model.c \
     src/model_gpu.c \
