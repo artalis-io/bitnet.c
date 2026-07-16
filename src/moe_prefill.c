@@ -5,13 +5,6 @@
 #include "transformer/gpu_internal.h"
 #include <stdlib.h>
 
-static int moe_cuda_prefill_min_tokens(void) {
-    const char *env = getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
-    if (!env || !*env) return 1;
-    int v = atoi(env);
-    return v > 0 ? v : 1;
-}
-
 typedef struct {
     float *logits;
     const float *router_w;
@@ -436,7 +429,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int prefer_cached_expert_batch =
         bn_model_gpu_moe_cache(m) != NULL &&
         n_experts == 2 && K == 2 &&
-        getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL") == NULL;
+        bn_transformer_gpu_cuda_moe_cache_prefill_enabled();
     if (!cuda_all2_q4q6_requires_opt_in &&
         !prefer_cached_expert_batch &&
         gpu_batch && gpu_batch->kind == BN_GPU_BACKEND_CUDA &&
@@ -508,7 +501,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 int can_fuse_shared =
                     c->has_shared_expert && lw->shared.shared_gate.data;
                 if (can_fuse_shared && backend &&
-                    getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE") == NULL) {
+                    bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled()) {
                     shared_gate = bn_backend_model_handle(
                         backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
                     if (shared_gate) {
@@ -595,7 +588,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         t0 = bn_moe_time_ms();
         int used_gpu_expert = 0;
         BnGPUBackend *gpu = bn_model_gpu(m);
-        int gpu_min_tokens = moe_cuda_prefill_min_tokens();
+        int gpu_min_tokens =
+            bn_transformer_gpu_cuda_moe_prefill_min_tokens();
         if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
             gpu->dense_ffn_batch && T >= gpu_min_tokens) {
             BnGPUMoETemporaryBuffers temps;
@@ -721,7 +715,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             int used_gpu_shared = 0;
             BnGPUBackend *gpu = bn_model_gpu(m);
             BnBackendModel *backend = bn_model_backend(m);
-            int gpu_min_tokens = moe_cuda_prefill_min_tokens();
+            int gpu_min_tokens =
+                bn_transformer_gpu_cuda_moe_prefill_min_tokens();
             if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
                 gpu->dense_ffn_batch && backend && n_tokens >= gpu_min_tokens) {
                 void *gate_gpu = bn_backend_model_handle(
