@@ -447,6 +447,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
     unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
+    unsetenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT");
+    unsetenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE");
+    unsetenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE");
     assert(bn_gpu_policy_cuda_cublas_matmul_enabled());
     assert(bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled());
     assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 0) == 128);
@@ -457,9 +460,20 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16", "1", 1);
     assert(!bn_gpu_policy_cuda_cublas_matmul_enabled());
     assert(!bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled());
+    assert(bn_gpu_policy_moe_auto_resident_enabled());
+    assert(!bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
+    setenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT", "1", 1);
+    setenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE", "1", 1);
+    assert(!bn_gpu_policy_moe_auto_resident_enabled());
+    assert(bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
+    setenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
     unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
+    unsetenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT");
+    unsetenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE");
+    unsetenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE");
 
     printf("PASSED\n");
 }

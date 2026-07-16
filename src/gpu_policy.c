@@ -101,3 +101,12 @@ int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
         max_mb = atoi(max_env);
     return max_mb;
 }
+
+int bn_gpu_policy_moe_auto_resident_enabled(void) {
+    return getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT") == NULL;
+}
+
+int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE") != NULL &&
+           getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;
+}

@@ -28,5 +28,7 @@ int bn_gpu_policy_cuda_cublas_matmul_enabled(void);
 int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
+int bn_gpu_policy_moe_auto_resident_enabled(void);
+int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 
 #endif // BN_GPU_POLICY_H

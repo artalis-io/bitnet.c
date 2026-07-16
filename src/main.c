@@ -4,6 +4,7 @@
 #include "model.h"
 #include "moe.h"
 #include "quant.h"
+#include "gpu_policy.h"
 #include "generate.h"
 #include "transformer.h"
 #include "tokenizer.h"
@@ -387,10 +388,10 @@ static size_t model_moe_entry_bytes(const BnModel *model,
                        em->expert_down_bytes;
         if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
             bn_quant_format_cuda_moe_down_cublas_cache_supported(em->down_type) &&
-            getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL") == NULL) {
+            bn_gpu_policy_cuda_cublas_matmul_enabled()) {
             size_t elems = (size_t)em->down_rows * (size_t)em->down_cols;
-            int q6_as_f16 = getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
-                            getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+            int q6_as_f16 =
+                bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
             size_t elem_size =
                 (size_t)bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(
                     em->down_type, q6_as_f16);
@@ -418,7 +419,7 @@ static int model_count_cuda_routed_moe_resident(const BnModel *model,
                                                 int *moe_layers_out) {
     if (moe_layers_out)
         *moe_layers_out = 0;
-    if (!model || getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN"))
+    if (!model || !bn_gpu_policy_cuda_moe_routed_ffn_enabled(1))
         return 0;
     const BnBackendModel *backend = bn_model_backend(model);
     if (!backend)
@@ -451,7 +452,7 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     if (!args || args->gpu_cache_mb <= 0 || entry_bytes == 0)
         return 0;
     size_t requested = (size_t)args->gpu_cache_mb * 1024u * 1024u;
-    if (getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT"))
+    if (!bn_gpu_policy_moe_auto_resident_enabled())
         return requested;
     int moe_layers = model_moe_layer_count(model);
     if (moe_layers <= 0 || model->config.n_experts <= 0)
@@ -523,8 +524,7 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
                     "moe_layers", layers);
     }
     int duplicate_cache_enabled =
-        getenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE") != NULL &&
-        getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;
+        bn_gpu_policy_cuda_duplicate_moe_cache_enabled();
     if (!args->gpu_cache_mb_set && !duplicate_cache_enabled &&
         routed_moe_layers > 0 && routed_resident_layers == routed_moe_layers)
         return;
