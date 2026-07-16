@@ -232,6 +232,11 @@ if grep -n 'BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL\|BN_GPU_COMPARE_MOE_LAYER\|BN_G
     fail=1
 fi
 
+if grep -n 'BN_GPU_COMPARE_MOE_INPUT_NORM\|BN_GPU_COMPARE_MOE_ACTUAL\|BN_GPU_COMPARE_MOE_ROUTE\|BN_GPU_COMPARE_MOE_RAW\|BN_GPU_COMPARE_MOE_MID\|BN_GPU_COMPARE_MOE_PARTS\|BN_GPU_COMPARE_MOE_SHARED_MID\|BN_GPU_COMPARE_MOE_SHARED_DOWN\|BN_GPU_COMPARE_MOE_NORM\|BN_GPU_CPU_LOGITS\|BN_GPU_DEBUG_ARGMAX_COMPARE\|BN_GPU_COMPARE_LOGITS' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for MoE/logits debug env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_fallback.c must use GPU policy helpers for GPU profile env vars"
     fail=1

@@ -578,6 +578,18 @@ int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default) {
     return refine_top;
 }
 
+int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu) {
+    return gpu_logits_need_cpu || getenv("BN_GPU_CPU_LOGITS") != NULL;
+}
+
+int bn_transformer_gpu_compare_logits_enabled(void) {
+    return getenv("BN_GPU_COMPARE_LOGITS") != NULL;
+}
+
+int bn_transformer_gpu_debug_argmax_compare_enabled(void) {
+    return getenv("BN_GPU_DEBUG_ARGMAX_COMPARE") != NULL;
+}
+
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -587,8 +599,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     int gpu_logits_need_cpu) {
     if (!gpu || !c || !logits || !want_argmax || need_logits ||
         !gpu->matvec_argmax_activation ||
-        getenv("BN_GPU_CPU_LOGITS") != NULL ||
-        gpu_logits_need_cpu ||
+        bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL ||
         !bn_quant_format_supports_q6_logits_refine(logits->type))
         return 0;
@@ -689,8 +700,8 @@ int bn_transformer_gpu_cuda_decode_cacheable(
         compare_ffn_state_layer >= 0)
         return 0;
     if (getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL ||
-        getenv("BN_GPU_CPU_LOGITS") != NULL ||
-        getenv("BN_GPU_COMPARE_LOGITS") != NULL ||
+        bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
+        bn_transformer_gpu_compare_logits_enabled() ||
         getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL)
         return 0;
     return 1;
@@ -1007,6 +1018,42 @@ int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos) {
     const char *compare_pos_env = getenv("BN_GPU_COMPARE_MOE_POS");
     int compare_pos = compare_pos_env ? atoi(compare_pos_env) : -1;
     return compare_layer == layer && (compare_pos < 0 || compare_pos == pos);
+}
+
+int bn_transformer_gpu_moe_compare_input_norm_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_INPUT_NORM") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_actual_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_ACTUAL") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_route_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_ROUTE") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_raw_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_RAW") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_mid_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_MID") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_parts_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_PARTS") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_shared_mid_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_SHARED_MID") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_shared_down_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_SHARED_DOWN") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_norm_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_NORM") != NULL;
 }
 
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible) {

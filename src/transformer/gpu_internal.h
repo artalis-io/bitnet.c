@@ -360,10 +360,22 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
 int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
 int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);
 int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos);
+int bn_transformer_gpu_moe_compare_input_norm_enabled(void);
+int bn_transformer_gpu_moe_compare_actual_enabled(void);
+int bn_transformer_gpu_moe_compare_route_enabled(void);
+int bn_transformer_gpu_moe_compare_raw_enabled(void);
+int bn_transformer_gpu_moe_compare_mid_enabled(void);
+int bn_transformer_gpu_moe_compare_parts_enabled(void);
+int bn_transformer_gpu_moe_compare_shared_mid_enabled(void);
+int bn_transformer_gpu_moe_compare_shared_down_enabled(void);
+int bn_transformer_gpu_moe_compare_norm_enabled(void);
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible);
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);
+int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu);
+int bn_transformer_gpu_debug_argmax_compare_enabled(void);
+int bn_transformer_gpu_compare_logits_enabled(void);
 int bn_transformer_gpu_moe_route_profile_enabled(void);
 int bn_transformer_gpu_moe_route_profile_every(void);
 int bn_transformer_gpu_profile_level(void);
