@@ -132,6 +132,30 @@ static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
     return type == BN_GGUF_TENSOR_Q6_K;
 }
 
+static inline int bn_backend_quant_cuda_logits_q6_f32_cache_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static inline int bn_backend_quant_cuda_moe_all_f16_cache_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0 ||
+           type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_K ||
+           type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static inline int bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static inline int bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q4_K;
+}
+
+static inline int bn_backend_quant_cuda_moe_quant_only_after_cache(
+    int type, int q8_f16_cache) {
+    return type != BN_GGUF_TENSOR_Q8_0 || !q8_f16_cache;
+}
+
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;

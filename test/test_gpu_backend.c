@@ -542,6 +542,18 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_supports_q6k_logits_refine(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_backend_quant_supports_q6k_logits_refine(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_cuda_logits_q6_f32_cache_supported(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_cuda_logits_q6_f32_cache_supported(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(
+        BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_gpu_matvec_exact_q6k_flag(BN_GGUF_TENSOR_Q6_K, 1) ==
            BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K);
     assert(bn_backend_quant_gpu_matvec_exact_q6k_flag(BN_GGUF_TENSOR_Q6_K, 0) == 0);
@@ -558,6 +570,18 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_cuda_moe_all_f16_cache_supported(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_cuda_moe_all_f16_cache_supported(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_moe_all_f16_cache_supported(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_backend_quant_cuda_moe_quant_only_after_cache(
+        BN_GGUF_TENSOR_Q8_0, 1));
+    assert(bn_backend_quant_cuda_moe_quant_only_after_cache(
+        BN_GGUF_TENSOR_Q8_0, 0));
+    assert(bn_backend_quant_cuda_moe_quant_only_after_cache(
+        BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_backend_quant_moe_route_q8(BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0));
