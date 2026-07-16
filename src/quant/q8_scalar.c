@@ -34,6 +34,32 @@ void bn_quant_q8_scalar_sdot_range(void *ctx, int row_start, int row_end) {
     }
 }
 
+int bn_quant_q8_logits_refine_row(const BnQWeight *W,
+                                  const int8_t *x_q,
+                                  const float *x_scales,
+                                  int row,
+                                  float *out) {
+    if (!W || !W->data || !x_q || !x_scales || !out ||
+        !bn_quant_format_supports_q8_logits_refine(W->type) ||
+        row < 0 || row >= W->rows || W->cols <= 0 || (W->cols % 32) != 0)
+        return -1;
+
+    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
+    int n_blocks_per_row = W->cols / 32;
+    float row_sum = 0.0f;
+    for (int b = 0; b < n_blocks_per_row; b++) {
+        const BnBlockQ8_0 *blk =
+            &blocks[(size_t)row * (size_t)n_blocks_per_row + (size_t)b];
+        const int8_t *xb = x_q + b * 32;
+        int32_t sumi = 0;
+        for (int j = 0; j < 32; j++)
+            sumi += (int32_t)blk->qs[j] * (int32_t)xb[j];
+        row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
+    }
+    *out = row_sum;
+    return 0;
+}
+
 void bn_quant_q8_scalar_range(void *ctx, int row_start, int row_end) {
     BnQ8Ctx *c = (BnQ8Ctx *)ctx;
     const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)c->W->data;

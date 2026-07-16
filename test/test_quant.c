@@ -185,6 +185,54 @@ static void test_dispatch_routing(void) {
     printf("PASSED\n");
 }
 
+static void test_logits_refine_rows(void) {
+    printf("test_logits_refine_rows... ");
+
+    float x32[32];
+    for (int i = 0; i < 32; i++)
+        x32[i] = (float)((i % 7) - 3);
+    int8_t x_q32[32];
+    float x_scales[1];
+    bn_quant_x_to_q8_blocks(x32, x_q32, x_scales, 32);
+
+    BnBlockQ8_0 q8[2];
+    memset(q8, 0, sizeof(q8));
+    for (int row = 0; row < 2; row++) {
+        q8[row].d = bn_fp32_to_fp16(row == 0 ? 1.0f : 0.5f);
+        for (int i = 0; i < 32; i++)
+            q8[row].qs[i] = (int8_t)(row == 0 ? 1 : -2);
+    }
+    BnQWeight W_q8 = { q8, BN_GGUF_TENSOR_Q8_0, 2, 32, 1.0f };
+    float row;
+    assert(bn_quant_q8_logits_refine_row(&W_q8, x_q32, x_scales, 0,
+                                         &row) == 0);
+    float ref = 0.0f;
+    for (int i = 0; i < 32; i++)
+        ref += (float)x_q32[i] * x_scales[0];
+    assert(fabsf(row - ref) < 1e-4f);
+    assert(bn_quant_q8_logits_refine_row(&W_q8, x_q32, x_scales, 2,
+                                         &row) == -1);
+
+    float x256[256];
+    for (int i = 0; i < 256; i++)
+        x256[i] = 1.0f;
+    BnBlockQ6K q6[2];
+    memset(q6, 0, sizeof(q6));
+    for (int row_i = 0; row_i < 2; row_i++) {
+        q6[row_i].d = bn_fp32_to_fp16(1.0f);
+        for (int i = 0; i < 16; i++)
+            q6[row_i].scales[i] = (int8_t)(row_i + 1);
+    }
+    BnQWeight W_q6 = { q6, BN_GGUF_TENSOR_Q6_K, 2, 256, 1.0f };
+    assert(bn_quant_q6_logits_refine_row(&W_q6, x256, 0, &row) == 0);
+    assert(fabsf(row - (-8192.0f)) < 1.0f);
+    assert(bn_quant_q6_logits_refine_row(&W_q6, x256, 1, &row) == 0);
+    assert(fabsf(row - (-16384.0f)) < 1.0f);
+    assert(bn_quant_q6_logits_refine_row(&W_q6, x256, -1, &row) == -1);
+
+    printf("PASSED\n");
+}
+
 // --- Integration test: batch matvec ---
 
 static void test_matvec_batch(void) {
@@ -1403,6 +1451,7 @@ int main(void) {
     test_quant_policy_helpers();
     test_fp16_conversion();
     test_dispatch_routing();
+    test_logits_refine_rows();
     test_matvec_batch();
     test_matvec_threaded();
     test_matmul_correctness();

@@ -313,6 +313,15 @@ int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);
+int      bn_quant_q8_logits_refine_row(const BnQWeight *W,
+                                        const int8_t *x_q,
+                                        const float *x_scales,
+                                        int row,
+                                        float *out);
+int      bn_quant_q6_logits_refine_row(const BnQWeight *W,
+                                        const float *x,
+                                        int row,
+                                        float *out);
 uint32_t bn_quant_format_gpu_split_cap(int type);
 int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_gpu_requires_exact_silu(int type);

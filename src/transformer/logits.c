@@ -48,7 +48,6 @@ static int logits_refine_q8_top(float *logits, int n_logits,
     int n_blocks = W->cols / 32;
     if (n_blocks <= 0 || n_blocks > BN_LOGITS_REFINE_MAX_SCALE_BLOCKS)
         return 0;
-    int n_blocks_per_row = n_blocks;
 
     int ids[128];
     float vals[128];
@@ -75,20 +74,12 @@ static int logits_refine_q8_top(float *logits, int n_logits,
 
     float x_scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
     bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
-    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
     for (int i = 0; i < n_top; i++) {
         int row = ids[i];
-        float row_sum = 0.0f;
-        for (int b = 0; b < n_blocks_per_row; b++) {
-            const BnBlockQ8_0 *blk =
-                &blocks[(size_t)row * (size_t)n_blocks_per_row + (size_t)b];
-            const int8_t *xb = x_q + b * 32;
-            int32_t sumi = 0;
-            for (int j = 0; j < 32; j++)
-                sumi += (int32_t)blk->qs[j] * (int32_t)xb[j];
-            row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
-        }
-        logits[row] = row_sum;
+        float row_sum;
+        if (bn_quant_q8_logits_refine_row(W, x_q, x_scales, row,
+                                          &row_sum) == 0)
+            logits[row] = row_sum;
     }
     return n_top;
 }
@@ -123,57 +114,6 @@ static int logits_top_ids(const float *logits, int n_logits,
     return n_top;
 }
 
-static float logits_q6k_row_native(const BnQWeight *W, const float *x,
-                                   int row) {
-    int n_blocks_per_row = W->cols / BN_QK_K;
-    const BnBlockQ6K *blocks = (const BnBlockQ6K *)W->data;
-    float row_sum = 0.0f;
-
-    for (int b = 0; b < n_blocks_per_row; b++) {
-        const BnBlockQ6K *blk =
-            &blocks[(size_t)row * (size_t)n_blocks_per_row + (size_t)b];
-        float d = bn_fp16_to_fp32(blk->d);
-        const uint8_t *ql = blk->ql;
-        const uint8_t *qh = blk->qh;
-        const int8_t *sc = blk->scales;
-        const float *xb = x + b * BN_QK_K;
-
-        for (int n = 0; n < BN_QK_K; n += 128) {
-            for (int is = 0; is < 2; is++) {
-                float sum1 = 0.0f;
-                float sum2 = 0.0f;
-                float sum3 = 0.0f;
-                float sum4 = 0.0f;
-                int l0 = is * 16;
-                for (int i = 0; i < 16; i++) {
-                    int l = l0 + i;
-                    int q1 = (int)((ql[l]      & 0xF) |
-                                   (((qh[l] >> 0) & 3) << 4)) - 32;
-                    int q2 = (int)((ql[l + 32] & 0xF) |
-                                   (((qh[l] >> 2) & 3) << 4)) - 32;
-                    int q3 = (int)((ql[l]      >> 4) |
-                                   (((qh[l] >> 4) & 3) << 4)) - 32;
-                    int q4 = (int)((ql[l + 32] >> 4) |
-                                   (((qh[l] >> 6) & 3) << 4)) - 32;
-                    sum1 += (float)q1 * xb[l +  0];
-                    sum2 += (float)q2 * xb[l + 32];
-                    sum3 += (float)q3 * xb[l + 64];
-                    sum4 += (float)q4 * xb[l + 96];
-                }
-                row_sum += d * ((float)sc[is + 0] * sum1 +
-                                (float)sc[is + 2] * sum2 +
-                                (float)sc[is + 4] * sum3 +
-                                (float)sc[is + 6] * sum4);
-            }
-            xb += 128;
-            ql += 64;
-            qh += 32;
-            sc += 8;
-        }
-    }
-    return row_sum;
-}
-
 static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
     if (!m || !s || !W ||
@@ -187,8 +127,11 @@ static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
     float vals[128];
     int n_top = logits_top_ids(s->logits, m->config.vocab_size,
                                ids, vals, refine_top);
-    for (int i = 0; i < n_top; i++)
-        s->logits[ids[i]] = logits_q6k_row_native(W, s->x, ids[i]);
+    for (int i = 0; i < n_top; i++) {
+        float row_sum;
+        if (bn_quant_q6_logits_refine_row(W, s->x, ids[i], &row_sum) == 0)
+            s->logits[ids[i]] = row_sum;
+    }
 }
 
 static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
@@ -210,7 +153,9 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
     int native_best = 0;
     int native_second = 1;
     for (int i = 0; i < n_top; i++) {
-        native_vals[i] = logits_q6k_row_native(W, s->x, ids[i]);
+        if (bn_quant_q6_logits_refine_row(W, s->x, ids[i],
+                                          &native_vals[i]) != 0)
+            return;
         if (i == 0) continue;
         if (native_vals[i] > native_vals[native_best]) {
             native_second = native_best;
