@@ -277,8 +277,8 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_pre
     fail=1
 fi
 
-if grep -n 'BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE' src/gpu_moe_bridge.c >/dev/null 2>&1; then
-    echo "src/gpu_moe_bridge.c must use GPU policy helpers for MoE lazy aux cache env vars"
+if grep -n 'BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE\|BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_quant_format_cuda_lazy_moe_aux_cache_candidate' src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "src/gpu_moe_bridge.c must use GPU policy helpers for MoE lazy aux cache policy"
     fail=1
 fi
 

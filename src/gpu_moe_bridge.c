@@ -42,11 +42,9 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
                                           int allow_aux_cache) {
     if (!gpu || !data || size == 0)
         return NULL;
-    if (gpu->kind == BN_GPU_BACKEND_CUDA &&
-        gpu->buffer_create_quant_only &&
-        !allow_aux_cache &&
-        !bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled() &&
-        bn_quant_format_cuda_lazy_moe_aux_cache_candidate(type)) {
+    if (gpu->buffer_create_quant_only &&
+        bn_transformer_gpu_moe_quant_only_without_aux_cache(
+            gpu, type, allow_aux_cache)) {
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     }

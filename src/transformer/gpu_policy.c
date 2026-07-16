@@ -536,6 +536,16 @@ int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") != NULL;
 }
 
+int bn_transformer_gpu_moe_quant_only_without_aux_cache(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int allow_aux_cache) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           !allow_aux_cache &&
+           !bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled() &&
+           bn_quant_format_cuda_lazy_moe_aux_cache_candidate(tensor_type);
+}
+
 int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
     return getenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL") != NULL;
 }
