@@ -324,6 +324,14 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_can_fused_gateup_silu(
         &gpu, BN_GGUF_TENSOR_Q5_K, 0));
     unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
+
+    unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
+    assert(!bn_transformer_gpu_q4_q8_fused_gateup_enabled(0));
+    assert(bn_transformer_gpu_q4_q8_fused_gateup_enabled(1));
+    setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
+    assert(!bn_transformer_gpu_q4_q8_fused_gateup_enabled(1));
+    unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
+
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
 

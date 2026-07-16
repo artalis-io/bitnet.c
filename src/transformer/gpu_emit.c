@@ -539,7 +539,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
         ctx->graph, input, weight, gate_rows, up_rows, cols,
         BN_GPU_IR_ACTIVATION_SILU, "fused_gateup.out");
     if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0 &&
-        use_q4_q8 && !getenv("BN_GPU_Q4_Q8_DISABLE_GATEUP"))
+        bn_transformer_gpu_q4_q8_fused_gateup_enabled(use_q4_q8))
         ctx->graph->ops[ctx->graph->n_ops - 1].flags |= 1u;
     if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0)
         ctx->graph->ops[ctx->graph->n_ops - 1].flags |= flags;

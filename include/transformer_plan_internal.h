@@ -160,6 +160,7 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type);
+int bn_transformer_gpu_q4_q8_fused_gateup_enabled(int use_q4_q8);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
 int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu);
 
