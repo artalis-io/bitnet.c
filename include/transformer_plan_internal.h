@@ -171,6 +171,8 @@ int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible);
 int bn_transformer_gpu_shared_expert_gate_enabled(int eligible);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
 int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu);
+BnBackendPlacement bn_transformer_gpu_backend_placement(
+    const BnGPUBackend *gpu);
 
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer);
 int bn_transformer_attn_index(const BnConfig *c, int layer);

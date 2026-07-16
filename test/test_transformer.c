@@ -569,9 +569,23 @@ static void test_gpu_policy_helpers(void) {
     memset(&logits, 0, sizeof(logits));
     memset(&W, 0, sizeof(W));
     assert(!bn_transformer_gpu_backend_is_cuda(&gpu));
+    assert(bn_transformer_gpu_backend_placement(&gpu) ==
+           BN_BACKEND_GPU_UNKNOWN);
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_backend_is_cuda(&gpu));
+    assert(bn_transformer_gpu_backend_placement(&gpu) ==
+           BN_BACKEND_CUDA);
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_transformer_gpu_backend_placement(&gpu) ==
+           BN_BACKEND_METAL);
+    gpu.kind = BN_GPU_BACKEND_WEBGPU;
+    assert(bn_transformer_gpu_backend_placement(&gpu) ==
+           BN_BACKEND_WEBGPU);
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
+    assert(bn_transformer_backend_placement(&gpu, BN_EXEC_GPU) ==
+           BN_BACKEND_GPU_UNKNOWN);
+    assert(bn_transformer_backend_placement(&gpu, BN_EXEC_CPU) ==
+           BN_BACKEND_CPU);
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
                      BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |

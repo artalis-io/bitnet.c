@@ -93,13 +93,7 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
                                                     BnExecPlacement placement) {
     if (placement == BN_EXEC_CPU) return BN_BACKEND_CPU;
     if (placement == BN_EXEC_CPU_FALLBACK) return BN_BACKEND_CPU;
-    if (!gpu) return BN_BACKEND_GPU_UNKNOWN;
-    switch (gpu->kind) {
-        case BN_GPU_BACKEND_METAL: return BN_BACKEND_METAL;
-        case BN_GPU_BACKEND_WEBGPU: return BN_BACKEND_WEBGPU;
-        case BN_GPU_BACKEND_CUDA: return BN_BACKEND_CUDA;
-        default: return BN_BACKEND_GPU_UNKNOWN;
-    }
+    return bn_transformer_gpu_backend_placement(gpu);
 }
 
 uint32_t bn_transformer_cpu_force_float_kquant_task_flags(

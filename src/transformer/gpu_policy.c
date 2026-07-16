@@ -18,6 +18,18 @@ int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
 }
 
+BnBackendPlacement bn_transformer_gpu_backend_placement(
+    const BnGPUBackend *gpu) {
+    if (!gpu)
+        return BN_BACKEND_GPU_UNKNOWN;
+    switch (gpu->kind) {
+        case BN_GPU_BACKEND_METAL: return BN_BACKEND_METAL;
+        case BN_GPU_BACKEND_WEBGPU: return BN_BACKEND_WEBGPU;
+        case BN_GPU_BACKEND_CUDA: return BN_BACKEND_CUDA;
+        default: return BN_BACKEND_GPU_UNKNOWN;
+    }
+}
+
 int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }

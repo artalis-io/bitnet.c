@@ -192,6 +192,11 @@ if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_CUDA_ENABLE_Q5K_FUSED_GATEUP' src/tr
     fail=1
 fi
 
+if grep -n 'BN_GPU_BACKEND_' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use GPU policy helpers for backend placement"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_MOE_DECODE_CACHE' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for MoE decode cache compatibility env vars"
     fail=1
