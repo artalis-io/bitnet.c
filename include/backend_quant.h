@@ -9,7 +9,9 @@
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT 1u
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K 8u
 
-#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+#if defined(BN_FORCE_SCALAR)
+#define BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT 0
+#elif (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
     defined(__AVX2__) || defined(__wasm_relaxed_simd__)
 #define BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT 1
 #else

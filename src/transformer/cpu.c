@@ -1,4 +1,5 @@
 #include "transformer_cpu_internal.h"
+#include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "transformer_kv_internal.h"
@@ -14,17 +15,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX512F__
-#undef __AVX512BW__
-#undef __AVX512VNNI__
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
 
 static inline const BnPreparedWeight *cpu_qweight_prepared(
     const BnBackendModel *backend,
@@ -151,24 +141,25 @@ typedef struct {
                         int16_t *x_bsums);
 } BnCPUBackendOps;
 
-#ifndef __AVX2__
+#if !BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
                                           int size);
 #endif
 static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
                                         int head_size, int rope_dims,
                                         const float *rc, const float *rs);
-#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2 && \
+    !BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_apply_ffn_activation_scalar(BnRunState *s,
                                             const BnFFNPlan *ffn_plan,
                                             int hidden_dim);
 #endif
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_apply_ffn_activation_neon(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim);
 #endif
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim);
@@ -178,20 +169,20 @@ static void cpu_apply_rope_heads_avx2(float *buf, int n_heads,
                                       int head_size, int rope_dims,
                                       const float *rc, const float *rs);
 #endif
-#ifdef __wasm_simd128__
+#if BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_apply_ffn_activation_wasm(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim);
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_residual_add_neon(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 4)
         vst1q_f32(x + i, vaddq_f32(vld1q_f32(x + i), vld1q_f32(r + i)));
 }
 #endif
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_residual_add_avx2(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 8)
         _mm256_storeu_ps(x + i,
@@ -200,7 +191,7 @@ static void cpu_residual_add_avx2(float *x, const float *r, int dim) {
 }
 #endif
 
-#ifdef __wasm_simd128__
+#if BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_residual_add_wasm(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 4)
         wasm_v128_store(x + i,
@@ -209,14 +200,15 @@ static void cpu_residual_add_wasm(float *x, const float *r, int dim) {
 }
 #endif
 
-#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2 && \
+    !BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_residual_add_scalar(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i++)
         x[i] += r[i];
 }
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     "neon",
     bn_transformer_rmsnorm_neon,
@@ -236,8 +228,7 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     0,
     NULL,
 };
-#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
-      defined(__AVX512VNNI__) && defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX512
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     "avx512",
     bn_transformer_rmsnorm_avx2,
@@ -257,7 +248,7 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     1,
     bn_quant_rmsnorm_q8k_avx2,
 };
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     "avx2",
     bn_transformer_rmsnorm_avx2,
@@ -277,7 +268,7 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     1,
     bn_quant_rmsnorm_q8k_avx2,
 };
-#elif defined(__wasm_simd128__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static const BnCPUBackendOps BN_CPU_BACKEND = {
     "wasm",
     bn_transformer_rmsnorm_wasm,
@@ -364,7 +355,8 @@ static void cpu_rmsnorm_unit_heads(float *x, int n_heads, int head_size, float e
         cpu_rmsnorm_unit(x + h * head_size, x + h * head_size, head_size, eps);
 }
 
-#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2 && \
+    !BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static float cpu_fast_exp_scalar(float x) {
     const float log2e = 1.4426950409f;
     const float ln2 = 0.6931471806f;
@@ -398,7 +390,7 @@ static float cpu_fast_gelu_scalar(float x) {
 }
 #endif
 
-#ifndef __AVX2__
+#if !BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_sigmoid_gate_scalar(float *x, const float *gate,
                                           int size) {
     for (int i = 0; i < size; i++)
@@ -421,7 +413,7 @@ static void cpu_apply_rope_heads_scalar(float *buf, int n_heads,
     }
 }
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_sigmoid_gate_avx2(float *x, const float *gate,
                                         int size) {
     for (int i = 0; i < size; i += 8) {
@@ -465,7 +457,8 @@ static void cpu_apply_rope_heads_avx2(float *buf, int n_heads,
 }
 #endif
 
-#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_simd128__)
+#if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2 && \
+    !BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_apply_ffn_activation_scalar(BnRunState *s,
                                             const BnFFNPlan *ffn_plan,
                                             int hidden_dim) {
@@ -525,7 +518,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
 }
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_apply_ffn_activation_neon(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
@@ -583,7 +576,7 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
 }
 #endif
 
-#ifdef __AVX2__
+#if BN_TRANSFORMER_CPU_HAS_AVX2
 static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
@@ -632,7 +625,7 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
 }
 #endif
 
-#ifdef __wasm_simd128__
+#if BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static void cpu_apply_ffn_activation_wasm(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
