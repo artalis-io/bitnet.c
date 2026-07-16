@@ -1,4 +1,5 @@
 #include "gpu_backend.h"
+#include "gpu_policy.h"
 #include "backend_quant.h"
 #include "backend_layout.h"
 #include "backend_model.h"
@@ -331,6 +332,134 @@ static void test_backend_model_release_owns_buffers(void) {
 
     bn_backend_model_free(backend);
     assert(counter.destroys == 2);
+
+    printf("PASSED\n");
+}
+
+static void test_gpu_policy_helpers(void) {
+    printf("test_gpu_policy_helpers... ");
+
+    BnGPUBackend gpu = mock_gpu;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.buffer_create_f16_cache = mock_create;
+    gpu.buffer_create_q6_f32_cache = mock_create;
+
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
+    assert(bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));
+    assert(!bn_gpu_policy_cuda_moe_routed_ffn_enabled(0));
+    setenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
+
+    unsetenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE");
+    unsetenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE");
+    assert(!bn_gpu_policy_cuda_moe_all_f16_cache_forced());
+    assert(!bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
+        &gpu, BN_GGUF_TENSOR_Q8_0, 0));
+    assert(bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
+        &gpu, BN_GGUF_TENSOR_Q8_0, 1));
+    setenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_all_f16_cache_forced());
+    assert(bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
+        &gpu, BN_GGUF_TENSOR_Q4_0, 0));
+    setenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
+        &gpu, BN_GGUF_TENSOR_Q8_0, 1));
+    unsetenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE");
+    unsetenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE");
+
+    unsetenv("BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE");
+    unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE");
+    assert(!bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(1));
+    setenv("BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(1));
+    setenv("BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(1));
+    unsetenv("BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE");
+    unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE");
+
+    unsetenv("BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE");
+    assert(!bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(1));
+    setenv("BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(1));
+    assert(!bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(0));
+    unsetenv("BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE");
+
+    unsetenv("BN_CUDA_DEBUG_MOE_FIT");
+    unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
+    assert(!bn_gpu_policy_cuda_moe_fit_debug_enabled());
+    assert(!bn_gpu_policy_cuda_keep_individual_f16_cache_enabled());
+    setenv("BN_CUDA_DEBUG_MOE_FIT", "1", 1);
+    setenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_fit_debug_enabled());
+    assert(bn_gpu_policy_cuda_keep_individual_f16_cache_enabled());
+    unsetenv("BN_CUDA_DEBUG_MOE_FIT");
+    unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
+
+    unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
+    assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q6_K));
+    setenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q4_K));
+    setenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q6_K));
+    unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
+
+    unsetenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE");
+    assert(!bn_gpu_policy_cuda_logits_f16_cache_enabled(&gpu));
+    setenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_logits_f16_cache_enabled(&gpu));
+    unsetenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE");
+
+    unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
+    assert(bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(&gpu));
+    assert(!bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced());
+    assert(!bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(1024));
+    assert(bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(1025));
+    setenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced());
+    assert(bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(1));
+    setenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(&gpu));
+    unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
+
+    unsetenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");
+    assert(!bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q4_K));
+    setenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q4_K));
+    setenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q4_K));
+    unsetenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");
+
+    unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
+    unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
+    unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
+    assert(bn_gpu_policy_cuda_cublas_matmul_enabled());
+    assert(bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled());
+    assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 0) == 128);
+    assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 1) == 512);
+    setenv("BN_CUDA_CUBLAS_CACHE_MAX_MB", "7", 1);
+    assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 1) == 7);
+    setenv("BN_CUDA_DISABLE_CUBLAS_MATMUL", "1", 1);
+    setenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16", "1", 1);
+    assert(!bn_gpu_policy_cuda_cublas_matmul_enabled());
+    assert(!bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled());
+    unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
+    unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
+    unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
 
     printf("PASSED\n");
 }
@@ -871,6 +1000,7 @@ static void test_backend_layout_prepared_qweights(void) {
 int main(void) {
     test_data_size();
     test_quant_registry();
+    test_gpu_policy_helpers();
     test_backend_layout_reasons();
     test_backend_layout_prepared_qweights();
     test_gpu_upload_weights();

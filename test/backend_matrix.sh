@@ -277,6 +277,16 @@ if grep -n 'BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE' src/gpu_moe_bridge.c >/dev/null 2
     fail=1
 fi
 
+if grep -n 'BN_CUDA_DISABLE_MOE_ROUTED_FFN\|BN_CUDA_ENABLE_MOE_ALL_F16_CACHE\|BN_CUDA_DISABLE_MOE_ALL_F16_CACHE\|BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE\|BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE\|BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE\|BN_CUDA_DEBUG_MOE_FIT\|BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use GPU policy helpers for CUDA MoE residency env vars"
+    fail=1
+fi
+
+if grep -n 'BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE\|BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE\|BN_CUDA_ENABLE_LOGITS_F16_CACHE\|BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE\|BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE\|BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE\|BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE\|BN_CUDA_CUBLAS_CACHE_MAX_MB\|BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use GPU policy helpers for CUDA cache env vars"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for CUDA prefill chain debug env vars"
     fail=1
