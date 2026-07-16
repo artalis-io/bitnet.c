@@ -498,6 +498,73 @@ int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
     return bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
 }
 
+int bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           gpu->moe_route_routed_ffn_batch_norm_resid &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
+               c ? c->n_experts : 0) &&
+           !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+               c, map, dim, allow_q4_down);
+}
+
+int bn_transformer_gpu_prefill_moe_layer_backend_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down) {
+    return gpu && gpu->prefill_moe_layer &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
+               c ? c->n_experts : 0) &&
+           !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+               c, map, dim, allow_q4_down);
+}
+
+int bn_transformer_gpu_prefill_moe_layer_chain_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int n_tokens) {
+    return bn_transformer_gpu_prefill_moe_layer_backend_available(
+               gpu, c, map, dim, allow_q4_down) &&
+           n_tokens >=
+               bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(c, gpu);
+}
+
+int bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int n_tokens) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           gpu->prefill_ssm_layer &&
+           !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
+           n_tokens >=
+               bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(c, gpu) &&
+           bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+               gpu, c, map, dim, allow_q4_down);
+}
+
+int bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           gpu->prefill_ssm_layer &&
+           !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
+           n_tokens >=
+               bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
+}
+
 int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") == NULL;
 }

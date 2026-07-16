@@ -53,6 +53,94 @@ static int mock_gpu_execute(void *ctx, const void *ops, int n_ops,
     return 0;
 }
 
+static int mock_moe_route_routed_ffn_batch_norm_resid(
+    void *ctx, float *out, void *router_buf, void *gate_all_buf,
+    void *up_all_buf, void *down_all_buf, void *shared_gate_buf,
+    void *shared_up_buf, void *shared_down_buf, void *shared_gate_weight_buf,
+    void *norm_buf, const float *X, int n_tokens, int dim, int hidden_dim,
+    int n_experts, int k, int gate_type, int up_type, int down_type,
+    int act_type, int shared_hidden_dim, int shared_gate_type,
+    int shared_up_type, int shared_down_type, float norm_eps,
+    int norm_topk_prob, float expert_weights_scale) {
+    (void)ctx; (void)out; (void)router_buf; (void)gate_all_buf;
+    (void)up_all_buf; (void)down_all_buf; (void)shared_gate_buf;
+    (void)shared_up_buf; (void)shared_down_buf;
+    (void)shared_gate_weight_buf; (void)norm_buf; (void)X;
+    (void)n_tokens; (void)dim; (void)hidden_dim; (void)n_experts;
+    (void)k; (void)gate_type; (void)up_type; (void)down_type;
+    (void)act_type; (void)shared_hidden_dim; (void)shared_gate_type;
+    (void)shared_up_type; (void)shared_down_type; (void)norm_eps;
+    (void)norm_topk_prob; (void)expert_weights_scale;
+    return 0;
+}
+
+static int mock_prefill_moe_layer(
+    void *ctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
+    void *router_buf, void *gate_all_buf, void *up_all_buf,
+    void *down_all_buf, void *shared_gate_buf, void *shared_up_buf,
+    void *shared_down_buf, void *shared_gate_weight_buf,
+    void *attn_norm_buf, void *ffn_norm_buf, void *q_norm_buf,
+    void *k_norm_buf, void *q_bias_buf, void *k_bias_buf,
+    void *v_bias_buf, const float *X, float *K_out, float *V_out,
+    int n_tokens, int dim, int moe_hidden_dim, int n_experts,
+    int experts_active, int n_heads, int n_kv_heads, int head_size,
+    int kv_mul, int kv_dim, int qk_rows, int qk_type, int wv_rows,
+    int wv_type, int wo_rows, int wo_cols, int wo_type, int gate_type,
+    int up_type, int down_type, int act_type, int shared_hidden_dim,
+    int shared_gate_type, int shared_up_type, int shared_down_type,
+    int qk_norm_per_head, float norm_eps, int pos0, int rope_dims,
+    uint32_t kv_cache_off, int kv_cache_stride, float attention_scale,
+    int norm_topk_prob, float expert_weights_scale) {
+    (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
+    (void)router_buf; (void)gate_all_buf; (void)up_all_buf;
+    (void)down_all_buf; (void)shared_gate_buf; (void)shared_up_buf;
+    (void)shared_down_buf; (void)shared_gate_weight_buf;
+    (void)attn_norm_buf; (void)ffn_norm_buf; (void)q_norm_buf;
+    (void)k_norm_buf; (void)q_bias_buf; (void)k_bias_buf;
+    (void)v_bias_buf; (void)X; (void)K_out; (void)V_out;
+    (void)n_tokens; (void)dim; (void)moe_hidden_dim;
+    (void)n_experts; (void)experts_active; (void)n_heads;
+    (void)n_kv_heads; (void)head_size; (void)kv_mul; (void)kv_dim;
+    (void)qk_rows; (void)qk_type; (void)wv_rows; (void)wv_type;
+    (void)wo_rows; (void)wo_cols; (void)wo_type; (void)gate_type;
+    (void)up_type; (void)down_type; (void)act_type;
+    (void)shared_hidden_dim; (void)shared_gate_type;
+    (void)shared_up_type; (void)shared_down_type;
+    (void)qk_norm_per_head; (void)norm_eps; (void)pos0;
+    (void)rope_dims; (void)kv_cache_off; (void)kv_cache_stride;
+    (void)attention_scale; (void)norm_topk_prob;
+    (void)expert_weights_scale;
+    return 0;
+}
+
+static int mock_prefill_ssm_layer(
+    void *ctx, float *out, void *wqkv_buf, void *wz_buf, void *alpha_buf,
+    void *beta_buf, void *qkvz_stacked_buf, void *ab_stacked_buf,
+    void *ssm_out_buf, void *attn_norm_buf, void *conv1d_buf,
+    void *dt_bias_buf, void *a_log_buf, void *ssm_norm_buf,
+    void *ffn_gate_buf, void *ffn_up_buf, void *ffn_down_buf,
+    void *ffn_norm_buf, const float *X, int n_tokens, int dim,
+    int qkv_dim, int inner_dim, int num_k_heads, int head_k_dim,
+    int num_v_heads, int head_v_dim, int conv_kernel, int ssm_idx,
+    int wqkv_type, int wz_type, int alpha_type, int beta_type,
+    int out_type, int hidden_dim, int ffn_gate_type, int ffn_up_type,
+    int ffn_down_type, int act_type, float norm_eps, int *did_ffn) {
+    (void)ctx; (void)out; (void)wqkv_buf; (void)wz_buf;
+    (void)alpha_buf; (void)beta_buf; (void)qkvz_stacked_buf;
+    (void)ab_stacked_buf; (void)ssm_out_buf; (void)attn_norm_buf;
+    (void)conv1d_buf; (void)dt_bias_buf; (void)a_log_buf;
+    (void)ssm_norm_buf; (void)ffn_gate_buf; (void)ffn_up_buf;
+    (void)ffn_down_buf; (void)ffn_norm_buf; (void)X;
+    (void)n_tokens; (void)dim; (void)qkv_dim; (void)inner_dim;
+    (void)num_k_heads; (void)head_k_dim; (void)num_v_heads;
+    (void)head_v_dim; (void)conv_kernel; (void)ssm_idx;
+    (void)wqkv_type; (void)wz_type; (void)alpha_type; (void)beta_type;
+    (void)out_type; (void)hidden_dim; (void)ffn_gate_type;
+    (void)ffn_up_type; (void)ffn_down_type; (void)act_type;
+    (void)norm_eps; (void)did_ffn;
+    return 0;
+}
+
 static void rope(float *vec, int dim, int head_size, int pos, float theta) {
     for (int h = 0; h < dim; h += head_size) {
         int half_rope = head_size / 2;
@@ -932,6 +1020,47 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &moe_w));
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
 
+    gpu.moe_route_routed_ffn_batch_norm_resid =
+        mock_moe_route_routed_ffn_batch_norm_resid;
+    gpu.prefill_moe_layer = mock_prefill_moe_layer;
+    gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
+    unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
+    unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+        &gpu, &c, &map, c.dim, 0));
+    assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
+    assert(bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+        &gpu, &c, &map, c.dim, 0));
+    assert(bn_transformer_gpu_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    assert(!bn_transformer_gpu_prefill_moe_layer_chain_available(
+        &gpu, &c, &map, c.dim, 0, 15));
+    assert(bn_transformer_gpu_prefill_moe_layer_chain_available(
+        &gpu, &c, &map, c.dim, 0, 16));
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+        &gpu, &c, &map, c.dim, 0, 15));
+    assert(bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+        &gpu, &c, &map, c.dim, 0, 16));
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+        &gpu, &c, &map, c.dim, 0, 16));
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+        &gpu, &c, &map, c.dim, 0));
+    assert(bn_transformer_gpu_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.prefill_moe_layer = NULL;
+    assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
+        &gpu, &c, &map, c.dim, 0));
+    gpu.prefill_moe_layer = mock_prefill_moe_layer;
+    unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
+
     BnWeights dense_w;
     BnLayerWeights dense_layers[1];
     memset(&dense_w, 0, sizeof(dense_w));
@@ -971,6 +1100,21 @@ static void test_gpu_policy_helpers(void) {
     c.full_attn_interval = 0;
     c.ssm_inner_size = 0;
     c.dim = 2048;
+
+    unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+        &gpu, &c, 16));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+        &gpu, &c, 15));
+    assert(bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+        &gpu, &c, 16));
+    gpu.prefill_ssm_layer = NULL;
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+        &gpu, &c, 16));
+    gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
 
     map.down_type = BN_GGUF_TENSOR_Q4_K;
     assert(!bn_transformer_gpu_moe_routed_q4_down(&map, 0));

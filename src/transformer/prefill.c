@@ -507,12 +507,11 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
                                        float attention_scale) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
-    if (!gpu || !gpu->prefill_moe_layer || !backend ||
+    if (!bn_transformer_gpu_prefill_moe_layer_backend_available(
+            gpu, &m->config, &lw->moe.expert_map, dim, 0) ||
+        !backend ||
         !lw->moe.router_weight || !lw->attn.wq.data ||
         !lw->attn.wk.data || !lw->attn.wv.data || !lw->attn.wo.data)
-        return -1;
-    if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
-            &m->config, &lw->moe.expert_map, dim, 0))
         return -1;
 
     void *qk_buf = bn_backend_model_handle(
@@ -607,12 +606,10 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_gpu_backend_is_cuda(gpu) ||
-        !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
+    if (!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+            gpu, c, &lw->moe.expert_map, dim, 0) ||
+        !backend ||
         !lw->moe.router_weight || n_tokens <= 0 || dim <= 0)
-        return -1;
-    if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
-            c, &lw->moe.expert_map, dim, 0))
         return -1;
 
     void *router_buf = bn_backend_model_handle(
@@ -673,14 +670,10 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_gpu_backend_is_cuda(gpu) ||
-        !gpu->prefill_ssm_layer ||
-        !gpu->moe_route_routed_ffn_batch_norm_resid || !backend ||
-        bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() ||
-        !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
-            c ? c->n_experts : 0) ||
-        n_tokens <
-            bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(c, gpu) ||
+    if (!bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+            gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0,
+            n_tokens) ||
+        !backend ||
         !lw || !lw->moe.router_weight ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
@@ -827,12 +820,11 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!gpu || !gpu->prefill_moe_layer || !backend ||
+    if (!bn_transformer_gpu_prefill_moe_layer_chain_available(
+            gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0,
+            n_tokens) ||
+        !backend ||
         bn_model_tq_state(m) != NULL ||
-        n_tokens <
-            bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(c, gpu) ||
-        !bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
-            c ? c->n_experts : 0) ||
         layer_rope_theta != c->rope_theta ||
         !plan->is_attn || !lw->moe.router_weight ||
         lw->norm.attn_sub_norm ||
@@ -1009,11 +1001,9 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_gpu_backend_is_cuda(gpu) ||
-        !gpu->prefill_ssm_layer || !backend ||
-        bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() ||
-        n_tokens <
-            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu) ||
+    if (!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+            gpu, c, n_tokens) ||
+        !backend ||
         !lw || !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
         !lw->ssm.ssm_out.data || !lw->norm.attn_norm ||

@@ -172,6 +172,11 @@ if grep -n 'BN_CUDA_DISABLE_SSM_FFN_FUSE\|BN_CUDA_ENABLE_MOE_PREFILL\|BN_CUDA_DI
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_backend_is_cuda(gpu)\|bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use GPU-aware prefill backend policy helpers"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN\|BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN\|BN_CUDA_DISABLE_PREFILL_ATTN\|BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for prefill chain/attention env vars"
     fail=1
