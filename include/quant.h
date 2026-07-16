@@ -309,6 +309,11 @@ int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);
+int      bn_quant_format_gpu_requires_exact_silu(int type);
+int      bn_quant_format_gpu_prefers_gateup_split(int type);
+int      bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(int type);
+int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
+                                                            int act_type);
 int      bn_quant_format_uses_f16_logits_path(int type);
 int      bn_quant_format_tied_logits_uses_quant_path(int type);
 int      bn_quant_format_supports_logits_i8_cache(int type);

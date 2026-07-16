@@ -117,6 +117,16 @@ do
 done
 
 for file in \
+    src/transformer/gpu_emit.c \
+    src/transformer/plan.c
+do
+    if grep -n 'bn_backend_quant_gpu_requires_exact_silu\|bn_backend_quant_gpu_prefers_gateup_split\|bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_backend_quant_can_gpu_gateup_split_activation' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant format GPU behavior helpers for quant-format policy"
+        fail=1
+    fi
+done
+
+for file in \
     src/transformer/cpu.c \
     src/transformer/gpu.c \
     src/transformer/gpu_emit.c \

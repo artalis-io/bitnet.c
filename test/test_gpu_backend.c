@@ -457,7 +457,7 @@ static void test_quant_registry(void) {
            BN_GPU_CAP_Q4_MATVEC_SPLIT);
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
-    assert(bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_0, 1));
+    assert(bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_0, 1));
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q4_0, 1, 32) == 18);
 
     const BnQuantFormatOps *i2s = bn_quant_format_ops(BN_GGUF_TENSOR_I2_S);
@@ -521,10 +521,10 @@ static void test_quant_registry(void) {
            BN_GGUF_TENSOR_F32);
     assert(bn_backend_quant_has_native_q8x_quant() ==
            BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT);
-    assert(bn_backend_quant_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_backend_quant_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_is_float_kquant_fallback_candidate(BN_GGUF_TENSOR_Q4_K));
@@ -564,8 +564,8 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
                                                   BN_GGUF_TENSOR_Q8_0,
                                                   BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
-    assert(bn_backend_quant_can_gpu_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
+    assert(!bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
+    assert(bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_supports_q6k_logits_refine(BN_GGUF_TENSOR_Q6_K));
@@ -606,8 +606,8 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU);
-    assert(bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_cuda_moe_all_f16_cache_supported(
         BN_GGUF_TENSOR_Q8_0));

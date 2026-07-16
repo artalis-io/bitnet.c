@@ -108,6 +108,23 @@ int bn_quant_format_supports_q6_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q6_LOGITS_REFINE);
 }
 
+int bn_quant_format_gpu_requires_exact_silu(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
+int bn_quant_format_gpu_prefers_gateup_split(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
+int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(int type) {
+    return type == BN_GGUF_TENSOR_Q5_K;
+}
+
+int bn_quant_format_gpu_allows_gateup_split_activation(int type,
+                                                       int act_type) {
+    return act_type != 1 || type != BN_GGUF_TENSOR_Q4_K;
+}
+
 int bn_quant_format_uses_f16_logits_path(int type) {
     return type == BN_GGUF_TENSOR_F16;
 }
