@@ -595,6 +595,18 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
 
+    unsetenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN");
+    assert(!bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled());
+    setenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN", "1", 1);
+    assert(bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled());
+    unsetenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN");
+
+    unsetenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN");
+    assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled());
+    setenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN", "1", 1);
+    assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled());
+    unsetenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN");
+
     unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
     unsetenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
     unsetenv("BN_GPU_CPU_ATTN_LAYER");

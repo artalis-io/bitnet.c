@@ -465,6 +465,14 @@ int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void) {
     return getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN") != NULL;
+}
+
+int bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN") != NULL;
+}
+
 int bn_transformer_gpu_cuda_moe_prefill_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
 }

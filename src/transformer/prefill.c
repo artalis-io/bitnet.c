@@ -837,7 +837,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
         !plan->is_attn || !lw->moe.router_weight ||
         lw->norm.attn_sub_norm ||
         lw->norm.layer_output_scale) {
-        if (getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN"))
+        if (bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled())
             fprintf(stderr,
                     "[bn:prefill:moe-chain] reject layer=%d basic gpu=%d hook=%d backend=%d tq=%d toks=%d min=%d theta=%d attn=%d moe=%d shared=%d bias=%d subnorm=%d scale=%d\n",
                     layer, gpu != NULL,
@@ -883,7 +883,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
             prefill_qweight_backend_buf(backend, &lw->shared.shared_up) &&
             prefill_qweight_backend_buf(backend, &lw->shared.shared_down);
     }
-    if (!ready && getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN"))
+    if (!ready && bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled())
         fprintf(stderr,
                 "[bn:prefill:moe-chain] reject layer=%d handles qk=%d wv=%d wo=%d router=%d gate=%d up=%d down=%d anorm=%d fnorm=%d\n",
                 layer,
@@ -1584,7 +1584,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         m, lw, &plan, l, n_tokens, layer_rope_theta) &&
                     !prefill_dense_layer_chain_ready(
                         m, lw, &plan, l, n_tokens, layer_rope_theta)) {
-                    if (getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN"))
+                    if (bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled())
                         fprintf(stderr,
                                 "[bn:prefill:hybrid-chain] reject attn layer=%d\n",
                                 l);
@@ -1593,7 +1593,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
             } else if (!prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens) &&
                        !prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
-                if (getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN"))
+                if (bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled())
                     fprintf(stderr,
                             "[bn:prefill:hybrid-chain] reject ssm layer=%d\n",
                             l);
