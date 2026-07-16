@@ -453,6 +453,19 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_profile_level() == 3);
     unsetenv("BN_GPU_PROFILE");
 
+    unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
+    unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+    assert(!bn_transformer_gpu_moe_route_profile_enabled());
+    assert(bn_transformer_gpu_moe_route_profile_every() == 28);
+    setenv("BN_GPU_MOE_ROUTE_PROFILE", "1", 1);
+    setenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY", "5", 1);
+    assert(bn_transformer_gpu_moe_route_profile_enabled());
+    assert(bn_transformer_gpu_moe_route_profile_every() == 5);
+    setenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY", "0", 1);
+    assert(bn_transformer_gpu_moe_route_profile_every() == 28);
+    unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
+    unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+
     setenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE", "1", 1);
     assert(!bn_transformer_gpu_cuda_moe_decode_cacheable(
         &c, NULL, NULL));

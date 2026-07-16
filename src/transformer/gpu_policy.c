@@ -974,6 +974,21 @@ int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
            getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
 }
 
+int bn_transformer_gpu_moe_route_profile_enabled(void) {
+    return getenv("BN_GPU_MOE_ROUTE_PROFILE") != NULL;
+}
+
+int bn_transformer_gpu_moe_route_profile_every(void) {
+    int every = 28;
+    const char *env = getenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+    if (env && *env) {
+        int v = atoi(env);
+        if (v > 0)
+            every = v;
+    }
+    return every;
+}
+
 int bn_transformer_gpu_profile_level(void) {
     const char *profile = getenv("BN_GPU_PROFILE");
     return profile ? atoi(profile) : 0;
