@@ -1,10 +1,10 @@
 #include "gpu_internal.h"
-#include "backend_quant.h"
 #include "backend_session.h"
 #include "platform.h"
 #include "quant.h"
 #include "quant_dispatch_internal.h"
 #include "session.h"
+#include "transformer_cpu_features_internal.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../moe_internal.h"
 #include "moe.h"
@@ -659,7 +659,7 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
         return 0;
     float x_d[n_blocks];
     int16_t x_bsums[n_blocks * 16];
-#if BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT
+#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
     bn_quant_x_to_q8k(x, x_q_buf, x_d, x_bsums, W->cols);
 #else
     bn_quant_x_to_q8k_scalar(x, x_q_buf, x_d, x_bsums, W->cols);
@@ -694,7 +694,7 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
     return n_top;
 }
 
-#if BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT
+#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
 static float gpu_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
                                       const int8_t *x_q,
                                       const float *x_scales) {
@@ -718,7 +718,7 @@ static float gpu_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
 static int gpu_refine_q8_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
                                     int8_t *x_q, int top_n) {
-#if BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT
+#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
     if (!logits || !W || !W->data || !x || !x_q ||
         !bn_quant_format_supports_q8_logits_refine(W->type))
         return 0;
