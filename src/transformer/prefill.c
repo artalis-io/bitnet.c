@@ -913,7 +913,8 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
                                  int *did_ffn) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
-    if (!gpu || !gpu->prefill_ssm_layer || !backend || !lw ||
+    if (!bn_transformer_gpu_prefill_ssm_layer_backend_available(gpu) ||
+        !backend || !lw ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
         !lw->ssm.ssm_out.data || !lw->norm.attn_norm ||

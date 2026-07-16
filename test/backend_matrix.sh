@@ -177,6 +177,11 @@ if grep -n 'bn_transformer_gpu_backend_is_cuda(gpu)\|bn_transformer_gpu_all2_q4_
     fail=1
 fi
 
+if grep -n '!gpu || !gpu->prefill_ssm_layer' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use GPU policy helpers for SSM prefill backend availability"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN\|BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN\|BN_CUDA_DISABLE_PREFILL_ATTN\|BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for prefill chain/attention env vars"
     fail=1
