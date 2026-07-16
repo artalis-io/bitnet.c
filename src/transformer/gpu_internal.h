@@ -292,6 +292,32 @@ int bn_transformer_gpu_moe_prefill_tokens_allowed(
 int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void);
 int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void);
 int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void);
+int bn_transformer_gpu_moe_prefill_route_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down);
+int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int prefer_cached_expert_batch);
+int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int used_resident_expert_batch);
 int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void);
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     const BnGPUBackend *gpu,

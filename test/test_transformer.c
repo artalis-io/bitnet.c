@@ -74,6 +74,64 @@ static int mock_moe_route_routed_ffn_batch_norm_resid(
     return 0;
 }
 
+static int mock_moe_route_routed_ffn_batch(
+    void *ctx, float *out, void *router_buf, void *gate_all_buf,
+    void *up_all_buf, void *down_all_buf, const float *X, int n_tokens,
+    int dim, int hidden_dim, int n_experts, int k, int gate_type,
+    int up_type, int down_type, int act_type, int norm_topk_prob,
+    float expert_weights_scale) {
+    (void)ctx; (void)out; (void)router_buf; (void)gate_all_buf;
+    (void)up_all_buf; (void)down_all_buf; (void)X; (void)n_tokens;
+    (void)dim; (void)hidden_dim; (void)n_experts; (void)k;
+    (void)gate_type; (void)up_type; (void)down_type; (void)act_type;
+    (void)norm_topk_prob; (void)expert_weights_scale;
+    return 0;
+}
+
+static int mock_moe_route_batch(
+    void *ctx, int *indices, float *weights, void *router_buf,
+    const float *X, int n_tokens, int dim, int n_experts, int k,
+    int norm_topk_prob, float expert_weights_scale) {
+    (void)ctx; (void)indices; (void)weights; (void)router_buf;
+    (void)X; (void)n_tokens; (void)dim; (void)n_experts; (void)k;
+    (void)norm_topk_prob; (void)expert_weights_scale;
+    return 0;
+}
+
+static int mock_moe_routed_ffn_batch(
+    void *ctx, float *out, void *gate_all_buf, void *up_all_buf,
+    void *down_all_buf, const int *indices, const float *weights,
+    const float *X, int n_tokens, int dim, int hidden_dim,
+    int n_experts, int k, int gate_type, int up_type, int down_type,
+    int act_type) {
+    (void)ctx; (void)out; (void)gate_all_buf; (void)up_all_buf;
+    (void)down_all_buf; (void)indices; (void)weights; (void)X;
+    (void)n_tokens; (void)dim; (void)hidden_dim; (void)n_experts;
+    (void)k; (void)gate_type; (void)up_type; (void)down_type;
+    (void)act_type;
+    return 0;
+}
+
+static int mock_moe_ffn_batch(
+    void *ctx, float *out, const BnGPUMoEPrefillExpert *experts,
+    int n_experts, const int *expert_offsets, const int *expert_counts,
+    const int *token_ids, const float *weights, const float *X,
+    int n_tokens, int dim, int hidden_dim, int gate_type, int up_type,
+    int down_type, int act_type, void *shared_gate_buf, void *shared_up_buf,
+    void *shared_down_buf, void *shared_gate_weight_buf,
+    int shared_hidden_dim, int shared_gate_type, int shared_up_type,
+    int shared_down_type) {
+    (void)ctx; (void)out; (void)experts; (void)n_experts;
+    (void)expert_offsets; (void)expert_counts; (void)token_ids;
+    (void)weights; (void)X; (void)n_tokens; (void)dim;
+    (void)hidden_dim; (void)gate_type; (void)up_type; (void)down_type;
+    (void)act_type; (void)shared_gate_buf; (void)shared_up_buf;
+    (void)shared_down_buf; (void)shared_gate_weight_buf;
+    (void)shared_hidden_dim; (void)shared_gate_type;
+    (void)shared_up_type; (void)shared_down_type;
+    return 0;
+}
+
 static int mock_prefill_moe_layer(
     void *ctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
     void *router_buf, void *gate_all_buf, void *up_all_buf,
@@ -1022,12 +1080,53 @@ static void test_gpu_policy_helpers(void) {
 
     gpu.moe_route_routed_ffn_batch_norm_resid =
         mock_moe_route_routed_ffn_batch_norm_resid;
+    gpu.moe_route_routed_ffn_batch = mock_moe_route_routed_ffn_batch;
+    gpu.moe_route_batch = mock_moe_route_batch;
+    gpu.moe_routed_ffn_batch = mock_moe_routed_ffn_batch;
+    gpu.moe_ffn_batch = mock_moe_ffn_batch;
     gpu.prefill_moe_layer = mock_prefill_moe_layer;
     gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+        &gpu, &c));
+    assert(!bn_transformer_gpu_moe_prefill_route_batch_available(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
+        &gpu, &c, &map, c.dim, 0));
+    assert(!bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
+        &gpu, &c, &map, c.dim, 0, 0));
+    assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+        &gpu, &c, &map, c.dim, 0, 0));
+    setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
+        &gpu, &c, &map, c.dim, 0));
+    assert(bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
+        &gpu, &c, &map, c.dim, 0, 0));
+    assert(!bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
+        &gpu, &c, &map, c.dim, 0, 1));
+    assert(bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+        &gpu, &c, &map, c.dim, 0, 0));
+    assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+        &gpu, &c, &map, c.dim, 0, 1));
+    unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
+    c.n_experts = 3;
+    assert(bn_transformer_gpu_moe_prefill_route_batch_available(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+        &gpu, &c));
+    setenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE", "1", 1);
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+        &gpu, &c));
+    assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
+        &gpu, &c, &map, c.dim, 0));
+    setenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH", "1", 1);
+    assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+        &gpu, &c));
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
+    c.n_experts = 2;
     assert(bn_transformer_gpu_prefill_ssm_layer_backend_available(&gpu));
     assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));

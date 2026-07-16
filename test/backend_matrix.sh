@@ -297,6 +297,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_pre
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed' src/moe_prefill.c >/dev/null 2>&1; then
+    echo "src/moe_prefill.c must use behavior-named GPU policy helpers for MoE prefill eligibility"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE\|BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_quant_format_cuda_lazy_moe_aux_cache_candidate' src/gpu_moe_bridge.c >/dev/null 2>&1; then
     echo "src/gpu_moe_bridge.c must use GPU policy helpers for MoE lazy aux cache policy"
     fail=1

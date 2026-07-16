@@ -638,6 +638,65 @@ int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH") != NULL;
 }
 
+int bn_transformer_gpu_moe_prefill_route_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return c && c->n_experts > 2 &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           gpu->moe_route_batch;
+}
+
+int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return c &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           gpu->moe_route_routed_ffn_batch_norm_resid &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c->n_experts);
+}
+
+int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down) {
+    return c &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           gpu->moe_route_routed_ffn_batch &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c->n_experts) &&
+           !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+               c, map, dim, allow_q4_down);
+}
+
+int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int prefer_cached_expert_batch) {
+    return !prefer_cached_expert_batch &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           gpu->moe_routed_ffn_batch &&
+           !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+               c, map, dim, allow_q4_down);
+}
+
+int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down,
+    int used_resident_expert_batch) {
+    return !used_resident_expert_batch &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           gpu->moe_ffn_batch &&
+           !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+               c, map, dim, allow_q4_down);
+}
+
 int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") != NULL;
 }

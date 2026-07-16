@@ -105,20 +105,16 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int n_experts = c->n_experts;
     int force_matvec_prefill =
         n_experts == 2 && K == 2 && c->has_shared_expert;
-    int allow_cuda_route_routed_batch =
-        bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(n_experts);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
-    int cuda_all2_q4q6_requires_opt_in =
-        bn_transformer_gpu_all2_q4_moe_requires_opt_in(c, map, dim, 0);
 
     BnAllocator a = bn_allocator_default();
     int did_input_norm = 0;
     if (n_experts > 2) {
         BnGPUBackend *gpu = bn_model_gpu(m);
         BnBackendModel *backend = bn_model_backend(m);
-        if (allow_cuda_route_routed_batch &&
-            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-            gpu->moe_route_routed_ffn_batch_norm_resid && backend) {
+        if (bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
+                gpu, c) &&
+            backend) {
             void *router = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
             void *gate_all = bn_backend_model_handle(
@@ -186,10 +182,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
         did_input_norm = 1;
 
-        if (!cuda_all2_q4q6_requires_opt_in &&
-            allow_cuda_route_routed_batch &&
-            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-            gpu->moe_route_routed_ffn_batch && backend) {
+        if (bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
+                gpu, c, map, dim, 0) &&
+            backend) {
             void *router = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
             void *gate_all = bn_backend_model_handle(
@@ -301,9 +296,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int used_gpu_route = 0;
     BnGPUBackend *route_gpu = bn_model_gpu(m);
     BnBackendModel *route_backend = bn_model_backend(m);
-    if (n_experts > 2 && route_gpu &&
-        bn_transformer_gpu_moe_prefill_backend_available(route_gpu) &&
-        route_gpu->moe_route_batch && route_backend) {
+    if (bn_transformer_gpu_moe_prefill_route_batch_available(route_gpu, c) &&
+        route_backend) {
         void *router_gpu = bn_backend_model_handle(
             route_backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
         int route_rc = router_gpu
@@ -429,10 +423,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         bn_model_gpu_moe_cache(m) != NULL &&
         n_experts == 2 && K == 2 &&
         bn_transformer_gpu_cuda_moe_cache_prefill_enabled();
-    if (!cuda_all2_q4q6_requires_opt_in &&
-        !prefer_cached_expert_batch &&
-        bn_transformer_gpu_moe_prefill_backend_available(gpu_batch) &&
-        gpu_batch->moe_routed_ffn_batch) {
+    if (bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
+            gpu_batch, c, map, dim, 0, prefer_cached_expert_batch)) {
         const BnBackendModel *backend = bn_model_backend(m);
         void *gate_all = bn_backend_model_handle(
             backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
@@ -452,10 +444,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             }
         }
     }
-    if (!cuda_all2_q4q6_requires_opt_in &&
-        !used_gpu_moe_batch && gpu_batch &&
-        bn_transformer_gpu_moe_prefill_backend_available(gpu_batch) &&
-        gpu_batch->moe_ffn_batch) {
+    if (bn_transformer_gpu_moe_prefill_split_expert_batch_available(
+            gpu_batch, c, map, dim, 0, used_gpu_moe_batch)) {
         BnGPUMoEPrefillExpert *gpu_experts =
             (BnGPUMoEPrefillExpert *)bn_malloc(
                 &a, (size_t)n_experts * sizeof(BnGPUMoEPrefillExpert));
