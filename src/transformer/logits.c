@@ -1,4 +1,5 @@
 #include "transformer_logits_internal.h"
+#include "transformer_cpu_features_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "backend_model.h"
@@ -13,17 +14,6 @@
 #include <math.h>
 #include <stdlib.h>
 
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX512F__
-#undef __AVX512BW__
-#undef __AVX512VNNI__
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
-
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
 #define BN_LOGITS_REFINE_MAX_SCALE_BLOCKS 512
 
@@ -37,7 +27,7 @@ typedef struct {
     void (*prepare_f16_x)(uint16_t *dst, const float *src, int dim);
 } BnLogitsBackendOps;
 
-#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+#if BN_TRANSFORMER_CPU_HAS_NEON_FP16_ARITH
 static void logits_prepare_f16_x_neon(uint16_t *dst,
                                       const float *src,
                                       int dim) {
@@ -49,10 +39,10 @@ static void logits_prepare_f16_x_neon(uint16_t *dst,
 }
 #endif
 
-#ifdef __ARM_NEON
+#if BN_TRANSFORMER_CPU_HAS_NEON
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_rmsnorm_neon,
-#ifdef __ARM_FEATURE_DOTPROD
+#if BN_TRANSFORMER_CPU_HAS_NEON_DOTPROD
     bn_transformer_logits_i8_neon_range,
     1,
     1,
@@ -61,7 +51,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     0,
     0,
 #endif
-#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+#if BN_TRANSFORMER_CPU_HAS_NEON_FP16_ARITH
     bn_transformer_logits_f16_native_neon_range,
     logits_prepare_f16_x_neon,
 #else
@@ -69,8 +59,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     NULL,
 #endif
 };
-#elif defined(__AVX512F__) && defined(__AVX512BW__) && \
-      defined(__AVX512VNNI__) && defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX512
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_rmsnorm_avx2,
     bn_transformer_logits_i8_avx2_range,
@@ -79,7 +68,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_logits_f16_avx2_range,
     NULL,
 };
-#elif defined(__AVX2__)
+#elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_rmsnorm_avx2,
     bn_transformer_logits_i8_avx2_range,
@@ -88,7 +77,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_logits_f16_avx2_range,
     NULL,
 };
-#elif defined(__wasm_relaxed_simd__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_RELAXED_SIMD
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_rmsnorm_wasm,
     bn_transformer_logits_i8_wasm_range,
@@ -97,7 +86,7 @@ static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_logits_f16_wasm_range,
     NULL,
 };
-#elif defined(__wasm_simd128__)
+#elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static const BnLogitsBackendOps BN_LOGITS_BACKEND = {
     bn_transformer_rmsnorm_wasm,
     bn_transformer_logits_i8_scalar_range,

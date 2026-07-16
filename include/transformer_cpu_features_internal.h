@@ -18,6 +18,18 @@
 #define BN_TRANSFORMER_CPU_HAS_NEON 0
 #endif
 
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)
+#define BN_TRANSFORMER_CPU_HAS_NEON_DOTPROD 1
+#else
+#define BN_TRANSFORMER_CPU_HAS_NEON_DOTPROD 0
+#endif
+
+#if defined(__ARM_NEON) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+#define BN_TRANSFORMER_CPU_HAS_NEON_FP16_ARITH 1
+#else
+#define BN_TRANSFORMER_CPU_HAS_NEON_FP16_ARITH 0
+#endif
+
 #if defined(__AVX512F__) && defined(__AVX512BW__) && \
     defined(__AVX512VNNI__) && defined(__AVX2__)
 #define BN_TRANSFORMER_CPU_HAS_AVX512 1
