@@ -64,7 +64,6 @@ typedef enum {
 } BnModelTensorRole;
 
 const char *bn_model_arch_prefix(const char *arch);
-int bn_model_arch_is_gemma4(const char *arch);
 int bn_model_arch_activation(const char *arch);
 int bn_model_arch_attention_value_shares_key(const char *arch);
 const char *bn_model_arch_tensor_suffix(BnModelTensorRole role);

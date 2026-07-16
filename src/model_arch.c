@@ -7,7 +7,7 @@ const char *bn_model_arch_prefix(const char *arch) {
     return arch && arch[0] ? arch : "llama";
 }
 
-int bn_model_arch_is_gemma4(const char *arch) {
+static int bn_model_arch_is_gemma4(const char *arch) {
     return arch && strcmp(arch, "gemma4") == 0;
 }
 

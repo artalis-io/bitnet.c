@@ -244,7 +244,7 @@ static void test_gemma4_dense(void) {
     uint8_t *buf = calloc(1, 4 * 1024 * 1024); assert(buf);
     BnGGUFFile *gf = build_gemma4(buf, 4 * 1024 * 1024, 0); assert(gf);
     int32_t sections[3] = {16, 24, 24};
-    assert(bn_model_arch_is_gemma4("gemma4") == 1);
+    assert(bn_model_arch_tokenizer_uses_metaspace("gemma4") == 1);
     assert(bn_model_arch_attention_value_shares_key("gemma4") == 1);
     assert(bn_model_arch_rope_text_dims(64, sections, 3) == 32);
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);

@@ -158,7 +158,7 @@ int bn_tokenizer_init(BnTokenizer *t, BnGGUFFile *f) {
     if (t->eot_id < 0)
         t->eot_id = vocab_lookup(t, "<|eot_id|>");
 
-    // Detect ChatML template (Qwen, Yi, etc.)
+    // Detect ChatML-style templates.
     t->im_start_id = vocab_lookup(t, "<|im_start|>");
     t->im_end_id   = vocab_lookup(t, "<|im_end|>");
     t->chatml = (t->im_start_id >= 0 && t->im_end_id >= 0) ? 1 : 0;

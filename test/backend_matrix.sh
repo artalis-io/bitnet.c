@@ -150,10 +150,10 @@ do
     fi
 done
 
-for file in include/model_config.h include/model_weights.h
+for file in include/model_config.h include/model_weights.h include/model_run_state.h
 do
-    if grep -n 'gemma4_\|qwen2_moe\|qwen2moe_' "$file" >/dev/null 2>&1; then
-        echo "$file must expose behavior-named fields, not family-prefixed fields"
+    if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_' "$file" >/dev/null 2>&1; then
+        echo "$file must expose behavior-named shared model state, not family-prefixed fields or comments"
         fail=1
     fi
 done
