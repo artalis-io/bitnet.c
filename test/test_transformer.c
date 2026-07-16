@@ -1,4 +1,5 @@
 #include "transformer_cpu_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_logits_internal.h"
@@ -1433,6 +1434,13 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER;
     assert(bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
+
+    unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
+    assert(bn_transformer_cpu_prepared_qweights_enabled());
+    setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
+    assert(!bn_transformer_cpu_prepared_qweights_enabled());
+    unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
+
     c.policy_flags = BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
                      BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |
                      BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM |

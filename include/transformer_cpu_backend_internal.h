@@ -33,5 +33,6 @@ typedef struct {
 } BnCPUBackendOps;
 
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
+int bn_transformer_cpu_prepared_qweights_enabled(void);
 
 #endif // BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H

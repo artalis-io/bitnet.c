@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "../gpu_shader.h"
 #include "backend_model.h"
+#include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
@@ -26,7 +27,7 @@ static void fallback_rmsnorm(float *out,
 static const BnPreparedWeight *fallback_cpu_prepared_qweight(
     const BnModel *m,
     const BnQWeight *w) {
-    if (getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS"))
+    if (!bn_transformer_cpu_prepared_qweights_enabled())
         return NULL;
     return bn_backend_model_prepared_qweight(bn_model_backend(m), w);
 }
@@ -423,7 +424,7 @@ static void debug_compare_vec(const char *label,
 
 static const BnPreparedWeight *debug_prepared_qweight(BnModel *m,
                                                       const BnQWeight *w) {
-    if (!m || !w || getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS"))
+    if (!m || !w || !bn_transformer_cpu_prepared_qweights_enabled())
         return NULL;
     return bn_backend_model_prepared_qweight(bn_model_backend(m), w);
 }
