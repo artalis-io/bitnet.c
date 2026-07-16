@@ -1,5 +1,6 @@
 #include "quant.h"
 #include "gguf.h"
+#include "gpu_backend.h"
 
 #define BN_QUANT_CAP_CPU_ALL \
     (BN_QUANT_CAP_CPU_MATVEC | BN_QUANT_CAP_CPU_BATCH | BN_QUANT_CAP_CPU_MATMUL)
@@ -108,12 +109,38 @@ int bn_quant_format_supports_q6_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q6_LOGITS_REFINE);
 }
 
+uint32_t bn_quant_format_gpu_split_cap(int type) {
+    switch (type) {
+        case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q5_0: return BN_GPU_CAP_Q5_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q4_K: return BN_GPU_CAP_Q4K_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q5_K: return BN_GPU_CAP_Q5K_MATVEC_SPLIT;
+        case BN_GGUF_TENSOR_Q8_0: return BN_GPU_CAP_Q8_MATVEC_SPLIT;
+        default: return 0;
+    }
+}
+
+int bn_quant_format_can_gpu_split(int type) {
+    return bn_quant_format_gpu_split_cap(type) != 0;
+}
+
 int bn_quant_format_gpu_requires_exact_silu(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
 }
 
 int bn_quant_format_gpu_prefers_gateup_split(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
+}
+
+uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type) {
+    switch (type) {
+        case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q5_0: return BN_GPU_CAP_Q5_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q8_0: return BN_GPU_CAP_Q8_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q4_K: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
+        case BN_GGUF_TENSOR_Q5_K: return BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU;
+        default: return 0;
+    }
 }
 
 int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(int type) {
@@ -123,6 +150,18 @@ int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(int type) {
 int bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                        int act_type) {
     return act_type != 1 || type != BN_GGUF_TENSOR_Q4_K;
+}
+
+uint32_t bn_quant_format_gpu_matvec_q8k_dot_flag(int type, int enabled) {
+    return enabled && type == BN_GGUF_TENSOR_Q4_K
+        ? BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT
+        : 0u;
+}
+
+uint32_t bn_quant_format_gpu_matvec_exact_q6k_flag(int type, int enabled) {
+    return enabled && type == BN_GGUF_TENSOR_Q6_K
+        ? BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
+        : 0u;
 }
 
 int bn_quant_format_cuda_logits_q6_f32_cache_supported(int type) {

@@ -10,7 +10,7 @@
 #include <string.h>
 
 static int gpu_moe_can_matvec_split(const BnGPUBackend *gpu, int tensor_type) {
-    uint32_t cap = bn_backend_quant_gpu_split_cap(tensor_type);
+    uint32_t cap = bn_quant_format_gpu_split_cap(tensor_type);
     return gpu && cap && ((gpu->caps & cap) != 0);
 }
 

@@ -6,8 +6,8 @@
 #include "gpu_backend.h"
 #include "quant.h"
 
-#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT 1u
-#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K 8u
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
 
 #if defined(BN_FORCE_SCALAR)
 #define BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT 0
@@ -23,18 +23,11 @@ static inline int bn_backend_quant_has_native_q8x_quant(void) {
 }
 
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
-    switch (type) {
-        case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_MATVEC_SPLIT;
-        case BN_GGUF_TENSOR_Q5_0: return BN_GPU_CAP_Q5_MATVEC_SPLIT;
-        case BN_GGUF_TENSOR_Q4_K: return BN_GPU_CAP_Q4K_MATVEC_SPLIT;
-        case BN_GGUF_TENSOR_Q5_K: return BN_GPU_CAP_Q5K_MATVEC_SPLIT;
-        case BN_GGUF_TENSOR_Q8_0: return BN_GPU_CAP_Q8_MATVEC_SPLIT;
-        default: return 0;
-    }
+    return bn_quant_format_gpu_split_cap(type);
 }
 
 static inline int bn_backend_quant_can_gpu_split(int type) {
-    return bn_backend_quant_gpu_split_cap(type) != 0;
+    return bn_quant_format_can_gpu_split(type);
 }
 
 static inline int bn_backend_quant_can_gpu_native(int type) {
@@ -229,14 +222,7 @@ static inline int bn_backend_quant_cuda_aux_cache_prefers_large_budget(int type)
 }
 
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
-    switch (type) {
-        case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
-        case BN_GGUF_TENSOR_Q5_0: return BN_GPU_CAP_Q5_FUSED_GATEUP_SILU;
-        case BN_GGUF_TENSOR_Q8_0: return BN_GPU_CAP_Q8_FUSED_GATEUP_SILU;
-        case BN_GGUF_TENSOR_Q4_K: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;
-        case BN_GGUF_TENSOR_Q5_K: return BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU;
-        default: return 0;
-    }
+    return bn_quant_format_gpu_fused_gateup_silu_cap(type);
 }
 
 static inline int bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(int type) {
@@ -250,16 +236,12 @@ static inline int bn_backend_quant_can_gpu_gateup_split_activation(int type,
 
 static inline uint32_t bn_backend_quant_gpu_matvec_q8k_dot_flag(int type,
                                                                int enabled) {
-    return enabled && type == BN_GGUF_TENSOR_Q4_K
-        ? BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT
-        : 0u;
+    return bn_quant_format_gpu_matvec_q8k_dot_flag(type, enabled);
 }
 
 static inline uint32_t bn_backend_quant_gpu_matvec_exact_q6k_flag(int type,
                                                                  int enabled) {
-    return enabled && type == BN_GGUF_TENSOR_Q6_K
-        ? BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
-        : 0u;
+    return bn_quant_format_gpu_matvec_exact_q6k_flag(type, enabled);
 }
 
 void bn_backend_quant_matvec_gpu(float *out, const BnQWeight *W,

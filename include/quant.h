@@ -25,6 +25,8 @@ extern "C" {
 #define BN_I8_MAX             127
 #define BN_I2S_BLOCK_ELEMS   128         // elements per I2S interleaved block
 #define BN_I2S_SUBROW_SIZE   32          // elements per sub-row
+#define BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT 1u
+#define BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K 8u
 
 // TQ1_0: base-3 ternary packing, 256 weights per block
 // qs packs 240 values (5 per byte in base-3), qh packs remaining 16 (4 per byte)
@@ -309,11 +311,16 @@ int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);
+uint32_t bn_quant_format_gpu_split_cap(int type);
+int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_gpu_requires_exact_silu(int type);
 int      bn_quant_format_gpu_prefers_gateup_split(int type);
+uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type);
 int      bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(int type);
 int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
+uint32_t bn_quant_format_gpu_matvec_q8k_dot_flag(int type, int enabled);
+uint32_t bn_quant_format_gpu_matvec_exact_q6k_flag(int type, int enabled);
 int      bn_quant_format_cuda_logits_q6_f32_cache_supported(int type);
 int      bn_quant_format_cuda_moe_all_f16_cache_supported(int type);
 int      bn_quant_format_cuda_moe_down_q6_f32_cache_supported(int type);

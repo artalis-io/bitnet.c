@@ -12,7 +12,7 @@ int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
 }
 
 int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type) {
-    uint32_t cap = bn_backend_quant_gpu_split_cap(tensor_type);
+    uint32_t cap = bn_quant_format_gpu_split_cap(tensor_type);
     return cap != 0 && bn_transformer_gpu_has_cap(gpu, cap);
 }
 
@@ -25,7 +25,7 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
         bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
         getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
         return 0;
-    uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
+    uint32_t cap = bn_quant_format_gpu_fused_gateup_silu_cap(tensor_type);
     return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);
 }
 
@@ -247,9 +247,9 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->use_fused_gateup_silu =
         p->placement == BN_EXEC_GPU &&
         c->has_ffn_gate &&
-        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) != 0 &&
-        bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_up.type) ==
-            bn_backend_quant_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) &&
+        bn_quant_format_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) != 0 &&
+        bn_quant_format_gpu_fused_gateup_silu_cap(lw->ffn.ffn_up.type) ==
+            bn_quant_format_gpu_fused_gateup_silu_cap(lw->ffn.ffn_gate.type) &&
         bn_transformer_gpu_can_fused_gateup_silu(gpu, lw->ffn.ffn_gate.type, c->act_type);
     p->use_gateup_split =
         p->placement == BN_EXEC_GPU &&
