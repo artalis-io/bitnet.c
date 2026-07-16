@@ -1397,19 +1397,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
                         c, w);
                 int override_moe_cpu_actual =
-                    all2_q4q6_moe_cpu_moe_safe ||
-                    getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
-                int compare_moe = 0;
-                const char *compare_moe_env =
-                    getenv("BN_GPU_COMPARE_MOE_LAYER");
-                if (compare_moe_env) {
-                    int compare_layer = atoi(compare_moe_env);
-                    const char *compare_pos_env =
-                        getenv("BN_GPU_COMPARE_MOE_POS");
-                    int compare_pos = compare_pos_env ? atoi(compare_pos_env) : -1;
-                    compare_moe = compare_layer == l &&
-                                  (compare_pos < 0 || compare_pos == pos);
-                }
+                    bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(
+                        all2_q4q6_moe_cpu_moe_safe);
+                int compare_moe =
+                    bn_transformer_gpu_moe_compare_layer_selected(l, pos);
                 float *moe_cpu_x = NULL;
                 float *moe_gpu_x = NULL;
                 float *moe_cpu_routed_part = NULL;
@@ -1880,15 +1871,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 free(moe_override_x);
                 continue;
             }
-            int compare_moe = 0;
-            const char *compare_moe_env = getenv("BN_GPU_COMPARE_MOE_LAYER");
-            if (compare_moe_env) {
-                int compare_layer = atoi(compare_moe_env);
-                const char *compare_pos_env = getenv("BN_GPU_COMPARE_MOE_POS");
-                int compare_pos = compare_pos_env ? atoi(compare_pos_env) : -1;
-                compare_moe = compare_layer == l &&
-                              (compare_pos < 0 || compare_pos == pos);
-            }
+            int compare_moe =
+                bn_transformer_gpu_moe_compare_layer_selected(l, pos);
             int did_gpu_route_topk = 0;
             if (gpu_route_topk) {
                 if (bn_transformer_gpu_emit_context_moe_route_topk(

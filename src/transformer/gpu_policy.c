@@ -994,6 +994,21 @@ int bn_transformer_gpu_cuda_moe_ffn_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
 }
 
+int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default) {
+    return safe_default ||
+           getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
+}
+
+int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos) {
+    const char *compare_moe_env = getenv("BN_GPU_COMPARE_MOE_LAYER");
+    if (!compare_moe_env)
+        return 0;
+    int compare_layer = atoi(compare_moe_env);
+    const char *compare_pos_env = getenv("BN_GPU_COMPARE_MOE_POS");
+    int compare_pos = compare_pos_env ? atoi(compare_pos_env) : -1;
+    return compare_layer == layer && (compare_pos < 0 || compare_pos == pos);
+}
+
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
     return eligible &&
            getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK") != NULL &&

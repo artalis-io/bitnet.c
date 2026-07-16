@@ -358,6 +358,8 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     int allow_q4_down);
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
 int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
+int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);
+int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos);
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible);
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,

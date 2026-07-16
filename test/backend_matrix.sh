@@ -227,6 +227,11 @@ if grep -n 'BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK\|BN_CUDA_DISABLE_MOE_SHARED_C
     fail=1
 fi
 
+if grep -n 'BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL\|BN_GPU_COMPARE_MOE_LAYER\|BN_GPU_COMPARE_MOE_POS' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for MoE override and compare selector env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_fallback.c must use GPU policy helpers for GPU profile env vars"
     fail=1

@@ -472,6 +472,25 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_cuda_moe_ffn_disabled());
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
 
+    unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
+    assert(!bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(0));
+    assert(bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(1));
+    setenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL", "1", 1);
+    assert(bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(0));
+    unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
+
+    unsetenv("BN_GPU_COMPARE_MOE_LAYER");
+    unsetenv("BN_GPU_COMPARE_MOE_POS");
+    assert(!bn_transformer_gpu_moe_compare_layer_selected(3, 7));
+    setenv("BN_GPU_COMPARE_MOE_LAYER", "3", 1);
+    assert(bn_transformer_gpu_moe_compare_layer_selected(3, 7));
+    assert(!bn_transformer_gpu_moe_compare_layer_selected(4, 7));
+    setenv("BN_GPU_COMPARE_MOE_POS", "7", 1);
+    assert(bn_transformer_gpu_moe_compare_layer_selected(3, 7));
+    assert(!bn_transformer_gpu_moe_compare_layer_selected(3, 8));
+    unsetenv("BN_GPU_COMPARE_MOE_LAYER");
+    unsetenv("BN_GPU_COMPARE_MOE_POS");
+
     unsetenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK");
     unsetenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK");
     assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
