@@ -178,6 +178,21 @@ int bn_transformer_uses_layer_output_scale(
     return bn_model_arch_uses_layer_output_scale(c);
 }
 
+int bn_transformer_per_layer_embedding_dim(
+    const BnConfig *c) {
+    return bn_model_arch_per_layer_embedding_dim(c);
+}
+
+int bn_transformer_cpu_uses_scalar_hybrid_ssm(
+    const BnConfig *c) {
+    return bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);
+}
+
+int bn_transformer_prefill_uses_exact_activation(
+    const BnConfig *c) {
+    return bn_model_arch_prefill_uses_exact_activation(c);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,

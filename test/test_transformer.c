@@ -1047,6 +1047,9 @@ static void test_block_planning(void) {
     assert(!bn_transformer_attention_uses_post_norm(&c));
     assert(!bn_transformer_ffn_uses_post_norm(&c));
     assert(!bn_transformer_uses_layer_output_scale(&c));
+    assert(bn_transformer_per_layer_embedding_dim(&c) == 0);
+    assert(!bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
+    assert(bn_transformer_prefill_uses_exact_activation(&c));
     assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
     int force_float_kquant =
         bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
@@ -1065,11 +1068,18 @@ static void test_block_planning(void) {
     c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
     assert(bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
     c.arch_flags = BN_MODEL_ARCH_FLAG_GEMMA4;
+    c.gemma4_per_layer_dim = 128;
     assert(bn_transformer_attention_scale(&c, 128) == 1.0f);
     assert(bn_transformer_attention_value_shares_key(&c));
     assert(bn_transformer_attention_uses_post_norm(&c));
     assert(bn_transformer_ffn_uses_post_norm(&c));
     assert(bn_transformer_uses_layer_output_scale(&c));
+    assert(bn_transformer_per_layer_embedding_dim(&c) == 128);
+    assert(!bn_transformer_prefill_uses_exact_activation(&c));
+    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    c.gemma4_per_layer_dim = 0;
+    c.full_attn_interval = 4;
+    assert(bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
 #if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif

@@ -9,7 +9,6 @@
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
 #include "backend_quant.h"
-#include "model_arch.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"
@@ -2498,7 +2497,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             float *QKV_all = Q_buf;
             float *Z_all = Xb2;
             float *Out_all = Hb;
-            int scalar_hybrid_ssm = bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);
+            int scalar_hybrid_ssm = bn_transformer_cpu_uses_scalar_hybrid_ssm(c);
 
             int ssm_preq8k = 0;
             {
@@ -2670,7 +2669,7 @@ prefill_ssm_done:
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
                     Hb, Hb2, hidden_dim, c->act_type,
-                    bn_model_arch_prefill_uses_exact_activation(c)
+                    bn_transformer_prefill_uses_exact_activation(c)
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
@@ -2684,7 +2683,7 @@ prefill_ssm_done:
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
                     Hb, NULL, hidden_dim, c->act_type,
-                    bn_model_arch_prefill_uses_exact_activation(c)
+                    bn_transformer_prefill_uses_exact_activation(c)
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens

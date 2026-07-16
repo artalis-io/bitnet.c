@@ -6,7 +6,6 @@
 #include "transformer_ssm_internal.h"
 #include "backend_quant.h"
 #include "backend_model.h"
-#include "model_arch.h"
 #include "quant.h"
 #include "moe.h"
 #include "session.h"
@@ -836,7 +835,7 @@ static void cpu_apply_arch_per_layer_embedding(BnModel *m,
                                                int layer) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
-    int per_dim = bn_model_arch_per_layer_embedding_dim(c);
+    int per_dim = bn_transformer_per_layer_embedding_dim(c);
     if (per_dim <= 0 ||
         !s->per_layer_input || !lw->per_layer.inp_gate.data ||
         !lw->per_layer.proj.data || !lw->per_layer.post_norm)
@@ -1374,7 +1373,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
-    int scalar_hybrid_ssm = bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);
+    int scalar_hybrid_ssm = bn_transformer_cpu_uses_scalar_hybrid_ssm(c);
     BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm.ssm_conv1d, qkv_dim, kern };
     BnTPTask conv_task = {
         scalar_hybrid_ssm ? bn_transformer_ssm_conv_silu_scalar_range

@@ -5,7 +5,6 @@
 #include "transformer_gqa_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
-#include "model_arch.h"
 #include "moe.h"
 #include "platform.h"
 #include "quant.h"

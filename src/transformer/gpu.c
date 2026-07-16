@@ -1,7 +1,6 @@
 #include "gpu_internal.h"
 #include "backend_quant.h"
 #include "backend_session.h"
-#include "model_arch.h"
 #include "platform.h"
 #include "quant_dispatch_internal.h"
 #include "session.h"
