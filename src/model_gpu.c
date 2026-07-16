@@ -381,22 +381,14 @@ static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
         (w->cols & 31) != 0 ||
         getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
         return 0;
-    if (w->type != BN_GGUF_TENSOR_Q8_0 &&
-        w->type != BN_GGUF_TENSOR_Q5_0 &&
-        w->type != BN_GGUF_TENSOR_BF16 &&
-        w->type != BN_GGUF_TENSOR_Q3_K &&
-        w->type != BN_GGUF_TENSOR_Q4_K &&
-        w->type != BN_GGUF_TENSOR_Q5_K &&
-        w->type != BN_GGUF_TENSOR_Q6_K &&
-        w->type != BN_GGUF_TENSOR_IQ3_XXS &&
-        w->type != BN_GGUF_TENSOR_IQ4_XS)
+    if (!bn_backend_quant_cuda_aux_cache_supported(w->type))
         return 0;
-    int q6_as_f16 = w->type == BN_GGUF_TENSOR_Q6_K &&
+    int q6_as_f16 = bn_backend_quant_cuda_aux_cache_can_use_f16(w->type) &&
                     getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
                     getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
     size_t bytes = 0;
     if (mul3_size((size_t)w->rows, (size_t)w->cols,
-                  w->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16
+                  bn_backend_quant_cuda_aux_cache_uses_f32(w->type, q6_as_f16)
                       ? sizeof(float) : sizeof(uint16_t),
                   &bytes) != 0)
         return SIZE_MAX;
@@ -405,9 +397,7 @@ static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
     const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
     if (max_env && *max_env) {
         max_mb = atoi(max_env);
-    } else if (w->type == BN_GGUF_TENSOR_Q4_K ||
-               w->type == BN_GGUF_TENSOR_Q5_K ||
-               w->type == BN_GGUF_TENSOR_Q6_K) {
+    } else if (bn_backend_quant_cuda_aux_cache_prefers_large_budget(w->type)) {
         max_mb = 512;
     }
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)

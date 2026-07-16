@@ -156,6 +156,33 @@ static inline int bn_backend_quant_cuda_moe_quant_only_after_cache(
     return type != BN_GGUF_TENSOR_Q8_0 || !q8_f16_cache;
 }
 
+static inline int bn_backend_quant_cuda_aux_cache_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0 ||
+           type == BN_GGUF_TENSOR_Q5_0 ||
+           type == BN_GGUF_TENSOR_BF16 ||
+           type == BN_GGUF_TENSOR_Q3_K ||
+           type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_K ||
+           type == BN_GGUF_TENSOR_Q6_K ||
+           type == BN_GGUF_TENSOR_IQ3_XXS ||
+           type == BN_GGUF_TENSOR_IQ4_XS;
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_can_use_f16(int type) {
+    return type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_uses_f32(int type,
+                                                          int q6_as_f16) {
+    return type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16;
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_prefers_large_budget(int type) {
+    return type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_K ||
+           type == BN_GGUF_TENSOR_Q6_K;
+}
+
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_FUSED_GATEUP_SILU;

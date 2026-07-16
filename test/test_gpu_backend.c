@@ -582,6 +582,19 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0, 0));
     assert(bn_backend_quant_cuda_moe_quant_only_after_cache(
         BN_GGUF_TENSOR_Q4_K, 1));
+    assert(bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_IQ4_XS));
+    assert(!bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_I2_S));
+    assert(bn_backend_quant_cuda_aux_cache_can_use_f16(BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_cuda_aux_cache_can_use_f16(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_aux_cache_uses_f32(BN_GGUF_TENSOR_Q6_K, 0));
+    assert(!bn_backend_quant_cuda_aux_cache_uses_f32(BN_GGUF_TENSOR_Q6_K, 1));
+    assert(!bn_backend_quant_cuda_aux_cache_uses_f32(BN_GGUF_TENSOR_Q4_K, 0));
+    assert(bn_backend_quant_cuda_aux_cache_prefers_large_budget(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_aux_cache_prefers_large_budget(
+        BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_moe_route_q8(BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0));
