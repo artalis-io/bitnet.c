@@ -1,6 +1,5 @@
 #include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
-#include "backend_quant.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "turboquant.h"
