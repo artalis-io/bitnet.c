@@ -943,58 +943,30 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_cpu_fallback_policy();
     BnTransformerGPUQ4Q8LayerPolicy q4_q8 =
         bn_transformer_gpu_q4_q8_layer_policy(c);
+    BnTransformerGPUComparePolicy compare_policy =
+        bn_transformer_gpu_compare_policy();
     int all2_q4q6_moe_gpu_route_from_layer = -1;
     int all2_q4q6_moe_gpu_route_to_layer = -1;
     {
         static int init = 0;
-        static int s_compare_attention_layer = -1;
-        static int s_compare_attention_pos = -1;
-        static int s_compare_gqa_layer = -1;
-        static int s_compare_gqa_pos = -1;
-        static int s_compare_qkv_layer = -1;
-        static int s_compare_qkv_pos = -1;
-        static int s_compare_ffn_down_layer = -1;
-        static int s_compare_ffn_down_pos = -1;
-        static int s_compare_ffn_state_layer = -1;
-        static int s_compare_ffn_state_pos = -1;
         static int s_all2_q4q6_moe_gpu_route_from_layer = -1;
         static int s_all2_q4q6_moe_gpu_route_to_layer = -1;
         if (!init) {
-            const char *env = getenv("BN_GPU_COMPARE_ATTENTION_LAYER");
-            if (env) s_compare_attention_layer = atoi(env);
-            env = getenv("BN_GPU_COMPARE_ATTENTION_POS");
-            if (env) s_compare_attention_pos = atoi(env);
-            env = getenv("BN_GPU_COMPARE_GQA_LAYER");
-            if (env) s_compare_gqa_layer = atoi(env);
-            env = getenv("BN_GPU_COMPARE_GQA_POS");
-            if (env) s_compare_gqa_pos = atoi(env);
-            env = getenv("BN_GPU_COMPARE_QKV_LAYER");
-            if (env) s_compare_qkv_layer = atoi(env);
-            env = getenv("BN_GPU_COMPARE_QKV_POS");
-            if (env) s_compare_qkv_pos = atoi(env);
-            env = getenv("BN_GPU_COMPARE_FFN_DOWN_LAYER");
-            if (env) s_compare_ffn_down_layer = atoi(env);
-            env = getenv("BN_GPU_COMPARE_FFN_DOWN_POS");
-            if (env) s_compare_ffn_down_pos = atoi(env);
-            env = getenv("BN_GPU_COMPARE_FFN_STATE_LAYER");
-            if (env) s_compare_ffn_state_layer = atoi(env);
-            env = getenv("BN_GPU_COMPARE_FFN_STATE_POS");
-            if (env) s_compare_ffn_state_pos = atoi(env);
             bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
                 &s_all2_q4q6_moe_gpu_route_from_layer,
                 &s_all2_q4q6_moe_gpu_route_to_layer);
             init = 1;
         }
-        compare_attention_layer = s_compare_attention_layer;
-        compare_attention_pos = s_compare_attention_pos;
-        compare_gqa_layer = s_compare_gqa_layer;
-        compare_gqa_pos = s_compare_gqa_pos;
-        compare_qkv_layer = s_compare_qkv_layer;
-        compare_qkv_pos = s_compare_qkv_pos;
-        compare_ffn_down_layer = s_compare_ffn_down_layer;
-        compare_ffn_down_pos = s_compare_ffn_down_pos;
-        compare_ffn_state_layer = s_compare_ffn_state_layer;
-        compare_ffn_state_pos = s_compare_ffn_state_pos;
+        compare_attention_layer = compare_policy.attention_layer;
+        compare_attention_pos = compare_policy.attention_pos;
+        compare_gqa_layer = compare_policy.gqa_layer;
+        compare_gqa_pos = compare_policy.gqa_pos;
+        compare_qkv_layer = compare_policy.qkv_layer;
+        compare_qkv_pos = compare_policy.qkv_pos;
+        compare_ffn_down_layer = compare_policy.ffn_down_layer;
+        compare_ffn_down_pos = compare_policy.ffn_down_pos;
+        compare_ffn_state_layer = compare_policy.ffn_state_layer;
+        compare_ffn_state_pos = compare_policy.ffn_state_pos;
         all2_q4q6_moe_gpu_route_from_layer =
             s_all2_q4q6_moe_gpu_route_from_layer;
         all2_q4q6_moe_gpu_route_to_layer =

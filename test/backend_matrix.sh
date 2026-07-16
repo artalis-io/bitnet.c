@@ -212,6 +212,11 @@ if grep -n 'BN_GPU_MOE_ROUTE_PROFILE\|BN_GPU_MOE_ROUTE_PROFILE_EVERY' src/transf
     fail=1
 fi
 
+if grep -n 'BN_GPU_COMPARE_ATTENTION_LAYER\|BN_GPU_COMPARE_ATTENTION_POS\|BN_GPU_COMPARE_GQA_LAYER\|BN_GPU_COMPARE_GQA_POS\|BN_GPU_COMPARE_QKV_LAYER\|BN_GPU_COMPARE_QKV_POS\|BN_GPU_COMPARE_FFN_DOWN_LAYER\|BN_GPU_COMPARE_FFN_DOWN_POS\|BN_GPU_COMPARE_FFN_STATE_LAYER\|BN_GPU_COMPARE_FFN_STATE_POS' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for compare layer env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_fallback.c must use GPU policy helpers for GPU profile env vars"
     fail=1

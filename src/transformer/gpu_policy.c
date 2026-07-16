@@ -790,6 +790,29 @@ bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerGPUComparePolicy
+bn_transformer_gpu_compare_policy(void) {
+    BnTransformerGPUComparePolicy policy = {
+        .attention_layer =
+            gpu_policy_env_int("BN_GPU_COMPARE_ATTENTION_LAYER", -1),
+        .attention_pos =
+            gpu_policy_env_int("BN_GPU_COMPARE_ATTENTION_POS", -1),
+        .gqa_layer = gpu_policy_env_int("BN_GPU_COMPARE_GQA_LAYER", -1),
+        .gqa_pos = gpu_policy_env_int("BN_GPU_COMPARE_GQA_POS", -1),
+        .qkv_layer = gpu_policy_env_int("BN_GPU_COMPARE_QKV_LAYER", -1),
+        .qkv_pos = gpu_policy_env_int("BN_GPU_COMPARE_QKV_POS", -1),
+        .ffn_down_layer =
+            gpu_policy_env_int("BN_GPU_COMPARE_FFN_DOWN_LAYER", -1),
+        .ffn_down_pos =
+            gpu_policy_env_int("BN_GPU_COMPARE_FFN_DOWN_POS", -1),
+        .ffn_state_layer =
+            gpu_policy_env_int("BN_GPU_COMPARE_FFN_STATE_LAYER", -1),
+        .ffn_state_pos =
+            gpu_policy_env_int("BN_GPU_COMPARE_FFN_STATE_POS", -1),
+    };
+    return policy;
+}
+
 int bn_transformer_gpu_flash_attention_enabled(
     const BnGPUBackend *gpu,
     int config_flash_attn,

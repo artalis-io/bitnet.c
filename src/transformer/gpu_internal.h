@@ -123,6 +123,19 @@ typedef struct {
     int ffn_only;
 } BnTransformerGPUQ4Q8LayerPolicy;
 
+typedef struct {
+    int attention_layer;
+    int attention_pos;
+    int gqa_layer;
+    int gqa_pos;
+    int qkv_layer;
+    int qkv_pos;
+    int ffn_down_layer;
+    int ffn_down_pos;
+    int ffn_state_layer;
+    int ffn_state_pos;
+} BnTransformerGPUComparePolicy;
+
 int bn_transformer_gpu_validate_forward(
     BnTransformerGPUForwardPolicy *out,
     const BnGPUBackend *gpu,
@@ -289,6 +302,8 @@ BnTransformerGPUCPUFallbackPolicy
 bn_transformer_gpu_cpu_fallback_policy(void);
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
+BnTransformerGPUComparePolicy
+bn_transformer_gpu_compare_policy(void);
 int bn_transformer_gpu_flash_attention_enabled(
     const BnGPUBackend *gpu,
     int config_flash_attn,
