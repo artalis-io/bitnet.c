@@ -1325,7 +1325,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int dim = c->dim;
     int head_size = c->head_size;
     BnPrefillProfile prof = {0};
-    prof.enabled = getenv("BN_PREFILL_PROFILE") != NULL;
+    prof.enabled = bn_transformer_prefill_profile_enabled();
     double t_prof = prefill_profile_now(&prof);
 
     if (head_size > BN_MAX_VLA_ELEMS || dim > BN_MAX_VLA_ELEMS) {
@@ -1377,7 +1377,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                      all_logits, need_last_logits);
     }
     if (c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
-        !cuda_hybrid_prefill && !getenv("BN_PREFILL_ALLOW_HYBRID_BATCH")) {
+        !cuda_hybrid_prefill &&
+        !bn_transformer_prefill_hybrid_batch_allowed()) {
         float *logits = NULL;
         for (int t = 0; t < n_tokens; t++) {
             logits = bn_transformer_forward(m, sess, tokens[t], pos0 + t);
@@ -1923,7 +1924,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
 
             int force_token_attn =
-                getenv("BN_PREFILL_FORCE_TOKEN_ATTN") != NULL ||
+                bn_transformer_prefill_force_token_attention_enabled() ||
                 cuda_hybrid_prefill;
             if (bn_model_tq_state(m) == NULL && !force_token_attn) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache

@@ -3,6 +3,7 @@
 #include "transformer_batched_attn_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_logits_internal.h"
+#include "transformer_prefill_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
@@ -1470,6 +1471,24 @@ static void test_block_planning(void) {
     setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
     assert(!bn_transformer_cpu_prepared_qweights_enabled());
     unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
+
+    unsetenv("BN_PREFILL_PROFILE");
+    assert(!bn_transformer_prefill_profile_enabled());
+    setenv("BN_PREFILL_PROFILE", "1", 1);
+    assert(bn_transformer_prefill_profile_enabled());
+    unsetenv("BN_PREFILL_PROFILE");
+
+    unsetenv("BN_PREFILL_ALLOW_HYBRID_BATCH");
+    assert(!bn_transformer_prefill_hybrid_batch_allowed());
+    setenv("BN_PREFILL_ALLOW_HYBRID_BATCH", "1", 1);
+    assert(bn_transformer_prefill_hybrid_batch_allowed());
+    unsetenv("BN_PREFILL_ALLOW_HYBRID_BATCH");
+
+    unsetenv("BN_PREFILL_FORCE_TOKEN_ATTN");
+    assert(!bn_transformer_prefill_force_token_attention_enabled());
+    setenv("BN_PREFILL_FORCE_TOKEN_ATTN", "1", 1);
+    assert(bn_transformer_prefill_force_token_attention_enabled());
+    unsetenv("BN_PREFILL_FORCE_TOKEN_ATTN");
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
                      BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |

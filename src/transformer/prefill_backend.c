@@ -7,6 +7,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 static float prefill_gelu(float x) {
     return 0.5f * x *
@@ -209,4 +210,16 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
 
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void) {
     return &BN_PREFILL_CPU_OPS;
+}
+
+int bn_transformer_prefill_profile_enabled(void) {
+    return getenv("BN_PREFILL_PROFILE") != NULL;
+}
+
+int bn_transformer_prefill_hybrid_batch_allowed(void) {
+    return getenv("BN_PREFILL_ALLOW_HYBRID_BATCH") != NULL;
+}
+
+int bn_transformer_prefill_force_token_attention_enabled(void) {
+    return getenv("BN_PREFILL_FORCE_TOKEN_ATTN") != NULL;
 }

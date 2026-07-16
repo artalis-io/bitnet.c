@@ -28,5 +28,8 @@ typedef struct {
 } BnPrefillCPUOps;
 
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
+int bn_transformer_prefill_profile_enabled(void);
+int bn_transformer_prefill_hybrid_batch_allowed(void);
+int bn_transformer_prefill_force_token_attention_enabled(void);
 
 #endif // BN_TRANSFORMER_PREFILL_INTERNAL_H
