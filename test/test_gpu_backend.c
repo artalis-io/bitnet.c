@@ -588,6 +588,16 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0, 0));
     assert(bn_backend_quant_cuda_moe_quant_only_after_cache(
         BN_GGUF_TENSOR_Q4_K, 1));
+    assert(bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(
+        BN_GGUF_TENSOR_IQ4_XS));
+    assert(!bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(bn_backend_quant_cuda_moe_prefers_quant_only(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_cuda_moe_prefers_quant_only(
+        BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_cuda_aux_cache_supported(BN_GGUF_TENSOR_IQ4_XS));

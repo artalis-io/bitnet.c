@@ -46,17 +46,12 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
         gpu->buffer_create_quant_only &&
         !allow_aux_cache &&
         getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") == NULL &&
-        (type == BN_GGUF_TENSOR_Q3_K ||
-         type == BN_GGUF_TENSOR_Q4_K ||
-         type == BN_GGUF_TENSOR_Q5_K ||
-         type == BN_GGUF_TENSOR_Q6_K ||
-         type == BN_GGUF_TENSOR_Q8_0 ||
-         type == BN_GGUF_TENSOR_IQ3_XXS ||
-         type == BN_GGUF_TENSOR_IQ4_XS)) {
+        bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(type)) {
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     }
-    if (type == BN_GGUF_TENSOR_Q8_0 && gpu->buffer_create_quant_only)
+    if (bn_backend_quant_cuda_moe_prefers_quant_only(type) &&
+        gpu->buffer_create_quant_only)
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     return gpu->buffer_create(gpu->ctx, data, size, type, rows, cols);

@@ -101,6 +101,7 @@ for file in \
     src/model.c \
     src/model_session.c \
     src/model_embed.c \
+    src/gpu_moe_bridge.c \
     src/moe_execute.c \
     src/transformer.c \
     src/generate.c

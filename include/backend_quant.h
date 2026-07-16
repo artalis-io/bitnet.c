@@ -204,6 +204,20 @@ static inline int bn_backend_quant_cuda_moe_quant_only_after_cache(
     return type != BN_GGUF_TENSOR_Q8_0 || !q8_f16_cache;
 }
 
+static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(int type) {
+    return type == BN_GGUF_TENSOR_Q3_K ||
+           type == BN_GGUF_TENSOR_Q4_K ||
+           type == BN_GGUF_TENSOR_Q5_K ||
+           type == BN_GGUF_TENSOR_Q6_K ||
+           type == BN_GGUF_TENSOR_Q8_0 ||
+           type == BN_GGUF_TENSOR_IQ3_XXS ||
+           type == BN_GGUF_TENSOR_IQ4_XS;
+}
+
+static inline int bn_backend_quant_cuda_moe_prefers_quant_only(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
 static inline int bn_backend_quant_cuda_aux_cache_supported(int type) {
     return type == BN_GGUF_TENSOR_Q8_0 ||
            type == BN_GGUF_TENSOR_Q5_0 ||
