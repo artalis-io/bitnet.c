@@ -41,7 +41,7 @@ static int logits_refine_q8_top(float *logits, int n_logits,
     if (!logits_backend_ops()->supports_q8_refine)
         return 0;
     if (!logits || !W || !W->data || !x || !x_q ||
-        !bn_backend_quant_supports_q8_logits_refine(W->type))
+        !bn_quant_format_supports_q8_logits_refine(W->type))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -178,7 +178,7 @@ static float logits_q6k_row_native(const BnQWeight *W, const float *x,
 static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
     if (!m || !s || !W ||
-        !bn_backend_quant_supports_q6k_logits_refine(W->type) ||
+        !bn_quant_format_supports_q6_logits_refine(W->type) ||
         !getenv("BN_CPU_TIED_Q6K_REFINE_TOP"))
         return;
 
@@ -198,7 +198,7 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
     const char *env = getenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
     if (!m || !s || !W ||
-        !bn_backend_quant_supports_q6k_logits_refine(W->type) || !env)
+        !bn_quant_format_supports_q6_logits_refine(W->type) || !env)
         return;
 
     int top_n = atoi(env);

@@ -271,6 +271,11 @@ typedef enum {
     BN_QUANT_CAP_CPU_MATMUL     = 1u << 6,
     BN_QUANT_CAP_CPU_PREQ8K     = 1u << 7,
     BN_QUANT_CAP_CPU_REPACKED   = 1u << 8,
+    BN_QUANT_CAP_GPU_SMALL_DENSE = 1u << 9,
+    BN_QUANT_CAP_GPU_SMALL_DENSE_Q8 = 1u << 10,
+    BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK = 1u << 11,
+    BN_QUANT_CAP_Q8_LOGITS_REFINE = 1u << 12,
+    BN_QUANT_CAP_Q6_LOGITS_REFINE = 1u << 13,
 } BnQuantCapability;
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,
@@ -299,6 +304,11 @@ int      bn_quant_format_has_cpu_batch(int type);
 int      bn_quant_format_has_cpu_matmul(int type);
 int      bn_quant_format_can_preq8k(int type);
 int      bn_quant_format_can_cpu_repack(int type);
+int      bn_quant_format_supports_gpu_small_dense(int type);
+int      bn_quant_format_supports_gpu_small_dense_q8(int type);
+int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
+int      bn_quant_format_supports_q8_logits_refine(int type);
+int      bn_quant_format_supports_q6_logits_refine(int type);
 BnQuantMatvecFn bn_quant_format_matvec(int type);
 BnQuantMatmulFn bn_quant_format_matmul(int type);
 size_t   bn_quant_format_data_size(int type, int rows, int cols);

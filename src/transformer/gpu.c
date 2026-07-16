@@ -2,6 +2,7 @@
 #include "backend_quant.h"
 #include "backend_session.h"
 #include "platform.h"
+#include "quant.h"
 #include "quant_dispatch_internal.h"
 #include "session.h"
 #include "../gpu_shader_ir_internal.h"
@@ -648,7 +649,7 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
                                      int8_t *x_q_buf, int top_n) {
     if (!logits || !W || !W->data || !x || !x_q_buf ||
-        !bn_backend_quant_supports_q6k_logits_refine(W->type))
+        !bn_quant_format_supports_q6_logits_refine(W->type))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 4096) top_n = 4096;
@@ -719,7 +720,7 @@ static int gpu_refine_q8_logits_top(float *logits, int n_logits,
                                     int8_t *x_q, int top_n) {
 #if BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT
     if (!logits || !W || !W->data || !x || !x_q ||
-        !bn_backend_quant_supports_q8_logits_refine(W->type))
+        !bn_quant_format_supports_q8_logits_refine(W->type))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -2269,7 +2270,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (argmax_token) {
         if (!use_matvec_argmax &&
             refine_q8_logits &&
-            bn_backend_quant_supports_q8_logits_refine(logit_res->type) &&
+            bn_quant_format_supports_q8_logits_refine(logit_res->type) &&
             logit_res->cpu_weight) {
             int refine_top = bn_transformer_gpu_q8_logits_refine_top(
                 small_dense_cuda_q8_logits_refine_default);
@@ -2363,7 +2364,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         return s->x;
     }
     if (refine_q6_logits &&
-        bn_backend_quant_supports_q6k_logits_refine(logit_res->type) &&
+        bn_quant_format_supports_q6_logits_refine(logit_res->type) &&
         logit_res->cpu_weight) {
         int refine_top = bn_transformer_gpu_q6_logits_refine_top(
             all2_q4q6_moe_cuda_q6_logits_refine_default);
@@ -2379,7 +2380,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
     }
     if (refine_q8_logits &&
-        bn_backend_quant_supports_q8_logits_refine(logit_res->type) &&
+        bn_quant_format_supports_q8_logits_refine(logit_res->type) &&
         logit_res->cpu_weight) {
         int refine_top = bn_transformer_gpu_q8_logits_refine_top(
             small_dense_cuda_q8_logits_refine_default);

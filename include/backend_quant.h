@@ -46,29 +46,19 @@ static inline int bn_backend_quant_can_gpu_repack(int type) {
 }
 
 static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
-    return type == BN_GGUF_TENSOR_F32 ||
-           type == BN_GGUF_TENSOR_F16 ||
-           type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_Q4_0 ||
-           type == BN_GGUF_TENSOR_Q5_0 ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K ||
-           type == BN_GGUF_TENSOR_Q8_K;
+    return bn_quant_format_supports_gpu_small_dense(type);
 }
 
 static inline int bn_backend_quant_cuda_small_dense_q8_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_supports_gpu_small_dense_q8(type);
 }
 
 static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) {
-    return type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_is_float_kquant_fallback_candidate(type);
 }
 
 static inline int bn_backend_quant_supports_q8_logits_refine(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_supports_q8_logits_refine(type);
 }
 
 static inline int bn_backend_quant_logits_uses_f16_path(int type) {
@@ -181,7 +171,7 @@ static inline int bn_backend_quant_moe_route_q8(int gate_type,
 }
 
 static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_supports_q6_logits_refine(type);
 }
 
 static inline int bn_backend_quant_cuda_logits_q6_f32_cache_supported(int type) {

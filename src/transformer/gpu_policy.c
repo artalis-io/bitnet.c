@@ -88,9 +88,9 @@ static int small_dense_cuda_native_by_default(
         c->dim > 2560)
         return 0;
     if (w->output_weight.data) {
-        if (!bn_backend_quant_cuda_small_dense_supported(w->output_weight.type))
+        if (!bn_quant_format_supports_gpu_small_dense(w->output_weight.type))
             return 0;
-    } else if (!bn_backend_quant_cuda_small_dense_supported(w->emb_type)) {
+    } else if (!bn_quant_format_supports_gpu_small_dense(w->emb_type)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -102,7 +102,7 @@ static int small_dense_cuda_native_by_default(
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
             if (weights[i]->data &&
-                !bn_backend_quant_cuda_small_dense_supported(weights[i]->type))
+                !bn_quant_format_supports_gpu_small_dense(weights[i]->type))
                 return 0;
         }
     }
@@ -116,9 +116,9 @@ static int small_dense_cuda_q8_native_by_default(
         c->dim > 2560)
         return 0;
     if (w->output_weight.data) {
-        if (!bn_backend_quant_cuda_small_dense_q8_supported(w->output_weight.type))
+        if (!bn_quant_format_supports_gpu_small_dense_q8(w->output_weight.type))
             return 0;
-    } else if (!bn_backend_quant_cuda_small_dense_q8_supported(w->emb_type)) {
+    } else if (!bn_quant_format_supports_gpu_small_dense_q8(w->emb_type)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -130,7 +130,7 @@ static int small_dense_cuda_q8_native_by_default(
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
             if (weights[i]->data &&
-                !bn_backend_quant_cuda_small_dense_q8_supported(weights[i]->type))
+                !bn_quant_format_supports_gpu_small_dense_q8(weights[i]->type))
                 return 0;
         }
     }
@@ -343,7 +343,7 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnConfig *c,
     int tensor_type) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
-           bn_backend_quant_supports_q8_logits_refine(tensor_type) &&
+           bn_quant_format_supports_q8_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_cuda_q8_logit_refine(c) &&
            getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
@@ -376,7 +376,7 @@ int bn_transformer_gpu_q6_logits_refine_captures_xb(
     return refine_q6_logits &&
            q6_refine_default &&
            logits &&
-           bn_backend_quant_supports_q6k_logits_refine(logits->type) &&
+           bn_quant_format_supports_q6_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
@@ -403,7 +403,7 @@ int bn_transformer_gpu_q8_logits_refine_captures_xb(
     int refine_q8_logits) {
     return refine_q8_logits &&
            logits &&
-           bn_backend_quant_supports_q8_logits_refine(logits->type) &&
+           bn_quant_format_supports_q8_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
@@ -427,7 +427,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         getenv("BN_GPU_CPU_LOGITS") != NULL ||
         gpu_logits_need_cpu ||
         getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL ||
-        !bn_backend_quant_supports_q6k_logits_refine(logits->type))
+        !bn_quant_format_supports_q6_logits_refine(logits->type))
         return 0;
 
     if (c->n_experts <= 0) {

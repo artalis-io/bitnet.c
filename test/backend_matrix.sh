@@ -90,6 +90,19 @@ if ! grep -n 'prepare_f16_x' src/transformer/logits.c >/dev/null 2>&1; then
 fi
 
 for file in \
+    src/transformer.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/logits.c \
+    src/transformer/prefill.c
+do
+    if grep -n 'bn_backend_quant_cuda_small_dense\|bn_backend_quant_is_kquant_float_fallback_candidate\|bn_backend_quant_supports_q[68]k*_logits_refine' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant format capability helpers for quant-format policy"
+        fail=1
+    fi
+done
+
+for file in \
     src/transformer/cpu.c \
     src/transformer/gpu.c \
     src/transformer/gpu_emit.c \

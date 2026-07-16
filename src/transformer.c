@@ -2,6 +2,7 @@
 #include "transformer_cpu_internal.h"
 #include "backend_quant.h"
 #include "model_arch.h"
+#include "quant.h"
 #include "turboquant.h"
 #include "gpu_backend.h"
 #include "moe.h"
@@ -195,10 +196,10 @@ static int should_disable_cuda_matvec_fallback(const BnModel *m,
         return 0;
     const BnWeights *w = &m->weights;
     if (w->output_weight.data) {
-        if (!bn_backend_quant_cuda_small_dense_q8_supported(
+        if (!bn_quant_format_supports_gpu_small_dense_q8(
                 w->output_weight.type))
             return 1;
-    } else if (!bn_backend_quant_cuda_small_dense_q8_supported(w->emb_type)) {
+    } else if (!bn_quant_format_supports_gpu_small_dense_q8(w->emb_type)) {
         return 1;
     }
     for (int l = 0; l < m->config.n_layers; l++) {
@@ -210,7 +211,7 @@ static int should_disable_cuda_matvec_fallback(const BnModel *m,
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
             if (weights[i]->data &&
-                !bn_backend_quant_cuda_small_dense_q8_supported(
+                !bn_quant_format_supports_gpu_small_dense_q8(
                     weights[i]->type))
                 return 1;
         }
