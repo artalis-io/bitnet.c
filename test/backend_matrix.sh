@@ -272,6 +272,11 @@ if grep -n 'BN_CUDA_DEBUG_MOE_ROUTE_BATCH' src/moe_prefill.c >/dev/null 2>&1; th
     fail=1
 fi
 
+if grep -n 'BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE' src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "src/gpu_moe_bridge.c must use GPU policy helpers for MoE lazy aux cache env vars"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for CUDA prefill chain debug env vars"
     fail=1
