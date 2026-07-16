@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "../gpu_shader.h"
 #include "backend_model.h"
+#include "backend_quant.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_plan_internal.h"
@@ -460,7 +461,7 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
                                         int pos,
                                         const float *x,
                                         int cols) {
-#if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
+#if !BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT
     (void)gpu;
     (void)layer;
     (void)pos;
