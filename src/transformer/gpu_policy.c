@@ -217,6 +217,47 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
            getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL") == NULL;
 }
 
+int bn_transformer_gpu_cuda_matvec_fallback_kept(
+    const BnModel *m,
+    const BnGPUBackend *gpu) {
+    if (!m || !bn_transformer_gpu_backend_is_cuda(gpu) || !gpu->execute)
+        return 0;
+    const BnConfig *c = &m->config;
+    if (c->n_experts > 0 || c->full_attn_interval > 0)
+        return 0;
+    if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
+        return 1;
+    if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") == NULL &&
+        !bn_model_arch_cpu_force_float_kquant(c))
+        return 1;
+    if (c->dim > 2560 || c->dim <= 1024)
+        return 1;
+
+    const BnWeights *w = &m->weights;
+    if (w->output_weight.data) {
+        if (!bn_quant_format_supports_gpu_small_dense_q8(
+                w->output_weight.type))
+            return 0;
+    } else if (!bn_quant_format_supports_gpu_small_dense_q8(w->emb_type)) {
+        return 0;
+    }
+    for (int l = 0; l < c->n_layers; l++) {
+        const BnLayerWeights *lw = &w->layers[l];
+        const BnQWeight *weights[] = {
+            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
+            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
+        };
+        int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
+        for (int i = 0; i < n_weights; i++) {
+            if (weights[i]->data &&
+                !bn_quant_format_supports_gpu_small_dense_q8(
+                    weights[i]->type))
+                return 0;
+        }
+    }
+    return 1;
+}
+
 int bn_transformer_gpu_batch_prefill_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {

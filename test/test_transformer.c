@@ -38,6 +38,18 @@ static void softmax(float *x, int size) {
     for (int i = 0; i < size; i++) x[i] /= sum;
 }
 
+static int mock_gpu_execute(void *ctx, const void *ops, int n_ops,
+                            int readback_buf, float *out_host,
+                            int out_len) {
+    (void)ctx;
+    (void)ops;
+    (void)n_ops;
+    (void)readback_buf;
+    (void)out_host;
+    (void)out_len;
+    return 0;
+}
+
 static void rope(float *vec, int dim, int head_size, int pos, float theta) {
     for (int h = 0; h < dim; h += head_size) {
         int half_rope = head_size / 2;
@@ -331,6 +343,41 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c));
     c.full_attn_interval = 0;
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
+
+    BnModel model;
+    BnLayerWeights layer;
+    memset(&model, 0, sizeof(model));
+    memset(&layer, 0, sizeof(layer));
+    model.config.dim = 2048;
+    model.config.n_layers = 1;
+    model.config.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT;
+    model.weights.layers = &layer;
+    model.weights.emb_type = BN_GGUF_TENSOR_Q8_0;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.execute = mock_gpu_execute;
+    unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
+    unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
+    assert(bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    model.weights.emb_type = BN_GGUF_TENSOR_Q4_K;
+    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    assert(bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
+    model.weights.emb_type = BN_GGUF_TENSOR_Q8_0;
+    layer.attn.wq.data = (void *)1;
+    layer.attn.wq.type = BN_GGUF_TENSOR_Q4_K;
+    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    layer.attn.wq.type = BN_GGUF_TENSOR_Q8_0;
+    assert(bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    model.config.n_experts = 1;
+    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    model.config.n_experts = 0;
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.execute = NULL;
+    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
+    unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) == 0);
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP;

@@ -1,9 +1,9 @@
 #include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
+#include "transformer/gpu_internal.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "turboquant.h"
-#include "gpu_backend.h"
 #include "moe.h"
 #include "session.h"
 #include "platform.h"
@@ -179,45 +179,6 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
     return 0;
 }
 
-static int should_disable_cuda_matvec_fallback(const BnModel *m,
-                                               const BnGPUBackend *gpu) {
-    if (!m || !gpu || gpu->kind != BN_GPU_BACKEND_CUDA)
-        return 0;
-    if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
-        return 0;
-    if (!getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") &&
-        !bn_model_arch_cpu_force_float_kquant(&m->config))
-        return 0;
-    if (m->config.n_experts > 0 || m->config.full_attn_interval > 0 ||
-        m->config.dim > 2560)
-        return 0;
-    if (m->config.dim <= 1024)
-        return 0;
-    const BnWeights *w = &m->weights;
-    if (w->output_weight.data) {
-        if (!bn_quant_format_supports_gpu_small_dense_q8(
-                w->output_weight.type))
-            return 1;
-    } else if (!bn_quant_format_supports_gpu_small_dense_q8(w->emb_type)) {
-        return 1;
-    }
-    for (int l = 0; l < m->config.n_layers; l++) {
-        const BnLayerWeights *lw = &w->layers[l];
-        const BnQWeight *weights[] = {
-            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
-            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
-        };
-        int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
-        for (int i = 0; i < n_weights; i++) {
-            if (weights[i]->data &&
-                !bn_quant_format_supports_gpu_small_dense_q8(
-                    weights[i]->type))
-                return 1;
-        }
-    }
-    return 0;
-}
-
 // Final RMSNorm + logits computation. Reads s->x, writes s->logits.
 // Returns s->logits.
 static float *forward_logits(BnModel *m, BnSession *sess) {
@@ -245,9 +206,7 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
     // CUDA matvecs would run, which can flip close greedy decisions.
     BnGPUBackend *gpu = bn_model_gpu(m);
     int keep_cuda_matvec =
-        gpu && gpu->kind == BN_GPU_BACKEND_CUDA && gpu->execute &&
-        m->config.n_experts <= 0 && m->config.full_attn_interval <= 0 &&
-        !should_disable_cuda_matvec_fallback(m, gpu);
+        bn_transformer_gpu_cuda_matvec_fallback_kept(m, gpu);
     int disable_gpu = !keep_cuda_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
@@ -266,9 +225,7 @@ int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
 
     BnGPUBackend *gpu = bn_model_gpu(m);
     int keep_cuda_matvec =
-        gpu && gpu->kind == BN_GPU_BACKEND_CUDA && gpu->execute &&
-        m->config.n_experts <= 0 && m->config.full_attn_interval <= 0 &&
-        !should_disable_cuda_matvec_fallback(m, gpu);
+        bn_transformer_gpu_cuda_matvec_fallback_kept(m, gpu);
     int disable_gpu = !keep_cuda_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);

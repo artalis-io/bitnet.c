@@ -152,6 +152,9 @@ int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
 int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_cuda_matvec_fallback_kept(
+    const BnModel *m,
+    const BnGPUBackend *gpu);
 int bn_transformer_gpu_batch_prefill_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
