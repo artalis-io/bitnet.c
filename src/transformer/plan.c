@@ -1,5 +1,4 @@
 #include "transformer_plan_internal.h"
-#include "backend_quant.h"
 #include "gpu_backend.h"
 #include "model_arch.h"
 #include "quant.h"
@@ -209,9 +208,9 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
 
     p->use_flash = c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);
     p->use_packed_qkv = qkv_stacked && !p->shape.q_gated &&
-                        bn_backend_quant_can_gpu_native(lw->attn.wq.type) &&
-                        bn_backend_quant_can_gpu_native(lw->attn.wk.type) &&
-                        bn_backend_quant_can_gpu_native(lw->attn.wv.type) &&
+                        bn_quant_format_can_gpu_native(lw->attn.wq.type) &&
+                        bn_quant_format_can_gpu_native(lw->attn.wk.type) &&
+                        bn_quant_format_can_gpu_native(lw->attn.wv.type) &&
                         q_bias && k_bias && v_bias;
     p->use_qkv_split = qkv_stacked && !p->shape.q_gated &&
                        bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);

@@ -89,6 +89,14 @@ int bn_quant_format_can_cpu_repack(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_CPU_REPACKED);
 }
 
+int bn_quant_format_can_gpu_native(int type) {
+    return type == BN_GGUF_TENSOR_Q4_0;
+}
+
+int bn_quant_format_can_gpu_repack(int type) {
+    return type == BN_GGUF_TENSOR_Q4_0;
+}
+
 int bn_quant_format_supports_gpu_small_dense(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_SMALL_DENSE);
 }
@@ -162,6 +170,42 @@ uint32_t bn_quant_format_gpu_matvec_exact_q6k_flag(int type, int enabled) {
     return enabled && type == BN_GGUF_TENSOR_Q6_K
         ? BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
         : 0u;
+}
+
+int bn_quant_format_dense_f32_type(void) {
+    return BN_GGUF_TENSOR_F32;
+}
+
+int bn_quant_format_gpu_float_buffer_type(void) {
+    return BN_GGUF_TENSOR_F32;
+}
+
+int bn_quant_format_is_f32(int type) {
+    return type == BN_GGUF_TENSOR_F32;
+}
+
+int bn_quant_format_can_convert_dense_to_f32(int type) {
+    return type == BN_GGUF_TENSOR_F16 ||
+           type == BN_GGUF_TENSOR_BF16;
+}
+
+int bn_quant_format_convert_dense_to_f32(int type, const void *src,
+                                         float *dst, int n) {
+    if (!src || !dst || n < 0)
+        return -1;
+    if (type == BN_GGUF_TENSOR_BF16) {
+        const uint16_t *s = (const uint16_t *)src;
+        for (int i = 0; i < n; i++)
+            dst[i] = bn_bf16_to_fp32(s[i]);
+        return 0;
+    }
+    if (type == BN_GGUF_TENSOR_F16) {
+        const uint16_t *s = (const uint16_t *)src;
+        for (int i = 0; i < n; i++)
+            dst[i] = bn_fp16_to_fp32(s[i]);
+        return 0;
+    }
+    return -1;
 }
 
 int bn_quant_format_cuda_logits_q6_f32_cache_supported(int type) {

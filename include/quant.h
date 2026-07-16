@@ -306,6 +306,8 @@ int      bn_quant_format_has_cpu_batch(int type);
 int      bn_quant_format_has_cpu_matmul(int type);
 int      bn_quant_format_can_preq8k(int type);
 int      bn_quant_format_can_cpu_repack(int type);
+int      bn_quant_format_can_gpu_native(int type);
+int      bn_quant_format_can_gpu_repack(int type);
 int      bn_quant_format_supports_gpu_small_dense(int type);
 int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
@@ -321,6 +323,12 @@ int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
 uint32_t bn_quant_format_gpu_matvec_q8k_dot_flag(int type, int enabled);
 uint32_t bn_quant_format_gpu_matvec_exact_q6k_flag(int type, int enabled);
+int      bn_quant_format_dense_f32_type(void);
+int      bn_quant_format_gpu_float_buffer_type(void);
+int      bn_quant_format_is_f32(int type);
+int      bn_quant_format_can_convert_dense_to_f32(int type);
+int      bn_quant_format_convert_dense_to_f32(int type, const void *src,
+                                              float *dst, int n);
 int      bn_quant_format_cuda_logits_q6_f32_cache_supported(int type);
 int      bn_quant_format_cuda_moe_all_f16_cache_supported(int type);
 int      bn_quant_format_cuda_moe_down_q6_f32_cache_supported(int type);

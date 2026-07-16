@@ -1,5 +1,4 @@
 #include "model_internal.h"
-#include "backend_quant.h"
 #include "backend_layout.h"
 #include "backend_model.h"
 #include "model_arch.h"
@@ -1006,7 +1005,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         for (int i = 0; i < c->n_layers; i++) {
             BnSharedExpertWeights *sh = &w->layers[i].shared;
             if (sh->shared_expert_gate &&
-                !bn_backend_quant_already_f32(sh->shared_expert_gate_type))
+                !bn_quant_format_is_f32(sh->shared_expert_gate_type))
                 shared_gate_float_bytes += (size_t)c->dim * sizeof(float);
         }
     }
@@ -1052,7 +1051,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             for (int i = 0; i < c->n_layers; i++) {
                 BnSharedExpertWeights *sh = &w->layers[i].shared;
                 if (!sh->shared_expert_gate ||
-                    bn_backend_quant_already_f32(sh->shared_expert_gate_type))
+                    bn_quant_format_is_f32(sh->shared_expert_gate_type))
                     continue;
                 float *dst = (float *)sh_arena_alloc(
                     m->runtime->weight_arena, (size_t)c->dim * sizeof(float));
@@ -1060,9 +1059,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     SH_LOG_ERROR("Failed to allocate shared expert gate");
                     goto fail_state;
                 }
-                if (!bn_backend_quant_can_convert_dense_to_f32(
+                if (!bn_quant_format_can_convert_dense_to_f32(
                         sh->shared_expert_gate_type) ||
-                    bn_backend_quant_convert_dense_to_f32(
+                    bn_quant_format_convert_dense_to_f32(
                         sh->shared_expert_gate_type,
                         sh->shared_expert_gate, dst, c->dim) != 0) {
                     SH_LOG_ERROR("Unsupported shared expert gate type");
@@ -1070,7 +1069,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 }
                 sh->shared_expert_gate = dst;
                 sh->shared_expert_gate_type =
-                    bn_backend_quant_dense_f32_type();
+                    bn_quant_format_dense_f32_type();
             }
         }
 

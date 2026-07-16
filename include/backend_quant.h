@@ -31,11 +31,11 @@ static inline int bn_backend_quant_can_gpu_split(int type) {
 }
 
 static inline int bn_backend_quant_can_gpu_native(int type) {
-    return type == BN_GGUF_TENSOR_Q4_0;
+    return bn_quant_format_can_gpu_native(type);
 }
 
 static inline int bn_backend_quant_can_gpu_repack(int type) {
-    return type == BN_GGUF_TENSOR_Q4_0;
+    return bn_quant_format_can_gpu_repack(type);
 }
 
 static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
@@ -83,39 +83,24 @@ static inline int bn_backend_quant_tied_logits_f32_weight_type(void) {
 }
 
 static inline int bn_backend_quant_dense_f32_type(void) {
-    return BN_GGUF_TENSOR_F32;
+    return bn_quant_format_dense_f32_type();
 }
 
 static inline int bn_backend_quant_gpu_float_buffer_type(void) {
-    return BN_GGUF_TENSOR_F32;
+    return bn_quant_format_gpu_float_buffer_type();
 }
 
 static inline int bn_backend_quant_already_f32(int type) {
-    return type == BN_GGUF_TENSOR_F32;
+    return bn_quant_format_is_f32(type);
 }
 
 static inline int bn_backend_quant_can_convert_dense_to_f32(int type) {
-    return type == BN_GGUF_TENSOR_F16 ||
-           type == BN_GGUF_TENSOR_BF16;
+    return bn_quant_format_can_convert_dense_to_f32(type);
 }
 
 static inline int bn_backend_quant_convert_dense_to_f32(
     int type, const void *src, float *dst, int n) {
-    if (!src || !dst || n < 0)
-        return -1;
-    if (type == BN_GGUF_TENSOR_BF16) {
-        const uint16_t *s = (const uint16_t *)src;
-        for (int i = 0; i < n; i++)
-            dst[i] = bn_bf16_to_fp32(s[i]);
-        return 0;
-    }
-    if (type == BN_GGUF_TENSOR_F16) {
-        const uint16_t *s = (const uint16_t *)src;
-        for (int i = 0; i < n; i++)
-            dst[i] = bn_fp16_to_fp32(s[i]);
-        return 0;
-    }
-    return -1;
+    return bn_quant_format_convert_dense_to_f32(type, src, dst, n);
 }
 
 static inline int bn_backend_quant_gpu_requires_exact_silu(int type) {

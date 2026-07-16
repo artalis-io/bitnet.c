@@ -138,6 +138,18 @@ do
 done
 
 for file in \
+    src/model.c \
+    src/model_gpu.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/plan.c
+do
+    if grep -n 'bn_backend_quant_can_gpu_native\|bn_backend_quant_can_gpu_repack\|bn_backend_quant_gpu_float_buffer_type\|bn_backend_quant_dense_f32_type\|bn_backend_quant_already_f32\|bn_backend_quant_can_convert_dense_to_f32\|bn_backend_quant_convert_dense_to_f32' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant format dense/GPU type helpers for quant-format policy"
+        fail=1
+    fi
+done
+
+for file in \
     src/model_gpu.c \
     src/gpu_moe_bridge.c \
     src/main.c
