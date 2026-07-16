@@ -34,14 +34,62 @@ static inline int bn_nearest_int_ggml(float fval) {
     return (i & 0x007fffff) - 0x00400000;
 }
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-static int bn_quant_use_avx512_q5k_vnni(int rows) {
+int bn_quant_policy_avx512_q5k_vnni_enabled(int rows) {
     const char *v = getenv("BN_AVX512_Q5K_VNNI");
     if (v)
         return v[0] != '\0' && v[0] != '0';
     return rows >= 4096;
 }
-#endif
+
+int bn_quant_policy_avx2_kquant_float_for_tasks(
+    const BnMatvecTask *tasks,
+    int n_tasks) {
+    const char *v = getenv("BN_AVX2_KQUANT_FLOAT");
+    if (v && v[0] != '\0' && v[0] != '0')
+        return 1;
+    for (int i = 0; i < n_tasks; i++) {
+        if (tasks[i].flags & BN_MATVEC_TASK_FORCE_FLOAT_KQUANT)
+            return 1;
+    }
+    return 0;
+}
+
+int bn_quant_policy_llama_q4_dot_enabled(uint32_t flags) {
+    return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
+           ((flags & BN_MATVEC_TASK_LLAMA_DOT) ||
+            getenv("BN_CPU_LLAMA_DOT") != NULL ||
+            getenv("BN_CPU_LLAMA_Q4_DOT") != NULL);
+}
+
+int bn_quant_policy_llama_q6_dot_enabled(uint32_t flags) {
+    return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
+           ((flags & BN_MATVEC_TASK_LLAMA_DOT) ||
+            getenv("BN_CPU_LLAMA_DOT") != NULL ||
+            getenv("BN_CPU_LLAMA_Q4_DOT") != NULL ||
+            getenv("BN_CPU_LLAMA_Q6_DOT") != NULL);
+}
+
+int bn_quant_policy_batch_llama_q4_dot_enabled(
+    const BnMatvecTask *tasks,
+    int n_tasks) {
+    int llama_dot = getenv("BN_CPU_LLAMA_DOT") != NULL ||
+                    getenv("BN_CPU_LLAMA_Q4_DOT") != NULL;
+    for (int t = 0; t < n_tasks; t++)
+        llama_dot = llama_dot ||
+                    ((tasks[t].flags & BN_MATVEC_TASK_LLAMA_DOT) != 0);
+    for (int t = 0; t < n_tasks; t++)
+        if (tasks[t].flags & BN_MATVEC_TASK_NATIVE_QUANT)
+            llama_dot = 0;
+    return llama_dot;
+}
+
+int bn_quant_policy_wasm_q4_canonical4_enabled(void) {
+    return getenv("BN_WASM_Q4_CANONICAL4") != NULL;
+}
+
+int bn_quant_policy_q8_0_matmul_batch_enabled(void) {
+    return getenv("BN_DISABLE_Q8_0_MATMUL_BATCH") == NULL;
+}
 
 #if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
 static void quant_x_to_q8_blocks_scalar(const float *x, int8_t *x_q,
@@ -220,10 +268,7 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
     }
 
     if (W->type == BN_GGUF_TENSOR_Q4_0) {
-        if (!(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-            ((flags & BN_MATVEC_TASK_LLAMA_DOT) ||
-             getenv("BN_CPU_LLAMA_DOT") ||
-             getenv("BN_CPU_LLAMA_Q4_DOT"))) {
+        if (bn_quant_policy_llama_q4_dot_enabled(flags)) {
             int n_blocks = W->cols / 32;
             if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
             float x_scales[n_blocks];
@@ -277,7 +322,7 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
         float x_scales[n_blocks];
         bn_quant_x_to_q8_blocks(x, x_q_buf, x_scales, W->cols);
         BnQ4SdotCtx ctx = { out, W, x_q_buf, x_scales, prepared };
-        if (getenv("BN_WASM_Q4_CANONICAL4")) {
+        if (bn_quant_policy_wasm_q4_canonical4_enabled()) {
             int n_groups = (W->rows + 3) / 4;
             BnTPTask task = { bn_quant_q4_wasm_sdot_4row_range, &ctx, n_groups };
             bn_tp_dispatch(pool, &task, 1);
@@ -305,11 +350,7 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
     }
 
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
-        if (!(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-            ((flags & BN_MATVEC_TASK_LLAMA_DOT) ||
-             getenv("BN_CPU_LLAMA_DOT") ||
-             getenv("BN_CPU_LLAMA_Q4_DOT") ||
-             getenv("BN_CPU_LLAMA_Q6_DOT"))) {
+        if (bn_quant_policy_llama_q6_dot_enabled(flags)) {
             int n_sb_q6k = W->cols / BN_QK_K;
             if (n_sb_q6k < 1 || n_sb_q6k > BN_MAX_SCALE_BLOCKS / 8) return;
             float q6k_d[n_sb_q6k];
@@ -468,7 +509,7 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
         BnTPTask task = { bn_quant_q5k_neon_range, &ctx, W->rows };
 #elif defined(__AVX2__)
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-        if (bn_quant_use_avx512_q5k_vnni(W->rows)) {
+        if (bn_quant_policy_avx512_q5k_vnni_enabled(W->rows)) {
             int n_sb = W->cols / BN_QK_K;
             if (n_sb < 1 || n_sb > BN_MAX_SCALE_BLOCKS / 8) return;
             float q8k_d[n_sb];

@@ -1,4 +1,5 @@
 #include "quant.h"
+#include "quant_dispatch_internal.h"
 #include "gguf.h"
 #include "sh_arena.h"
 #include "quant_ctx.h"
@@ -13,6 +14,72 @@ static uint16_t test_fp32_to_bf16(float f) {
     uint32_t bits;
     memcpy(&bits, &f, sizeof(bits));
     return (uint16_t)(bits >> 16);
+}
+
+static void test_quant_policy_helpers(void) {
+    printf("test_quant_policy_helpers... ");
+
+    unsetenv("BN_AVX512_Q5K_VNNI");
+    assert(!bn_quant_policy_avx512_q5k_vnni_enabled(1024));
+    assert(bn_quant_policy_avx512_q5k_vnni_enabled(4096));
+    setenv("BN_AVX512_Q5K_VNNI", "0", 1);
+    assert(!bn_quant_policy_avx512_q5k_vnni_enabled(4096));
+    setenv("BN_AVX512_Q5K_VNNI", "1", 1);
+    assert(bn_quant_policy_avx512_q5k_vnni_enabled(1024));
+    unsetenv("BN_AVX512_Q5K_VNNI");
+
+    BnMatvecTask tasks[2];
+    memset(tasks, 0, sizeof(tasks));
+    unsetenv("BN_AVX2_KQUANT_FLOAT");
+    assert(!bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    tasks[1].flags = BN_MATVEC_TASK_FORCE_FLOAT_KQUANT;
+    assert(bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    tasks[1].flags = 0;
+    setenv("BN_AVX2_KQUANT_FLOAT", "1", 1);
+    assert(bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    setenv("BN_AVX2_KQUANT_FLOAT", "0", 1);
+    assert(!bn_quant_policy_avx2_kquant_float_for_tasks(tasks, 2));
+    unsetenv("BN_AVX2_KQUANT_FLOAT");
+
+    unsetenv("BN_CPU_LLAMA_DOT");
+    unsetenv("BN_CPU_LLAMA_Q4_DOT");
+    unsetenv("BN_CPU_LLAMA_Q6_DOT");
+    assert(!bn_quant_policy_llama_q4_dot_enabled(0));
+    assert(bn_quant_policy_llama_q4_dot_enabled(BN_MATVEC_TASK_LLAMA_DOT));
+    assert(!bn_quant_policy_llama_q4_dot_enabled(
+        BN_MATVEC_TASK_LLAMA_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
+    assert(!bn_quant_policy_llama_q6_dot_enabled(0));
+    setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
+    assert(bn_quant_policy_llama_q4_dot_enabled(0));
+    assert(bn_quant_policy_llama_q6_dot_enabled(0));
+    unsetenv("BN_CPU_LLAMA_Q4_DOT");
+    setenv("BN_CPU_LLAMA_Q6_DOT", "1", 1);
+    assert(!bn_quant_policy_llama_q4_dot_enabled(0));
+    assert(bn_quant_policy_llama_q6_dot_enabled(0));
+    unsetenv("BN_CPU_LLAMA_Q6_DOT");
+
+    memset(tasks, 0, sizeof(tasks));
+    assert(!bn_quant_policy_batch_llama_q4_dot_enabled(tasks, 2));
+    tasks[0].flags = BN_MATVEC_TASK_LLAMA_DOT;
+    assert(bn_quant_policy_batch_llama_q4_dot_enabled(tasks, 2));
+    tasks[1].flags = BN_MATVEC_TASK_NATIVE_QUANT;
+    assert(!bn_quant_policy_batch_llama_q4_dot_enabled(tasks, 2));
+    tasks[0].flags = 0;
+    tasks[1].flags = 0;
+
+    unsetenv("BN_WASM_Q4_CANONICAL4");
+    assert(!bn_quant_policy_wasm_q4_canonical4_enabled());
+    setenv("BN_WASM_Q4_CANONICAL4", "1", 1);
+    assert(bn_quant_policy_wasm_q4_canonical4_enabled());
+    unsetenv("BN_WASM_Q4_CANONICAL4");
+
+    unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
+    assert(bn_quant_policy_q8_0_matmul_batch_enabled());
+    setenv("BN_DISABLE_Q8_0_MATMUL_BATCH", "1", 1);
+    assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
+    unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
+
+    printf("PASSED\n");
 }
 
 static float ref_dot_f32(const float *w, const float *x, int cols) {
@@ -1333,6 +1400,7 @@ static void test_mxfp4_matvec_correctness(void) {
 
 int main(void) {
     printf("=== Quant Integration Tests ===\n");
+    test_quant_policy_helpers();
     test_fp16_conversion();
     test_dispatch_routing();
     test_matvec_batch();

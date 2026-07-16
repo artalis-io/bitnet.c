@@ -228,7 +228,8 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 #elif defined(__AVX2__)
                     void (*fn)(void *, int, int) = bn_quant_q4_avx2_4row_range;
 #elif defined(__wasm_relaxed_simd__)
-                    void (*fn)(void *, int, int) = getenv("BN_WASM_Q4_CANONICAL4")
+                    void (*fn)(void *, int, int) =
+                        bn_quant_policy_wasm_q4_canonical4_enabled()
                         ? bn_quant_q4_wasm_sdot_4row_range
                         : (tasks[t].prepared && tasks[t].prepared->qs
                            ? bn_quant_q4_repacked_wasm_sdot_8row_range
@@ -244,7 +245,7 @@ void bn_quant_matvec_multi(const BnMatvecMultiTask *tasks, int n_tasks,
 #if defined(__AVX512F__) || defined(__AVX2__)
                     n_items = (tasks[t].W->rows + 3) / 4;
 #elif defined(__wasm_relaxed_simd__)
-                    if (getenv("BN_WASM_Q4_CANONICAL4"))
+                    if (bn_quant_policy_wasm_q4_canonical4_enabled())
                         n_items = (tasks[t].W->rows + 3) / 4;
                     else if (tasks[t].prepared && tasks[t].prepared->qs)
                         n_items = (tasks[t].W->rows + 7) / 8;

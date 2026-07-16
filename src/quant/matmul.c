@@ -101,7 +101,7 @@ void bn_quant_matmul_prepared(float *out, const BnQWeight *W,
 
 #if defined(__AVX2__) || (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD))
     if (W->type == BN_GGUF_TENSOR_Q8_0) {
-        if (getenv("BN_DISABLE_Q8_0_MATMUL_BATCH"))
+        if (!bn_quant_policy_q8_0_matmul_batch_enabled())
             goto fallback_loop;
         int n_blocks = cols / 32;
         if (n_blocks < 1 || n_blocks > BN_MAX_SCALE_BLOCKS) goto fallback_loop;

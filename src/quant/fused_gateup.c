@@ -49,7 +49,7 @@ int bn_quant_q4_gate_up_silu(float *out,
     bn_tp_dispatch(pool, &task, 1);
     return 0;
 #elif defined(__wasm_relaxed_simd__)
-    int use_canonical4 = getenv("BN_WASM_Q4_CANONICAL4") != NULL;
+    int use_canonical4 = bn_quant_policy_wasm_q4_canonical4_enabled();
     if (!use_canonical4 &&
         (!gate_prepared || !gate_prepared->qs ||
          !up_prepared || !up_prepared->qs))

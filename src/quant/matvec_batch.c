@@ -23,29 +23,6 @@
 #define BN_MAX_SCALE_BLOCKS 8192
 #define BN_MAX_BATCH 24
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-static int bn_quant_batch_use_avx512_q5k_vnni(int rows) {
-    const char *v = getenv("BN_AVX512_Q5K_VNNI");
-    if (v)
-        return v[0] != '\0' && v[0] != '0';
-    return rows >= 4096;
-}
-#endif
-
-#if (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)) || defined(__AVX2__)
-static int bn_quant_batch_force_avx2_kquant_float(const BnMatvecTask *tasks,
-                                                  int n_tasks) {
-    const char *v = getenv("BN_AVX2_KQUANT_FLOAT");
-    if (v && v[0] != '\0' && v[0] != '0')
-        return 1;
-    for (int i = 0; i < n_tasks; i++) {
-        if (tasks[i].flags & BN_MATVEC_TASK_FORCE_FLOAT_KQUANT)
-            return 1;
-    }
-    return 0;
-}
-#endif
-
 #if !defined(__ARM_NEON) && !defined(__AVX2__) && !defined(__wasm_relaxed_simd__)
 static void batch_quant_x_to_q8_blocks_scalar(const float *x, int8_t *x_q,
                                               float *x_scales, int n) {
@@ -123,14 +100,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     }
 
     if (all_q4 && n_tasks <= 4) {
-        int llama_dot = getenv("BN_CPU_LLAMA_DOT") != NULL ||
-                        getenv("BN_CPU_LLAMA_Q4_DOT") != NULL;
-        for (int t = 0; t < n_tasks; t++)
-            llama_dot = llama_dot ||
-                        ((tasks[t].flags & BN_MATVEC_TASK_LLAMA_DOT) != 0);
-        for (int t = 0; t < n_tasks; t++)
-            if (tasks[t].flags & BN_MATVEC_TASK_NATIVE_QUANT)
-                llama_dot = 0;
+        int llama_dot =
+            bn_quant_policy_batch_llama_q4_dot_enabled(tasks, n_tasks);
         if (llama_dot) {
             int n_blocks = cols / 32;
             if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
@@ -403,7 +374,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     /* Q4_K / Q6_K batch: quantize x to Q8_K ONCE, reuse across all tasks.
      * Uses 4-row kernels for bandwidth amortization. */
     if (all_kquant && n_tasks <= BN_MAX_BATCH &&
-        !bn_quant_batch_force_avx2_kquant_float(tasks, n_tasks)) {
+        !bn_quant_policy_avx2_kquant_float_for_tasks(tasks, n_tasks)) {
         int n_bpr = cols / BN_QK_K;
         if (n_bpr >= 1 && n_bpr <= BN_MAX_SCALE_BLOCKS / 8) {
             float q8k_d[n_bpr];
@@ -474,7 +445,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 
         for (int t = 0; t < n_tasks; t++) {
             ctxs[t] = (BnQ4SdotCtx){ tasks[t].out, tasks[t].W, x_q_buf, x_scales, tasks[t].prepared };
-            if (getenv("BN_WASM_Q4_CANONICAL4")) {
+            if (bn_quant_policy_wasm_q4_canonical4_enabled()) {
                 int n_groups = (tasks[t].W->rows + 3) / 4;
                 tp_tasks[t] = (BnTPTask){ bn_quant_q4_wasm_sdot_4row_range, &ctxs[t], n_groups };
             } else if (tasks[t].prepared && tasks[t].prepared->qs) {
@@ -623,7 +594,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 #endif
 
 #if defined(__AVX2__)
-    if (bn_quant_batch_force_avx2_kquant_float(tasks, n_tasks)) {
+    if (bn_quant_policy_avx2_kquant_float_for_tasks(tasks, n_tasks)) {
         int all_kquant_float = 1;
         for (int t = 0; t < n_tasks; t++) {
             int ty = tasks[t].W->type;
@@ -669,7 +640,7 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
 #ifdef __AVX2__
             if (batch_type == BN_GGUF_TENSOR_Q5_K) {
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)
-                if (bn_quant_batch_use_avx512_q5k_vnni(tasks[0].W->rows)) {
+                if (bn_quant_policy_avx512_q5k_vnni_enabled(tasks[0].W->rows)) {
                     int n_bpr = cols / BN_QK_K;
                     if (n_bpr >= 1 && n_bpr <= BN_MAX_SCALE_BLOCKS / 8) {
                         float q8k_d[n_bpr];
@@ -712,14 +683,8 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                 return;
             }
 #endif
-        int llama_dot = getenv("BN_CPU_LLAMA_DOT") != NULL ||
-                        getenv("BN_CPU_LLAMA_Q4_DOT") != NULL;
-        for (int t = 0; t < n_tasks; t++)
-            llama_dot = llama_dot ||
-                        ((tasks[t].flags & BN_MATVEC_TASK_LLAMA_DOT) != 0);
-        for (int t = 0; t < n_tasks; t++)
-            if (tasks[t].flags & BN_MATVEC_TASK_NATIVE_QUANT)
-                llama_dot = 0;
+        int llama_dot =
+            bn_quant_policy_batch_llama_q4_dot_enabled(tasks, n_tasks);
             if (batch_type == BN_GGUF_TENSOR_Q4_0 && llama_dot) {
                 int n_blocks = cols / 32;
                 if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
