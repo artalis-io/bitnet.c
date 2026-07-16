@@ -887,6 +887,69 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_routed_q4(&map));
     assert(!bn_transformer_gpu_moe_routed_q8(&map));
 
+    BnWeights moe_w;
+    BnLayerWeights moe_layers[1];
+    memset(&moe_w, 0, sizeof(moe_w));
+    memset(moe_layers, 0, sizeof(moe_layers));
+    moe_w.layers = moe_layers;
+    moe_layers[0].moe.router_weight = (void *)1;
+    moe_layers[0].moe.expert_map = map;
+    c.n_layers = 1;
+    c.n_experts = 2;
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
+    c.dim = 2048;
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+        &gpu, &c, &moe_w));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+        &gpu, &c, &moe_w));
+    setenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE", "1", 1);
+    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+        &gpu, &c, &moe_w));
+    unsetenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
+
+    BnWeights dense_w;
+    BnLayerWeights dense_layers[1];
+    memset(&dense_w, 0, sizeof(dense_w));
+    memset(dense_layers, 0, sizeof(dense_layers));
+    dense_w.layers = dense_layers;
+    dense_w.emb_type = BN_GGUF_TENSOR_Q8_0;
+    c.n_experts = 0;
+    c.n_experts_active = 0;
+    c.moe_intermediate_size = 0;
+    c.dim = 2048;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8;
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+        &gpu, &c, &dense_w));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+        &gpu, &c, &dense_w));
+    setenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE", "1", 1);
+    assert(!bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+        &gpu, &c, &dense_w));
+    unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
+    c.policy_flags = 0;
+
+    BnWeights hybrid_w;
+    memset(&hybrid_w, 0, sizeof(hybrid_w));
+    c.dim = 4096;
+    c.full_attn_interval = 4;
+    c.ssm_inner_size = 128;
+    setenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE", "1", 1);
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+        &gpu, &c, &hybrid_w));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+        &gpu, &c, &hybrid_w));
+    unsetenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE");
+    c.full_attn_interval = 0;
+    c.ssm_inner_size = 0;
+    c.dim = 2048;
+
     map.down_type = BN_GGUF_TENSOR_Q4_K;
     assert(!bn_transformer_gpu_moe_routed_q4_down(&map, 0));
     assert(bn_transformer_gpu_moe_routed_q4_down(&map, 1));

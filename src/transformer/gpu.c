@@ -893,15 +893,14 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             s_all2_q4q6_moe_gpu_route_to_layer;
     }
     int all2_q4q6_moe_safe_cpu_attn =
-        bn_transformer_gpu_backend_is_cuda(gpu) &&
-        bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-            c, w);
+        bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+            gpu, c, w);
     int small_dense_q8_safe_cpu_attn =
-        bn_transformer_gpu_backend_is_cuda(gpu) &&
-        bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w);
+        bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+            gpu, c, w);
     int large_hybrid_safe_cpu_attn =
-        bn_transformer_gpu_backend_is_cuda(gpu) &&
-        bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w);
+        bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+            gpu, c, w);
     if (all2_q4q6_moe_safe_cpu_attn &&
         cpu_fallback.layer < 0 && cpu_fallback.from_layer < 0 &&
         cpu_fallback.attn_layer < 0 && cpu_fallback.attn_from_layer < 0)

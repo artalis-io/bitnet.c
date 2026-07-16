@@ -160,7 +160,15 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w);
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
@@ -171,6 +179,10 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+    const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
 int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(

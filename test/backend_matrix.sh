@@ -152,6 +152,11 @@ if grep -n 'BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER\|BN_CUDA_QWEN2MOE_GPU_ROUTE_TO
     fail=1
 fi
 
+if grep -n 'cpu_attn_safe_default' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU-aware CPU attention fallback policy helpers"
+    fail=1
+fi
+
 for file in \
     src/generate.c \
     src/transformer/prefill.c

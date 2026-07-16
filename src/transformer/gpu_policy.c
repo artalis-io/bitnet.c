@@ -207,12 +207,28 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
            getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") == NULL;
 }
 
+int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(c, w);
+}
+
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
            small_dense_cuda_q8_native_by_default(c, w) &&
            getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
+}
+
+int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w);
 }
 
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
@@ -251,6 +267,14 @@ int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
             return 1;
     }
     return 0;
+}
+
+int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w) {
+    return bn_transformer_gpu_backend_is_cuda(gpu) &&
+           bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w);
 }
 
 int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
@@ -406,9 +430,10 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
     if (getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV"))
         return 0;
     if ((gpu_cpu_decode_fallback_requested() ||
-         bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-             c, w) ||
-         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(c, w) ||
+         bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+             gpu, c, w) ||
+         bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+             gpu, c, w) ||
          bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
              gpu, c)) &&
         !getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK"))
