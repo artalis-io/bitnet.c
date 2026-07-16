@@ -43,6 +43,13 @@ int bn_gpu_policy_cuda_keep_individual_f16_cache_enabled(void) {
     return getenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE") != NULL;
 }
 
+int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+           gpu->buffer_create_quant_only &&
+           !bn_gpu_policy_cuda_keep_individual_f16_cache_enabled();
+}
+
 int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {

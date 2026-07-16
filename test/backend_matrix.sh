@@ -292,6 +292,11 @@ if grep -n 'BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE\|BN_CUDA_DISABLE_Q6K_LOGITS_F32_
     fail=1
 fi
 
+if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use GPU policy helpers for CUDA backend policy"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE\|BN_CUDA_DISABLE_MOE_ROUTED_FFN\|BN_GPU_MOE_DISABLE_AUTO_RESIDENT\|BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE\|BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use GPU policy helpers for CUDA/MoE cache env vars"
     fail=1

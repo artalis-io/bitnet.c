@@ -854,8 +854,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             &lw->shared.shared_down,
         };
         int quant_only_individual[15] = {0};
-        if (gpu->kind == BN_GPU_BACKEND_CUDA && gpu->buffer_create_quant_only &&
-            !bn_gpu_policy_cuda_keep_individual_f16_cache_enabled()) {
+        if (bn_gpu_policy_cuda_individual_upload_quant_only_enabled(gpu)) {
             if (lw->ssm.wqkv.data &&
                 qweight_pair_stackable(&lw->ffn.ffn_gate,
                                        &lw->ffn.ffn_up)) {
