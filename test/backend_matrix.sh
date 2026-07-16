@@ -99,6 +99,7 @@ for file in \
     src/transformer/prefill.c \
     src/transformer/kv.c \
     src/model.c \
+    src/main.c \
     src/model_session.c \
     src/model_embed.c \
     src/gpu_moe_bridge.c \

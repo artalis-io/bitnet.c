@@ -556,6 +556,16 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q6_K));
     assert(!bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_moe_down_cublas_cache_supported(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_cuda_moe_down_cublas_cache_supported(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes(
+        BN_GGUF_TENSOR_Q6_K, 1) == (int)sizeof(uint16_t));
+    assert(bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes(
+        BN_GGUF_TENSOR_Q6_K, 0) == (int)sizeof(float));
+    assert(bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes(
+        BN_GGUF_TENSOR_Q4_K, 0) == 0);
     assert(bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(

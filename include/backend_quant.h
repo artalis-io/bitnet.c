@@ -195,6 +195,17 @@ static inline int bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(int type
     return type == BN_GGUF_TENSOR_Q6_K;
 }
 
+static inline int bn_backend_quant_cuda_moe_down_cublas_cache_supported(int type) {
+    return type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static inline int bn_backend_quant_cuda_moe_down_cublas_cache_elem_bytes(
+    int type, int q6_as_f16) {
+    if (!bn_backend_quant_cuda_moe_down_cublas_cache_supported(type))
+        return 0;
+    return q6_as_f16 ? (int)sizeof(uint16_t) : (int)sizeof(float);
+}
+
 static inline int bn_backend_quant_cuda_moe_down_q4_f32_cache_supported(int type) {
     return type == BN_GGUF_TENSOR_Q4_K;
 }
