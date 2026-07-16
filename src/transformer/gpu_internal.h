@@ -178,6 +178,12 @@ int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
 int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
+int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void);
+int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_cuda_prefill_attention_enabled(void);
+int bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled(void);
 int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void);
 int bn_transformer_gpu_cuda_moe_prefill_enabled(void);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void);

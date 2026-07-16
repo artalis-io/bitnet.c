@@ -1470,7 +1470,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int rope_cache_dims = -1;
     float rope_cache_theta = 0.0f;
 
-    if (!getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") &&
+    if (bn_transformer_gpu_cuda_prefill_dense_chain_enabled() &&
         bn_model_gpu(m) && pos0 == 0 && c->n_layers > 0) {
         int chain_ready = 1;
         for (int l = 0; l < c->n_layers; l++) {
@@ -1567,9 +1567,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         }
     }
 
-    if (!getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") &&
-        !bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
-            prefill_gpu, c) &&
+    if (bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(prefill_gpu, c) &&
         cuda_hybrid_prefill && pos0 == 0 && c->n_layers > 0 &&
         bn_model_tq_state(m) == NULL) {
         int chain_ready = 1;
@@ -1728,7 +1726,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             if (bn_model_gpu(m) &&
                 bn_model_tq_state(m) == NULL &&
-                !getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") &&
+                bn_transformer_gpu_cuda_prefill_dense_chain_enabled() &&
                 n_tokens >=
                     bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
                         c, bn_model_gpu(m)) &&
@@ -2008,7 +2006,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 int used_gpu_attn = used_raw_prefill_attn_wo;
                 if (!used_raw_prefill_attn_wo &&
                     gpu && gpu->prefill_attention &&
-                    !getenv("BN_CUDA_DISABLE_PREFILL_ATTN") &&
+                    bn_transformer_gpu_cuda_prefill_attention_enabled() &&
                     n_tokens >=
                         bn_transformer_gpu_cuda_prefill_attention_min_tokens() &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
@@ -2177,7 +2175,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int kern_ssm = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
             int ssm_idx = plan.ssm_idx;
 
-            if (!getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN") &&
+            if (bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled() &&
                 cuda_hybrid_prefill &&
                 (prefill_ssm_layer_chain_ready(m, lw, l, n_tokens) ||
                  prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens))) {

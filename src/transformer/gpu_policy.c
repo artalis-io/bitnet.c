@@ -433,6 +433,26 @@ int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
     return bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
 }
 
+int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") == NULL;
+}
+
+int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") == NULL &&
+           !bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
+               gpu, c);
+}
+
+int bn_transformer_gpu_cuda_prefill_attention_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_ATTN") == NULL;
+}
+
+int bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN") == NULL;
+}
+
 int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void) {
     return getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE") == NULL;
 }

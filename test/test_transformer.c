@@ -514,6 +514,41 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
 
+    unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
+    assert(bn_transformer_gpu_cuda_prefill_dense_chain_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN", "1", 1);
+    assert(!bn_transformer_gpu_cuda_prefill_dense_chain_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
+
+    memset(&c, 0, sizeof(c));
+    c.dim = 2048;
+    c.full_attn_interval = 1;
+    c.ssm_inner_size = 128;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    unsetenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN");
+    unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
+    assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
+    setenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN", "1", 1);
+    assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
+    unsetenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN");
+    c.dim = 4096;
+    assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
+    setenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN", "1", 1);
+    assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
+    unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
+
+    unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
+    assert(bn_transformer_gpu_cuda_prefill_attention_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_ATTN", "1", 1);
+    assert(!bn_transformer_gpu_cuda_prefill_attention_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
+
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
+    assert(bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN", "1", 1);
+    assert(!bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
+
     setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
     setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
     gpu.caps = BN_GPU_CAP_FLASH_ATTN;
