@@ -322,6 +322,12 @@ int      bn_quant_q6_logits_refine_row(const BnQWeight *W,
                                         const float *x,
                                         int row,
                                         float *out);
+int      bn_quant_q6_logits_refine_q8k_row(const BnQWeight *W,
+                                            const int8_t *x_q,
+                                            const float *x_d,
+                                            const int16_t *x_bsums,
+                                            int row,
+                                            float *out);
 uint32_t bn_quant_format_gpu_split_cap(int type);
 int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_gpu_requires_exact_silu(int type);

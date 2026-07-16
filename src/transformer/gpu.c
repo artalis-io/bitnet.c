@@ -575,71 +575,6 @@ static int gpu_resolve_moe_all2_resources(BnGPUMoEResources *out,
     return 0;
 }
 
-static float gpu_exact_q6k_row_dot_q8k(const BnQWeight *W, int row,
-                                       const int8_t *x_q,
-                                       const float *x_d,
-                                       const int16_t *x_bsums) {
-    int cols = W->cols;
-    int n_blocks_per_row = cols / BN_QK_K;
-    const BnBlockQ6K *blocks = (const BnBlockQ6K *)W->data;
-    float row_sum = 0.0f;
-
-    for (int b = 0; b < n_blocks_per_row; b++) {
-        const BnBlockQ6K *blk =
-            &blocks[(size_t)row * n_blocks_per_row + b];
-        float d = bn_fp16_to_fp32(blk->d);
-        float dx = x_d[b];
-        const uint8_t *ql = blk->ql;
-        const uint8_t *qh = blk->qh;
-        const int8_t *sc = blk->scales;
-        const int8_t *xb = x_q + (size_t)b * BN_QK_K;
-        const int16_t *bsums = x_bsums + (size_t)b * 16;
-
-        int32_t sumi = 0;
-        int32_t bias_corr = 0;
-        for (int chunk = 0; chunk < 2; chunk++) {
-            for (int is = 0; is < 2; is++) {
-                int l0 = is * 16;
-                int32_t sum1 = 0;
-                int32_t sum2 = 0;
-                int32_t sum3 = 0;
-                int32_t sum4 = 0;
-                for (int i = 0; i < 16; i++) {
-                    int l = l0 + i;
-                    uint8_t h = qh[l];
-                    int q1 = (int)((ql[l]      & 0x0f) |
-                                   ((h & 0x03) << 4));
-                    int q2 = (int)((ql[l + 32] & 0x0f) |
-                                   (((h >> 2) & 0x03) << 4));
-                    int q3 = (int)((ql[l]      >> 4) |
-                                   (((h >> 4) & 0x03) << 4));
-                    int q4 = (int)((ql[l + 32] >> 4) |
-                                   (((h >> 6) & 0x03) << 4));
-                    sum1 += q1 * (int32_t)xb[l];
-                    sum2 += q2 * (int32_t)xb[l + 32];
-                    sum3 += q3 * (int32_t)xb[l + 64];
-                    sum4 += q4 * (int32_t)xb[l + 96];
-                }
-                sumi += (int32_t)sc[is + 0] * sum1 +
-                        (int32_t)sc[is + 2] * sum2 +
-                        (int32_t)sc[is + 4] * sum3 +
-                        (int32_t)sc[is + 6] * sum4;
-            }
-            for (int g = 0; g < 8; g++)
-                bias_corr += (int32_t)sc[g] *
-                             (int32_t)bsums[chunk * 8 + g];
-
-            xb += 128;
-            ql += 64;
-            qh += 32;
-            sc += 8;
-        }
-
-        row_sum += d * dx * (float)(sumi - 32 * bias_corr);
-    }
-    return row_sum;
-}
-
 static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
                                      int8_t *x_q_buf, int top_n) {
@@ -683,32 +618,14 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
         vals[j] = v;
     }
 
-    for (int i = 0; i < n_top; i++)
-        logits[ids[i]] = gpu_exact_q6k_row_dot_q8k(
-            W, ids[i], x_q_buf, x_d, x_bsums);
+    for (int i = 0; i < n_top; i++) {
+        float row_sum;
+        if (bn_quant_q6_logits_refine_q8k_row(W, x_q_buf, x_d, x_bsums,
+                                              ids[i], &row_sum) == 0)
+            logits[ids[i]] = row_sum;
+    }
     return n_top;
 }
-
-#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
-static float gpu_exact_q8_row_dot_q8x(const BnQWeight *W, int row,
-                                      const int8_t *x_q,
-                                      const float *x_scales) {
-    int n_blocks_per_row = W->cols / 32;
-    const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)W->data;
-    float row_sum = 0.0f;
-
-    for (int b = 0; b < n_blocks_per_row; b++) {
-        const BnBlockQ8_0 *blk =
-            &blocks[(size_t)row * n_blocks_per_row + b];
-        const int8_t *xb = x_q + b * 32;
-        int32_t sumi = 0;
-        for (int i = 0; i < 32; i++)
-            sumi += (int32_t)blk->qs[i] * (int32_t)xb[i];
-        row_sum += (float)sumi * bn_fp16_to_fp32(blk->d) * x_scales[b];
-    }
-    return row_sum;
-}
-#endif
 
 static int gpu_refine_q8_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
@@ -749,9 +666,12 @@ static int gpu_refine_q8_logits_top(float *logits, int n_logits,
 
     float x_scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
     bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
-    for (int i = 0; i < n_top; i++)
-        logits[ids[i]] = gpu_exact_q8_row_dot_q8x(
-            W, ids[i], x_q, x_scales);
+    for (int i = 0; i < n_top; i++) {
+        float row_sum;
+        if (bn_quant_q8_logits_refine_row(W, x_q, x_scales, ids[i],
+                                          &row_sum) == 0)
+            logits[ids[i]] = row_sum;
+    }
     return n_top;
 #else
     (void)logits; (void)n_logits; (void)W; (void)x; (void)x_q; (void)top_n;

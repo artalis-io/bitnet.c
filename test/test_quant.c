@@ -230,6 +230,19 @@ static void test_logits_refine_rows(void) {
     assert(fabsf(row - (-16384.0f)) < 1.0f);
     assert(bn_quant_q6_logits_refine_row(&W_q6, x256, -1, &row) == -1);
 
+    int8_t x_q8k[256];
+    float x_d[1];
+    int16_t x_bsums[16];
+    bn_quant_x_to_q8k_scalar(x256, x_q8k, x_d, x_bsums, 256);
+    assert(bn_quant_q6_logits_refine_q8k_row(
+               &W_q6, x_q8k, x_d, x_bsums, 0, &row) == 0);
+    assert(fabsf(row - (-8192.0f)) < 1.0f);
+    assert(bn_quant_q6_logits_refine_q8k_row(
+               &W_q6, x_q8k, x_d, x_bsums, 1, &row) == 0);
+    assert(fabsf(row - (-16384.0f)) < 1.0f);
+    assert(bn_quant_q6_logits_refine_q8k_row(
+               &W_q6, x_q8k, x_d, x_bsums, 2, &row) == -1);
+
     printf("PASSED\n");
 }
 

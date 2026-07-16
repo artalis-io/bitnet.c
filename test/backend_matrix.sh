@@ -192,6 +192,11 @@ if grep -n 'BnBlockQ8_0\|BnBlockQ6K\|bn_fp16_to_fp32' src/transformer/logits.c >
     fail=1
 fi
 
+if grep -n 'BnBlockQ8_0\|BnBlockQ6K\|bn_fp16_to_fp32\|gpu_exact_q[68]' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use quant logits-refine helpers, not direct quant block layout"
+    fail=1
+fi
+
 if grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use logits policy helpers for CPU tied-logits env vars"
     fail=1
