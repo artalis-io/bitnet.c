@@ -3,7 +3,6 @@
 #include "gguf.h"
 #include "model.h"
 #include "moe.h"
-#include "quant.h"
 #include "gpu_policy.h"
 #include "generate.h"
 #include "transformer.h"
@@ -386,20 +385,12 @@ static size_t model_moe_entry_bytes(const BnModel *model,
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         size_t entry = em->expert_gate_bytes + em->expert_up_bytes +
                        em->expert_down_bytes;
-        if (gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
-            bn_quant_format_cuda_moe_down_cublas_cache_supported(em->down_type) &&
-            bn_gpu_policy_cuda_cublas_matmul_enabled()) {
-            size_t elems = (size_t)em->down_rows * (size_t)em->down_cols;
-            int q6_as_f16 =
-                bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
-            size_t elem_size =
-                (size_t)bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(
-                    em->down_type, q6_as_f16);
-            if (elems <= (SIZE_MAX - entry) / elem_size)
-                entry += elems * elem_size;
-            else
-                return 0;
-        }
+        size_t cache_bytes =
+            bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
+                gpu, em->down_type, em->down_rows, em->down_cols);
+        if (cache_bytes > SIZE_MAX - entry)
+            return 0;
+        entry += cache_bytes;
         return entry;
     }
     return 0;

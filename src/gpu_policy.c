@@ -1,5 +1,6 @@
 #include "gpu_policy.h"
 #include "quant.h"
+#include <stdint.h>
 #include <stdlib.h>
 
 int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
@@ -107,6 +108,26 @@ int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
     if (max_env && *max_env)
         max_mb = atoi(max_env);
     return max_mb;
+}
+
+size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int rows,
+    int cols) {
+    if (!gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
+        rows <= 0 || cols <= 0 ||
+        !bn_quant_format_cuda_moe_down_cublas_cache_supported(tensor_type) ||
+        !bn_gpu_policy_cuda_cublas_matmul_enabled())
+        return 0;
+    size_t elems = (size_t)rows * (size_t)cols;
+    int q6_as_f16 = bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
+    size_t elem_size =
+        (size_t)bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(
+            tensor_type, q6_as_f16);
+    if (elem_size != 0 && elems > SIZE_MAX / elem_size)
+        return 0;
+    return elems * elem_size;
 }
 
 int bn_gpu_policy_moe_auto_resident_enabled(void) {

@@ -30,6 +30,11 @@ int bn_gpu_policy_cuda_cublas_matmul_enabled(void);
 int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
+size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int rows,
+    int cols);
 int bn_gpu_policy_moe_auto_resident_enabled(void);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 
