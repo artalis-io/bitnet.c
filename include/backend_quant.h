@@ -9,6 +9,17 @@
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT 1u
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K 8u
 
+#if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || \
+    defined(__AVX2__) || defined(__wasm_relaxed_simd__)
+#define BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT 1
+#else
+#define BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT 0
+#endif
+
+static inline int bn_backend_quant_has_native_q8x_quant(void) {
+    return BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT;
+}
+
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_MATVEC_SPLIT;

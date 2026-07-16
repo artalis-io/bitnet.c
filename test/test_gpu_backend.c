@@ -498,6 +498,8 @@ static void test_quant_registry(void) {
     assert(!bn_backend_quant_cuda_small_dense_q8_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_has_native_q8x_quant() ==
+           BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT);
     assert(bn_backend_quant_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
