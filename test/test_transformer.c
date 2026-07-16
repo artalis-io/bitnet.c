@@ -332,6 +332,19 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_q4_q8_fused_gateup_enabled(1));
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
 
+    unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
+    assert(bn_transformer_gpu_gateup_split_enabled());
+    setenv("BN_GPU_DISABLE_GATEUP_SPLIT", "1", 1);
+    assert(!bn_transformer_gpu_gateup_split_enabled());
+    unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
+
+    unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
+    assert(!bn_transformer_gpu_q4_q8_ffn_down_enabled(0));
+    assert(bn_transformer_gpu_q4_q8_ffn_down_enabled(1));
+    setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
+    assert(!bn_transformer_gpu_q4_q8_ffn_down_enabled(1));
+    unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
+
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
 

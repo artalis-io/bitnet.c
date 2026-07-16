@@ -38,6 +38,15 @@ int bn_transformer_gpu_q4_q8_fused_gateup_enabled(int use_q4_q8) {
     return use_q4_q8 && getenv("BN_GPU_Q4_Q8_DISABLE_GATEUP") == NULL;
 }
 
+int bn_transformer_gpu_gateup_split_enabled(void) {
+    return getenv("BN_GPU_DISABLE_GATEUP_SPLIT") == NULL;
+}
+
+int bn_transformer_gpu_q4_q8_ffn_down_enabled(int use_q4_q8_down) {
+    return use_q4_q8_down &&
+           getenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN") == NULL;
+}
+
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_model_arch_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
