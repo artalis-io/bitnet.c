@@ -92,6 +92,7 @@ fi
 for file in \
     src/transformer/cpu.c \
     src/transformer/gpu.c \
+    src/transformer/gpu_emit.c \
     src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/logits.c \
@@ -100,6 +101,7 @@ for file in \
     src/transformer/kv.c \
     src/model.c \
     src/main.c \
+    src/model_gpu.c \
     src/model_session.c \
     src/model_embed.c \
     src/gpu_moe_bridge.c \
@@ -117,6 +119,7 @@ for file in \
     src/transformer.c \
     src/transformer/cpu.c \
     src/transformer/gpu.c \
+    src/transformer/gpu_emit.c \
     src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/logits.c \

@@ -504,6 +504,8 @@ static void test_quant_registry(void) {
            BN_GGUF_TENSOR_F16);
     assert(bn_backend_quant_tied_logits_f32_weight_type() ==
            BN_GGUF_TENSOR_F32);
+    assert(bn_backend_quant_gpu_float_buffer_type() ==
+           BN_GGUF_TENSOR_F32);
     assert(bn_backend_quant_has_native_q8x_quant() ==
            BN_BACKEND_QUANT_HAS_NATIVE_Q8X_QUANT);
     assert(bn_backend_quant_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));

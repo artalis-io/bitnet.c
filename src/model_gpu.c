@@ -108,7 +108,8 @@ static void *upload_moe_router_diff2(BnGPUBackend *gpu,
         diff[i] = r0[i] - r1[i];
     void *handle = gpu->buffer_create(gpu->ctx, diff,
                                       (size_t)dim * sizeof(float),
-                                      BN_GGUF_TENSOR_F32, 1, dim);
+                                      bn_backend_quant_gpu_float_buffer_type(),
+                                      1, dim);
     free(diff);
     return handle;
 }
@@ -919,7 +920,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             ? gpu->buffer_create(
                 gpu->ctx, lw->moe.router_weight,
                 (size_t)c->n_experts * (size_t)c->dim * sizeof(float),
-                BN_GGUF_TENSOR_F32, c->n_experts, c->dim)
+                bn_backend_quant_gpu_float_buffer_type(),
+                c->n_experts, c->dim)
             : NULL;
         int upload_moe_all = upload_moe_all_model &&
                              can_use_cuda_moe_routed_ffn(c, lw);
@@ -991,8 +993,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         void *shared_expert_gate_gpu = lw->shared.shared_expert_gate
             ? gpu->buffer_create(
                 gpu->ctx, lw->shared.shared_expert_gate,
-                (size_t)c->dim * sizeof(float), BN_GGUF_TENSOR_F32,
-                1, c->dim)
+                (size_t)c->dim * sizeof(float),
+                bn_backend_quant_gpu_float_buffer_type(), 1, c->dim)
             : NULL;
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_NORM,
                                 attn_norm_gpu) != 0 ||

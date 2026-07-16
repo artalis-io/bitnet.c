@@ -105,6 +105,10 @@ static inline int bn_backend_quant_dense_f32_type(void) {
     return BN_GGUF_TENSOR_F32;
 }
 
+static inline int bn_backend_quant_gpu_float_buffer_type(void) {
+    return BN_GGUF_TENSOR_F32;
+}
+
 static inline int bn_backend_quant_already_f32(int type) {
     return type == BN_GGUF_TENSOR_F32;
 }

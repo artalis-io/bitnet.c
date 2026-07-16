@@ -575,7 +575,7 @@ int bn_transformer_gpu_emit_context_moe_route_topk(
     memset(op, 0, sizeof(*op));
     op->op_kind = BN_GPU_OP_FFN;
     op->op_code = BN_GPU_CODE_MOE_ROUTE_TOPK;
-    op->type = BN_GGUF_TENSOR_F32;
+    op->type = bn_backend_quant_gpu_float_buffer_type();
     op->W_buf = router_buf;
     op->buf_in = buf_in;
     op->buf_out = route_buf;
