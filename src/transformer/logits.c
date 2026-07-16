@@ -253,9 +253,7 @@ static void logits_refine_small_cuda_q8(const BnModel *m,
                                         const BnQWeight *W) {
     if (!logits_small_cuda_q8_refine_enabled(m, W))
         return;
-    int refine_top = 16;
-    const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
-    if (env) refine_top = atoi(env);
+    int refine_top = bn_transformer_gpu_q8_logits_refine_top(1);
     if (refine_top > 0)
         logits_refine_q8_top(s->logits, m->config.vocab_size, W, s->x,
                              s->x_q, refine_top);

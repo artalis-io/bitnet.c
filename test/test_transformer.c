@@ -434,6 +434,12 @@ static void test_gpu_policy_helpers(void) {
     logits.cpu_weight = NULL;
     assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
 
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
+    assert(bn_transformer_gpu_q8_logits_refine_top(1) == 16);
+    setenv("BN_GPU_Q8_REFINE_TOP", "5", 1);
+    assert(bn_transformer_gpu_q8_logits_refine_top(1) == 5);
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
+
     setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
     setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
     gpu.caps = BN_GPU_CAP_FLASH_ATTN;

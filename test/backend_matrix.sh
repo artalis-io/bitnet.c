@@ -172,6 +172,11 @@ if grep -n 'BN_CUDA_DISABLE_MOE_DECODE_CACHE' src/transformer/gpu.c >/dev/null 2
     fail=1
 fi
 
+if grep -n 'BN_GPU_Q8_REFINE_TOP' src/transformer/logits.c >/dev/null 2>&1; then
+    echo "src/transformer/logits.c must use GPU policy helpers for Q8 logits refine top compatibility env vars"
+    fail=1
+fi
+
 for file in \
     src/model.c \
     src/model_gpu.c \
