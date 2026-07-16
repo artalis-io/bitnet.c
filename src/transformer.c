@@ -1,5 +1,6 @@
 #include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
+#include "backend_quant.h"
 #include "model_arch.h"
 #include "turboquant.h"
 #include "gpu_backend.h"
@@ -10,7 +11,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #ifdef BN_FORCE_SCALAR
 #undef __ARM_NEON
@@ -19,32 +19,6 @@
 #undef __wasm_relaxed_simd__
 #undef __wasm_simd128__
 #endif
-
-static int dequant_per_layer_token_embedding(const BnQWeight *W, int token,
-                                             float *out, int n) {
-    if (!W || !W->data || token < 0 || token >= W->rows || n != W->cols)
-        return -1;
-    if (W->type == BN_GGUF_TENSOR_F32) {
-        memcpy(out, (const float *)W->data + (size_t)token * n,
-               (size_t)n * sizeof(float));
-        return 0;
-    }
-    if (W->type == BN_GGUF_TENSOR_F16) {
-        const uint16_t *row = (const uint16_t *)W->data + (size_t)token * n;
-        for (int i = 0; i < n; i++)
-            out[i] = bn_fp16_to_fp32(row[i]);
-        return 0;
-    }
-    if (W->type == BN_GGUF_TENSOR_Q6_K) {
-        int n_blocks = n / BN_QK_K;
-        const BnBlockQ6K *row = (const BnBlockQ6K *)W->data +
-                                (size_t)token * n_blocks;
-        for (int b = 0; b < n_blocks; b++)
-            bn_quant_dequant_q6k(&row[b], out + b * BN_QK_K);
-        return 0;
-    }
-    return -1;
-}
 
 static void rmsnorm_per_layer_slice(float *x, const float *w, int n, float eps) {
     float ss = 0.0f;
@@ -78,8 +52,9 @@ static int prepare_arch_per_layer_input(BnModel *m, BnSession *sess,
         rmsnorm_per_layer_slice(s->per_layer_input + (size_t)l * per_dim,
                                 w->per_layer_proj_norm, per_dim, c->norm_eps);
 
-    if (dequant_per_layer_token_embedding(&w->per_layer_token_embd, token,
-                                          s->hb, total) != 0)
+    if (bn_quant_dequant_row(w->per_layer_token_embd.type,
+                             w->per_layer_token_embd.data,
+                             token, total, s->hb) != 0)
         return -1;
     float tok_scale = sqrtf((float)per_dim);
     float input_scale = 1.0f / sqrtf(2.0f);
@@ -220,9 +195,10 @@ static int should_disable_cuda_matvec_fallback(const BnModel *m,
         return 0;
     const BnWeights *w = &m->weights;
     if (w->output_weight.data) {
-        if (w->output_weight.type != BN_GGUF_TENSOR_Q8_0)
+        if (!bn_backend_quant_cuda_small_dense_q8_supported(
+                w->output_weight.type))
             return 1;
-    } else if (w->emb_type != BN_GGUF_TENSOR_Q8_0) {
+    } else if (!bn_backend_quant_cuda_small_dense_q8_supported(w->emb_type)) {
         return 1;
     }
     for (int l = 0; l < m->config.n_layers; l++) {
@@ -233,7 +209,9 @@ static int should_disable_cuda_matvec_fallback(const BnModel *m,
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (weights[i]->data && weights[i]->type != BN_GGUF_TENSOR_Q8_0)
+            if (weights[i]->data &&
+                !bn_backend_quant_cuda_small_dense_q8_supported(
+                    weights[i]->type))
                 return 1;
         }
     }

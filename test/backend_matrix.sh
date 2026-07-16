@@ -114,6 +114,27 @@ done
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/logits.c \
+    src/transformer/plan.c \
+    src/transformer/prefill.c \
+    src/transformer/kv.c \
+    src/model_session.c \
+    src/model_embed.c \
+    src/moe_execute.c \
+    src/generate.c
+do
+    if grep -n 'BN_GGUF_TENSOR_' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant/backend_quant policy helpers, not direct tensor-format checks"
+        fail=1
+    fi
+done
+
+for file in \
+    src/transformer.c \
+    src/transformer/cpu.c \
     src/transformer/logits.c \
     src/model_session.c
 do

@@ -85,6 +85,198 @@ void bn_quant_dequant_i2s(const uint8_t *data, float *out, int n, float scale) {
     }
 }
 
+int bn_quant_dequant_row(int type, const void *data, int row, int n,
+                         float *out) {
+    if (!data || !out || row < 0 || n <= 0)
+        return -1;
+
+    switch (type) {
+        case BN_GGUF_TENSOR_F32: {
+            const float *rows = (const float *)data;
+            memcpy(out, rows + (size_t)row * n, (size_t)n * sizeof(float));
+            return 0;
+        }
+        case BN_GGUF_TENSOR_F16: {
+            const uint16_t *rows = (const uint16_t *)data;
+            const uint16_t *src = rows + (size_t)row * n;
+            for (int i = 0; i < n; i++)
+                out[i] = bn_fp16_to_fp32(src[i]);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_BF16: {
+            const uint16_t *rows = (const uint16_t *)data;
+            const uint16_t *src = rows + (size_t)row * n;
+            for (int i = 0; i < n; i++)
+                out[i] = bn_bf16_to_fp32(src[i]);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q4_0: {
+            if ((n % 32) != 0) return -1;
+            int blocks_per_row = n / 32;
+            const BnBlockQ4_0 *src = (const BnBlockQ4_0 *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q4_0(&src[b], out + b * 32);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q8_0: {
+            if ((n % 32) != 0) return -1;
+            int blocks_per_row = n / 32;
+            const BnBlockQ8_0 *src = (const BnBlockQ8_0 *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q8_0(&src[b], out + b * 32);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q5_0: {
+            if ((n % 32) != 0) return -1;
+            int blocks_per_row = n / 32;
+            const BnBlockQ5_0 *src = (const BnBlockQ5_0 *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q5_0(&src[b], out + b * 32);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q4_1: {
+            if ((n % 32) != 0) return -1;
+            int blocks_per_row = n / 32;
+            const BnBlockQ4_1 *src = (const BnBlockQ4_1 *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q4_1(&src[b], out + b * 32);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q5_1: {
+            if ((n % 32) != 0) return -1;
+            int blocks_per_row = n / 32;
+            const BnBlockQ5_1 *src = (const BnBlockQ5_1 *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q5_1(&src[b], out + b * 32);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ4_NL: {
+            if ((n % 32) != 0) return -1;
+            int blocks_per_row = n / 32;
+            const BnBlockIQ4NL *src = (const BnBlockIQ4NL *)data +
+                                      (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq4nl(&src[b], out + b * 32);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q2_K: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockQ2K *src = (const BnBlockQ2K *)data +
+                                    (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q2k(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q3_K: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockQ3K *src = (const BnBlockQ3K *)data +
+                                    (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q3k(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q4_K: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockQ4K *src = (const BnBlockQ4K *)data +
+                                    (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q4k(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q5_K: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockQ5K *src = (const BnBlockQ5K *)data +
+                                    (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q5k(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q6_K: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockQ6K *src = (const BnBlockQ6K *)data +
+                                    (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q6k(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_Q8_K: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockQ8K *src = (const BnBlockQ8K *)data +
+                                    (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_q8k(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ4_XS: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockIQ4XS *src = (const BnBlockIQ4XS *)data +
+                                      (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq4xs(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ3_XXS: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockIQ3XXS *src = (const BnBlockIQ3XXS *)data +
+                                       (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq3xxs(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ3_S: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockIQ3S *src = (const BnBlockIQ3S *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq3s(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ2_XXS: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockIQ2XXS *src = (const BnBlockIQ2XXS *)data +
+                                       (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq2xxs(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ2_XS: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockIQ2XS *src = (const BnBlockIQ2XS *)data +
+                                      (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq2xs(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ2_S: {
+            if ((n % BN_QK_K) != 0) return -1;
+            int blocks_per_row = n / BN_QK_K;
+            const BnBlockIQ2S *src = (const BnBlockIQ2S *)data +
+                                     (size_t)row * blocks_per_row;
+            for (int b = 0; b < blocks_per_row; b++)
+                bn_quant_dequant_iq2s(&src[b], out + b * BN_QK_K);
+            return 0;
+        }
+        default:
+            return -1;
+    }
+}
+
 // --- Q8_0 dequantization ---
 
 void bn_quant_dequant_q8_0(const BnBlockQ8_0 *block, float *out) {
