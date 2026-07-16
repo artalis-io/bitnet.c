@@ -345,6 +345,7 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts);
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);
+int bn_transformer_gpu_profile_level(void);
 int bn_transformer_gpu_debug_fallback_enabled(void);
 void bn_transformer_gpu_report_fallback(const char *reason);
 float *bn_transformer_gpu_reject_forward(

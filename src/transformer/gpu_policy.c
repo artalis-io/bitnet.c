@@ -974,6 +974,11 @@ int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
            getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
 }
 
+int bn_transformer_gpu_profile_level(void) {
+    const char *profile = getenv("BN_GPU_PROFILE");
+    return profile ? atoi(profile) : 0;
+}
+
 int bn_transformer_gpu_debug_fallback_enabled(void) {
     return getenv("BN_GPU_DEBUG_FALLBACK") != NULL;
 }

@@ -447,6 +447,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
 
+    unsetenv("BN_GPU_PROFILE");
+    assert(bn_transformer_gpu_profile_level() == 0);
+    setenv("BN_GPU_PROFILE", "3", 1);
+    assert(bn_transformer_gpu_profile_level() == 3);
+    unsetenv("BN_GPU_PROFILE");
+
     setenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE", "1", 1);
     assert(!bn_transformer_gpu_cuda_moe_decode_cacheable(
         &c, NULL, NULL));

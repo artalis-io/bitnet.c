@@ -207,6 +207,11 @@ if grep -n 'BN_GPU_CPU_FALLBACK_LAYER\|BN_GPU_CPU_FALLBACK_FROM_LAYER\|BN_GPU_CP
     fail=1
 fi
 
+if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_fallback.c must use GPU policy helpers for GPU profile env vars"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_MOE_PREFILL_MIN_TOKENS\|BN_CUDA_DISABLE_MOE_CACHE_PREFILL\|BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use GPU policy helpers for MoE prefill env vars"
     fail=1

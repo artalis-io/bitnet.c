@@ -1028,8 +1028,7 @@ int bn_transformer_gpu_fallback_logits(
     bn_quant_matvec(s->logits, logits->cpu_weight, s->xb, s->x_q,
                     bn_model_pool(m));
     double t_logits = bn_platform_time_ms();
-    const char *profile = getenv("BN_GPU_PROFILE");
-    if (profile && atoi(profile) >= 3) {
+    if (bn_transformer_gpu_profile_level() >= 3) {
         fprintf(stderr,
                 "[gpu:fallback:logits] flush=%.3fms read=%.3fms cpu=%.3fms total=%.3fms\n",
                 t_flush - t0, t_read - t_flush, t_logits - t_read,
