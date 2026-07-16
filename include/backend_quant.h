@@ -62,33 +62,31 @@ static inline int bn_backend_quant_supports_q8_logits_refine(int type) {
 }
 
 static inline int bn_backend_quant_logits_uses_f16_path(int type) {
-    return type == BN_GGUF_TENSOR_F16;
+    return bn_quant_format_uses_f16_logits_path(type);
 }
 
 static inline int bn_backend_quant_tied_logits_uses_quant_path(int type) {
-    return bn_quant_format_supported(type) &&
-           type != BN_GGUF_TENSOR_F16 &&
-           type != BN_GGUF_TENSOR_F32;
+    return bn_quant_format_tied_logits_uses_quant_path(type);
 }
 
 static inline int bn_backend_quant_logits_i8_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_F16;
+    return bn_quant_format_supports_logits_i8_cache(type);
 }
 
 static inline int bn_backend_quant_tied_logits_uses_f16_path(int type) {
-    return type == BN_GGUF_TENSOR_F16;
+    return bn_quant_format_tied_logits_uses_f16_path(type);
 }
 
 static inline int bn_backend_quant_tied_logits_i8_weight_type(void) {
-    return BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_tied_logits_i8_weight_type();
 }
 
 static inline int bn_backend_quant_tied_logits_f16_weight_type(void) {
-    return BN_GGUF_TENSOR_F16;
+    return bn_quant_format_tied_logits_f16_weight_type();
 }
 
 static inline int bn_backend_quant_tied_logits_f32_weight_type(void) {
-    return BN_GGUF_TENSOR_F32;
+    return bn_quant_format_tied_logits_f32_weight_type();
 }
 
 static inline int bn_backend_quant_dense_f32_type(void) {

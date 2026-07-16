@@ -108,6 +108,36 @@ int bn_quant_format_supports_q6_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q6_LOGITS_REFINE);
 }
 
+int bn_quant_format_uses_f16_logits_path(int type) {
+    return type == BN_GGUF_TENSOR_F16;
+}
+
+int bn_quant_format_tied_logits_uses_quant_path(int type) {
+    return bn_quant_format_supported(type) &&
+           type != BN_GGUF_TENSOR_F16 &&
+           type != BN_GGUF_TENSOR_F32;
+}
+
+int bn_quant_format_supports_logits_i8_cache(int type) {
+    return type == BN_GGUF_TENSOR_F16;
+}
+
+int bn_quant_format_tied_logits_uses_f16_path(int type) {
+    return type == BN_GGUF_TENSOR_F16;
+}
+
+int bn_quant_format_tied_logits_i8_weight_type(void) {
+    return BN_GGUF_TENSOR_Q8_0;
+}
+
+int bn_quant_format_tied_logits_f16_weight_type(void) {
+    return BN_GGUF_TENSOR_F16;
+}
+
+int bn_quant_format_tied_logits_f32_weight_type(void) {
+    return BN_GGUF_TENSOR_F32;
+}
+
 int bn_quant_format_supports_moe_q4_down_route(int gate_type,
                                                int up_type,
                                                int down_type,

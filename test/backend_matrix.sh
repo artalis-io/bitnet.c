@@ -107,6 +107,16 @@ do
 done
 
 for file in \
+    src/model.c \
+    src/transformer/plan.c
+do
+    if grep -n 'bn_backend_quant_logits_uses_f16_path\|bn_backend_quant_tied_logits_uses_quant_path\|bn_backend_quant_logits_i8_cache_supported\|bn_backend_quant_tied_logits_uses_f16_path\|bn_backend_quant_tied_logits_i[0-9]_weight_type\|bn_backend_quant_tied_logits_f[0-9][0-9]_weight_type' "$file" >/dev/null 2>&1; then
+        echo "$file must use quant format logits helpers for quant-format policy"
+        fail=1
+    fi
+done
+
+for file in \
     src/transformer/cpu.c \
     src/transformer/gpu.c \
     src/transformer/gpu_emit.c \

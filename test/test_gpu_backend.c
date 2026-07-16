@@ -502,11 +502,20 @@ static void test_quant_registry(void) {
     assert(!bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_supports_gpu_small_dense_q8(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_supports_q8_logits_refine(BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_tied_logits_i8_weight_type() ==
+    assert(bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_supports_logits_i8_cache(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_supports_logits_i8_cache(BN_GGUF_TENSOR_F32));
+    assert(bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F32));
+    assert(bn_quant_format_tied_logits_uses_f16_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_tied_logits_uses_f16_path(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_tied_logits_i8_weight_type() ==
            BN_GGUF_TENSOR_Q8_0);
-    assert(bn_backend_quant_tied_logits_f16_weight_type() ==
+    assert(bn_quant_format_tied_logits_f16_weight_type() ==
            BN_GGUF_TENSOR_F16);
-    assert(bn_backend_quant_tied_logits_f32_weight_type() ==
+    assert(bn_quant_format_tied_logits_f32_weight_type() ==
            BN_GGUF_TENSOR_F32);
     assert(bn_backend_quant_gpu_float_buffer_type() ==
            BN_GGUF_TENSOR_F32);

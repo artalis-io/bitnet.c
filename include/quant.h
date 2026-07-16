@@ -309,6 +309,13 @@ int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);
+int      bn_quant_format_uses_f16_logits_path(int type);
+int      bn_quant_format_tied_logits_uses_quant_path(int type);
+int      bn_quant_format_supports_logits_i8_cache(int type);
+int      bn_quant_format_tied_logits_uses_f16_path(int type);
+int      bn_quant_format_tied_logits_i8_weight_type(void);
+int      bn_quant_format_tied_logits_f16_weight_type(void);
+int      bn_quant_format_tied_logits_f32_weight_type(void);
 int      bn_quant_format_supports_moe_q4_down_route(int gate_type,
                                                      int up_type,
                                                      int down_type,

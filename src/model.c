@@ -4,6 +4,7 @@
 #include "backend_model.h"
 #include "model_arch.h"
 #include "moe.h"
+#include "quant.h"
 #include "sh_arena.h"
 #include "sh_log.h"
 #include "turboquant.h"
@@ -551,7 +552,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
     }
     if (!w->output_weight.data &&
-        bn_backend_quant_tied_logits_uses_quant_path(w->emb_type)) {
+        bn_quant_format_tied_logits_uses_quant_path(w->emb_type)) {
         w->tied_embedding_weight.data = w->token_embedding;
         w->tied_embedding_weight.type = w->emb_type;
         w->tied_embedding_weight.rows = c->vocab_size;
@@ -983,14 +984,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     size_t emb_i8_bytes = 0;
     size_t emb_i8_scales_bytes = 0;
     int want_i8_emb =
-        bn_backend_quant_logits_i8_cache_supported(w->emb_type) ||
+        bn_quant_format_supports_logits_i8_cache(w->emb_type) ||
         (w->output_weight.data &&
-         bn_backend_quant_logits_i8_cache_supported(w->output_weight.type));
+         bn_quant_format_supports_logits_i8_cache(w->output_weight.type));
     int i8_emb_rows = 0;
     if (want_i8_emb) {
         i8_emb_rows =
             (w->output_weight.data &&
-             bn_backend_quant_logits_i8_cache_supported(w->output_weight.type))
+             bn_quant_format_supports_logits_i8_cache(w->output_weight.type))
                 ? w->output_weight.rows
                 : c->vocab_size;
         emb_i8_bytes = (size_t)i8_emb_rows * c->dim;
@@ -1031,7 +1032,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (w->emb_out_i8 && w->emb_out_scales) {
                 const uint16_t *src =
                     (w->output_weight.data &&
-                     bn_backend_quant_logits_i8_cache_supported(
+                     bn_quant_format_supports_logits_i8_cache(
                          w->output_weight.type))
                         ? (const uint16_t *)w->output_weight.data
                         : (const uint16_t *)w->token_embedding;
