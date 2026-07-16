@@ -11,7 +11,7 @@
 #define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU             (1u << 2)
 #define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT                  (1u << 3)
 #define BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU                    (1u << 4)
-#define BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER               (1u << 5)
+#define BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER               (1u << 5)
 #define BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY        (1u << 6)
 #define BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT                   (1u << 7)
 #define BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM               (1u << 8)

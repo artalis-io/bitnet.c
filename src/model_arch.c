@@ -126,8 +126,8 @@ float bn_model_arch_attention_scale(const BnConfig *c, int head_size) {
 }
 
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c) {
-    if (c && (c->policy_flags & BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER))
-        return BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER;
+    if (c && (c->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER))
+        return BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER;
     return BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER;
 }
 
@@ -463,7 +463,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         {
             "qwen2",
             BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
-            BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER |
+            BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK |
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |

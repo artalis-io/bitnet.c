@@ -19,7 +19,7 @@ typedef struct {
 
 typedef enum {
     BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER = 0,
-    BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER,
+    BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER,
 } BnModelArchRMSNormMode;
 
 typedef enum {

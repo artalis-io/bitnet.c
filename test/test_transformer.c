@@ -630,7 +630,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 0);
 
     memset(&c, 0, sizeof(c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
                      BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
                      BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
@@ -638,7 +638,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
-           BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER);
+           BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 2);
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
@@ -1065,7 +1065,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_per_layer_embedding_dim(&c) == 0);
     assert(!bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
     assert(bn_transformer_prefill_uses_exact_activation(&c));
-    assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
+    assert(!bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
     int force_float_kquant =
         bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
     assert(force_float_kquant ==
@@ -1074,14 +1074,14 @@ static void test_block_planning(void) {
     c.policy_flags = 0;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
-    assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
+    assert(!bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
     c.policy_flags = 0;
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER;
-    assert(bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER;
+    assert(bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
                      BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |
                      BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM |

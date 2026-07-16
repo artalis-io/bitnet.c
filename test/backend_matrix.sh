@@ -167,9 +167,9 @@ do
     fi
 done
 
-for file in include/model_config.h include/model_weights.h include/model_run_state.h
+for file in include/model_arch.h include/model_config.h include/model_weights.h include/model_run_state.h include/transformer_plan_internal.h
 do
-    if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_\|BN_MODEL_ARCH_POLICY_.*GEMMA\|BN_MODEL_ARCH_POLICY_.*QWEN\|BN_MODEL_ARCH_POLICY_.*BITNET' "$file" >/dev/null 2>&1; then
+    if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_\|BN_MODEL_ARCH_POLICY_.*GEMMA\|BN_MODEL_ARCH_POLICY_.*QWEN\|BN_MODEL_ARCH_POLICY_.*BITNET\|BN_MODEL_ARCH_POLICY_.*LLAMA\|RMSNORM_LLAMA\|requires_llama_scalar' "$file" >/dev/null 2>&1; then
         echo "$file must expose behavior-named shared model state, not family-prefixed fields or comments"
         fail=1
     fi

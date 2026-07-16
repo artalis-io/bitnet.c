@@ -126,7 +126,7 @@ static int cpu_quant_can_preq8k_triple(const BnCPUBackendOps *ops,
            bn_quant_format_can_preq8k(c);
 }
 
-static void cpu_rmsnorm_llama_scalar_order(float *out, const float *x,
+static void cpu_rmsnorm_reference_scalar_order(float *out, const float *x,
                                            const float *w, int size, float eps) {
     double ss = 0.0;
     for (int i = 0; i < size; i++)
@@ -139,8 +139,8 @@ static void cpu_rmsnorm_llama_scalar_order(float *out, const float *x,
 static inline void cpu_rmsnorm_model(const BnModel *m, float *out,
                                      const float *x, const float *w,
                                      int size, float eps) {
-    if (m && bn_transformer_rmsnorm_requires_llama_scalar_order(&m->config)) {
-        cpu_rmsnorm_llama_scalar_order(out, x, w, size, eps);
+    if (m && bn_transformer_rmsnorm_requires_reference_scalar_order(&m->config)) {
+        cpu_rmsnorm_reference_scalar_order(out, x, w, size, eps);
         return;
     }
     cpu_backend_ops()->rmsnorm(out, x, w, size, eps);
