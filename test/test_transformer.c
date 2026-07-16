@@ -318,7 +318,9 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_backend_is_cuda(&gpu));
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+                     BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
     assert(!bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
         &gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
@@ -331,10 +333,10 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) == 0);
-    c.arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP;
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
-    c.arch_flags = 0;
+    c.policy_flags = 0;
 
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;
@@ -520,15 +522,16 @@ static void test_model_arch_registry(void) {
     const BnModelArchOps *gemma = bn_model_arch_ops_for("gemma4");
     assert(gemma);
     assert(strcmp(gemma->name, "gemma4") == 0);
-    assert(gemma->flags & BN_MODEL_ARCH_FLAG_GEMMA4);
-    assert(gemma->flags & BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK);
+    assert(gemma->policy_flags & BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY);
+    assert(gemma->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT);
+    assert(gemma->policy_flags & BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK);
     assert(strcmp(gemma->prefix("gemma4"), "gemma4") == 0);
     assert(gemma->attention_value_shares_key("gemma4"));
     assert(gemma->activation("gemma4") == 2);
 
     BnConfig c = {0};
     bn_model_arch_apply_config(&c, gemma);
-    assert(c.arch_flags == gemma->flags);
+    assert(c.policy_flags == gemma->policy_flags);
     assert(bn_model_arch_requires_large_gpu_graph_fallback(&c));
     assert(!bn_model_arch_cpu_force_float_kquant(&c));
     assert(bn_model_arch_attention_scale(&c, 128) == 1.0f);
@@ -570,7 +573,6 @@ static void test_model_arch_registry(void) {
     const BnModelArchOps *bitnet = bn_model_arch_ops_for("bitnet");
     assert(bitnet);
     assert(strcmp(bitnet->name, "bitnet") == 0);
-    assert(bitnet->flags & BN_MODEL_ARCH_FLAG_BITNET);
     assert(strcmp(bitnet->prefix("bitnet"), "bitnet") == 0);
     assert(bitnet->activation("bitnet") == 1);
     assert(!bitnet->attention_value_shares_key("bitnet"));
@@ -578,7 +580,7 @@ static void test_model_arch_registry(void) {
     const BnModelArchOps *qwen = bn_model_arch_ops_for("qwen35");
     assert(qwen);
     assert(strcmp(qwen->name, "qwen") == 0);
-    assert(qwen->flags & BN_MODEL_ARCH_FLAG_QWEN);
+    assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU);
     assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
     assert(qwen->activation("qwen35") == 0);
     assert(!qwen->attention_value_shares_key("qwen35"));
@@ -589,7 +591,14 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_tokenizer_uses_metaspace("llama"));
 
     memset(&c, 0, sizeof(c));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
+                     BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+                     BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+                     BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
+                     BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
     assert(bn_model_arch_cpu_force_float_kquant(&c));
     assert(fabsf(bn_model_arch_attention_scale(&c, 128) -
                  (1.0f / sqrtf(128.0f))) < 1e-7f);
@@ -621,7 +630,10 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 0);
 
     memset(&c, 0, sizeof(c));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+                     BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
     assert(!bn_model_arch_cpu_force_float_kquant(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
@@ -631,7 +643,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
 
-    c.arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
+                      BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION;
     assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(bn_model_arch_moe_prefers_cuda_exact_attention(&c));
 
@@ -1039,7 +1052,8 @@ static void test_block_planning(void) {
            cpu_backend == BN_CPU_BACKEND_AVX512 ||
            cpu_backend == BN_CPU_BACKEND_WASM_SIMD);
     memset(&c, 0, sizeof(c));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
+                     BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(fabsf(bn_transformer_attention_scale(&c, 128) -
@@ -1057,18 +1071,23 @@ static void test_block_planning(void) {
     assert(force_float_kquant ==
            (cpu_backend == BN_CPU_BACKEND_AVX2 ||
             cpu_backend == BN_CPU_BACKEND_AVX512));
-    c.arch_flags = 0;
+    c.policy_flags = 0;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
     assert(!bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
-    c.arch_flags = 0;
+    c.policy_flags = 0;
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER;
     assert(bn_transformer_rmsnorm_requires_llama_scalar_order(&c));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_GEMMA4;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
+                     BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |
+                     BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM |
+                     BN_MODEL_ARCH_POLICY_FFN_POST_NORM |
+                     BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE |
+                     BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
     c.per_layer_input_dim = 128;
     assert(bn_transformer_attention_scale(&c, 128) == 1.0f);
     assert(bn_transformer_attention_value_shares_key(&c));
@@ -1077,7 +1096,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_uses_layer_output_scale(&c));
     assert(bn_transformer_per_layer_embedding_dim(&c) == 128);
     assert(!bn_transformer_prefill_uses_exact_activation(&c));
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU;
     c.per_layer_input_dim = 0;
     c.full_attn_interval = 4;
     assert(bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));

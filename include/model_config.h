@@ -6,13 +6,27 @@
 #define BN_DEFAULT_ROPE_THETA  10000.0f
 #define BN_DEFAULT_NORM_EPS    1e-5f
 
-#define BN_MODEL_ARCH_FLAG_GEMMA4 1u
-#define BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK 2u
-#define BN_MODEL_ARCH_FLAG_QWEN 4u
-#define BN_MODEL_ARCH_FLAG_BITNET 8u
-#define BN_MODEL_ARCH_FLAG_QWEN3 16u
-#define BN_MODEL_ARCH_FLAG_QWEN2MOE 32u
-#define BN_MODEL_ARCH_FLAG_QWEN2 64u
+#define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE              (1u << 0)
+#define BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK          (1u << 1)
+#define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU             (1u << 2)
+#define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT                  (1u << 3)
+#define BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU                    (1u << 4)
+#define BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER               (1u << 5)
+#define BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY        (1u << 6)
+#define BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT                   (1u << 7)
+#define BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM               (1u << 8)
+#define BN_MODEL_ARCH_POLICY_FFN_POST_NORM                     (1u << 9)
+#define BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE                (1u << 10)
+#define BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY         (1u << 11)
+#define BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK (1u << 12)
+#define BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP           (1u << 13)
+#define BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION          (1u << 14)
+#define BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT           (1u << 15)
+#define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH         (1u << 16)
+#define BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8      (1u << 17)
+#define BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE        (1u << 18)
+#define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION          (1u << 19)
+#define BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION       (1u << 20)
 
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
@@ -21,7 +35,7 @@ typedef struct {
     float rope_theta_swa;
     int head_size, kv_dim, kv_mul;  // derived
     int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU², 2=GELU
-    uint32_t arch_flags;            // BnModelArchOps flags for planner/backend constraints
+    uint32_t policy_flags;          // BnModelArchOps behavior policies for planner/backend constraints
     int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)
     int kv_f16;                     // store KV cache in FP16 (halves attention DRAM bandwidth)

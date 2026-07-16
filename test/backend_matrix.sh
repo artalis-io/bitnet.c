@@ -109,8 +109,8 @@ for file in \
     src/transformer.c \
     src/generate.c
 do
-    if grep -n 'BN_MODEL_ARCH_FLAG_\|arch_flags' "$file" >/dev/null 2>&1; then
-        echo "$file must use model_arch policy helpers, not direct architecture flags"
+    if grep -n 'BN_MODEL_ARCH_POLICY_\|policy_flags' "$file" >/dev/null 2>&1; then
+        echo "$file must use model_arch policy helpers, not direct architecture policy flags"
         fail=1
     fi
 done
@@ -152,7 +152,7 @@ done
 
 for file in include/model_config.h include/model_weights.h include/model_run_state.h
 do
-    if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_' "$file" >/dev/null 2>&1; then
+    if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_\|BN_MODEL_ARCH_POLICY_.*GEMMA\|BN_MODEL_ARCH_POLICY_.*QWEN\|BN_MODEL_ARCH_POLICY_.*BITNET' "$file" >/dev/null 2>&1; then
         echo "$file must expose behavior-named shared model state, not family-prefixed fields or comments"
         fail=1
     fi

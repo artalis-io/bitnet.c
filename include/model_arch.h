@@ -7,7 +7,7 @@
 
 typedef struct {
     const char *name;
-    uint32_t flags;
+    uint32_t policy_flags;
     int (*is_match)(const char *arch);
     const char *(*prefix)(const char *arch);
     int (*activation)(const char *arch);

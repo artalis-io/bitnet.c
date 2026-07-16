@@ -203,7 +203,6 @@ static void test_qwen2moe_arch_config(void) {
     f.kvs = kvs;
 
     BnConfig c = {0};
-    c.arch_flags = BN_MODEL_ARCH_FLAG_QWEN;
     const BnModelArchOps *ops = bn_model_arch_ops_for("qwen2moe");
     assert(ops != NULL);
     bn_model_arch_load_moe_config(&c, &f, ops, "qwen2moe");
@@ -213,7 +212,10 @@ static void test_qwen2moe_arch_config(void) {
     assert(c.moe_intermediate_size == 8960);
     assert(c.moe_norm_topk_prob == 0);
     assert(c.moe_exact_silu == 1);
-    assert((c.arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) != 0);
+    assert((c.policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU) != 0);
+    assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(bn_model_arch_moe_prefers_cuda_exact_attention(&c));
+    assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
 
     printf("PASSED\n");
 }

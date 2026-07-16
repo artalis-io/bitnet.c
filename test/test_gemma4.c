@@ -250,7 +250,8 @@ static void test_gemma4_dense(void) {
     BnModel m; assert(bn_model_load(&m, gf, 8, 0, 0) == 0);
     assert(bn_model_backend(&m) != NULL);
     assert(bn_model_gpu(&m) == NULL);
-    assert(m.config.arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4);
+    assert(bn_model_arch_attention_value_shares_key_config(&m.config));
+    assert(bn_model_arch_uses_per_layer_embedding(&m.config));
     assert(bn_model_arch_requires_large_gpu_graph_fallback(&m.config));
     assert(m.config.head_size == 64);
     assert(m.config.kv_dim == 64);

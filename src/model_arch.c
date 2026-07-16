@@ -108,56 +108,56 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
 
 void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops) {
     if (c)
-        c->arch_flags = ops ? ops->flags : 0;
+        c->policy_flags = ops ? ops->policy_flags : 0;
 }
 
 int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK) != 0);
 }
 
 int bn_model_arch_cpu_force_float_kquant(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT) != 0);
 }
 
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size) {
-    if (c && (c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4))
+    if (c && (c->policy_flags & BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE))
         return 1.0f;
     return 1.0f / sqrtf((float)head_size);
 }
 
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c) {
-    if (c && (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2))
+    if (c && (c->policy_flags & BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER))
         return BN_MODEL_ARCH_RMSNORM_LLAMA_SCALAR_ORDER;
     return BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER;
 }
 
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY) != 0);
 }
 
 int bn_model_arch_uses_per_layer_embedding(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT) != 0);
 }
 
 int bn_model_arch_uses_attention_post_norm(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM) != 0);
 }
 
 int bn_model_arch_uses_ffn_post_norm(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_FFN_POST_NORM) != 0);
 }
 
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE) != 0);
 }
 
 int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU) != 0) &&
            c->full_attn_interval > 0;
 }
 
 static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
-    if (!c || ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) == 0))
+    if (!c || ((c->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT) == 0))
         return 0;
     if (c->per_layer_input_dim > 0)
         return 1;
@@ -178,38 +178,30 @@ int bn_model_arch_per_layer_embedding_dim(const BnConfig *c) {
 }
 
 int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK) != 0) &&
            c->n_experts <= 0 &&
            c->full_attn_interval <= 0 &&
            c->dim <= 2560;
 }
 
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
-    return c && (c->arch_flags &
-                 (BN_MODEL_ARCH_FLAG_GEMMA4 |
-                  BN_MODEL_ARCH_FLAG_QWEN |
-                  BN_MODEL_ARCH_FLAG_QWEN3 |
-                  BN_MODEL_ARCH_FLAG_QWEN2MOE)) != 0;
-}
-
-static int model_arch_is_qwen2_moe(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN2MOE) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY) != 0);
 }
 
 int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
-    return model_arch_is_qwen2_moe(c);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP) != 0);
 }
 
 int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
-    return model_arch_is_qwen2_moe(c);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION) != 0);
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT) != 0);
 }
 
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_GEMMA4) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH) != 0);
 }
 
 int bn_model_arch_loads_extra_metadata(const BnConfig *c) {
@@ -257,29 +249,29 @@ int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
 }
 
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN) != 0) &&
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8) != 0) &&
            c->n_experts <= 0 &&
            c->full_attn_interval <= 0 &&
            c->dim <= 2560;
 }
 
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
-    return bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE) != 0) &&
+           bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c);
 }
 
 int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c) {
     if (!bn_model_arch_allows_small_cuda_q8_logit_refine(c))
         return 0;
-    return (c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) ? 7 : 2;
+    return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) ? 7 : 2;
 }
 
 int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {
-    return c && ((c->arch_flags & BN_MODEL_ARCH_FLAG_QWEN3) != 0);
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) != 0);
 }
 
 int bn_model_arch_ffn_uses_exact_scalar_activation(const BnConfig *c) {
-    return c && (c->arch_flags &
-                 (BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2)) != 0;
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION) != 0);
 }
 
 int bn_model_arch_rope_text_dims(int rope_dim_count,
@@ -347,8 +339,12 @@ void bn_model_arch_load_moe_config(BnConfig *c,
     if (c->n_experts <= 0) return;
     c->moe_norm_topk_prob = strcmp(prefix, "qwen2moe") != 0;
     c->moe_exact_silu = strcmp(prefix, "qwen2moe") == 0;
-    if (c->moe_exact_silu)
-        c->arch_flags |= BN_MODEL_ARCH_FLAG_QWEN2MOE;
+    if (c->moe_exact_silu) {
+        c->policy_flags |= BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU |
+                           BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
+                           BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION |
+                           BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY;
+    }
     snprintf(key, sizeof(key), "%s.expert_weights_scale", prefix);
     c->moe_expert_weights_scale = bn_gguf_get_f32(f, key);
 
@@ -428,7 +424,16 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
     static const BnModelArchOps ops[] = {
         {
             "gemma4",
-            BN_MODEL_ARCH_FLAG_GEMMA4 | BN_MODEL_ARCH_FLAG_LARGE_GPU_GRAPH_FALLBACK,
+            BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |
+            BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK |
+            BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY |
+            BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT |
+            BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM |
+            BN_MODEL_ARCH_POLICY_FFN_POST_NORM |
+            BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE |
+            BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT |
+            BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH,
             bn_model_arch_match_gemma4,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -439,7 +444,14 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen3",
-            BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN3,
+            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
+            BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
+            BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             bn_model_arch_match_qwen3,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -450,7 +462,13 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen2",
-            BN_MODEL_ARCH_FLAG_QWEN | BN_MODEL_ARCH_FLAG_QWEN2,
+            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_LLAMA_RMSNORM_ORDER |
+            BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             bn_model_arch_match_qwen2,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -461,7 +479,12 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen",
-            BN_MODEL_ARCH_FLAG_QWEN,
+            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             bn_model_arch_match_qwen,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -472,7 +495,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "bitnet",
-            BN_MODEL_ARCH_FLAG_BITNET,
+            0,
             bn_model_arch_match_bitnet,
             bn_model_arch_prefix,
             bn_model_arch_activation,
