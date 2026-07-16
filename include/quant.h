@@ -235,7 +235,7 @@ typedef struct BnPreparedWeight {
 // Quantized weight tensor descriptor (zero-copy into GGUF buffer)
 typedef struct BnQWeight {
     const void *data;   // packed weight data
-    int type;           // BN_GGUF_TENSOR_TQ1_0, TQ2_0, or I2_S
+    int type;           // GGUF tensor type
     int rows, cols;
     float scale;        // per-tensor scale (from .scale tensor or embedded in data)
 } BnQWeight;
@@ -250,6 +250,10 @@ static inline size_t bn_quant_embedded_tensor_scale_offset(int type,
     if (!bn_quant_format_has_embedded_tensor_scale(type))
         return 0;
     return (size_t)rows * (size_t)cols / 4;
+}
+
+static inline int bn_quant_format_allows_stacked_layout(int type) {
+    return !bn_quant_format_has_embedded_tensor_scale(type);
 }
 
 typedef enum {

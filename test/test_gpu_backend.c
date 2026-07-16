@@ -616,7 +616,11 @@ static void test_backend_layout_reasons(void) {
     b.cols = 32;
 
     a.type = BN_GGUF_TENSOR_I2_S;
-    assert(bn_backend_layout_stackable_reason(&a, &b) == BN_BACKEND_LAYOUT_I2S_NOT_STACKABLE);
+    assert(bn_backend_layout_stackable_reason(&a, &b) ==
+           BN_BACKEND_LAYOUT_EMBEDDED_SCALE_NOT_STACKABLE);
+    assert(strcmp(bn_backend_layout_reason_string(
+               BN_BACKEND_LAYOUT_EMBEDDED_SCALE_NOT_STACKABLE),
+           "embedded_scale_not_stackable") == 0);
     assert(strcmp(bn_backend_layout_reason_string((BnBackendLayoutReason)999), "unknown") == 0);
     a.type = BN_GGUF_TENSOR_Q4_0;
 

@@ -102,7 +102,8 @@ const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason) {
         case BN_BACKEND_LAYOUT_NO_BUFFER_CREATE: return "no_buffer_create";
         case BN_BACKEND_LAYOUT_NO_BUFFER_CREATE_BIASED: return "no_buffer_create_biased";
         case BN_BACKEND_LAYOUT_MISSING_WEIGHT: return "missing_weight";
-        case BN_BACKEND_LAYOUT_I2S_NOT_STACKABLE: return "i2s_not_stackable";
+        case BN_BACKEND_LAYOUT_EMBEDDED_SCALE_NOT_STACKABLE:
+            return "embedded_scale_not_stackable";
         case BN_BACKEND_LAYOUT_TYPE_MISMATCH: return "type_mismatch";
         case BN_BACKEND_LAYOUT_COL_MISMATCH: return "col_mismatch";
         case BN_BACKEND_LAYOUT_ZERO_SIZE: return "zero_size";
@@ -115,8 +116,9 @@ const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason) {
 BnBackendLayoutReason bn_backend_layout_stackable_reason(const BnQWeight *a,
                                                          const BnQWeight *b) {
     if (!a || !b || !a->data || !b->data) return BN_BACKEND_LAYOUT_MISSING_WEIGHT;
-    if (a->type == BN_GGUF_TENSOR_I2_S || b->type == BN_GGUF_TENSOR_I2_S)
-        return BN_BACKEND_LAYOUT_I2S_NOT_STACKABLE;
+    if (!bn_quant_format_allows_stacked_layout(a->type) ||
+        !bn_quant_format_allows_stacked_layout(b->type))
+        return BN_BACKEND_LAYOUT_EMBEDDED_SCALE_NOT_STACKABLE;
     if (a->type != b->type) return BN_BACKEND_LAYOUT_TYPE_MISMATCH;
     if (a->cols != b->cols) return BN_BACKEND_LAYOUT_COL_MISMATCH;
     return BN_BACKEND_LAYOUT_OK;

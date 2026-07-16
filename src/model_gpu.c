@@ -307,8 +307,8 @@ static size_t qweight_pair_bytes(const BnQWeight *a, const BnQWeight *b) {
 }
 
 static int qweight_pair_stackable(const BnQWeight *a, const BnQWeight *b) {
-    return a && b && a->data && b->data && a->type == b->type &&
-           a->cols == b->cols && a->rows > 0 && b->rows > 0;
+    return a && b && a->rows > 0 && b->rows > 0 &&
+           bn_backend_layout_stackable(a, b);
 }
 
 static size_t qweight_triple_bytes(const BnQWeight *a, const BnQWeight *b,
