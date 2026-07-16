@@ -345,6 +345,27 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_q4_q8_ffn_down_enabled(1));
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
 
+    unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
+    assert(bn_transformer_gpu_qkv_split_enabled(0));
+    assert(!bn_transformer_gpu_qkv_split_enabled(1));
+    assert(bn_transformer_gpu_qk_split_enabled());
+    setenv("BN_GPU_DISABLE_QKV_SPLIT", "1", 1);
+    assert(!bn_transformer_gpu_qkv_split_enabled(0));
+    assert(!bn_transformer_gpu_qk_split_enabled());
+    unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
+
+    unsetenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT");
+    assert(bn_transformer_gpu_ssm_qkvz_split_enabled());
+    setenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT", "1", 1);
+    assert(!bn_transformer_gpu_ssm_qkvz_split_enabled());
+    unsetenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT");
+
+    unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
+    assert(bn_transformer_gpu_ssm_ab_stack_enabled());
+    setenv("BN_GPU_DISABLE_SSM_AB_STACK", "1", 1);
+    assert(!bn_transformer_gpu_ssm_ab_stack_enabled());
+    unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
+
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
 

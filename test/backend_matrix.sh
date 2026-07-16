@@ -187,6 +187,11 @@ if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_GPU_DISABLE_GATEUP_SPLIT\|BN_GPU_Q4_
     fail=1
 fi
 
+if grep -n 'BN_GPU_DISABLE_QKV_SPLIT\|BN_GPU_DISABLE_SSM_QKVZ_SPLIT\|BN_GPU_DISABLE_SSM_AB_STACK' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use GPU policy helpers for QKV and SSM split compatibility env vars"
+    fail=1
+fi
+
 for file in \
     src/model.c \
     src/model_gpu.c \

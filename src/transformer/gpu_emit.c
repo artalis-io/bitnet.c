@@ -1182,25 +1182,24 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
         bn_transformer_gpu_can_matvec_split(res->gpu, lw->ssm.wqkv.type);
 
     int qkv_split_op_code = bn_gpu_quant_split_op_code(lw->attn.wq.type);
-    int qkv_split_env_disabled = getenv("BN_GPU_DISABLE_QKV_SPLIT") != NULL;
-    int qkv_split_disabled = use_q4_q8 || qkv_split_env_disabled;
-    int qk_split_disabled = qkv_split_env_disabled;
-    int use_split = !qkv_split_disabled && !c->kv_f16 &&
+    int qkv_split_enabled = bn_transformer_gpu_qkv_split_enabled(use_q4_q8);
+    int qk_split_enabled = bn_transformer_gpu_qk_split_enabled();
+    int use_split = qkv_split_enabled && !c->kv_f16 &&
                     qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     qkv_split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
                     bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_q8_split = !qkv_split_disabled && !c->kv_f16 &&
+    int use_q8_split = qkv_split_enabled && !c->kv_f16 &&
                        qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_q5_split = !qkv_split_disabled && !c->kv_f16 &&
+    int use_q5_split = qkv_split_enabled && !c->kv_f16 &&
                        qkv_stacked && !q_gated &&
                        !q_bias && !k_bias && !v_bias &&
                        qkv_split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
                        bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type);
-    int use_qk_split = !qk_split_disabled && !c->kv_f16 &&
+    int use_qk_split = qk_split_enabled && !c->kv_f16 &&
                        qk_stacked && !q_gated &&
                        lw->attn.wq.rows == q_dim &&
                        lw->attn.wk.rows == kv_dim &&
@@ -1217,7 +1216,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 "[bn:gpu:debug] qkv_split disabled=%d stacked=%p qk=%p q_gated=%d "
                 "q_bias=%p k_bias=%p v_bias=%p op=%d can=%d use=%d qk_use=%d "
                 "kv_f16=%d q_rows=%d/%d k_rows=%d/%d cols=%d/%d types=%d/%d\n",
-                qkv_split_disabled, qkv_stacked, qk_stacked, q_gated, q_bias, k_bias,
+                !qkv_split_enabled, qkv_stacked, qk_stacked, q_gated, q_bias, k_bias,
                 v_bias, qkv_split_op_code,
                 bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type),
                 use_split || use_q8_split || use_q5_split, use_qk_split,
@@ -1560,7 +1559,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
 
     int ssm_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
     if (ssm_qkvz_stacked &&
-        !getenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT") &&
+        bn_transformer_gpu_ssm_qkvz_split_enabled() &&
         ssm_split_op_code != BN_GPU_CODE_UNKNOWN &&
         bn_transformer_gpu_can_matvec_split(res->gpu, lw->ssm.wqkv.type)) {
         int total_rows = lw->ssm.wqkv.rows + lw->ssm.wz.rows;
@@ -1593,7 +1592,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                      ssm_l2_params);
 
     if (ssm_ab_stacked &&
-        !getenv("BN_GPU_DISABLE_SSM_AB_STACK") &&
+        bn_transformer_gpu_ssm_ab_stack_enabled() &&
         lw->ssm.ssm_alpha.rows == lw->ssm.ssm_beta.rows &&
         lw->ssm.ssm_alpha.cols == lw->ssm.ssm_beta.cols) {
         int ab_rows = lw->ssm.ssm_alpha.rows + lw->ssm.ssm_beta.rows;

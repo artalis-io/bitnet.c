@@ -163,6 +163,10 @@ int bn_transformer_gpu_fused_gateup_silu_policy_allows(
 int bn_transformer_gpu_q4_q8_fused_gateup_enabled(int use_q4_q8);
 int bn_transformer_gpu_gateup_split_enabled(void);
 int bn_transformer_gpu_q4_q8_ffn_down_enabled(int use_q4_q8_down);
+int bn_transformer_gpu_qkv_split_enabled(int use_q4_q8);
+int bn_transformer_gpu_qk_split_enabled(void);
+int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
+int bn_transformer_gpu_ssm_ab_stack_enabled(void);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
 int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu);
 
