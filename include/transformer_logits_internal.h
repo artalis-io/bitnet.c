@@ -45,5 +45,8 @@ void bn_transformer_logits_f16_wasm_range(void *ctx, int start, int end);
 void bn_transformer_logits_f16_scalar_range(void *ctx, int start, int end);
 void bn_transformer_logits_f32_range(void *ctx, int start, int end);
 const BnLogitsBackendOps *bn_transformer_logits_backend_ops(void);
+int bn_transformer_logits_cpu_tied_q6k_refine_top(void);
+int bn_transformer_logits_cpu_tied_q6k_hybrid_top(void);
+int bn_transformer_logits_cpu_native_tied_quant_enabled(void);
 
 #endif // BN_TRANSFORMER_LOGITS_INTERNAL_H

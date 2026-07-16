@@ -1,6 +1,7 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_logits_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
@@ -677,6 +678,38 @@ static void test_gpu_policy_helpers(void) {
     assert(route_to == 7);
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+
+    printf("PASSED\n");
+}
+
+static void test_logits_policy_helpers(void) {
+    printf("test_logits_policy_helpers... ");
+
+    unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
+    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 0);
+    setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "0", 1);
+    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 0);
+    setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "7", 1);
+    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 7);
+    setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "200", 1);
+    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 128);
+    unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
+
+    unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
+    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 0);
+    setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "1", 1);
+    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 0);
+    setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "9", 1);
+    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 9);
+    setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "200", 1);
+    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 128);
+    unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
+
+    unsetenv("BN_CPU_NATIVE_TIED_LOGITS");
+    assert(!bn_transformer_logits_cpu_native_tied_quant_enabled());
+    setenv("BN_CPU_NATIVE_TIED_LOGITS", "1", 1);
+    assert(bn_transformer_logits_cpu_native_tied_quant_enabled());
+    unsetenv("BN_CPU_NATIVE_TIED_LOGITS");
 
     printf("PASSED\n");
 }
@@ -1494,6 +1527,7 @@ int main(void) {
     test_cpu_execution_helpers();
     test_gpu_capability_routing();
     test_gpu_policy_helpers();
+    test_logits_policy_helpers();
     test_gpu_op_kind_mapping();
     test_model_arch_registry();
     test_layer_shape_planning();

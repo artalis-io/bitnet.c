@@ -11,7 +11,6 @@
 #include "gpu_backend.h"
 #include "quant.h"
 #include <math.h>
-#include <stdlib.h>
 
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
 #define BN_LOGITS_REFINE_MAX_SCALE_BLOCKS 512
@@ -178,13 +177,11 @@ static float logits_q6k_row_native(const BnQWeight *W, const float *x,
 static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
     if (!m || !s || !W ||
-        !bn_quant_format_supports_q6_logits_refine(W->type) ||
-        !getenv("BN_CPU_TIED_Q6K_REFINE_TOP"))
+        !bn_quant_format_supports_q6_logits_refine(W->type))
         return;
 
-    int refine_top = atoi(getenv("BN_CPU_TIED_Q6K_REFINE_TOP"));
+    int refine_top = bn_transformer_logits_cpu_tied_q6k_refine_top();
     if (refine_top <= 0) return;
-    if (refine_top > 128) refine_top = 128;
 
     int ids[128];
     float vals[128];
@@ -196,14 +193,12 @@ static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
 
 static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
-    const char *env = getenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
     if (!m || !s || !W ||
-        !bn_quant_format_supports_q6_logits_refine(W->type) || !env)
+        !bn_quant_format_supports_q6_logits_refine(W->type))
         return;
 
-    int top_n = atoi(env);
-    if (top_n < 2) return;
-    if (top_n > 128) top_n = 128;
+    int top_n = bn_transformer_logits_cpu_tied_q6k_hybrid_top();
+    if (top_n <= 0) return;
 
     int ids[128];
     float vals[128];
@@ -359,7 +354,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared =
             bn_backend_model_prepared_qweight(backend, tied);
-        if (getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL) {
+        if (bn_transformer_logits_cpu_native_tied_quant_enabled()) {
             bn_quant_matvec_prepared_flags(
                 s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
                 BN_MATVEC_TASK_NATIVE_QUANT);
