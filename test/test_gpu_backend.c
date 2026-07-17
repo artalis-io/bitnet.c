@@ -777,6 +777,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT");
     unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
     unsetenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM");
+    unsetenv("BN_GPU_DEBUG_FALLBACK");
+    unsetenv("BN_GPU_FORCE_GRAPH");
     unsetenv("BN_GPU_CPU_LOGITS");
     unsetenv("BN_GPU_COMPARE_LOGITS");
     unsetenv("BN_GPU_DEBUG_ARGMAX_COMPARE");
@@ -881,6 +883,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_ssm_qkvz_split_enabled());
     assert(bn_gpu_policy_ssm_ab_stack_enabled());
     assert(!bn_gpu_policy_split_residual_rmsnorm_enabled());
+    assert(!bn_gpu_policy_debug_fallback_enabled());
+    assert(!bn_gpu_policy_force_graph_enabled());
     assert(!bn_gpu_policy_cpu_logits_enabled());
     assert(!bn_gpu_policy_compare_logits_enabled());
     assert(!bn_gpu_policy_debug_argmax_compare_enabled());
@@ -910,6 +914,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT", "1", 1);
     setenv("BN_GPU_DISABLE_SSM_AB_STACK", "1", 1);
     setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
+    setenv("BN_GPU_DEBUG_FALLBACK", "1", 1);
+    setenv("BN_GPU_FORCE_GRAPH", "1", 1);
     setenv("BN_GPU_CPU_LOGITS", "1", 1);
     setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
     setenv("BN_GPU_DEBUG_ARGMAX_COMPARE", "1", 1);
@@ -937,6 +943,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_ssm_qkvz_split_enabled());
     assert(!bn_gpu_policy_ssm_ab_stack_enabled());
     assert(bn_gpu_policy_split_residual_rmsnorm_enabled());
+    assert(bn_gpu_policy_debug_fallback_enabled());
+    assert(bn_gpu_policy_force_graph_enabled());
     assert(bn_gpu_policy_cpu_logits_enabled());
     assert(bn_gpu_policy_compare_logits_enabled());
     assert(bn_gpu_policy_debug_argmax_compare_enabled());
@@ -983,6 +991,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT");
     unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
     unsetenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM");
+    unsetenv("BN_GPU_DEBUG_FALLBACK");
+    unsetenv("BN_GPU_FORCE_GRAPH");
     unsetenv("BN_GPU_CPU_LOGITS");
     unsetenv("BN_GPU_COMPARE_LOGITS");
     unsetenv("BN_GPU_DEBUG_ARGMAX_COMPARE");
@@ -1034,6 +1044,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT");
     unsetenv("BN_GPU_DISABLE_SSM_AB_STACK");
     unsetenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM");
+    unsetenv("BN_GPU_DEBUG_FALLBACK");
+    unsetenv("BN_GPU_FORCE_GRAPH");
     unsetenv("BN_GPU_CPU_LOGITS");
     unsetenv("BN_GPU_COMPARE_LOGITS");
     unsetenv("BN_GPU_DEBUG_ARGMAX_COMPARE");

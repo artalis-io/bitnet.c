@@ -630,6 +630,14 @@ int bn_gpu_policy_split_residual_rmsnorm_enabled(void) {
     return getenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM") != NULL;
 }
 
+int bn_gpu_policy_debug_fallback_enabled(void) {
+    return getenv("BN_GPU_DEBUG_FALLBACK") != NULL;
+}
+
+int bn_gpu_policy_force_graph_enabled(void) {
+    return getenv("BN_GPU_FORCE_GRAPH") != NULL;
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }

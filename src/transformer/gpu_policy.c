@@ -1483,7 +1483,7 @@ int bn_transformer_gpu_profile_level(void) {
 }
 
 int bn_transformer_gpu_debug_fallback_enabled(void) {
-    return getenv("BN_GPU_DEBUG_FALLBACK") != NULL;
+    return bn_gpu_policy_debug_fallback_enabled();
 }
 
 void bn_transformer_gpu_report_fallback(const char *reason) {
@@ -1542,7 +1542,7 @@ int bn_transformer_gpu_validate_forward(
     }
 
     int cuda_large_native = bn_transformer_gpu_backend_is_cuda(gpu);
-    if (!getenv("BN_GPU_FORCE_GRAPH") && !cuda_large_native &&
+    if (!bn_gpu_policy_force_graph_enabled() && !cuda_large_native &&
         bn_model_arch_uses_large_gpu_graph_fallback_shape(c))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
 
