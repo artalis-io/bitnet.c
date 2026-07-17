@@ -5,7 +5,6 @@
 #include "transformer_kv_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
-#include "backend_quant.h"
 #include "backend_model.h"
 #include "quant.h"
 #include "moe.h"
@@ -68,8 +67,8 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
             for (int i = 0; i < n_tasks; i++)
                 bufs[i] = bn_backend_model_qweight_buf(backend,
                                                        prepared_tasks[i].W);
-            bn_backend_quant_matvec_batch_gpu_buf(
-                prepared_tasks, (const void *const *)bufs, n_tasks, x,
+            bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
+                prepared_tasks, (const void **)bufs, n_tasks, x,
                 x_q_buf, bn_model_pool(m), bn_model_gpu(m));
             free(heap_bufs);
             if (prepared_tasks != inline_tasks) free(prepared_tasks);

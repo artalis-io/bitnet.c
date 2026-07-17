@@ -47,3 +47,15 @@ int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
     return bn_transformer_cpu_can_preq8k_pair(ops, first_type, second_type) &&
            bn_backend_quant_can_preq8k(third_type);
 }
+
+void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
+    const BnMatvecTask *tasks,
+    const void **buffers,
+    int n_tasks,
+    const float *x,
+    int8_t *x_q_buf,
+    BnThreadPool *pool,
+    BnGPUBackend *gpu) {
+    bn_backend_quant_matvec_batch_gpu_buf(tasks, buffers, n_tasks, x, x_q_buf,
+                                          pool, gpu);
+}

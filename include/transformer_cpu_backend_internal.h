@@ -1,7 +1,9 @@
 #ifndef BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H
 #define BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H
 
+#include "gpu_backend.h"
 #include "model_run_state.h"
+#include "quant.h"
 #include "threadpool.h"
 #include "transformer_plan_internal.h"
 #include <stdint.h>
@@ -46,5 +48,13 @@ int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
+void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
+    const BnMatvecTask *tasks,
+    const void **buffers,
+    int n_tasks,
+    const float *x,
+    int8_t *x_q_buf,
+    BnThreadPool *pool,
+    BnGPUBackend *gpu);
 
 #endif // BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H

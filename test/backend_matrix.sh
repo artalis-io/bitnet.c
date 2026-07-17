@@ -300,6 +300,11 @@ if grep -n 'bn_quant_format_supports_cpu_fused_q4_gateup_silu\|bn_backend_quant_
     fail=1
 fi
 
+if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "CPU execution code must use CPU backend policy helpers for GPU-resident quant matvec dispatch"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transformer/cpu.c >/dev/null 2>&1; then
     echo "CPU execution code must use CPU backend policy helpers for preq8k quant capability"
     fail=1
