@@ -347,8 +347,7 @@ static int cuda_all2_q4q6_moe_requires_opt_in(const BnConfig *c,
 static int small_dense_cuda_native_by_default(
     const BnConfig *c,
     const BnWeights *w) {
-    if (!c || !w || c->n_experts > 0 || c->full_attn_interval > 0 ||
-        c->dim > 2560)
+    if (!c || !w || !bn_model_arch_uses_small_cuda_dense_shape(c))
         return 0;
     if (w->output_weight.data) {
         if (!bn_backend_quant_cuda_small_dense_supported(w->output_weight.type))
@@ -375,8 +374,7 @@ static int small_dense_cuda_native_by_default(
 static int small_dense_cuda_q8_native_by_default(
     const BnConfig *c,
     const BnWeights *w) {
-    if (!c || !w || c->n_experts > 0 || c->full_attn_interval > 0 ||
-        c->dim > 2560)
+    if (!c || !w || !bn_model_arch_uses_small_cuda_dense_shape(c))
         return 0;
     if (w->output_weight.data) {
         if (!bn_backend_quant_cuda_small_dense_q8_supported(w->output_weight.type))

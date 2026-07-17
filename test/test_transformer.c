@@ -2052,6 +2052,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
     assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
+    assert(bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));
@@ -2063,6 +2064,7 @@ static void test_model_arch_registry(void) {
     c.full_attn_interval = 4;
     assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
+    assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(!bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));
     assert(!bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
@@ -2075,6 +2077,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     c.n_experts = 1;
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
+    assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
 
     memset(&c, 0, sizeof(c));
     c.n_experts = 2;
@@ -2110,9 +2113,14 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
+    assert(bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 2);
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
+    c.dim = 2561;
+    assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
+    assert(!bn_model_arch_small_cuda_dense_prefill_min_tokens(&c));
+    c.dim = 0;
 
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
                       BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION;

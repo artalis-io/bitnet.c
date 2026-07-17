@@ -285,11 +285,16 @@ int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
     return bn_model_arch_is_gemma4(tokenizer_model);
 }
 
-int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8) != 0) &&
+int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c) {
+    return c &&
            c->n_experts <= 0 &&
            c->full_attn_interval <= 0 &&
            c->dim <= 2560;
+}
+
+int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8) != 0) &&
+           bn_model_arch_uses_small_cuda_dense_shape(c);
 }
 
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
