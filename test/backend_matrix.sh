@@ -500,6 +500,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA' src/model_gpu.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n 'n_experts == 2 && c->n_experts_active == 2' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use model_arch helpers for all-active two-expert MoE policy"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q8_route' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
     fail=1

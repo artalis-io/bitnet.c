@@ -2048,6 +2048,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(!bn_model_arch_moe_uses_dense_residual_branch(&c));
+    assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
@@ -2078,11 +2079,14 @@ static void test_model_arch_registry(void) {
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4096;
     c.dim = 2048;
+    assert(bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     c.n_experts_active = 1;
+    assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4095;
+    assert(bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     c.moe_intermediate_size = 4096;
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, 2049));

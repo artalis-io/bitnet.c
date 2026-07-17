@@ -3,6 +3,7 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_policy.h"
+#include "model_arch.h"
 #include "moe_internal.h"
 #include "quant.h"
 #include <stdlib.h>
@@ -412,7 +413,7 @@ static size_t estimate_cuda_base_model_bytes(const BnConfig *c,
             add_f32_bytes(&total, lw->shared.shared_expert_gate,
                           c->dim) != 0)
             return SIZE_MAX;
-        if (c->n_experts == 2 && c->n_experts_active == 2 &&
+        if (bn_model_arch_uses_all_active_two_expert_moe(c, c->dim) &&
             lw->moe.router_weight &&
             add_f32_bytes(&total, lw->moe.router_weight, c->dim) != 0)
             return SIZE_MAX;
@@ -698,7 +699,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             bn_gpu_policy_cuda_moe_all_f16_cache_forced();
         int auto_f16_cache =
             c->n_experts > 2 ||
-            (c->n_experts == 2 && c->n_experts_active == 2);
+            bn_model_arch_uses_two_expert_all_active_moe(c);
         if ((force_f16_cache || auto_f16_cache) &&
             cuda_moe_all_fits_memory(gpu, c, w, 1)) {
             upload_moe_all_q8_f16_cache = 1;
@@ -812,7 +813,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         void *attn_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_norm, c->dim);
         void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->norm.ffn_norm, c->dim);
         void *moe_router_diff_gpu =
-            (c->n_experts == 2 && c->n_experts_active == 2)
+            bn_model_arch_uses_all_active_two_expert_moe(c, c->dim)
                 ? upload_moe_router_diff2(gpu, lw->moe.router_weight, c->dim)
                 : NULL;
         void *moe_router_gpu = lw->moe.router_weight
