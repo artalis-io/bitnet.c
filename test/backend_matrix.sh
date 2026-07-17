@@ -580,7 +580,7 @@ if grep -n 'full_attn_interval\|c && c->n_experts > 0 && c->full_attn_interval >
     fail=1
 fi
 
-if grep -n 'full_attn_interval\|n_ssm = c->n_layers - n_attn' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
+if grep -n 'full_attn_interval\|n_ssm = c->n_layers - n_attn' src/gpu_wgpu.c src/gpu_metal.m src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "GPU backends must compose model_arch helpers for hybrid activation sizing policy"
     fail=1
 fi
