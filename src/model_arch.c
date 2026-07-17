@@ -12,12 +12,16 @@ static int bn_model_arch_is_gemma4(const char *arch) {
 }
 
 int bn_model_arch_activation(const char *arch) {
-    if (bn_model_arch_is_gemma4(arch)) return 2;
-    return (arch && strncmp(arch, "bitnet", 6) == 0) ? 1 : 0;
+    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
+    if (ops && ops->activation)
+        return ops->activation(arch);
+    return 0;
 }
 
 int bn_model_arch_attention_value_shares_key(const char *arch) {
-    return bn_model_arch_is_gemma4(arch);
+    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
+    return ops && ops->attention_value_shares_key &&
+           ops->attention_value_shares_key(arch);
 }
 
 const char *bn_model_arch_tensor_suffix(BnModelTensorRole role) {
@@ -394,6 +398,31 @@ static void bn_model_arch_apply_default_shapes(BnConfig *c,
     (void)max_kv_dim;
 }
 
+static int bn_model_arch_default_activation(const char *arch) {
+    (void)arch;
+    return 0;
+}
+
+static int bn_model_arch_bitnet_activation(const char *arch) {
+    (void)arch;
+    return 1;
+}
+
+static int bn_model_arch_gemma4_activation(const char *arch) {
+    (void)arch;
+    return 2;
+}
+
+static int bn_model_arch_attention_value_unique(const char *arch) {
+    (void)arch;
+    return 0;
+}
+
+static int bn_model_arch_attention_value_shared(const char *arch) {
+    (void)arch;
+    return 1;
+}
+
 static int bn_model_arch_match_gemma4(const char *arch) {
     return bn_model_arch_is_gemma4(arch);
 }
@@ -441,8 +470,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             0,
             bn_model_arch_match_gemma4,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_gemma4_activation,
+            bn_model_arch_attention_value_shared,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_gemma4_tensor_name,
             bn_model_arch_apply_gemma4_shapes,
@@ -460,8 +489,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             0,
             bn_model_arch_match_qwen3,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_default_activation,
+            bn_model_arch_attention_value_unique,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_default_shapes,
@@ -478,8 +507,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             0,
             bn_model_arch_match_qwen35,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_default_activation,
+            bn_model_arch_attention_value_unique,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_default_shapes,
@@ -500,8 +529,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK,
             bn_model_arch_match_qwen2,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_default_activation,
+            bn_model_arch_attention_value_unique,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_default_shapes,
@@ -517,8 +546,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             0,
             bn_model_arch_match_qwen,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_default_activation,
+            bn_model_arch_attention_value_unique,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_default_shapes,
@@ -529,8 +558,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             0,
             bn_model_arch_match_bitnet,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_bitnet_activation,
+            bn_model_arch_attention_value_unique,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_default_shapes,
@@ -541,8 +570,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             0,
             bn_model_arch_match_default,
             bn_model_arch_prefix,
-            bn_model_arch_activation,
-            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_default_activation,
+            bn_model_arch_attention_value_unique,
             bn_model_arch_is_ssm_layer,
             bn_model_arch_default_tensor_name,
             bn_model_arch_apply_default_shapes,
