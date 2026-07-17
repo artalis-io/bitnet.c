@@ -734,6 +734,31 @@ int bn_gpu_policy_cuda_moe_ffn_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
 }
 
+int bn_gpu_policy_cuda_moe_router_topk_enabled(int eligible) {
+    return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK") == NULL;
+}
+
+int bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(int eligible) {
+    return eligible &&
+           getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_router_gpu_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_router_diff2_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(int large_moe) {
+    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
+        return 0;
+    return !large_moe ||
+           getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
+}
+
 int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void) {
     return getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
 }

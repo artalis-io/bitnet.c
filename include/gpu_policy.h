@@ -172,6 +172,11 @@ int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
                                            int q8_refine_default);
 int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top);
 int bn_gpu_policy_cuda_moe_ffn_disabled(void);
+int bn_gpu_policy_cuda_moe_router_topk_enabled(int eligible);
+int bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(int eligible);
+int bn_gpu_policy_cuda_moe_router_gpu_enabled(void);
+int bn_gpu_policy_cuda_moe_router_diff2_enabled(void);
+int bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(int large_moe);
 int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void);
 int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos);
 int bn_gpu_policy_moe_compare_input_norm_enabled(void);
