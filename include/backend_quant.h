@@ -37,6 +37,10 @@ static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) 
     return bn_quant_format_is_float_kquant_fallback_candidate(type);
 }
 
+static inline int bn_backend_quant_can_preq8k(int type) {
+    return bn_quant_format_can_preq8k(type);
+}
+
 static inline int bn_backend_quant_supports_q8_logits_refine(int type) {
     return bn_quant_format_supports_q8_logits_refine(type);
 }

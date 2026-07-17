@@ -31,3 +31,19 @@ int bn_transformer_cpu_can_fused_q4_gateup_silu(int gate_type, int up_type) {
     return bn_transformer_cpu_fused_q4_gateup_silu_allowed() &&
            bn_backend_quant_cpu_fused_q4_gateup_silu(gate_type, up_type);
 }
+
+int bn_transformer_cpu_can_preq8k_pair(const BnCPUBackendOps *ops,
+                                       int left_type,
+                                       int right_type) {
+    return ops && ops->supports_preq8k &&
+           bn_backend_quant_can_preq8k(left_type) &&
+           bn_backend_quant_can_preq8k(right_type);
+}
+
+int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
+                                         int first_type,
+                                         int second_type,
+                                         int third_type) {
+    return bn_transformer_cpu_can_preq8k_pair(ops, first_type, second_type) &&
+           bn_backend_quant_can_preq8k(third_type);
+}
