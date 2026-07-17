@@ -1,6 +1,5 @@
 #include "gpu_internal.h"
 #include "../gpu_graph_lowering_internal.h"
-#include "../gpu_quant_lowering_internal.h"
 #include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
@@ -1048,7 +1047,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                    bn_transformer_gpu_dense_gateup_exact_split_supported(
                        res ? res->gpu : NULL, &lw->ffn.ffn_gate,
                        &lw->ffn.ffn_up, ffn_plan->activation,
-                       bn_gpu_quant_split_op_code(lw->ffn.ffn_gate.type))) {
+                       bn_transformer_gpu_matvec_split_op_code(
+                           lw->ffn.ffn_gate.type))) {
             int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
             emit_context_matvec_split(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,
@@ -1165,12 +1165,14 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                          !q_bias && !k_bias && !v_bias &&
                          lw->ssm.wqkv.rows == q_dim + 2 * kv_dim;
     int q_gated = !use_packed_qkv && plan->q_gated;
-    int packed_split_op_code = bn_gpu_quant_split_op_code(lw->ssm.wqkv.type);
+    int packed_split_op_code = bn_transformer_gpu_matvec_split_op_code(
+        lw->ssm.wqkv.type);
     int use_packed_q5_split = bn_transformer_gpu_packed_qkv_split_supported(
         res ? res->gpu : NULL, &lw->ssm.wqkv, use_packed_qkv, c->kv_f16,
         packed_split_op_code);
 
-    int qkv_split_op_code = bn_gpu_quant_split_op_code(lw->attn.wq.type);
+    int qkv_split_op_code = bn_transformer_gpu_matvec_split_op_code(
+        lw->attn.wq.type);
     int qkv_split_enabled = bn_transformer_gpu_qkv_split_enabled(use_q4_q8);
     int qk_split_enabled = bn_transformer_gpu_qk_split_enabled();
     int use_split = qkv_split_enabled && !c->kv_f16 &&
@@ -1196,7 +1198,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        bn_transformer_gpu_qk_split_supported(
                            res ? res->gpu : NULL, &lw->attn.wq, &lw->attn.wk,
                            q_dim, kv_dim,
-                           bn_gpu_quant_split_op_code(lw->attn.wq.type));
+                           bn_transformer_gpu_matvec_split_op_code(
+                               lw->attn.wq.type));
     static int qkv_debug_printed = 0;
     if (!qkv_debug_printed && bn_transformer_gpu_qkv_split_debug_enabled()) {
         fprintf(stderr,
@@ -1548,7 +1551,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
         bn_transformer_gpu_ssm_qkvz_split_enabled() &&
         bn_transformer_gpu_ssm_qkvz_split_supported(
             res ? res->gpu : NULL, &lw->ssm.wqkv,
-            bn_gpu_quant_split_op_code(lw->ssm.wqkv.type))) {
+            bn_transformer_gpu_matvec_split_op_code(lw->ssm.wqkv.type))) {
         int total_rows = lw->ssm.wqkv.rows + lw->ssm.wz.rows;
         emit_context_matvec_split(
             ctx, lw->ssm.wqkv.type, ssm_qkvz_stacked, BN_GPU_VALUE_XB,

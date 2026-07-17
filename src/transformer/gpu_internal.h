@@ -151,7 +151,7 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,
     int split_op_code);
-int bn_transformer_gpu_moe_gateup_split_op_code(int tensor_type);
+int bn_transformer_gpu_matvec_split_op_code(int tensor_type);
 int bn_transformer_gpu_dense_gateup_exact_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *gate,

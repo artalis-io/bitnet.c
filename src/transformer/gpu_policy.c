@@ -212,7 +212,7 @@ int bn_transformer_gpu_moe_gateup_split_supported(
            map->gate_cols == map->up_cols;
 }
 
-int bn_transformer_gpu_moe_gateup_split_op_code(int tensor_type) {
+int bn_transformer_gpu_matvec_split_op_code(int tensor_type) {
     return bn_gpu_quant_split_op_code(tensor_type);
 }
 
