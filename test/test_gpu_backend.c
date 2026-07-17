@@ -576,6 +576,20 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6_K");
     unsetenv("BN_CUDA_DISABLE_Q8_K");
 
+    unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
+    unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
+    assert(bn_gpu_policy_cuda_small_kquant_native_enabled(0));
+    assert(!bn_gpu_policy_cuda_small_kquant_native_enabled(1));
+    assert(!bn_gpu_policy_cuda_small_kquant_native_disabled());
+    setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    assert(bn_gpu_policy_cuda_small_kquant_native_enabled(1));
+    setenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    assert(bn_gpu_policy_cuda_small_kquant_native_enabled(1));
+    assert(bn_gpu_policy_cuda_small_kquant_native_disabled());
+    unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
+    assert(!bn_gpu_policy_cuda_small_kquant_native_enabled(0));
+    unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
+
     unsetenv("BN_GPU_MAX_STORAGE_BINDING_MB");
     assert(bn_gpu_policy_max_storage_binding_bytes(0) ==
            128u * 1024u * 1024u);

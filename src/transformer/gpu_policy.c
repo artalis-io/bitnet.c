@@ -526,10 +526,8 @@ int bn_transformer_gpu_cuda_matvec_fallback_kept(
     const BnConfig *c = &m->config;
     if (!bn_model_arch_uses_dense_attention_only(c))
         return 0;
-    if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
-        return 1;
-    if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") == NULL &&
-        !bn_model_arch_cpu_force_float_kquant(c))
+    if (bn_gpu_policy_cuda_small_kquant_native_enabled(
+            bn_model_arch_cpu_force_float_kquant(c)))
         return 1;
     if (!bn_model_arch_uses_small_cuda_dense_q8_native_shape(c))
         return 1;
@@ -1557,7 +1555,7 @@ int bn_transformer_gpu_validate_forward(
 
     if (bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_model_arch_uses_small_cuda_dense_shape(c)) {
-        if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")) {
+        if (bn_gpu_policy_cuda_small_kquant_native_disabled()) {
             if (!small_dense_cuda_q8_native_by_default(c, w))
                 GPU_POLICY_REJECT("small dense cuda graph disabled");
         } else if (!small_dense_cuda_native_by_default(c, w)) {

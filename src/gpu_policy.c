@@ -174,6 +174,17 @@ int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type) {
     return bn_backend_quant_cuda_matvec_type_disabled(tensor_type);
 }
 
+int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant) {
+    if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
+        return 1;
+    return getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") == NULL &&
+           !force_float_kquant;
+}
+
+int bn_gpu_policy_cuda_small_kquant_native_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") != NULL;
+}
+
 size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit) {
     size_t max_storage_binding = backend_limit;
     if (max_storage_binding == 0)
