@@ -451,7 +451,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // MoE config
     bn_model_arch_load_moe_config(c, f, arch_ops, prefix);
-    if (c->n_experts > 0) {
+    if (bn_model_arch_uses_moe(c)) {
         if (c->n_experts_active <= 0 || c->moe_intermediate_size <= 0) {
             SH_LOG_ERROR("Invalid MoE config: n_experts_active and moe_intermediate_size must be > 0");
             return -1;
@@ -596,7 +596,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         // Determine layer type for hybrid models
         int is_ssm = arch_ops->is_ssm_layer(c, i);
         lw->block_kind = is_ssm ? BN_LAYER_BLOCK_SSM : BN_LAYER_BLOCK_ATTENTION;
-        lw->ffn_kind = c->n_experts > 0 ? BN_LAYER_FFN_MOE : BN_LAYER_FFN_DENSE;
+        lw->ffn_kind = bn_model_arch_uses_moe(c) ? BN_LAYER_FFN_MOE : BN_LAYER_FFN_DENSE;
 
         // #25: Attention norms — must exist
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -848,7 +848,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 
         // FFN weights: MoE or dense
-        if (c->n_experts > 0) {
+        if (bn_model_arch_uses_moe(c)) {
             // --- MoE layer: router + expert offsets + shared expert ---
 
             // Router weight: [n_experts, dim] F32 — always resident
