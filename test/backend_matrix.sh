@@ -445,6 +445,16 @@ if grep -n 'BN_GPU_PROFILE' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'getenv("BN_METAL_SHARED_WEIGHTS")\|getenv("BN_METAL_Q4_PREPARED")\|getenv("BN_METAL_ENABLE_Q6_Q8K")\|getenv("BN_METAL_FULL_BARRIERS")\|getenv("BN_METAL_ENABLE_BARRIERS")\|getenv("BN_METAL_DISABLE_BARRIERS")\|getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")\|getenv("BN_METAL_Q8_BARRIERS")\|getenv("BN_METAL_CPU_ORDER_RMSNORM")\|getenv("BN_GPU_Q4_Q8")\|getenv("BN_GPU_Q4_Q8_FROM_LAYER")\|getenv("BN_GPU_Q4_Q8_ATTN_ONLY")\|getenv("BN_GPU_Q4_Q8_FFN_ONLY")' src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal backend must use GPU policy helpers for Metal/Q4-Q8 compatibility env vars"
+    fail=1
+fi
+
+if ! grep -n 'bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c must own Metal feature-policy env vars"
+    fail=1
+fi
+
 if grep -n 'static const char \*shader_name_for_type\|static const int supported_types' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     echo "GPU backends must use quant format helpers for shader type-name and supported-type policy"
     fail=1

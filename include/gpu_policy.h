@@ -83,6 +83,16 @@ int bn_gpu_policy_auto_caps_sequence(int webgpu,
                                      int cap_seq_len);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
+void bn_gpu_policy_metal_apply_q4_q8_default(void);
+int bn_gpu_policy_metal_q4_q8_enabled(void);
+int bn_gpu_policy_metal_q4_prepared_upload_enabled(void);
+int bn_gpu_policy_metal_shared_weights_enabled(void);
+int bn_gpu_policy_metal_q6_q8k_enabled(void);
+int bn_gpu_policy_metal_q8_barriers_enabled(void);
+int bn_gpu_policy_metal_cpu_order_rmsnorm_enabled(void);
+int bn_gpu_policy_metal_full_barriers_enabled(void);
+int bn_gpu_policy_metal_barriers_enabled(void);
+int bn_gpu_policy_metal_barriers_disabled(void);
 int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_profile_level(void);
 

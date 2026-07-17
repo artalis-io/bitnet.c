@@ -187,16 +187,6 @@ typedef struct {
     int           q4_prepared;
 } BnMetalBuf;
 
-static int metal_q4_prepared_upload_enabled(void)
-{
-    const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
-    return getenv("BN_METAL_Q4_PREPARED") &&
-           getenv("BN_GPU_Q4_Q8") &&
-           (!from_layer || atoi(from_layer) <= 0) &&
-           !getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
-           !getenv("BN_GPU_Q4_Q8_FFN_ONLY");
-}
-
 /* ── Shader compilation ────────────────────────────────────────────── */
 
 static id<MTLComputePipelineState> compile_shader(BnMetalCtx *ctx,
@@ -273,7 +263,7 @@ static id<MTLBuffer> metal_new_weight_buffer(BnMetalCtx *ctx,
                                              size_t size)
 {
     if (!ctx || !data || size == 0) return nil;
-    if (getenv("BN_METAL_SHARED_WEIGHTS")) {
+    if (bn_gpu_policy_metal_shared_weights_enabled()) {
         return [ctx->device newBufferWithBytes:data
                                         length:size
                                        options:MTLResourceStorageModeShared];
@@ -361,7 +351,8 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
 
     int blocks_per_row = cols / 32;
     int n_blocks = rows * blocks_per_row;
-    if (allow_prepared && metal_q4_prepared_upload_enabled() && (rows % 4) == 0) {
+    if (allow_prepared && bn_gpu_policy_metal_q4_prepared_upload_enabled() &&
+        (rows % 4) == 0) {
         int n_groups = rows / 4;
         size_t n_group_blocks = (size_t)n_groups * (size_t)blocks_per_row;
         size_t scale_bytes = n_group_blocks * 4 * sizeof(uint16_t);
@@ -661,7 +652,8 @@ static void *metal_buffer_create_stacked3(void *vctx,
     if (!ctx || !data0 || !data1 || !data2 ||
         size0 == 0 || size1 == 0 || size2 == 0)
         return NULL;
-    if (type == BN_GGUF_TENSOR_Q4_0 && metal_q4_prepared_upload_enabled())
+    if (type == BN_GGUF_TENSOR_Q4_0 &&
+        bn_gpu_policy_metal_q4_prepared_upload_enabled())
         return NULL;
 
     size_t total = size0 + size1 + size2;
@@ -700,7 +692,8 @@ static void *metal_buffer_create_stacked3_biased(void *vctx,
     if (!ctx || !data0 || !data1 || !data2 || !bias ||
         size0 == 0 || size1 == 0 || size2 == 0 || bias_size == 0)
         return NULL;
-    if (type == BN_GGUF_TENSOR_Q4_0 && metal_q4_prepared_upload_enabled())
+    if (type == BN_GGUF_TENSOR_Q4_0 &&
+        bn_gpu_policy_metal_q4_prepared_upload_enabled())
         return NULL;
 
     size_t total = size0 + size1 + size2;
@@ -1064,7 +1057,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
                     !wbuf->q4_prepared &&
                     ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline;
     int use_q6_q8k = type == BN_GGUF_TENSOR_Q6_K &&
-                     getenv("BN_METAL_ENABLE_Q6_Q8K") &&
+                     bn_gpu_policy_metal_q6_q8k_enabled() &&
                      ctx->q8k_quant_pipeline && ctx->q6_q8k_matvec_pipeline &&
                      (cols % 256) == 0;
     if (wbuf->q4_prepared && !use_q4_prepared_q8) return -1;
@@ -1301,11 +1294,9 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     ctx->q8_matvec_dispatches = 0;
     ctx->q8_split_dispatches = 0;
     ctx->q8_gateup_dispatches = 0;
-    int full_barriers = getenv("BN_METAL_FULL_BARRIERS") != NULL;
-    int enable_barriers = getenv("BN_METAL_ENABLE_BARRIERS") != NULL ||
-                          full_barriers;
-    int disable_barriers = getenv("BN_METAL_DISABLE_BARRIERS") != NULL ||
-                           !enable_barriers;
+    int full_barriers = bn_gpu_policy_metal_full_barriers_enabled();
+    int enable_barriers = bn_gpu_policy_metal_barriers_enabled();
+    int disable_barriers = bn_gpu_policy_metal_barriers_disabled();
 
     @autoreleasepool {
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
@@ -1543,7 +1534,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->type == BN_GGUF_TENSOR_Q6_K &&
-                           getenv("BN_METAL_ENABLE_Q6_Q8K") &&
+                           bn_gpu_policy_metal_q6_q8k_enabled() &&
                            ctx->q8k_quant_pipeline &&
                            ctx->q6_q8k_matvec_pipeline &&
                            (op->cols % 256) == 0) {
@@ -2178,18 +2169,13 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
                 compiled, n_supported_types);
 
-        if (!getenv("BN_GPU_Q4_Q8") &&
-            !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {
-            setenv("BN_GPU_Q4_Q8", "1", 1);
-            if (!getenv("BN_GPU_Q4_Q8_FROM_LAYER"))
-                setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
-        }
-        ctx->q4_q8_enabled = getenv("BN_GPU_Q4_Q8") ? 1 : 0;
-        ctx->q8_barriers_enabled = getenv("BN_METAL_Q8_BARRIERS") ? 1 : 0;
+        bn_gpu_policy_metal_apply_q4_q8_default();
+        ctx->q4_q8_enabled = bn_gpu_policy_metal_q4_q8_enabled();
+        ctx->q8_barriers_enabled = bn_gpu_policy_metal_q8_barriers_enabled();
         ctx->cpu_order_rmsnorm_enabled =
-            getenv("BN_METAL_CPU_ORDER_RMSNORM") ? 1 : 0;
+            bn_gpu_policy_metal_cpu_order_rmsnorm_enabled();
 
-        if (getenv("BN_METAL_ENABLE_Q6_Q8K")) {
+        if (bn_gpu_policy_metal_q6_q8k_enabled()) {
             ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
                 "q8k_quantize.metal", "q8k_quantize");
             ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,

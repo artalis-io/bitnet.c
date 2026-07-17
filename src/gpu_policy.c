@@ -324,6 +324,58 @@ int bn_gpu_policy_metal_mmap_zero_copy_enabled(void) {
     return getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") != NULL;
 }
 
+void bn_gpu_policy_metal_apply_q4_q8_default(void) {
+    if (!getenv("BN_GPU_Q4_Q8") &&
+        !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {
+        setenv("BN_GPU_Q4_Q8", "1", 1);
+        if (!getenv("BN_GPU_Q4_Q8_FROM_LAYER"))
+            setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
+    }
+}
+
+int bn_gpu_policy_metal_q4_q8_enabled(void) {
+    return getenv("BN_GPU_Q4_Q8") != NULL;
+}
+
+int bn_gpu_policy_metal_q4_prepared_upload_enabled(void) {
+    const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
+    return getenv("BN_METAL_Q4_PREPARED") &&
+           getenv("BN_GPU_Q4_Q8") &&
+           (!from_layer || atoi(from_layer) <= 0) &&
+           !getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
+           !getenv("BN_GPU_Q4_Q8_FFN_ONLY");
+}
+
+int bn_gpu_policy_metal_shared_weights_enabled(void) {
+    return getenv("BN_METAL_SHARED_WEIGHTS") != NULL;
+}
+
+int bn_gpu_policy_metal_q6_q8k_enabled(void) {
+    return getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL;
+}
+
+int bn_gpu_policy_metal_q8_barriers_enabled(void) {
+    return getenv("BN_METAL_Q8_BARRIERS") != NULL;
+}
+
+int bn_gpu_policy_metal_cpu_order_rmsnorm_enabled(void) {
+    return getenv("BN_METAL_CPU_ORDER_RMSNORM") != NULL;
+}
+
+int bn_gpu_policy_metal_full_barriers_enabled(void) {
+    return getenv("BN_METAL_FULL_BARRIERS") != NULL;
+}
+
+int bn_gpu_policy_metal_barriers_enabled(void) {
+    return getenv("BN_METAL_ENABLE_BARRIERS") != NULL ||
+           bn_gpu_policy_metal_full_barriers_enabled();
+}
+
+int bn_gpu_policy_metal_barriers_disabled(void) {
+    return getenv("BN_METAL_DISABLE_BARRIERS") != NULL ||
+           !bn_gpu_policy_metal_barriers_enabled();
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }
