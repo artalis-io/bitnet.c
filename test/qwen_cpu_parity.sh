@@ -7,6 +7,9 @@ REQUIRE_MODELS=${REQUIRE_MODELS:-0}
 COMPARE=${COMPARE_LLAMA:-./test/compare_llama.sh}
 NEON_BIN=${BITNET_NEON:-./bitnet}
 SCALAR_BIN=${BITNET_SCALAR:-./bitnet_scalar}
+AVX2_BIN=${BITNET_AVX2:-./bitnet_avx2}
+AVX512_BIN=${BITNET_AVX512:-./bitnet_avx512}
+BACKENDS=${QWEN_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-neon,scalar}}
 CASES=${QWEN_CPU_PARITY_CASES:-all}
 
 fail=0
@@ -55,6 +58,42 @@ run_backend() {
     fi
 }
 
+validate_backends() {
+    local backend
+    for backend in ${BACKENDS//,/ }; do
+        case "$backend" in
+            neon|native|scalar|avx2|avx512) ;;
+            "")
+                echo "ERROR: QWEN_CPU_PARITY_BACKENDS contains an empty backend" >&2
+                exit 1
+                ;;
+            *)
+                echo "ERROR: unknown Qwen CPU parity backend '$backend'" >&2
+                echo "Valid backends: neon,native,scalar,avx2,avx512" >&2
+                exit 1
+                ;;
+        esac
+    done
+}
+
+run_selected_backends() {
+    local name=$1
+    local model=$2
+    local tokens=$3
+    shift 3
+
+    local backend
+    for backend in ${BACKENDS//,/ }; do
+        case "$backend" in
+            neon) run_backend "NEON" "$NEON_BIN" "$name" "$model" "$tokens" "$@" ;;
+            native) run_backend "native" "$NEON_BIN" "$name" "$model" "$tokens" "$@" ;;
+            scalar) run_backend "scalar" "$SCALAR_BIN" "$name" "$model" "$tokens" "$@" ;;
+            avx2) run_backend "AVX2" "$AVX2_BIN" "$name" "$model" "$tokens" "$@" ;;
+            avx512) run_backend "AVX512" "$AVX512_BIN" "$name" "$model" "$tokens" "$@" ;;
+        esac
+    done
+}
+
 run_case() {
     local case_id=$1
     local name=$2
@@ -83,8 +122,7 @@ run_case() {
         return
     fi
 
-    run_backend "NEON" "$NEON_BIN" "$name" "$model" "$tokens" "$@"
-    run_backend "scalar" "$SCALAR_BIN" "$name" "$model" "$tokens" "$@"
+    run_selected_backends "$name" "$model" "$tokens" "$@"
 }
 
 case "$LEVEL" in
@@ -94,6 +132,8 @@ case "$LEVEL" in
         exit 1
         ;;
 esac
+
+validate_backends
 
 run_case "qwen25" "Qwen 2.5 dense" "BN_MODEL_QWEN25" \
     "*qwen2.5*.gguf" 1 16 --flash
@@ -120,4 +160,4 @@ if [[ "$fail" -ne 0 ]]; then
     exit 1
 fi
 
-echo "Qwen CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL"
+echo "Qwen CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL backends=$BACKENDS"
