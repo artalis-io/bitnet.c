@@ -69,6 +69,10 @@ int bn_gpu_policy_cuda_logits_argmax_disabled(void);
 int bn_gpu_policy_cuda_dense_logits_argmax_enabled(void);
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled(void);
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void);
+int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void);
+int bn_gpu_policy_cuda_q5k_fused_gateup_enabled(void);
+int bn_gpu_policy_cuda_shared_q4_q8_dot_enabled(void);
+int bn_gpu_policy_cuda_shared_expert_gate_enabled(void);
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_configured(void);
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(
     int default_tokens);

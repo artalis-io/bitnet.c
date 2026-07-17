@@ -257,6 +257,22 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
+}
+
+int bn_gpu_policy_cuda_q5k_fused_gateup_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") != NULL;
+}
+
+int bn_gpu_policy_cuda_shared_q4_q8_dot_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
+}
+
+int bn_gpu_policy_cuda_shared_expert_gate_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE") == NULL;
+}
+
 static int env_positive_int_or_default(const char *name, int default_tokens) {
     const char *env = getenv(name);
     if (!env || !*env)

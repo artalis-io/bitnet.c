@@ -132,7 +132,7 @@ BnBackendPlacement bn_transformer_gpu_backend_placement(
 }
 
 int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
+    return bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
 }
 
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
@@ -142,7 +142,7 @@ int bn_transformer_gpu_fused_gateup_silu_policy_allows(
         return 0;
     if (bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
-        getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") == NULL)
+        !bn_gpu_policy_cuda_q5k_fused_gateup_enabled())
         return 0;
     return 1;
 }
@@ -186,12 +186,12 @@ int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
 
 int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible) {
     return eligible &&
-           getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
+           bn_gpu_policy_cuda_shared_q4_q8_dot_enabled();
 }
 
 int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
     return eligible &&
-           getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE") == NULL;
+           bn_gpu_policy_cuda_shared_expert_gate_enabled();
 }
 
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {

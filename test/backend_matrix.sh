@@ -500,6 +500,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX")\|getenv("BN_CUDA_ENABLE_DENS
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER")\|getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP")\|getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT")\|getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for CUDA prefill/dispatch env vars"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_ATTN")\|getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN")\|getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE")\|getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN")\|getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_ENABLE_MOE_PREFILL")\|getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL")\|getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE")\|getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA prefill env vars"
     fail=1
