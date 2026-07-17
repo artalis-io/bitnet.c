@@ -397,6 +397,12 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DEBUG_MOE_FIT");
     unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
 
+    unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
+    assert(!bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
+    setenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
+    unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(

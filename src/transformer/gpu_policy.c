@@ -888,7 +888,7 @@ int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
 }
 
 int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") != NULL;
+    return bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled();
 }
 
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(

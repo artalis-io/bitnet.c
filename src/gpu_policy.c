@@ -57,6 +57,10 @@ int bn_gpu_policy_cuda_keep_individual_f16_cache_enabled(void) {
     return getenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE") != NULL;
 }
 
+int bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") != NULL;
+}
+
 int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&

@@ -22,6 +22,7 @@ int bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(int eligible);
 int bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(int eligible);
 int bn_gpu_policy_cuda_moe_fit_debug_enabled(void);
 int bn_gpu_policy_cuda_keep_individual_f16_cache_enabled(void);
+int bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled(void);
 int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
