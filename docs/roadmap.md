@@ -370,13 +370,18 @@ ARM NEON / CPU plan:
   llama.cpp for discovered Qwen2.5, Qwen3, Qwen3.5, and Qwen3.6 fixtures. The
   standard level uses 5-token dense gates and 1-token large/MoE smoke gates;
   `QWEN_CPU_PARITY_LEVEL=full` raises the token budget for deeper checks, and
-  `QWEN_CPU_PARITY_CASES=qwen25,qwen3_dense` supports focused reruns.
+  `QWEN_CPU_PARITY_CASES=qwen25,qwen3_dense` supports focused reruns. Set
+  `QWEN_CPU_PARITY_BACKENDS` or shared `CPU_PARITY_BACKENDS` to select
+  `neon,native,scalar,avx2,avx512`; AVX selections build runnable x86 parity
+  binaries on x86_64 hosts.
 - [x] **Gemma4 CPU parity gate wiring** — `make test_gemma4_cpu_parity` runs
   `test/gemma4_cpu_parity.sh`, which discovers dense E2B/E4B/31B and sparse
   26B-A4B Gemma4 GGUFs while excluding mmproj sidecars, then compares both
   NEON and scalar backends against llama.cpp with `--maxseq 512` by default.
-  The gate skips when fixtures are absent and fails missing fixtures when
-  `REQUIRE_MODELS=1` is set; real Gemma4 parity still requires local GGUFs.
+  `GEMMA4_CPU_PARITY_BACKENDS` or shared `CPU_PARITY_BACKENDS` selects
+  `neon,native,scalar,avx2,avx512`. The gate skips when fixtures are absent
+  and fails missing fixtures when `REQUIRE_MODELS=1` is set; real Gemma4 parity
+  still requires local GGUFs.
 - [x] **Investigate Qwen3 dense top-1 near-tie** — the Q8_0 scalar path now
   pre-quantizes batch inputs, uses NEON-matching activation inverse arithmetic,
   and reduces Q8 blocks in four-block groups. Fresh scalar and NEON strict
