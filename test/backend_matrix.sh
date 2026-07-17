@@ -510,6 +510,11 @@ if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/mo
     fail=1
 fi
 
+if grep -n 'c->n_experts <= 0' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use model_arch helpers for loaded-model MoE presence policy"
+    fail=1
+fi
+
 if grep -n 'c->n_experts > 2' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose model_arch helpers for MoE shape policy"
     fail=1

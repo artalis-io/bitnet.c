@@ -463,7 +463,7 @@ static size_t estimate_cuda_moe_layer_bytes(const BnConfig *c,
                                             const BnMoEExpertMap *em,
                                             const BnGPUBackend *gpu,
                                             int q8_f16_cache) {
-    if (!c || !em || c->n_experts <= 0)
+    if (!em || !bn_model_arch_uses_moe(c))
         return 0;
     size_t total = 0;
     size_t proj = 0;
@@ -515,7 +515,7 @@ static size_t estimate_cuda_moe_layer_bytes(const BnConfig *c,
 static size_t estimate_cuda_moe_gateup_f16_all_bytes(const BnConfig *c,
                                                      const BnWeights *w,
                                                      const BnGPUBackend *gpu) {
-    if (!c || !w || c->n_experts <= 0)
+    if (!w || !bn_model_arch_uses_moe(c))
         return 0;
     size_t total = 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -552,7 +552,7 @@ static size_t estimate_cuda_moe_all_bytes(const BnConfig *c,
                                           const BnWeights *w,
                                           const BnGPUBackend *gpu,
                                           int q8_f16_cache) {
-    if (!c || !w || c->n_experts <= 0)
+    if (!w || !bn_model_arch_uses_moe(c))
         return 0;
     size_t total = 0;
     for (int l = 0; l < c->n_layers; l++) {
