@@ -671,11 +671,13 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
     unsetenv("BN_METAL_Q4_PREPARED");
     assert(!bn_gpu_policy_metal_q4_q8_enabled());
+    assert(!bn_gpu_policy_metal_q4_prepared_enabled());
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());
     bn_gpu_policy_metal_apply_q4_q8_default();
     assert(bn_gpu_policy_metal_q4_q8_enabled());
     assert(getenv("BN_GPU_Q4_Q8_FROM_LAYER") != NULL);
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
+    assert(bn_gpu_policy_metal_q4_prepared_enabled());
     assert(bn_gpu_policy_metal_q4_prepared_upload_enabled());
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "1", 1);
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());

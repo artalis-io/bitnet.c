@@ -85,6 +85,7 @@ int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 void bn_gpu_policy_metal_apply_q4_q8_default(void);
 int bn_gpu_policy_metal_q4_q8_enabled(void);
+int bn_gpu_policy_metal_q4_prepared_enabled(void);
 int bn_gpu_policy_metal_q4_prepared_upload_enabled(void);
 int bn_gpu_policy_metal_shared_weights_enabled(void);
 int bn_gpu_policy_metal_q6_q8k_enabled(void);

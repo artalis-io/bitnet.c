@@ -450,7 +450,12 @@ if grep -n 'getenv("BN_METAL_SHARED_WEIGHTS")\|getenv("BN_METAL_Q4_PREPARED")\|g
     fail=1
 fi
 
-if ! grep -n 'bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
+if grep -n 'getenv("BN_METAL_' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for Metal env vars"
+    fail=1
+fi
+
+if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must own Metal feature-policy env vars"
     fail=1
 fi

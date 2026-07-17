@@ -1327,6 +1327,11 @@ static void test_gpu_policy_helpers(void) {
     q4_q8_policy = bn_transformer_gpu_q4_q8_layer_policy(&c);
     assert(q4_q8_policy.from_layer == 39);
     assert(q4_q8_policy.to_layer == 6);
+    setenv("BN_METAL_Q4_PREPARED", "1", 1);
+    q4_q8_policy = bn_transformer_gpu_q4_q8_layer_policy(&c);
+    assert(q4_q8_policy.from_layer == 39);
+    assert(q4_q8_policy.to_layer == -1);
+    unsetenv("BN_METAL_Q4_PREPARED");
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "10", 1);
     setenv("BN_GPU_Q4_Q8_TO_LAYER", "20", 1);
     setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
@@ -1730,6 +1735,11 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
+    setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+    assert(!bn_transformer_gpu_cuda_decode_cacheable(
+        &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
+    unsetenv("BN_METAL_ENABLE_Q6_Q8K");
     assert(!bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 1, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));

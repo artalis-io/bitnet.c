@@ -337,9 +337,13 @@ int bn_gpu_policy_metal_q4_q8_enabled(void) {
     return getenv("BN_GPU_Q4_Q8") != NULL;
 }
 
+int bn_gpu_policy_metal_q4_prepared_enabled(void) {
+    return getenv("BN_METAL_Q4_PREPARED") != NULL;
+}
+
 int bn_gpu_policy_metal_q4_prepared_upload_enabled(void) {
     const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
-    return getenv("BN_METAL_Q4_PREPARED") &&
+    return bn_gpu_policy_metal_q4_prepared_enabled() &&
            getenv("BN_GPU_Q4_Q8") &&
            (!from_layer || atoi(from_layer) <= 0) &&
            !getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&

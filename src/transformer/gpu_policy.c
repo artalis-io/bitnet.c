@@ -1121,7 +1121,7 @@ int bn_transformer_gpu_cuda_decode_cacheable(
     if (getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_transformer_gpu_compare_logits_enabled() ||
-        getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL)
+        bn_gpu_policy_metal_q6_q8k_enabled())
         return 0;
     return 1;
 }
@@ -1215,7 +1215,7 @@ bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
                     policy.to_layer = -1;
             }
         } else if (getenv("BN_GPU_Q4_Q8") &&
-                   getenv("BN_METAL_Q4_PREPARED") == NULL &&
+                   !bn_gpu_policy_metal_q4_prepared_enabled() &&
                    n_layers > 33) {
             policy.to_layer = n_layers - 33 - 1;
         }
