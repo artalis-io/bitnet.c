@@ -82,7 +82,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         hb_size = c->shared_expert_intermediate_size;
     if (c->has_shared_expert && c->shared_expert_intermediate_size > hb2_size)
         hb2_size = c->shared_expert_intermediate_size;
-    if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
+    if (bn_model_arch_uses_moe(c) && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
     int per_layer_dim = bn_model_arch_per_layer_embedding_dim(c);
     if (per_layer_dim > 0) {
@@ -126,7 +126,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     }
 
     size_t moe_arena_bytes = 0;
-    if (c->n_experts > 0 && c->n_layers > 0) {
+    if (bn_model_arch_uses_moe(c) && c->n_layers > 0) {
         size_t moe_expert_buf_size = 0;
         if (w && w->layers) {
             BnMoEExpertMap *em0 = &w->layers[0].moe.expert_map;
@@ -301,7 +301,7 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         hb_size = c->shared_expert_intermediate_size;
     if (c->has_shared_expert && c->shared_expert_intermediate_size > hb2_size)
         hb2_size = c->shared_expert_intermediate_size;
-    if (c->n_experts > 0 && c->moe_intermediate_size > x_q_size)
+    if (bn_model_arch_uses_moe(c) && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
     int per_layer_dim = bn_model_arch_per_layer_embedding_dim(c);
     if (per_layer_dim > 0) {
@@ -410,7 +410,7 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     }
 
     *moe_out = NULL;
-    if (c->n_experts > 0) {
+    if (bn_model_arch_uses_moe(c)) {
         BnMoEState *ms = (BnMoEState *)sh_arena_calloc(arena, 1, sizeof(BnMoEState));
         if (!ms) return -1;
 
