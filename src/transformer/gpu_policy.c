@@ -204,7 +204,7 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,
     int split_op_code) {
-    if (!map || split_op_code != BN_GPU_CODE_Q4K_MATVEC_SPLIT)
+    if (!map || !bn_gpu_quant_split_op_is_q4k(split_op_code))
         return 0;
     return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
            map->up_type == map->gate_type &&
@@ -223,7 +223,7 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     int activation,
     int split_op_code) {
     if (!gate || !up || activation == 1 ||
-        split_op_code != BN_GPU_CODE_Q4K_MATVEC_SPLIT)
+        !bn_gpu_quant_split_op_is_q4k(split_op_code))
         return 0;
     return gate->rows == up->rows &&
            gate->cols == up->cols &&
@@ -237,7 +237,7 @@ int bn_transformer_gpu_packed_qkv_split_supported(
     int kv_f16,
     int split_op_code) {
     return qkv && use_packed_qkv && !kv_f16 &&
-           split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
+           bn_gpu_quant_split_op_is_q5k(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
 }
 
@@ -245,7 +245,7 @@ int bn_transformer_gpu_qkv_split_standard_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code) {
-    return q && split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
+    return q && bn_gpu_quant_split_op_is_standard(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
@@ -253,7 +253,7 @@ int bn_transformer_gpu_qkv_split_q8_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code) {
-    return q && split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT &&
+    return q && bn_gpu_quant_split_op_is_q8(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
@@ -261,7 +261,7 @@ int bn_transformer_gpu_qkv_split_q5_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code) {
-    return q && split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
+    return q && bn_gpu_quant_split_op_is_q5k(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
@@ -272,7 +272,7 @@ int bn_transformer_gpu_qk_split_supported(
     int q_dim,
     int kv_dim,
     int split_op_code) {
-    if (!q || !k || split_op_code == BN_GPU_CODE_UNKNOWN)
+    if (!q || !k || !bn_gpu_quant_split_op_known(split_op_code))
         return 0;
     return q->rows == q_dim &&
            k->rows == kv_dim &&
@@ -285,7 +285,7 @@ int bn_transformer_gpu_ssm_qkvz_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *qkv,
     int split_op_code) {
-    return qkv && split_op_code != BN_GPU_CODE_UNKNOWN &&
+    return qkv && bn_gpu_quant_split_op_known(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
 }
 
