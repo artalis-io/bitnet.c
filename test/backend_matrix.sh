@@ -362,8 +362,13 @@ if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN'
     fail=1
 fi
 
-if grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORCE_TOKEN_ATTN' src/transformer/prefill.c >/dev/null 2>&1; then
-    echo "src/transformer/prefill.c must use prefill policy helpers for prefill env vars"
+if grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORCE_TOKEN_ATTN' src/transformer/prefill.c src/transformer/prefill_backend.c >/dev/null 2>&1; then
+    echo "Prefill orchestration/backend code must use prefill policy helpers for prefill env vars"
+    fail=1
+fi
+
+if ! grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORCE_TOKEN_ATTN' src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Prefill env compatibility policy must live in src/transformer/prefill_policy.c"
     fail=1
 fi
 

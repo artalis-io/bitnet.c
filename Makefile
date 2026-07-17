@@ -63,6 +63,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_neon.c src/transformer/ssm_scalar.c
 else
@@ -105,6 +106,7 @@ else
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 endif
@@ -256,6 +258,7 @@ SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c src/transformer/rm
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_scalar.c
 
@@ -587,6 +590,7 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnor
     src/transformer/gpu_resources.c \
     src/transformer/gpu_emit.c src/transformer/gpu.c \
     src/transformer/kv_backend.c src/transformer/kv.c \
+    src/transformer/prefill_policy.c \
     src/transformer/prefill_backend.c src/transformer/prefill.c \
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 
