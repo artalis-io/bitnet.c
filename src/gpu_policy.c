@@ -579,6 +579,97 @@ int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_cpu_logits_enabled(void) {
+    return getenv("BN_GPU_CPU_LOGITS") != NULL;
+}
+
+int bn_gpu_policy_compare_logits_enabled(void) {
+    return getenv("BN_GPU_COMPARE_LOGITS") != NULL;
+}
+
+int bn_gpu_policy_debug_argmax_compare_enabled(void) {
+    return getenv("BN_GPU_DEBUG_ARGMAX_COMPARE") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_ffn_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void) {
+    return getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos) {
+    const char *compare_moe_env = getenv("BN_GPU_COMPARE_MOE_LAYER");
+    if (!compare_moe_env)
+        return 0;
+    int compare_layer = atoi(compare_moe_env);
+    const char *compare_pos_env = getenv("BN_GPU_COMPARE_MOE_POS");
+    int compare_pos = compare_pos_env ? atoi(compare_pos_env) : -1;
+    return compare_layer == layer && (compare_pos < 0 || compare_pos == pos);
+}
+
+int bn_gpu_policy_moe_compare_input_norm_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_INPUT_NORM") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_actual_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_ACTUAL") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_route_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_ROUTE") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_raw_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_RAW") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_mid_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_MID") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_parts_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_PARTS") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_shared_mid_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_SHARED_MID") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_shared_down_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_SHARED_DOWN") != NULL;
+}
+
+int bn_gpu_policy_moe_compare_norm_enabled(void) {
+    return getenv("BN_GPU_COMPARE_MOE_NORM") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
+    return eligible &&
+           getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_gateup_split_enabled(int can_split) {
+    return can_split && getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
+}
+
+int bn_gpu_policy_moe_route_profile_enabled(void) {
+    return getenv("BN_GPU_MOE_ROUTE_PROFILE") != NULL;
+}
+
+int bn_gpu_policy_moe_route_profile_every_or_default(int default_every) {
+    int every = default_every;
+    const char *env = getenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+    if (env && *env) {
+        int v = atoi(env);
+        if (v > 0)
+            every = v;
+    }
+    return every;
+}
+
 int bn_gpu_policy_profile_level(void) {
     const char *profile = getenv("BN_GPU_PROFILE");
     return profile ? atoi(profile) : 0;

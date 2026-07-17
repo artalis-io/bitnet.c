@@ -142,6 +142,25 @@ int bn_gpu_policy_ssm_qkvz_split_enabled(void);
 int bn_gpu_policy_ssm_ab_stack_enabled(void);
 int bn_gpu_policy_split_residual_rmsnorm_enabled(void);
 int bn_gpu_policy_argmax_debug_enabled(void);
+int bn_gpu_policy_cpu_logits_enabled(void);
+int bn_gpu_policy_compare_logits_enabled(void);
+int bn_gpu_policy_debug_argmax_compare_enabled(void);
+int bn_gpu_policy_cuda_moe_ffn_disabled(void);
+int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void);
+int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos);
+int bn_gpu_policy_moe_compare_input_norm_enabled(void);
+int bn_gpu_policy_moe_compare_actual_enabled(void);
+int bn_gpu_policy_moe_compare_route_enabled(void);
+int bn_gpu_policy_moe_compare_raw_enabled(void);
+int bn_gpu_policy_moe_compare_mid_enabled(void);
+int bn_gpu_policy_moe_compare_parts_enabled(void);
+int bn_gpu_policy_moe_compare_shared_mid_enabled(void);
+int bn_gpu_policy_moe_compare_shared_down_enabled(void);
+int bn_gpu_policy_moe_compare_norm_enabled(void);
+int bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(int eligible);
+int bn_gpu_policy_cuda_moe_gateup_split_enabled(int can_split);
+int bn_gpu_policy_moe_route_profile_enabled(void);
+int bn_gpu_policy_moe_route_profile_every_or_default(int default_every);
 int bn_gpu_policy_profile_level(void);
 
 #ifdef __cplusplus
