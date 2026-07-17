@@ -716,8 +716,8 @@ if grep -n 'c->n_experts > 0' src/model_session.c >/dev/null 2>&1; then
     fail=1
 fi
 
-if grep -n 'n_attn_layers = (c->full_attn_interval > 0)\|n_ssm_layers = c->n_layers - n_attn_layers' src/model_session.c >/dev/null 2>&1; then
-    echo "src/model_session.c must use model_arch helpers for hybrid layer count policy"
+if grep -n 'full_attn_interval\|n_attn_layers = (c->full_attn_interval > 0)\|n_ssm_layers = c->n_layers - n_attn_layers' src/model_session.c >/dev/null 2>&1; then
+    echo "src/model_session.c must use model_arch helpers for hybrid layer layout/count policy"
     fail=1
 fi
 

@@ -63,7 +63,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     if (attn_tmp > hb_size) hb_size = attn_tmp;
     int kv_pair_tmp = 2 * c->kv_dim;
     if (kv_pair_tmp > hb2_size) hb2_size = kv_pair_tmp;
-    if (c->full_attn_interval > 0) {
+    if (bn_model_arch_uses_hybrid_layer_layout(c)) {
         size_t qkv_tmp = 0;
         if (checked_mul3_size((size_t)c->ssm_group_count,
                               (size_t)c->ssm_state_size, 2, &qkv_tmp) != 0 ||
@@ -286,7 +286,7 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (attn_tmp > hb_size) hb_size = attn_tmp;
     int kv_pair_tmp = 2 * c->kv_dim;
     if (kv_pair_tmp > hb2_size) hb2_size = kv_pair_tmp;
-    if (c->full_attn_interval > 0) {
+    if (bn_model_arch_uses_hybrid_layer_layout(c)) {
         int qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
         if (qkv_dim > hb_size) hb_size = qkv_dim;
         if (c->ssm_inner_size > hb2_size) hb2_size = c->ssm_inner_size;
