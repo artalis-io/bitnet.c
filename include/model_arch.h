@@ -5,6 +5,28 @@
 #include "gguf.h"
 #include <stddef.h>
 
+#define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE               (1u << 0)
+#define BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK           (1u << 1)
+#define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU              (1u << 2)
+#define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT                   (1u << 3)
+#define BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU                     (1u << 4)
+#define BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER            (1u << 5)
+#define BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY         (1u << 6)
+#define BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT                    (1u << 7)
+#define BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM                (1u << 8)
+#define BN_MODEL_ARCH_POLICY_FFN_POST_NORM                      (1u << 9)
+#define BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE                 (1u << 10)
+#define BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY          (1u << 11)
+#define BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK (1u << 12)
+#define BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP            (1u << 13)
+#define BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION           (1u << 14)
+#define BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT            (1u << 15)
+#define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH          (1u << 16)
+#define BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8       (1u << 17)
+#define BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE         (1u << 18)
+#define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION           (1u << 19)
+#define BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION        (1u << 20)
+
 typedef struct {
     const char *name;
     uint32_t policy_flags;
