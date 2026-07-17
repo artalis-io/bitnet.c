@@ -60,5 +60,6 @@ int bn_gpu_policy_moe_auto_resident_enabled(void);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 int bn_gpu_policy_argmax_debug_enabled(void);
+int bn_gpu_policy_profile_level(void);
 
 #endif // BN_GPU_POLICY_H

@@ -15,6 +15,7 @@
 
 #include "gpu_metal.h"
 #include "gpu_backend.h"
+#include "gpu_policy.h"
 #include "gpu_shader.h"
 #include "model.h"
 #include "quant.h"
@@ -1317,10 +1318,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     const BnGPUOp *ops = (const BnGPUOp *)ops_raw;
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !ops || n_ops <= 0) return -1;
-    if (ctx->gpu_profile < 0) {
-        const char *env = getenv("BN_GPU_PROFILE");
-        ctx->gpu_profile = env ? atoi(env) : 0;
-    }
+    if (ctx->gpu_profile < 0)
+        ctx->gpu_profile = bn_gpu_policy_profile_level();
 
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
@@ -2100,7 +2099,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 n_barriers,
                 t_encode - t0, t_gpu - t_encode, t1 - t_gpu, t1 - t0);
     }
-    /* Per-op-type breakdown (BN_GPU_PROFILE>=2, frame 1 only) */
+    /* Per-op-type breakdown (GPU profile level >= 2, frame 1 only) */
     if (ctx->gpu_profile >= 2 && ctx->gpu_frame == 1) {
         int cat_count[BN_GPU_SHADER_COUNT]; memset(cat_count, 0, sizeof(cat_count));
         for (int i = 0; i < n_ops; i++) {
@@ -2141,7 +2140,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             }
         }
     }
-    /* Per-op command-buffer timing (BN_GPU_PROFILE>=4, frame 1 only).
+    /* Per-op command-buffer timing (GPU profile level >= 4, frame 1 only).
      * This intentionally changes submission granularity and is diagnostic-only. */
     if (ctx->gpu_profile >= 4 && ctx->gpu_frame == 1) {
         fprintf(stderr, "[gpu:metal:breakdown] --- per-op shader timing ---\n");

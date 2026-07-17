@@ -556,6 +556,10 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_argmax_debug_enabled());
     setenv("BN_GPU_DEBUG_ARGMAX", "1", 1);
     assert(bn_gpu_policy_argmax_debug_enabled());
+    unsetenv("BN_GPU_PROFILE");
+    assert(bn_gpu_policy_profile_level() == 0);
+    setenv("BN_GPU_PROFILE", "4", 1);
+    assert(bn_gpu_policy_profile_level() == 4);
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
     unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
@@ -564,6 +568,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE");
     unsetenv("BN_METAL_ENABLE_MMAP_ZERO_COPY");
     unsetenv("BN_GPU_DEBUG_ARGMAX");
+    unsetenv("BN_GPU_PROFILE");
 
     printf("PASSED\n");
 }

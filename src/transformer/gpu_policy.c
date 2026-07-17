@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "gpu_policy.h"
 #include "model_arch.h"
 #include "quant.h"
 #include <stdio.h>
@@ -1332,8 +1333,7 @@ int bn_transformer_gpu_moe_route_profile_every(void) {
 }
 
 int bn_transformer_gpu_profile_level(void) {
-    const char *profile = getenv("BN_GPU_PROFILE");
-    return profile ? atoi(profile) : 0;
+    return bn_gpu_policy_profile_level();
 }
 
 int bn_transformer_gpu_debug_fallback_enabled(void) {

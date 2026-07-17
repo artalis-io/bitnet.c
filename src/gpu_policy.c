@@ -258,3 +258,8 @@ int bn_gpu_policy_metal_mmap_zero_copy_enabled(void) {
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }
+
+int bn_gpu_policy_profile_level(void) {
+    const char *profile = getenv("BN_GPU_PROFILE");
+    return profile ? atoi(profile) : 0;
+}

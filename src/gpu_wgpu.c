@@ -10,6 +10,7 @@
 
 #include "gpu_wgpu.h"
 #include "gpu_backend.h"
+#include "gpu_policy.h"
 #include "gpu_shader.h"
 #include "model.h"
 #include "quant.h"
@@ -2252,11 +2253,9 @@ static int wgpu_execute(void *vctx, const void *ops_raw, int n_ops,
     (void)n_passes;
     double t4_readback = bn_platform_time_ms();
 
-    /* GPU profiling: set BN_GPU_PROFILE=1 to see per-frame timing */
-    if (ctx->gpu_profile < 0) {
-        const char *env = getenv("BN_GPU_PROFILE");
-        ctx->gpu_profile = env ? atoi(env) : 0;
-    }
+    /* GPU profiling: set the common GPU profile level to see timing. */
+    if (ctx->gpu_profile < 0)
+        ctx->gpu_profile = bn_gpu_policy_profile_level();
     if (ctx->gpu_profile && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
         fprintf(stderr, "[gpu:profile] frame=%d ops=%d passes=%d | "
                 "uniforms=%.1fms encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",

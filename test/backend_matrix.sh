@@ -287,6 +287,11 @@ if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_GPU_PROFILE' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
+    echo "GPU backends must use GPU policy helpers for GPU profile env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
     echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
     fail=1
