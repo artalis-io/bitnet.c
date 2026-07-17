@@ -505,8 +505,13 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA' src/model_gpu.c >/dev/null 2>&1
     fail=1
 fi
 
-if grep -n 'n_experts == 2 && c->n_experts_active == 2' src/model_gpu.c >/dev/null 2>&1; then
-    echo "src/model_gpu.c must use model_arch helpers for all-active two-expert MoE policy"
+if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use model_arch helpers for MoE shape policy"
+    fail=1
+fi
+
+if grep -n 'c->n_experts > 2' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose model_arch helpers for MoE shape policy"
     fail=1
 fi
 

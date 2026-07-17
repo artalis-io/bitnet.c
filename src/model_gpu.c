@@ -698,7 +698,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         int force_f16_cache =
             bn_gpu_policy_cuda_moe_all_f16_cache_forced();
         int auto_f16_cache =
-            c->n_experts > 2 ||
+            bn_model_arch_uses_more_than_two_expert_moe(c) ||
             bn_model_arch_uses_two_expert_all_active_moe(c);
         if ((force_f16_cache || auto_f16_cache) &&
             cuda_moe_all_fits_memory(gpu, c, w, 1)) {
