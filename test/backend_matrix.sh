@@ -530,6 +530,11 @@ if grep -n 'c->n_experts > 0 || c->full_attn_interval > 0' src/transformer/gpu_p
     fail=1
 fi
 
+if grep -n 'c->n_experts > 0 || c->dim < 4096' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose model_arch helpers for large dense shape policy"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q8_route' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
     fail=1

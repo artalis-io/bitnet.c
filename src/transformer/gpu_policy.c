@@ -456,7 +456,7 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    if (!c || !w || c->n_experts > 0 || c->dim < 4096 ||
+    if (!bn_model_arch_uses_large_dense_shape(c) || !w ||
         getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") != NULL ||
         getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
         return 0;

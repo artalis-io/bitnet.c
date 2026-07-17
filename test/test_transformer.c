@@ -2045,6 +2045,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(bn_model_arch_uses_dense_attention_only(&c));
+    assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
@@ -2077,9 +2078,12 @@ static void test_model_arch_registry(void) {
     c.dim = 4095;
     assert(bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
+    assert(!bn_model_arch_uses_large_dense_shape(&c));
     c.dim = 4096;
+    assert(bn_model_arch_uses_large_dense_shape(&c));
     assert(bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     c.n_experts = 1;
+    assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(bn_model_arch_uses_moe(&c));

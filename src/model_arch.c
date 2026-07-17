@@ -170,10 +170,15 @@ int bn_model_arch_uses_dense_attention_only(const BnConfig *c) {
            c->full_attn_interval <= 0;
 }
 
-int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_ssm(c) &&
+int bn_model_arch_uses_large_dense_shape(const BnConfig *c) {
+    return c &&
            c->n_experts <= 0 &&
            c->dim >= 4096;
+}
+
+int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_ssm(c) &&
+           bn_model_arch_uses_large_dense_shape(c);
 }
 
 static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {

@@ -118,6 +118,7 @@ int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c);
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_dense_attention_only(const BnConfig *c);
+int bn_model_arch_uses_large_dense_shape(const BnConfig *c);
 int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer);
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c);
