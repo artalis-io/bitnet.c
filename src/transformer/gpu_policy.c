@@ -295,15 +295,9 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
     if (!gpu || !logits || !logits->cpu_weight)
         return 0;
 
-    size_t max_storage_binding = gpu->max_storage_binding_size;
-    if (max_storage_binding == 0)
-        max_storage_binding = 128ull * 1024ull * 1024ull;
-    const char *override_mb = getenv("BN_GPU_MAX_STORAGE_BINDING_MB");
-    if (override_mb) {
-        long mb = strtol(override_mb, NULL, 10);
-        if (mb >= 0)
-            max_storage_binding = (size_t)mb * 1024ull * 1024ull;
-    }
+    size_t max_storage_binding =
+        bn_gpu_policy_max_storage_binding_bytes(
+            gpu->max_storage_binding_size);
 
     return bn_qweight_data_size(logits->cpu_weight) > max_storage_binding;
 }

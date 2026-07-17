@@ -300,6 +300,11 @@ if grep -n 'BN_GPU_Q8_REFINE_TOP' src/transformer/logits.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_GPU_MAX_STORAGE_BINDING_MB' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use backend GPU policy helpers for max storage binding env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_ENABLE_Q6_LOGITS_REFINE\|BN_GPU_DISABLE_Q6_LOGITS_REFINE\|BN_GPU_Q6_Q8K_REFINE_TOP\|BN_GPU_ENABLE_Q8_LOGITS_REFINE\|BN_GPU_DISABLE_Q8_LOGITS_REFINE\|BN_GPU_Q8_REFINE_TOP' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must use backend GPU policy helpers for logits refine env vars"
     fail=1

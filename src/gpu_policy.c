@@ -174,6 +174,19 @@ int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type) {
     return bn_backend_quant_cuda_matvec_type_disabled(tensor_type);
 }
 
+size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit) {
+    size_t max_storage_binding = backend_limit;
+    if (max_storage_binding == 0)
+        max_storage_binding = 128ull * 1024ull * 1024ull;
+    const char *override_mb = getenv("BN_GPU_MAX_STORAGE_BINDING_MB");
+    if (override_mb) {
+        long mb = strtol(override_mb, NULL, 10);
+        if (mb >= 0)
+            max_storage_binding = (size_t)mb * 1024ull * 1024ull;
+    }
+    return max_storage_binding;
+}
+
 static size_t env_mb_or_default(const char *name, size_t def) {
     const char *s = getenv(name);
     if (!s || !*s)

@@ -576,6 +576,21 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6_K");
     unsetenv("BN_CUDA_DISABLE_Q8_K");
 
+    unsetenv("BN_GPU_MAX_STORAGE_BINDING_MB");
+    assert(bn_gpu_policy_max_storage_binding_bytes(0) ==
+           128u * 1024u * 1024u);
+    assert(bn_gpu_policy_max_storage_binding_bytes(7u * 1024u * 1024u) ==
+           7u * 1024u * 1024u);
+    setenv("BN_GPU_MAX_STORAGE_BINDING_MB", "3", 1);
+    assert(bn_gpu_policy_max_storage_binding_bytes(7u * 1024u * 1024u) ==
+           3u * 1024u * 1024u);
+    setenv("BN_GPU_MAX_STORAGE_BINDING_MB", "-1", 1);
+    assert(bn_gpu_policy_max_storage_binding_bytes(7u * 1024u * 1024u) ==
+           7u * 1024u * 1024u);
+    setenv("BN_GPU_MAX_STORAGE_BINDING_MB", "bad", 1);
+    assert(bn_gpu_policy_max_storage_binding_bytes(7u * 1024u * 1024u) == 0);
+    unsetenv("BN_GPU_MAX_STORAGE_BINDING_MB");
+
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
     unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
