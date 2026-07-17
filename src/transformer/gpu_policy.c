@@ -307,11 +307,7 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
     const BnConfig *c,
     const BnLayerWeights *lw,
     int dim) {
-    if (!c || !lw ||
-        c->n_experts != 2 ||
-        c->n_experts_active != 2 ||
-        c->moe_intermediate_size < 4096 ||
-        dim > 2048)
+    if (!lw || !bn_model_arch_uses_all_active_two_expert_moe(c, dim))
         return 0;
     return bn_transformer_gpu_moe_routed_q4_down(&lw->moe.expert_map, 0);
 }
@@ -327,10 +323,7 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
 
 int bn_transformer_gpu_cuda_all2_q4q6_moe_model(const BnConfig *c,
                                                 const BnWeights *w) {
-    if (!c || !w || c->n_experts != 2 ||
-        c->n_experts_active != 2 ||
-        c->moe_intermediate_size < 4096 ||
-        c->dim > 2048)
+    if (!w || !bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0))
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];

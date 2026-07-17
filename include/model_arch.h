@@ -123,6 +123,8 @@ int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c);
 int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
+int bn_model_arch_uses_all_active_two_expert_moe(const BnConfig *c,
+                                                 int dim);
 int bn_model_arch_loads_extra_metadata(const BnConfig *c);
 int bn_model_arch_loads_per_layer_input_weights(const BnConfig *c);
 int bn_model_arch_layer_reuses_kv(const BnConfig *c, int layer);

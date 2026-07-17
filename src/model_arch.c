@@ -208,6 +208,15 @@ int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH) != 0);
 }
 
+int bn_model_arch_uses_all_active_two_expert_moe(const BnConfig *c,
+                                                 int dim) {
+    return c &&
+           c->n_experts == 2 &&
+           c->n_experts_active == 2 &&
+           c->moe_intermediate_size >= 4096 &&
+           dim <= 2048;
+}
+
 int bn_model_arch_loads_extra_metadata(const BnConfig *c) {
     return bn_model_arch_uses_per_layer_embedding(c);
 }
