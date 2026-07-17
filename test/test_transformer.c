@@ -826,6 +826,29 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 
+    unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
+    unsetenv("BN_GPU_PREFILL_MATMUL");
+    memset(&c, 0, sizeof(c));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    c.dim = 8192;
+    assert(bn_transformer_gpu_dense_batch_prefill_shape_allowed(&gpu, &c));
+    assert(bn_transformer_gpu_batch_prefill_enabled(&gpu, &c));
+    c.dim = 8193;
+    assert(!bn_transformer_gpu_dense_batch_prefill_shape_allowed(&gpu, &c));
+    assert(!bn_transformer_gpu_batch_prefill_enabled(&gpu, &c));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    c.dim = 2560;
+    assert(bn_transformer_gpu_dense_batch_prefill_shape_allowed(&gpu, &c));
+    assert(bn_transformer_gpu_batch_prefill_enabled(&gpu, &c));
+    c.dim = 2561;
+    assert(!bn_transformer_gpu_dense_batch_prefill_shape_allowed(&gpu, &c));
+    assert(!bn_transformer_gpu_batch_prefill_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_dense_batch_prefill_shape_allowed(&gpu, NULL));
+    c.dim = 9000;
+    setenv("BN_GPU_PREFILL_MATMUL", "1", 1);
+    assert(bn_transformer_gpu_batch_prefill_enabled(&gpu, &c));
+    unsetenv("BN_GPU_PREFILL_MATMUL");
+
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) == 0);
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP;
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) ==

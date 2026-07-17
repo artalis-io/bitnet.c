@@ -261,6 +261,9 @@ int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void);
 int bn_transformer_gpu_batch_prefill_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_dense_batch_prefill_shape_allowed(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);

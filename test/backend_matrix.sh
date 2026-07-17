@@ -550,6 +550,16 @@ if grep -n 'c->dim > 2560 || c->dim <= 1024' src/transformer/gpu_policy.c >/dev/
     fail=1
 fi
 
+if awk '
+    /int bn_transformer_gpu_batch_prefill_enabled\(/ { in_func = 1 }
+    in_func && /return c->dim <= (8192|2560)/ { found = 1 }
+    in_func && /^}/ { in_func = 0 }
+    END { exit found ? 0 : 1 }
+' src/transformer/gpu_policy.c; then
+    echo "src/transformer/gpu_policy.c must compose GPU policy helpers for dense batch prefill shape policy"
+    fail=1
+fi
+
 if grep -n 'c && c->n_experts > 0 && c->full_attn_interval > 0' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must compose model_arch helpers for hybrid MoE policy"
     fail=1
