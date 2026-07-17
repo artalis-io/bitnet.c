@@ -44,12 +44,23 @@ static void test_quant_policy_helpers(void) {
     unsetenv("BN_CPU_LLAMA_DOT");
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
     unsetenv("BN_CPU_LLAMA_Q6_DOT");
+    unsetenv("BN_CPU_REFERENCE_DOT");
+    unsetenv("BN_CPU_REFERENCE_Q4_DOT");
+    unsetenv("BN_CPU_REFERENCE_Q6_DOT");
     assert(!bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q4_dot_enabled(
         BN_MATVEC_TASK_REFERENCE_DOT));
     assert(!bn_quant_policy_reference_q4_dot_enabled(
         BN_MATVEC_TASK_REFERENCE_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
     assert(!bn_quant_policy_reference_q6_dot_enabled(0));
+    setenv("BN_CPU_REFERENCE_Q4_DOT", "1", 1);
+    assert(bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    unsetenv("BN_CPU_REFERENCE_Q4_DOT");
+    setenv("BN_CPU_REFERENCE_Q6_DOT", "1", 1);
+    assert(!bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    unsetenv("BN_CPU_REFERENCE_Q6_DOT");
     setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
     assert(bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q6_dot_enabled(0));
@@ -61,6 +72,9 @@ static void test_quant_policy_helpers(void) {
 
     memset(tasks, 0, sizeof(tasks));
     assert(!bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
+    setenv("BN_CPU_REFERENCE_DOT", "1", 1);
+    assert(bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
+    unsetenv("BN_CPU_REFERENCE_DOT");
     tasks[0].flags = BN_MATVEC_TASK_REFERENCE_DOT;
     assert(bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
     tasks[1].flags = BN_MATVEC_TASK_NATIVE_QUANT;

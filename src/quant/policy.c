@@ -1,6 +1,11 @@
 #include "quant_dispatch_internal.h"
 #include <stdlib.h>
 
+static int quant_env_enabled(const char *name, const char *compat_name) {
+    return getenv(name) != NULL ||
+           (compat_name != NULL && getenv(compat_name) != NULL);
+}
+
 int bn_quant_policy_avx512_q5k_vnni_enabled(int rows) {
     const char *v = getenv("BN_AVX512_Q5K_VNNI");
     if (v)
@@ -24,23 +29,30 @@ int bn_quant_policy_avx2_kquant_float_for_tasks(
 int bn_quant_policy_reference_q4_dot_enabled(uint32_t flags) {
     return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
            ((flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
-            getenv("BN_CPU_LLAMA_DOT") != NULL ||
-            getenv("BN_CPU_LLAMA_Q4_DOT") != NULL);
+            quant_env_enabled("BN_CPU_REFERENCE_DOT",
+                              "BN_CPU_LLAMA_DOT") ||
+            quant_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
+                              "BN_CPU_LLAMA_Q4_DOT"));
 }
 
 int bn_quant_policy_reference_q6_dot_enabled(uint32_t flags) {
     return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
            ((flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
-            getenv("BN_CPU_LLAMA_DOT") != NULL ||
-            getenv("BN_CPU_LLAMA_Q4_DOT") != NULL ||
-            getenv("BN_CPU_LLAMA_Q6_DOT") != NULL);
+            quant_env_enabled("BN_CPU_REFERENCE_DOT",
+                              "BN_CPU_LLAMA_DOT") ||
+            quant_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
+                              "BN_CPU_LLAMA_Q4_DOT") ||
+            quant_env_enabled("BN_CPU_REFERENCE_Q6_DOT",
+                              "BN_CPU_LLAMA_Q6_DOT"));
 }
 
 int bn_quant_policy_batch_reference_q4_dot_enabled(
     const BnMatvecTask *tasks,
     int n_tasks) {
-    int reference_dot = getenv("BN_CPU_LLAMA_DOT") != NULL ||
-                        getenv("BN_CPU_LLAMA_Q4_DOT") != NULL;
+    int reference_dot = quant_env_enabled("BN_CPU_REFERENCE_DOT",
+                                          "BN_CPU_LLAMA_DOT") ||
+                        quant_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
+                                          "BN_CPU_LLAMA_Q4_DOT");
     for (int t = 0; t < n_tasks; t++)
         reference_dot = reference_dot ||
                         ((tasks[t].flags &
