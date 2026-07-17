@@ -1,6 +1,8 @@
 #ifndef BN_TRANSFORMER_PREFILL_INTERNAL_H
 #define BN_TRANSFORMER_PREFILL_INTERNAL_H
 
+#include "gpu_backend.h"
+#include "quant.h"
 #include "threadpool.h"
 #include <stdint.h>
 
@@ -43,5 +45,23 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
 int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type);
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type);
+void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,
+                                                    const BnQWeight *W,
+                                                    void *W_buf,
+                                                    const float *X,
+                                                    int n_tokens,
+                                                    int8_t *x_q_buf,
+                                                    BnThreadPool *pool,
+                                                    BnGPUBackend *gpu);
+void bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
+    const BnMatvecTask *tasks,
+    const void **buffers,
+    int n_tasks,
+    const float *X,
+    int n_tokens,
+    int cols,
+    int8_t *x_q_buf,
+    BnThreadPool *pool,
+    BnGPUBackend *gpu);
 
 #endif // BN_TRANSFORMER_PREFILL_INTERNAL_H

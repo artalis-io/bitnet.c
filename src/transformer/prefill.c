@@ -8,7 +8,6 @@
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
-#include "backend_quant.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"
@@ -155,10 +154,9 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                  X, n_tokens, x_q_buf, bn_model_pool(m));
         return;
     }
-    bn_backend_quant_matmul_gpu_buf(out, W,
-                                    prefill_qweight_backend_buf(bn_model_backend(m), W),
-                                    X, n_tokens, x_q_buf, bn_model_pool(m),
-                                    bn_model_gpu(m));
+    bn_transformer_prefill_quant_matmul_gpu_buffer(
+        out, W, prefill_qweight_backend_buf(bn_model_backend(m), W), X,
+        n_tokens, x_q_buf, bn_model_pool(m), bn_model_gpu(m));
 }
 
 static int prefill_quant_matmul_gpu_buf(const BnModel *m,
@@ -212,7 +210,7 @@ static void prefill_quant_matmul_multi(const BnModel *m,
             if (!bufs[i]) all_bufs = 0;
         }
         if (all_bufs) {
-            bn_backend_quant_matmul_batch_gpu_buf(
+            bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
                 tasks, bufs, n, X, n_tokens, W[0]->cols, x_q_buf,
                 bn_model_pool(m), bn_model_gpu(m));
             return;
