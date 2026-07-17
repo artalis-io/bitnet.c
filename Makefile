@@ -58,6 +58,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/logits_neon.c src/transformer/logits_scalar.c \
     src/transformer/logits_policy.c \
     src/transformer/logits_backend.c src/transformer/logits.c \
+    src/transformer/cpu_policy.c \
     src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
@@ -102,6 +103,7 @@ else
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
     src/transformer/logits_policy.c \
     src/transformer/logits_backend.c src/transformer/logits.c \
+    src/transformer/cpu_policy.c \
     src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
@@ -255,7 +257,8 @@ SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c src/transformer/rm
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_scalar.c src/transformer/logits_policy.c \
     src/transformer/logits_backend.c \
-    src/transformer/logits.c src/transformer/cpu_backend.c src/transformer/cpu.c \
+    src/transformer/logits.c src/transformer/cpu_policy.c \
+    src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c \
@@ -588,6 +591,7 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnor
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
     src/transformer/logits_policy.c \
     src/transformer/logits_backend.c src/transformer/logits.c \
+    src/transformer/cpu_policy.c \
     src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \

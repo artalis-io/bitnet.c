@@ -227,13 +227,18 @@ if ! grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NAT
     fail=1
 fi
 
-if grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS' src/transformer/cpu.c src/transformer/gpu_fallback.c >/dev/null 2>&1; then
-    echo "CPU execution and GPU fallback must use CPU backend policy helpers for prepared qweight env vars"
+if grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS' src/transformer/cpu.c src/transformer/gpu_fallback.c src/transformer/cpu_backend.c >/dev/null 2>&1; then
+    echo "CPU execution/backend and GPU fallback must use CPU backend policy helpers for prepared qweight env vars"
     fail=1
 fi
 
-if grep -n 'BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu.c >/dev/null 2>&1; then
-    echo "src/transformer/cpu.c must use CPU backend policy helpers for debug and fused gate-up env vars"
+if grep -n 'BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu.c src/transformer/cpu_backend.c >/dev/null 2>&1; then
+    echo "CPU execution/backend code must use CPU backend policy helpers for debug and fused gate-up env vars"
+    fail=1
+fi
+
+if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu_policy.c >/dev/null 2>&1; then
+    echo "CPU env compatibility policy must live in src/transformer/cpu_policy.c"
     fail=1
 fi
 
