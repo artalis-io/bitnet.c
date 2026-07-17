@@ -490,6 +490,7 @@ do
 done
 
 for file in \
+    src/transformer.c \
     src/model.c \
     src/model_session.c \
     src/model_embed.c

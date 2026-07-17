@@ -12,14 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef BN_FORCE_SCALAR
-#undef __ARM_NEON
-#undef __ARM_FEATURE_DOTPROD
-#undef __AVX2__
-#undef __wasm_relaxed_simd__
-#undef __wasm_simd128__
-#endif
-
 static void rmsnorm_per_layer_slice(float *x, const float *w, int n, float eps) {
     float ss = 0.0f;
     for (int i = 0; i < n; i++)
