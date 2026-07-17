@@ -312,8 +312,26 @@ static int cuda_env_int(const char *name, int fallback) {
     return atoi(env);
 }
 
+static int cuda_env_enabled(const char *name, const char *compat_name) {
+    return getenv(name) != NULL ||
+           (compat_name && getenv(compat_name) != NULL);
+}
+
+static const char *cuda_env_value(const char *name, const char *compat_name) {
+    const char *env = getenv(name);
+    return env ? env : (compat_name ? getenv(compat_name) : NULL);
+}
+
 static float cuda_env_float(const char *name, float fallback) {
     const char *env = getenv(name);
+    if (!env || !*env) return fallback;
+    return (float)atof(env);
+}
+
+static float cuda_env_float_compat(const char *name,
+                                   const char *compat_name,
+                                   float fallback) {
+    const char *env = cuda_env_value(name, compat_name);
     if (!env || !*env) return fallback;
     return (float)atof(env);
 }
@@ -350,6 +368,34 @@ static int cuda_env_layer_selected(const char *name, int layer) {
             return 1;
         while (*p && *p != ',')
             p++;
+    }
+    return 0;
+}
+
+static int cuda_env_layer_selected_compat(const char *name,
+                                          const char *compat_name,
+                                          int layer) {
+    const char *env = cuda_env_value(name, compat_name);
+    if (!env || !*env || layer < 0)
+        return 0;
+    const char *p = env;
+    while (*p) {
+        while (*p == ' ' || *p == '\t' || *p == ',')
+            p++;
+        if (!*p)
+            break;
+        int start = atoi(p);
+        while (*p && *p != ',' && *p != '-')
+            p++;
+        int end = start;
+        if (*p == '-') {
+            p++;
+            end = atoi(p);
+            while (*p && *p != ',')
+                p++;
+        }
+        if (layer >= start && layer <= end)
+            return 1;
     }
     return 0;
 }
@@ -18167,7 +18213,8 @@ static int cuda_ops_have_logits(const BnGPUOp *ops, int n_ops) {
 static int cuda_ops_have_moe_cublas_decode(const BnGPUOp *ops, int n_ops) {
     if (!ops || getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE"))
         return 0;
-    if (getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE") == NULL)
+    if (!cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_CUBLAS_DECODE",
+                          "BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE"))
         return 0;
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
@@ -18447,8 +18494,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     if (graph_exec && cuda_ops_have_moe_cublas_decode(ops, n_ops))
         graph_exec = 0;
     if (graph_exec &&
-        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL &&
-        getenv("BN_CUDA_DISABLE_QWEN2MOE_FAST_MOE_GRAPH") != NULL &&
+        cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                         "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
+        cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_FAST_GRAPH",
+                         "BN_CUDA_DISABLE_QWEN2MOE_FAST_MOE_GRAPH") &&
         cuda_ops_have_moe_all2_q4q6_routed_ffn(ops, n_ops))
         graph_exec = 0;
     graph_static_params = graph_exec && graph_static_params;
@@ -20010,15 +20059,18 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int moe_all2_route_q8k_default_enabled =
                 (dim % BN_QK_K) == 0 &&
                 next_moe_all2_q4q6 &&
-                getenv("BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT") == NULL &&
-                getenv("BN_CUDA_DISABLE_QWEN2MOE_ROUTE_Q8K_DEFAULT") == NULL &&
+                !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT",
+                                  "BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT") &&
+                !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT",
+                                  "BN_CUDA_DISABLE_QWEN2MOE_ROUTE_Q8K_DEFAULT") &&
                 getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT") == NULL;
             if (route_diff2) {
                 int route_prequant_q8_1 =
                     (dim % 32) == 0 &&
                     next_moe_all2_q4q6 &&
                     (next->flags & BN_GPU_OP_FLAG_EXACT_SILU) == 0 &&
-                    (getenv("BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT") != NULL ||
+                    (cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT",
+                                      "BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT") ||
                      getenv("BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT") != NULL) &&
                     getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT") == NULL &&
                     getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2") == NULL &&
@@ -20054,7 +20106,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (n_experts == 2 && k == 2 && w->rows >= 2 &&
                        (dim % 16) == 0 &&
                        moe_all2_route_q8k_default_enabled &&
-                       getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE") == NULL) {
+                       !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
+                                         "BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE")) {
                 if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
                     BN_CUDA_EXEC_FAIL("moe exact route q8k prequant scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -20221,17 +20274,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                          down_type == BN_GGUF_TENSOR_Q4_K) &&
                         hidden >= 4096 && dim <= 2048;
                     int moe_all2_fast_moe_ffn =
-                        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL;
+                        cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                                         "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
                     int moe_all2_fast_enabled =
                         getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST") == NULL &&
                         (!moe_all2_q4_or_q6 ||
-                         getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_ALL2_FAST") != NULL);
+                         cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST",
+                                          "BN_CUDA_ENABLE_QWEN2MOE_MOE_ALL2_FAST"));
                     int exact_silu =
                         (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
                     int use_cublas_all2_decode =
                         moe_all2_q4q6 &&
                         gate->f16_data && up->f16_data && down->f16_data &&
-                        getenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE") != NULL &&
+                        cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_CUBLAS_DECODE",
+                                         "BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE") &&
                         getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE") == NULL;
                     if (use_cublas_all2_decode) {
                         if (cuda_moe_cublas_all2_decode(
@@ -20248,14 +20304,17 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     const BnGPUOp *prev = (i > 0) ? &ops[i - 1] : NULL;
                     int moe_all2_route_q8_1_prequant_enabled =
                         !exact_silu &&
-                        (getenv("BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT") != NULL ||
+                        (cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT",
+                                          "BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT") ||
                          getenv("BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT") != NULL) &&
                         getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT") == NULL &&
                         getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2") == NULL &&
                         getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT") == NULL;
                     int moe_all2_route_q8k_default_enabled =
-                        getenv("BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT") == NULL &&
-                        getenv("BN_CUDA_DISABLE_QWEN2MOE_ROUTE_Q8K_DEFAULT") == NULL &&
+                        !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT",
+                                          "BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT") &&
+                        !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT",
+                                          "BN_CUDA_DISABLE_QWEN2MOE_ROUTE_Q8K_DEFAULT") &&
                         getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT") == NULL;
                     int moe_all2_x_q8k_prequantized =
                         moe_all2_q4q6 &&
@@ -20266,7 +20325,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (((BnCudaBuffer *)prev->W_buf)->rows == 1 ||
                          (((BnCudaBuffer *)prev->W_buf)->rows >= 2 &&
                           (dim % 16) == 0 &&
-                          getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE") == NULL)) &&
+                          !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
+                                            "BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE"))) &&
                         !moe_all2_route_q8_1_prequant_enabled &&
                         moe_all2_route_q8k_default_enabled;
                     int moe_all2_x_q8_1_prequantized =
@@ -20279,11 +20339,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         moe_all2_route_q8_1_prequant_enabled;
                     int use_moe_all2_q8k_default =
                         moe_all2_q4q6 &&
-                        getenv("BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT") == NULL;
+                        !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT",
+                                          "BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT");
                     int moe_all2_fast_q8k_gateup =
                         moe_all2_q4_or_q6 &&
-                        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_Q8K_GATEUP") != NULL &&
-                        getenv("BN_CUDA_DISABLE_QWEN2MOE_FAST_Q8K_GATEUP") == NULL;
+                        cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP",
+                                         "BN_CUDA_ENABLE_QWEN2MOE_FAST_Q8K_GATEUP") &&
+                        !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP",
+                                          "BN_CUDA_DISABLE_QWEN2MOE_FAST_Q8K_GATEUP");
                     int use_q4k_q8k_dot =
                         ((use_moe_all2_q8k_default ||
                           moe_all2_fast_q8k_gateup ||
@@ -20380,33 +20443,41 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int use_q6_float_down =
                             getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN") == NULL;
                         int moe_all2_pair_down_enabled =
-                            getenv("BN_CUDA_ENABLE_QWEN2MOE_Q6K_PAIR_DOWN") != NULL;
+                            cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_PAIR_DOWN",
+                                             "BN_CUDA_ENABLE_QWEN2MOE_Q6K_PAIR_DOWN");
                         int moe_all2_pair_down_f32_layer =
                             moe_all2_q4q6 &&
                             down->f32_data &&
                             moe_all2_pair_down_enabled &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_PAIR_DOWN_F32_LAYERS") == NULL &&
-                            cuda_env_layer_selected(
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_PAIR_DOWN_F32_LAYERS",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_PAIR_DOWN_F32_LAYERS") &&
+                            cuda_env_layer_selected_compat(
+                                "BN_CUDA_ALL2_Q4Q6_Q6K_PAIR_DOWN_F32_LAYERS",
                                 "BN_CUDA_QWEN2MOE_Q6K_PAIR_DOWN_F32_LAYERS",
                                 moe_layer);
                         int moe_all2_q6k_ordered_down =
                             moe_all2_q4q6 &&
-                            getenv("BN_CUDA_ENABLE_QWEN2MOE_Q6K_ORDERED_DOWN") != NULL &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_ORDERED_DOWN") == NULL;
+                            cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_ORDERED_DOWN",
+                                             "BN_CUDA_ENABLE_QWEN2MOE_Q6K_ORDERED_DOWN") &&
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_ORDERED_DOWN",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_ORDERED_DOWN");
                         int moe_all2_allow_f32_down_default =
                             !moe_all2_fast_moe_ffn ||
-                            getenv("BN_CUDA_ENABLE_QWEN2MOE_Q6K_F32_DOWN_DEFAULT") != NULL;
+                            cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_F32_DOWN_DEFAULT",
+                                             "BN_CUDA_ENABLE_QWEN2MOE_Q6K_F32_DOWN_DEFAULT");
                         int moe_all2_f32_down_default =
                             moe_all2_q4q6 &&
                             down->f32_data &&
                             !moe_all2_q6k_ordered_down &&
                             !moe_all2_pair_down_enabled &&
                             moe_all2_allow_f32_down_default &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_DOWN_DEFAULT") == NULL;
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_DOWN_DEFAULT",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_DOWN_DEFAULT");
                         int moe_all2_f32_down =
                             (moe_all2_f32_down_default ||
                              moe_all2_pair_down_f32_layer) &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_ALL2_DOWN") == NULL;
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_ALL2_DOWN",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_ALL2_DOWN");
                         int moe_all2_disable_pair_down =
                             moe_all2_q4q6 &&
                             moe_all2_fast_moe_ffn &&
@@ -20414,7 +20485,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int moe_all2_disable_f32_cache =
                             moe_all2_q4q6 &&
                             moe_all2_fast_moe_ffn &&
-                            getenv("BN_CUDA_ENABLE_QWEN2MOE_Q6K_F32_CACHE") == NULL;
+                            !cuda_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_F32_CACHE",
+                                              "BN_CUDA_ENABLE_QWEN2MOE_Q6K_F32_CACHE");
                         int use_q6_pair_down =
                             !moe_all2_f32_down_default &&
                             !moe_all2_pair_down_f32_layer &&
@@ -20427,14 +20499,19 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int moe_all2_float_4row_down =
                             moe_all2_q4q6 &&
                             moe_all2_fast_moe_ffn &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_FLOAT_4ROW_DOWN_DEFAULT") == NULL &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_FLOAT_4ROW_DOWN") == NULL;
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_FLOAT_4ROW_DOWN_DEFAULT",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_FLOAT_4ROW_DOWN_DEFAULT") &&
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_FLOAT_4ROW_DOWN",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_FLOAT_4ROW_DOWN");
                         const char *moe_all2_exact_down_layers =
-                            getenv("BN_CUDA_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN_LAYERS");
+                            cuda_env_value(
+                                "BN_CUDA_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_LAYERS",
+                                "BN_CUDA_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN_LAYERS");
                         int moe_all2_exact_down_layer_selected =
                             !moe_all2_exact_down_layers ||
                             !*moe_all2_exact_down_layers ||
-                            cuda_env_layer_selected(
+                            cuda_env_layer_selected_compat(
+                                "BN_CUDA_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_LAYERS",
                                 "BN_CUDA_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN_LAYERS",
                                 moe_layer);
                         int moe_all2_f32_exact_4row_down =
@@ -20442,11 +20519,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             moe_all2_fast_moe_ffn &&
                             down->f32_data &&
                             moe_all2_exact_down_layer_selected &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN_DEFAULT") == NULL &&
-                            getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN") == NULL;
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_DEFAULT",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN_DEFAULT") &&
+                            !cuda_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN",
+                                              "BN_CUDA_DISABLE_QWEN2MOE_Q6K_F32_EXACT_4ROW_DOWN");
                         if (moe_all2_f32_exact_4row_down) {
                             int row4_blocks = (dim + 3) / 4;
-                            float skip_eps = cuda_env_float(
+                            float skip_eps = cuda_env_float_compat(
+                                "BN_CUDA_ALL2_Q4Q6_DOWN_SKIP_EPS",
                                 "BN_CUDA_QWEN2MOE_DOWN_SKIP_EPS", 1.0e-7f);
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_all2_f32_cache_exact_4row_kernel,
