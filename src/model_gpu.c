@@ -350,25 +350,9 @@ static int add_qweight_bytes(size_t *total, const BnQWeight *w) {
 
 static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {
     if (!w || !w->data || w->rows <= 0 || w->cols <= 0 ||
-        (w->cols & 31) != 0 ||
-        !bn_gpu_policy_cuda_cublas_matmul_enabled())
+        (w->cols & 31) != 0)
         return 0;
-    if (!bn_quant_format_cuda_aux_cache_supported(w->type))
-        return 0;
-    int q6_as_f16 = bn_quant_format_cuda_aux_cache_can_use_f16(w->type) &&
-                    bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
-    size_t bytes = 0;
-    if (mul3_size((size_t)w->rows, (size_t)w->cols,
-                  bn_quant_format_cuda_aux_cache_uses_f32(w->type, q6_as_f16)
-                      ? sizeof(float) : sizeof(uint16_t),
-                  &bytes) != 0)
-        return SIZE_MAX;
-
-    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(
-        128, bn_quant_format_cuda_aux_cache_prefers_large_budget(w->type));
-    if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
-        return 0;
-    return bytes;
+    return bn_gpu_policy_cuda_aux_cache_bytes(w->type, w->rows, w->cols);
 }
 
 static size_t qweight_stacked_aux_cache_bytes(const BnQWeight *a,

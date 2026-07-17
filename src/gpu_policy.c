@@ -130,6 +130,34 @@ size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     return elems * elem_size;
 }
 
+size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
+                                          int rows,
+                                          int cols) {
+    if (rows <= 0 || cols <= 0 || (cols & 31) != 0 ||
+        !bn_gpu_policy_cuda_cublas_matmul_enabled() ||
+        !bn_quant_format_cuda_aux_cache_supported(tensor_type))
+        return 0;
+    int q6_as_f16 =
+        bn_quant_format_cuda_aux_cache_can_use_f16(tensor_type) &&
+        bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
+    if ((size_t)rows > SIZE_MAX / (size_t)cols)
+        return SIZE_MAX;
+    size_t elems = (size_t)rows * (size_t)cols;
+    size_t elem_size =
+        bn_quant_format_cuda_aux_cache_uses_f32(tensor_type, q6_as_f16)
+            ? sizeof(float)
+            : sizeof(uint16_t);
+    if (elem_size != 0 && elems > SIZE_MAX / elem_size)
+        return SIZE_MAX;
+    size_t bytes = elems * elem_size;
+
+    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(
+        128, bn_quant_format_cuda_aux_cache_prefers_large_budget(tensor_type));
+    if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
+        return 0;
+    return bytes;
+}
+
 int bn_gpu_policy_moe_auto_resident_enabled(void) {
     return getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT") == NULL;
 }
