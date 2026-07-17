@@ -236,6 +236,10 @@ int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c) {
     return bn_model_arch_uses_moe(c) && c->full_attn_interval <= 0;
 }
 
+int bn_model_arch_uses_hybrid_moe(const BnConfig *c) {
+    return bn_model_arch_uses_moe(c) && c->full_attn_interval > 0;
+}
+
 int bn_model_arch_uses_two_expert_all_active_moe(const BnConfig *c) {
     return c &&
            c->n_experts == 2 &&

@@ -4,6 +4,7 @@
 #include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "quant.h"
 #include "transformer_backend_internal.h"
@@ -1034,7 +1035,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             lw->ffn.ffn_gate.type, ffn_plan->activation != 1);
         int prefer_gateup_split =
             bn_transformer_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
-            c && c->n_experts > 0 && c->full_attn_interval > 0;
+            bn_model_arch_uses_hybrid_moe(c);
         int use_fused_gateup = !prefer_gateup_split &&
                                gateup_stacked &&
                                bn_transformer_gpu_can_fused_gateup_silu(res->gpu, lw->ffn.ffn_gate.type,
