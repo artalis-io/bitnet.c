@@ -159,6 +159,8 @@ int bn_model_arch_is_ssm_layer(const BnConfig *c, int layer);
 int bn_model_arch_is_attention_layer(const BnConfig *c, int layer);
 int bn_model_arch_attention_layer_index(const BnConfig *c, int layer);
 int bn_model_arch_ssm_layer_index(const BnConfig *c, int layer);
+int bn_model_arch_attention_layer_count(const BnConfig *c);
+int bn_model_arch_ssm_layer_count(const BnConfig *c);
 int bn_model_arch_infer_moe_hidden(BnGGUFFile *f,
                                    const BnModelArchOps *ops);
 int bn_model_arch_has_shared_expert(BnGGUFFile *f,

@@ -38,9 +38,8 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     size_t att_size = 0;
     if (checked_mul_size((size_t)c->n_heads, (size_t)c->seq_len, &att_size) != 0)
         return 0;
-    int n_attn_layers = (c->full_attn_interval > 0)
-        ? c->n_layers / c->full_attn_interval : c->n_layers;
-    int n_ssm_layers = c->n_layers - n_attn_layers;
+    int n_attn_layers = bn_model_arch_attention_layer_count(c);
+    int n_ssm_layers = bn_model_arch_ssm_layer_count(c);
     if (n_attn_layers < 0 || n_ssm_layers < 0) return 0;
     size_t kv_cache_size = 0;
     if (checked_mul3_size((size_t)n_attn_layers, (size_t)c->seq_len,
@@ -262,9 +261,8 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (checked_mul_size((size_t)c->n_heads, (size_t)c->seq_len, &att_size) != 0)
         return -1;
 
-    int n_attn_layers = (c->full_attn_interval > 0)
-        ? c->n_layers / c->full_attn_interval : c->n_layers;
-    int n_ssm_layers = c->n_layers - n_attn_layers;
+    int n_attn_layers = bn_model_arch_attention_layer_count(c);
+    int n_ssm_layers = bn_model_arch_ssm_layer_count(c);
     if (n_attn_layers < 0 || n_ssm_layers < 0) return -1;
     size_t kv_cache_size = 0;
     if (checked_mul3_size((size_t)n_attn_layers, (size_t)c->seq_len,

@@ -390,6 +390,20 @@ int bn_model_arch_ssm_layer_index(const BnConfig *c, int layer) {
     return layer - (layer + 1) / c->full_attn_interval;
 }
 
+int bn_model_arch_attention_layer_count(const BnConfig *c) {
+    if (!c || c->n_layers <= 0) return 0;
+    return c->full_attn_interval > 0
+        ? c->n_layers / c->full_attn_interval
+        : c->n_layers;
+}
+
+int bn_model_arch_ssm_layer_count(const BnConfig *c) {
+    if (!c || c->n_layers <= 0) return 0;
+    int n_attn_layers = bn_model_arch_attention_layer_count(c);
+    int n_ssm_layers = c->n_layers - n_attn_layers;
+    return n_ssm_layers > 0 ? n_ssm_layers : 0;
+}
+
 int bn_model_arch_infer_moe_hidden(BnGGUFFile *f,
                                    const BnModelArchOps *ops) {
     char name[128];

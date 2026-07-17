@@ -2287,10 +2287,15 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_attention_layer_index(&c, 7) == 1);
     assert(bn_model_arch_ssm_layer_index(&c, 0) == 0);
     assert(bn_model_arch_ssm_layer_index(&c, 4) == 3);
+    c.n_layers = 12;
+    assert(bn_model_arch_attention_layer_count(&c) == 3);
+    assert(bn_model_arch_ssm_layer_count(&c) == 9);
     c.full_attn_interval = 0;
     assert(bn_model_arch_is_attention_layer(&c, 0));
     assert(bn_model_arch_attention_layer_index(&c, 2) == 2);
     assert(bn_model_arch_ssm_layer_index(&c, 2) == -1);
+    assert(bn_model_arch_attention_layer_count(&c) == 12);
+    assert(bn_model_arch_ssm_layer_count(&c) == 0);
 
     printf("PASSED\n");
 }
