@@ -252,8 +252,13 @@ static void test_qwen2moe_arch_config(void) {
     assert(c.moe_exact_silu == 1);
     assert((c.policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU) != 0);
     assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(bn_moe_gateup_task_flags(&c) ==
+           BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
+
+    BnConfig dense = {0};
+    assert(bn_moe_gateup_task_flags(&dense) == 0);
 
     printf("PASSED\n");
 }

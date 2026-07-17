@@ -967,6 +967,16 @@ do
     fi
 done
 
+if grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_execute.c >/dev/null 2>&1; then
+    echo "src/moe_execute.c must use MoE policy helpers for float K-quant gate/up task flags"
+    fail=1
+fi
+
+if ! grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_policy.c >/dev/null 2>&1; then
+    echo "MoE float K-quant gate/up task flag policy must live in src/moe_policy.c"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/model.c \

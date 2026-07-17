@@ -1,5 +1,12 @@
 #include "moe_internal.h"
 #include "backend_quant.h"
+#include "model_arch.h"
+
+uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
+    return bn_model_arch_moe_forces_float_kquant_gateup(c)
+        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
+        : 0u;
+}
 
 int bn_moe_quant_supports_prepared_q8k(int type) {
     return bn_backend_quant_can_preq8k(type);

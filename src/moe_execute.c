@@ -83,12 +83,6 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     return 0;
 }
 
-static uint32_t moe_kquant_gateup_flags(const BnConfig *c) {
-    return bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
-}
-
 static float moe_expert_weight_scale(const BnLayerWeights *lw, int expert_idx) {
     if (!lw || !lw->moe.expert_down_scale || expert_idx < 0)
         return 1.0f;
@@ -142,7 +136,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         bn_model_arch_moe_uses_dense_residual_branch(c);
     int exact_silu = uses_dense_residual_branch ? -1 : c->moe_exact_silu;
     int K = c->n_experts_active;
-    uint32_t gateup_flags = moe_kquant_gateup_flags(c);
+    uint32_t gateup_flags = bn_moe_gateup_task_flags(c);
     double t0;
 
     // 1. RMSNorm input

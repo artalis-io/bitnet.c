@@ -50,6 +50,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *map,
                                     int expert_idx, int proj);
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
+uint32_t bn_moe_gateup_task_flags(const BnConfig *c);
 int bn_moe_quant_supports_prepared_q8k(int type);
 int bn_moe_quant_uses_embedded_tensor_scale(int type);
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
