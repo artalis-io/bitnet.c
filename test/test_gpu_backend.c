@@ -454,6 +454,10 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q6_K, 0));
     assert(!bn_gpu_policy_cuda_moe_quant_only_after_cache(
         BN_GGUF_TENSOR_Q8_0, 1));
+    assert(bn_gpu_policy_cuda_moe_prefers_quant_only(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_gpu_policy_cuda_moe_prefers_quant_only(
+        BN_GGUF_TENSOR_Q4_K));
 
     unsetenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");

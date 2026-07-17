@@ -145,6 +145,10 @@ int bn_gpu_policy_cuda_moe_quant_only_after_cache(int tensor_type,
                                                            q8_f16_cache);
 }
 
+int bn_gpu_policy_cuda_moe_prefers_quant_only(int tensor_type) {
+    return bn_quant_format_cuda_moe_prefers_quant_only(tensor_type);
+}
+
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void) {
     return getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL") == NULL;
 }
