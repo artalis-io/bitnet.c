@@ -36,3 +36,8 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
                                                   second_type) &&
            bn_backend_quant_can_preq8k(third_type);
 }
+
+int bn_transformer_prefill_stacked_pair_same_format(int left_type,
+                                                    int right_type) {
+    return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
+}

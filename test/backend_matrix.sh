@@ -270,6 +270,11 @@ if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transfo
     fail=1
 fi
 
+if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill execution code must use prefill policy helpers for stacked pair quant compatibility"
+    fail=1
+fi
+
 if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu_policy.c >/dev/null 2>&1; then
     echo "CPU env compatibility policy must live in src/transformer/cpu_policy.c"
     fail=1

@@ -40,5 +40,7 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
                                              int first_type,
                                              int second_type,
                                              int third_type);
+int bn_transformer_prefill_stacked_pair_same_format(int left_type,
+                                                    int right_type);
 
 #endif // BN_TRANSFORMER_PREFILL_INTERNAL_H

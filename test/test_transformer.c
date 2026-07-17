@@ -2069,6 +2069,10 @@ static void test_block_planning(void) {
     assert(!bn_transformer_prefill_can_preq8k_pair(
         bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q8_0));
+    assert(bn_transformer_prefill_stacked_pair_same_format(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_transformer_prefill_stacked_pair_same_format(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
 
     unsetenv("BN_PREFILL_PROFILE");
     assert(!bn_transformer_prefill_profile_enabled());
