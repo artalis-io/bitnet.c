@@ -210,6 +210,11 @@ if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_CUDA_ENABLE_Q5K_FUSED_GATEUP' src/tr
     fail=1
 fi
 
+if grep -n 'bn_quant_format_can_gpu_native\|bn_quant_format_gpu_fused_gateup_silu_cap\|bn_quant_format_gpu_allows_gateup_split_activation\|bn_quant_format_gpu_split_cap' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use GPU policy helpers for quant-format GPU capability policy"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_BACKEND_' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use GPU policy helpers for backend placement"
     fail=1

@@ -19,6 +19,53 @@ int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
 }
 
+int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
+    return gpu && ((gpu->caps & cap) != 0);
+}
+
+int bn_transformer_gpu_can_native_qkv(int q_type, int k_type, int v_type) {
+    return bn_backend_quant_can_gpu_native(q_type) &&
+           bn_backend_quant_can_gpu_native(k_type) &&
+           bn_backend_quant_can_gpu_native(v_type);
+}
+
+int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu,
+                                        int tensor_type) {
+    uint32_t cap = bn_backend_quant_gpu_split_cap(tensor_type);
+    return cap != 0 && bn_transformer_gpu_has_cap(gpu, cap);
+}
+
+int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
+                                             int tensor_type,
+                                             int act_type) {
+    if (!bn_transformer_gpu_fused_gateup_silu_policy_allows(gpu, tensor_type))
+        return 0;
+    uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
+    return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);
+}
+
+int bn_transformer_gpu_can_fused_gateup_silu_pair(const BnGPUBackend *gpu,
+                                                  int gate_type,
+                                                  int up_type,
+                                                  int act_type) {
+    uint32_t gate_cap = bn_backend_quant_gpu_fused_gateup_silu_cap(gate_type);
+    uint32_t up_cap = bn_backend_quant_gpu_fused_gateup_silu_cap(up_type);
+    return gate_cap != 0 && gate_cap == up_cap &&
+           bn_transformer_gpu_can_fused_gateup_silu(gpu, gate_type, act_type);
+}
+
+int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
+                                                   int tensor_type,
+                                                   int act_type) {
+    return bn_transformer_gpu_can_matvec_split(gpu, tensor_type) &&
+           bn_backend_quant_can_gpu_gateup_split_activation(tensor_type,
+                                                           act_type);
+}
+
+int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_FLASH_ATTN);
+}
+
 BnBackendPlacement bn_transformer_gpu_backend_placement(
     const BnGPUBackend *gpu) {
     if (!gpu)

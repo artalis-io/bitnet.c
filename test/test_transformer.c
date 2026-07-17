@@ -432,6 +432,9 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_0));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_transformer_gpu_can_native_qkv(BN_GGUF_TENSOR_Q4_0,
+                                              BN_GGUF_TENSOR_Q4_0,
+                                              BN_GGUF_TENSOR_TQ1_0));
 
     gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
                BN_GPU_CAP_Q5_MATVEC_SPLIT |
@@ -449,11 +452,22 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_F16));
+    assert(bn_transformer_gpu_can_native_qkv(BN_GGUF_TENSOR_Q4_0,
+                                             BN_GGUF_TENSOR_Q4_0,
+                                             BN_GGUF_TENSOR_Q4_0));
 
     assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 0));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q4_0, 1));
     assert(bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q5_0, 0));
     assert(!bn_transformer_gpu_can_fused_gateup_silu(&gpu, BN_GGUF_TENSOR_Q8_0, 0));
+    assert(bn_transformer_gpu_can_fused_gateup_silu_pair(
+        &gpu, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, 0));
+    assert(!bn_transformer_gpu_can_fused_gateup_silu_pair(
+        &gpu, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q5_0, 0));
+    assert(bn_transformer_gpu_can_gateup_split_activation(
+        &gpu, BN_GGUF_TENSOR_Q4_0, 0));
+    assert(!bn_transformer_gpu_can_gateup_split_activation(
+        &gpu, BN_GGUF_TENSOR_F16, 0));
     setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     assert(!bn_transformer_gpu_fused_gateup_silu_policy_allows(
         &gpu, BN_GGUF_TENSOR_Q4_0));
