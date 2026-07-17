@@ -1582,15 +1582,12 @@ int bn_transformer_gpu_validate_forward(
     }
 
     int cuda_large_native = bn_transformer_gpu_backend_is_cuda(gpu);
-    if (!getenv("BN_GPU_FORCE_GRAPH") && c->dim >= 4096 &&
-        !cuda_large_native &&
-        (bn_model_arch_requires_large_gpu_graph_fallback(c) ||
-         c->full_attn_interval > 0 ||
-         c->n_experts > 0))
+    if (!getenv("BN_GPU_FORCE_GRAPH") && !cuda_large_native &&
+        bn_model_arch_uses_large_gpu_graph_fallback_shape(c))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
 
-    if (bn_transformer_gpu_backend_is_cuda(gpu) && c->dim <= 2560 &&
-        c->n_experts <= 0 && c->full_attn_interval <= 0) {
+    if (bn_transformer_gpu_backend_is_cuda(gpu) &&
+        bn_model_arch_uses_small_cuda_dense_shape(c)) {
         if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")) {
             if (!small_dense_cuda_q8_native_by_default(c, w))
                 GPU_POLICY_REJECT("small dense cuda graph disabled");

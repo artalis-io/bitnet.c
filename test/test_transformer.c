@@ -2046,6 +2046,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(bn_model_arch_uses_dense_attention_only(&c));
     assert(!bn_model_arch_uses_large_dense_shape(&c));
+    assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
@@ -2079,9 +2080,11 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_shape(&c));
+    assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     c.dim = 4096;
     assert(bn_model_arch_uses_large_dense_shape(&c));
     assert(bn_model_arch_uses_large_dense_hybrid_ssm(&c));
+    assert(bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     c.n_experts = 1;
     assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
@@ -2089,6 +2092,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_moe(&c));
     assert(!bn_model_arch_uses_non_hybrid_moe(&c));
     assert(bn_model_arch_uses_hybrid_moe(&c));
+    assert(bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_uses_dense_attention_only(&c));
 
     memset(&c, 0, sizeof(c));
@@ -2121,6 +2125,7 @@ static void test_model_arch_registry(void) {
 
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
+                     BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
                      BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
@@ -2131,11 +2136,15 @@ static void test_model_arch_registry(void) {
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
     assert(bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 2);
+    assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
     c.dim = 2561;
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_small_cuda_dense_prefill_min_tokens(&c));
+    assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
+    c.dim = 4096;
+    assert(bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     c.dim = 0;
 
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |

@@ -181,6 +181,14 @@ int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c) {
            bn_model_arch_uses_large_dense_shape(c);
 }
 
+int bn_model_arch_uses_large_gpu_graph_fallback_shape(const BnConfig *c) {
+    return c &&
+           c->dim >= 4096 &&
+           (bn_model_arch_requires_large_gpu_graph_fallback(c) ||
+            c->full_attn_interval > 0 ||
+            bn_model_arch_uses_moe(c));
+}
+
 static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
     if (!c || ((c->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT) == 0))
         return 0;

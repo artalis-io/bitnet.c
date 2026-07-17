@@ -535,6 +535,16 @@ if grep -n 'c->n_experts > 0 || c->dim < 4096' src/transformer/gpu_policy.c >/de
     fail=1
 fi
 
+if grep -n 'c->dim >= 4096' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose model_arch helpers for large graph fallback shape policy"
+    fail=1
+fi
+
+if grep -n 'c->dim <= 2560 &&' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose model_arch helpers for small dense CUDA shape policy"
+    fail=1
+fi
+
 if grep -n 'c && c->n_experts > 0 && c->full_attn_interval > 0' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must compose model_arch helpers for hybrid MoE policy"
     fail=1
