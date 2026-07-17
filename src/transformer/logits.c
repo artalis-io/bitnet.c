@@ -37,10 +37,8 @@ static void logits_rmsnorm_model(const BnModel *m, float *out,
 static int logits_refine_q8_top(float *logits, int n_logits,
                                 const BnQWeight *W, const float *x,
                                 int8_t *x_q, int top_n) {
-    if (!logits_backend_ops()->supports_q8_refine)
-        return 0;
-    if (!logits || !W || !W->data || !x || !x_q ||
-        !bn_quant_format_supports_q8_logits_refine(W->type))
+    if (!logits || !x || !x_q ||
+        !bn_transformer_logits_q8_refine_supported(logits_backend_ops(), W))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -116,8 +114,7 @@ static int logits_top_ids(const float *logits, int n_logits,
 
 static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
-    if (!m || !s || !W ||
-        !bn_quant_format_supports_q6_logits_refine(W->type))
+    if (!m || !s || !bn_transformer_logits_q6_refine_supported(W))
         return;
 
     int refine_top = bn_transformer_logits_cpu_tied_q6k_refine_top();
@@ -136,8 +133,7 @@ static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
 
 static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
                                        const BnQWeight *W) {
-    if (!m || !s || !W ||
-        !bn_quant_format_supports_q6_logits_refine(W->type))
+    if (!m || !s || !bn_transformer_logits_q6_refine_supported(W))
         return;
 
     int top_n = bn_transformer_logits_cpu_tied_q6k_hybrid_top();

@@ -48,5 +48,8 @@ const BnLogitsBackendOps *bn_transformer_logits_backend_ops(void);
 int bn_transformer_logits_cpu_tied_q6k_refine_top(void);
 int bn_transformer_logits_cpu_tied_q6k_hybrid_top(void);
 int bn_transformer_logits_cpu_native_tied_quant_enabled(void);
+int bn_transformer_logits_q8_refine_supported(
+    const BnLogitsBackendOps *ops, const BnQWeight *W);
+int bn_transformer_logits_q6_refine_supported(const BnQWeight *W);
 
 #endif // BN_TRANSFORMER_LOGITS_INTERNAL_H

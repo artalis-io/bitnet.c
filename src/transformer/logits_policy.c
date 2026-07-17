@@ -1,4 +1,5 @@
 #include "transformer_logits_internal.h"
+#include "backend_quant.h"
 
 #include <stdlib.h>
 
@@ -22,4 +23,15 @@ int bn_transformer_logits_cpu_tied_q6k_hybrid_top(void) {
 
 int bn_transformer_logits_cpu_native_tied_quant_enabled(void) {
     return getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL;
+}
+
+int bn_transformer_logits_q8_refine_supported(
+    const BnLogitsBackendOps *ops, const BnQWeight *W) {
+    return ops && ops->supports_q8_refine && W && W->data &&
+           bn_backend_quant_supports_q8_logits_refine(W->type);
+}
+
+int bn_transformer_logits_q6_refine_supported(const BnQWeight *W) {
+    return W && W->data &&
+           bn_backend_quant_supports_q6k_logits_refine(W->type);
 }
