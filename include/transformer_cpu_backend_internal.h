@@ -38,5 +38,6 @@ const char *bn_transformer_cpu_debug_dump_path(void);
 int bn_transformer_cpu_debug_dump_pos_selected(int pos);
 int bn_transformer_cpu_debug_dump_heads_enabled(void);
 int bn_transformer_cpu_fused_q4_gateup_silu_allowed(void);
+int bn_transformer_cpu_can_fused_q4_gateup_silu(int gate_type, int up_type);
 
 #endif // BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H

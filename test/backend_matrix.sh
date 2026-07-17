@@ -255,6 +255,11 @@ if grep -n 'BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAM
     fail=1
 fi
 
+if grep -n 'bn_quant_format_supports_cpu_fused_q4_gateup_silu\|bn_backend_quant_cpu_fused_q4_gateup_silu' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "CPU execution code must use CPU backend policy helpers for fused gate-up quant capability"
+    fail=1
+fi
+
 if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu_policy.c >/dev/null 2>&1; then
     echo "CPU env compatibility policy must live in src/transformer/cpu_policy.c"
     fail=1

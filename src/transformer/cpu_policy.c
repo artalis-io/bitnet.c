@@ -1,4 +1,5 @@
 #include "transformer_cpu_backend_internal.h"
+#include "backend_quant.h"
 
 #include <stdlib.h>
 
@@ -24,4 +25,9 @@ int bn_transformer_cpu_debug_dump_heads_enabled(void) {
 int bn_transformer_cpu_fused_q4_gateup_silu_allowed(void) {
     return getenv("BN_CPU_LLAMA_DOT") == NULL &&
            getenv("BN_CPU_LLAMA_Q4_DOT") == NULL;
+}
+
+int bn_transformer_cpu_can_fused_q4_gateup_silu(int gate_type, int up_type) {
+    return bn_transformer_cpu_fused_q4_gateup_silu_allowed() &&
+           bn_backend_quant_cpu_fused_q4_gateup_silu(gate_type, up_type);
 }

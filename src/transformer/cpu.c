@@ -987,9 +987,8 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
             const BnPreparedWeight *up_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
             if (!bn_model_gpu(m) && !ffn_plan->scalar_exact_activation &&
-                bn_transformer_cpu_fused_q4_gateup_silu_allowed() &&
                 ffn_plan->activation == 0 &&
-                bn_quant_format_supports_cpu_fused_q4_gateup_silu(
+                bn_transformer_cpu_can_fused_q4_gateup_silu(
                     lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) &&
                 dim % 32 == 0 &&
                 bn_quant_q4_gate_up_silu(s->hb, &lw->ffn.ffn_gate, gate_prepared,
