@@ -149,6 +149,29 @@ int bn_gpu_policy_cuda_moe_prefers_quant_only(int tensor_type) {
     return bn_quant_format_cuda_moe_prefers_quant_only(tensor_type);
 }
 
+int bn_gpu_policy_cuda_matvec_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_MATVEC") != NULL;
+}
+
+int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type) {
+    switch (tensor_type) {
+        case BN_GGUF_TENSOR_Q8_0:
+            return getenv("BN_CUDA_DISABLE_Q8_0") != NULL;
+        case BN_GGUF_TENSOR_Q5_0:
+            return getenv("BN_CUDA_DISABLE_Q5_0") != NULL;
+        case BN_GGUF_TENSOR_Q4_K:
+            return getenv("BN_CUDA_DISABLE_Q4_K") != NULL;
+        case BN_GGUF_TENSOR_Q5_K:
+            return getenv("BN_CUDA_DISABLE_Q5_K") != NULL;
+        case BN_GGUF_TENSOR_Q6_K:
+            return getenv("BN_CUDA_DISABLE_Q6_K") != NULL;
+        case BN_GGUF_TENSOR_Q8_K:
+            return getenv("BN_CUDA_DISABLE_Q8_K") != NULL;
+        default:
+            return 0;
+    }
+}
+
 static size_t env_mb_or_default(const char *name, size_t def) {
     const char *s = getenv(name);
     if (!s || !*s)

@@ -46,6 +46,8 @@ int bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
 int bn_gpu_policy_cuda_moe_quant_only_after_cache(int tensor_type,
                                                   int q8_f16_cache);
 int bn_gpu_policy_cuda_moe_prefers_quant_only(int tensor_type);
+int bn_gpu_policy_cuda_matvec_disabled(void);
+int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type);
 size_t bn_gpu_policy_cuda_layout_reserve_bytes(void);
 size_t bn_gpu_policy_cuda_moe_full_reserve_bytes(void);
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void);

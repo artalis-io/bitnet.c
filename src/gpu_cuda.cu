@@ -10825,13 +10825,19 @@ static int cuda_type_supported(int type) {
     static int disable_q6_k = 0;
     static int disable_q8_k = 0;
     if (!init) {
-        disable_matvec = getenv("BN_CUDA_DISABLE_MATVEC") != NULL;
-        disable_q8_0 = getenv("BN_CUDA_DISABLE_Q8_0") != NULL;
-        disable_q5_0 = getenv("BN_CUDA_DISABLE_Q5_0") != NULL;
-        disable_q4_k = getenv("BN_CUDA_DISABLE_Q4_K") != NULL;
-        disable_q5_k = getenv("BN_CUDA_DISABLE_Q5_K") != NULL;
-        disable_q6_k = getenv("BN_CUDA_DISABLE_Q6_K") != NULL;
-        disable_q8_k = getenv("BN_CUDA_DISABLE_Q8_K") != NULL;
+        disable_matvec = bn_gpu_policy_cuda_matvec_disabled();
+        disable_q8_0 =
+            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q8_0);
+        disable_q5_0 =
+            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q5_0);
+        disable_q4_k =
+            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q4_K);
+        disable_q5_k =
+            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q5_K);
+        disable_q6_k =
+            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q6_K);
+        disable_q8_k =
+            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q8_K);
         init = 1;
     }
     if (disable_matvec)

@@ -297,6 +297,11 @@ if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CU
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_MATVEC")\|getenv("BN_CUDA_DISABLE_Q8_0")\|getenv("BN_CUDA_DISABLE_Q5_0")\|getenv("BN_CUDA_DISABLE_Q4_K")\|getenv("BN_CUDA_DISABLE_Q5_K")\|getenv("BN_CUDA_DISABLE_Q6_K")\|getenv("BN_CUDA_DISABLE_Q8_K")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for matvec type disable env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
     echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
     fail=1
