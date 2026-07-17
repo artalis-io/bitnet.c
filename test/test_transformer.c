@@ -2147,6 +2147,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     assert(bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_q8_native_shape(&c));
+    assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
+    assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));
@@ -2160,6 +2162,8 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_hybrid_layer_layout(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_dense_attention_only(&c));
+    assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
+    assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_q8_native_shape(&c));
     assert(!bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
@@ -2183,6 +2187,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_q8_native_shape(&c));
     assert(bn_model_arch_uses_moe(&c));
+    assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(!bn_model_arch_uses_non_hybrid_moe(&c));
     assert(bn_model_arch_uses_hybrid_moe(&c));
     assert(bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
@@ -2229,6 +2234,8 @@ static void test_model_arch_registry(void) {
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
     assert(bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_q8_native_shape(&c));
+    assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
+    assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 2);
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
@@ -2239,9 +2246,15 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_q8_native_shape(&c));
     assert(!bn_model_arch_small_cuda_dense_prefill_min_tokens(&c));
+    assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
+    assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     c.dim = 4096;
     assert(bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
+    assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
+    assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
+    c.dim = 8193;
+    assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     c.dim = 0;
 
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |

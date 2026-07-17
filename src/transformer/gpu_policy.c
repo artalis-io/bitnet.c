@@ -570,11 +570,8 @@ int bn_transformer_gpu_cuda_matvec_fallback_kept(
 int bn_transformer_gpu_dense_batch_prefill_shape_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    if (!c)
-        return 0;
-    if (bn_transformer_gpu_backend_is_cuda(gpu))
-        return c->dim <= 8192;
-    return c->dim <= 2560;
+    return bn_model_arch_dense_batch_prefill_shape_allowed(
+        c, bn_transformer_gpu_backend_is_cuda(gpu));
 }
 
 int bn_transformer_gpu_batch_prefill_enabled(
