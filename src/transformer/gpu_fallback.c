@@ -3,7 +3,6 @@
 #include "backend_model.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
-#include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
@@ -445,16 +444,9 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
                                         int pos,
                                         const float *x,
                                         int cols) {
-#if !BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
-    (void)gpu;
-    (void)layer;
-    (void)pos;
-    (void)x;
-    (void)cols;
-    return;
-#else
     if (!gpu || !gpu->read_activation || !x || cols <= 0 ||
-        (cols % 32) != 0)
+        (cols % 32) != 0 ||
+        !bn_transformer_cpu_has_native_q8x_quant())
         return;
     int n_blocks = cols / 32;
     int8_t *cpu_q = (int8_t *)malloc((size_t)cols);
@@ -466,7 +458,11 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
         return;
     }
 
-    bn_quant_x_to_q8_blocks(x, cpu_q, cpu_scales, cols);
+    if (bn_transformer_cpu_quantize_q8_blocks_native(
+            x, cpu_q, cpu_scales, cols) != 0) {
+        free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
+        return;
+    }
     if (gpu->read_activation(gpu->ctx, BN_GPU_DEBUG_BUF_Q8_ACT, gpu_q,
                              (size_t)cols, 0) != 0 ||
         gpu->read_activation(gpu->ctx, BN_GPU_DEBUG_BUF_Q8_SCALE, gpu_scales,
@@ -518,7 +514,6 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
             sqrt(sum_scale_sq / (double)n_blocks));
 
     free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
-#endif
 }
 
 int bn_transformer_gpu_debug_compare_ffn_state(

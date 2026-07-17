@@ -48,6 +48,16 @@ int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
+int bn_transformer_cpu_has_native_q8x_quant(void);
+void bn_transformer_cpu_quantize_q8k_activation(const float *x,
+                                                int8_t *x_q,
+                                                float *x_d,
+                                                int16_t *x_bsums,
+                                                int n);
+int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
+                                                 int8_t *x_q,
+                                                 float *x_scales,
+                                                 int n);
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,

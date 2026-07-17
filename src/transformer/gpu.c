@@ -5,7 +5,7 @@
 #include "quant.h"
 #include "quant_dispatch_internal.h"
 #include "session.h"
-#include "transformer_cpu_features_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../moe_internal.h"
 #include "moe.h"
@@ -589,11 +589,8 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
         return 0;
     float x_d[n_blocks];
     int16_t x_bsums[n_blocks * 16];
-#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
-    bn_quant_x_to_q8k(x, x_q_buf, x_d, x_bsums, W->cols);
-#else
-    bn_quant_x_to_q8k_scalar(x, x_q_buf, x_d, x_bsums, W->cols);
-#endif
+    bn_transformer_cpu_quantize_q8k_activation(x, x_q_buf, x_d, x_bsums,
+                                               W->cols);
 
     int ids[4096];
     float vals[4096];
@@ -630,8 +627,9 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
 static int gpu_refine_q8_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
                                     int8_t *x_q, int top_n) {
-#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
     if (!logits || !W || !W->data || !x || !x_q)
+        return 0;
+    if (!bn_transformer_cpu_has_native_q8x_quant())
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -664,7 +662,9 @@ static int gpu_refine_q8_logits_top(float *logits, int n_logits,
     }
 
     float x_scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
-    bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
+    if (bn_transformer_cpu_quantize_q8_blocks_native(x, x_q, x_scales,
+                                                     W->cols) != 0)
+        return 0;
     for (int i = 0; i < n_top; i++) {
         float row_sum;
         if (bn_quant_q8_logits_refine_row(W, x_q, x_scales, ids[i],
@@ -672,10 +672,6 @@ static int gpu_refine_q8_logits_top(float *logits, int n_logits,
             logits[ids[i]] = row_sum;
     }
     return n_top;
-#else
-    (void)logits; (void)n_logits; (void)W; (void)x; (void)x_q; (void)top_n;
-    return 0;
-#endif
 }
 
 static int gpu_patch_cached_decode_ops(BnGPUOp *ops, int n_ops,

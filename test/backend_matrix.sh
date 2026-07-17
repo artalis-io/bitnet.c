@@ -804,6 +804,11 @@ do
     fi
 done
 
+if grep -n 'BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT\|transformer_cpu_features_internal.h' src/transformer/gpu.c src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "GPU execution/fallback code must use CPU backend helpers for native Q8x ISA policy"
+    fail=1
+fi
+
 for file in \
     src/model_gpu.c \
     src/gpu_moe_bridge.c \

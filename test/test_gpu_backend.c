@@ -4,7 +4,7 @@
 #include "backend_layout.h"
 #include "backend_model.h"
 #include "quant.h"
-#include "transformer_cpu_features_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "model.h"
 #include "gguf.h"
 #include "sh_arena.h"
@@ -1557,7 +1557,7 @@ static void test_quant_registry(void) {
     assert(fabsf(f32_dst[1] + 2.0f) < 1e-3f);
     assert(bn_quant_format_convert_dense_to_f32(
                BN_GGUF_TENSOR_Q4_0, f16_src, f32_dst, 2) == -1);
-    assert(BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT ==
+    assert(bn_transformer_cpu_has_native_q8x_quant() ==
            TEST_EXPECT_NATIVE_Q8X);
     assert(bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));

@@ -43,6 +43,32 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
                                           int hidden_dim);
 #endif
 
+int bn_transformer_cpu_has_native_q8x_quant(void) {
+    return BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT;
+}
+
+void bn_transformer_cpu_quantize_q8k_activation(const float *x,
+                                                int8_t *x_q,
+                                                float *x_d,
+                                                int16_t *x_bsums,
+                                                int n) {
+#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
+    bn_quant_x_to_q8k(x, x_q, x_d, x_bsums, n);
+#else
+    bn_quant_x_to_q8k_scalar(x, x_q, x_d, x_bsums, n);
+#endif
+}
+
+int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
+                                                 int8_t *x_q,
+                                                 float *x_scales,
+                                                 int n) {
+    if (!bn_transformer_cpu_has_native_q8x_quant())
+        return -1;
+    bn_quant_x_to_q8_blocks(x, x_q, x_scales, n);
+    return 0;
+}
+
 #if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_residual_add_neon(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 4)
