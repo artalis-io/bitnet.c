@@ -412,6 +412,44 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
 
+    unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
+    unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    assert(!bn_gpu_policy_q6_logits_refine_enabled(1, 0));
+    assert(bn_gpu_policy_q6_logits_refine_enabled(0, 0));
+    assert(bn_gpu_policy_q6_logits_refine_enabled(1, 1));
+    assert(bn_gpu_policy_q6_logits_refine_top_or_default(64) == 64);
+    setenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE", "1", 1);
+    assert(bn_gpu_policy_q6_logits_refine_enabled(1, 0));
+    setenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE", "1", 1);
+    assert(bn_gpu_policy_q6_logits_refine_enabled(0, 0));
+    unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
+    assert(!bn_gpu_policy_q6_logits_refine_enabled(0, 0));
+    setenv("BN_GPU_Q6_Q8K_REFINE_TOP", "11", 1);
+    assert(bn_gpu_policy_q6_logits_refine_top_or_default(64) == 11);
+    unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
+    unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+
+    unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE");
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
+    assert(!bn_gpu_policy_q8_logits_refine_enabled(1, 0));
+    assert(bn_gpu_policy_q8_logits_refine_enabled(0, 0));
+    assert(bn_gpu_policy_q8_logits_refine_enabled(1, 1));
+    assert(bn_gpu_policy_q8_logits_refine_top_or_default(16) == 16);
+    setenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE", "1", 1);
+    assert(bn_gpu_policy_q8_logits_refine_enabled(1, 0));
+    setenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE", "1", 1);
+    assert(bn_gpu_policy_q8_logits_refine_enabled(0, 0));
+    unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
+    assert(!bn_gpu_policy_q8_logits_refine_enabled(0, 0));
+    setenv("BN_GPU_Q8_REFINE_TOP", "5", 1);
+    assert(bn_gpu_policy_q8_logits_refine_top_or_default(16) == 5);
+    unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE");
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
+
     unsetenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE");
     assert(!bn_gpu_policy_cuda_logits_f16_cache_enabled(&gpu));
     setenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE", "1", 1);

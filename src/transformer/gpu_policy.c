@@ -933,11 +933,8 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
 int bn_transformer_gpu_q6_logits_refine_enabled(
     const BnGPUBackend *gpu,
     int q6_refine_default) {
-    int cuda_backend = bn_transformer_gpu_backend_is_cuda(gpu);
-    return q6_refine_default ||
-           getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL ||
-           (!cuda_backend &&
-            getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") == NULL);
+    return bn_gpu_policy_q6_logits_refine_enabled(
+        bn_transformer_gpu_backend_is_cuda(gpu), q6_refine_default);
 }
 
 int bn_transformer_gpu_q6_logits_refine_captures_xb(
@@ -952,21 +949,15 @@ int bn_transformer_gpu_q6_logits_refine_captures_xb(
 }
 
 int bn_transformer_gpu_q6_logits_refine_top(int q6_refine_default) {
-    int refine_top = q6_refine_default ? 64 : 8;
-    const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
-    if (env)
-        refine_top = atoi(env);
-    return refine_top;
+    return bn_gpu_policy_q6_logits_refine_top_or_default(
+        q6_refine_default ? 64 : 8);
 }
 
 int bn_transformer_gpu_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     int q8_refine_default) {
-    int cuda_backend = bn_transformer_gpu_backend_is_cuda(gpu);
-    return getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL ||
-           q8_refine_default ||
-           (!cuda_backend &&
-            getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") == NULL);
+    return bn_gpu_policy_q8_logits_refine_enabled(
+        bn_transformer_gpu_backend_is_cuda(gpu), q8_refine_default);
 }
 
 int bn_transformer_gpu_q8_logits_refine_captures_xb(
@@ -979,11 +970,8 @@ int bn_transformer_gpu_q8_logits_refine_captures_xb(
 }
 
 int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default) {
-    int refine_top = q8_refine_default ? 16 : 8;
-    const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
-    if (env)
-        refine_top = atoi(env);
-    return refine_top;
+    return bn_gpu_policy_q8_logits_refine_top_or_default(
+        q8_refine_default ? 16 : 8);
 }
 
 int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu) {

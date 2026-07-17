@@ -591,6 +591,32 @@ int bn_gpu_policy_debug_argmax_compare_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX_COMPARE") != NULL;
 }
 
+int bn_gpu_policy_q6_logits_refine_enabled(int cuda_backend,
+                                           int q6_refine_default) {
+    return q6_refine_default ||
+           getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL ||
+           (!cuda_backend &&
+            getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") == NULL);
+}
+
+int bn_gpu_policy_q6_logits_refine_top_or_default(int default_top) {
+    const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    return env ? atoi(env) : default_top;
+}
+
+int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
+                                           int q8_refine_default) {
+    return getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL ||
+           q8_refine_default ||
+           (!cuda_backend &&
+            getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") == NULL);
+}
+
+int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top) {
+    const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
+    return env ? atoi(env) : default_top;
+}
+
 int bn_gpu_policy_cuda_moe_ffn_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
 }

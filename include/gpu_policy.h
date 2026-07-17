@@ -145,6 +145,12 @@ int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_cpu_logits_enabled(void);
 int bn_gpu_policy_compare_logits_enabled(void);
 int bn_gpu_policy_debug_argmax_compare_enabled(void);
+int bn_gpu_policy_q6_logits_refine_enabled(int cuda_backend,
+                                           int q6_refine_default);
+int bn_gpu_policy_q6_logits_refine_top_or_default(int default_top);
+int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
+                                           int q8_refine_default);
+int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top);
 int bn_gpu_policy_cuda_moe_ffn_disabled(void);
 int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void);
 int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos);
