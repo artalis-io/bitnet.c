@@ -951,9 +951,7 @@ int bn_transformer_gpu_upload_kv_cache(BnModel *m, BnSession *sess,
     if (pos0 < 0 || n_tokens < 0) return -1;
     if (n_tokens == 0) return 0;
 
-    int n_attn = (c->full_attn_interval > 0)
-        ? c->n_layers / c->full_attn_interval
-        : c->n_layers;
+    int n_attn = bn_model_arch_attention_layer_count(c);
     if (n_attn <= 0 || c->seq_len <= 0 || c->kv_dim <= 0) return -1;
     size_t elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     int first = pos0 % c->seq_len;
@@ -983,12 +981,11 @@ int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess) {
     if (!gpu || !gpu->write_activation) return -1;
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
-    if (c->full_attn_interval <= 0 || c->ssm_inner_size <= 0)
+    if (!bn_model_arch_uses_hybrid_ssm(c))
         return 0;
     if (!s->ssm_state || !s->ssm_conv_state) return -1;
 
-    int n_attn = c->n_layers / c->full_attn_interval;
-    int n_ssm = c->n_layers - n_attn;
+    int n_ssm = bn_model_arch_ssm_layer_count(c);
     int num_v_heads = c->ssm_time_step_rank;
     int head_k_dim = c->ssm_state_size;
     if (n_ssm <= 0 || num_v_heads <= 0 || head_k_dim <= 0)
