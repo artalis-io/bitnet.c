@@ -1922,6 +1922,24 @@ static void test_gpu_op_kind_mapping(void) {
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_SSM_DELTA) == BN_GPU_OP_SSM);
     assert(bn_gpu_op_kind_from_code(99999) == BN_GPU_OP_UNKNOWN);
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FLASH_ATTN) == BN_GPU_OP_ATTENTION);
+    assert(bn_gpu_op_code_is_matvec(BN_GPU_CODE_MATVEC));
+    assert(!bn_gpu_op_code_is_matvec(BN_GPU_CODE_MATVEC_SPLIT));
+    assert(bn_gpu_op_code_is_split_matvec(BN_GPU_CODE_MATVEC_SPLIT));
+    assert(bn_gpu_op_code_is_split_matvec(BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    assert(bn_gpu_op_code_is_split_matvec(BN_GPU_CODE_Q8_MATVEC_SPLIT));
+    assert(bn_gpu_op_code_is_split_matvec(BN_GPU_CODE_Q5K_MATVEC_SPLIT));
+    assert(!bn_gpu_op_code_is_split_matvec(BN_GPU_CODE_MATVEC));
+    assert(bn_gpu_op_code_is_rope(BN_GPU_CODE_ROPE));
+    assert(bn_gpu_op_code_is_rope(BN_GPU_CODE_ROPE_QK));
+    assert(!bn_gpu_op_code_is_rope(BN_GPU_CODE_FLASH_ATTN));
+    assert(bn_gpu_op_code_is_rope_qk(BN_GPU_CODE_ROPE_QK));
+    assert(!bn_gpu_op_code_is_rope_qk(BN_GPU_CODE_ROPE));
+    assert(bn_gpu_op_code_is_flash_attention(BN_GPU_CODE_FLASH_ATTN));
+    assert(!bn_gpu_op_code_is_flash_attention(BN_GPU_CODE_GQA_SCORES));
+    assert(bn_gpu_op_code_is_per_head_rmsnorm(BN_GPU_CODE_PER_HEAD_RMSNORM));
+    assert(!bn_gpu_op_code_is_per_head_rmsnorm(BN_GPU_CODE_RMSNORM));
+    assert(bn_gpu_op_code_is_copy(BN_GPU_CODE_COPY));
+    assert(!bn_gpu_op_code_is_copy(BN_GPU_CODE_DEINTERLEAVE_Q));
     assert(bn_transformer_gpu_matvec_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CODE_MATVEC_SPLIT);
     assert(bn_transformer_gpu_matvec_split_op_code(BN_GGUF_TENSOR_Q8_0) ==

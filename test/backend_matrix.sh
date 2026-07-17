@@ -225,6 +225,11 @@ if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q4K_MATVEC_SPLIT\|BN_GPU_CODE_
     fail=1
 fi
 
+if grep -n 'BN_GPU_CODE_' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must classify backend shader op codes through GPU IR helpers"
+    fail=1
+fi
+
 if ! grep -n '#include "backend_quant.h"' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose quant-format policy through backend_quant helpers"
     fail=1

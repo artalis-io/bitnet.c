@@ -107,6 +107,42 @@ typedef struct BnGPUOp {
 #define BN_GPU_OP_FLAG_EXACT_SILU 4u
 #define BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K 8u
 
+static inline int bn_gpu_op_code_is_matvec(int code) {
+    return code == BN_GPU_CODE_MATVEC;
+}
+
+static inline int bn_gpu_op_code_is_split_matvec(int code) {
+    switch (code) {
+        case BN_GPU_CODE_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q8_MATVEC_SPLIT:
+        case BN_GPU_CODE_Q5K_MATVEC_SPLIT:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static inline int bn_gpu_op_code_is_rope(int code) {
+    return code == BN_GPU_CODE_ROPE || code == BN_GPU_CODE_ROPE_QK;
+}
+
+static inline int bn_gpu_op_code_is_rope_qk(int code) {
+    return code == BN_GPU_CODE_ROPE_QK;
+}
+
+static inline int bn_gpu_op_code_is_flash_attention(int code) {
+    return code == BN_GPU_CODE_FLASH_ATTN;
+}
+
+static inline int bn_gpu_op_code_is_per_head_rmsnorm(int code) {
+    return code == BN_GPU_CODE_PER_HEAD_RMSNORM;
+}
+
+static inline int bn_gpu_op_code_is_copy(int code) {
+    return code == BN_GPU_CODE_COPY;
+}
+
 static inline BnGPUOpKind bn_gpu_op_kind_from_code(int code) {
     switch (code) {
         case BN_GPU_CODE_MATVEC:

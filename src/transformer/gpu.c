@@ -685,19 +685,14 @@ static int gpu_patch_cached_decode_ops(BnGPUOp *ops, int n_ops,
     uint32_t cache_off = (uint32_t)(cache_pos * c->kv_dim);
     for (int i = 0; i < n_ops; i++) {
         BnGPUOp *op = &ops[i];
-        switch (op->op_code) {
-        case BN_GPU_CODE_MATVEC:
+        if (bn_gpu_op_code_is_matvec(op->op_code)) {
             if ((op->buf_out == BN_GPU_VALUE_KEY_CACHE ||
                  op->buf_out == BN_GPU_VALUE_VALUE_CACHE) &&
                 op->rows == (int)kv_dim && layer_span > 0) {
                 uint32_t base = (op->p[5] / layer_span) * layer_span;
                 op->p[5] = base + cache_off;
             }
-            break;
-        case BN_GPU_CODE_MATVEC_SPLIT:
-        case BN_GPU_CODE_Q4K_MATVEC_SPLIT:
-        case BN_GPU_CODE_Q8_MATVEC_SPLIT:
-        case BN_GPU_CODE_Q5K_MATVEC_SPLIT:
+        } else if (bn_gpu_op_code_is_split_matvec(op->op_code)) {
             if (op->buf_aux == BN_GPU_VALUE_KEY_CACHE &&
                 op->p[0] - op->p[2] >= kv_dim && layer_span > 0) {
                 uint32_t base = (op->p[6] / layer_span) * layer_span;
@@ -708,37 +703,29 @@ static int gpu_patch_cached_decode_ops(BnGPUOp *ops, int n_ops,
                 uint32_t base = (op->p[7] / layer_span) * layer_span;
                 op->p[7] = base + cache_off;
             }
-            break;
-        case BN_GPU_CODE_ROPE:
-        case BN_GPU_CODE_ROPE_QK:
+        } else if (bn_gpu_op_code_is_rope(op->op_code)) {
             op->p[2] = (uint32_t)pos;
-            if (op->op_code == BN_GPU_CODE_ROPE_QK &&
+            if (bn_gpu_op_code_is_rope_qk(op->op_code) &&
                 op->buf_aux == BN_GPU_VALUE_KEY_CACHE &&
                 layer_span > 0) {
                 uint32_t base = (op->p[5] / layer_span) * layer_span;
                 op->p[5] = base + cache_off;
             }
-            break;
-        case BN_GPU_CODE_FLASH_ATTN:
+        } else if (bn_gpu_op_code_is_flash_attention(op->op_code)) {
             op->p[2] = (uint32_t)n_kv;
-            break;
-        case BN_GPU_CODE_PER_HEAD_RMSNORM:
+        } else if (bn_gpu_op_code_is_per_head_rmsnorm(op->op_code)) {
             if (op->buf_in == BN_GPU_VALUE_KEY_CACHE &&
                 op->p[0] == (uint32_t)c->head_size && layer_span > 0) {
                 uint32_t base = (op->p[3] / layer_span) * layer_span;
                 op->p[3] = base + cache_off;
             }
-            break;
-        case BN_GPU_CODE_COPY:
+        } else if (bn_gpu_op_code_is_copy(op->op_code)) {
             if ((op->buf_out == BN_GPU_VALUE_KEY_CACHE ||
                  op->buf_out == BN_GPU_VALUE_VALUE_CACHE) &&
                 op->p[2] == kv_dim && layer_span > 0) {
                 uint32_t base = (op->p[1] / layer_span) * layer_span;
                 op->p[1] = base + cache_off;
             }
-            break;
-        default:
-            break;
         }
     }
     return 0;
