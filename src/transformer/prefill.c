@@ -1348,13 +1348,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                      all_logits, need_last_logits);
     }
     if (gpu_hybrid_prefill &&
-        c->n_experts <= 0 &&
-        c->dim >= 4096 &&
+        bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
         bn_transformer_gpu_cuda_large_hybrid_prefill_disabled()) {
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
-    if (c->full_attn_interval > 0 && c->ssm_inner_size > 0 &&
+    if (bn_model_arch_uses_hybrid_ssm(c) &&
         !gpu_hybrid_prefill &&
         !bn_transformer_prefill_hybrid_batch_allowed()) {
         float *logits = NULL;

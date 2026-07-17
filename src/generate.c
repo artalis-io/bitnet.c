@@ -7,6 +7,7 @@
 #include "transformer/gpu_internal.h"
 #include "gpu_backend.h"
 #include "gpu_policy.h"
+#include "model_arch.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -386,7 +387,7 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
                                                n_tokens) != 0)
             return NULL;
         if (logits && gpu_attached &&
-            model->config.full_attn_interval > 0 &&
+            bn_model_arch_uses_hybrid_ssm(&model->config) &&
             bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
             bn_transformer_gpu_upload_ssm_state(model, s) != 0)
             return NULL;
@@ -417,7 +418,7 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
             rc = bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                     n_tokens);
         if (rc == 0 && gpu_attached &&
-            model->config.full_attn_interval > 0 &&
+            bn_model_arch_uses_hybrid_ssm(&model->config) &&
             bn_transformer_gpu_cuda_prefill_ssm_layer_disabled())
             rc = bn_transformer_gpu_upload_ssm_state(model, s);
         return rc;

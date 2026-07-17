@@ -1108,13 +1108,25 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     unsetenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN");
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
+    assert(bn_transformer_gpu_hybrid_prefill_chain_applicable(&gpu, &c));
+    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
+        &gpu, &c));
     assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
     setenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN", "1", 1);
     assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
     unsetenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN");
+    c.ssm_inner_size = 0;
+    assert(!bn_transformer_gpu_hybrid_prefill_chain_applicable(&gpu, &c));
+    c.ssm_inner_size = 128;
     c.dim = 4096;
+    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
+        &gpu, &c));
+    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
+        &gpu, &c));
     assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
     setenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN", "1", 1);
+    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
+        &gpu, &c));
     assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
 
@@ -2030,6 +2042,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_ffn_post_norm(&c));
     assert(!bn_model_arch_uses_layer_output_scale(&c));
     assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(!bn_model_arch_uses_hybrid_ssm(&c));
+    assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
@@ -2045,10 +2059,19 @@ static void test_model_arch_registry(void) {
 
     c.full_attn_interval = 4;
     assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(!bn_model_arch_allows_small_cuda_dense_exact_q4_q8(&c));
     assert(!bn_model_arch_allows_small_cuda_q8_logit_refine(&c));
     assert(bn_model_arch_small_cuda_dense_prefill_min_tokens(&c) == 0);
+    c.ssm_inner_size = 128;
+    c.dim = 4095;
+    assert(bn_model_arch_uses_hybrid_ssm(&c));
+    assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
+    c.dim = 4096;
+    assert(bn_model_arch_uses_large_dense_hybrid_ssm(&c));
+    c.n_experts = 1;
+    assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
 
     memset(&c, 0, sizeof(c));
     c.n_experts = 2;

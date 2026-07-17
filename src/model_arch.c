@@ -160,6 +160,16 @@ int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
            c->full_attn_interval > 0;
 }
 
+int bn_model_arch_uses_hybrid_ssm(const BnConfig *c) {
+    return c && c->full_attn_interval > 0 && c->ssm_inner_size > 0;
+}
+
+int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_ssm(c) &&
+           c->n_experts <= 0 &&
+           c->dim >= 4096;
+}
+
 static int model_arch_gemma4_divides_rope_freqs(const BnConfig *c, int layer) {
     if (!c || ((c->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT) == 0))
         return 0;
