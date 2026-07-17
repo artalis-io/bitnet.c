@@ -7,6 +7,7 @@ RUN_WEBGPU=${RUN_WEBGPU:-0}
 RUN_METAL=${RUN_METAL:-0}
 RUN_CUDA=${RUN_CUDA:-0}
 COHERENCE=${COHERENCE:-./test_coherence}
+CASES=${MODEL_MATRIX_CASES:-all}
 
 fail=0
 ran=0
@@ -33,9 +34,17 @@ find_model() {
 }
 
 run_case() {
-    name=$1
-    env_name=$2
-    shift 2
+    case_id=$1
+    name=$2
+    env_name=$3
+    shift 3
+
+    if [ "$CASES" != "all" ]; then
+        case ",$CASES," in
+            *",$case_id,"*) ;;
+            *) return ;;
+        esac
+    fi
 
     if path=$(find_model "$env_name" "$@"); then
         echo "RUN $name: $path"
@@ -56,18 +65,18 @@ run_case() {
     fi
 }
 
-run_case "Llama 2 dense" "BN_MODEL_LLAMA2" "*llama*2*.gguf"
-run_case "Llama 3 dense" "BN_MODEL_LLAMA3" "*llama*3*.gguf"
-run_case "Microsoft BitNet 1.58" "BN_MODEL_BITNET158" "*bitnet*b1.58*.gguf"
-run_case "Qwen 2.5 dense" "BN_MODEL_QWEN25" "*qwen2.5*.gguf"
-run_case "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" "*qwen3-[0-9.]*b-q*.gguf"
-run_case "Qwen 3 sparse MoE" "BN_MODEL_QWEN3_MOE" "*qwen3-*a3b*.gguf"
-run_case "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" "*qwen3*5*9b-q*.gguf"
-run_case "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" "*qwen3.5*35b*a3b*.gguf"
-run_case "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" "*qwen3.6*27b*.gguf"
-run_case "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" "*qwen3.6*35b*a3b*.gguf"
-run_case "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" "*gemma*4*e*b*q*.gguf" "*gemma*4*31b*q*.gguf"
-run_case "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" "*gemma*4*26b*q*.gguf" "*gemma*4*a4b*q*.gguf" "*gemma*4*a4b*mxfp4*.gguf"
+run_case "llama2_dense" "Llama 2 dense" "BN_MODEL_LLAMA2" "*llama*2*.gguf"
+run_case "llama3_dense" "Llama 3 dense" "BN_MODEL_LLAMA3" "*llama*3*.gguf"
+run_case "bitnet158" "Microsoft BitNet 1.58" "BN_MODEL_BITNET158" "*bitnet*b1.58*.gguf"
+run_case "qwen25_dense" "Qwen 2.5 dense" "BN_MODEL_QWEN25" "*qwen2.5*.gguf"
+run_case "qwen3_dense" "Qwen 3 dense" "BN_MODEL_QWEN3_DENSE" "*qwen3-[0-9.]*b-q*.gguf"
+run_case "qwen3_moe" "Qwen 3 sparse MoE" "BN_MODEL_QWEN3_MOE" "*qwen3-*a3b*.gguf"
+run_case "qwen35_dense" "Qwen 3.5 dense" "BN_MODEL_QWEN35_DENSE" "*qwen3*5*9b-q*.gguf"
+run_case "qwen35_moe" "Qwen 3.5 sparse MoE" "BN_MODEL_QWEN35_MOE" "*qwen3.5*35b*a3b*.gguf"
+run_case "qwen36_dense" "Qwen 3.6 dense" "BN_MODEL_QWEN36_DENSE" "*qwen3.6*27b*.gguf"
+run_case "qwen36_moe" "Qwen 3.6 sparse MoE" "BN_MODEL_QWEN36_MOE" "*qwen3.6*35b*a3b*.gguf"
+run_case "gemma4_dense" "Gemma4 dense" "BN_MODEL_GEMMA4_DENSE" "*gemma*4*e*b*q*.gguf" "*gemma*4*31b*q*.gguf"
+run_case "gemma4_moe" "Gemma4 sparse MoE" "BN_MODEL_GEMMA4_MOE" "*gemma*4*26b*q*.gguf" "*gemma*4*a4b*q*.gguf" "*gemma*4*a4b*mxfp4*.gguf"
 
 if [ "$REQUIRE_MODELS" = "1" ] && [ "$missing" -ne 0 ]; then
     echo "Model matrix FAILED: $missing required model case(s) missing"
