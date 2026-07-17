@@ -520,6 +520,11 @@ if grep -n 'n_experts > 2' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'c->n_experts <= 0' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose model_arch helpers for MoE presence policy"
+    fail=1
+fi
+
 if grep -n 'c->n_experts > 0 || c->full_attn_interval > 0 ||' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose model_arch helpers for small dense CUDA shape policy"
     fail=1

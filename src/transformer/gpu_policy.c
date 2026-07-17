@@ -1020,7 +1020,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         !bn_backend_quant_supports_q6k_logits_refine(logits->type))
         return 0;
 
-    if (c->n_experts <= 0) {
+    if (!bn_model_arch_uses_moe(c)) {
         return logits->rows > 262144 ||
                getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
     }
@@ -1037,7 +1037,7 @@ int bn_transformer_gpu_cuda_moe_decode_cacheable(
     const BnWeights *w,
     const BnBackendModel *backend) {
     if (getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") != NULL ||
-        !c || !w || !backend || c->n_experts <= 0)
+        !c || !w || !backend || !bn_model_arch_uses_moe(c))
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
