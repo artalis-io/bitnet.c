@@ -1296,8 +1296,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     all2_q4q6_moe_gpu_route_layer_selected);
             int cpu_route_resident_ffn =
                 bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-                    all2_q4q6_moe, gpu_route_topk, moe_routed_q8,
-                    c->n_experts);
+                    c, all2_q4q6_moe, gpu_route_topk, moe_routed_q8);
             int gpu_routed_ffn =
                 bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
                     gpu_route_topk, cpu_route_resident_ffn, moe_gate_all,

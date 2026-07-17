@@ -1295,15 +1295,16 @@ int bn_transformer_gpu_cuda_moe_route_topk_enabled(
 }
 
 int bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
+    const BnConfig *c,
     int all2_q4q6_moe,
     int gpu_route_topk,
-    int moe_routed_q8,
-    int n_experts) {
+    int moe_routed_q8) {
     if (all2_q4q6_moe && !gpu_route_topk &&
         !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT",
                          "BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT"))
         return 1;
-    return !gpu_route_topk && moe_routed_q8 && n_experts > 2 &&
+    return !gpu_route_topk && moe_routed_q8 &&
+           bn_model_arch_uses_more_than_two_expert_moe(c) &&
            getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT") == NULL;
 }
 
