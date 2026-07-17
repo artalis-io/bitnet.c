@@ -166,6 +166,11 @@ int bn_transformer_gpu_can_fused_gateup_silu_pair(const BnGPUBackend *gpu,
 int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
                                                    int tensor_type,
                                                    int act_type);
+uint32_t bn_transformer_gpu_matvec_q8k_dot_flags(int tensor_type,
+                                                 int enabled);
+uint32_t bn_transformer_gpu_matvec_exact_q6k_flags(int tensor_type,
+                                                   int enabled);
+int bn_transformer_gpu_float_buffer_type(void);
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type);

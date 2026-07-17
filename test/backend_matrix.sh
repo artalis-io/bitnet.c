@@ -160,7 +160,7 @@ for file in \
     src/transformer/plan.c \
     src/gpu_moe_bridge.c
 do
-    if grep -n 'bn_quant_format_gpu_split_cap\|bn_backend_quant_gpu_split_cap\|bn_backend_quant_gpu_fused_gateup_silu_cap\|bn_backend_quant_gpu_matvec_q8k_dot_flag\|bn_backend_quant_gpu_matvec_exact_q6k_flag\|BN_BACKEND_QUANT_GPU_MATVEC_FLAG_' "$file" >/dev/null 2>&1; then
+    if grep -n 'bn_quant_format_gpu_split_cap\|bn_backend_quant_gpu_split_cap\|bn_backend_quant_gpu_fused_gateup_silu_cap\|bn_quant_format_gpu_matvec_q8k_dot_flag\|bn_backend_quant_gpu_matvec_q8k_dot_flag\|bn_quant_format_gpu_matvec_exact_q6k_flag\|bn_backend_quant_gpu_matvec_exact_q6k_flag\|bn_quant_format_gpu_float_buffer_type\|bn_backend_quant_gpu_float_buffer_type\|BN_BACKEND_QUANT_GPU_MATVEC_FLAG_' "$file" >/dev/null 2>&1; then
         echo "$file must use quant format GPU cap/flag helpers for quant-format policy"
         fail=1
     fi
