@@ -877,7 +877,8 @@ int main(int argc, char **argv) {
         BnGPUBackend *gpu = bn_gpu_metal_create(sd);
         if (gpu) {
             // Zero-copy: let Metal wrap mmap'd weight data when explicitly enabled.
-            if (gf->n_shards <= 1 && getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") &&
+            if (gf->n_shards <= 1 &&
+                bn_gpu_policy_metal_mmap_zero_copy_enabled() &&
                 mf && mf->is_mmap && mf->data)
                 bn_gpu_metal_set_mmap_range(gpu, mf->data, mf->size);
             double gpu_t0 = bn_platform_time_ms();

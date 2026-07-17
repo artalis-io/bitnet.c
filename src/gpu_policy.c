@@ -250,3 +250,7 @@ int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE") != NULL &&
            getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;
 }
+
+int bn_gpu_policy_metal_mmap_zero_copy_enabled(void) {
+    return getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") != NULL;
+}
