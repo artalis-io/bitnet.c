@@ -14,7 +14,6 @@
 #include "sh_arena.h"
 #include "sh_log.h"
 #include "platform.h"
-#include "quant.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,7 +101,7 @@ static int prefill_force_float_kquant(const BnModel *m) {
 }
 
 static int prefill_qweight_is_kquant(const BnQWeight *w) {
-    return w && bn_quant_format_is_float_kquant_fallback_candidate(w->type);
+    return w && bn_transformer_prefill_uses_float_kquant_fallback(w->type);
 }
 
 static int prefill_all_kquant(const BnQWeight *const *W, int n) {

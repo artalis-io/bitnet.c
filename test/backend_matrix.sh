@@ -140,6 +140,11 @@ if grep -n 'bn_quant_format_uses_f16_logits_path\|bn_quant_format_tied_logits_us
     fail=1
 fi
 
+if grep -n 'bn_quant_format_is_float_kquant_fallback_candidate' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use prefill policy helpers for float K-quant fallback policy"
+    fail=1
+fi
+
 for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c

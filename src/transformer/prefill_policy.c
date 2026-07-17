@@ -41,3 +41,7 @@ int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type) {
     return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
 }
+
+int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type) {
+    return bn_backend_quant_is_kquant_float_fallback_candidate(tensor_type);
+}

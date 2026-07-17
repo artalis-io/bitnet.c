@@ -42,5 +42,6 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
                                              int third_type);
 int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type);
+int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type);
 
 #endif // BN_TRANSFORMER_PREFILL_INTERNAL_H
