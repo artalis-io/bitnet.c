@@ -1,5 +1,6 @@
 #include "prompt_cache.h"
 #include "model.h"
+#include "model_arch.h"
 #include "session.h"
 #include "turboquant.h"
 #include <string.h>
@@ -42,10 +43,8 @@ static BnAllocator resolve_alloc(BnAllocator *a) {
     return bn_allocator_default();
 }
 
-// Compute n_attn_layers from config
 static int config_n_attn(const BnConfig *c) {
-    return (c->full_attn_interval > 0)
-        ? c->n_layers / c->full_attn_interval : c->n_layers;
+    return bn_model_arch_attention_layer_count(c);
 }
 
 // Free a single entry's buffers
@@ -122,7 +121,7 @@ int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
     const BnConfig *cfg = &model->config;
 
     // Reject hybrid models (SSM state can't be cheaply snapshotted)
-    if (cfg->full_attn_interval > 0) return -1;
+    if (bn_model_arch_uses_hybrid_layer_layout(cfg)) return -1;
 
     // Validate: n_tokens must not exceed session pos or seq_len
     if (n_tokens > session->pos || n_tokens > cfg->seq_len) return -2;
@@ -238,7 +237,7 @@ int bn_prompt_cache_restore(BnPromptCache *cache, const BnModel *model,
     const BnConfig *cfg = &model->config;
 
     // Reject hybrid models
-    if (cfg->full_attn_interval > 0) return 0;
+    if (bn_model_arch_uses_hybrid_layer_layout(cfg)) return 0;
 
     int n_attn = config_n_attn(cfg);
     int kv_dim = cfg->kv_dim;

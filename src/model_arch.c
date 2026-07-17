@@ -160,14 +160,18 @@ int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
            c->full_attn_interval > 0;
 }
 
+int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c) {
+    return c && c->full_attn_interval > 0;
+}
+
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c) {
-    return c && c->full_attn_interval > 0 && c->ssm_inner_size > 0;
+    return bn_model_arch_uses_hybrid_layer_layout(c) && c->ssm_inner_size > 0;
 }
 
 int bn_model_arch_uses_dense_attention_only(const BnConfig *c) {
     return c &&
            c->n_experts <= 0 &&
-           c->full_attn_interval <= 0;
+           !bn_model_arch_uses_hybrid_layer_layout(c);
 }
 
 int bn_model_arch_uses_large_dense_shape(const BnConfig *c) {
@@ -370,7 +374,7 @@ int bn_model_arch_rope_text_dims(int rope_dim_count,
 }
 
 int bn_model_arch_is_ssm_layer(const BnConfig *c, int layer) {
-    return c && c->full_attn_interval > 0 &&
+    return bn_model_arch_uses_hybrid_layer_layout(c) &&
            ((layer + 1) % c->full_attn_interval != 0);
 }
 
@@ -380,19 +384,19 @@ int bn_model_arch_is_attention_layer(const BnConfig *c, int layer) {
 
 int bn_model_arch_attention_layer_index(const BnConfig *c, int layer) {
     if (!c) return -1;
-    return c->full_attn_interval > 0
+    return bn_model_arch_uses_hybrid_layer_layout(c)
         ? (layer + 1) / c->full_attn_interval - 1
         : layer;
 }
 
 int bn_model_arch_ssm_layer_index(const BnConfig *c, int layer) {
-    if (!c || c->full_attn_interval <= 0) return -1;
+    if (!bn_model_arch_uses_hybrid_layer_layout(c)) return -1;
     return layer - (layer + 1) / c->full_attn_interval;
 }
 
 int bn_model_arch_attention_layer_count(const BnConfig *c) {
     if (!c || c->n_layers <= 0) return 0;
-    return c->full_attn_interval > 0
+    return bn_model_arch_uses_hybrid_layer_layout(c)
         ? c->n_layers / c->full_attn_interval
         : c->n_layers;
 }

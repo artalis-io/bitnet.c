@@ -115,6 +115,7 @@ int bn_model_arch_uses_attention_post_norm(const BnConfig *c);
 int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
 int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c);
+int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_dense_attention_only(const BnConfig *c);

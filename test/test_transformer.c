@@ -2104,6 +2104,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_ffn_post_norm(&c));
     assert(!bn_model_arch_uses_layer_output_scale(&c));
     assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(!bn_model_arch_uses_hybrid_layer_layout(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(bn_model_arch_uses_dense_attention_only(&c));
@@ -2131,6 +2132,7 @@ static void test_model_arch_registry(void) {
 
     c.full_attn_interval = 4;
     assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(bn_model_arch_uses_hybrid_layer_layout(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_dense_attention_only(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
