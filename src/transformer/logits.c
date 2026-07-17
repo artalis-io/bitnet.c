@@ -2,7 +2,6 @@
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "backend_model.h"
-#include "backend_quant.h"
 #include "model.h"
 #include "session.h"
 #include "sh_log.h"
@@ -225,10 +224,9 @@ static void logits_quant_matvec_gpu(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     const BnPreparedWeight *prepared =
         bn_backend_model_prepared_qweight(backend, W);
-    bn_backend_quant_matvec_gpu_buf_prepared(out, W, prepared,
-                                             qweight_backend_buf(backend, W),
-                                             x, x_q_buf, bn_model_pool(m),
-                                             bn_model_gpu(m));
+    bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
+        out, W, prepared, qweight_backend_buf(backend, W), x, x_q_buf,
+        bn_model_pool(m), bn_model_gpu(m));
 }
 
 static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
@@ -300,7 +298,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
                 s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
                 BN_MATVEC_TASK_NATIVE_QUANT);
         } else {
-            bn_backend_quant_matvec_gpu_buf_prepared(
+            bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
                 s->logits, tied, prepared,
                 bn_transformer_backend_handle_or(bn_model_backend(m), -1,
                                                  BN_BACKEND_HANDLE_TIED_EMBEDDING),

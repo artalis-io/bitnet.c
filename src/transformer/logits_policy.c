@@ -59,3 +59,16 @@ int bn_transformer_logits_tied_f16_weight_type(void) {
 int bn_transformer_logits_tied_f32_weight_type(void) {
     return bn_backend_quant_tied_logits_f32_weight_type();
 }
+
+void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
+    float *out,
+    const BnQWeight *W,
+    const BnPreparedWeight *prepared,
+    void *W_buf,
+    const float *x,
+    int8_t *x_q_buf,
+    BnThreadPool *pool,
+    BnGPUBackend *gpu) {
+    bn_backend_quant_matvec_gpu_buf_prepared(out, W, prepared, W_buf, x,
+                                             x_q_buf, pool, gpu);
+}

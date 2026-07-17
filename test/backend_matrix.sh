@@ -130,6 +130,11 @@ if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_suppo
     fail=1
 fi
 
+if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/transformer/logits.c >/dev/null 2>&1; then
+    echo "src/transformer/logits.c must use logits policy helpers for GPU-resident quant matvec dispatch"
+    fail=1
+fi
+
 for file in \
     src/model.c \
     src/transformer/plan.c

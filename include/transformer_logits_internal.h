@@ -1,6 +1,7 @@
 #ifndef BN_TRANSFORMER_LOGITS_INTERNAL_H
 #define BN_TRANSFORMER_LOGITS_INTERNAL_H
 
+#include "gpu_backend.h"
 #include "quant.h"
 #include "threadpool.h"
 #include "transformer_simd_internal.h"
@@ -57,5 +58,14 @@ int bn_transformer_logits_tied_uses_f16_path(int tensor_type);
 int bn_transformer_logits_tied_i8_weight_type(void);
 int bn_transformer_logits_tied_f16_weight_type(void);
 int bn_transformer_logits_tied_f32_weight_type(void);
+void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
+    float *out,
+    const BnQWeight *W,
+    const BnPreparedWeight *prepared,
+    void *W_buf,
+    const float *x,
+    int8_t *x_q_buf,
+    BnThreadPool *pool,
+    BnGPUBackend *gpu);
 
 #endif // BN_TRANSFORMER_LOGITS_INTERNAL_H
