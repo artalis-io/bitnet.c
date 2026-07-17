@@ -128,6 +128,10 @@ static inline int bn_backend_quant_stacked_pair_same_format(int left_type,
     return bn_quant_format_pair_same_format(left_type, right_type);
 }
 
+static inline int bn_backend_quant_allows_stacked_layout(int type) {
+    return bn_quant_format_allows_stacked_layout(type);
+}
+
 static inline int bn_backend_quant_moe_route_q8(int gate_type,
                                                 int up_type,
                                                 int down_type) {

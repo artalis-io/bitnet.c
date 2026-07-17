@@ -1,4 +1,5 @@
 #include "backend_layout.h"
+#include "backend_quant.h"
 #include "gguf.h"
 #include <stdlib.h>
 #include <string.h>
@@ -116,8 +117,8 @@ const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason) {
 BnBackendLayoutReason bn_backend_layout_stackable_reason(const BnQWeight *a,
                                                          const BnQWeight *b) {
     if (!a || !b || !a->data || !b->data) return BN_BACKEND_LAYOUT_MISSING_WEIGHT;
-    if (!bn_quant_format_allows_stacked_layout(a->type) ||
-        !bn_quant_format_allows_stacked_layout(b->type))
+    if (!bn_backend_quant_allows_stacked_layout(a->type) ||
+        !bn_backend_quant_allows_stacked_layout(b->type))
         return BN_BACKEND_LAYOUT_EMBEDDED_SCALE_NOT_STACKABLE;
     if (a->type != b->type) return BN_BACKEND_LAYOUT_TYPE_MISMATCH;
     if (a->cols != b->cols) return BN_BACKEND_LAYOUT_COL_MISMATCH;

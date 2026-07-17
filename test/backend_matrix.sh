@@ -120,6 +120,11 @@ if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same
     fail=1
 fi
 
+if grep -n 'bn_quant_format_allows_stacked_layout' src/backend_layout.c >/dev/null 2>&1; then
+    echo "src/backend_layout.c must use backend_quant helpers for stacked layout quant-format policy"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_supports_q[68]k*_logits_refine' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use logits policy helpers for logits refine capability policy"
     fail=1
