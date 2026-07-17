@@ -971,11 +971,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int q8_logits_refine_captures_xb =
         bn_transformer_gpu_q8_logits_refine_captures_xb(
             logit_res, refine_q8_logits);
-    int small_dense_cuda_exact_q4_q8_to_layer = q4_q8.to_layer;
-    if (small_dense_cuda_exact_q4_q8_default &&
-        small_dense_cuda_exact_q4_q8_to_layer < 0 &&
-        c->n_layers > 33)
-        small_dense_cuda_exact_q4_q8_to_layer = c->n_layers - 33 - 1;
+    int small_dense_cuda_exact_q4_q8_to_layer =
+        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+            c, small_dense_cuda_exact_q4_q8_default, q4_q8.to_layer);
     int cacheable_decode =
         bn_transformer_gpu_cuda_decode_cacheable(
             gpu, emit_logits, argmax_token != NULL, gpu_logits_need_cpu,

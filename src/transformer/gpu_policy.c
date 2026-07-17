@@ -443,6 +443,16 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
                             "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
 }
 
+int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+    const BnConfig *c,
+    int exact_q4_q8_default,
+    int q4_q8_to_layer) {
+    if (!exact_q4_q8_default || q4_q8_to_layer >= 0 || !c ||
+        c->n_layers <= 33)
+        return q4_q8_to_layer;
+    return c->n_layers - 33 - 1;
+}
+
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {

@@ -220,6 +220,10 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int q4_q8_from_layer);
+int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+    const BnConfig *c,
+    int exact_q4_q8_default,
+    int q4_q8_to_layer);
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);

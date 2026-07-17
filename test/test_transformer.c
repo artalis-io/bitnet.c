@@ -1570,6 +1570,17 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &dense_w));
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
         &gpu, &c, -1));
+    c.n_layers = 61;
+    assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+               &c, 1, -1) == 27);
+    assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+               &c, 1, 9) == 9);
+    c.n_layers = 33;
+    assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+               &c, 1, -1) == -1);
+    c.n_layers = 0;
+    assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+               &c, 0, -1) == -1);
     assert(!bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
         &gpu, &c, 0));
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE", "1", 1);

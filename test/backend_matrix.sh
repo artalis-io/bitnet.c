@@ -891,6 +891,11 @@ if grep -n 'bn_transformer_gpu_backend_is_cuda(prefill_gpu)\|bn_transformer_gpu_
     fail=1
 fi
 
+if grep -n 'c->n_layers - 33 - 1\|n_layers - 33 - 1' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for small-dense Q4/Q8 layer cutoff policy"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval' src/transformer/prefill.c test/test_prefill.c >/dev/null 2>&1; then
     echo "prefill code and tests must use model_arch helpers for hybrid layer layout policy"
     fail=1
