@@ -26,10 +26,12 @@
 #define BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE         (1u << 18)
 #define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION           (1u << 19)
 #define BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION        (1u << 20)
+#define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
 
 typedef struct {
     const char *name;
     uint32_t policy_flags;
+    uint32_t moe_policy_flags;
     int (*is_match)(const char *arch);
     const char *(*prefix)(const char *arch);
     int (*activation)(const char *arch);

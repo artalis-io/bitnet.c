@@ -337,14 +337,12 @@ void bn_model_arch_load_moe_config(BnConfig *c,
     c->n_experts_active = (int)bn_gguf_get_u32(f, key);
 
     if (c->n_experts <= 0) return;
-    c->moe_norm_topk_prob = strcmp(prefix, "qwen2moe") != 0;
-    c->moe_exact_silu = strcmp(prefix, "qwen2moe") == 0;
-    if (c->moe_exact_silu) {
-        c->policy_flags |= BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU |
-                           BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
-                           BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION |
-                           BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY;
-    }
+    if (ops)
+        c->policy_flags |= ops->moe_policy_flags;
+    c->moe_norm_topk_prob =
+        (c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK) == 0;
+    c->moe_exact_silu =
+        (c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU) != 0;
     snprintf(key, sizeof(key), "%s.expert_weights_scale", prefix);
     c->moe_expert_weights_scale = bn_gguf_get_f32(f, key);
 
@@ -434,6 +432,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT |
             BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH,
+            0,
             bn_model_arch_match_gemma4,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -452,6 +451,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
+            0,
             bn_model_arch_match_qwen3,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -469,6 +469,11 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
+            BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU |
+            BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
+            BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION |
+            BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK,
             bn_model_arch_match_qwen2,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -485,6 +490,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
             BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
+            0,
             bn_model_arch_match_qwen,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -496,6 +502,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         {
             "bitnet",
             0,
+            0,
             bn_model_arch_match_bitnet,
             bn_model_arch_prefix,
             bn_model_arch_activation,
@@ -506,6 +513,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "default",
+            0,
             0,
             bn_model_arch_match_default,
             bn_model_arch_prefix,
