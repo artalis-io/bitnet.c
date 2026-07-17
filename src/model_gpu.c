@@ -150,10 +150,8 @@ static void *upload_moe_all_proj(BnModel *model,
             gpu, type, q8_f16_cache);
     int prefer_q6_f32_cache =
         proj == 2 &&
-        bn_quant_format_cuda_moe_down_q6_f32_cache_supported(type) &&
-        bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(cols) &&
-        !force_f16_cache &&
-        bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(gpu);
+        bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred(
+            gpu, type, cols, force_f16_cache);
     int prefer_q4_f32_cache =
         proj == 2 &&
         !force_f16_cache &&
@@ -163,16 +161,14 @@ static void *upload_moe_all_proj(BnModel *model,
         prefer_q6_f32_cache ||
         prefer_q4_f32_cache ||
         (proj == 2 &&
-         bn_quant_format_cuda_moe_down_q6_f32_cache_supported(type) &&
-         bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced());
+         bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer(type));
     void *(*create_buffer)(void *, const void *, size_t, int, int, int) =
         force_f16_cache
             ? gpu->buffer_create_f16_cache :
         (prefer_q6_f32_cache || prefer_q4_f32_cache)
             ? gpu->buffer_create_q6_f32_cache :
         ((!force_full_buffer ||
-          bn_quant_format_cuda_moe_quant_only_after_cache(type,
-                                                           q8_f16_cache)) &&
+          bn_gpu_policy_cuda_moe_quant_only_after_cache(type, q8_f16_cache)) &&
          gpu->buffer_create_quant_only)
             ? gpu->buffer_create_quant_only
             : gpu->buffer_create;
@@ -318,30 +314,10 @@ static int mul3_size(size_t a, size_t b, size_t c, size_t *out) {
 static size_t cuda_q6_down_f32_cache_bytes(const BnGPUBackend *gpu,
                                            const BnMoEExpertMap *em,
                                            int n_experts) {
-    if (!bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(gpu) || !em ||
-        !bn_quant_format_cuda_moe_down_q6_f32_cache_supported(
-            em->down_type) ||
-        n_experts <= 0)
+    if (!em)
         return 0;
-    if (!bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(
-            em->down_cols))
-        return 0;
-
-    size_t elems = 0;
-    size_t bytes = 0;
-    if (mul3_size((size_t)n_experts, (size_t)em->down_rows,
-                  (size_t)em->down_cols, &elems) != 0 ||
-        checked_mul_size(elems, sizeof(float), &bytes) != 0)
-        return SIZE_MAX;
-
-    if (bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced())
-        return bytes;
-
-    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(512, 0);
-    if (max_mb <= 0)
-        return bytes;
-    size_t max_bytes = (size_t)max_mb * 1024u * 1024u;
-    return bytes <= max_bytes ? bytes : 0;
+    return bn_gpu_policy_cuda_moe_down_q6_f32_cache_bytes(
+        gpu, em->down_type, em->down_rows, em->down_cols, n_experts);
 }
 
 static int add_qweight_bytes(size_t *total, const BnQWeight *w) {

@@ -83,6 +83,53 @@ int bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(int cols) {
            bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced();
 }
 
+int bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int cols,
+    int force_f16_cache) {
+    return !force_f16_cache &&
+           bn_quant_format_cuda_moe_down_q6_f32_cache_supported(tensor_type) &&
+           bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(cols) &&
+           bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(gpu);
+}
+
+size_t bn_gpu_policy_cuda_moe_down_q6_f32_cache_bytes(
+    const BnGPUBackend *gpu,
+    int tensor_type,
+    int rows,
+    int cols,
+    int n_experts) {
+    if (!bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred(
+            gpu, tensor_type, cols, 0) ||
+        rows <= 0 || cols <= 0 || n_experts <= 0)
+        return 0;
+    if ((size_t)n_experts > SIZE_MAX / (size_t)rows)
+        return SIZE_MAX;
+    size_t row_count = (size_t)rows * (size_t)n_experts;
+    if (row_count > SIZE_MAX / (size_t)cols)
+        return SIZE_MAX;
+    size_t elems = row_count * (size_t)cols;
+    if (elems > SIZE_MAX / sizeof(float))
+        return SIZE_MAX;
+    size_t bytes = elems * sizeof(float);
+
+    if (bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced())
+        return bytes;
+
+    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(512, 0);
+    if (max_mb <= 0)
+        return bytes;
+    size_t max_bytes = (size_t)max_mb * 1024u * 1024u;
+    return bytes <= max_bytes ? bytes : 0;
+}
+
+int bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer(
+    int tensor_type) {
+    return bn_quant_format_cuda_moe_down_q6_f32_cache_supported(tensor_type) &&
+           bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced();
+}
+
 int bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
@@ -90,6 +137,12 @@ int bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
            bn_quant_format_cuda_moe_down_q4_f32_cache_supported(tensor_type) &&
            getenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE") != NULL &&
            getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_quant_only_after_cache(int tensor_type,
+                                                  int q8_f16_cache) {
+    return bn_quant_format_cuda_moe_quant_only_after_cache(tensor_type,
+                                                           q8_f16_cache);
 }
 
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void) {
