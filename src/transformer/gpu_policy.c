@@ -572,9 +572,9 @@ int bn_transformer_gpu_batch_prefill_enabled(
     const BnConfig *c) {
     if (!c)
         return 0;
-    if (getenv("BN_GPU_DISABLE_PREFILL_MATMUL"))
+    if (bn_gpu_policy_prefill_matmul_disabled())
         return 0;
-    if (getenv("BN_GPU_PREFILL_MATMUL"))
+    if (bn_gpu_policy_prefill_matmul_enabled())
         return 1;
     if (c->kv_tq_bits != 0)
         return 0;
@@ -631,7 +631,7 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
     int n_tokens) {
     if (!c || !bn_transformer_gpu_backend_is_cuda(gpu))
         return 0;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV"))
+    if (bn_gpu_policy_cuda_prefill_direct_kv_disabled())
         return 0;
     if ((gpu_cpu_decode_fallback_requested() ||
          bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
@@ -640,7 +640,7 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
              gpu, c, w) ||
          bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
              gpu, c)) &&
-        !getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK"))
+        !bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled())
         return 0;
     if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
         return 0;

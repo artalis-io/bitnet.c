@@ -407,6 +407,22 @@ int bn_gpu_policy_cuda_large_hybrid_argmax_enabled(void) {
     return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_prefill_matmul_disabled(void) {
+    return getenv("BN_GPU_DISABLE_PREFILL_MATMUL") != NULL;
+}
+
+int bn_gpu_policy_prefill_matmul_enabled(void) {
+    return getenv("BN_GPU_PREFILL_MATMUL") != NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_direct_kv_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV") != NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK") != NULL;
+}
+
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget) {
     int max_mb = large_budget ? 512 : default_mb;

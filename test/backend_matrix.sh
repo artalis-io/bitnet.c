@@ -530,6 +530,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE")\|getenv("BN_CUDA_DISABL
     fail=1
 fi
 
+if grep -n 'getenv("BN_GPU_DISABLE_PREFILL_MATMUL")\|getenv("BN_GPU_PREFILL_MATMUL")\|getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV")\|getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for prefill matmul/direct-KV env vars"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_GPU_CPU_LOGITS")\|getenv("BN_GPU_COMPARE_LOGITS")\|getenv("BN_GPU_DEBUG_ARGMAX_COMPARE")\|getenv("BN_CUDA_DISABLE_MOE_FFN")\|getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL")\|getenv("BN_GPU_COMPARE_MOE_LAYER")\|getenv("BN_GPU_COMPARE_MOE_POS")\|getenv("BN_GPU_COMPARE_MOE_INPUT_NORM")\|getenv("BN_GPU_COMPARE_MOE_ACTUAL")\|getenv("BN_GPU_COMPARE_MOE_ROUTE")\|getenv("BN_GPU_COMPARE_MOE_RAW")\|getenv("BN_GPU_COMPARE_MOE_MID")\|getenv("BN_GPU_COMPARE_MOE_PARTS")\|getenv("BN_GPU_COMPARE_MOE_SHARED_MID")\|getenv("BN_GPU_COMPARE_MOE_SHARED_DOWN")\|getenv("BN_GPU_COMPARE_MOE_NORM")\|getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK")\|getenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK")\|getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT")\|getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE")\|getenv("BN_GPU_MOE_ROUTE_PROFILE")\|getenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for GPU debug/MoE env vars"
     fail=1
