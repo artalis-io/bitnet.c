@@ -115,6 +115,11 @@ if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_suppo
     fail=1
 fi
 
+if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for stacked Q/K quant compatibility"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_supports_q[68]k*_logits_refine' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use logits policy helpers for logits refine capability policy"
     fail=1

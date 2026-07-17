@@ -29,6 +29,10 @@ int bn_transformer_gpu_can_native_qkv(int q_type, int k_type, int v_type) {
            bn_backend_quant_can_gpu_native(v_type);
 }
 
+int bn_transformer_gpu_can_use_stacked_qk(int q_type, int k_type) {
+    return bn_backend_quant_stacked_pair_same_format(q_type, k_type);
+}
+
 int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu,
                                         int tensor_type) {
     uint32_t cap = bn_backend_quant_gpu_split_cap(tensor_type);

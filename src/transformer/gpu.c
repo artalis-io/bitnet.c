@@ -764,8 +764,8 @@ static int gpu_qkv_resources_missing(
                  lw->attn.wq.rows == plan->q_dim &&
                  lw->attn.wk.rows == plan->kv_dim &&
                  lw->attn.wq.cols == lw->attn.wk.cols &&
-                 bn_quant_format_pair_same_format(lw->attn.wq.type,
-                                                           lw->attn.wk.type);
+                 bn_transformer_gpu_can_use_stacked_qk(lw->attn.wq.type,
+                                                       lw->attn.wk.type);
     if (has_qkv)
         return 0;
     if (has_qk)
