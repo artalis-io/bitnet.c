@@ -7,6 +7,19 @@ int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN") == NULL;
 }
 
+int bn_gpu_policy_float_buffer_type(void) {
+    return bn_backend_quant_gpu_float_buffer_type();
+}
+
+int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
+    int gate_type,
+    int up_type,
+    int down_type) {
+    return bn_backend_quant_moe_route_q4_down(gate_type, up_type, down_type,
+                                              1) ||
+           bn_backend_quant_moe_route_q8(gate_type, up_type, down_type);
+}
+
 int bn_gpu_policy_cuda_moe_all_f16_cache_forced(void) {
     return getenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE") != NULL;
 }

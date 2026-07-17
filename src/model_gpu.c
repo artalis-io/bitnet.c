@@ -91,7 +91,7 @@ static void *upload_moe_router_diff2(BnGPUBackend *gpu,
         diff[i] = r0[i] - r1[i];
     void *handle = gpu->buffer_create(gpu->ctx, diff,
                                       (size_t)dim * sizeof(float),
-                                      bn_quant_format_gpu_float_buffer_type(),
+                                      bn_gpu_policy_float_buffer_type(),
                                       1, dim);
     free(diff);
     return handle;
@@ -195,11 +195,8 @@ static int can_use_cuda_moe_routed_ffn(const BnConfig *c,
     if (!c || !lw || !lw->moe.router_weight)
         return 0;
     const BnMoEExpertMap *em = &lw->moe.expert_map;
-    int is_q4 = bn_quant_format_supports_moe_q4_down_route(
-        em->gate_type, em->up_type, em->down_type, 1);
-    int is_q8 = bn_quant_format_supports_moe_q8_route(
-        em->gate_type, em->up_type, em->down_type);
-    return (is_q4 || is_q8) &&
+    return bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
+               em->gate_type, em->up_type, em->down_type) &&
            em->gate_rows == c->moe_intermediate_size &&
            em->up_rows == c->moe_intermediate_size &&
            em->gate_cols == c->dim &&
@@ -822,7 +819,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             ? gpu->buffer_create(
                 gpu->ctx, lw->moe.router_weight,
                 (size_t)c->n_experts * (size_t)c->dim * sizeof(float),
-                bn_quant_format_gpu_float_buffer_type(),
+                bn_gpu_policy_float_buffer_type(),
                 c->n_experts, c->dim)
             : NULL;
         int upload_moe_all = upload_moe_all_model &&
@@ -896,7 +893,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             ? gpu->buffer_create(
                 gpu->ctx, lw->shared.shared_expert_gate,
                 (size_t)c->dim * sizeof(float),
-                bn_quant_format_gpu_float_buffer_type(), 1, c->dim)
+                bn_gpu_policy_float_buffer_type(), 1, c->dim)
             : NULL;
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_NORM,
                                 attn_norm_gpu) != 0 ||

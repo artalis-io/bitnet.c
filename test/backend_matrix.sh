@@ -440,6 +440,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA' src/model_gpu.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q8_route' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE\|BN_CUDA_DISABLE_MOE_ROUTED_FFN\|BN_GPU_MOE_DISABLE_AUTO_RESIDENT\|BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE\|BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE\|BN_METAL_ENABLE_MMAP_ZERO_COPY\|BN_GPU_BACKEND_CUDA\|bn_quant_format_cuda_moe_down_cublas_cache_supported\|bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use GPU policy helpers for GPU cache/env policy"
     fail=1
