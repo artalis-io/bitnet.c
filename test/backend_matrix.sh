@@ -300,6 +300,16 @@ if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transfo
     fail=1
 fi
 
+if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_cpu_kernels.c >/dev/null 2>&1; then
+    echo "MoE CPU kernels must use MoE policy helpers for preq8k quant capability"
+    fail=1
+fi
+
+if grep -n 'bn_quant_format_has_embedded_tensor_scale\|bn_quant_embedded_tensor_scale_offset' src/moe_math.c >/dev/null 2>&1; then
+    echo "MoE math must use MoE policy helpers for embedded tensor scale policy"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for stacked pair quant compatibility"
     fail=1

@@ -7,10 +7,11 @@ BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols) {
     w.type = type;
     w.rows = rows;
     w.cols = cols;
-    if (bn_quant_format_has_embedded_tensor_scale(type)) {
+    if (bn_moe_quant_uses_embedded_tensor_scale(type)) {
         const uint8_t *base = (const uint8_t *)data;
         memcpy(&w.scale,
-               base + bn_quant_embedded_tensor_scale_offset(type, rows, cols),
+               base + bn_moe_quant_embedded_tensor_scale_offset(type, rows,
+                                                                cols),
                sizeof(float));
     } else {
         w.scale = 1.0f;

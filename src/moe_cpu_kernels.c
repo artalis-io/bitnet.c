@@ -135,11 +135,11 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
         can_batch = tasks[i].W->type == batch_type;
 #if BN_TRANSFORMER_CPU_HAS_AVX2
     if (!can_batch &&
-        bn_quant_format_can_preq8k(shared_gate_type) &&
-        bn_quant_format_can_preq8k(shared_up_type)) {
+        bn_moe_quant_supports_prepared_q8k(shared_gate_type) &&
+        bn_moe_quant_supports_prepared_q8k(shared_up_type)) {
         can_batch = 1;
         for (int i = 0; can_batch && i < n_tasks; i++)
-            can_batch = bn_quant_format_can_preq8k(tasks[i].W->type);
+            can_batch = bn_moe_quant_supports_prepared_q8k(tasks[i].W->type);
     }
 #endif
     return can_batch;
