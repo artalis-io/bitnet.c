@@ -31,5 +31,14 @@ const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
 int bn_transformer_prefill_force_token_attention_enabled(void);
+int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
+                                           int tensor_type);
+int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,
+                                           int left_type,
+                                           int right_type);
+int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
+                                             int first_type,
+                                             int second_type,
+                                             int third_type);
 
 #endif // BN_TRANSFORMER_PREFILL_INTERNAL_H

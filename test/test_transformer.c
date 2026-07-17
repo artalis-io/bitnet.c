@@ -2051,6 +2051,25 @@ static void test_block_planning(void) {
         bn_transformer_cpu_backend_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
 
+    assert(!bn_transformer_prefill_can_preq8k_type(
+        NULL, BN_GGUF_TENSOR_Q4_K));
+    int prefill_supports_preq8k =
+        bn_transformer_prefill_cpu_ops()->supports_preq8k;
+    assert(bn_transformer_prefill_can_preq8k_type(
+               bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K) ==
+           prefill_supports_preq8k);
+    assert(bn_transformer_prefill_can_preq8k_pair(
+               bn_transformer_prefill_cpu_ops(),
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
+           prefill_supports_preq8k);
+    assert(bn_transformer_prefill_can_preq8k_triple(
+               bn_transformer_prefill_cpu_ops(),
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
+               BN_GGUF_TENSOR_Q6_K) == prefill_supports_preq8k);
+    assert(!bn_transformer_prefill_can_preq8k_pair(
+        bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K,
+        BN_GGUF_TENSOR_Q8_0));
+
     unsetenv("BN_PREFILL_PROFILE");
     assert(!bn_transformer_prefill_profile_enabled());
     setenv("BN_PREFILL_PROFILE", "1", 1);
