@@ -6,6 +6,7 @@
 #include "transformer_plan_internal.h"
 #include "transformer/gpu_internal.h"
 #include "gpu_backend.h"
+#include "gpu_policy.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -217,7 +218,7 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
                 model, s, next, *pos,
                 sampler->recent_tokens, sampler->recent_len,
                 sampler->repeat_penalty, &gpu_next) == 0) {
-            if (getenv("BN_GPU_DEBUG_ARGMAX"))
+            if (bn_gpu_policy_argmax_debug_enabled())
                 fprintf(stderr, "[bn:gpu:argmax] step=%d token=%d next=%d\n",
                         i, next, gpu_next);
             have_gpu_next = 1;

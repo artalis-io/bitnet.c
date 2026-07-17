@@ -287,6 +287,11 @@ if grep -n 'BN_GPU_PROFILE' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
+    echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_MOE_PREFILL_MIN_TOKENS\|BN_CUDA_DISABLE_MOE_CACHE_PREFILL\|BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use GPU policy helpers for MoE prefill env vars"
     fail=1

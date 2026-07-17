@@ -552,6 +552,10 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_metal_mmap_zero_copy_enabled());
     setenv("BN_METAL_ENABLE_MMAP_ZERO_COPY", "1", 1);
     assert(bn_gpu_policy_metal_mmap_zero_copy_enabled());
+    unsetenv("BN_GPU_DEBUG_ARGMAX");
+    assert(!bn_gpu_policy_argmax_debug_enabled());
+    setenv("BN_GPU_DEBUG_ARGMAX", "1", 1);
+    assert(bn_gpu_policy_argmax_debug_enabled());
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
     unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
@@ -559,6 +563,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE");
     unsetenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE");
     unsetenv("BN_METAL_ENABLE_MMAP_ZERO_COPY");
+    unsetenv("BN_GPU_DEBUG_ARGMAX");
 
     printf("PASSED\n");
 }

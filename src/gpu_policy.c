@@ -254,3 +254,7 @@ int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void) {
     return getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") != NULL;
 }
+
+int bn_gpu_policy_argmax_debug_enabled(void) {
+    return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
+}
