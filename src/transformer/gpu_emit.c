@@ -1047,12 +1047,10 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 silu_flags);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
-                   lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
-                   lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
-                   ffn_plan->activation != 1 &&
-                   bn_gpu_quant_split_op_code(lw->ffn.ffn_gate.type) ==
-                       BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
-                   bn_transformer_gpu_can_matvec_split(res->gpu, lw->ffn.ffn_gate.type)) {
+                   bn_transformer_gpu_dense_gateup_exact_split_supported(
+                       res ? res->gpu : NULL, &lw->ffn.ffn_gate,
+                       &lw->ffn.ffn_up, ffn_plan->activation,
+                       bn_gpu_quant_split_op_code(lw->ffn.ffn_gate.type))) {
             int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
             emit_context_matvec_split(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,

@@ -200,6 +200,11 @@ if grep -n 'BN_GPU_CODE_Q4K_MATVEC_SPLIT' src/gpu_moe_bridge.c >/dev/null 2>&1; 
     fail=1
 fi
 
+if grep -n 'BN_GPU_CODE_Q4K_MATVEC_SPLIT' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use GPU policy helpers for dense gate-up split op policy"
+    fail=1
+fi
+
 if ! grep -n '#include "backend_quant.h"' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose quant-format policy through backend_quant helpers"
     fail=1

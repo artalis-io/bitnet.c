@@ -201,6 +201,20 @@ int bn_transformer_gpu_moe_gateup_split_supported(
            map->gate_cols == map->up_cols;
 }
 
+int bn_transformer_gpu_dense_gateup_exact_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *gate,
+    const BnQWeight *up,
+    int activation,
+    int split_op_code) {
+    if (!gate || !up || activation == 1 ||
+        split_op_code != BN_GPU_CODE_Q4K_MATVEC_SPLIT)
+        return 0;
+    return gate->rows == up->rows &&
+           gate->cols == up->cols &&
+           bn_transformer_gpu_can_matvec_split(gpu, gate->type);
+}
+
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits) {

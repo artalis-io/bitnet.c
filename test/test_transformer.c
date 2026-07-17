@@ -855,6 +855,41 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_moe_gateup_split_supported(
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
 
+    BnQWeight gate_w;
+    BnQWeight up_w;
+    memset(&gate_w, 0, sizeof(gate_w));
+    memset(&up_w, 0, sizeof(up_w));
+    gate_w.type = BN_GGUF_TENSOR_Q4_K;
+    gate_w.rows = 32;
+    gate_w.cols = 64;
+    up_w.type = BN_GGUF_TENSOR_Q4_K;
+    up_w.rows = 32;
+    up_w.cols = 64;
+    gpu.caps = BN_GPU_CAP_Q4K_MATVEC_SPLIT;
+    assert(bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        NULL, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, NULL, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, NULL, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, &up_w, 1, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
+    up_w.rows = 16;
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    up_w.rows = 32;
+    up_w.cols = 32;
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    up_w.cols = 64;
+    gpu.caps = 0;
+    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+        &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;
     W.cols = 32;
