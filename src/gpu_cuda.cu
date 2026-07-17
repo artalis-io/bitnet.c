@@ -6,6 +6,7 @@
 #include "model_config.h"
 #include "moe_types.h"
 #include "quant.h"
+#include "gpu_policy.h"
 #include "gpu_shader.h"
 
 #include <cublas_v2.h>
@@ -11453,7 +11454,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         buf->type != BN_GGUF_TENSOR_Q5_K &&
         buf->type != BN_GGUF_TENSOR_Q6_K)
         return 0;
-    if (getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
+    if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
         return 0;
 
     int force_q6_f32 = aux_cache_mode == 2;
@@ -11462,32 +11463,18 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         aux_cache_mode == 2 && buf->type == BN_GGUF_TENSOR_Q4_K;
     int q6_as_f16 = buf->type == BN_GGUF_TENSOR_Q6_K &&
                     (force_f16 || !force_q6_f32) &&
-                    getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
-                    getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+                    bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
     int add_q6_f32_cache =
         force_f16 && buf->type == BN_GGUF_TENSOR_Q6_K &&
-        getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL &&
-        getenv("BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE") == NULL;
+        bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache();
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     int f32_cache =
         force_q4_f32 || (buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16);
     size_t bytes = n * (f32_cache
                         ? sizeof(float)
                         : sizeof(__half));
-    int max_mb = 128;
-    const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
-    if (force_f16) {
-        max_mb = 0;
-    } else if (max_env && *max_env) {
-        max_mb = atoi(max_env);
-    } else if (force_q6_f32 &&
-               getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE")) {
-        max_mb = 0;
-    } else if (buf->type == BN_GGUF_TENSOR_Q4_K ||
-               buf->type == BN_GGUF_TENSOR_Q5_K ||
-               buf->type == BN_GGUF_TENSOR_Q6_K) {
-        max_mb = 512;
-    }
+    int max_mb = bn_gpu_policy_cuda_cublas_aux_cache_max_mb(
+        buf->type, force_q6_f32, force_f16);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
     size_t free_mem = 0;
@@ -11627,15 +11614,12 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     if (buf->type != BN_GGUF_TENSOR_IQ3_XXS &&
         buf->type != BN_GGUF_TENSOR_IQ4_XS)
         return 0;
-    if (getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL"))
+    if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
         return 0;
 
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     size_t bytes = n * sizeof(uint16_t);
-    int max_mb = 128;
-    const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
-    if (max_env && *max_env)
-        max_mb = atoi(max_env);
+    int max_mb = bn_gpu_policy_cuda_cublas_cache_max_mb(128, 0);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
     size_t free_mem = 0;

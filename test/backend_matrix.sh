@@ -292,6 +292,11 @@ if grep -n 'BN_GPU_PROFILE' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CUDA_CUBLAS_CACHE_MAX_MB\|BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for cublas aux-cache env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
     echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
     fail=1

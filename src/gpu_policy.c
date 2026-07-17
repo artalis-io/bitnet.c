@@ -194,6 +194,31 @@ int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
     return max_mb;
 }
 
+int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
+                                               int force_q6_f32,
+                                               int force_f16) {
+    if (force_f16)
+        return 0;
+
+    const char *max_env = getenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
+    if (max_env && *max_env)
+        return atoi(max_env);
+
+    if (force_q6_f32 && bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced())
+        return 0;
+
+    return tensor_type == BN_GGUF_TENSOR_Q4_K ||
+           tensor_type == BN_GGUF_TENSOR_Q5_K ||
+           tensor_type == BN_GGUF_TENSOR_Q6_K
+        ? 512
+        : 128;
+}
+
+int bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE") == NULL;
+}
+
 size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     const BnGPUBackend *gpu,
     int tensor_type,

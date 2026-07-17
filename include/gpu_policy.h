@@ -3,6 +3,10 @@
 
 #include "gpu_backend.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible);
 int bn_gpu_policy_cuda_moe_all_f16_cache_forced(void);
 int bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
@@ -48,6 +52,10 @@ int bn_gpu_policy_cuda_cublas_matmul_enabled(void);
 int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
+int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
+                                               int force_q6_f32,
+                                               int force_f16);
+int bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache(void);
 size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     const BnGPUBackend *gpu,
     int tensor_type,
@@ -61,5 +69,9 @@ int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_profile_level(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // BN_GPU_POLICY_H
