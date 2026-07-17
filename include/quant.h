@@ -359,6 +359,7 @@ int      bn_quant_format_cuda_aux_cache_supported(int type);
 int      bn_quant_format_cuda_aux_cache_can_use_f16(int type);
 int      bn_quant_format_cuda_aux_cache_uses_f32(int type, int q6_as_f16);
 int      bn_quant_format_cuda_aux_cache_prefers_large_budget(int type);
+int      bn_quant_policy_cuda_matvec_type_disabled(int type);
 int      bn_quant_format_uses_f16_logits_path(int type);
 int      bn_quant_format_tied_logits_uses_quant_path(int type);
 int      bn_quant_format_supports_logits_i8_cache(int type);

@@ -57,3 +57,22 @@ int bn_quant_policy_wasm_q4_canonical4_enabled(void) {
 int bn_quant_policy_q8_0_matmul_batch_enabled(void) {
     return getenv("BN_DISABLE_Q8_0_MATMUL_BATCH") == NULL;
 }
+
+int bn_quant_policy_cuda_matvec_type_disabled(int type) {
+    switch (type) {
+        case BN_GGUF_TENSOR_Q8_0:
+            return getenv("BN_CUDA_DISABLE_Q8_0") != NULL;
+        case BN_GGUF_TENSOR_Q5_0:
+            return getenv("BN_CUDA_DISABLE_Q5_0") != NULL;
+        case BN_GGUF_TENSOR_Q4_K:
+            return getenv("BN_CUDA_DISABLE_Q4_K") != NULL;
+        case BN_GGUF_TENSOR_Q5_K:
+            return getenv("BN_CUDA_DISABLE_Q5_K") != NULL;
+        case BN_GGUF_TENSOR_Q6_K:
+            return getenv("BN_CUDA_DISABLE_Q6_K") != NULL;
+        case BN_GGUF_TENSOR_Q8_K:
+            return getenv("BN_CUDA_DISABLE_Q8_K") != NULL;
+        default:
+            return 0;
+    }
+}
