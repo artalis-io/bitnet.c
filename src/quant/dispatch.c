@@ -210,7 +210,7 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
     }
 
     if (W->type == BN_GGUF_TENSOR_Q4_0) {
-        if (bn_quant_policy_llama_q4_dot_enabled(flags)) {
+        if (bn_quant_policy_reference_q4_dot_enabled(flags)) {
             int n_blocks = W->cols / 32;
             if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
             float x_scales[n_blocks];
@@ -292,7 +292,7 @@ void bn_quant_matvec_impl(float *out, const BnQWeight *W, const float *x,
     }
 
     if (W->type == BN_GGUF_TENSOR_Q6_K) {
-        if (bn_quant_policy_llama_q6_dot_enabled(flags)) {
+        if (bn_quant_policy_reference_q6_dot_enabled(flags)) {
             int n_sb_q6k = W->cols / BN_QK_K;
             if (n_sb_q6k < 1 || n_sb_q6k > BN_MAX_SCALE_BLOCKS / 8) return;
             float q6k_d[n_sb_q6k];

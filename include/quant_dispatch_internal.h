@@ -21,9 +21,9 @@ int bn_quant_policy_avx512_q5k_vnni_enabled(int rows);
 int bn_quant_policy_avx2_kquant_float_for_tasks(
     const BnMatvecTask *tasks,
     int n_tasks);
-int bn_quant_policy_llama_q4_dot_enabled(uint32_t flags);
-int bn_quant_policy_llama_q6_dot_enabled(uint32_t flags);
-int bn_quant_policy_batch_llama_q4_dot_enabled(
+int bn_quant_policy_reference_q4_dot_enabled(uint32_t flags);
+int bn_quant_policy_reference_q6_dot_enabled(uint32_t flags);
+int bn_quant_policy_batch_reference_q4_dot_enabled(
     const BnMatvecTask *tasks,
     int n_tasks);
 int bn_quant_policy_wasm_q4_canonical4_enabled(void);

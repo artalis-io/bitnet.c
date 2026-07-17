@@ -44,26 +44,27 @@ static void test_quant_policy_helpers(void) {
     unsetenv("BN_CPU_LLAMA_DOT");
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
     unsetenv("BN_CPU_LLAMA_Q6_DOT");
-    assert(!bn_quant_policy_llama_q4_dot_enabled(0));
-    assert(bn_quant_policy_llama_q4_dot_enabled(BN_MATVEC_TASK_LLAMA_DOT));
-    assert(!bn_quant_policy_llama_q4_dot_enabled(
-        BN_MATVEC_TASK_LLAMA_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
-    assert(!bn_quant_policy_llama_q6_dot_enabled(0));
+    assert(!bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(
+        BN_MATVEC_TASK_REFERENCE_DOT));
+    assert(!bn_quant_policy_reference_q4_dot_enabled(
+        BN_MATVEC_TASK_REFERENCE_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
+    assert(!bn_quant_policy_reference_q6_dot_enabled(0));
     setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
-    assert(bn_quant_policy_llama_q4_dot_enabled(0));
-    assert(bn_quant_policy_llama_q6_dot_enabled(0));
+    assert(bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
     setenv("BN_CPU_LLAMA_Q6_DOT", "1", 1);
-    assert(!bn_quant_policy_llama_q4_dot_enabled(0));
-    assert(bn_quant_policy_llama_q6_dot_enabled(0));
+    assert(!bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
     unsetenv("BN_CPU_LLAMA_Q6_DOT");
 
     memset(tasks, 0, sizeof(tasks));
-    assert(!bn_quant_policy_batch_llama_q4_dot_enabled(tasks, 2));
-    tasks[0].flags = BN_MATVEC_TASK_LLAMA_DOT;
-    assert(bn_quant_policy_batch_llama_q4_dot_enabled(tasks, 2));
+    assert(!bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
+    tasks[0].flags = BN_MATVEC_TASK_REFERENCE_DOT;
+    assert(bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
     tasks[1].flags = BN_MATVEC_TASK_NATIVE_QUANT;
-    assert(!bn_quant_policy_batch_llama_q4_dot_enabled(tasks, 2));
+    assert(!bn_quant_policy_batch_reference_q4_dot_enabled(tasks, 2));
     tasks[0].flags = 0;
     tasks[1].flags = 0;
 
@@ -468,15 +469,15 @@ static void test_q4_matmul_correctness(void) {
     for (int t = 0; t < n_tokens; t++) {
         bn_quant_matvec_prepared_flags(out_llama_native + (size_t)t * rows,
                                        &W, NULL, X + (size_t)t * cols, x_q,
-                                       NULL, BN_MATVEC_TASK_LLAMA_DOT);
+                                       NULL, BN_MATVEC_TASK_REFERENCE_DOT);
         bn_quant_matvec_prepared_flags(out_llama_prepared + (size_t)t * rows,
                                        &W, &prepared, X + (size_t)t * cols,
-                                       x_q, NULL, BN_MATVEC_TASK_LLAMA_DOT);
+                                       x_q, NULL, BN_MATVEC_TASK_REFERENCE_DOT);
         BnMatvecTask q4_batch[2] = {
             { out_llama_batch0 + (size_t)t * rows, &W, &prepared,
-              BN_MATVEC_TASK_LLAMA_DOT },
+              BN_MATVEC_TASK_REFERENCE_DOT },
             { out_llama_batch1 + (size_t)t * rows, &W, &prepared,
-              BN_MATVEC_TASK_LLAMA_DOT },
+              BN_MATVEC_TASK_REFERENCE_DOT },
         };
         bn_quant_matvec_batch(q4_batch, 2, X + (size_t)t * cols, x_q, NULL);
     }

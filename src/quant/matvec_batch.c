@@ -100,9 +100,9 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
     }
 
     if (all_q4 && n_tasks <= 4) {
-        int llama_dot =
-            bn_quant_policy_batch_llama_q4_dot_enabled(tasks, n_tasks);
-        if (llama_dot) {
+        int reference_dot =
+            bn_quant_policy_batch_reference_q4_dot_enabled(tasks, n_tasks);
+        if (reference_dot) {
             int n_blocks = cols / 32;
             if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
             float x_scales[n_blocks];
@@ -683,9 +683,9 @@ void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                 return;
             }
 #endif
-        int llama_dot =
-            bn_quant_policy_batch_llama_q4_dot_enabled(tasks, n_tasks);
-            if (batch_type == BN_GGUF_TENSOR_Q4_0 && llama_dot) {
+            int reference_dot =
+                bn_quant_policy_batch_reference_q4_dot_enabled(tasks, n_tasks);
+            if (batch_type == BN_GGUF_TENSOR_Q4_0 && reference_dot) {
                 int n_blocks = cols / 32;
                 if (n_blocks > BN_MAX_SCALE_BLOCKS) return;
                 float x_scales[n_blocks];

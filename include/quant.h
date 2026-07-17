@@ -424,7 +424,8 @@ void     bn_quant_matvec_prepared_flags(float *out, const BnQWeight *W,
 
 // Batch matvec: run multiple independent matvecs with a single dispatch
 #define BN_MATVEC_TASK_FORCE_FLOAT_KQUANT 1u
-#define BN_MATVEC_TASK_LLAMA_DOT          2u
+#define BN_MATVEC_TASK_REFERENCE_DOT      2u
+#define BN_MATVEC_TASK_LLAMA_DOT          BN_MATVEC_TASK_REFERENCE_DOT
 #define BN_MATVEC_TASK_NATIVE_QUANT       4u
 
 typedef struct {

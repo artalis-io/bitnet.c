@@ -21,33 +21,34 @@ int bn_quant_policy_avx2_kquant_float_for_tasks(
     return 0;
 }
 
-int bn_quant_policy_llama_q4_dot_enabled(uint32_t flags) {
+int bn_quant_policy_reference_q4_dot_enabled(uint32_t flags) {
     return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-           ((flags & BN_MATVEC_TASK_LLAMA_DOT) ||
+           ((flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
             getenv("BN_CPU_LLAMA_DOT") != NULL ||
             getenv("BN_CPU_LLAMA_Q4_DOT") != NULL);
 }
 
-int bn_quant_policy_llama_q6_dot_enabled(uint32_t flags) {
+int bn_quant_policy_reference_q6_dot_enabled(uint32_t flags) {
     return !(flags & BN_MATVEC_TASK_NATIVE_QUANT) &&
-           ((flags & BN_MATVEC_TASK_LLAMA_DOT) ||
+           ((flags & BN_MATVEC_TASK_REFERENCE_DOT) ||
             getenv("BN_CPU_LLAMA_DOT") != NULL ||
             getenv("BN_CPU_LLAMA_Q4_DOT") != NULL ||
             getenv("BN_CPU_LLAMA_Q6_DOT") != NULL);
 }
 
-int bn_quant_policy_batch_llama_q4_dot_enabled(
+int bn_quant_policy_batch_reference_q4_dot_enabled(
     const BnMatvecTask *tasks,
     int n_tasks) {
-    int llama_dot = getenv("BN_CPU_LLAMA_DOT") != NULL ||
-                    getenv("BN_CPU_LLAMA_Q4_DOT") != NULL;
+    int reference_dot = getenv("BN_CPU_LLAMA_DOT") != NULL ||
+                        getenv("BN_CPU_LLAMA_Q4_DOT") != NULL;
     for (int t = 0; t < n_tasks; t++)
-        llama_dot = llama_dot ||
-                    ((tasks[t].flags & BN_MATVEC_TASK_LLAMA_DOT) != 0);
+        reference_dot = reference_dot ||
+                        ((tasks[t].flags &
+                          BN_MATVEC_TASK_REFERENCE_DOT) != 0);
     for (int t = 0; t < n_tasks; t++)
         if (tasks[t].flags & BN_MATVEC_TASK_NATIVE_QUANT)
-            llama_dot = 0;
-    return llama_dot;
+            reference_dot = 0;
+    return reference_dot;
 }
 
 int bn_quant_policy_wasm_q4_canonical4_enabled(void) {
