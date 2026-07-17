@@ -132,6 +132,15 @@ int bn_gpu_policy_metal_cpu_order_rmsnorm_enabled(void);
 int bn_gpu_policy_metal_full_barriers_enabled(void);
 int bn_gpu_policy_metal_barriers_enabled(void);
 int bn_gpu_policy_metal_barriers_disabled(void);
+int bn_gpu_policy_fused_gateup_enabled(void);
+int bn_gpu_policy_q4_q8_fused_gateup_enabled(void);
+int bn_gpu_policy_gateup_split_enabled(void);
+int bn_gpu_policy_q4_q8_ffn_down_enabled(void);
+int bn_gpu_policy_qkv_split_enabled(void);
+int bn_gpu_policy_qkv_split_debug_enabled(void);
+int bn_gpu_policy_ssm_qkvz_split_enabled(void);
+int bn_gpu_policy_ssm_ab_stack_enabled(void);
+int bn_gpu_policy_split_residual_rmsnorm_enabled(void);
 int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_profile_level(void);
 

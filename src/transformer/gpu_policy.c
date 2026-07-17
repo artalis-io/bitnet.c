@@ -138,7 +138,7 @@ int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    if (getenv("BN_GPU_DISABLE_FUSED_GATEUP") != NULL)
+    if (!bn_gpu_policy_fused_gateup_enabled())
         return 0;
     if (bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
@@ -148,40 +148,40 @@ int bn_transformer_gpu_fused_gateup_silu_policy_allows(
 }
 
 int bn_transformer_gpu_q4_q8_fused_gateup_enabled(int use_q4_q8) {
-    return use_q4_q8 && getenv("BN_GPU_Q4_Q8_DISABLE_GATEUP") == NULL;
+    return use_q4_q8 && bn_gpu_policy_q4_q8_fused_gateup_enabled();
 }
 
 int bn_transformer_gpu_gateup_split_enabled(void) {
-    return getenv("BN_GPU_DISABLE_GATEUP_SPLIT") == NULL;
+    return bn_gpu_policy_gateup_split_enabled();
 }
 
 int bn_transformer_gpu_q4_q8_ffn_down_enabled(int use_q4_q8_down) {
     return use_q4_q8_down &&
-           getenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN") == NULL;
+           bn_gpu_policy_q4_q8_ffn_down_enabled();
 }
 
 int bn_transformer_gpu_qkv_split_enabled(int use_q4_q8) {
-    return !use_q4_q8 && getenv("BN_GPU_DISABLE_QKV_SPLIT") == NULL;
+    return !use_q4_q8 && bn_gpu_policy_qkv_split_enabled();
 }
 
 int bn_transformer_gpu_qk_split_enabled(void) {
-    return getenv("BN_GPU_DISABLE_QKV_SPLIT") == NULL;
+    return bn_gpu_policy_qkv_split_enabled();
 }
 
 int bn_transformer_gpu_qkv_split_debug_enabled(void) {
-    return getenv("BN_GPU_DEBUG_QKV_SPLIT") != NULL;
+    return bn_gpu_policy_qkv_split_debug_enabled();
 }
 
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void) {
-    return getenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT") == NULL;
+    return bn_gpu_policy_ssm_qkvz_split_enabled();
 }
 
 int bn_transformer_gpu_ssm_ab_stack_enabled(void) {
-    return getenv("BN_GPU_DISABLE_SSM_AB_STACK") == NULL;
+    return bn_gpu_policy_ssm_ab_stack_enabled();
 }
 
 int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
-    return getenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM") != NULL;
+    return bn_gpu_policy_split_residual_rmsnorm_enabled();
 }
 
 int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible) {

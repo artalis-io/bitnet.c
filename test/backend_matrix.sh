@@ -695,6 +695,11 @@ if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_GPU_DISABLE_GATEUP_SPLIT\|BN_GPU_Q4_
     fail=1
 fi
 
+if grep -n 'getenv("BN_GPU_DISABLE_FUSED_GATEUP")\|getenv("BN_GPU_Q4_Q8_DISABLE_GATEUP")\|getenv("BN_GPU_DISABLE_GATEUP_SPLIT")\|getenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN")\|getenv("BN_GPU_DISABLE_QKV_SPLIT")\|getenv("BN_GPU_DEBUG_QKV_SPLIT")\|getenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT")\|getenv("BN_GPU_DISABLE_SSM_AB_STACK")\|getenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for generic GPU feature env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DISABLE_QKV_SPLIT\|BN_GPU_DISABLE_SSM_QKVZ_SPLIT\|BN_GPU_DISABLE_SSM_AB_STACK\|BN_GPU_DEBUG_QKV_SPLIT\|BN_GPU_SPLIT_RESIDUAL_RMSNORM\|BN_GPU_DEBUG_FALLBACK' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for QKV/SSM split and debug compatibility env vars"
     fail=1
