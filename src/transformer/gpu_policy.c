@@ -704,8 +704,7 @@ int bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
     int allow_q4_down) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            gpu->moe_route_routed_ffn_batch_norm_resid &&
-           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
-               c ? c->n_experts : 0) &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
                c, map, dim, allow_q4_down);
 }
@@ -717,8 +716,7 @@ int bn_transformer_gpu_prefill_moe_layer_backend_available(
     int dim,
     int allow_q4_down) {
     return gpu && gpu->prefill_moe_layer &&
-           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
-               c ? c->n_experts : 0) &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
                c, map, dim, allow_q4_down);
 }
@@ -850,7 +848,7 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
     return c &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
            gpu->moe_route_routed_ffn_batch_norm_resid &&
-           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c->n_experts);
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c);
 }
 
 int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
@@ -862,7 +860,7 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
     return c &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
            gpu->moe_route_routed_ffn_batch &&
-           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c->n_experts) &&
+           bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
                c, map, dim, allow_q4_down);
 }
@@ -1437,10 +1435,11 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
             layer >= cpu_fallback_ffn_from_layer);
 }
 
-int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(int n_experts) {
+int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
+    const BnConfig *c) {
     if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
         return 0;
-    return n_experts <= 2 ||
+    return !bn_model_arch_uses_more_than_two_expert_moe(c) ||
            getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
 }
 

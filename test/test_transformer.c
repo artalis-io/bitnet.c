@@ -1464,6 +1464,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    assert(bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     assert(!bn_transformer_gpu_moe_prefill_route_batch_available(&gpu, &c));
@@ -1486,15 +1487,18 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0, 1));
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     c.n_experts = 3;
+    assert(!bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(bn_transformer_gpu_moe_prefill_route_batch_available(&gpu, &c));
     assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     setenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE", "1", 1);
+    assert(bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     setenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH", "1", 1);
+    assert(!bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
