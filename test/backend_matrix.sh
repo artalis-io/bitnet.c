@@ -242,8 +242,13 @@ if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER
     fail=1
 fi
 
-if grep -n 'BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT\|BN_CPU_LLAMA_Q6_DOT\|BN_WASM_Q4_CANONICAL4\|BN_DISABLE_Q8_0_MATMUL_BATCH' src/quant/matvec_batch.c src/quant/matvec_multi.c src/quant/matmul.c src/quant/fused_gateup.c >/dev/null 2>&1; then
-    echo "quant kernels must use quant dispatch policy helpers for compatibility env vars"
+if grep -n 'BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT\|BN_CPU_LLAMA_Q6_DOT\|BN_WASM_Q4_CANONICAL4\|BN_DISABLE_Q8_0_MATMUL_BATCH' src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matvec_multi.c src/quant/matmul.c src/quant/fused_gateup.c >/dev/null 2>&1; then
+    echo "quant dispatch/kernels must use quant policy helpers for compatibility env vars"
+    fail=1
+fi
+
+if ! grep -n 'BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT\|BN_CPU_LLAMA_Q6_DOT\|BN_WASM_Q4_CANONICAL4\|BN_DISABLE_Q8_0_MATMUL_BATCH' src/quant/policy.c >/dev/null 2>&1; then
+    echo "quant env compatibility policy must live in src/quant/policy.c"
     fail=1
 fi
 

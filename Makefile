@@ -19,7 +19,7 @@ CFLAGS += -D_GNU_SOURCE
 LDFLAGS += -lpthread
 endif
 
-QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c src/quant/mxfp4_scalar.c
+QUANT_COMMON = src/quant/fp16.c src/quant/dequant.c src/quant/registry.c src/quant/prepared.c src/quant/kernel_select.c src/quant/policy.c src/quant/dispatch.c src/quant/matvec_batch.c src/quant/matmul.c src/quant/fused_gateup.c src/quant/batch_preq8k.c src/quant/matvec_multi.c src/quant/mxfp4_scalar.c
 
 UNAME_M := $(shell uname -m)
 ifneq ($(filter arm% aarch%,$(UNAME_M)),)
