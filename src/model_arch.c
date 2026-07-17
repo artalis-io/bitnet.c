@@ -218,6 +218,14 @@ int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH) != 0);
 }
 
+int bn_model_arch_uses_moe(const BnConfig *c) {
+    return c && c->n_experts > 0;
+}
+
+int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c) {
+    return bn_model_arch_uses_moe(c) && c->full_attn_interval <= 0;
+}
+
 int bn_model_arch_uses_two_expert_all_active_moe(const BnConfig *c) {
     return c &&
            c->n_experts == 2 &&

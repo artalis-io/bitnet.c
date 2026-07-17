@@ -2048,6 +2048,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_prefers_cuda_exact_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(!bn_model_arch_moe_uses_dense_residual_branch(&c));
+    assert(!bn_model_arch_uses_moe(&c));
+    assert(!bn_model_arch_uses_non_hybrid_moe(&c));
     assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
     assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
@@ -2078,12 +2080,16 @@ static void test_model_arch_registry(void) {
     c.n_experts = 1;
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_small_cuda_dense_shape(&c));
+    assert(bn_model_arch_uses_moe(&c));
+    assert(!bn_model_arch_uses_non_hybrid_moe(&c));
 
     memset(&c, 0, sizeof(c));
     c.n_experts = 2;
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4096;
     c.dim = 2048;
+    assert(bn_model_arch_uses_moe(&c));
+    assert(bn_model_arch_uses_non_hybrid_moe(&c));
     assert(bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
     assert(!bn_model_arch_moe_prefill_forces_matvec(&c));

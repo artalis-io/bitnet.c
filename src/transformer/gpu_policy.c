@@ -507,7 +507,7 @@ int bn_transformer_gpu_hybrid_prefill_chain_applicable(
 int bn_transformer_gpu_moe_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return c && c->n_experts > 0 && c->full_attn_interval <= 0 &&
+    return bn_model_arch_uses_non_hybrid_moe(c) &&
            bn_transformer_gpu_backend_is_cuda(gpu);
 }
 
@@ -582,10 +582,9 @@ int bn_transformer_gpu_batch_prefill_enabled(
                getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") == NULL &&
                !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled();
     }
-    if (bn_transformer_gpu_backend_is_cuda(gpu) && c->n_experts > 0)
-        return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
-    if (c->n_experts > 0)
-        return 0;
+    if (bn_model_arch_uses_moe(c))
+        return bn_transformer_gpu_backend_is_cuda(gpu) &&
+               getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
     if (bn_transformer_gpu_backend_is_cuda(gpu))
         return c->dim <= 8192;
     return c->dim <= 2560;
