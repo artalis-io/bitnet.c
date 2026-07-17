@@ -9,16 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int gpu_moe_can_gateup_split(const BnGPUBackend *gpu,
-                                    const BnMoEExpertMap *em,
-                                    int split_op_code) {
-    return split_op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
-           bn_transformer_gpu_can_matvec_split(gpu, em->gate_type) &&
-           em->up_type == em->gate_type &&
-           em->gate_rows == em->up_rows &&
-           em->gate_cols == em->up_cols;
-}
-
 static void gpu_moe_destroy_partial(BnGPUBackend *gpu,
                                     void *gate,
                                     void *up,
@@ -79,7 +69,8 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     int split_op_code = bn_gpu_quant_split_op_code(em->gate_type);
     int use_split = bn_transformer_gpu_cuda_moe_gateup_split_enabled(
-        gpu, gpu_moe_can_gateup_split(gpu, em, split_op_code));
+        gpu, bn_transformer_gpu_moe_gateup_split_supported(
+                 gpu, em, split_op_code));
 
     memset(out, 0, sizeof(*out));
     out->use_gateup_split = use_split;
@@ -263,7 +254,8 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         int split_op_code = bn_gpu_quant_split_op_code(em->gate_type);
         int use_split = bn_transformer_gpu_cuda_moe_gateup_split_enabled(
-            gpu, gpu_moe_can_gateup_split(gpu, em, split_op_code));
+            gpu, bn_transformer_gpu_moe_gateup_split_supported(
+                     gpu, em, split_op_code));
 
         for (int expert_idx = 0; expert_idx < m->config.n_experts;
              expert_idx++) {

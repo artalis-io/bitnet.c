@@ -189,6 +189,18 @@ uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
         : 0u;
 }
 
+int bn_transformer_gpu_moe_gateup_split_supported(
+    const BnGPUBackend *gpu,
+    const BnMoEExpertMap *map,
+    int split_op_code) {
+    if (!map || split_op_code != BN_GPU_CODE_Q4K_MATVEC_SPLIT)
+        return 0;
+    return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
+           map->up_type == map->gate_type &&
+           map->gate_rows == map->up_rows &&
+           map->gate_cols == map->up_cols;
+}
+
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits) {

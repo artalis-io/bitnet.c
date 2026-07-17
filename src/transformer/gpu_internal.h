@@ -147,6 +147,10 @@ int bn_transformer_gpu_validate_forward(
     const char **reject_reason);
 int bn_transformer_gpu_graph_op_capacity(const BnConfig *c);
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c);
+int bn_transformer_gpu_moe_gateup_split_supported(
+    const BnGPUBackend *gpu,
+    const BnMoEExpertMap *map,
+    int split_op_code);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
