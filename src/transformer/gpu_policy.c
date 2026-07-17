@@ -594,12 +594,12 @@ int bn_transformer_gpu_batch_prefill_enabled(
     if (bn_model_arch_uses_hybrid_ssm(c)) {
         return bn_transformer_gpu_backend_is_cuda(gpu) &&
                gpu->prefill_ssm_layer &&
-               getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") == NULL &&
+               bn_gpu_policy_cuda_prefill_hybrid_chain_enabled() &&
                !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled();
     }
     if (bn_model_arch_uses_moe(c))
         return bn_transformer_gpu_backend_is_cuda(gpu) &&
-               getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
+               bn_gpu_policy_cuda_moe_prefill_enabled();
     return bn_transformer_gpu_dense_batch_prefill_shape_allowed(gpu, c);
 }
 
@@ -656,18 +656,13 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
 }
 
 int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void) {
-    const char *env = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
-    if (!env || !*env)
-        return 16;
-    int n = atoi(env);
-    return n > 0 ? n : 16;
+    return bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
 }
 
 int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu) {
-    const char *env = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
-    if (env && *env)
+    if (bn_gpu_policy_cuda_prefill_attention_min_tokens_configured())
         return bn_transformer_gpu_cuda_prefill_attention_min_tokens();
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c) {
         int arch_min = bn_model_arch_small_cuda_dense_prefill_min_tokens(c);
@@ -691,14 +686,12 @@ int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
 int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu) {
-    const char *env = getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
-    if (env && *env) {
-        int n = atoi(env);
-        return n > 0 ? n : 1;
-    }
+    if (bn_gpu_policy_cuda_moe_prefill_min_tokens_configured())
+        return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c)
-        return 16;
-    return bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
+        return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(16);
+    return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
+        bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu));
 }
 
 int bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
@@ -772,47 +765,43 @@ int bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
 }
 
 int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") == NULL;
+    return bn_gpu_policy_cuda_prefill_dense_chain_enabled();
 }
 
 int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN") == NULL &&
+    return bn_gpu_policy_cuda_prefill_hybrid_chain_enabled() &&
            !bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
                gpu, c);
 }
 
 int bn_transformer_gpu_cuda_prefill_attention_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_ATTN") == NULL;
+    return bn_gpu_policy_cuda_prefill_attention_enabled();
 }
 
 int bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN") == NULL;
+    return bn_gpu_policy_cuda_prefill_ssm_run_chain_enabled();
 }
 
 int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void) {
-    return getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE") == NULL;
+    return bn_gpu_policy_cuda_prefill_ssm_ffn_fuse_allowed();
 }
 
 int bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled(void) {
-    return getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN") != NULL;
+    return bn_gpu_policy_cuda_prefill_moe_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled(void) {
-    return getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN") != NULL;
+    return bn_gpu_policy_cuda_prefill_hybrid_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_cuda_moe_prefill_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_MOE_PREFILL") != NULL;
+    return bn_gpu_policy_cuda_moe_prefill_enabled();
 }
 
 int bn_transformer_gpu_cuda_moe_prefill_min_tokens(void) {
-    const char *env = getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
-    if (!env || !*env)
-        return 1;
-    int n = atoi(env);
-    return n > 0 ? n : 1;
+    return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
 }
 
 int bn_transformer_gpu_moe_prefill_backend_available(
@@ -828,15 +817,15 @@ int bn_transformer_gpu_moe_prefill_tokens_allowed(
 }
 
 int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL") == NULL;
+    return bn_gpu_policy_cuda_moe_cache_prefill_enabled();
 }
 
 int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE") == NULL;
+    return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
-    return getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH") != NULL;
+    return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_route_batch_available(
