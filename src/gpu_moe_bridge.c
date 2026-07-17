@@ -4,21 +4,16 @@
 #include "gpu_moe_cache.h"
 #include "gpu_policy.h"
 #include "moe.h"
-#include "quant.h"
 #include "transformer/gpu_internal.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int gpu_moe_can_matvec_split(const BnGPUBackend *gpu, int tensor_type) {
-    uint32_t cap = bn_quant_format_gpu_split_cap(tensor_type);
-    return gpu && cap && ((gpu->caps & cap) != 0);
-}
 
 static int gpu_moe_can_gateup_split(const BnGPUBackend *gpu,
                                     const BnMoEExpertMap *em,
                                     int split_op_code) {
     return split_op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
-           gpu_moe_can_matvec_split(gpu, em->gate_type) &&
+           bn_transformer_gpu_can_matvec_split(gpu, em->gate_type) &&
            em->up_type == em->gate_type &&
            em->gate_rows == em->up_rows &&
            em->gate_cols == em->up_cols;
