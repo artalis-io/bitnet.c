@@ -430,6 +430,10 @@ int bn_gpu_policy_cpu_decode_fallback_requested(void) {
            getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
 }
 
+int bn_gpu_policy_cuda_ssm_graph_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_SSM_GRAPH") != NULL;
+}
+
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget) {
     int max_mb = large_budget ? 512 : default_mb;

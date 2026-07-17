@@ -629,6 +629,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cpu_decode_fallback_requested());
     unsetenv("BN_GPU_CPU_ATTN_FROM_LAYER");
 
+    unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
+    assert(!bn_gpu_policy_cuda_ssm_graph_disabled());
+    setenv("BN_CUDA_DISABLE_SSM_GRAPH", "1", 1);
+    assert(bn_gpu_policy_cuda_ssm_graph_disabled());
+    unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
+
     unsetenv("BN_GPU_MAX_STORAGE_BINDING_MB");
     assert(bn_gpu_policy_max_storage_binding_bytes(0) ==
            128u * 1024u * 1024u);

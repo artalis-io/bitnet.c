@@ -1110,7 +1110,7 @@ int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
 int bn_transformer_gpu_ssm_cpu_fallback_required(
     const BnGPUBackend *gpu) {
     return !bn_transformer_gpu_backend_is_cuda(gpu) ||
-           getenv("BN_CUDA_DISABLE_SSM_GRAPH") != NULL;
+           bn_gpu_policy_cuda_ssm_graph_disabled();
 }
 
 int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
