@@ -675,6 +675,19 @@ int bn_gpu_policy_force_graph_enabled(void) {
     return getenv("BN_GPU_FORCE_GRAPH") != NULL;
 }
 
+int bn_gpu_policy_flash_min_kv_or_default(int default_min_kv) {
+    const char *env = getenv("BN_GPU_FLASH_MIN_KV");
+    return env ? atoi(env) : default_min_kv;
+}
+
+int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
+                                          int default_max_kv) {
+    const char *env = getenv("BN_GPU_FLASH_MAX_KV");
+    if (env)
+        return atoi(env);
+    return cuda_backend ? 2048 : default_max_kv;
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }

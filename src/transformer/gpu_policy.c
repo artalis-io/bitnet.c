@@ -1188,19 +1188,13 @@ int bn_transformer_gpu_flash_attention_enabled(
     int config_flash_attn,
     int has_moe,
     int n_kv) {
-    int flash_min_kv = 0;
-    const char *flash_min_env = getenv("BN_GPU_FLASH_MIN_KV");
-    if (flash_min_env) flash_min_kv = atoi(flash_min_env);
-    int flash_max_kv = 0;
-    const char *flash_max_env = getenv("BN_GPU_FLASH_MAX_KV");
-    if (flash_max_env)
-        flash_max_kv = atoi(flash_max_env);
-    else if (bn_transformer_gpu_backend_is_cuda(gpu))
-        flash_max_kv = 2048;
+    int cuda_backend = bn_transformer_gpu_backend_is_cuda(gpu);
+    int flash_min_kv = bn_gpu_policy_flash_min_kv_or_default(0);
+    int flash_max_kv =
+        bn_gpu_policy_flash_max_kv_or_default(cuda_backend, 0);
 
     return bn_transformer_gpu_can_flash_attn(gpu) &&
-           (has_moe || config_flash_attn ||
-            bn_transformer_gpu_backend_is_cuda(gpu)) &&
+           (has_moe || config_flash_attn || cuda_backend) &&
            n_kv >= flash_min_kv &&
            (flash_max_kv <= 0 || n_kv <= flash_max_kv);
 }

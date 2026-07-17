@@ -158,6 +158,9 @@ int bn_gpu_policy_ssm_ab_stack_enabled(void);
 int bn_gpu_policy_split_residual_rmsnorm_enabled(void);
 int bn_gpu_policy_debug_fallback_enabled(void);
 int bn_gpu_policy_force_graph_enabled(void);
+int bn_gpu_policy_flash_min_kv_or_default(int default_min_kv);
+int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
+                                          int default_max_kv);
 int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_cpu_logits_enabled(void);
 int bn_gpu_policy_compare_logits_enabled(void);
