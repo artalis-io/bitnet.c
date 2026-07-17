@@ -585,6 +585,11 @@ if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CU
     fail=1
 fi
 
+if grep -n 'args\.metal && n_experts > 0' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use GPU policy helpers for Metal MoE sequence auto-cap policy"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for CUDA prefill chain debug env vars"
     fail=1

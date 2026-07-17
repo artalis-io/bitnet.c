@@ -75,6 +75,12 @@ size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
                                           int rows,
                                           int cols);
 int bn_gpu_policy_moe_auto_resident_enabled(void);
+int bn_gpu_policy_auto_caps_sequence(int webgpu,
+                                     int cuda,
+                                     int metal,
+                                     int has_moe,
+                                     int model_seq_len,
+                                     int cap_seq_len);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 int bn_gpu_policy_argmax_debug_enabled(void);

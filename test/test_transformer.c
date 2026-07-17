@@ -9,6 +9,7 @@
 #include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
 #include "../src/gpu_quant_lowering_internal.h"
+#include "gpu_policy.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "simd_helpers.h"
@@ -685,6 +686,13 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_route_profile_every() == 28);
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+
+    assert(!bn_gpu_policy_auto_caps_sequence(0, 0, 0, 0, 8193, 4096));
+    assert(!bn_gpu_policy_auto_caps_sequence(1, 0, 0, 0, 4096, 4096));
+    assert(bn_gpu_policy_auto_caps_sequence(1, 0, 0, 0, 4097, 4096));
+    assert(bn_gpu_policy_auto_caps_sequence(0, 1, 0, 0, 4097, 4096));
+    assert(!bn_gpu_policy_auto_caps_sequence(0, 0, 1, 0, 4097, 4096));
+    assert(bn_gpu_policy_auto_caps_sequence(0, 0, 1, 1, 4097, 4096));
 
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
     assert(!bn_transformer_gpu_cuda_moe_ffn_disabled());
