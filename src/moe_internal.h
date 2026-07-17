@@ -53,6 +53,20 @@ BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
 int bn_moe_quant_supports_prepared_q8k(int type);
 int bn_moe_quant_uses_embedded_tensor_scale(int type);
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
+void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,
+                                            const void **buffers,
+                                            int n_tasks,
+                                            const float *x,
+                                            int8_t *x_q_buf,
+                                            BnThreadPool *pool,
+                                            BnGPUBackend *gpu);
+void bn_moe_quant_matvec_down_gpu_buffer(float *out,
+                                         const BnQWeight *W,
+                                         void *W_buf,
+                                         const float *x,
+                                         int8_t *x_q_buf,
+                                         BnThreadPool *pool,
+                                         BnGPUBackend *gpu);
 void bn_moe_swiglu_range(void *ctx, int start, int end);
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
                    int exact_silu);

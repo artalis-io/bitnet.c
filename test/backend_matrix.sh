@@ -315,6 +315,11 @@ if grep -n 'bn_quant_format_has_embedded_tensor_scale\|bn_quant_embedded_tensor_
     fail=1
 fi
 
+if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/moe_execute.c >/dev/null 2>&1; then
+    echo "MoE execution must use MoE policy helpers for GPU-resident quant matvec dispatch"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for stacked pair quant compatibility"
     fail=1

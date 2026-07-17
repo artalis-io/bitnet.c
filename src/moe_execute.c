@@ -1,5 +1,4 @@
 #include "moe_internal.h"
-#include "backend_quant.h"
 #include "gpu_moe_bridge.h"
 #include "model_arch.h"
 
@@ -58,8 +57,8 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
         { ms->expert_hb2, &wup,   NULL, 0 },
     };
     const void *gu_bufs[2] = { bufs.gate, bufs.up };
-    bn_backend_quant_matvec_batch_gpu_buf(gu, gu_bufs, 2, s->xb, s->x_q,
-                                          bn_model_pool(m), gpu);
+    bn_moe_quant_matvec_gateup_gpu_buffers(gu, gu_bufs, 2, s->xb, s->x_q,
+                                           bn_model_pool(m), gpu);
     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
@@ -71,9 +70,9 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     t0 = bn_moe_time_ms();
     BnQWeight wdown = bn_moe_make_qweight(down_data, map->down_type,
                                           map->down_rows, map->down_cols);
-    bn_backend_quant_matvec_gpu_buf(s->xb2, &wdown, bufs.down,
-                                    ms->expert_hb, s->x_q,
-                                    bn_model_pool(m), gpu);
+    bn_moe_quant_matvec_down_gpu_buffer(s->xb2, &wdown, bufs.down,
+                                        ms->expert_hb, s->x_q,
+                                        bn_model_pool(m), gpu);
     ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
