@@ -2281,6 +2281,16 @@ static void test_model_arch_registry(void) {
     c.full_attn_interval = 4;
     assert(gemma->is_ssm_layer(&c, 0));
     assert(!gemma->is_ssm_layer(&c, 3));
+    assert(!bn_model_arch_is_attention_layer(&c, 0));
+    assert(bn_model_arch_is_attention_layer(&c, 3));
+    assert(bn_model_arch_attention_layer_index(&c, 3) == 0);
+    assert(bn_model_arch_attention_layer_index(&c, 7) == 1);
+    assert(bn_model_arch_ssm_layer_index(&c, 0) == 0);
+    assert(bn_model_arch_ssm_layer_index(&c, 4) == 3);
+    c.full_attn_interval = 0;
+    assert(bn_model_arch_is_attention_layer(&c, 0));
+    assert(bn_model_arch_attention_layer_index(&c, 2) == 2);
+    assert(bn_model_arch_ssm_layer_index(&c, 2) == -1);
 
     printf("PASSED\n");
 }
@@ -2355,6 +2365,10 @@ static void test_layer_shape_planning(void) {
     c.full_attn_interval = 4;
     c.kv_tq_bits = 0;
     c.kv_f16 = 1;
+    assert(!bn_transformer_is_attn_layer(&c, 0));
+    assert(bn_transformer_is_attn_layer(&c, 3));
+    assert(bn_transformer_attn_index(&c, 7) == 1);
+    assert(bn_transformer_ssm_index(&c, 4) == 3);
     lw.block_kind = BN_LAYER_BLOCK_SSM;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(!p.is_attn);

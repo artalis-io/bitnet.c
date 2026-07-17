@@ -761,6 +761,11 @@ do
     fi
 done
 
+if grep -n 'full_attn_interval' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use model_arch helpers for hybrid layer layout policy"
+    fail=1
+fi
+
 for file in include/model_config.h include/model_weights.h include/model_run_state.h include/transformer_plan_internal.h
 do
     if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_\|BN_MODEL_ARCH_POLICY_\|RMSNORM_LLAMA\|requires_llama_scalar' "$file" >/dev/null 2>&1; then

@@ -13,20 +13,15 @@ void *bn_transformer_backend_handle_or(const BnBackendModel *backend,
 }
 
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer) {
-    return c->full_attn_interval == 0 ||
-           ((layer + 1) % c->full_attn_interval == 0);
+    return bn_model_arch_is_attention_layer(c, layer);
 }
 
 int bn_transformer_attn_index(const BnConfig *c, int layer) {
-    return c->full_attn_interval > 0
-        ? (layer + 1) / c->full_attn_interval - 1
-        : layer;
+    return bn_model_arch_attention_layer_index(c, layer);
 }
 
 int bn_transformer_ssm_index(const BnConfig *c, int layer) {
-    return c->full_attn_interval > 0
-        ? layer - (layer + 1) / c->full_attn_interval
-        : -1;
+    return bn_model_arch_ssm_layer_index(c, layer);
 }
 
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {

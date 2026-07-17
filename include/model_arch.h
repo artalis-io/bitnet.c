@@ -156,6 +156,9 @@ int bn_model_arch_rope_text_dims(int rope_dim_count,
                                  const int32_t *sections,
                                  uint64_t n_sections);
 int bn_model_arch_is_ssm_layer(const BnConfig *c, int layer);
+int bn_model_arch_is_attention_layer(const BnConfig *c, int layer);
+int bn_model_arch_attention_layer_index(const BnConfig *c, int layer);
+int bn_model_arch_ssm_layer_index(const BnConfig *c, int layer);
 int bn_model_arch_infer_moe_hidden(BnGGUFFile *f,
                                    const BnModelArchOps *ops);
 int bn_model_arch_has_shared_expert(BnGGUFFile *f,

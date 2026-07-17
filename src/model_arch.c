@@ -374,6 +374,22 @@ int bn_model_arch_is_ssm_layer(const BnConfig *c, int layer) {
            ((layer + 1) % c->full_attn_interval != 0);
 }
 
+int bn_model_arch_is_attention_layer(const BnConfig *c, int layer) {
+    return c && !bn_model_arch_is_ssm_layer(c, layer);
+}
+
+int bn_model_arch_attention_layer_index(const BnConfig *c, int layer) {
+    if (!c) return -1;
+    return c->full_attn_interval > 0
+        ? (layer + 1) / c->full_attn_interval - 1
+        : layer;
+}
+
+int bn_model_arch_ssm_layer_index(const BnConfig *c, int layer) {
+    if (!c || c->full_attn_interval <= 0) return -1;
+    return layer - (layer + 1) / c->full_attn_interval;
+}
+
 int bn_model_arch_infer_moe_hidden(BnGGUFFile *f,
                                    const BnModelArchOps *ops) {
     char name[128];
