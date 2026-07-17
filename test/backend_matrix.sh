@@ -92,7 +92,6 @@ fi
 for file in \
     src/transformer.c \
     src/transformer/gpu.c \
-    src/transformer/gpu_policy.c \
     src/transformer/logits.c \
     src/transformer/prefill.c
 do
@@ -105,6 +104,11 @@ do
         fail=1
     fi
 done
+
+if grep -n 'bn_quant_format_' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use backend_quant helpers for quant-format policy"
+    fail=1
+fi
 
 for file in \
     src/model.c \
@@ -138,7 +142,6 @@ do
 done
 
 for file in \
-    src/transformer/gpu_policy.c \
     src/gpu_moe_bridge.c
 do
     if grep -n '#include "backend_quant.h"' "$file" >/dev/null 2>&1; then
@@ -146,6 +149,11 @@ do
         fail=1
     fi
 done
+
+if ! grep -n '#include "backend_quant.h"' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose quant-format policy through backend_quant helpers"
+    fail=1
+fi
 
 if grep -n 'BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER\|BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for Qwen2MoE route range compatibility env vars"
