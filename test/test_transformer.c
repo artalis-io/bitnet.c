@@ -1487,8 +1487,9 @@ static void test_model_arch_registry(void) {
 
     const BnModelArchOps *qwen = bn_model_arch_ops_for("qwen35");
     assert(qwen);
-    assert(strcmp(qwen->name, "qwen") == 0);
+    assert(strcmp(qwen->name, "qwen35") == 0);
     assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU);
+    assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS);
     assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
     assert(qwen->activation("qwen35") == 0);
     assert(!qwen->attention_value_shares_key("qwen35"));

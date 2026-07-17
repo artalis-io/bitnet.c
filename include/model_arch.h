@@ -27,6 +27,7 @@
 #define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION           (1u << 19)
 #define BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION        (1u << 20)
 #define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
+#define BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS                (1u << 22)
 
 typedef struct {
     const char *name;

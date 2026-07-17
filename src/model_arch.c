@@ -240,8 +240,9 @@ int bn_model_arch_loads_moe_aux_weights(const BnConfig *c) {
 }
 
 int bn_model_arch_uses_full_rope_text_dims(const char *arch) {
-    return arch && (strcmp(arch, "qwen35") == 0 ||
-                    strcmp(arch, "qwen35moe") == 0);
+    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
+    return ops &&
+           ((ops->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS) != 0);
 }
 
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
@@ -409,6 +410,11 @@ static int bn_model_arch_match_qwen3(const char *arch) {
     return arch && strcmp(arch, "qwen3") == 0;
 }
 
+static int bn_model_arch_match_qwen35(const char *arch) {
+    return arch && (strcmp(arch, "qwen35") == 0 ||
+                    strcmp(arch, "qwen35moe") == 0);
+}
+
 static int bn_model_arch_match_bitnet(const char *arch) {
     return arch && strncmp(arch, "bitnet", 6) == 0;
 }
@@ -453,6 +459,24 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             0,
             bn_model_arch_match_qwen3,
+            bn_model_arch_prefix,
+            bn_model_arch_activation,
+            bn_model_arch_attention_value_shares_key,
+            bn_model_arch_is_ssm_layer,
+            bn_model_arch_default_tensor_name,
+            bn_model_arch_apply_default_shapes,
+        },
+        {
+            "qwen35",
+            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+            BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION |
+            BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS,
+            0,
+            bn_model_arch_match_qwen35,
             bn_model_arch_prefix,
             bn_model_arch_activation,
             bn_model_arch_attention_value_shares_key,
