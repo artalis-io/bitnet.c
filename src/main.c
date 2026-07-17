@@ -2,6 +2,7 @@
 #include "backend_model.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "gpu_policy.h"
 #include "generate.h"
@@ -446,7 +447,7 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     if (!bn_gpu_policy_moe_auto_resident_enabled())
         return requested;
     int moe_layers = model_moe_layer_count(model);
-    if (moe_layers <= 0 || model->config.n_experts <= 0)
+    if (moe_layers <= 0 || !bn_model_arch_uses_moe(&model->config))
         return requested;
     size_t all_experts = entry_bytes * (size_t)moe_layers *
                          (size_t)model->config.n_experts;
@@ -500,7 +501,7 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
 static void maybe_create_gpu_moe_cache(BnModel *model,
                                        const CLIArgs *args,
                                        BnGPUBackend *gpu) {
-    if (!model || !args || !gpu || model->config.n_experts <= 0 ||
+    if (!model || !args || !gpu || !bn_model_arch_uses_moe(&model->config) ||
         args->gpu_cache_mb <= 0 || model->config.n_layers <= 0)
         return;
     int routed_moe_layers = 0;
@@ -775,7 +776,7 @@ int main(int argc, char **argv) {
     model.config.flash_attn = args.flash_attn;
 
     // Set expert I/O for MoE: prefer mmap, fallback to pread
-    if (model.config.n_experts > 0) {
+    if (bn_model_arch_uses_moe(&model.config)) {
         BnMoEIO *moe_io = bn_model_moe_io(&model);
         if (gf->n_shards > 1 && !args.force_pread && gf->shard_raws) {
             bn_model_set_moe_mmap_shards(&model, (const uint8_t **)gf->shard_raws,
@@ -853,7 +854,7 @@ int main(int argc, char **argv) {
                     if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
                         SH_LOG_INFO("GPU forward pass ready");
                         // Initialize GPU slab allocator for MoE weight suballocation
-                        if (model.config.n_experts > 0)
+                        if (bn_model_arch_uses_moe(&model.config))
                             bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         maybe_create_gpu_moe_cache(&model, &args, gpu);
                     }
@@ -895,7 +896,7 @@ int main(int argc, char **argv) {
                             setenv("BN_GPU_CPU_LOGITS", "1", 1);
                         if (args.gpu_compare_logits)
                             setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
-                        if (model.config.n_experts > 0)
+                        if (bn_model_arch_uses_moe(&model.config))
                             bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         maybe_create_gpu_moe_cache(&model, &args, gpu);
                     }
