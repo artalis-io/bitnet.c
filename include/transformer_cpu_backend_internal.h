@@ -48,6 +48,14 @@ int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
+bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnConfig *c,
+                                             const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnConfig *c,
+                                          const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnConfig *c,
+                                         const BnCPUBackendOps *ops);
+bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnConfig *c,
+                                        const BnCPUBackendOps *ops);
 int bn_transformer_cpu_has_native_q8x_quant(void);
 void bn_transformer_cpu_quantize_q8k_activation(const float *x,
                                                 int8_t *x_q,

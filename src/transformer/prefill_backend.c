@@ -1,5 +1,6 @@
 #include "transformer_prefill_internal.h"
 #include "transformer_cpu_features_internal.h"
+#include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
 #include "quant.h"
@@ -209,4 +210,36 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
 
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void) {
     return &BN_PREFILL_CPU_OPS;
+}
+
+bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops) {
+    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+        return bn_transformer_ssm_conv_silu_scalar_range;
+    return ops ? ops->ssm_conv_silu : BN_PREFILL_CPU_OPS.ssm_conv_silu;
+}
+
+bn_tp_fn bn_transformer_prefill_ssm_l2norm_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops) {
+    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+        return bn_transformer_ssm_l2norm_scalar_range;
+    return ops ? ops->ssm_l2norm : BN_PREFILL_CPU_OPS.ssm_l2norm;
+}
+
+bn_tp_fn bn_transformer_prefill_ssm_delta_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops) {
+    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+        return bn_transformer_ssm_delta_scalar_range;
+    return ops ? ops->ssm_delta : BN_PREFILL_CPU_OPS.ssm_delta;
+}
+
+bn_tp_fn bn_transformer_prefill_ssm_gate_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops) {
+    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+        return bn_transformer_ssm_gate_scalar_range;
+    return ops ? ops->ssm_gate : BN_PREFILL_CPU_OPS.ssm_gate;
 }

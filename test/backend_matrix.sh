@@ -876,6 +876,16 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_small_de
     fail=1
 fi
 
+for file in \
+    src/transformer/cpu.c \
+    src/transformer/prefill.c
+do
+    if grep -n 'bn_transformer_cpu_uses_scalar_hybrid_ssm\|bn_transformer_ssm_.*_scalar_range' "$file" >/dev/null 2>&1; then
+        echo "$file must use backend SSM op selectors for scalar-hybrid SSM CPU policy"
+        fail=1
+    fi
+done
+
 if grep -n 'bn_transformer_gpu_backend_is_cuda(prefill_gpu)\|bn_transformer_gpu_backend_is_cuda(gpu_ffn)\|int cuda_hybrid_prefill\|int cuda_moe_prefill' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for prefill chain policy"
     fail=1

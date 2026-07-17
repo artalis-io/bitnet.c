@@ -2,6 +2,7 @@
 #define BN_TRANSFORMER_PREFILL_INTERNAL_H
 
 #include "gpu_backend.h"
+#include "model_config.h"
 #include "quant.h"
 #include "threadpool.h"
 #include <stdint.h>
@@ -42,6 +43,18 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
                                              int first_type,
                                              int second_type,
                                              int third_type);
+bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops);
+bn_tp_fn bn_transformer_prefill_ssm_l2norm_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops);
+bn_tp_fn bn_transformer_prefill_ssm_delta_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops);
+bn_tp_fn bn_transformer_prefill_ssm_gate_op(
+    const BnConfig *c,
+    const BnPrefillCPUOps *ops);
 int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type);
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type);

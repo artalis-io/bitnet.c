@@ -835,11 +835,9 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
-    int scalar_hybrid_ssm = bn_transformer_cpu_uses_scalar_hybrid_ssm(c);
     BnSSMConvCtx conv_ctx = { qkv, conv_state, lw->ssm.ssm_conv1d, qkv_dim, kern };
     BnTPTask conv_task = {
-        scalar_hybrid_ssm ? bn_transformer_ssm_conv_silu_scalar_range
-                          : cpu_ops->ssm_conv_silu,
+        bn_transformer_cpu_ssm_conv_silu_op(c, cpu_ops),
         &conv_ctx, qkv_dim
     };
     bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -850,8 +848,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
 
     BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
     BnTPTask norm_task = {
-        scalar_hybrid_ssm ? bn_transformer_ssm_l2norm_scalar_range
-                          : cpu_ops->ssm_l2norm,
+        bn_transformer_cpu_ssm_l2norm_op(c, cpu_ops),
         &norm_ctx, num_k_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
@@ -889,16 +886,14 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
         num_k_heads, head_k_dim, head_v_dim, q_scale
     };
     BnTPTask delta_task = {
-        scalar_hybrid_ssm ? bn_transformer_ssm_delta_scalar_range
-                          : cpu_ops->ssm_delta,
+        bn_transformer_cpu_ssm_delta_op(c, cpu_ops),
         &delta_ctx, num_v_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
     BnSSMGateCtx gate_ctx = { out, z, lw->ssm.ssm_norm, c->norm_eps, head_v_dim };
     BnTPTask gate_task = {
-        scalar_hybrid_ssm ? bn_transformer_ssm_gate_scalar_range
-                          : cpu_ops->ssm_gate,
+        bn_transformer_cpu_ssm_gate_op(c, cpu_ops),
         &gate_ctx, num_v_heads
     };
     bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);

@@ -5,6 +5,7 @@
 #include "transformer_logits_internal.h"
 #include "transformer_prefill_internal.h"
 #include "transformer_rmsnorm_internal.h"
+#include "transformer_ssm_internal.h"
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
@@ -2762,6 +2763,29 @@ static void test_block_planning(void) {
         bn_transformer_cpu_backend_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
 
+    const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
+    c.policy_flags = 0;
+    assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==
+           cpu_ops->ssm_conv_silu);
+    assert(bn_transformer_cpu_ssm_l2norm_op(&c, cpu_ops) ==
+           cpu_ops->ssm_l2norm);
+    assert(bn_transformer_cpu_ssm_delta_op(&c, cpu_ops) ==
+           cpu_ops->ssm_delta);
+    assert(bn_transformer_cpu_ssm_gate_op(&c, cpu_ops) ==
+           cpu_ops->ssm_gate);
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU;
+    c.full_attn_interval = 4;
+    assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==
+           bn_transformer_ssm_conv_silu_scalar_range);
+    assert(bn_transformer_cpu_ssm_l2norm_op(&c, cpu_ops) ==
+           bn_transformer_ssm_l2norm_scalar_range);
+    assert(bn_transformer_cpu_ssm_delta_op(&c, cpu_ops) ==
+           bn_transformer_ssm_delta_scalar_range);
+    assert(bn_transformer_cpu_ssm_gate_op(&c, cpu_ops) ==
+           bn_transformer_ssm_gate_scalar_range);
+    c.policy_flags = 0;
+    c.full_attn_interval = 0;
+
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_preq8k =
@@ -2784,6 +2808,29 @@ static void test_block_planning(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_prefill_stacked_pair_same_format(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
+
+    const BnPrefillCPUOps *prefill_ops = bn_transformer_prefill_cpu_ops();
+    c.policy_flags = 0;
+    assert(bn_transformer_prefill_ssm_conv_silu_op(&c, prefill_ops) ==
+           prefill_ops->ssm_conv_silu);
+    assert(bn_transformer_prefill_ssm_l2norm_op(&c, prefill_ops) ==
+           prefill_ops->ssm_l2norm);
+    assert(bn_transformer_prefill_ssm_delta_op(&c, prefill_ops) ==
+           prefill_ops->ssm_delta);
+    assert(bn_transformer_prefill_ssm_gate_op(&c, prefill_ops) ==
+           prefill_ops->ssm_gate);
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU;
+    c.full_attn_interval = 4;
+    assert(bn_transformer_prefill_ssm_conv_silu_op(&c, prefill_ops) ==
+           bn_transformer_ssm_conv_silu_scalar_range);
+    assert(bn_transformer_prefill_ssm_l2norm_op(&c, prefill_ops) ==
+           bn_transformer_ssm_l2norm_scalar_range);
+    assert(bn_transformer_prefill_ssm_delta_op(&c, prefill_ops) ==
+           bn_transformer_ssm_delta_scalar_range);
+    assert(bn_transformer_prefill_ssm_gate_op(&c, prefill_ops) ==
+           bn_transformer_ssm_gate_scalar_range);
+    c.policy_flags = 0;
+    c.full_attn_interval = 0;
 
     unsetenv("BN_PREFILL_PROFILE");
     assert(!bn_transformer_prefill_profile_enabled());

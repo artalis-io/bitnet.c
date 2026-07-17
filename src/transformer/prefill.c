@@ -2240,7 +2240,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             float *QKV_all = Q_buf;
             float *Z_all = Xb2;
             float *Out_all = Hb;
-            int scalar_hybrid_ssm = bn_transformer_cpu_uses_scalar_hybrid_ssm(c);
+            const BnPrefillCPUOps *ssm_cpu_ops = prefill_cpu_ops();
 
             int ssm_preq8k = 0;
             {
@@ -2269,8 +2269,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm.ssm_conv1d,
                                           qkv_dim_ssm, kern_ssm };
                 BnTPTask conv_task = {
-                    scalar_hybrid_ssm ? bn_transformer_ssm_conv_silu_scalar_range
-                                      : prefill_cpu_ops()->ssm_conv_silu,
+                    bn_transformer_prefill_ssm_conv_silu_op(c, ssm_cpu_ops),
                     &conv_ctx, qkv_dim_ssm
                 };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
@@ -2281,8 +2280,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                 BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
                 BnTPTask norm_task = {
-                    scalar_hybrid_ssm ? bn_transformer_ssm_l2norm_scalar_range
-                                      : prefill_cpu_ops()->ssm_l2norm,
+                    bn_transformer_prefill_ssm_l2norm_op(c, ssm_cpu_ops),
                     &norm_ctx, num_k_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
@@ -2317,8 +2315,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     num_k_heads, head_k_dim, head_v_dim, q_scale
                 };
                 BnTPTask delta_task = {
-                    scalar_hybrid_ssm ? bn_transformer_ssm_delta_scalar_range
-                                      : prefill_cpu_ops()->ssm_delta,
+                    bn_transformer_prefill_ssm_delta_op(c, ssm_cpu_ops),
                     &delta_ctx, num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
@@ -2326,8 +2323,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
                                           c->norm_eps, head_v_dim };
                 BnTPTask gate_task = {
-                    scalar_hybrid_ssm ? bn_transformer_ssm_gate_scalar_range
-                                      : prefill_cpu_ops()->ssm_gate,
+                    bn_transformer_prefill_ssm_gate_op(c, ssm_cpu_ops),
                     &gate_ctx, num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
