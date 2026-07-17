@@ -56,6 +56,7 @@ ifneq ($(filter arm% aarch%,$(UNAME_M)),)
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_neon.c \
     src/transformer/batched_attn_scalar.c \
     src/transformer/logits_neon.c src/transformer/logits_scalar.c \
+    src/transformer/logits_policy.c \
     src/transformer/logits_backend.c src/transformer/logits.c \
     src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
@@ -99,6 +100,7 @@ else
     src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
+    src/transformer/logits_policy.c \
     src/transformer/logits_backend.c src/transformer/logits.c \
     src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
@@ -251,7 +253,8 @@ SCALAR_QUANT_BACKEND = src/quant/x_quant_scalar.c src/quant/i2s_scalar.c \
 SCALAR_TRANSFORMER_BACKEND = src/transformer/rmsnorm_scalar.c src/transformer/rmsnorm_backend.c \
     src/transformer/gqa_scalar.c src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
-    src/transformer/logits_scalar.c src/transformer/logits_backend.c \
+    src/transformer/logits_scalar.c src/transformer/logits_policy.c \
+    src/transformer/logits_backend.c \
     src/transformer/logits.c src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \
     src/transformer/gpu_policy.c \
@@ -583,6 +586,7 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/rmsnorm_avx2.c src/transformer/rmsnor
     src/transformer/gqa_tq_scalar.c \
     src/transformer/batched_attn_avx2.c src/transformer/batched_attn_scalar.c \
     src/transformer/logits_avx2.c src/transformer/logits_scalar.c \
+    src/transformer/logits_policy.c \
     src/transformer/logits_backend.c src/transformer/logits.c \
     src/transformer/cpu_backend.c src/transformer/cpu.c \
     src/transformer/plan.c src/transformer/gpu_fallback.c \

@@ -217,8 +217,13 @@ if grep -n 'BnBlockQ8_0\|BnBlockQ6K\|bn_fp16_to_fp32\|gpu_exact_q[68]' src/trans
     fail=1
 fi
 
-if grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits.c >/dev/null 2>&1; then
-    echo "src/transformer/logits.c must use logits policy helpers for CPU tied-logits env vars"
+if grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits.c src/transformer/logits_backend.c >/dev/null 2>&1; then
+    echo "Logits orchestration/backend code must use logits policy helpers for CPU tied-logits env vars"
+    fail=1
+fi
+
+if ! grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits_policy.c >/dev/null 2>&1; then
+    echo "CPU tied-logits env compatibility policy must live in src/transformer/logits_policy.c"
     fail=1
 fi
 
