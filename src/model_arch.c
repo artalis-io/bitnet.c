@@ -320,6 +320,11 @@ int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c) {
            c->dim <= 2560;
 }
 
+int bn_model_arch_uses_small_cuda_dense_q8_native_shape(const BnConfig *c) {
+    return bn_model_arch_uses_small_cuda_dense_shape(c) &&
+           c->dim > 1024;
+}
+
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8) != 0) &&
            bn_model_arch_uses_small_cuda_dense_shape(c);

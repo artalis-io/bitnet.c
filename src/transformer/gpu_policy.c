@@ -532,7 +532,7 @@ int bn_transformer_gpu_cuda_matvec_fallback_kept(
     if (getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") == NULL &&
         !bn_model_arch_cpu_force_float_kquant(c))
         return 1;
-    if (c->dim > 2560 || c->dim <= 1024)
+    if (!bn_model_arch_uses_small_cuda_dense_q8_native_shape(c))
         return 1;
 
     const BnWeights *w = &m->weights;
