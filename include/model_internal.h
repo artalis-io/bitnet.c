@@ -3,6 +3,7 @@
 
 #include "model.h"
 #include "platform.h"
+#include <stddef.h>
 
 struct BnModelRuntime {
     BnThreadPool *pool;
@@ -20,5 +21,21 @@ struct BnModelIO {
 struct BnModelBackendState {
     BnBackendModel *backend;
 };
+
+int bn_model_quant_type_supported(int type);
+int bn_model_quant_uses_embedded_block_scale(int type);
+int bn_model_quant_uses_embedded_tensor_scale(int type);
+size_t bn_model_quant_embedded_tensor_scale_offset(int type,
+                                                   int rows,
+                                                   int cols);
+int bn_model_quant_tied_logits_uses_quant_path(int type);
+int bn_model_quant_logits_i8_cache_supported(int type);
+int bn_model_quant_is_dense_f32(int type);
+int bn_model_quant_can_convert_dense_to_f32(int type);
+int bn_model_quant_convert_dense_to_f32(int type,
+                                        const void *src,
+                                        float *dst,
+                                        int n);
+int bn_model_quant_dense_f32_type(void);
 
 #endif // BN_MODEL_INTERNAL_H

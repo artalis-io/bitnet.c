@@ -145,6 +145,11 @@ if grep -n 'bn_quant_format_uses_f16_logits_path\|bn_quant_format_tied_logits_us
     fail=1
 fi
 
+if grep -n 'bn_quant_format_tied_logits_uses_quant_path\|bn_quant_format_supports_logits_i8_cache' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use model policy helpers for logits quant-format policy"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_is_float_kquant_fallback_candidate' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use prefill policy helpers for float K-quant fallback policy"
     fail=1
@@ -452,6 +457,11 @@ fi
 
 if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q8_route' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
+    fail=1
+fi
+
+if grep -n 'bn_quant_format_supported\|bn_quant_format_uses_embedded_scale\|bn_quant_format_has_embedded_tensor_scale\|bn_quant_embedded_tensor_scale_offset\|bn_quant_format_is_f32\|bn_quant_format_can_convert_dense_to_f32\|bn_quant_format_convert_dense_to_f32\|bn_quant_format_dense_f32_type' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use model policy helpers for load-time quant-format policy"
     fail=1
 fi
 
