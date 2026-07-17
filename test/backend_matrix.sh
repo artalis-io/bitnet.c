@@ -580,6 +580,11 @@ if grep -n 'full_attn_interval\|c && c->n_experts > 0 && c->full_attn_interval >
     fail=1
 fi
 
+if grep -n 'full_attn_interval\|n_ssm = c->n_layers - n_attn' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
+    echo "GPU backends must compose model_arch helpers for hybrid activation sizing policy"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q8_route' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
     fail=1

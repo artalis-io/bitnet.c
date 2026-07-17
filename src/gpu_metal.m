@@ -18,6 +18,7 @@
 #include "gpu_policy.h"
 #include "gpu_shader.h"
 #include "model.h"
+#include "model_arch.h"
 #include "quant.h"
 #include "gguf.h"
 #include "platform.h"
@@ -799,9 +800,7 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
     if (!ctx || !c) return -1;
 
     /* Compute buffer sizes (same logic as wgpu) */
-    int n_attn = (c->full_attn_interval > 0)
-                     ? c->n_layers / c->full_attn_interval
-                     : c->n_layers;
+    int n_attn = bn_model_arch_attention_layer_count(c);
     int q_dim = c->n_heads * c->head_size;
     int xb_size = q_dim > c->dim ? q_dim : c->dim;
 
@@ -834,8 +833,8 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
         sizes[BN_GPU_BUF_MOE_OUT] = (size_t)c->dim * sizeof(float);
     }
 
-    if (c->full_attn_interval > 0 && c->ssm_inner_size > 0) {
-        int n_ssm = c->n_layers - n_attn;
+    if (bn_model_arch_uses_hybrid_ssm(c)) {
+        int n_ssm = bn_model_arch_ssm_layer_count(c);
         int num_v_heads = c->ssm_time_step_rank;
         int head_k_dim  = c->ssm_state_size;
         int head_v_dim  = c->ssm_inner_size / (num_v_heads > 0 ? num_v_heads : 1);
