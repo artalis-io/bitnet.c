@@ -347,6 +347,38 @@ int bn_gpu_policy_cuda_moe_route_batch_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH") != NULL;
 }
 
+int bn_gpu_policy_cuda_large_hybrid_attention_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_forced(void) {
+    return getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_prefill_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_prefill_chain_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_prefill_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL") != NULL;
+}
+
+int bn_gpu_policy_cuda_large_hybrid_argmax_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") != NULL;
+}
+
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget) {
     int max_mb = large_budget ? 512 : default_mb;

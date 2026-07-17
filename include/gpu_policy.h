@@ -90,6 +90,14 @@ int bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
 int bn_gpu_policy_cuda_moe_cache_prefill_enabled(void);
 int bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled(void);
 int bn_gpu_policy_cuda_moe_route_batch_debug_enabled(void);
+int bn_gpu_policy_cuda_large_hybrid_attention_enabled(void);
+int bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled(void);
+int bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_disabled(void);
+int bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_forced(void);
+int bn_gpu_policy_cuda_large_hybrid_prefill_enabled(void);
+int bn_gpu_policy_cuda_large_hybrid_prefill_chain_enabled(void);
+int bn_gpu_policy_cuda_large_hybrid_prefill_disabled(void);
+int bn_gpu_policy_cuda_large_hybrid_argmax_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,

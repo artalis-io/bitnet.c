@@ -462,11 +462,11 @@ int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     if (!bn_model_arch_uses_large_dense_shape(c) || !w ||
-        getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") != NULL ||
-        getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
+        bn_gpu_policy_cuda_large_hybrid_attention_enabled() ||
+        bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_disabled())
         return 0;
-    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
-        getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL)
+    if (!bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled() &&
+        !bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_forced())
         return 0;
     if (bn_model_arch_uses_hybrid_ssm(c))
         return 1;
@@ -521,7 +521,7 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
-           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL") == NULL;
+           !bn_gpu_policy_cuda_large_hybrid_prefill_enabled();
 }
 
 int bn_transformer_gpu_cuda_matvec_fallback_kept(
@@ -609,11 +609,11 @@ int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
     if (!c || !bn_transformer_gpu_backend_is_cuda(gpu) ||
         !bn_model_arch_uses_large_dense_hybrid_ssm(c))
         return 0;
-    if (getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL)
+    if (bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled())
         return 1;
-    return getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN") == NULL &&
-           getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE") == NULL &&
-           getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE") != NULL;
+    return !bn_gpu_policy_cuda_large_hybrid_attention_enabled() &&
+           !bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_disabled() &&
+           bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_forced();
 }
 
 int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
@@ -621,7 +621,7 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
-           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN") == NULL;
+           !bn_gpu_policy_cuda_large_hybrid_prefill_chain_enabled();
 }
 
 static int gpu_cpu_decode_fallback_requested(void) {
@@ -902,7 +902,7 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
 }
 
 int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL") != NULL;
+    return bn_gpu_policy_cuda_large_hybrid_prefill_disabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
@@ -1148,7 +1148,7 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
     return want_argmax &&
            bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(c, w) &&
-           getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX") == NULL;
+           !bn_gpu_policy_cuda_large_hybrid_argmax_enabled();
 }
 
 static int gpu_policy_env_int(const char *name, int default_value) {

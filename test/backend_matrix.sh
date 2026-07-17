@@ -510,6 +510,11 @@ if grep -n 'getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_P
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN")\|getenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE")\|getenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE")\|getenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE")\|getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL")\|getenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN")\|getenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL")\|getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for CUDA large-hybrid env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
     echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
     fail=1
