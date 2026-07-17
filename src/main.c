@@ -753,9 +753,9 @@ int main(int argc, char **argv) {
 
     if ((args.webgpu || args.metal || args.cuda) && !args.max_seq_len_set) {
         int model_seq_len = gguf_get_arch_u32(gf, "context_length");
-        int n_experts = gguf_get_arch_u32(gf, "expert_count");
         if (bn_gpu_policy_auto_caps_sequence(args.webgpu, args.cuda,
-                                             args.metal, n_experts > 0,
+                                             args.metal,
+                                             bn_model_arch_gguf_uses_moe(gf),
                                              model_seq_len,
                                              BN_GPU_DEFAULT_MAXSEQ)) {
             args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;

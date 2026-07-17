@@ -190,6 +190,44 @@ static BnGGUFKeyValue make_u32_kv(char *key, uint32_t value) {
     return kv;
 }
 
+static BnGGUFKeyValue make_str_kv(char *key, char *value) {
+    BnGGUFKeyValue kv = {0};
+    kv.key = key;
+    kv.type = BN_GGUF_TYPE_STRING;
+    kv.value.str.str = value;
+    kv.value.str.len = strlen(value);
+    return kv;
+}
+
+static void test_model_arch_gguf_uses_moe(void) {
+    printf("test_model_arch_gguf_uses_moe... ");
+
+    BnGGUFKeyValue qwen_moe_kvs[2];
+    qwen_moe_kvs[0] = make_str_kv("general.architecture", "qwen35moe");
+    qwen_moe_kvs[1] = make_u32_kv("qwen35moe.expert_count", 4);
+    BnGGUFFile qwen_moe = {0};
+    qwen_moe.n_kv = 2;
+    qwen_moe.kvs = qwen_moe_kvs;
+    assert(bn_model_arch_gguf_uses_moe(&qwen_moe));
+
+    BnGGUFKeyValue gemma_dense_kvs[2];
+    gemma_dense_kvs[0] = make_str_kv("general.architecture", "gemma4");
+    gemma_dense_kvs[1] = make_u32_kv("gemma4.expert_count", 0);
+    BnGGUFFile gemma_dense = {0};
+    gemma_dense.n_kv = 2;
+    gemma_dense.kvs = gemma_dense_kvs;
+    assert(!bn_model_arch_gguf_uses_moe(&gemma_dense));
+
+    BnGGUFKeyValue fallback_kvs[1];
+    fallback_kvs[0] = make_u32_kv("llama.expert_count", 2);
+    BnGGUFFile fallback = {0};
+    fallback.n_kv = 1;
+    fallback.kvs = fallback_kvs;
+    assert(bn_model_arch_gguf_uses_moe(&fallback));
+
+    printf("PASSED\n");
+}
+
 static void test_qwen2moe_arch_config(void) {
     printf("test_qwen2moe_arch_config... ");
 
@@ -287,6 +325,7 @@ int main(void) {
     test_expert_map_split();
     test_expert_map_fused_gate_up();
     test_moe_config_compat();
+    test_model_arch_gguf_uses_moe();
     test_qwen2moe_arch_config();
     test_swiglu();
     test_route_uniform();
