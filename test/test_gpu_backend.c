@@ -611,6 +611,24 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV");
     unsetenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK");
 
+    unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
+    unsetenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
+    unsetenv("BN_GPU_CPU_ATTN_LAYER");
+    unsetenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+    assert(!bn_gpu_policy_cpu_decode_fallback_requested());
+    setenv("BN_GPU_CPU_FALLBACK_LAYER", "1", 1);
+    assert(bn_gpu_policy_cpu_decode_fallback_requested());
+    unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
+    setenv("BN_GPU_CPU_FALLBACK_FROM_LAYER", "1", 1);
+    assert(bn_gpu_policy_cpu_decode_fallback_requested());
+    unsetenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
+    setenv("BN_GPU_CPU_ATTN_LAYER", "1", 1);
+    assert(bn_gpu_policy_cpu_decode_fallback_requested());
+    unsetenv("BN_GPU_CPU_ATTN_LAYER");
+    setenv("BN_GPU_CPU_ATTN_FROM_LAYER", "1", 1);
+    assert(bn_gpu_policy_cpu_decode_fallback_requested());
+    unsetenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+
     unsetenv("BN_GPU_MAX_STORAGE_BINDING_MB");
     assert(bn_gpu_policy_max_storage_binding_bytes(0) ==
            128u * 1024u * 1024u);

@@ -423,6 +423,13 @@ int bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled(void) {
     return getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK") != NULL;
 }
 
+int bn_gpu_policy_cpu_decode_fallback_requested(void) {
+    return getenv("BN_GPU_CPU_FALLBACK_LAYER") ||
+           getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER") ||
+           getenv("BN_GPU_CPU_ATTN_LAYER") ||
+           getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+}
+
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget) {
     int max_mb = large_budget ? 512 : default_mb;

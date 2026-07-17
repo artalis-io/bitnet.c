@@ -106,6 +106,7 @@ int bn_gpu_policy_prefill_matmul_disabled(void);
 int bn_gpu_policy_prefill_matmul_enabled(void);
 int bn_gpu_policy_cuda_prefill_direct_kv_disabled(void);
 int bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled(void);
+int bn_gpu_policy_cpu_decode_fallback_requested(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
