@@ -1019,20 +1019,20 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     if (!gpu || !c || !logits || !want_argmax || need_logits ||
         !gpu->matvec_argmax_activation ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
-        getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL ||
+        bn_gpu_policy_cuda_logits_argmax_disabled() ||
         !bn_backend_quant_supports_q6k_logits_refine(logits->type))
         return 0;
 
     if (!bn_model_arch_uses_moe(c)) {
         return logits->rows > 262144 ||
-               getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
+               bn_gpu_policy_cuda_dense_logits_argmax_enabled();
     }
     if (bn_model_arch_uses_all_active_two_expert_moe(c, c->dim))
         return 1;
-    if (getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL)
+    if (bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled())
         return 1;
     return logits->cols == 1536 &&
-           getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") == NULL;
+           !bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled();
 }
 
 int bn_transformer_gpu_cuda_moe_decode_cacheable(

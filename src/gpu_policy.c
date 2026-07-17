@@ -241,6 +241,22 @@ int bn_gpu_policy_cuda_q4_q8_decode_cache_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL;
 }
 
+int bn_gpu_policy_cuda_logits_argmax_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL;
+}
+
+int bn_gpu_policy_cuda_dense_logits_argmax_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
+}
+
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget) {
     int max_mb = large_budget ? 512 : default_mb;

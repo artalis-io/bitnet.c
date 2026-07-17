@@ -495,6 +495,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_LOGITS_CACHE")\|getenv("BN_CUDA_ENABLE_MOE_DE
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX")\|getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for CUDA logits argmax env vars"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
     echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
     fail=1
