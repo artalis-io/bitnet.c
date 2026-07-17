@@ -1,6 +1,7 @@
 #include "gpu_internal.h"
 #include "gpu_policy.h"
 #include "../gpu_shader_ir_internal.h"
+#include "../gpu_quant_lowering_internal.h"
 #include "backend_quant.h"
 #include "model_arch.h"
 #include <stdio.h>
@@ -209,6 +210,10 @@ int bn_transformer_gpu_moe_gateup_split_supported(
            map->up_type == map->gate_type &&
            map->gate_rows == map->up_rows &&
            map->gate_cols == map->up_cols;
+}
+
+int bn_transformer_gpu_moe_gateup_split_op_code(int tensor_type) {
+    return bn_gpu_quant_split_op_code(tensor_type);
 }
 
 int bn_transformer_gpu_dense_gateup_exact_split_supported(

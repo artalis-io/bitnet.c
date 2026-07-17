@@ -8,7 +8,6 @@
 #include "../src/transformer/gpu_internal.h"
 #include "../src/gpu_shader.h"
 #include "transformer_plan_internal.h"
-#include "../src/gpu_quant_lowering_internal.h"
 #include "gpu_policy.h"
 #include "model_arch.h"
 #include "quant.h"
@@ -1901,15 +1900,15 @@ static void test_gpu_op_kind_mapping(void) {
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_SSM_DELTA) == BN_GPU_OP_SSM);
     assert(bn_gpu_op_kind_from_code(99999) == BN_GPU_OP_UNKNOWN);
     assert(bn_gpu_op_kind_from_code(BN_GPU_CODE_FLASH_ATTN) == BN_GPU_OP_ATTENTION);
-    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
+    assert(bn_transformer_gpu_moe_gateup_split_op_code(BN_GGUF_TENSOR_Q4_0) ==
            BN_GPU_CODE_MATVEC_SPLIT);
-    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q8_0) ==
+    assert(bn_transformer_gpu_moe_gateup_split_op_code(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CODE_Q8_MATVEC_SPLIT);
-    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q5_K) ==
+    assert(bn_transformer_gpu_moe_gateup_split_op_code(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CODE_Q5K_MATVEC_SPLIT);
-    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
+    assert(bn_transformer_gpu_moe_gateup_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CODE_Q4K_MATVEC_SPLIT);
-    assert(bn_gpu_quant_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
+    assert(bn_transformer_gpu_moe_gateup_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
 
     BnGPUOp op;
     memset(&op, 0, sizeof(op));
