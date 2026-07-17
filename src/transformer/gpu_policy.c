@@ -1151,37 +1151,12 @@ BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     int n_layers = c ? c->n_layers : 0;
     BnTransformerGPUQ4Q8LayerPolicy policy = {
-        .from_layer = -1,
-        .to_layer = -1,
-        .attn_only = getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL,
-        .ffn_only = getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL,
+        .from_layer = bn_gpu_policy_q4_q8_from_layer_or_default(n_layers),
+        .to_layer = bn_gpu_policy_q4_q8_to_layer_or_default(
+            n_layers, bn_gpu_policy_metal_q4_prepared_enabled()),
+        .attn_only = bn_gpu_policy_q4_q8_attn_only_enabled(),
+        .ffn_only = bn_gpu_policy_q4_q8_ffn_only_enabled(),
     };
-
-    const char *env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
-    if (env) {
-        policy.from_layer = atoi(env);
-    } else if (getenv("BN_GPU_Q4_Q8")) {
-        policy.from_layer = n_layers - 1;
-    }
-
-    env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
-    if (env) {
-        policy.to_layer = atoi(env);
-    } else {
-        env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
-        if (env) {
-            int tail_native = atoi(env);
-            if (tail_native > 0) {
-                policy.to_layer = n_layers - tail_native - 1;
-                if (policy.to_layer < -1)
-                    policy.to_layer = -1;
-            }
-        } else if (getenv("BN_GPU_Q4_Q8") &&
-                   !bn_gpu_policy_metal_q4_prepared_enabled() &&
-                   n_layers > 33) {
-            policy.to_layer = n_layers - 33 - 1;
-        }
-    }
     return policy;
 }
 

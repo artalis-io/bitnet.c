@@ -750,6 +750,11 @@ if grep -n 'getenv("BN_GPU_DEBUG_FALLBACK")\|getenv("BN_GPU_FORCE_GRAPH")' src/t
     fail=1
 fi
 
+if grep -n 'getenv("BN_GPU_Q4_Q8[^"]*")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for Q4/Q8 layer env vars"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT\|BN_CUDA_DISABLE_SHARED_EXPERT_GATE' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for shared MoE compatibility env vars"
     fail=1
