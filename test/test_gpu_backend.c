@@ -9,6 +9,7 @@
 #include "gguf.h"
 #include "sh_arena.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -458,6 +459,27 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_gpu_policy_cuda_moe_prefers_quant_only(
         BN_GGUF_TENSOR_Q4_K));
+
+    unsetenv("BN_CUDA_LAYOUT_RESERVE_MB");
+    unsetenv("BN_CUDA_MOE_FULL_RESERVE_MB");
+    assert(bn_gpu_policy_cuda_layout_reserve_bytes() ==
+           512u * 1024u * 1024u);
+    assert(bn_gpu_policy_cuda_moe_full_reserve_bytes() ==
+           512u * 1024u * 1024u);
+    setenv("BN_CUDA_LAYOUT_RESERVE_MB", "7", 1);
+    setenv("BN_CUDA_MOE_FULL_RESERVE_MB", "9", 1);
+    assert(bn_gpu_policy_cuda_layout_reserve_bytes() ==
+           7u * 1024u * 1024u);
+    assert(bn_gpu_policy_cuda_moe_full_reserve_bytes() ==
+           9u * 1024u * 1024u);
+    setenv("BN_CUDA_LAYOUT_RESERVE_MB", "bad", 1);
+    assert(bn_gpu_policy_cuda_layout_reserve_bytes() ==
+           512u * 1024u * 1024u);
+    setenv("BN_CUDA_MOE_FULL_RESERVE_MB",
+           "18446744073709551615", 1);
+    assert(bn_gpu_policy_cuda_moe_full_reserve_bytes() == SIZE_MAX);
+    unsetenv("BN_CUDA_LAYOUT_RESERVE_MB");
+    unsetenv("BN_CUDA_MOE_FULL_RESERVE_MB");
 
     unsetenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");

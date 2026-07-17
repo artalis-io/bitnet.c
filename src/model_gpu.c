@@ -224,17 +224,6 @@ static int can_use_cuda_moe_routed_ffn_model(const BnConfig *c,
     return moe_layers > 0;
 }
 
-static size_t env_mb_or_default(const char *name, size_t def) {
-    const char *s = getenv(name);
-    if (!s || !*s)
-        return def;
-    char *end = NULL;
-    unsigned long long v = strtoull(s, &end, 10);
-    if (!end || *end != '\0')
-        return def;
-    return (size_t)v;
-}
-
 static size_t qweight_pair_upload_bytes(const BnQWeight *a,
                                         const BnQWeight *b);
 static size_t qweight_triple_upload_bytes(const BnQWeight *a,
@@ -251,10 +240,7 @@ static int optional_layout_fits_memory(BnGPUBackend *gpu, size_t bytes,
     size_t total_bytes = 0;
     if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve_mb = env_mb_or_default("BN_CUDA_LAYOUT_RESERVE_MB", 512);
-    size_t reserve = reserve_mb > SIZE_MAX / (1024u * 1024u)
-        ? SIZE_MAX
-        : reserve_mb * 1024u * 1024u;
+    size_t reserve = bn_gpu_policy_cuda_layout_reserve_bytes();
     if (free_bytes > bytes && free_bytes - bytes >= reserve)
         return 1;
 
@@ -605,10 +591,7 @@ static int cuda_moe_all_fits_memory(BnGPUBackend *gpu,
     size_t total_bytes = 0;
     if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve_mb = env_mb_or_default("BN_CUDA_MOE_FULL_RESERVE_MB", 512);
-    size_t reserve = reserve_mb > SIZE_MAX / (1024u * 1024u)
-        ? SIZE_MAX
-        : reserve_mb * 1024u * 1024u;
+    size_t reserve = bn_gpu_policy_cuda_moe_full_reserve_bytes();
     if (free_bytes > projected && free_bytes - projected >= reserve)
         return 1;
     fprintf(stderr,
@@ -644,10 +627,7 @@ static int cuda_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
     size_t total_bytes = 0;
     if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve_mb = env_mb_or_default("BN_CUDA_MOE_FULL_RESERVE_MB", 512);
-    size_t reserve = reserve_mb > SIZE_MAX / (1024u * 1024u)
-        ? SIZE_MAX
-        : reserve_mb * 1024u * 1024u;
+    size_t reserve = bn_gpu_policy_cuda_moe_full_reserve_bytes();
     if (free_bytes > projected && free_bytes - projected >= reserve)
         return 1;
     if (bn_gpu_policy_cuda_moe_fit_debug_enabled())
@@ -674,10 +654,7 @@ static int cuda_moe_f16_cache_layers_that_fit(BnGPUBackend *gpu,
     size_t total_bytes = 0;
     if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
         return 0;
-    size_t reserve_mb = env_mb_or_default("BN_CUDA_MOE_FULL_RESERVE_MB", 512);
-    size_t reserve = reserve_mb > SIZE_MAX / (1024u * 1024u)
-        ? SIZE_MAX
-        : reserve_mb * 1024u * 1024u;
+    size_t reserve = bn_gpu_policy_cuda_moe_full_reserve_bytes();
     size_t used = 0;
     if (add_size_checked(&used, base) != 0 ||
         add_size_checked(&used, quant_need) != 0 ||

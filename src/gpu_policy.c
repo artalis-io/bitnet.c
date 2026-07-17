@@ -149,6 +149,33 @@ int bn_gpu_policy_cuda_moe_prefers_quant_only(int tensor_type) {
     return bn_quant_format_cuda_moe_prefers_quant_only(tensor_type);
 }
 
+static size_t env_mb_or_default(const char *name, size_t def) {
+    const char *s = getenv(name);
+    if (!s || !*s)
+        return def;
+    char *end = NULL;
+    unsigned long long v = strtoull(s, &end, 10);
+    if (!end || *end != '\0')
+        return def;
+    return (size_t)v;
+}
+
+static size_t mb_to_bytes_saturating(size_t mb) {
+    return mb > SIZE_MAX / (1024u * 1024u)
+        ? SIZE_MAX
+        : mb * 1024u * 1024u;
+}
+
+size_t bn_gpu_policy_cuda_layout_reserve_bytes(void) {
+    return mb_to_bytes_saturating(
+        env_mb_or_default("BN_CUDA_LAYOUT_RESERVE_MB", 512));
+}
+
+size_t bn_gpu_policy_cuda_moe_full_reserve_bytes(void) {
+    return mb_to_bytes_saturating(
+        env_mb_or_default("BN_CUDA_MOE_FULL_RESERVE_MB", 512));
+}
+
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void) {
     return getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL") == NULL;
 }
