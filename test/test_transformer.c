@@ -1621,8 +1621,13 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX");
     c.n_experts = 2;
     c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
     assert(bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 0, 0));
+    c.moe_intermediate_size = 4095;
+    assert(!bn_transformer_gpu_matvec_argmax_enabled(
+        &gpu, &c, &logits, 1, 0, 0));
+    c.moe_intermediate_size = 4096;
     assert(!bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 1, 0));
     setenv("BN_GPU_CPU_LOGITS", "1", 1);
@@ -1731,6 +1736,32 @@ static void test_gpu_policy_helpers(void) {
     assert(route_to == 7);
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+
+    c.n_experts = 2;
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
+    c.dim = 2048;
+    c.moe_norm_topk_prob = 1;
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2");
+    setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
+    assert(bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
+        &c, (void *)1, NULL));
+    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_router(
+        &c, (void *)2, (void *)1, 1, 0) == (void *)1);
+    c.n_experts_active = 1;
+    assert(!bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
+        &c, (void *)1, NULL));
+    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_router(
+        &c, (void *)2, (void *)1, 1, 0) == (void *)2);
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4095;
+    assert(!bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
+        &c, (void *)1, NULL));
+    c.moe_intermediate_size = 4096;
+    assert(!bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
+        &c, (void *)1, (void *)3));
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
 
     printf("PASSED\n");
 }

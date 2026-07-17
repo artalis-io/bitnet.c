@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
+#include "model_arch.h"
 #include "platform.h"
 #include "quant.h"
 #include "quant_dispatch_internal.h"
@@ -555,7 +556,7 @@ static int gpu_resolve_moe_all2_resources(BnGPUMoEResources *out,
     if (!out || !storage || !m || !sess || !lw || !router_diff || !temps)
         return -1;
     BnConfig *c = &m->config;
-    if (c->n_experts != 2 || c->n_experts_active != 2)
+    if (!bn_model_arch_uses_all_active_two_expert_moe(c, c->dim))
         return -1;
     memset(out, 0, sizeof(*out));
     memset(temps, 0, sizeof(*temps));

@@ -1024,7 +1024,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         return logits->rows > 262144 ||
                getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
     }
-    if (c->n_experts == 2 && c->n_experts_active == 2)
+    if (bn_model_arch_uses_all_active_two_expert_moe(c, c->dim))
         return 1;
     if (getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL)
         return 1;
@@ -1335,8 +1335,7 @@ int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
     void *router_diff,
     void *moe_gate_all) {
     return router_diff &&
-           c && c->n_experts == 2 &&
-           c->n_experts_active == 2 &&
+           bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0) &&
            c->moe_norm_topk_prob &&
            !moe_gate_all &&
            getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") != NULL &&
@@ -1394,8 +1393,7 @@ void *bn_transformer_gpu_cuda_all2_q4q6_moe_router(
     int route_layer_selected,
     int exact_gpu_route) {
     if (router_diff &&
-        c && c->n_experts == 2 &&
-        c->n_experts_active == 2 &&
+        bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0) &&
         route_layer_selected &&
         getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2") == NULL &&
         !exact_gpu_route)
@@ -1409,10 +1407,7 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
     int dim,
     int allow_q4_down) {
     if (!c || !map ||
-        c->n_experts != 2 ||
-        c->n_experts_active != 2 ||
-        c->moe_intermediate_size < 4096 ||
-        dim > 2048 ||
+        !bn_model_arch_uses_all_active_two_expert_moe(c, dim) ||
         !bn_transformer_gpu_moe_routed_q4_down(map, allow_q4_down) ||
         gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
                         "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN"))

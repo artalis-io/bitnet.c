@@ -8,6 +8,7 @@
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"
@@ -1192,8 +1193,8 @@ static float *prefill_logits(BnModel *m, BnSession *sess) {
 static int prefill_use_shared_all2_decode_fallback(const BnModel *m) {
     if (!m)
         return 0;
-    if (m->config.n_experts != 2 ||
-        m->config.n_experts_active != 2 ||
+    if (!bn_model_arch_uses_all_active_two_expert_moe(&m->config,
+                                                      m->config.dim) ||
         !m->config.has_shared_expert)
         return 0;
     return bn_model_gpu(m) == NULL;
