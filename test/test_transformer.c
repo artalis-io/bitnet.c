@@ -485,6 +485,24 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_matvec_exact_q6k_flags(
                BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_transformer_gpu_float_buffer_type() == BN_GGUF_TENSOR_F32);
+    assert(bn_transformer_gpu_exact_silu_flags(
+               BN_GGUF_TENSOR_Q8_0, 1) == BN_GPU_OP_FLAG_EXACT_SILU);
+    assert(bn_transformer_gpu_exact_silu_flags(
+               BN_GGUF_TENSOR_Q8_0, 0) == 0);
+    assert(bn_transformer_gpu_exact_silu_flags(
+               BN_GGUF_TENSOR_Q4_0, 1) == 0);
+    assert(bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_transformer_gpu_stacked_pair_same_format(
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_transformer_gpu_stacked_pair_same_format(
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
+    assert(bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 256));
+    assert(!bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 128));
+    assert(!bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, 256));
 
     setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     assert(!bn_transformer_gpu_fused_gateup_silu_policy_allows(

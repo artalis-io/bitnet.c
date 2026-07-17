@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "gpu_policy.h"
+#include "../gpu_shader_ir_internal.h"
 #include "backend_quant.h"
 #include "model_arch.h"
 #include <stdio.h>
@@ -78,6 +79,29 @@ uint32_t bn_transformer_gpu_matvec_exact_q6k_flags(int tensor_type,
 
 int bn_transformer_gpu_float_buffer_type(void) {
     return bn_backend_quant_gpu_float_buffer_type();
+}
+
+uint32_t bn_transformer_gpu_exact_silu_flags(int tensor_type,
+                                             int use_silu) {
+    return use_silu && bn_backend_quant_gpu_requires_exact_silu(tensor_type)
+        ? BN_GPU_OP_FLAG_EXACT_SILU
+        : 0u;
+}
+
+int bn_transformer_gpu_prefers_gateup_split(int tensor_type) {
+    return bn_backend_quant_gpu_prefers_gateup_split(tensor_type);
+}
+
+int bn_transformer_gpu_stacked_pair_same_format(int left_type,
+                                                int right_type) {
+    return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
+}
+
+int bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(int gate_type,
+                                                        int up_type,
+                                                        int cols) {
+    return cols % 256 == 0 &&
+           bn_backend_quant_moe_gateup_q4(gate_type, up_type);
 }
 
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu) {

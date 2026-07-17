@@ -1030,13 +1030,10 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     void *ffn_sub_norm = res ? res->ffn_sub_norm : NULL;
 
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
-        uint32_t silu_flags =
-            (ffn_plan->activation != 1 &&
-             bn_quant_format_gpu_requires_exact_silu(lw->ffn.ffn_gate.type))
-            ? BN_GPU_OP_FLAG_EXACT_SILU
-            : 0u;
+        uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
+            lw->ffn.ffn_gate.type, ffn_plan->activation != 1);
         int prefer_gateup_split =
-            bn_quant_format_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
+            bn_transformer_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
             c && c->n_experts > 0 && c->full_attn_interval > 0;
         int use_fused_gateup = !prefer_gateup_split &&
                                gateup_stacked &&
@@ -1109,11 +1106,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         BnGPUIRActivationKind act_kind = (ffn_plan->activation == 1)
             ? BN_GPU_IR_ACTIVATION_RELU2
             : BN_GPU_IR_ACTIVATION_SILU;
-        uint32_t silu_flags =
-            (act_kind == BN_GPU_IR_ACTIVATION_SILU &&
-             bn_quant_format_gpu_requires_exact_silu(lw->ffn.ffn_up.type))
-            ? BN_GPU_OP_FLAG_EXACT_SILU
-            : 0u;
+        uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
+            lw->ffn.ffn_up.type, act_kind == BN_GPU_IR_ACTIVATION_SILU);
         emit_context_activation_flags(
             ctx, BN_GPU_VALUE_HB, -1, hidden_dim, 0, act_kind, silu_flags);
     }
@@ -1205,7 +1199,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                        lw->attn.wq.rows == q_dim &&
                        lw->attn.wk.rows == kv_dim &&
                        lw->attn.wq.cols == lw->attn.wk.cols &&
-                       bn_quant_format_pair_same_format(
+                       bn_transformer_gpu_stacked_pair_same_format(
                            lw->attn.wq.type, lw->attn.wk.type) &&
                        bn_gpu_quant_split_op_code(lw->attn.wq.type) !=
                            BN_GPU_CODE_UNKNOWN &&
@@ -1745,19 +1739,19 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
         int shared_q4_q8_eligible =
-            bn_quant_format_supports_moe_q4_gateup(lw->shared.shared_gate.type,
-                                           lw->shared.shared_up.type) &&
-            lw->shared.shared_gate.cols % 256 == 0;
+            bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+                lw->shared.shared_gate.type, lw->shared.shared_up.type,
+                lw->shared.shared_gate.cols);
         int use_shared_q4_q8 =
             bn_transformer_gpu_shared_q4_q8_dot_enabled(
                 shared_q4_q8_eligible);
         int prefer_shared_gateup_split =
-            bn_quant_format_gpu_prefers_gateup_split(
+            bn_transformer_gpu_prefers_gateup_split(
                 lw->shared.shared_gate.type);
         int use_shared_fused_gateup =
             !prefer_shared_gateup_split &&
             shared->shared_gateup_stacked &&
-            bn_quant_format_pair_same_format(
+            bn_transformer_gpu_stacked_pair_same_format(
                 lw->shared.shared_gate.type, lw->shared.shared_up.type) &&
             lw->shared.shared_gate.rows == lw->shared.shared_up.rows &&
             lw->shared.shared_gate.cols == lw->shared.shared_up.cols &&

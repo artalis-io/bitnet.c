@@ -171,6 +171,14 @@ uint32_t bn_transformer_gpu_matvec_q8k_dot_flags(int tensor_type,
 uint32_t bn_transformer_gpu_matvec_exact_q6k_flags(int tensor_type,
                                                    int enabled);
 int bn_transformer_gpu_float_buffer_type(void);
+uint32_t bn_transformer_gpu_exact_silu_flags(int tensor_type,
+                                             int use_silu);
+int bn_transformer_gpu_prefers_gateup_split(int tensor_type);
+int bn_transformer_gpu_stacked_pair_same_format(int left_type,
+                                                int right_type);
+int bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(int gate_type,
+                                                        int up_type,
+                                                        int cols);
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type);

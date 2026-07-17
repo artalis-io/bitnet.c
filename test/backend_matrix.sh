@@ -149,11 +149,16 @@ for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c
 do
-    if grep -n 'bn_backend_quant_gpu_requires_exact_silu\|bn_backend_quant_gpu_prefers_gateup_split\|bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_backend_quant_can_gpu_gateup_split_activation' "$file" >/dev/null 2>&1; then
+    if grep -n 'bn_quant_format_gpu_requires_exact_silu\|bn_backend_quant_gpu_requires_exact_silu\|bn_quant_format_gpu_prefers_gateup_split\|bn_backend_quant_gpu_prefers_gateup_split\|bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_backend_quant_can_gpu_gateup_split_activation' "$file" >/dev/null 2>&1; then
         echo "$file must use quant format GPU behavior helpers for quant-format policy"
         fail=1
     fi
 done
+
+if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format\|bn_quant_format_supports_moe_q4_gateup\|bn_backend_quant_moe_gateup_q4' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use GPU policy helpers for stacked pair and shared gate-up quant-format policy"
+    fail=1
+fi
 
 for file in \
     src/transformer/gpu_emit.c \
