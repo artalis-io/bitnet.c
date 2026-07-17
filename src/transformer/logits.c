@@ -116,7 +116,7 @@ static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
     if (!m || !s || !bn_transformer_logits_q6_refine_supported(W))
         return;
 
-    int refine_top = bn_transformer_logits_cpu_tied_q6k_refine_top();
+    int refine_top = bn_transformer_logits_cpu_tied_kquant_refine_top();
     if (refine_top <= 0) return;
 
     int ids[128];
@@ -135,7 +135,7 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
     if (!m || !s || !bn_transformer_logits_q6_refine_supported(W))
         return;
 
-    int top_n = bn_transformer_logits_cpu_tied_q6k_hybrid_top();
+    int top_n = bn_transformer_logits_cpu_tied_kquant_hybrid_top();
     if (top_n <= 0) return;
 
     int ids[128];

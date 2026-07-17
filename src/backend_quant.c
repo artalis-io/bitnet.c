@@ -1,6 +1,24 @@
 #include "backend_quant.h"
 #include <stdlib.h>
 
+static int backend_quant_env_top_n(const char *name, int min_value) {
+    const char *env = getenv(name);
+    if (!env)
+        return 0;
+    int top_n = atoi(env);
+    if (top_n < min_value)
+        return 0;
+    return top_n > 128 ? 128 : top_n;
+}
+
+int bn_backend_quant_cpu_tied_q6k_refine_top(void) {
+    return backend_quant_env_top_n("BN_CPU_TIED_Q6K_REFINE_TOP", 1);
+}
+
+int bn_backend_quant_cpu_tied_q6k_hybrid_top(void) {
+    return backend_quant_env_top_n("BN_CPU_TIED_Q6K_HYBRID_TOP", 2);
+}
+
 void bn_backend_quant_matmul_gpu_buf(float *out, const BnQWeight *W,
                                      void *W_buf, const float *X,
                                      int n_tokens, int8_t *x_q_buf,

@@ -1523,6 +1523,24 @@ static void test_quant_registry(void) {
            BN_GGUF_TENSOR_F16);
     assert(bn_quant_format_tied_logits_f32_weight_type() ==
            BN_GGUF_TENSOR_F32);
+    unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
+    unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
+    assert(bn_backend_quant_cpu_tied_q6k_refine_top() == 0);
+    assert(bn_backend_quant_cpu_tied_q6k_hybrid_top() == 0);
+    setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "1", 1);
+    setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "2", 1);
+    assert(bn_backend_quant_cpu_tied_q6k_refine_top() == 1);
+    assert(bn_backend_quant_cpu_tied_q6k_hybrid_top() == 2);
+    setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "0", 1);
+    setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "1", 1);
+    assert(bn_backend_quant_cpu_tied_q6k_refine_top() == 0);
+    assert(bn_backend_quant_cpu_tied_q6k_hybrid_top() == 0);
+    setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "256", 1);
+    setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "256", 1);
+    assert(bn_backend_quant_cpu_tied_q6k_refine_top() == 128);
+    assert(bn_backend_quant_cpu_tied_q6k_hybrid_top() == 128);
+    unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
+    unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
     assert(bn_quant_format_gpu_float_buffer_type() ==
            BN_GGUF_TENSOR_F32);
     assert(bn_quant_format_dense_f32_type() == BN_GGUF_TENSOR_F32);

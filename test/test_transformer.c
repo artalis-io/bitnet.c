@@ -1857,23 +1857,23 @@ static void test_logits_policy_helpers(void) {
     printf("test_logits_policy_helpers... ");
 
     unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
-    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 0);
+    assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 0);
     setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "0", 1);
-    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 0);
+    assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 0);
     setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "7", 1);
-    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 7);
+    assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 7);
     setenv("BN_CPU_TIED_Q6K_REFINE_TOP", "200", 1);
-    assert(bn_transformer_logits_cpu_tied_q6k_refine_top() == 128);
+    assert(bn_transformer_logits_cpu_tied_kquant_refine_top() == 128);
     unsetenv("BN_CPU_TIED_Q6K_REFINE_TOP");
 
     unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
-    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 0);
+    assert(bn_transformer_logits_cpu_tied_kquant_hybrid_top() == 0);
     setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "1", 1);
-    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 0);
+    assert(bn_transformer_logits_cpu_tied_kquant_hybrid_top() == 0);
     setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "9", 1);
-    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 9);
+    assert(bn_transformer_logits_cpu_tied_kquant_hybrid_top() == 9);
     setenv("BN_CPU_TIED_Q6K_HYBRID_TOP", "200", 1);
-    assert(bn_transformer_logits_cpu_tied_q6k_hybrid_top() == 128);
+    assert(bn_transformer_logits_cpu_tied_kquant_hybrid_top() == 128);
     unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
 
     unsetenv("BN_CPU_NATIVE_TIED_LOGITS");

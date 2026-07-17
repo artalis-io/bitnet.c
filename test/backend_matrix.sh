@@ -325,7 +325,17 @@ if grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NATIV
     fail=1
 fi
 
-if ! grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP\|BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits_policy.c >/dev/null 2>&1; then
+if grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP' src/transformer/logits_policy.c >/dev/null 2>&1; then
+    echo "Q6K tied-logits top-N policy must live in backend quant policy"
+    fail=1
+fi
+
+if ! grep -n 'BN_CPU_TIED_Q6K_REFINE_TOP\|BN_CPU_TIED_Q6K_HYBRID_TOP' src/backend_quant.c >/dev/null 2>&1; then
+    echo "Q6K tied-logits top-N policy must live in src/backend_quant.c"
+    fail=1
+fi
+
+if ! grep -n 'BN_CPU_NATIVE_TIED_LOGITS' src/transformer/logits_policy.c >/dev/null 2>&1; then
     echo "CPU tied-logits env compatibility policy must live in src/transformer/logits_policy.c"
     fail=1
 fi
