@@ -157,6 +157,35 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     const BnQWeight *up,
     int activation,
     int split_op_code);
+int bn_transformer_gpu_packed_qkv_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *qkv,
+    int use_packed_qkv,
+    int kv_f16,
+    int split_op_code);
+int bn_transformer_gpu_qkv_split_standard_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    int split_op_code);
+int bn_transformer_gpu_qkv_split_q8_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    int split_op_code);
+int bn_transformer_gpu_qkv_split_q5_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    int split_op_code);
+int bn_transformer_gpu_qk_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    const BnQWeight *k,
+    int q_dim,
+    int kv_dim,
+    int split_op_code);
+int bn_transformer_gpu_ssm_qkvz_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *qkv,
+    int split_op_code);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);

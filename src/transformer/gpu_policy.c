@@ -215,6 +215,65 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
            bn_transformer_gpu_can_matvec_split(gpu, gate->type);
 }
 
+int bn_transformer_gpu_packed_qkv_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *qkv,
+    int use_packed_qkv,
+    int kv_f16,
+    int split_op_code) {
+    return qkv && use_packed_qkv && !kv_f16 &&
+           split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
+           bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
+}
+
+int bn_transformer_gpu_qkv_split_standard_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    int split_op_code) {
+    return q && split_op_code == BN_GPU_CODE_MATVEC_SPLIT &&
+           bn_transformer_gpu_can_matvec_split(gpu, q->type);
+}
+
+int bn_transformer_gpu_qkv_split_q8_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    int split_op_code) {
+    return q && split_op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT &&
+           bn_transformer_gpu_can_matvec_split(gpu, q->type);
+}
+
+int bn_transformer_gpu_qkv_split_q5_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    int split_op_code) {
+    return q && split_op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT &&
+           bn_transformer_gpu_can_matvec_split(gpu, q->type);
+}
+
+int bn_transformer_gpu_qk_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *q,
+    const BnQWeight *k,
+    int q_dim,
+    int kv_dim,
+    int split_op_code) {
+    if (!q || !k || split_op_code == BN_GPU_CODE_UNKNOWN)
+        return 0;
+    return q->rows == q_dim &&
+           k->rows == kv_dim &&
+           q->cols == k->cols &&
+           bn_transformer_gpu_stacked_pair_same_format(q->type, k->type) &&
+           bn_transformer_gpu_can_matvec_split(gpu, q->type);
+}
+
+int bn_transformer_gpu_ssm_qkvz_split_supported(
+    const BnGPUBackend *gpu,
+    const BnQWeight *qkv,
+    int split_op_code) {
+    return qkv && split_op_code != BN_GPU_CODE_UNKNOWN &&
+           bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
+}
+
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits) {

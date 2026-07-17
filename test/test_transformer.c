@@ -890,6 +890,70 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
 
+    BnQWeight q_w;
+    BnQWeight k_w;
+    BnQWeight packed_qkv_w;
+    memset(&q_w, 0, sizeof(q_w));
+    memset(&k_w, 0, sizeof(k_w));
+    memset(&packed_qkv_w, 0, sizeof(packed_qkv_w));
+    q_w.type = BN_GGUF_TENSOR_Q4_0;
+    q_w.rows = 32;
+    q_w.cols = 64;
+    k_w.type = BN_GGUF_TENSOR_Q4_0;
+    k_w.rows = 16;
+    k_w.cols = 64;
+    packed_qkv_w.type = BN_GGUF_TENSOR_Q5_K;
+    packed_qkv_w.rows = 64;
+    packed_qkv_w.cols = 64;
+    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
+               BN_GPU_CAP_Q5K_MATVEC_SPLIT |
+               BN_GPU_CAP_Q8_MATVEC_SPLIT;
+    assert(bn_transformer_gpu_packed_qkv_split_supported(
+        &gpu, &packed_qkv_w, 1, 0, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_packed_qkv_split_supported(
+        &gpu, &packed_qkv_w, 0, 0, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_packed_qkv_split_supported(
+        &gpu, &packed_qkv_w, 1, 1, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_packed_qkv_split_supported(
+        &gpu, &packed_qkv_w, 1, 0, BN_GPU_CODE_Q8_MATVEC_SPLIT));
+    assert(bn_transformer_gpu_qkv_split_standard_supported(
+        &gpu, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_qkv_split_standard_supported(
+        &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
+    q_w.type = BN_GGUF_TENSOR_Q8_0;
+    assert(bn_transformer_gpu_qkv_split_q8_supported(
+        &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_qkv_split_q8_supported(
+        &gpu, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
+    q_w.type = BN_GGUF_TENSOR_Q5_K;
+    assert(bn_transformer_gpu_qkv_split_q5_supported(
+        &gpu, &q_w, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_qkv_split_q5_supported(
+        &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
+    q_w.type = BN_GGUF_TENSOR_Q4_0;
+    assert(bn_transformer_gpu_qk_split_supported(
+        &gpu, &q_w, &k_w, 32, 16, BN_GPU_CODE_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_qk_split_supported(
+        &gpu, &q_w, &k_w, 32, 16, BN_GPU_CODE_UNKNOWN));
+    k_w.cols = 32;
+    assert(!bn_transformer_gpu_qk_split_supported(
+        &gpu, &q_w, &k_w, 32, 16, BN_GPU_CODE_MATVEC_SPLIT));
+    k_w.cols = 64;
+    k_w.type = BN_GGUF_TENSOR_Q5_0;
+    assert(!bn_transformer_gpu_qk_split_supported(
+        &gpu, &q_w, &k_w, 32, 16, BN_GPU_CODE_MATVEC_SPLIT));
+    k_w.type = BN_GGUF_TENSOR_Q4_0;
+    gpu.caps = 0;
+    assert(!bn_transformer_gpu_qk_split_supported(
+        &gpu, &q_w, &k_w, 32, 16, BN_GPU_CODE_MATVEC_SPLIT));
+    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT;
+    assert(bn_transformer_gpu_ssm_qkvz_split_supported(
+        &gpu, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
+    assert(!bn_transformer_gpu_ssm_qkvz_split_supported(
+        &gpu, &q_w, BN_GPU_CODE_UNKNOWN));
+    assert(!bn_transformer_gpu_ssm_qkvz_split_supported(
+        NULL, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
+
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;
     W.cols = 32;
