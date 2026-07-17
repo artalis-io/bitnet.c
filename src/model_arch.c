@@ -164,6 +164,12 @@ int bn_model_arch_uses_hybrid_ssm(const BnConfig *c) {
     return c && c->full_attn_interval > 0 && c->ssm_inner_size > 0;
 }
 
+int bn_model_arch_uses_dense_attention_only(const BnConfig *c) {
+    return c &&
+           c->n_experts <= 0 &&
+           c->full_attn_interval <= 0;
+}
+
 int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c) {
     return bn_model_arch_uses_hybrid_ssm(c) &&
            c->n_experts <= 0 &&
@@ -193,8 +199,7 @@ int bn_model_arch_per_layer_embedding_dim(const BnConfig *c) {
 
 int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK) != 0) &&
-           c->n_experts <= 0 &&
-           c->full_attn_interval <= 0 &&
+           bn_model_arch_uses_dense_attention_only(c) &&
            c->dim <= 2560;
 }
 
@@ -294,9 +299,7 @@ int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
 }
 
 int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c) {
-    return c &&
-           c->n_experts <= 0 &&
-           c->full_attn_interval <= 0 &&
+    return bn_model_arch_uses_dense_attention_only(c) &&
            c->dim <= 2560;
 }
 

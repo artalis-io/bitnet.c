@@ -525,7 +525,7 @@ int bn_transformer_gpu_cuda_matvec_fallback_kept(
     if (!m || !bn_transformer_gpu_backend_is_cuda(gpu) || !gpu->execute)
         return 0;
     const BnConfig *c = &m->config;
-    if (c->n_experts > 0 || c->full_attn_interval > 0)
+    if (!bn_model_arch_uses_dense_attention_only(c))
         return 0;
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 1;
