@@ -1,6 +1,7 @@
 #include "platform.h"
 #include "gguf.h"
 #include "model.h"
+#include "model_arch.h"
 #include "transformer.h"
 #include "tokenizer.h"
 #include "session.h"
@@ -107,9 +108,8 @@ int main(int argc, char **argv) {
     printf("max_diff=%.6f at %d top_prefill=%d top_sequential=%d\n",
            max_diff, max_idx, top_prefill, top_sequential);
 
-    size_t kv_layers = model.config.full_attn_interval > 0
-        ? (size_t)(model.config.n_layers / model.config.full_attn_interval)
-        : (size_t)model.config.n_layers;
+    size_t kv_layers =
+        (size_t)bn_model_arch_attention_layer_count(&model.config);
     size_t kv_count = kv_layers * (size_t)model.config.seq_len *
                       (size_t)model.config.kv_dim;
     float max_k_diff = 0.0f, max_v_diff = 0.0f;
@@ -122,8 +122,8 @@ int main(int argc, char **argv) {
     printf("state kv max_key_diff=%.6f max_value_diff=%.6f\n",
            max_k_diff, max_v_diff);
 
-    if (model.config.full_attn_interval > 0 && model.config.ssm_inner_size > 0) {
-        int n_ssm = model.config.n_layers - (int)kv_layers;
+    if (bn_model_arch_uses_hybrid_ssm(&model.config)) {
+        int n_ssm = bn_model_arch_ssm_layer_count(&model.config);
         size_t ssm_count = (size_t)n_ssm *
             (size_t)model.config.ssm_time_step_rank *
             (size_t)model.config.ssm_state_size *

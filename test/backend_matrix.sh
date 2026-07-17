@@ -736,6 +736,11 @@ if grep -n 'bn_transformer_gpu_backend_is_cuda(prefill_gpu)\|bn_transformer_gpu_
     fail=1
 fi
 
+if grep -n 'full_attn_interval' src/transformer/prefill.c test/test_prefill.c >/dev/null 2>&1; then
+    echo "prefill code and tests must use model_arch helpers for hybrid layer layout policy"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \

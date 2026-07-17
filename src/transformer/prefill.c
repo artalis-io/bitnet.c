@@ -1390,7 +1390,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int xb2_stride = dim;
     int hb_stride = hidden_dim;
     int hb2_stride = hidden_dim;
-    if (c->full_attn_interval > 0 && c->ssm_inner_size > 0) {
+    if (bn_model_arch_uses_hybrid_ssm(c)) {
         int ssm_qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 +
                           c->ssm_inner_size;
         if (ssm_qkv_dim > q_buf_stride)
@@ -2390,7 +2390,7 @@ prefill_ssm_done:
                     !(bn_transformer_ffn_uses_post_norm(c) &&
                       lw->norm.ffn_post_norm) &&
                     can_use_dense_ffn_batch &&
-                    (c->full_attn_interval <= 0 ||
+                    (!bn_model_arch_uses_hybrid_layer_layout(c) ||
                      n_tokens >= dense_ffn_batch_min_tokens) &&
                     prefill_dense_ffn_gpu_batch(m, Xb, lw, Xb, n_tokens,
                                                 dim, hidden_dim,
