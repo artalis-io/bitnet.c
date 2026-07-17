@@ -52,6 +52,9 @@ size_t bn_gpu_policy_cuda_layout_reserve_bytes(void);
 size_t bn_gpu_policy_cuda_moe_full_reserve_bytes(void);
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void);
 int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
+int bn_gpu_policy_cuda_q8_0_quant_matmul_enabled(void);
+int bn_gpu_policy_cuda_f16_q8_0_matmul_enabled(void);
+int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,

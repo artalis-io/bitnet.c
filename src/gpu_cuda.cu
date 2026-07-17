@@ -10990,17 +10990,15 @@ static int cuda_ensure_q8_0_f32(BnCudaCtx *ctx, int cols, int n_tokens) {
 }
 
 static int cuda_use_q8_0_quant_matmul(void) {
-    return getenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL") != NULL &&
-           getenv("BN_CUDA_DISABLE_Q8_0_QUANT_MATMUL") == NULL;
+    return bn_gpu_policy_cuda_q8_0_quant_matmul_enabled();
 }
 
 static int cuda_use_f16_q8_0_matmul(void) {
-    return getenv("BN_CUDA_DISABLE_F16_Q8_0_MATMUL") == NULL;
+    return bn_gpu_policy_cuda_f16_q8_0_matmul_enabled();
 }
 
 static int cuda_use_q8_0_preq_split(void) {
-    return getenv("BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT") != NULL &&
-           getenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT") == NULL;
+    return bn_gpu_policy_cuda_q8_0_preq_split_enabled();
 }
 
 static int cuda_ensure_q8_k(BnCudaCtx *ctx, int cols, int n_tokens) {
