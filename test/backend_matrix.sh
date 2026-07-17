@@ -696,6 +696,11 @@ do
     fi
 done
 
+if grep -n 'm->config\.n_experts <= 0' src/moe_cache.c >/dev/null 2>&1; then
+    echo "src/moe_cache.c must use model_arch helpers for loaded-model MoE presence policy"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_small_dense_q8\|bn_model_arch_cpu_force_float_kquant' src/transformer.c >/dev/null 2>&1; then
     echo "src/transformer.c must use GPU policy helpers for CUDA matvec fallback policy"
     fail=1
