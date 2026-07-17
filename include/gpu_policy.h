@@ -60,6 +60,11 @@ int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_q8_0_quant_matmul_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_matmul_enabled(void);
 int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void);
+int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu);
+int bn_gpu_policy_cuda_moe_decode_cache_enabled(void);
+int bn_gpu_policy_cuda_moe_decode_cache_disabled(void);
+int bn_gpu_policy_cuda_decode_cache_disabled(void);
+int bn_gpu_policy_cuda_q4_q8_decode_cache_disabled(void);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,

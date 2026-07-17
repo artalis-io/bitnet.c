@@ -1039,7 +1039,7 @@ int bn_transformer_gpu_cuda_moe_decode_cacheable(
     const BnConfig *c,
     const BnWeights *w,
     const BnBackendModel *backend) {
-    if (getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") != NULL ||
+    if (bn_gpu_policy_cuda_moe_decode_cache_disabled() ||
         !c || !w || !backend || !bn_model_arch_uses_moe(c))
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -1095,15 +1095,15 @@ int bn_transformer_gpu_cuda_decode_cacheable(
     int compare_ffn_down_layer,
     int compare_ffn_state_layer) {
     if ((!emit_logits || want_argmax ||
-         (getenv("BN_CUDA_ENABLE_LOGITS_CACHE") &&
-          !gpu_logits_need_cpu)) == 0)
+         bn_gpu_policy_cuda_decode_logits_cache_enabled(
+             gpu_logits_need_cpu)) == 0)
         return 0;
     if (!bn_transformer_gpu_backend_is_cuda(gpu))
         return 0;
     if (has_moe && !cacheable_resident_moe &&
-        getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE") == NULL)
+        !bn_gpu_policy_cuda_moe_decode_cache_enabled())
         return 0;
-    if (getenv("BN_CUDA_DISABLE_DECODE_CACHE") != NULL)
+    if (bn_gpu_policy_cuda_decode_cache_disabled())
         return 0;
     if (q6_logits_refine_captures_xb && !(want_argmax && !need_logits))
         return 0;
@@ -1118,7 +1118,7 @@ int bn_transformer_gpu_cuda_decode_cacheable(
         compare_qkv_layer >= 0 || compare_ffn_down_layer >= 0 ||
         compare_ffn_state_layer >= 0)
         return 0;
-    if (getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL ||
+    if (bn_gpu_policy_cuda_q4_q8_decode_cache_disabled() ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_transformer_gpu_compare_logits_enabled() ||
         bn_gpu_policy_metal_q6_q8k_enabled())

@@ -220,6 +220,27 @@ int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void) {
            getenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT") == NULL;
 }
 
+int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
+    return getenv("BN_CUDA_ENABLE_LOGITS_CACHE") != NULL &&
+           !gpu_logits_need_cpu;
+}
+
+int bn_gpu_policy_cuda_moe_decode_cache_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_decode_cache_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") != NULL;
+}
+
+int bn_gpu_policy_cuda_decode_cache_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_DECODE_CACHE") != NULL;
+}
+
+int bn_gpu_policy_cuda_q4_q8_decode_cache_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL;
+}
+
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget) {
     int max_mb = large_budget ? 512 : default_mb;
