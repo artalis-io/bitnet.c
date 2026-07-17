@@ -2049,6 +2049,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(!bn_model_arch_moe_uses_dense_residual_branch(&c));
     assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
+    assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
+    assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     assert(bn_model_arch_allows_small_cuda_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
@@ -2080,7 +2082,12 @@ static void test_model_arch_registry(void) {
     c.moe_intermediate_size = 4096;
     c.dim = 2048;
     assert(bn_model_arch_uses_two_expert_all_active_moe(&c));
+    assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
+    assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
     assert(bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
+    c.has_shared_expert = 1;
+    assert(bn_model_arch_moe_prefill_forces_matvec(&c));
+    c.has_shared_expert = 0;
     c.n_experts_active = 1;
     assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
@@ -2090,6 +2097,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     c.moe_intermediate_size = 4096;
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, 2049));
+    c.n_experts = 3;
+    assert(bn_model_arch_uses_more_than_two_expert_moe(&c));
 
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |

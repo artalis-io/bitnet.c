@@ -2,6 +2,7 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
+#include "model_arch.h"
 #include "transformer/gpu_internal.h"
 
 typedef struct {
@@ -103,13 +104,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int moe_hidden = c->moe_intermediate_size;
     int K = c->n_experts_active;
     int n_experts = c->n_experts;
-    int force_matvec_prefill =
-        n_experts == 2 && K == 2 && c->has_shared_expert;
+    int force_matvec_prefill = bn_model_arch_moe_prefill_forces_matvec(c);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
 
     BnAllocator a = bn_allocator_default();
     int did_input_norm = 0;
-    if (n_experts > 2) {
+    if (bn_model_arch_uses_more_than_two_expert_moe(c)) {
         BnGPUBackend *gpu = bn_model_gpu(m);
         BnBackendModel *backend = bn_model_backend(m);
         if (bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
@@ -421,7 +421,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     BnGPUBackend *gpu_batch = bn_model_gpu(m);
     int prefer_cached_expert_batch =
         bn_model_gpu_moe_cache(m) != NULL &&
-        n_experts == 2 && K == 2 &&
+        bn_model_arch_uses_two_expert_all_active_moe(c) &&
         bn_transformer_gpu_cuda_moe_cache_prefill_enabled();
     if (bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
             gpu_batch, c, map, dim, 0, prefer_cached_expert_batch)) {

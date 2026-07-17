@@ -470,6 +470,11 @@ if grep -n 'BN_CUDA_DEBUG_MOE_ROUTE_BATCH' src/moe_prefill.c >/dev/null 2>&1; th
     fail=1
 fi
 
+if grep -n 'n_experts == 2 && K == 2\|n_experts > 2' src/moe_prefill.c >/dev/null 2>&1; then
+    echo "src/moe_prefill.c must use model_arch helpers for MoE shape policy"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_prefill_min_tokens' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use GPU policy helpers for MoE prefill backend policy"
     fail=1
