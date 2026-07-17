@@ -197,48 +197,6 @@ static int metal_q4_prepared_upload_enabled(void)
            !getenv("BN_GPU_Q4_Q8_FFN_ONLY");
 }
 
-/* ── Shader type name mapping (same as wgpu) ──────────────────────── */
-
-static const char *shader_name_for_type(int type)
-{
-    switch (type) {
-        case BN_GGUF_TENSOR_F32:     return "f32";
-        case BN_GGUF_TENSOR_F16:     return "f16";
-        case BN_GGUF_TENSOR_I2_S:    return "i2s";
-        case BN_GGUF_TENSOR_TQ1_0:   return "tq1";
-        case BN_GGUF_TENSOR_TQ2_0:   return "tq2";
-        case BN_GGUF_TENSOR_Q4_0:    return "q4";
-        case BN_GGUF_TENSOR_Q4_1:    return "q4_1";
-        case BN_GGUF_TENSOR_Q8_0:    return "q8";
-        case BN_GGUF_TENSOR_BF16:    return "bf16";
-        case BN_GGUF_TENSOR_Q2_K:    return "q2k";
-        case BN_GGUF_TENSOR_Q3_K:    return "q3k";
-        case BN_GGUF_TENSOR_Q4_K:    return "q4k";
-        case BN_GGUF_TENSOR_Q5_K:    return "q5k";
-        case BN_GGUF_TENSOR_Q6_K:    return "q6k";
-        case BN_GGUF_TENSOR_Q8_K:    return "q8k";
-        case BN_GGUF_TENSOR_IQ4_NL:  return "iq4nl";
-        case BN_GGUF_TENSOR_IQ4_XS:  return "iq4xs";
-        case BN_GGUF_TENSOR_IQ3_XXS: return "iq3xxs";
-        case BN_GGUF_TENSOR_IQ3_S:   return "iq3s";
-        case BN_GGUF_TENSOR_IQ2_XXS: return "iq2xxs";
-        case BN_GGUF_TENSOR_IQ2_XS:  return "iq2xs";
-        case BN_GGUF_TENSOR_IQ2_S:   return "iq2s";
-        default:                      return NULL;
-    }
-}
-
-static const int supported_types[] = {
-    BN_GGUF_TENSOR_I2_S, BN_GGUF_TENSOR_TQ1_0, BN_GGUF_TENSOR_TQ2_0,
-    BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_1, BN_GGUF_TENSOR_Q8_0,
-    BN_GGUF_TENSOR_F16, BN_GGUF_TENSOR_BF16, BN_GGUF_TENSOR_Q2_K, BN_GGUF_TENSOR_Q3_K,
-    BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K,
-    BN_GGUF_TENSOR_Q8_K, BN_GGUF_TENSOR_IQ4_NL, BN_GGUF_TENSOR_IQ4_XS,
-    BN_GGUF_TENSOR_IQ3_XXS, BN_GGUF_TENSOR_IQ3_S, BN_GGUF_TENSOR_IQ2_XXS,
-    BN_GGUF_TENSOR_IQ2_XS, BN_GGUF_TENSOR_IQ2_S,
-};
-#define N_SUPPORTED_TYPES ((int)(sizeof(supported_types) / sizeof(supported_types[0])))
-
 /* ── Shader compilation ────────────────────────────────────────────── */
 
 static id<MTLComputePipelineState> compile_shader(BnMetalCtx *ctx,
@@ -295,7 +253,7 @@ static id<MTLComputePipelineState> compile_shader(BnMetalCtx *ctx,
 
 static int compile_matvec_pipeline(BnMetalCtx *ctx, int type, const char *dir)
 {
-    const char *name = shader_name_for_type(type);
+    const char *name = bn_quant_format_gpu_shader_name(type);
     if (!name) return -1;
     if (type < 0 || type >= BN_METAL_MAX_TYPES) return -1;
 
@@ -2211,13 +2169,14 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
 
         /* Compile matvec pipelines for all supported quant types */
         int compiled = 0;
-        for (int i = 0; i < N_SUPPORTED_TYPES; i++) {
-            int type = supported_types[i];
+        int n_supported_types = bn_quant_format_gpu_shader_type_count(0);
+        for (int i = 0; i < n_supported_types; i++) {
+            int type = bn_quant_format_gpu_shader_type_at(i, 0);
             if (compile_matvec_pipeline(ctx, type, dir) == 0)
                 compiled++;
         }
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
-                compiled, N_SUPPORTED_TYPES);
+                compiled, n_supported_types);
 
         if (!getenv("BN_GPU_Q4_Q8") &&
             !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {

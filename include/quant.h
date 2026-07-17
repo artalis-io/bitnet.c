@@ -313,6 +313,9 @@ int      bn_quant_format_supports_gpu_small_dense_q8(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);
+const char *bn_quant_format_gpu_shader_name(int type);
+int      bn_quant_format_gpu_shader_type_count(int include_f32);
+int      bn_quant_format_gpu_shader_type_at(int index, int include_f32);
 int      bn_quant_q8_logits_refine_row(const BnQWeight *W,
                                         const int8_t *x_q,
                                         const float *x_scales,

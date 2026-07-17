@@ -94,6 +94,26 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
     unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
 
+    assert(strcmp(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_Q4_0),
+                  "q4") == 0);
+    assert(strcmp(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_Q6_K),
+                  "q6k") == 0);
+    assert(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_MXFP4) == NULL);
+
+    int n_without_f32 = bn_quant_format_gpu_shader_type_count(0);
+    int n_with_f32 = bn_quant_format_gpu_shader_type_count(1);
+    assert(n_with_f32 == n_without_f32 + 1);
+    assert(bn_quant_format_gpu_shader_type_at(6, 1) == BN_GGUF_TENSOR_F32);
+    assert(bn_quant_format_gpu_shader_type_at(6, 0) == BN_GGUF_TENSOR_F16);
+    assert(bn_quant_format_gpu_shader_type_at(-1, 1) == -1);
+    assert(bn_quant_format_gpu_shader_type_at(n_with_f32, 1) == -1);
+    for (int i = 0; i < n_without_f32; i++)
+        assert(bn_quant_format_gpu_shader_name(
+                   bn_quant_format_gpu_shader_type_at(i, 0)) != NULL);
+    for (int i = 0; i < n_with_f32; i++)
+        assert(bn_quant_format_gpu_shader_name(
+                   bn_quant_format_gpu_shader_type_at(i, 1)) != NULL);
+
     printf("PASSED\n");
 }
 

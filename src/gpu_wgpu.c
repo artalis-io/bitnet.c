@@ -264,50 +264,6 @@ static void on_buffer_map(WGPUMapAsyncStatus status,
     r->done = 1;
 }
 
-/* ── Shader type name mapping ──────────────────────────────────────── */
-
-static const char *shader_name_for_type(int type)
-{
-    switch (type) {
-        case BN_GGUF_TENSOR_F32:     return "f32";
-        case BN_GGUF_TENSOR_F16:     return "f16";
-        case BN_GGUF_TENSOR_I2_S:    return "i2s";
-        case BN_GGUF_TENSOR_TQ1_0:   return "tq1";
-        case BN_GGUF_TENSOR_TQ2_0:   return "tq2";
-        case BN_GGUF_TENSOR_Q4_0:    return "q4";
-        case BN_GGUF_TENSOR_Q4_1:    return "q4_1";
-        case BN_GGUF_TENSOR_Q8_0:    return "q8";
-        case BN_GGUF_TENSOR_BF16:    return "bf16";
-        case BN_GGUF_TENSOR_Q2_K:    return "q2k";
-        case BN_GGUF_TENSOR_Q3_K:    return "q3k";
-        case BN_GGUF_TENSOR_Q4_K:    return "q4k";
-        case BN_GGUF_TENSOR_Q5_K:    return "q5k";
-        case BN_GGUF_TENSOR_Q6_K:    return "q6k";
-        case BN_GGUF_TENSOR_Q8_K:    return "q8k";
-        case BN_GGUF_TENSOR_IQ4_NL:  return "iq4nl";
-        case BN_GGUF_TENSOR_IQ4_XS:  return "iq4xs";
-        case BN_GGUF_TENSOR_IQ3_XXS: return "iq3xxs";
-        case BN_GGUF_TENSOR_IQ3_S:   return "iq3s";
-        case BN_GGUF_TENSOR_IQ2_XXS: return "iq2xxs";
-        case BN_GGUF_TENSOR_IQ2_XS:  return "iq2xs";
-        case BN_GGUF_TENSOR_IQ2_S:   return "iq2s";
-        default:                      return NULL;
-    }
-}
-
-/* All supported quant types for pipeline compilation */
-static const int supported_types[] = {
-    BN_GGUF_TENSOR_I2_S, BN_GGUF_TENSOR_TQ1_0, BN_GGUF_TENSOR_TQ2_0,
-    BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_1, BN_GGUF_TENSOR_Q8_0,
-    BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F16, BN_GGUF_TENSOR_BF16,
-    BN_GGUF_TENSOR_Q2_K, BN_GGUF_TENSOR_Q3_K,
-    BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K,
-    BN_GGUF_TENSOR_Q8_K, BN_GGUF_TENSOR_IQ4_NL, BN_GGUF_TENSOR_IQ4_XS,
-    BN_GGUF_TENSOR_IQ3_XXS, BN_GGUF_TENSOR_IQ3_S, BN_GGUF_TENSOR_IQ2_XXS,
-    BN_GGUF_TENSOR_IQ2_XS, BN_GGUF_TENSOR_IQ2_S,
-};
-#define N_SUPPORTED_TYPES ((int)(sizeof(supported_types) / sizeof(supported_types[0])))
-
 /* ── Shader loading ────────────────────────────────────────────────── */
 
 static char *load_shader_file(const char *shader_dir, const char *type_name)
@@ -362,7 +318,7 @@ static int compile_pipeline(BnWgpuCtx *ctx, int type, const char *shader_dir)
 {
     if (type < 0 || type >= BN_WGPU_MAX_TYPES) return -1;
 
-    const char *name = shader_name_for_type(type);
+    const char *name = bn_quant_format_gpu_shader_name(type);
     if (!name) return -1;
 
     /* Load shader source from file */
@@ -2430,15 +2386,16 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
 
     /* Compile pipelines for all supported quant types */
     int compiled = 0;
-    for (int i = 0; i < N_SUPPORTED_TYPES; i++) {
-        int type = supported_types[i];
+    int n_supported_types = bn_quant_format_gpu_shader_type_count(1);
+    for (int i = 0; i < n_supported_types; i++) {
+        int type = bn_quant_format_gpu_shader_type_at(i, 1);
         if (compile_pipeline(ctx, type, shader_dir) == 0)
             compiled++;
         /* Non-fatal: types without shaders just fall back to CPU */
     }
 
     fprintf(stderr, "[bn:gpu:wgpu] compiled %d/%d shader pipelines\n",
-            compiled, N_SUPPORTED_TYPES);
+            compiled, n_supported_types);
 
     /* Build vtable */
     BnGPUBackend *gpu = calloc(1, sizeof(BnGPUBackend));

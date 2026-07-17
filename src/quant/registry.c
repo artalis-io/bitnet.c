@@ -117,6 +117,65 @@ int bn_quant_format_supports_q6_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q6_LOGITS_REFINE);
 }
 
+const char *bn_quant_format_gpu_shader_name(int type) {
+    switch (type) {
+        case BN_GGUF_TENSOR_F32:     return "f32";
+        case BN_GGUF_TENSOR_F16:     return "f16";
+        case BN_GGUF_TENSOR_I2_S:    return "i2s";
+        case BN_GGUF_TENSOR_TQ1_0:   return "tq1";
+        case BN_GGUF_TENSOR_TQ2_0:   return "tq2";
+        case BN_GGUF_TENSOR_Q4_0:    return "q4";
+        case BN_GGUF_TENSOR_Q4_1:    return "q4_1";
+        case BN_GGUF_TENSOR_Q8_0:    return "q8";
+        case BN_GGUF_TENSOR_BF16:    return "bf16";
+        case BN_GGUF_TENSOR_Q2_K:    return "q2k";
+        case BN_GGUF_TENSOR_Q3_K:    return "q3k";
+        case BN_GGUF_TENSOR_Q4_K:    return "q4k";
+        case BN_GGUF_TENSOR_Q5_K:    return "q5k";
+        case BN_GGUF_TENSOR_Q6_K:    return "q6k";
+        case BN_GGUF_TENSOR_Q8_K:    return "q8k";
+        case BN_GGUF_TENSOR_IQ4_NL:  return "iq4nl";
+        case BN_GGUF_TENSOR_IQ4_XS:  return "iq4xs";
+        case BN_GGUF_TENSOR_IQ3_XXS: return "iq3xxs";
+        case BN_GGUF_TENSOR_IQ3_S:   return "iq3s";
+        case BN_GGUF_TENSOR_IQ2_XXS: return "iq2xxs";
+        case BN_GGUF_TENSOR_IQ2_XS:  return "iq2xs";
+        case BN_GGUF_TENSOR_IQ2_S:   return "iq2s";
+        default: return NULL;
+    }
+}
+
+static const int g_gpu_shader_types[] = {
+    BN_GGUF_TENSOR_I2_S, BN_GGUF_TENSOR_TQ1_0, BN_GGUF_TENSOR_TQ2_0,
+    BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_1, BN_GGUF_TENSOR_Q8_0,
+    BN_GGUF_TENSOR_F16, BN_GGUF_TENSOR_BF16,
+    BN_GGUF_TENSOR_Q2_K, BN_GGUF_TENSOR_Q3_K,
+    BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K,
+    BN_GGUF_TENSOR_Q8_K, BN_GGUF_TENSOR_IQ4_NL, BN_GGUF_TENSOR_IQ4_XS,
+    BN_GGUF_TENSOR_IQ3_XXS, BN_GGUF_TENSOR_IQ3_S, BN_GGUF_TENSOR_IQ2_XXS,
+    BN_GGUF_TENSOR_IQ2_XS, BN_GGUF_TENSOR_IQ2_S,
+};
+
+int bn_quant_format_gpu_shader_type_count(int include_f32) {
+    int n = (int)(sizeof(g_gpu_shader_types) / sizeof(g_gpu_shader_types[0]));
+    return n + (include_f32 ? 1 : 0);
+}
+
+int bn_quant_format_gpu_shader_type_at(int index, int include_f32) {
+    if (index < 0)
+        return -1;
+    if (include_f32) {
+        if (index == 6)
+            return BN_GGUF_TENSOR_F32;
+        if (index > 6)
+            index--;
+    }
+    int n = (int)(sizeof(g_gpu_shader_types) / sizeof(g_gpu_shader_types[0]));
+    if (index >= n)
+        return -1;
+    return g_gpu_shader_types[index];
+}
+
 uint32_t bn_quant_format_gpu_split_cap(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_Q4_0: return BN_GPU_CAP_Q4_MATVEC_SPLIT;

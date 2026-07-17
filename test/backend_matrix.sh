@@ -445,6 +445,16 @@ if grep -n 'BN_GPU_PROFILE' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'static const char \*shader_name_for_type\|static const int supported_types' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
+    echo "GPU backends must use quant format helpers for shader type-name and supported-type policy"
+    fail=1
+fi
+
+if ! grep -n 'bn_quant_format_gpu_shader_name\|bn_quant_format_gpu_shader_type_count' src/quant/registry.c >/dev/null 2>&1; then
+    echo "quant registry must own GPU shader type-name and supported-type policy"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CUDA_CUBLAS_CACHE_MAX_MB\|BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for cublas aux-cache env vars"
     fail=1
