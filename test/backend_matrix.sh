@@ -135,6 +135,11 @@ do
     fi
 done
 
+if grep -n 'bn_quant_format_uses_f16_logits_path\|bn_quant_format_tied_logits_uses_quant_path\|bn_quant_format_tied_logits_uses_f16_path\|bn_quant_format_tied_logits_i[0-9]_weight_type\|bn_quant_format_tied_logits_f[0-9][0-9]_weight_type' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use logits policy helpers for logits quant-format policy"
+    fail=1
+fi
+
 for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c

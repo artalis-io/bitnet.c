@@ -51,5 +51,11 @@ int bn_transformer_logits_cpu_native_tied_quant_enabled(void);
 int bn_transformer_logits_q8_refine_supported(
     const BnLogitsBackendOps *ops, const BnQWeight *W);
 int bn_transformer_logits_q6_refine_supported(const BnQWeight *W);
+int bn_transformer_logits_untied_uses_f16_path(int tensor_type);
+int bn_transformer_logits_tied_uses_quant_path(int tensor_type);
+int bn_transformer_logits_tied_uses_f16_path(int tensor_type);
+int bn_transformer_logits_tied_i8_weight_type(void);
+int bn_transformer_logits_tied_f16_weight_type(void);
+int bn_transformer_logits_tied_f32_weight_type(void);
 
 #endif // BN_TRANSFORMER_LOGITS_INTERNAL_H

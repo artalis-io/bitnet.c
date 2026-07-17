@@ -35,3 +35,27 @@ int bn_transformer_logits_q6_refine_supported(const BnQWeight *W) {
     return W && W->data &&
            bn_backend_quant_supports_q6k_logits_refine(W->type);
 }
+
+int bn_transformer_logits_untied_uses_f16_path(int tensor_type) {
+    return bn_backend_quant_logits_uses_f16_path(tensor_type);
+}
+
+int bn_transformer_logits_tied_uses_quant_path(int tensor_type) {
+    return bn_backend_quant_tied_logits_uses_quant_path(tensor_type);
+}
+
+int bn_transformer_logits_tied_uses_f16_path(int tensor_type) {
+    return bn_backend_quant_tied_logits_uses_f16_path(tensor_type);
+}
+
+int bn_transformer_logits_tied_i8_weight_type(void) {
+    return bn_backend_quant_tied_logits_i8_weight_type();
+}
+
+int bn_transformer_logits_tied_f16_weight_type(void) {
+    return bn_backend_quant_tied_logits_f16_weight_type();
+}
+
+int bn_transformer_logits_tied_f32_weight_type(void) {
+    return bn_backend_quant_tied_logits_f32_weight_type();
+}

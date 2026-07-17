@@ -1312,6 +1312,16 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_cpu_native_tied_quant_enabled());
     unsetenv("BN_CPU_NATIVE_TIED_LOGITS");
 
+    assert(bn_transformer_logits_untied_uses_f16_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_transformer_logits_untied_uses_f16_path(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_transformer_logits_tied_uses_quant_path(BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_transformer_logits_tied_uses_quant_path(BN_GGUF_TENSOR_F32));
+    assert(bn_transformer_logits_tied_uses_f16_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_transformer_logits_tied_uses_f16_path(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_transformer_logits_tied_i8_weight_type() == BN_GGUF_TENSOR_Q8_0);
+    assert(bn_transformer_logits_tied_f16_weight_type() == BN_GGUF_TENSOR_F16);
+    assert(bn_transformer_logits_tied_f32_weight_type() == BN_GGUF_TENSOR_F32);
+
     printf("PASSED\n");
 }
 

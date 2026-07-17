@@ -1,8 +1,8 @@
 #include "transformer_plan_internal.h"
 #include "gpu_backend.h"
 #include "model_arch.h"
-#include "quant.h"
 #include "transformer_backend_internal.h"
+#include "transformer_logits_internal.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -294,20 +294,21 @@ void bn_transformer_plan_logits(BnLogitsPlan *p,
     p->use_i8_output = w->emb_out_i8 != NULL;
     if (w->output_weight.data) {
         p->weight_type = w->output_weight.type;
-        p->kind = bn_quant_format_uses_f16_logits_path(w->output_weight.type)
+        p->kind = bn_transformer_logits_untied_uses_f16_path(
+                      w->output_weight.type)
             ? BN_LOGITS_UNTIED_F16
             : BN_LOGITS_UNTIED_QUANT;
     } else if (w->emb_out_i8) {
         p->kind = BN_LOGITS_TIED_I8;
-        p->weight_type = bn_quant_format_tied_logits_i8_weight_type();
-    } else if (bn_quant_format_tied_logits_uses_quant_path(w->emb_type)) {
+        p->weight_type = bn_transformer_logits_tied_i8_weight_type();
+    } else if (bn_transformer_logits_tied_uses_quant_path(w->emb_type)) {
         p->kind = BN_LOGITS_TIED_QUANT;
         p->weight_type = w->emb_type;
-    } else if (bn_quant_format_tied_logits_uses_f16_path(w->emb_type)) {
+    } else if (bn_transformer_logits_tied_uses_f16_path(w->emb_type)) {
         p->kind = BN_LOGITS_TIED_F16;
-        p->weight_type = bn_quant_format_tied_logits_f16_weight_type();
+        p->weight_type = bn_transformer_logits_tied_f16_weight_type();
     } else {
         p->kind = BN_LOGITS_TIED_F32;
-        p->weight_type = bn_quant_format_tied_logits_f32_weight_type();
+        p->weight_type = bn_transformer_logits_tied_f32_weight_type();
     }
 }
