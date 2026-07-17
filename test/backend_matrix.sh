@@ -716,6 +716,11 @@ if grep -n 'c->n_experts > 0' src/model.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'if (c->full_attn_interval > 0)' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use model_arch helpers for hybrid layout predicates"
+    fail=1
+fi
+
 if grep -n 'c->n_experts > 0' src/model_session.c >/dev/null 2>&1; then
     echo "src/model_session.c must use model_arch helpers for loaded-session MoE presence policy"
     fail=1

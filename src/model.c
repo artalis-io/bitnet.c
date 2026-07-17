@@ -434,7 +434,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // Validate SSM config when hybrid model
-    if (c->full_attn_interval > 0) {
+    if (bn_model_arch_uses_hybrid_layer_layout(c)) {
         if (c->ssm_time_step_rank <= 0) {
             SH_LOG_ERROR("ssm_time_step_rank must be > 0 for hybrid models");
             return -1;
@@ -487,7 +487,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         snprintf(vocab_s, sizeof(vocab_s), "%d", c->vocab_size);
         SH_LOG_DEBUG("Model config", "dim", dim_s, "layers", layers_s,
                      "heads", heads_s, "vocab", vocab_s);
-        if (c->full_attn_interval > 0) {
+        if (bn_model_arch_uses_hybrid_layer_layout(c)) {
             char fai_s[16], ssm_s[16];
             snprintf(fai_s, sizeof(fai_s), "%d", c->full_attn_interval);
             snprintf(ssm_s, sizeof(ssm_s), "%d", c->ssm_inner_size);
