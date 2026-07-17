@@ -1253,10 +1253,15 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &moe_w));
     assert(bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
         &gpu, &c, &moe_layers[0], c.dim));
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
+    assert(!bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
+        &gpu, &c, &map, c.dim, 1, 0, -1, -1));
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
     assert(!bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
@@ -1269,6 +1274,10 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
+    setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE", "1", 1);
+    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+        &gpu, &c, &moe_w));
+    unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE");
     setenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE", "1", 1);
     assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
@@ -1282,6 +1291,7 @@ static void test_gpu_policy_helpers(void) {
     gpu.moe_ffn_batch = mock_moe_ffn_batch;
     gpu.prefill_moe_layer = mock_prefill_moe_layer;
     gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
@@ -1296,7 +1306,7 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 0));
-    setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     assert(bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
@@ -1307,7 +1317,7 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 1));
-    unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     c.n_experts = 3;
     assert(bn_transformer_gpu_moe_prefill_route_batch_available(&gpu, &c));
     assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
@@ -1328,7 +1338,7 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0));
     assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
-    setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     assert(bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     assert(bn_transformer_gpu_prefill_moe_layer_backend_available(
@@ -1358,6 +1368,7 @@ static void test_gpu_policy_helpers(void) {
     gpu.prefill_ssm_layer = NULL;
     assert(!bn_transformer_gpu_prefill_ssm_layer_backend_available(&gpu));
     gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
 
     BnWeights dense_w;
@@ -1377,6 +1388,10 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
+    setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE", "1", 1);
+    assert(!bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+        &gpu, &c, &dense_w));
+    unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE");
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE", "1", 1);
     assert(!bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
@@ -1428,12 +1443,23 @@ static void test_gpu_policy_helpers(void) {
 
     int route_from = 0;
     int route_to = 0;
+    unsetenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER");
+    unsetenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER");
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
     bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
         &route_from, &route_to);
     assert(route_from == -1);
     assert(route_to == -1);
+
+    setenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER", "2", 1);
+    setenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER", "6", 1);
+    bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+        &route_from, &route_to);
+    assert(route_from == 2);
+    assert(route_to == 6);
+    unsetenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER");
+    unsetenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER");
 
     setenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER", "3", 1);
     setenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER", "7", 1);

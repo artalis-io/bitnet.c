@@ -6,6 +6,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static int gpu_env_enabled(const char *name, const char *compat_name) {
+    return getenv(name) != NULL ||
+           (compat_name && getenv(compat_name) != NULL);
+}
+
+static const char *gpu_env_value(const char *name, const char *compat_name) {
+    const char *env = getenv(name);
+    return env ? env : (compat_name ? getenv(compat_name) : NULL);
+}
+
 int bn_transformer_gpu_graph_op_capacity(const BnConfig *c) {
     /* Max ops per batch. MoE/SSM flush between layers, so single-layer max
      * suffices. Approximate flush batch budget:
@@ -335,8 +345,10 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_model(const BnConfig *c,
 static int cuda_all2_q4q6_moe_requires_opt_in(const BnConfig *c,
                                               const BnWeights *w) {
     return bn_transformer_gpu_cuda_all2_q4q6_moe_model(c, w) &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
-           getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") != NULL;
+           !gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                            "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
+           gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE",
+                           "BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
 }
 
 static int small_dense_cuda_native_by_default(
@@ -399,8 +411,10 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_transformer_gpu_cuda_all2_q4q6_moe_model(c, w) &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
-           getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE") == NULL;
+           !gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                            "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
+           !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE",
+                            "BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
 }
 
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
@@ -416,7 +430,8 @@ int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
     const BnWeights *w) {
     return bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
            small_dense_cuda_q8_native_by_default(c, w) &&
-           getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE") == NULL;
+           !gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE",
+                            "BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
 }
 
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
@@ -434,7 +449,8 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
     return q4_q8_from_layer < 0 &&
            bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
-           getenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8") == NULL;
+           !gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8",
+                            "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
 }
 
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
@@ -442,7 +458,8 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c) &&
-           getenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN") != NULL;
+           gpu_env_enabled("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN",
+                           "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
 }
 
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
@@ -478,7 +495,8 @@ int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_allows_small_cuda_prefill_decode_fallback(c) &&
-           getenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL") != NULL;
+           gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_PREFILL",
+                           "BN_CUDA_DISABLE_SMALL_QWEN_PREFILL");
 }
 
 int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
@@ -909,8 +927,10 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_backend_quant_supports_q8_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_cuda_q8_logit_refine(c) &&
-           getenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") != NULL &&
-           getenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE") == NULL;
+           gpu_env_enabled("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
+                           "BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") &&
+           !gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
+                            "BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
 }
 
 int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
@@ -919,8 +939,10 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
     const BnWeights *w) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_transformer_gpu_cuda_all2_q4q6_moe_model(c, w) &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL &&
-           getenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE") == NULL;
+           gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                           "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
+           !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE",
+                            "BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");
 }
 
 int bn_transformer_gpu_q6_logits_refine_enabled(
@@ -1112,8 +1134,10 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_transformer_gpu_cuda_all2_q4q6_moe_model(c, w) &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") == NULL &&
-           getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE") == NULL;
+           !gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                            "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
+           !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_MOE_SAFE",
+                            "BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE");
 }
 
 int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
@@ -1121,7 +1145,8 @@ int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_moe_prefers_cuda_exact_attention(c) &&
-           getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN") == NULL;
+           !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN",
+                            "BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
 }
 
 int bn_transformer_gpu_ssm_cpu_fallback_required(
@@ -1282,7 +1307,8 @@ int bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
     int moe_routed_q8,
     int n_experts) {
     if (all2_q4q6_moe && !gpu_route_topk &&
-        getenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT") == NULL)
+        !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT",
+                         "BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT"))
         return 1;
     return !gpu_route_topk && moe_routed_q8 && n_experts > 2 &&
            getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT") == NULL;
@@ -1329,7 +1355,8 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
     int route_from_layer,
     int route_to_layer) {
     if (getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") == NULL &&
-        getenv("BN_CUDA_ENABLE_QWEN2MOE_EXACT_GPU_ROUTE") == NULL)
+        !gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
+                         "BN_CUDA_ENABLE_QWEN2MOE_EXACT_GPU_ROUTE"))
         return 0;
     return route_from_layer < 0 ||
            (layer >= route_from_layer &&
@@ -1346,10 +1373,12 @@ void bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
     if (route_to_layer)
         *route_to_layer = -1;
 
-    env = getenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
+    env = gpu_env_value("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER",
+                        "BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
     if (env && route_from_layer)
         *route_from_layer = atoi(env);
-    env = getenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+    env = gpu_env_value("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER",
+                        "BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
     if (env && route_to_layer)
         *route_to_layer = atoi(env);
 }
@@ -1359,8 +1388,10 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
     int route_layer_selected) {
     return all2_q4q6_moe &&
            route_layer_selected &&
-           getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL &&
-           getenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE") == NULL;
+           gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                           "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
+           !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
+                            "BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE");
 }
 
 void *bn_transformer_gpu_cuda_all2_q4q6_moe_router(
@@ -1390,7 +1421,8 @@ int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
         c->moe_intermediate_size < 4096 ||
         dim > 2048 ||
         !bn_transformer_gpu_moe_routed_q4_down(map, allow_q4_down) ||
-        getenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") != NULL)
+        gpu_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                        "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN"))
         return 0;
     return 1;
 }
