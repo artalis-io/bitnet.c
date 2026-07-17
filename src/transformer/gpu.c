@@ -578,8 +578,7 @@ static int gpu_resolve_moe_all2_resources(BnGPUMoEResources *out,
 static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
                                      int8_t *x_q_buf, int top_n) {
-    if (!logits || !W || !W->data || !x || !x_q_buf ||
-        !bn_quant_format_supports_q6_logits_refine(W->type))
+    if (!logits || !W || !W->data || !x || !x_q_buf)
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 4096) top_n = 4096;
@@ -631,8 +630,7 @@ static int gpu_refine_q8_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
                                     int8_t *x_q, int top_n) {
 #if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
-    if (!logits || !W || !W->data || !x || !x_q ||
-        !bn_quant_format_supports_q8_logits_refine(W->type))
+    if (!logits || !W || !W->data || !x || !x_q)
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -2069,9 +2067,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                    !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&
-            refine_q8_logits &&
-            bn_quant_format_supports_q8_logits_refine(logit_res->type) &&
-            logit_res->cpu_weight) {
+            q8_logits_refine_captures_xb) {
             int refine_top = bn_transformer_gpu_q8_logits_refine_top(
                 small_dense_cuda_q8_logits_refine_default);
             if (refine_top > 0 &&
@@ -2163,9 +2159,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_free(&emit);
         return s->x;
     }
-    if (refine_q6_logits &&
-        bn_quant_format_supports_q6_logits_refine(logit_res->type) &&
-        logit_res->cpu_weight) {
+    if (q6_logits_refine_captures_xb) {
         int refine_top = bn_transformer_gpu_q6_logits_refine_top(
             all2_q4q6_moe_cuda_q6_logits_refine_default);
         int has_xb = q6_logits_refine_has_xb_snapshot;
@@ -2179,9 +2173,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                       s->x_q, refine_top);
         }
     }
-    if (refine_q8_logits &&
-        bn_quant_format_supports_q8_logits_refine(logit_res->type) &&
-        logit_res->cpu_weight) {
+    if (q8_logits_refine_captures_xb) {
         int refine_top = bn_transformer_gpu_q8_logits_refine_top(
             small_dense_cuda_q8_logits_refine_default);
         if (refine_top > 0 &&

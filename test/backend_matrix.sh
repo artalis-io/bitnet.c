@@ -110,6 +110,11 @@ if grep -n 'bn_quant_format_' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_supports_q[68]k*_logits_refine' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for logits refine capability policy"
+    fail=1
+fi
+
 for file in \
     src/model.c \
     src/transformer/plan.c
