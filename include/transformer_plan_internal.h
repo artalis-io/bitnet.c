@@ -314,6 +314,10 @@ int bn_transformer_ssm_uses_qkvz_stack(
 int bn_transformer_ssm_uses_alpha_beta_stack(
     BnExecPlacement placement,
     const void *alpha_beta_stacked);
+int bn_transformer_logits_uses_i8_output(const BnWeights *w);
+int bn_transformer_logits_has_untied_output(const BnWeights *w);
+BnLogitsKind bn_transformer_logits_kind(const BnWeights *w);
+int bn_transformer_logits_weight_type(const BnWeights *w);
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c);
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(

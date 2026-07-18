@@ -329,6 +329,42 @@ int bn_transformer_ssm_uses_alpha_beta_stack(
     return placement == BN_EXEC_GPU && alpha_beta_stacked;
 }
 
+int bn_transformer_logits_uses_i8_output(const BnWeights *w) {
+    return w && w->emb_out_i8 != NULL;
+}
+
+int bn_transformer_logits_has_untied_output(const BnWeights *w) {
+    return w && w->output_weight.data;
+}
+
+BnLogitsKind bn_transformer_logits_kind(const BnWeights *w) {
+    if (bn_transformer_logits_has_untied_output(w)) {
+        return bn_transformer_logits_untied_uses_f16_path(
+                   w->output_weight.type)
+            ? BN_LOGITS_UNTIED_F16
+            : BN_LOGITS_UNTIED_QUANT;
+    }
+    if (bn_transformer_logits_uses_i8_output(w))
+        return BN_LOGITS_TIED_I8;
+    if (w && bn_transformer_logits_tied_uses_quant_path(w->emb_type))
+        return BN_LOGITS_TIED_QUANT;
+    if (w && bn_transformer_logits_tied_uses_f16_path(w->emb_type))
+        return BN_LOGITS_TIED_F16;
+    return BN_LOGITS_TIED_F32;
+}
+
+int bn_transformer_logits_weight_type(const BnWeights *w) {
+    if (bn_transformer_logits_has_untied_output(w))
+        return w->output_weight.type;
+    if (bn_transformer_logits_uses_i8_output(w))
+        return bn_transformer_logits_tied_i8_weight_type();
+    if (w && bn_transformer_logits_tied_uses_quant_path(w->emb_type))
+        return w->emb_type;
+    if (w && bn_transformer_logits_tied_uses_f16_path(w->emb_type))
+        return bn_transformer_logits_tied_f16_weight_type();
+    return bn_transformer_logits_tied_f32_weight_type();
+}
+
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c) {
     return bn_model_arch_per_layer_embedding_dim(c);
@@ -490,24 +526,7 @@ void bn_transformer_plan_logits(BnLogitsPlan *p,
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
     p->vocab_size = c->vocab_size;
     p->dim = c->dim;
-    p->use_i8_output = w->emb_out_i8 != NULL;
-    if (w->output_weight.data) {
-        p->weight_type = w->output_weight.type;
-        p->kind = bn_transformer_logits_untied_uses_f16_path(
-                      w->output_weight.type)
-            ? BN_LOGITS_UNTIED_F16
-            : BN_LOGITS_UNTIED_QUANT;
-    } else if (w->emb_out_i8) {
-        p->kind = BN_LOGITS_TIED_I8;
-        p->weight_type = bn_transformer_logits_tied_i8_weight_type();
-    } else if (bn_transformer_logits_tied_uses_quant_path(w->emb_type)) {
-        p->kind = BN_LOGITS_TIED_QUANT;
-        p->weight_type = w->emb_type;
-    } else if (bn_transformer_logits_tied_uses_f16_path(w->emb_type)) {
-        p->kind = BN_LOGITS_TIED_F16;
-        p->weight_type = bn_transformer_logits_tied_f16_weight_type();
-    } else {
-        p->kind = BN_LOGITS_TIED_F32;
-        p->weight_type = bn_transformer_logits_tied_f32_weight_type();
-    }
+    p->use_i8_output = bn_transformer_logits_uses_i8_output(w);
+    p->kind = bn_transformer_logits_kind(w);
+    p->weight_type = bn_transformer_logits_weight_type(w);
 }
