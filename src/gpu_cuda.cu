@@ -11713,11 +11713,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                                   int type);
 
 static int cuda_force_quant_matmul_for_type(int type) {
-    return (type == BN_GGUF_TENSOR_Q8_0 && !cuda_use_f16_q8_0_matmul()) ||
-           (type == BN_GGUF_TENSOR_Q4_K &&
-            getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL") != NULL) ||
-           (type == BN_GGUF_TENSOR_Q6_K &&
-            getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL") != NULL);
+    return bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        type, cuda_use_f16_q8_0_matmul());
 }
 
 static int cuda_use_q6k_4warp_long(int rows, int cols) {

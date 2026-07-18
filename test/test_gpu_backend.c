@@ -807,6 +807,26 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_F16_Q8_0_MATMUL");
     unsetenv("BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT");
     unsetenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT");
+    unsetenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL");
+    unsetenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL");
+    assert(!bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q8_0, 1));
+    assert(bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q8_0, 0));
+    assert(!bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q4_K, 1));
+    assert(!bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q6_K, 1));
+    setenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL", "1", 1);
+    assert(bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q4_K, 1));
+    assert(!bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q5_K, 1));
+    setenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL", "1", 1);
+    assert(bn_gpu_policy_cuda_force_quant_matmul_for_type(
+        BN_GGUF_TENSOR_Q6_K, 1));
+    unsetenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL");
+    unsetenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL");
     unsetenv("BN_CUDA_ENABLE_LOGITS_CACHE");
     assert(!bn_gpu_policy_cuda_decode_logits_cache_enabled(0));
     setenv("BN_CUDA_ENABLE_LOGITS_CACHE", "1", 1);

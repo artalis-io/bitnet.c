@@ -359,6 +359,18 @@ int bn_quant_format_cuda_moe_down_q4_f32_cache_supported(int type) {
     return bn_quant_format_moe_down_q4_f32_cache_supported(type);
 }
 
+int bn_quant_format_cuda_q8_quant_matmul_on_f16_disable(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
+int bn_quant_format_cuda_force_q4k_quant_matmul_candidate(int type) {
+    return type == BN_GGUF_TENSOR_Q4_K;
+}
+
+int bn_quant_format_cuda_force_q6k_quant_matmul_candidate(int type) {
+    return type == BN_GGUF_TENSOR_Q6_K;
+}
+
 int bn_quant_format_moe_quant_only_after_cache(int type,
                                                int q8_f16_cache) {
     return !q8_f16_cache || !bn_quant_format_moe_prefers_quant_only(type);

@@ -719,6 +719,22 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL")\|getenv("BN_CUDA_DISABLE_
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL")\|getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for forced quant matmul env vars"
+    fail=1
+fi
+
+if ! awk '
+    /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
+    in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
+    in_fn && /BN_GGUF_TENSOR_/ { bad=1 }
+    in_fn && /^}/ { in_fn=0 }
+    END { exit(found && !bad ? 0 : 1) }
+' src/gpu_cuda.cu; then
+    echo "CUDA forced quant matmul selection must delegate tensor/env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_ENABLE_LOGITS_CACHE")\|getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE")\|getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE")\|getenv("BN_CUDA_DISABLE_DECODE_CACHE")\|getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA decode-cache env vars"
     fail=1

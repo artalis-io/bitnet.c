@@ -347,6 +347,20 @@ int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void) {
            getenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT") == NULL;
 }
 
+int bn_gpu_policy_cuda_force_quant_matmul_for_type(
+    int tensor_type,
+    int f16_q8_0_matmul_enabled) {
+    return (bn_backend_quant_cuda_q8_quant_matmul_on_f16_disable(
+                tensor_type) &&
+            !f16_q8_0_matmul_enabled) ||
+           (bn_backend_quant_cuda_force_q4k_quant_matmul_candidate(
+                tensor_type) &&
+            getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL") != NULL) ||
+           (bn_backend_quant_cuda_force_q6k_quant_matmul_candidate(
+                tensor_type) &&
+            getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL") != NULL);
+}
+
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
     return getenv("BN_CUDA_ENABLE_LOGITS_CACHE") != NULL &&
            !gpu_logits_need_cpu;
