@@ -281,6 +281,8 @@ typedef enum {
     BN_QUANT_CAP_GPU_EXACT_SILU = 1u << 14,
     BN_QUANT_CAP_GPU_GATEUP_SPLIT_PREFERRED = 1u << 15,
     BN_QUANT_CAP_GPU_FUSED_GATEUP_CUDA_OPT_IN = 1u << 16,
+    BN_QUANT_CAP_GPU_NATIVE = 1u << 17,
+    BN_QUANT_CAP_GPU_REPACKED = 1u << 18,
 } BnQuantCapability;
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,

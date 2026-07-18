@@ -99,6 +99,10 @@ static void test_quant_policy_helpers(void) {
     assert(strcmp(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_Q6_K),
                   "q6k") == 0);
     assert(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_MXFP4) == NULL);
+    assert(bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_gpu_uses_repacked_layout(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_supports_repacked_bias(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_dispatch_tile_rows(BN_GGUF_TENSOR_Q4_0) == 8u);

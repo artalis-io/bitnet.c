@@ -181,6 +181,8 @@ do
 done
 
 if awk '
+    /int bn_quant_format_can_gpu_native\(/ { in_fn=1 }
+    /int bn_quant_format_can_gpu_repack\(/ { in_fn=1 }
     /int bn_quant_format_gpu_requires_exact_silu\(/ { in_fn=1 }
     /int bn_quant_format_gpu_prefers_gateup_split\(/ { in_fn=1 }
     /int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in\(/ { in_fn=1 }
