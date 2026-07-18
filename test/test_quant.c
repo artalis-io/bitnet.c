@@ -124,6 +124,14 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_moe_all_f16_cache_supported(BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_moe_all_f16_cache_supported(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_moe_all_f16_cache_supported(BN_GGUF_TENSOR_Q5_0));
+    assert(!bn_quant_format_has_embedded_tensor_scale(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_allows_stacked_layout(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_embedded_tensor_scale_offset(BN_GGUF_TENSOR_Q4_0,
+                                                 4, 32) == 0);
+    assert(bn_quant_format_has_embedded_tensor_scale(BN_GGUF_TENSOR_I2_S));
+    assert(!bn_quant_format_allows_stacked_layout(BN_GGUF_TENSOR_I2_S));
+    assert(bn_quant_embedded_tensor_scale_offset(BN_GGUF_TENSOR_I2_S,
+                                                 4, 32) == 32);
     assert(bn_quant_format_moe_down_q6_f32_cache_supported(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_moe_down_q6_f32_cache_supported(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_moe_down_cublas_cache_supported(BN_GGUF_TENSOR_Q6_K));

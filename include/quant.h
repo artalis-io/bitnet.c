@@ -242,21 +242,9 @@ typedef struct BnQWeight {
     float scale;        // per-tensor scale (from .scale tensor or embedded in data)
 } BnQWeight;
 
-static inline int bn_quant_format_has_embedded_tensor_scale(int type) {
-    return type == BN_GGUF_TENSOR_I2_S;
-}
-
-static inline size_t bn_quant_embedded_tensor_scale_offset(int type,
-                                                          int rows,
-                                                          int cols) {
-    if (!bn_quant_format_has_embedded_tensor_scale(type))
-        return 0;
-    return (size_t)rows * (size_t)cols / 4;
-}
-
-static inline int bn_quant_format_allows_stacked_layout(int type) {
-    return !bn_quant_format_has_embedded_tensor_scale(type);
-}
+int bn_quant_format_has_embedded_tensor_scale(int type);
+size_t bn_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
+int bn_quant_format_allows_stacked_layout(int type);
 
 typedef enum {
     BN_QUANT_LAYOUT_DENSE = 0,

@@ -82,6 +82,21 @@ int bn_quant_format_uses_embedded_scale(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_EMBEDDED_SCALE);
 }
 
+int bn_quant_format_has_embedded_tensor_scale(int type) {
+    const BnQuantFormatOps *ops = bn_quant_format_ops(type);
+    return ops && ops->layout == BN_QUANT_LAYOUT_I2S;
+}
+
+size_t bn_quant_embedded_tensor_scale_offset(int type, int rows, int cols) {
+    if (!bn_quant_format_has_embedded_tensor_scale(type))
+        return 0;
+    return (size_t)rows * (size_t)cols / 4;
+}
+
+int bn_quant_format_allows_stacked_layout(int type) {
+    return !bn_quant_format_has_embedded_tensor_scale(type);
+}
+
 int bn_quant_format_has_cpu_matvec(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_CPU_MATVEC);
 }
