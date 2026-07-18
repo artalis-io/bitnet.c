@@ -180,6 +180,18 @@ do
     fi
 done
 
+if awk '
+    /int bn_quant_format_gpu_requires_exact_silu\(/ { in_fn=1 }
+    /int bn_quant_format_gpu_prefers_gateup_split\(/ { in_fn=1 }
+    /int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in\(/ { in_fn=1 }
+    in_fn && /BN_GGUF_TENSOR_/ { found=1 }
+    in_fn && /^}/ { in_fn=0 }
+    END { exit found ? 0 : 1 }
+' src/quant/registry.c >/dev/null 2>&1; then
+    echo "src/quant/registry.c must use quant capability flags for GPU behavior helpers"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format\|bn_quant_format_supports_moe_q4_gateup\|bn_backend_quant_moe_gateup_q4' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for stacked pair and shared gate-up quant-format policy"
     fail=1
