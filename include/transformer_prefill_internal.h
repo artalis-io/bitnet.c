@@ -290,6 +290,12 @@ int bn_transformer_prefill_moe_ffn_batch_available(
     const BnMoEExpertMap *map,
     int dim,
     int allow_q4_down);
+int bn_transformer_prefill_moe_layer_backend_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down);
 int bn_transformer_prefill_ssm_moe_chain_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,

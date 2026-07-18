@@ -2016,12 +2016,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_prefill_ssm_layer_backend_available(&gpu));
     assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
-    assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
+    assert(!bn_transformer_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     assert(bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
-    assert(bn_transformer_gpu_prefill_moe_layer_backend_available(
+    assert(bn_transformer_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
     assert(!bn_transformer_gpu_prefill_moe_layer_chain_available(
         &gpu, &c, &map, c.dim, 0, 15));
@@ -2038,11 +2038,11 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
-    assert(bn_transformer_gpu_prefill_moe_layer_backend_available(
+    assert(bn_transformer_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     gpu.prefill_moe_layer = NULL;
-    assert(!bn_transformer_gpu_prefill_moe_layer_backend_available(
+    assert(!bn_transformer_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
     gpu.prefill_moe_layer = mock_prefill_moe_layer;
     gpu.prefill_ssm_layer = NULL;

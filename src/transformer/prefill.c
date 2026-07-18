@@ -523,7 +523,7 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
                                        float attention_scale) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
-    if (!bn_transformer_gpu_prefill_moe_layer_backend_available(
+    if (!bn_transformer_prefill_moe_layer_backend_available(
             gpu, &m->config, &lw->moe.expert_map, dim, 0) ||
         !backend ||
         !lw->moe.router_weight || !lw->attn.wq.data ||
