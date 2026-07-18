@@ -314,6 +314,10 @@ static int cuda_debug_prefill_gemm(void) {
     return bn_gpu_policy_cuda_prefill_gemm_debug_enabled();
 }
 
+static int cuda_debug_readback(void) {
+    return bn_gpu_policy_cuda_readback_debug_enabled();
+}
+
 static int cuda_env_int(const char *name, int fallback) {
     const char *env = getenv(name);
     if (!env || !*env) return fallback;
@@ -11326,7 +11330,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
                                 size_t size, size_t offset) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     if (!ctx || !out || buf_idx < 0 || buf_idx >= BN_GPU_VALUE_COUNT) {
-        if (getenv("BN_CUDA_DEBUG_READBACK")) {
+        if (cuda_debug_readback()) {
             fprintf(stderr,
                     "[bn:gpu:cuda] read_activation invalid args: ctx=%p "
                     "out=%p buf=%d size=%zu offset=%zu\n",
@@ -11336,7 +11340,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
     }
     if (cuda_ctx_set_device(ctx) != 0) return -1;
     if (!ctx->act_bufs[buf_idx] || offset + size > ctx->act_sizes[buf_idx]) {
-        if (getenv("BN_CUDA_DEBUG_READBACK")) {
+        if (cuda_debug_readback()) {
             fprintf(stderr,
                     "[bn:gpu:cuda] read_activation invalid buffer: buf=%d "
                     "ptr=%p size=%zu offset=%zu alloc=%zu\n",
@@ -11355,7 +11359,7 @@ static int cuda_read_activation(void *vctx, int buf_idx, void *out,
         err = cudaMemcpy(out, (char *)ctx->act_bufs[buf_idx] + offset,
                          size, cudaMemcpyDeviceToHost);
     }
-    if (err != cudaSuccess && getenv("BN_CUDA_DEBUG_READBACK")) {
+    if (err != cudaSuccess && cuda_debug_readback()) {
         fprintf(stderr,
                 "[bn:gpu:cuda] read_activation failed: buf=%d size=%zu "
                 "offset=%zu err=%s\n",

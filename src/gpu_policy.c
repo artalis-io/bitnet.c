@@ -655,6 +655,10 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_cuda_readback_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_READBACK") != NULL;
+}
+
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }
