@@ -3254,6 +3254,40 @@ static void test_block_planning(void) {
     assert(attention_batch.eligible);
     assert(!attention_batch.fuses_output_projection);
 
+    BnTransformerPrefillFFNBatchPolicy ffn_batch =
+        bn_transformer_prefill_ffn_batch_policy(
+            1, 1, 1, 1, 16, 16, 0, 0, 0, 0);
+    assert(ffn_batch.eligible);
+    assert(ffn_batch.fuses_norm_residual);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 1, 1, 1, 8, 16, 0, 0, 0, 0);
+    assert(ffn_batch.eligible);
+    assert(!ffn_batch.fuses_norm_residual);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 1, 1, 1, 8, 16, 1, 0, 0, 0);
+    assert(!ffn_batch.eligible);
+    assert(!ffn_batch.fuses_norm_residual);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        0, 1, 1, 1, 16, 16, 0, 0, 0, 0);
+    assert(!ffn_batch.eligible);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 0, 1, 1, 16, 16, 0, 0, 0, 0);
+    assert(!ffn_batch.eligible);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 1, 1, 1, 16, 16, 0, 1, 0, 0);
+    assert(!ffn_batch.eligible);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 1, 1, 1, 16, 16, 0, 0, 1, 1);
+    assert(!ffn_batch.eligible);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 1, 0, 1, 16, 16, 0, 0, 0, 0);
+    assert(ffn_batch.eligible);
+    assert(!ffn_batch.fuses_norm_residual);
+    ffn_batch = bn_transformer_prefill_ffn_batch_policy(
+        1, 1, 1, 0, 16, 16, 0, 0, 0, 0);
+    assert(ffn_batch.eligible);
+    assert(!ffn_batch.fuses_norm_residual);
+
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_preq8k =

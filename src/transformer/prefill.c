@@ -2384,13 +2384,19 @@ prefill_ssm_done:
             void *ffn_norm_buf =
                 backend_ffn ? bn_backend_model_handle(
                     backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
-            if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
-                !(bn_transformer_ffn_uses_post_norm(c) &&
-                  lw->norm.ffn_post_norm) &&
-                can_use_dense_ffn_batch &&
-                gpu_ffn && gpu_ffn->dense_ffn_batch_norm_resid &&
-                n_tokens >= dense_ffn_batch_min_tokens &&
-                ffn_norm_buf &&
+            BnTransformerPrefillFFNBatchPolicy ffn_batch_policy =
+                bn_transformer_prefill_ffn_batch_policy(
+                    c->has_ffn_gate,
+                    can_use_dense_ffn_batch,
+                    gpu_ffn && gpu_ffn->dense_ffn_batch_norm_resid,
+                    ffn_norm_buf != NULL,
+                    n_tokens,
+                    dense_ffn_batch_min_tokens,
+                    bn_model_arch_uses_hybrid_layer_layout(c),
+                    lw->norm.ffn_sub_norm != NULL,
+                    bn_transformer_ffn_uses_post_norm(c),
+                    lw->norm.ffn_post_norm != NULL);
+            if (ffn_batch_policy.fuses_norm_residual &&
                 prefill_dense_ffn_gpu_batch(m, act, lw, act, n_tokens,
                                             dim, hidden_dim,
                                             c->act_type, l, ffn_norm_buf,
@@ -2409,12 +2415,7 @@ prefill_ssm_done:
                 prefill_profile_add(&prof.ffn_norm_ms, t_prof);
 
                 t_prof = prefill_profile_now(&prof);
-                if (c->has_ffn_gate && !lw->norm.ffn_sub_norm &&
-                    !(bn_transformer_ffn_uses_post_norm(c) &&
-                      lw->norm.ffn_post_norm) &&
-                    can_use_dense_ffn_batch &&
-                    (!bn_model_arch_uses_hybrid_layer_layout(c) ||
-                     n_tokens >= dense_ffn_batch_min_tokens) &&
+                if (ffn_batch_policy.eligible &&
                     prefill_dense_ffn_gpu_batch(m, Xb, lw, Xb, n_tokens,
                                                 dim, hidden_dim,
                                                 c->act_type, l, NULL,

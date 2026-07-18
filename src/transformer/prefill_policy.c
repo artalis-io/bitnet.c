@@ -134,6 +134,35 @@ bn_transformer_prefill_attention_batch_policy(
     return policy;
 }
 
+BnTransformerPrefillFFNBatchPolicy
+bn_transformer_prefill_ffn_batch_policy(
+    int has_ffn_gate,
+    int tokens_allowed,
+    int ffn_batch_norm_resid_hook_available,
+    int ffn_norm_buffer_available,
+    int n_tokens,
+    int min_tokens,
+    int uses_hybrid_layer_layout,
+    int has_ffn_sub_norm,
+    int uses_post_norm,
+    int has_ffn_post_norm) {
+    BnTransformerPrefillFFNBatchPolicy policy = {0};
+    int compatible_norms =
+        !has_ffn_sub_norm &&
+        !(uses_post_norm && has_ffn_post_norm);
+    policy.eligible =
+        has_ffn_gate &&
+        compatible_norms &&
+        tokens_allowed &&
+        (!uses_hybrid_layer_layout || n_tokens >= min_tokens);
+    policy.fuses_norm_residual =
+        policy.eligible &&
+        ffn_batch_norm_resid_hook_available &&
+        ffn_norm_buffer_available &&
+        n_tokens >= min_tokens;
+    return policy;
+}
+
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
     return ops && ops->supports_preq8k &&
