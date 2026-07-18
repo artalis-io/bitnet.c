@@ -75,6 +75,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_WEIGHTED_ADD_SIGMOID_RESIDUAL_RMSNORM_FUSE")
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_ENABLE_CUBLAS_LOGITS")\|getenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC")\|getenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC")\|getenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA logits matvec env policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

@@ -18957,7 +18957,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                getenv("BN_CUDA_ENABLE_CUBLAS_LOGITS") != NULL) {
+                bn_gpu_policy_cuda_cublas_logits_enabled()) {
                 if (cuda_convert_f32_to_f16(ctx, in, (size_t)op->cols) == 0 &&
                     cuda_cublas_matmul_f16_preconverted(
                         ctx, out, w, ctx->d_x_f16, op->rows, op->cols, 1) == 0) {
@@ -18967,8 +18967,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (is_logits_op && w->f32_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 op->type == BN_GGUF_TENSOR_Q6_K && op->rows >= 65536 &&
-                getenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC") != NULL &&
-                getenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC") == NULL) {
+                bn_gpu_policy_cuda_f32_logits_matvec_enabled()) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -18980,7 +18979,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 op->type == BN_GGUF_TENSOR_Q6_K && op->rows >= 65536 &&
-                getenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC") != NULL) {
+                bn_gpu_policy_cuda_f16_logits_matvec_enabled()) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;

@@ -165,6 +165,19 @@ int bn_gpu_policy_cuda_logits_f16_cache_enabled(const BnGPUBackend *gpu) {
            getenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE") != NULL;
 }
 
+int bn_gpu_policy_cuda_cublas_logits_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_CUBLAS_LOGITS") != NULL;
+}
+
+int bn_gpu_policy_cuda_f32_logits_matvec_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC") != NULL &&
+           getenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC") == NULL;
+}
+
+int bn_gpu_policy_cuda_f16_logits_matvec_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC") != NULL;
+}
+
 int bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_create_q6_f32_cache &&

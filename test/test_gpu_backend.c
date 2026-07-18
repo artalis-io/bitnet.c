@@ -683,18 +683,37 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
+    unsetenv("BN_CUDA_ENABLE_CUBLAS_LOGITS");
+    unsetenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC");
+    unsetenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC");
+    unsetenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_gpu_policy_cuda_cublas_logits_enabled());
+    assert(!bn_gpu_policy_cuda_f32_logits_matvec_enabled());
+    assert(!bn_gpu_policy_cuda_f16_logits_matvec_enabled());
     setenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE", "1", 1);
+    setenv("BN_CUDA_ENABLE_CUBLAS_LOGITS", "1", 1);
+    setenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC", "1", 1);
+    setenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC", "1", 1);
     assert(bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q6_K));
+    assert(bn_gpu_policy_cuda_cublas_logits_enabled());
+    assert(bn_gpu_policy_cuda_f32_logits_matvec_enabled());
+    assert(bn_gpu_policy_cuda_f16_logits_matvec_enabled());
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q4_K));
+    setenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC", "1", 1);
+    assert(!bn_gpu_policy_cuda_f32_logits_matvec_enabled());
     setenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE", "1", 1);
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q6_K));
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
+    unsetenv("BN_CUDA_ENABLE_CUBLAS_LOGITS");
+    unsetenv("BN_CUDA_ENABLE_F32_LOGITS_MATVEC");
+    unsetenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC");
+    unsetenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC");
 
     unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");

@@ -39,6 +39,9 @@ int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type);
 int bn_gpu_policy_cuda_logits_f16_cache_enabled(const BnGPUBackend *gpu);
+int bn_gpu_policy_cuda_cublas_logits_enabled(void);
+int bn_gpu_policy_cuda_f32_logits_matvec_enabled(void);
+int bn_gpu_policy_cuda_f16_logits_matvec_enabled(void);
 int bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced(void);
