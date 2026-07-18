@@ -218,6 +218,18 @@ int bn_transformer_attention_q_projection_is_gated(const BnQWeight *wq,
 int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
                                                   int model_dim,
                                                   int q_dim);
+int bn_transformer_attention_head_size(const BnConfig *c,
+                                       const BnLayerWeights *lw);
+int bn_transformer_attention_kv_dim(const BnConfig *c,
+                                    const BnLayerWeights *lw);
+int bn_transformer_attention_n_kv_heads(const BnConfig *c,
+                                        const BnLayerWeights *lw);
+int bn_transformer_attention_kv_mul(const BnConfig *c,
+                                    const BnLayerWeights *lw);
+int bn_transformer_attention_qk_stride(const BnConfig *c,
+                                       int head_size);
+int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw);
+int bn_transformer_attention_has_bias(const BnLayerWeights *lw);
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled);
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,

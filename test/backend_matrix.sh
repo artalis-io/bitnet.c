@@ -972,6 +972,16 @@ if grep -n 'attn\.wq\.data && .*attn\.wq\.rows >\|attn\.wq\.rows > .*q_dim' src/
     fail=1
 fi
 
+if grep -n 'p->head_size = .*attn\.head_size > 0\|p->kv_dim = .*attn\.kv_dim > 0\|p->n_kv_heads = .*attn\.n_kv_heads > 0\|p->kv_mul = .*attn\.kv_mul > 0' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer attention planning must use attention shape default helpers"
+    fail=1
+fi
+
+if grep -n 'p->qk_stride = .*qk_norm_per_head\|p->has_qk_norm = .*attn\.q_norm\|p->has_bias = .*attn\.q_bias' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer attention planning must use attention feature helpers"
+    fail=1
+fi
+
 if grep -n 'p->hidden_dim = .*ffn\.ffn_up\.rows' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer FFN planning must use hidden-dim policy helpers"
     fail=1

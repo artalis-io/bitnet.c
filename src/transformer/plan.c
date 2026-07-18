@@ -63,6 +63,43 @@ int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
            wq->rows != model_dim;
 }
 
+int bn_transformer_attention_head_size(const BnConfig *c,
+                                       const BnLayerWeights *lw) {
+    return lw && lw->attn.head_size > 0 ? lw->attn.head_size
+                                        : c->head_size;
+}
+
+int bn_transformer_attention_kv_dim(const BnConfig *c,
+                                    const BnLayerWeights *lw) {
+    return lw && lw->attn.kv_dim > 0 ? lw->attn.kv_dim
+                                     : c->kv_dim;
+}
+
+int bn_transformer_attention_n_kv_heads(const BnConfig *c,
+                                        const BnLayerWeights *lw) {
+    return lw && lw->attn.n_kv_heads > 0 ? lw->attn.n_kv_heads
+                                         : c->n_kv_heads;
+}
+
+int bn_transformer_attention_kv_mul(const BnConfig *c,
+                                    const BnLayerWeights *lw) {
+    return lw && lw->attn.kv_mul > 0 ? lw->attn.kv_mul
+                                     : c->kv_mul;
+}
+
+int bn_transformer_attention_qk_stride(const BnConfig *c,
+                                       int head_size) {
+    return c && c->qk_norm_per_head ? head_size : 0;
+}
+
+int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw) {
+    return lw && (lw->attn.q_norm || lw->attn.k_norm);
+}
+
+int bn_transformer_attention_has_bias(const BnLayerWeights *lw) {
+    return lw && (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias);
+}
+
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {
     if (c->kv_tq_bits > 0 && tq_enabled) return BN_KV_TQ;
     if (c->kv_f16) return BN_KV_FP16;
@@ -79,18 +116,18 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
     p->is_attn = lw->block_kind == BN_LAYER_BLOCK_ATTENTION;
     p->attn_idx = p->is_attn ? bn_transformer_attn_index(c, layer) : -1;
     p->ssm_idx = p->is_attn ? -1 : bn_transformer_ssm_index(c, layer);
-    p->head_size = lw->attn.head_size > 0 ? lw->attn.head_size : c->head_size;
-    p->kv_dim = lw->attn.kv_dim > 0 ? lw->attn.kv_dim : c->kv_dim;
-    p->n_kv_heads = lw->attn.n_kv_heads > 0 ? lw->attn.n_kv_heads : c->n_kv_heads;
-    p->kv_mul = lw->attn.kv_mul > 0 ? lw->attn.kv_mul : c->kv_mul;
+    p->head_size = bn_transformer_attention_head_size(c, lw);
+    p->kv_dim = bn_transformer_attention_kv_dim(c, lw);
+    p->n_kv_heads = bn_transformer_attention_n_kv_heads(c, lw);
+    p->kv_mul = bn_transformer_attention_kv_mul(c, lw);
     p->q_dim = c->n_heads * p->head_size;
     p->q_gated = bn_transformer_attention_q_projection_is_gated(
         &lw->attn.wq, p->q_dim);
     p->q_wide = bn_transformer_attention_q_projection_is_wide(
         &lw->attn.wq, c->dim, p->q_dim);
-    p->qk_stride = c->qk_norm_per_head ? p->head_size : 0;
-    p->has_qk_norm = (lw->attn.q_norm || lw->attn.k_norm) ? 1 : 0;
-    p->has_bias = (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias) ? 1 : 0;
+    p->qk_stride = bn_transformer_attention_qk_stride(c, p->head_size);
+    p->has_qk_norm = bn_transformer_attention_has_qk_norm(lw);
+    p->has_bias = bn_transformer_attention_has_bias(lw);
     p->kv_mode = bn_transformer_kv_mode(c, tq_enabled);
     p->kind = p->is_attn
         ? (p->q_gated ? BN_LAYER_ATTN_GATED_Q

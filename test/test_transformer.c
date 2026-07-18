@@ -2859,6 +2859,13 @@ static void test_layer_shape_planning(void) {
     assert(p.has_qk_norm);
     assert(p.has_bias);
     assert(p.kv_mode == BN_KV_FP32);
+    assert(bn_transformer_attention_head_size(&c, &lw) == 128);
+    assert(bn_transformer_attention_kv_dim(&c, &lw) == 512);
+    assert(bn_transformer_attention_n_kv_heads(&c, &lw) == 4);
+    assert(bn_transformer_attention_kv_mul(&c, &lw) == 4);
+    assert(bn_transformer_attention_qk_stride(&c, p.head_size) == 128);
+    assert(bn_transformer_attention_has_qk_norm(&lw));
+    assert(bn_transformer_attention_has_bias(&lw));
 
     lw.attn.wq.rows = 4096;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
@@ -2890,6 +2897,17 @@ static void test_layer_shape_planning(void) {
     assert(p.head_size == 192);
     assert(p.kv_dim == 768);
     assert(p.kv_mode == BN_KV_TQ);
+    assert(bn_transformer_attention_head_size(&c, &lw) == 192);
+    assert(bn_transformer_attention_kv_dim(&c, &lw) == 768);
+    c.qk_norm_per_head = 0;
+    assert(bn_transformer_attention_qk_stride(&c, p.head_size) == 0);
+    c.qk_norm_per_head = 1;
+    lw.attn.q_norm = NULL;
+    lw.attn.k_bias = NULL;
+    assert(!bn_transformer_attention_has_qk_norm(&lw));
+    assert(!bn_transformer_attention_has_bias(&lw));
+    lw.attn.q_norm = (float *)1;
+    lw.attn.k_bias = (float *)1;
     assert(bn_transformer_attention_q_projection_is_wide(
         &lw.attn.wq, c.dim, p.q_dim));
     lw.attn.wq.rows = 4096;
