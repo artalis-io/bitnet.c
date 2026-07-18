@@ -1183,10 +1183,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             moe_router = moe_route.router;
             if (moe_route.gpu_routed_ffn) {
                 BnTransformerGPUMoEDebugPolicy moe_debug =
-                    bn_transformer_gpu_moe_debug_policy(
-                        bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
-                            c, w),
-                        bn_transformer_gpu_moe_compare_layer_selected(l, pos));
+                    bn_transformer_gpu_moe_decode_debug_policy(
+                        c, w, l, pos);
                 float *moe_cpu_x = NULL;
                 float *moe_gpu_x = NULL;
                 float *moe_cpu_routed_part = NULL;
@@ -1471,11 +1469,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                 l, pos, moe_cpu_routed_part,
                                                 moe_gpu_routed_part, dim);
                 }
-                int cpu_shared_fallback =
-                    bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(
-                        c->has_shared_expert &&
-                        lw->shared.shared_gate.data != NULL);
-                if (cpu_shared_fallback) {
+                BnTransformerGPUMoESharedCPUFallbackPolicy
+                    shared_cpu_fallback =
+                        bn_transformer_gpu_moe_shared_cpu_fallback_policy(
+                            c, lw);
+                if (shared_cpu_fallback.enabled) {
                     size_t dim_bytes = (size_t)dim * sizeof(float);
                     float *shared_cpu_xb = (float *)malloc(dim_bytes);
                     float *shared_cpu_out = (float *)malloc(dim_bytes);

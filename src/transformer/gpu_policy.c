@@ -1803,6 +1803,16 @@ BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
     return policy;
 }
 
+BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_decode_debug_policy(
+    const BnConfig *c,
+    const BnWeights *w,
+    int layer,
+    int pos) {
+    return bn_transformer_gpu_moe_debug_policy(
+        bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(c, w),
+        bn_transformer_gpu_moe_compare_layer_selected(layer, pos));
+}
+
 int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos) {
     return bn_gpu_policy_moe_compare_layer_selected(layer, pos);
 }
@@ -1845,6 +1855,18 @@ int bn_transformer_gpu_moe_compare_norm_enabled(void) {
 
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
     return bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(eligible);
+}
+
+BnTransformerGPUMoESharedCPUFallbackPolicy
+bn_transformer_gpu_moe_shared_cpu_fallback_policy(
+    const BnConfig *c,
+    const BnLayerWeights *lw) {
+    BnTransformerGPUMoESharedCPUFallbackPolicy policy = {0};
+    policy.enabled =
+        bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(
+            c && c->has_shared_expert && lw &&
+            lw->shared.shared_gate.data != NULL);
+    return policy;
 }
 
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(

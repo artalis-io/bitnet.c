@@ -182,6 +182,10 @@ typedef struct {
 
 typedef struct {
     int enabled;
+} BnTransformerGPUMoESharedCPUFallbackPolicy;
+
+typedef struct {
+    int enabled;
     void *router_diff;
 } BnTransformerGPUMoEDirectRoutePolicy;
 
@@ -701,6 +705,11 @@ int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);
 BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
     int cpu_actual_safe_default,
     int compare_layer_selected);
+BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_decode_debug_policy(
+    const BnConfig *c,
+    const BnWeights *w,
+    int layer,
+    int pos);
 int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos);
 int bn_transformer_gpu_moe_compare_input_norm_enabled(void);
 int bn_transformer_gpu_moe_compare_actual_enabled(void);
@@ -712,6 +721,10 @@ int bn_transformer_gpu_moe_compare_shared_mid_enabled(void);
 int bn_transformer_gpu_moe_compare_shared_down_enabled(void);
 int bn_transformer_gpu_moe_compare_norm_enabled(void);
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible);
+BnTransformerGPUMoESharedCPUFallbackPolicy
+bn_transformer_gpu_moe_shared_cpu_fallback_policy(
+    const BnConfig *c,
+    const BnLayerWeights *lw);
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);
