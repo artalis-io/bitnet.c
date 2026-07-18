@@ -263,6 +263,19 @@ static void test_qwen2moe_arch_config(void) {
     printf("PASSED\n");
 }
 
+static void test_moe_quant_policy_helpers(void) {
+    printf("test_moe_quant_policy_helpers... ");
+
+    assert(!bn_moe_quant_uses_embedded_tensor_scale(BN_GGUF_TENSOR_F32));
+    assert(bn_moe_quant_embedded_tensor_scale_offset(BN_GGUF_TENSOR_F32,
+                                                     4, 32) == 0);
+    assert(bn_moe_quant_uses_embedded_tensor_scale(BN_GGUF_TENSOR_I2_S));
+    assert(bn_moe_quant_embedded_tensor_scale_offset(BN_GGUF_TENSOR_I2_S,
+                                                     4, 32) == 32);
+
+    printf("PASSED\n");
+}
+
 // --- Test: SwiGLU activation (reference check) ---
 
 static void test_swiglu(void) {
@@ -332,6 +345,7 @@ int main(void) {
     test_moe_config_compat();
     test_model_arch_gguf_uses_moe();
     test_qwen2moe_arch_config();
+    test_moe_quant_policy_helpers();
     test_swiglu();
     test_route_uniform();
     test_moe_cache();

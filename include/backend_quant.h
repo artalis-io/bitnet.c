@@ -132,6 +132,15 @@ static inline int bn_backend_quant_allows_stacked_layout(int type) {
     return bn_quant_format_allows_stacked_layout(type);
 }
 
+static inline int bn_backend_quant_has_embedded_tensor_scale(int type) {
+    return bn_quant_format_has_embedded_tensor_scale(type);
+}
+
+static inline size_t bn_backend_quant_embedded_tensor_scale_offset(
+    int type, int rows, int cols) {
+    return bn_quant_embedded_tensor_scale_offset(type, rows, cols);
+}
+
 static inline int bn_backend_quant_moe_route_q8(int gate_type,
                                                 int up_type,
                                                 int down_type) {

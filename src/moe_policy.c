@@ -13,11 +13,11 @@ int bn_moe_quant_supports_prepared_q8k(int type) {
 }
 
 int bn_moe_quant_uses_embedded_tensor_scale(int type) {
-    return bn_quant_format_has_embedded_tensor_scale(type);
+    return bn_backend_quant_has_embedded_tensor_scale(type);
 }
 
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols) {
-    return bn_quant_embedded_tensor_scale_offset(type, rows, cols);
+    return bn_backend_quant_embedded_tensor_scale_offset(type, rows, cols);
 }
 
 void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,
