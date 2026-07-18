@@ -1149,11 +1149,12 @@ static int prefill_try_preq8k_multi(const BnModel *m,
                                     int dim,
                                     int n_tokens) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
-    if (!m || bn_model_gpu(m) || prefill_force_float_kquant(m) ||
-        !b || !b->xq || !out || !W || !X || n <= 0 || n > 4)
+    if (!m || !b || !b->xq || !out || !W || !X || n <= 0 || n > 4)
         return 0;
     for (int i = 0; i < n; i++) {
-        if (!bn_transformer_prefill_can_preq8k_type(ops, W[i]->type))
+        if (!bn_transformer_prefill_route_preq8k_type_enabled(
+                ops, bn_model_gpu(m), prefill_force_float_kquant(m), dim,
+                W[i]->type))
             return 0;
     }
     if (!prefill_prepare_preq8k(b, X, dim, n_tokens))
@@ -1171,11 +1172,12 @@ static int prefill_try_preq8k_matvec_batch(const BnModel *m,
                                            int dim,
                                            int token_index) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
-    if (!m || bn_model_gpu(m) || prefill_force_float_kquant(m) ||
-        !b || !b->xq || !tasks || !x || n <= 0 || token_index < 0)
+    if (!m || !b || !b->xq || !tasks || !x || n <= 0 || token_index < 0)
         return 0;
     for (int i = 0; i < n; i++) {
-        if (!bn_transformer_prefill_can_preq8k_type(ops, tasks[i].W->type))
+        if (!bn_transformer_prefill_route_preq8k_type_enabled(
+                ops, bn_model_gpu(m), prefill_force_float_kquant(m), dim,
+                tasks[i].W->type))
             return 0;
     }
     bn_quant_matvec_batch_preq8k(
@@ -1870,8 +1872,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     &lw->attn.wq, &lw->attn.wk, &lw->attn.wv
                 };
                 int used_preq8k =
-                    bn_transformer_prefill_can_preq8k_triple(
-                        prefill_cpu_ops(),
+                    bn_transformer_prefill_route_preq8k_triple_enabled(
+                        prefill_cpu_ops(), bn_model_gpu(m),
+                        prefill_force_float_kquant(m), dim,
                         lw->attn.wq.type, lw->attn.wk.type,
                         lw->attn.wv.type) &&
                     prefill_try_preq8k_multi(m, &preq8k, qkv_out, qkv_w,
@@ -2247,9 +2250,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 float *qz_out[2] = { QKV_all, Z_all };
                 const BnQWeight *qz_w[2] = { &lw->ssm.wqkv, &lw->ssm.wz };
                 ssm_preq8k =
-                    bn_transformer_prefill_can_preq8k_pair(
-                        prefill_cpu_ops(), lw->ssm.wqkv.type,
-                        lw->ssm.wz.type) &&
+                    bn_transformer_prefill_route_preq8k_pair_enabled(
+                        prefill_cpu_ops(), bn_model_gpu(m),
+                        prefill_force_float_kquant(m), dim,
+                        lw->ssm.wqkv.type, lw->ssm.wz.type) &&
                     prefill_try_preq8k_multi(m, &preq8k, qz_out, qz_w,
                                              2, Xb, dim, n_tokens);
             }
@@ -2293,9 +2297,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
                 };
                 if (!ssm_preq8k ||
-                    !bn_transformer_prefill_can_preq8k_pair(
-                        prefill_cpu_ops(), lw->ssm.ssm_alpha.type,
-                        lw->ssm.ssm_beta.type) ||
+                    !bn_transformer_prefill_route_preq8k_pair_enabled(
+                        prefill_cpu_ops(), bn_model_gpu(m),
+                        prefill_force_float_kquant(m), dim,
+                        lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type) ||
                     !prefill_try_preq8k_matvec_batch(m, &preq8k, ab, 2,
                                                      xb_t, dim, t)) {
                     bn_quant_matvec_batch(ab, 2, xb_t, s->x_q,
@@ -2399,9 +2404,10 @@ prefill_ssm_done:
                     const BnQWeight *gu_w[2] = {
                         &lw->ffn.ffn_gate, &lw->ffn.ffn_up
                     };
-                    if (!bn_transformer_prefill_can_preq8k_pair(
-                            prefill_cpu_ops(), lw->ffn.ffn_gate.type,
-                            lw->ffn.ffn_up.type) ||
+                    if (!bn_transformer_prefill_route_preq8k_pair_enabled(
+                            prefill_cpu_ops(), bn_model_gpu(m),
+                            prefill_force_float_kquant(m), dim,
+                            lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) ||
                         !prefill_try_preq8k_multi(m, &preq8k, gu_out, gu_w,
                                                   2, Xb, dim, n_tokens))
                         prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,

@@ -43,6 +43,27 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
                                              int first_type,
                                              int second_type,
                                              int third_type);
+int bn_transformer_prefill_route_preq8k_type_enabled(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int force_float_kquant,
+    int dim,
+    int tensor_type);
+int bn_transformer_prefill_route_preq8k_pair_enabled(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int force_float_kquant,
+    int dim,
+    int left_type,
+    int right_type);
+int bn_transformer_prefill_route_preq8k_triple_enabled(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int force_float_kquant,
+    int dim,
+    int first_type,
+    int second_type,
+    int third_type);
 bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops);

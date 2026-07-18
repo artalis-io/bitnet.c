@@ -37,6 +37,44 @@ int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
            bn_backend_quant_can_preq8k(third_type);
 }
 
+int bn_transformer_prefill_route_preq8k_type_enabled(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int force_float_kquant,
+    int dim,
+    int tensor_type) {
+    return !gpu &&
+           !force_float_kquant &&
+           dim > 0 &&
+           dim % BN_QK_K == 0 &&
+           bn_transformer_prefill_can_preq8k_type(ops, tensor_type);
+}
+
+int bn_transformer_prefill_route_preq8k_pair_enabled(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int force_float_kquant,
+    int dim,
+    int left_type,
+    int right_type) {
+    return bn_transformer_prefill_route_preq8k_type_enabled(
+               ops, gpu, force_float_kquant, dim, left_type) &&
+           bn_backend_quant_can_preq8k(right_type);
+}
+
+int bn_transformer_prefill_route_preq8k_triple_enabled(
+    const BnPrefillCPUOps *ops,
+    const BnGPUBackend *gpu,
+    int force_float_kquant,
+    int dim,
+    int first_type,
+    int second_type,
+    int third_type) {
+    return bn_transformer_prefill_route_preq8k_pair_enabled(
+               ops, gpu, force_float_kquant, dim, first_type, second_type) &&
+           bn_backend_quant_can_preq8k(third_type);
+}
+
 int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type) {
     return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
