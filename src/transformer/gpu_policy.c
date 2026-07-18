@@ -2218,14 +2218,14 @@ bn_transformer_gpu_moe_shared_cpu_fallback_policy(
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split) {
-    return bn_transformer_gpu_backend_is_cuda(gpu) && can_split &&
-           bn_gpu_policy_cuda_moe_gateup_split_enabled(can_split);
+    return bn_transformer_gpu_moe_gateup_split_enabled(gpu, can_split);
 }
 
 int bn_transformer_gpu_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split) {
-    return bn_transformer_gpu_cuda_moe_gateup_split_enabled(gpu, can_split);
+    return bn_transformer_gpu_backend_is_cuda(gpu) && can_split &&
+           bn_gpu_policy_cuda_moe_gateup_split_enabled(can_split);
 }
 
 int bn_transformer_gpu_moe_route_profile_enabled(void) {
