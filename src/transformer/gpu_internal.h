@@ -535,6 +535,7 @@ int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
     const BnLayerWeights *lw,
     int backend_available);
 int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void);
+int bn_transformer_gpu_moe_route_batch_debug_enabled(void);
 int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,

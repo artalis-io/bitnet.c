@@ -1074,6 +1074,10 @@ int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
     return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
 }
 
+int bn_transformer_gpu_moe_route_batch_debug_enabled(void) {
+    return bn_transformer_gpu_cuda_moe_route_batch_debug_enabled();
+}
+
 int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,

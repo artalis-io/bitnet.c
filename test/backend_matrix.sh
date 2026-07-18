@@ -626,7 +626,7 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_pre
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed' src/moe_prefill.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed\|bn_transformer_gpu_cuda_moe_route_batch_debug_enabled' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use behavior-named GPU policy helpers for MoE prefill eligibility"
     fail=1
 fi
