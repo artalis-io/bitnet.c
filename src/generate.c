@@ -39,6 +39,26 @@ static int prefill_uploads_ssm_state_after_gpu_batch(const BnModel *model,
     return policy.upload;
 }
 
+static int prefill_uses_batch_path(const BnModel *model,
+                                   int no_prefill,
+                                   int parity_cpu,
+                                   int n_tokens,
+                                   int gpu_attached) {
+    BnTransformerPrefillEntryPolicy policy =
+        bn_transformer_prefill_entry_policy(
+            no_prefill, parity_cpu, n_tokens, gpu_attached,
+            use_gpu_batch_prefill(model));
+    return policy.batch;
+}
+
+static int prefill_uploads_kv_cache_after_batch(BnSession *s,
+                                                int gpu_attached) {
+    BnTransformerPrefillKVUploadPolicy policy =
+        bn_transformer_prefill_kv_upload_policy(
+            gpu_attached, s->gpu_kv_direct_valid);
+    return policy.upload;
+}
+
 static int use_gpu_greedy_argmax(const BnGPUBackend *gpu,
                                  int top_logits,
                                  const BnSampler *sampler) {
@@ -391,11 +411,11 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
     /* GPU decode reads backend-resident KV buffers. For conservative small
      * dense models, batch prefill is followed by a CPU->GPU KV upload.
      */
-    if (!no_prefill && !parity_cpu && n_tokens > 1 &&
-        (!gpu_attached || use_gpu_batch_prefill(model))) {
+    if (prefill_uses_batch_path(model, no_prefill, parity_cpu, n_tokens,
+                                gpu_attached)) {
         logits = bn_transformer_prefill(model, s, tokens, n_tokens, pos0);
-        if (logits && gpu_attached &&
-            !s->gpu_kv_direct_valid &&
+        if (logits &&
+            prefill_uploads_kv_cache_after_batch(s, gpu_attached) &&
             bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                n_tokens) != 0)
             return NULL;
@@ -422,11 +442,11 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
     int parity_cpu =
         bn_transformer_cpu_prefill_decode_for_parity_enabled(
             &model->config, gpu_attached);
-    if (!no_prefill && !parity_cpu && n_tokens > 1 &&
-        (!gpu_attached || use_gpu_batch_prefill(model))) {
+    if (prefill_uses_batch_path(model, no_prefill, parity_cpu, n_tokens,
+                                gpu_attached)) {
         int rc = bn_transformer_prefill_no_logits(model, s, tokens,
                                                   n_tokens, pos0);
-        if (rc == 0 && gpu_attached && !s->gpu_kv_direct_valid)
+        if (rc == 0 && prefill_uploads_kv_cache_after_batch(s, gpu_attached))
             rc = bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                     n_tokens);
         if (rc == 0 &&

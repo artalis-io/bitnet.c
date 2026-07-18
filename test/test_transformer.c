@@ -3558,6 +3558,28 @@ static void test_block_planning(void) {
     assert(!ssm_upload.upload);
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
 
+    BnTransformerPrefillEntryPolicy prefill_entry =
+        bn_transformer_prefill_entry_policy(0, 0, 2, 0, 0);
+    assert(prefill_entry.batch);
+    prefill_entry = bn_transformer_prefill_entry_policy(0, 0, 2, 1, 1);
+    assert(prefill_entry.batch);
+    prefill_entry = bn_transformer_prefill_entry_policy(1, 0, 2, 0, 0);
+    assert(!prefill_entry.batch);
+    prefill_entry = bn_transformer_prefill_entry_policy(0, 1, 2, 0, 0);
+    assert(!prefill_entry.batch);
+    prefill_entry = bn_transformer_prefill_entry_policy(0, 0, 1, 0, 0);
+    assert(!prefill_entry.batch);
+    prefill_entry = bn_transformer_prefill_entry_policy(0, 0, 2, 1, 0);
+    assert(!prefill_entry.batch);
+
+    BnTransformerPrefillKVUploadPolicy kv_upload =
+        bn_transformer_prefill_kv_upload_policy(1, 0);
+    assert(kv_upload.upload);
+    kv_upload = bn_transformer_prefill_kv_upload_policy(0, 0);
+    assert(!kv_upload.upload);
+    kv_upload = bn_transformer_prefill_kv_upload_policy(1, 1);
+    assert(!kv_upload.upload);
+
     const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
     c.policy_flags = 0;
     assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==

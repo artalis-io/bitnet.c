@@ -224,6 +224,31 @@ bn_transformer_prefill_ssm_state_upload_policy(
     return policy;
 }
 
+BnTransformerPrefillEntryPolicy
+bn_transformer_prefill_entry_policy(
+    int no_prefill,
+    int parity_cpu,
+    int n_tokens,
+    int gpu_attached,
+    int gpu_batch_prefill_enabled) {
+    BnTransformerPrefillEntryPolicy policy = {0};
+    policy.batch =
+        !no_prefill &&
+        !parity_cpu &&
+        n_tokens > 1 &&
+        (!gpu_attached || gpu_batch_prefill_enabled);
+    return policy;
+}
+
+BnTransformerPrefillKVUploadPolicy
+bn_transformer_prefill_kv_upload_policy(
+    int gpu_attached,
+    int gpu_kv_direct_valid) {
+    BnTransformerPrefillKVUploadPolicy policy = {0};
+    policy.upload = gpu_attached && !gpu_kv_direct_valid;
+    return policy;
+}
+
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

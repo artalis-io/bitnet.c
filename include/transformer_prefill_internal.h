@@ -69,6 +69,14 @@ typedef struct {
 } BnTransformerPrefillSSMStateUploadPolicy;
 
 typedef struct {
+    int batch;
+} BnTransformerPrefillEntryPolicy;
+
+typedef struct {
+    int upload;
+} BnTransformerPrefillKVUploadPolicy;
+
+typedef struct {
     int eligible;
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
@@ -208,6 +216,17 @@ BnTransformerPrefillSSMStateUploadPolicy
 bn_transformer_prefill_ssm_state_upload_policy(
     const BnConfig *c,
     int gpu_attached);
+BnTransformerPrefillEntryPolicy
+bn_transformer_prefill_entry_policy(
+    int no_prefill,
+    int parity_cpu,
+    int n_tokens,
+    int gpu_attached,
+    int gpu_batch_prefill_enabled);
+BnTransformerPrefillKVUploadPolicy
+bn_transformer_prefill_kv_upload_policy(
+    int gpu_attached,
+    int gpu_kv_direct_valid);
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,
