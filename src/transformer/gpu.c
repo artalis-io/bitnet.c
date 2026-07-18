@@ -776,8 +776,8 @@ static int gpu_dense_ffn_resources_missing(
         return 1;
     if (plan->has_gate && lw->ffn.ffn_gate.data) {
         int has_gateup = res && res->gateup_stacked &&
-                         lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
-                         lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols;
+                         bn_transformer_gpu_can_use_stacked_gateup(
+                             &lw->ffn.ffn_gate, &lw->ffn.ffn_up);
         if (!has_gateup && !(res && res->ffn_gate && res->ffn_up))
             return 1;
     } else if (lw->ffn.ffn_up.data && !(res && res->ffn_up)) {

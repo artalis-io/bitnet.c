@@ -155,6 +155,8 @@ typedef struct {
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap);
 int bn_transformer_gpu_can_native_qkv(int q_type, int k_type, int v_type);
 int bn_transformer_gpu_can_use_stacked_qk(int q_type, int k_type);
+int bn_transformer_gpu_can_use_stacked_gateup(const BnQWeight *gate,
+                                              const BnQWeight *up);
 int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu, int tensor_type);
 int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
                                              int tensor_type,

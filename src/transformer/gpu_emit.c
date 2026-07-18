@@ -1056,8 +1056,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 0, 0, use_q4_q8);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
-                   lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
-                   lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
+                   bn_transformer_gpu_can_use_stacked_gateup(
+                       &lw->ffn.ffn_gate, &lw->ffn.ffn_up) &&
                    bn_transformer_gpu_can_matvec_split(res->gpu, lw->ffn.ffn_gate.type)) {
             int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
             emit_context_matvec_split(

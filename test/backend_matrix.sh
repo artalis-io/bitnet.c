@@ -181,6 +181,17 @@ if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same
 fi
 
 for file in \
+    src/transformer/gpu.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/plan.c
+do
+    if grep -n 'ffn_gate\.rows == .*ffn_up\.rows\|ffn_gate\.cols == .*ffn_up\.cols' "$file" >/dev/null 2>&1; then
+        echo "$file must use GPU policy helpers for dense gate-up stackability policy"
+        fail=1
+    fi
+done
+
+for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c \
     src/gpu_moe_bridge.c

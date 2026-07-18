@@ -235,8 +235,8 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
         p->placement == BN_EXEC_GPU &&
         c->has_ffn_gate &&
         gateup_stacked &&
-        lw->ffn.ffn_gate.rows == lw->ffn.ffn_up.rows &&
-        lw->ffn.ffn_gate.cols == lw->ffn.ffn_up.cols &&
+        bn_transformer_gpu_can_use_stacked_gateup(&lw->ffn.ffn_gate,
+                                                  &lw->ffn.ffn_up) &&
         bn_transformer_gpu_can_gateup_split_activation(
             gpu, lw->ffn.ffn_gate.type, c->act_type);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
