@@ -997,6 +997,11 @@ if grep -n 'p->kind = .*ffn_kind == BN_LAYER_FFN_MOE\|p->kind = .*has_ffn_gate' 
     fail=1
 fi
 
+if grep -n 'p->has_gate = .*has_ffn_gate\|p->has_sub_norm = .*ffn_sub_norm\|p->use_fused_gateup_silu = .*p->placement\|p->use_gateup_split = .*p->placement\|p->placement == BN_EXEC_GPU.*BN_FUSION_RESIDUAL_RMSNORM\|p->kind == BN_FFN_MOE && p->placement == BN_EXEC_GPU' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer FFN execution planning must use FFN policy helpers"
+    fail=1
+fi
+
 if grep -n 'p->has_shared_expert = .*has_shared_expert.*shared_expert_gate' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer MoE planning must use shared-expert policy helpers"
     fail=1

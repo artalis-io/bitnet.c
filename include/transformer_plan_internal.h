@@ -286,6 +286,24 @@ BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
                                   const BnLayerWeights *lw);
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                   const BnLayerWeights *lw);
+int bn_transformer_ffn_has_gate(const BnConfig *c);
+int bn_transformer_ffn_has_sub_norm(const BnLayerWeights *lw);
+int bn_transformer_ffn_uses_fused_gateup_silu(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    BnExecPlacement placement);
+int bn_transformer_ffn_uses_gateup_split(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    BnExecPlacement placement,
+    const void *gateup_stacked);
+int bn_transformer_ffn_uses_residual_rmsnorm_fusion(
+    BnExecPlacement placement);
+int bn_transformer_ffn_requires_cpu_fallback(
+    BnFFNKind kind,
+    BnExecPlacement placement);
 int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,

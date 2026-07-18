@@ -3121,8 +3121,21 @@ static void test_block_planning(void) {
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_DENSE_GATE_UP);
     assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_DENSE_GATE_UP);
+    assert(bn_transformer_ffn_has_gate(&c));
+    assert(bn_transformer_ffn_has_sub_norm(&lw));
+    assert(bn_transformer_ffn_uses_fused_gateup_silu(
+        &gpu, &c, &lw, BN_EXEC_GPU));
+    assert(bn_transformer_ffn_uses_gateup_split(
+        &gpu, &c, &lw, BN_EXEC_GPU, (void *)5));
+    assert(!bn_transformer_ffn_uses_gateup_split(
+        &gpu, &c, &lw, BN_EXEC_GPU, NULL));
+    assert(bn_transformer_ffn_uses_residual_rmsnorm_fusion(BN_EXEC_GPU));
+    assert(!bn_transformer_ffn_uses_residual_rmsnorm_fusion(BN_EXEC_CPU));
     c.has_ffn_gate = 0;
     assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_DENSE_UP);
+    assert(!bn_transformer_ffn_has_gate(&c));
+    assert(!bn_transformer_ffn_uses_fused_gateup_silu(
+        &gpu, &c, &lw, BN_EXEC_GPU));
     c.has_ffn_gate = 1;
     assert(ffn.placement == BN_EXEC_GPU);
     assert(ffn.backend == BN_BACKEND_METAL);
@@ -3144,6 +3157,10 @@ static void test_block_planning(void) {
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_MOE);
     assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_MOE);
+    assert(bn_transformer_ffn_requires_cpu_fallback(
+        BN_FFN_MOE, BN_EXEC_GPU));
+    assert(!bn_transformer_ffn_requires_cpu_fallback(
+        BN_FFN_MOE, BN_EXEC_CPU));
     assert(ffn.placement == BN_EXEC_CPU_FALLBACK);
     assert(ffn.backend == BN_BACKEND_CPU);
     assert(ffn.needs_cpu_fallback);

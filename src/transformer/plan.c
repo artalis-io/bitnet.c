@@ -259,6 +259,53 @@ int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                          : c->hidden_dim;
 }
 
+int bn_transformer_ffn_has_gate(const BnConfig *c) {
+    return c && c->has_ffn_gate;
+}
+
+int bn_transformer_ffn_has_sub_norm(const BnLayerWeights *lw) {
+    return lw && lw->norm.ffn_sub_norm;
+}
+
+int bn_transformer_ffn_uses_fused_gateup_silu(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    BnExecPlacement placement) {
+    return placement == BN_EXEC_GPU &&
+           bn_transformer_ffn_has_gate(c) &&
+           lw &&
+           bn_transformer_gpu_can_fused_gateup_silu_pair(
+               gpu, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type, c->act_type);
+}
+
+int bn_transformer_ffn_uses_gateup_split(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    BnExecPlacement placement,
+    const void *gateup_stacked) {
+    return placement == BN_EXEC_GPU &&
+           bn_transformer_ffn_has_gate(c) &&
+           gateup_stacked &&
+           lw &&
+           bn_transformer_gpu_can_use_stacked_gateup(&lw->ffn.ffn_gate,
+                                                     &lw->ffn.ffn_up) &&
+           bn_transformer_gpu_can_gateup_split_activation(
+               gpu, lw->ffn.ffn_gate.type, c->act_type);
+}
+
+int bn_transformer_ffn_uses_residual_rmsnorm_fusion(
+    BnExecPlacement placement) {
+    return placement == BN_EXEC_GPU;
+}
+
+int bn_transformer_ffn_requires_cpu_fallback(
+    BnFFNKind kind,
+    BnExecPlacement placement) {
+    return kind == BN_FFN_MOE && placement == BN_EXEC_GPU;
+}
+
 int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw) {
     return (c && c->has_shared_expert) ||
@@ -347,31 +394,23 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->kind = bn_transformer_ffn_kind(c, lw);
     p->hidden_dim = bn_transformer_ffn_hidden_dim(c, lw);
     p->activation = c->act_type;
-    p->has_gate = c->has_ffn_gate;
-    p->has_sub_norm = lw->norm.ffn_sub_norm ? 1 : 0;
+    p->has_gate = bn_transformer_ffn_has_gate(c);
+    p->has_sub_norm = bn_transformer_ffn_has_sub_norm(lw);
     p->scalar_exact_activation =
         bn_transformer_ffn_uses_exact_scalar_activation(c);
 
     void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
                                                             BN_BACKEND_HANDLE_GATEUP_STACKED);
 
-    p->use_fused_gateup_silu =
-        p->placement == BN_EXEC_GPU &&
-        c->has_ffn_gate &&
-        bn_transformer_gpu_can_fused_gateup_silu_pair(
-            gpu, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type, c->act_type);
-    p->use_gateup_split =
-        p->placement == BN_EXEC_GPU &&
-        c->has_ffn_gate &&
-        gateup_stacked &&
-        bn_transformer_gpu_can_use_stacked_gateup(&lw->ffn.ffn_gate,
-                                                  &lw->ffn.ffn_up) &&
-        bn_transformer_gpu_can_gateup_split_activation(
-            gpu, lw->ffn.ffn_gate.type, c->act_type);
+    p->use_fused_gateup_silu = bn_transformer_ffn_uses_fused_gateup_silu(
+        gpu, c, lw, p->placement);
+    p->use_gateup_split = bn_transformer_ffn_uses_gateup_split(
+        gpu, c, lw, p->placement, gateup_stacked);
     if (p->use_fused_gateup_silu) p->fusion_flags |= BN_FUSION_GATEUP_SILU;
     if (p->use_gateup_split) p->fusion_flags |= BN_FUSION_GATEUP_SPLIT;
-    if (p->placement == BN_EXEC_GPU) p->fusion_flags |= BN_FUSION_RESIDUAL_RMSNORM;
-    if (p->kind == BN_FFN_MOE && p->placement == BN_EXEC_GPU) {
+    if (bn_transformer_ffn_uses_residual_rmsnorm_fusion(p->placement))
+        p->fusion_flags |= BN_FUSION_RESIDUAL_RMSNORM;
+    if (bn_transformer_ffn_requires_cpu_fallback(p->kind, p->placement)) {
         p->needs_cpu_fallback = 1;
         p->placement = BN_EXEC_CPU_FALLBACK;
         p->backend = bn_transformer_backend_placement(gpu, p->placement);
