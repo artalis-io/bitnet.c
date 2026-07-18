@@ -1093,6 +1093,23 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &q_w, BN_GPU_CODE_UNKNOWN));
     assert(!bn_transformer_gpu_ssm_qkvz_split_supported(
         NULL, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
+    BnQWeight alpha_w;
+    BnQWeight beta_w;
+    memset(&alpha_w, 0, sizeof(alpha_w));
+    memset(&beta_w, 0, sizeof(beta_w));
+    alpha_w.type = BN_GGUF_TENSOR_Q4_K;
+    beta_w.type = BN_GGUF_TENSOR_Q4_K;
+    alpha_w.rows = beta_w.rows = 16;
+    alpha_w.cols = beta_w.cols = 64;
+    assert(bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    beta_w.cols = 32;
+    assert(!bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    beta_w.cols = 64;
+    beta_w.rows = 32;
+    assert(!bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    beta_w.rows = 16;
+    beta_w.type = BN_GGUF_TENSOR_Q5_K;
+    assert(!bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
 
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;

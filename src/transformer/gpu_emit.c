@@ -1582,8 +1582,8 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
 
     if (ssm_ab_stacked &&
         bn_transformer_gpu_ssm_ab_stack_enabled() &&
-        lw->ssm.ssm_alpha.rows == lw->ssm.ssm_beta.rows &&
-        lw->ssm.ssm_alpha.cols == lw->ssm.ssm_beta.cols) {
+        bn_transformer_gpu_can_use_stacked_alpha_beta(
+            &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta)) {
         int ab_rows = lw->ssm.ssm_alpha.rows + lw->ssm.ssm_beta.rows;
         bn_transformer_gpu_emit_context_matvec(
             ctx, lw->ssm.ssm_alpha.type, ssm_ab_stacked, BN_GPU_VALUE_XB,

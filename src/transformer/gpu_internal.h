@@ -232,6 +232,8 @@ int bn_transformer_gpu_ssm_qkvz_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *qkv,
     int split_op_code);
+int bn_transformer_gpu_can_use_stacked_alpha_beta(const BnQWeight *alpha,
+                                                  const BnQWeight *beta);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);

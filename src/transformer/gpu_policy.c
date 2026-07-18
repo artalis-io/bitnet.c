@@ -318,6 +318,15 @@ int bn_transformer_gpu_ssm_qkvz_split_supported(
            bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
 }
 
+int bn_transformer_gpu_can_use_stacked_alpha_beta(const BnQWeight *alpha,
+                                                  const BnQWeight *beta) {
+    return alpha && beta &&
+           alpha->rows == beta->rows &&
+           alpha->cols == beta->cols &&
+           bn_transformer_gpu_stacked_pair_same_format(alpha->type,
+                                                       beta->type);
+}
+
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits) {

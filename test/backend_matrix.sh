@@ -796,6 +796,11 @@ if grep -n 'BN_GPU_DISABLE_QKV_SPLIT\|BN_GPU_DISABLE_SSM_QKVZ_SPLIT\|BN_GPU_DISA
     fail=1
 fi
 
+if grep -n 'ssm_alpha\.rows == .*ssm_beta\.rows\|ssm_alpha\.cols == .*ssm_beta\.cols' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use GPU policy helpers for SSM alpha/beta stackability"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_FALLBACK' src/gpu_graph_lowering_internal.h >/dev/null 2>&1; then
     echo "src/gpu_graph_lowering_internal.h must receive GPU debug policy as an argument"
     fail=1
