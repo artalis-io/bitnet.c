@@ -375,6 +375,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_DOT")\|getenv("BN_CUDA_DISABLE_Q5K_DOT")
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT")\|getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT")\|getenv("BN_CUDA_ENABLE_Q4K_MATMUL8")\|getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH")\|getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA Q4K shared matmul env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_DOT")\|getenv("BN_CUDA_ENABLE_Q6K_DOT")\|getenv("BN_CUDA_ENABLE_Q6K_WARP")\|getenv("BN_CUDA_ENABLE_Q6K_MATMUL8")\|getenv("BN_CUDA_DISABLE_Q6K_MATMUL4")\|getenv("BN_CUDA_ENABLE_Q6K_BATCH_WARP")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA Q6 matvec/matmul env policy"
     fail=1

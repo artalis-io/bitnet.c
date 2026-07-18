@@ -12931,7 +12931,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         err = cudaSuccess;
     } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
                n_tokens > 1 &&
-               getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+               bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
             return -1;
@@ -12959,8 +12959,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         quantize_q8_1_batch_kernel<<<qgrid, 32, 0>>>(
             xq, d_x, cols, n_tokens);
         if (n_tokens >= 8 &&
-            getenv("BN_CUDA_ENABLE_Q4K_MATMUL8") != NULL &&
-            getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH") == NULL) {
+            bn_gpu_policy_cuda_q4k_matmul8_enabled() &&
+            bn_gpu_policy_cuda_q4k_sharedx_enabled()) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 7) / 8, 1);
             size_t shared =
@@ -12972,7 +12972,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         } else if (n_tokens >= 4) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH") == NULL) {
+            if (bn_gpu_policy_cuda_q4k_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -13102,7 +13102,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
     } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
-               getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+               bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(cols / BN_QK_K, 1, 1),
@@ -13192,7 +13192,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
                                n_tokens) == 0) {
         err = cudaSuccess;
     } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
-               getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+               bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
             return -1;
@@ -13223,7 +13223,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         if (n_tokens >= 4) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH") == NULL) {
+            if (bn_gpu_policy_cuda_q4k_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -13423,7 +13423,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
             if (n_tokens >= 4) {
                 dim3 grid((rows + warps - 1) / warps,
                           (n_tokens + 3) / 4, 1);
-                if (getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH")) {
+                if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
                     size_t shared =
                         (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                     q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -14224,7 +14224,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         if (n_tokens >= 4) {
             dim3 grid((hidden_dim * 2 + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH")) {
+            if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -14320,7 +14320,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         if (n_tokens >= 4) {
             dim3 grid((hidden_dim + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH")) {
+            if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -15031,7 +15031,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     int gateup_tasks = n_tokens * k * hidden_dim;
     int gateup_blocks = (gateup_tasks + warps - 1) / warps;
     int use_q4k_q8k_gateup =
-        getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
+        bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
         (n_tokens <= 1 || dim <= 2048 ||
          getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
 
@@ -15656,7 +15656,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int down_tasks = n_tokens * dim;
     int down_blocks = (down_tasks + warps - 1) / warps;
     int use_q4k_q8k_gateup =
-        getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
+        bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
         (n_tokens <= 1 ||
          getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
     int use_q8_q8_1_batch =
@@ -16273,7 +16273,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         if (n_tokens >= 4) {
             dim3 grid((wo_rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH")) {
+            if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -18519,8 +18519,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if (rop->type == BN_GGUF_TENSOR_Q4_K &&
                            (rop->cols % BN_QK_K) == 0 && enable_q4k_dot &&
                            ((rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                            getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") != NULL) &&
-                           getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+                            bn_gpu_policy_cuda_q4k_q8k_dot_forced()) &&
+                           bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
                 } else if ((rop->type == BN_GGUF_TENSOR_Q4_K ||
@@ -19239,8 +19239,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
                        (op->cols % BN_QK_K) == 0 && enable_q4k_dot &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                        getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") != NULL) &&
-                       getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+                        bn_gpu_policy_cuda_q4k_q8k_dot_forced()) &&
+                       bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
                 int reuse_q8k_input =
                     BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, op->cols, 1) &&
                     q8k_input_cache_mark_op == i - 1;
@@ -19587,7 +19587,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (op->type == BN_GGUF_TENSOR_Q4_K &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_q4k_dot &&
                 (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) &&
-                getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL) {
+                bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
                 int reuse_q8k_input =
                     BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, cols, 1) &&
                     q8k_input_cache_mark_op == i - 1;
@@ -19898,7 +19898,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     up_rows, cols, exact_silu);
             } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot &&
-                       getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL &&
+                       bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                         getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST") != NULL)) {
                 const BnGPUOp *prev_q8k = (i > 0) ? &ops[i - 1] : NULL;

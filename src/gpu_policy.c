@@ -724,6 +724,26 @@ int bn_gpu_policy_cuda_q8_warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
 }
 
+int bn_gpu_policy_cuda_q4k_q8k_dot_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_q8k_dot_forced(void) {
+    return getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") != NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_matmul8_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q4K_MATMUL8") != NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_sharedx_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH") == NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_batch_sharedx_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH") != NULL;
+}
+
 int bn_gpu_policy_cuda_q6k_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_DOT") == NULL;
 }
