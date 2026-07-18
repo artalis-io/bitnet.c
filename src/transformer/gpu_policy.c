@@ -1436,6 +1436,21 @@ bn_transformer_gpu_moe_decode_route_policy(
     return policy;
 }
 
+BnTransformerGPUMoEDirectRoutePolicy
+bn_transformer_gpu_moe_direct_route_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    void *router_diff,
+    void *moe_gate_all) {
+    BnTransformerGPUMoEDirectRoutePolicy policy = {0};
+    policy.router_diff = router_diff;
+    policy.enabled =
+        bn_transformer_gpu_backend_is_cuda(gpu) &&
+        bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
+            c, router_diff, moe_gate_all);
+    return policy;
+}
+
 int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,

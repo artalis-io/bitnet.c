@@ -2072,6 +2072,19 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
     assert(bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
         &c, (void *)1, NULL));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    BnTransformerGPUMoEDirectRoutePolicy direct_route =
+        bn_transformer_gpu_moe_direct_route_policy(&gpu, &c, (void *)1, NULL);
+    assert(direct_route.enabled);
+    assert(direct_route.router_diff == (void *)1);
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    direct_route =
+        bn_transformer_gpu_moe_direct_route_policy(&gpu, &c, (void *)1, NULL);
+    assert(!direct_route.enabled);
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    direct_route =
+        bn_transformer_gpu_moe_direct_route_policy(&gpu, &c, NULL, NULL);
+    assert(!direct_route.enabled);
     assert(bn_transformer_gpu_cuda_all2_q4q6_moe_router(
         &c, (void *)2, (void *)1, 1, 0) == (void *)1);
     c.n_experts_active = 1;

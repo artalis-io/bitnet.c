@@ -1148,13 +1148,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER_DIFF);
             void *moe_gate_all = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-            int gpu_route_all2 =
-                bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
-                    c, router_diff, moe_gate_all);
-            if (gpu_route_all2) {
+            BnTransformerGPUMoEDirectRoutePolicy direct_route =
+                bn_transformer_gpu_moe_direct_route_policy(
+                    gpu, c, router_diff, moe_gate_all);
+            if (direct_route.enabled) {
                 if (gpu_resolve_moe_all2_resources(
-                        &moe_res, expert_emit, m, sess, lw, l, router_diff,
-                        &moe_temporaries) != 0)
+                        &moe_res, expert_emit, m, sess, lw, l,
+                        direct_route.router_diff, &moe_temporaries) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe all2 resource resolution failed");
                 BnTransformerGPUMoESharedResources moe_shared =

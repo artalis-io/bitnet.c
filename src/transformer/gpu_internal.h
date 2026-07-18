@@ -148,6 +148,11 @@ typedef struct {
 } BnTransformerGPUMoEDecodeRoutePolicy;
 
 typedef struct {
+    int enabled;
+    void *router_diff;
+} BnTransformerGPUMoEDirectRoutePolicy;
+
+typedef struct {
     int q6_default;
     int q6_enabled;
     int q6_captures_xb;
@@ -544,6 +549,12 @@ bn_transformer_gpu_moe_decode_route_policy(
     void *moe_gate_all,
     void *moe_up_all,
     void *moe_down_all);
+BnTransformerGPUMoEDirectRoutePolicy
+bn_transformer_gpu_moe_direct_route_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    void *router_diff,
+    void *moe_gate_all);
 int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
