@@ -265,6 +265,13 @@ static int qweight_pair_stackable(const BnQWeight *a, const BnQWeight *b) {
            bn_backend_layout_stackable(a, b);
 }
 
+static int qweight_triple_stackable(const BnQWeight *a,
+                                    const BnQWeight *b,
+                                    const BnQWeight *c) {
+    return a && b && c && a->rows > 0 && b->rows > 0 && c->rows > 0 &&
+           bn_backend_layout_stackable3(a, b, c);
+}
+
 static size_t qweight_triple_bytes(const BnQWeight *a, const BnQWeight *b,
                                    const BnQWeight *c) {
     size_t ab = qweight_pair_bytes(a, b);
@@ -323,7 +330,7 @@ static size_t qweight_pair_upload_bytes(const BnQWeight *a,
     size_t raw = qweight_pair_bytes(a, b);
     if (raw == SIZE_MAX)
         return SIZE_MAX;
-    if (!a || !b || a->type != b->type || a->cols != b->cols)
+    if (!qweight_pair_stackable(a, b))
         return raw;
     size_t aux = qweight_stacked_aux_cache_bytes(a, a->rows + b->rows);
     if (aux == SIZE_MAX || raw > SIZE_MAX - aux)
@@ -337,9 +344,7 @@ static size_t qweight_triple_upload_bytes(const BnQWeight *a,
     size_t raw = qweight_triple_bytes(a, b, c);
     if (raw == SIZE_MAX)
         return SIZE_MAX;
-    if (!a || !b || !c ||
-        a->type != b->type || a->type != c->type ||
-        a->cols != b->cols || a->cols != c->cols)
+    if (!qweight_triple_stackable(a, b, c))
         return raw;
     size_t aux = qweight_stacked_aux_cache_bytes(
         a, a->rows + b->rows + c->rows);

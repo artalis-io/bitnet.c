@@ -1760,6 +1760,7 @@ static void test_backend_layout_reasons(void) {
 
     assert(bn_backend_layout_stackable_reason(&a, &b) == BN_BACKEND_LAYOUT_OK);
     assert(bn_backend_layout_stackable(&a, &b));
+    assert(bn_backend_layout_stackable3(&a, &b, &a));
     assert(bn_backend_layout_stacked2_reason(&mock_gpu, &a, &b) ==
            BN_BACKEND_LAYOUT_OK);
     assert(strcmp(bn_backend_layout_reason_string(BN_BACKEND_LAYOUT_OK), "ok") == 0);
@@ -1784,6 +1785,7 @@ static void test_backend_layout_reasons(void) {
 
     b.cols = 64;
     assert(bn_backend_layout_stackable_reason(&a, &b) == BN_BACKEND_LAYOUT_COL_MISMATCH);
+    assert(!bn_backend_layout_stackable3(&a, &b, &a));
     b.cols = 32;
 
     a.type = BN_GGUF_TENSOR_I2_S;

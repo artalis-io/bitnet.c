@@ -38,6 +38,10 @@ BnBackendLayoutReason bn_backend_layout_stackable_reason(const BnQWeight *a,
 
 int bn_backend_layout_stackable(const BnQWeight *a, const BnQWeight *b);
 
+int bn_backend_layout_stackable3(const BnQWeight *a,
+                                 const BnQWeight *b,
+                                 const BnQWeight *c);
+
 BnBackendLayoutReason bn_backend_layout_stacked2_reason(const BnGPUBackend *gpu,
                                                         const BnQWeight *a,
                                                         const BnQWeight *b);

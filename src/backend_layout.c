@@ -129,6 +129,13 @@ int bn_backend_layout_stackable(const BnQWeight *a, const BnQWeight *b) {
     return bn_backend_layout_stackable_reason(a, b) == BN_BACKEND_LAYOUT_OK;
 }
 
+int bn_backend_layout_stackable3(const BnQWeight *a,
+                                 const BnQWeight *b,
+                                 const BnQWeight *c) {
+    return bn_backend_layout_stackable(a, b) &&
+           bn_backend_layout_stackable(a, c);
+}
+
 BnBackendLayoutReason bn_backend_layout_stacked2_reason(const BnGPUBackend *gpu,
                                                         const BnQWeight *a,
                                                         const BnQWeight *b) {
