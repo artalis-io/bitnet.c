@@ -409,6 +409,33 @@ int bn_gpu_policy_cuda_q6k_matvec4_shape_disabled(int rows, int cols) {
     return 0;
 }
 
+int bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(int routed_q4,
+                                                    int down_type,
+                                                    int hidden_dim,
+                                                    int n_experts,
+                                                    int k) {
+    return routed_q4 &&
+           bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(down_type) &&
+           hidden_dim <= 1024 && (n_experts > 2 || k > 2) &&
+           getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+    int routed_q4,
+    int down_type,
+    int has_f32_data,
+    int prefer_quant_down,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k) {
+    return bn_backend_quant_cuda_moe_down_q6_f32_cache_supported(down_type) &&
+           has_f32_data && !prefer_quant_down &&
+           !(routed_q4 && n_experts == 2 && k == 2 &&
+             hidden_dim >= 4096 && dim <= 2048) &&
+           getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+}
+
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
     return getenv("BN_CUDA_ENABLE_LOGITS_CACHE") != NULL &&
            !gpu_logits_need_cpu;

@@ -750,12 +750,15 @@ for fn in \
     cuda_use_q6k_5warp_exact \
     cuda_use_q6k_3warp_exact \
     cuda_use_q6k_2warp_long \
-    cuda_disable_q6k_matvec4_shape
+    cuda_disable_q6k_matvec4_shape \
+    cuda_prefer_q6k_moe_quant_down \
+    cuda_use_q6k_moe_down_f32_cache_path
 do
     if ! awk -v fn="$fn" '
         $0 ~ "static int " fn "\\(" { in_fn=1 }
         in_fn && /bn_gpu_policy_cuda_q6k_/ { found=1 }
         in_fn && /getenv\(/ { bad=1 }
+        in_fn && /BN_GGUF_TENSOR_/ { bad=1 }
         in_fn && /^}/ { in_fn=0 }
         END { exit(found && !bad ? 0 : 1) }
     ' src/gpu_cuda.cu; then

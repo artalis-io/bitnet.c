@@ -871,6 +871,37 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_Q6K_MATVEC4_512_2048", "1", 1);
     assert(!bn_gpu_policy_cuda_q6k_matvec4_shape_disabled(1024, 2560));
     assert(!bn_gpu_policy_cuda_q6k_matvec4_shape_disabled(512, 2048));
+    unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
+    assert(bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        1, BN_GGUF_TENSOR_Q6_K, 1024, 4, 2));
+    assert(bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        1, BN_GGUF_TENSOR_Q6_K, 768, 2, 4));
+    assert(!bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        0, BN_GGUF_TENSOR_Q6_K, 1024, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        1, BN_GGUF_TENSOR_Q6_K, 2048, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        1, BN_GGUF_TENSOR_Q4_K, 1024, 4, 2));
+    setenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        1, BN_GGUF_TENSOR_Q6_K, 1024, 4, 2));
+    unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
+    assert(bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q6_K, 1, 0, 4096, 1024, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q6_K, 0, 0, 4096, 1024, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q6_K, 1, 1, 4096, 1024, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q4_K, 1, 0, 4096, 1024, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q6_K, 1, 0, 2048, 4096, 2, 2));
+    assert(bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q6_K, 1, 0, 4096, 4096, 2, 2));
+    setenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE", "1", 1);
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        1, BN_GGUF_TENSOR_Q6_K, 1, 0, 4096, 1024, 4, 2));
     unsetenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG");
     unsetenv("BN_CUDA_DISABLE_Q6K_4WARP_1536_8960");
     unsetenv("BN_CUDA_ENABLE_Q6K_4WARP_5120");
@@ -882,6 +913,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6K_2WARP_LONG");
     unsetenv("BN_CUDA_ENABLE_Q6K_MATVEC4_1024_2560");
     unsetenv("BN_CUDA_ENABLE_Q6K_MATVEC4_512_2048");
+    unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
     unsetenv("BN_CUDA_ENABLE_LOGITS_CACHE");
     assert(!bn_gpu_policy_cuda_decode_logits_cache_enabled(0));
     setenv("BN_CUDA_ENABLE_LOGITS_CACHE", "1", 1);

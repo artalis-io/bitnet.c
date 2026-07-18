@@ -83,6 +83,20 @@ int bn_gpu_policy_cuda_q6k_5warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_q6k_3warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_q6k_2warp_long_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_q6k_matvec4_shape_disabled(int rows, int cols);
+int bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(int routed_q4,
+                                                    int down_type,
+                                                    int hidden_dim,
+                                                    int n_experts,
+                                                    int k);
+int bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+    int routed_q4,
+    int down_type,
+    int has_f32_data,
+    int prefer_quant_down,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k);
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu);
 int bn_gpu_policy_cuda_moe_decode_cache_enabled(void);
 int bn_gpu_policy_cuda_moe_decode_cache_disabled(void);

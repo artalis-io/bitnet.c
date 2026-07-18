@@ -11740,9 +11740,18 @@ static int cuda_disable_q6k_matvec4_shape(int rows, int cols) {
 static int cuda_prefer_q6k_moe_quant_down(int routed_q4, int down_type,
                                           int hidden_dim, int n_experts,
                                           int k) {
-    return routed_q4 && down_type == BN_GGUF_TENSOR_Q6_K &&
-           hidden_dim <= 1024 && (n_experts > 2 || k > 2) &&
-           getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+    return bn_gpu_policy_cuda_q6k_moe_quant_down_preferred(
+        routed_q4, down_type, hidden_dim, n_experts, k);
+}
+
+static int cuda_use_q6k_moe_down_f32_cache_path(int routed_q4, int down_type,
+                                                const BnCudaBuffer *down,
+                                                int prefer_quant_down,
+                                                int dim, int hidden_dim,
+                                                int n_experts, int k) {
+    return bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
+        routed_q4, down_type, down && down->f32_data != NULL,
+        prefer_quant_down, dim, hidden_dim, n_experts, k);
 }
 
 static cublasGemmAlgo_t cuda_cublas_gemm_algo(void) {
@@ -14974,11 +14983,9 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
-    } else if (down_type == BN_GGUF_TENSOR_Q6_K && down->f32_data &&
-               !prefer_q6k_quant_down &&
-               !(routed_q4 && n_experts == 2 && k == 2 &&
-                 hidden_dim >= 4096 && dim <= 2048) &&
-               getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
+    } else if (cuda_use_q6k_moe_down_f32_cache_path(
+                   routed_q4, down_type, down, prefer_q6k_quant_down,
+                   dim, hidden_dim, n_experts, k)) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15248,8 +15255,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
           getenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW") == NULL &&
           getenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW") == NULL &&
           getenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER") == NULL &&
-          !(down->f32_data && !prefer_q6k_quant_down &&
-            getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL)));
+          !cuda_use_q6k_moe_down_f32_cache_path(
+              routed_q4, down_type, down, prefer_q6k_quant_down,
+              dim, hidden_dim, n_experts, k)));
     int direct_device_resid_out =
         add_norm_resid && !out && !has_shared && init_out_with_residual &&
         getenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT") == NULL;
@@ -15716,11 +15724,9 @@ moe_route_routed_down:
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
-    } else if (down_type == BN_GGUF_TENSOR_Q6_K && down->f32_data &&
-               !prefer_q6k_quant_down &&
-               !(routed_q4 && n_experts == 2 && k == 2 &&
-                 hidden_dim >= 4096 && dim <= 2048) &&
-               getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL) {
+    } else if (cuda_use_q6k_moe_down_f32_cache_path(
+                   routed_q4, down_type, down, prefer_q6k_quant_down,
+                   dim, hidden_dim, n_experts, k)) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
