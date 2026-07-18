@@ -285,10 +285,22 @@ int bn_transformer_gpu_can_use_stacked_alpha_beta(const BnQWeight *alpha,
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
+int bn_transformer_gpu_all2_q4q6_moe_model(
+    const BnConfig *c,
+    const BnWeights *w);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_model(
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_all2_q4q6_moe_layer(
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int dim);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int dim);
+int bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
+    const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnLayerWeights *lw,
     int dim);
