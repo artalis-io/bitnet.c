@@ -17068,7 +17068,7 @@ static int cuda_prefill_dense_layer(
     int ffn_act_ready = 0;
     if (stacked_gateup && gate_type == BN_GGUF_TENSOR_Q4_K &&
         !gate->f16_data && (dim % BN_QK_K) == 0 &&
-        getenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH") == NULL) {
+        bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled()) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -17767,8 +17767,7 @@ static int cuda_prefill_ssm_layer(
         } else if (stacked_ffn_gateup &&
             ffn_gate_type == BN_GGUF_TENSOR_Q4_K &&
             (dim % BN_QK_K) == 0 &&
-            getenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH") != NULL &&
-            getenv("BN_CUDA_DISABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH") == NULL) {
+            bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled()) {
             int x_blocks = (dim + 31) / 32;
             if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
                 return -1;

@@ -720,6 +720,17 @@ int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }
 
+int bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH") == NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH") !=
+               NULL &&
+           getenv("BN_CUDA_DISABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH") ==
+               NULL;
+}
+
 int bn_gpu_policy_cuda_q5k_fused_gateup_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") != NULL;
 }

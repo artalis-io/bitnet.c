@@ -185,6 +185,8 @@ int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void);
 int bn_gpu_policy_cuda_prefill_moe_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_dense_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void);
+int bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled(void);
+int bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled(void);
 int bn_gpu_policy_cuda_q5k_fused_gateup_enabled(void);
 int bn_gpu_policy_cuda_shared_q4_q8_dot_enabled(void);
 int bn_gpu_policy_cuda_shared_expert_gate_enabled(void);
