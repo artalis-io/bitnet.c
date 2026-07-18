@@ -995,6 +995,8 @@ static void test_gpu_policy_helpers(void) {
     shared_fallback = bn_transformer_gpu_moe_shared_cpu_fallback_policy(
         &c, &shared_layer);
     assert(!shared_fallback.enabled);
+    assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(0));
+    assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(1));
     assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
     assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
     setenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK", "1", 1);
@@ -1006,12 +1008,15 @@ static void test_gpu_policy_helpers(void) {
         &c, &shared_layer);
     assert(!shared_fallback.enabled);
     c.has_shared_expert = 1;
+    assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(0));
+    assert(bn_transformer_gpu_moe_shared_cpu_fallback_enabled(1));
     assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
     assert(bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
     setenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK", "1", 1);
     shared_fallback = bn_transformer_gpu_moe_shared_cpu_fallback_policy(
         &c, &shared_layer);
     assert(!shared_fallback.enabled);
+    assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(1));
     assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
     unsetenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK");
     unsetenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK");

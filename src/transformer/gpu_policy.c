@@ -2222,8 +2222,12 @@ int bn_transformer_gpu_moe_compare_norm_enabled(void) {
     return bn_gpu_policy_moe_compare_norm_enabled();
 }
 
-int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
+int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible) {
     return bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(eligible);
+}
+
+int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
+    return bn_transformer_gpu_moe_shared_cpu_fallback_enabled(eligible);
 }
 
 BnTransformerGPUMoESharedCPUFallbackPolicy
@@ -2232,7 +2236,7 @@ bn_transformer_gpu_moe_shared_cpu_fallback_policy(
     const BnLayerWeights *lw) {
     BnTransformerGPUMoESharedCPUFallbackPolicy policy = {0};
     policy.enabled =
-        bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(
+        bn_transformer_gpu_moe_shared_cpu_fallback_enabled(
             c && c->has_shared_expert && lw &&
             lw->shared.shared_gate.data != NULL);
     return policy;

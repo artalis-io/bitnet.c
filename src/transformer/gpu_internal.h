@@ -895,6 +895,7 @@ int bn_transformer_gpu_moe_compare_parts_enabled(void);
 int bn_transformer_gpu_moe_compare_shared_mid_enabled(void);
 int bn_transformer_gpu_moe_compare_shared_down_enabled(void);
 int bn_transformer_gpu_moe_compare_norm_enabled(void);
+int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible);
 int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible);
 BnTransformerGPUMoESharedCPUFallbackPolicy
 bn_transformer_gpu_moe_shared_cpu_fallback_policy(
