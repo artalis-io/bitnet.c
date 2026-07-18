@@ -1828,8 +1828,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     backend, l, BN_BACKEND_HANDLE_K_NORM) : NULL;
                 t_prof = prefill_profile_now(&prof);
                 int qkv_fused_rc = -1;
+                BnTransformerPrefillRawAttentionCallPolicy raw_attn_call =
+                    bn_transformer_prefill_raw_attention_call_policy(
+                        raw_attn_policy);
                 if (qk_buf && wv_buf && wo_buf &&
-                    raw_attn_policy.fuses_input_norm) {
+                    raw_attn_call.preferred_kind ==
+                        BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID) {
                     qkv_fused_rc = gpu->prefill_qkv_attention_wo_norm_resid(
                         gpu->ctx, act, qk_buf, wv_buf, wo_buf,
                         attn_norm_buf, q_norm_buf, k_norm_buf, act, K_new,

@@ -105,6 +105,16 @@ bn_transformer_prefill_raw_attention_policy(
     return policy;
 }
 
+BnTransformerPrefillRawAttentionCallPolicy
+bn_transformer_prefill_raw_attention_call_policy(
+    BnTransformerPrefillRawAttentionPolicy policy) {
+    BnTransformerPrefillRawAttentionCallPolicy call_policy = {0};
+    call_policy.preferred_kind = policy.fuses_input_norm
+        ? BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID
+        : BN_TRANSFORMER_PREFILL_RAW_ATTENTION_PLAIN;
+    return call_policy;
+}
+
 BnTransformerPrefillAttentionBatchPolicy
 bn_transformer_prefill_attention_batch_policy(
     int raw_attention_already_used,

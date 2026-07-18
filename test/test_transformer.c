@@ -3356,6 +3356,18 @@ static void test_block_planning(void) {
         0, 0, 0, 0, 1, 1);
     assert(!raw_attention.eligible);
 
+    BnTransformerPrefillRawAttentionCallPolicy raw_attention_call =
+        bn_transformer_prefill_raw_attention_call_policy(raw_attention);
+    assert(raw_attention_call.preferred_kind ==
+           BN_TRANSFORMER_PREFILL_RAW_ATTENTION_PLAIN);
+    raw_attention = bn_transformer_prefill_raw_attention_policy(
+        1, 1, 1, 1, 0, 0, 0, 16, 16, 10000.0f, 10000.0f,
+        0, 0, 0, 0, 0, 0);
+    raw_attention_call =
+        bn_transformer_prefill_raw_attention_call_policy(raw_attention);
+    assert(raw_attention_call.preferred_kind ==
+           BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID);
+
     BnTransformerPrefillAttentionBatchPolicy attention_batch =
         bn_transformer_prefill_attention_batch_policy(
             0, 1, 1, 1, 1, 1, 16, 16, 0, 0, 0);

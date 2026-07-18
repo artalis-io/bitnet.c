@@ -43,6 +43,15 @@ typedef struct {
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
 
+typedef enum {
+    BN_TRANSFORMER_PREFILL_RAW_ATTENTION_PLAIN = 0,
+    BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID
+} BnTransformerPrefillRawAttentionCallKind;
+
+typedef struct {
+    BnTransformerPrefillRawAttentionCallKind preferred_kind;
+} BnTransformerPrefillRawAttentionCallPolicy;
+
 typedef struct {
     int eligible;
     int fuses_output_projection;
@@ -119,6 +128,9 @@ bn_transformer_prefill_raw_attention_policy(
     int has_attn_sub_norm,
     int uses_post_norm,
     int has_attn_post_norm);
+BnTransformerPrefillRawAttentionCallPolicy
+bn_transformer_prefill_raw_attention_call_policy(
+    BnTransformerPrefillRawAttentionPolicy policy);
 BnTransformerPrefillAttentionBatchPolicy
 bn_transformer_prefill_attention_batch_policy(
     int raw_attention_already_used,
