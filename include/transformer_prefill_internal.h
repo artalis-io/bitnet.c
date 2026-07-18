@@ -53,6 +53,16 @@ typedef struct {
     int fuses_norm_residual;
 } BnTransformerPrefillFFNBatchPolicy;
 
+typedef enum {
+    BN_TRANSFORMER_PREFILL_FFN_BATCH_PLAIN = 0,
+    BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM,
+    BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM_RESID
+} BnTransformerPrefillFFNBatchCallKind;
+
+typedef struct {
+    BnTransformerPrefillFFNBatchCallKind kind;
+} BnTransformerPrefillFFNBatchCallPolicy;
+
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
@@ -125,6 +135,12 @@ bn_transformer_prefill_ffn_batch_policy(
     int has_ffn_sub_norm,
     int uses_post_norm,
     int has_ffn_post_norm);
+BnTransformerPrefillFFNBatchCallPolicy
+bn_transformer_prefill_ffn_batch_call_policy(
+    int norm_buffer_available,
+    int add_residual,
+    int ffn_batch_norm_hook_available,
+    int ffn_batch_norm_resid_hook_available);
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type);
 int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,

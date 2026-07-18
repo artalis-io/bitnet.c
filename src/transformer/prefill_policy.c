@@ -163,6 +163,24 @@ bn_transformer_prefill_ffn_batch_policy(
     return policy;
 }
 
+BnTransformerPrefillFFNBatchCallPolicy
+bn_transformer_prefill_ffn_batch_call_policy(
+    int norm_buffer_available,
+    int add_residual,
+    int ffn_batch_norm_hook_available,
+    int ffn_batch_norm_resid_hook_available) {
+    BnTransformerPrefillFFNBatchCallPolicy policy = {0};
+    if (norm_buffer_available && add_residual &&
+        ffn_batch_norm_resid_hook_available) {
+        policy.kind = BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM_RESID;
+    } else if (norm_buffer_available && ffn_batch_norm_hook_available) {
+        policy.kind = BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM;
+    } else {
+        policy.kind = BN_TRANSFORMER_PREFILL_FFN_BATCH_PLAIN;
+    }
+    return policy;
+}
+
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
     return ops && ops->supports_preq8k &&

@@ -3424,6 +3424,18 @@ static void test_block_planning(void) {
     assert(ffn_batch.eligible);
     assert(!ffn_batch.fuses_norm_residual);
 
+    BnTransformerPrefillFFNBatchCallPolicy ffn_call =
+        bn_transformer_prefill_ffn_batch_call_policy(1, 1, 1, 1);
+    assert(ffn_call.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM_RESID);
+    ffn_call = bn_transformer_prefill_ffn_batch_call_policy(1, 1, 1, 0);
+    assert(ffn_call.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM);
+    ffn_call = bn_transformer_prefill_ffn_batch_call_policy(1, 0, 1, 1);
+    assert(ffn_call.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM);
+    ffn_call = bn_transformer_prefill_ffn_batch_call_policy(1, 1, 0, 0);
+    assert(ffn_call.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_PLAIN);
+    ffn_call = bn_transformer_prefill_ffn_batch_call_policy(0, 1, 1, 1);
+    assert(ffn_call.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_PLAIN);
+
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_preq8k =
