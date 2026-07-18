@@ -17278,7 +17278,8 @@ static int cuda_prefill_ssm_layer(
         }
     }
 
-    const int ssm_profile = getenv("BN_CUDA_SSM_PROFILE") != NULL;
+    const int ssm_profile =
+        bn_gpu_policy_cuda_prefill_ssm_profile_enabled();
     enum {
         BN_CUDA_SSM_PROF_UPLOAD = 0,
         BN_CUDA_SSM_PROF_NORM,
@@ -17309,7 +17310,7 @@ static int cuda_prefill_ssm_layer(
     } while (0)
 
     int use_stacked_prefill =
-        getenv("BN_CUDA_DISABLE_SSM_STACKED_PREFILL") == NULL;
+        bn_gpu_policy_cuda_prefill_ssm_stacked_enabled();
     int use_qkvz = use_stacked_prefill &&
                    qkvz && qkvz->data && wqkv_type == wz_type &&
                    qkvz->rows == qkv_dim + inner_dim &&
@@ -17318,7 +17319,7 @@ static int cuda_prefill_ssm_layer(
                  ab && ab->data && alpha_type == beta_type &&
                  ab->rows == 2 * num_v_heads && ab->cols == dim;
     int ssm_stream_safe =
-        getenv("BN_CUDA_DISABLE_SSM_STREAM_PREFILL") == NULL &&
+        bn_gpu_policy_cuda_prefill_ssm_stream_enabled() &&
         ctx->stream &&
         ctx->ssm_stream_entry_event &&
         ctx->ssm_stream_exit_event &&
@@ -17383,8 +17384,9 @@ static int cuda_prefill_ssm_layer(
         return -1;
 
     cudaError_t err = cudaSuccess;
-    int alias_prev_output = !X && fuse_ffn &&
-                            getenv("BN_CUDA_DISABLE_SSM_PREFILL_INPUT_ALIAS") == NULL;
+    int alias_prev_output =
+        !X && fuse_ffn &&
+        bn_gpu_policy_cuda_prefill_ssm_input_alias_enabled();
     const float *d_input = alias_prev_output ? ctx->d_out : ctx->d_x;
     if (X) {
         err = cudaMemcpy(ctx->d_x, X, dim_values * sizeof(float),
@@ -17477,7 +17479,7 @@ static int cuda_prefill_ssm_layer(
     BN_CUDA_SSM_PROFILE_STEP(BN_CUDA_SSM_PROF_QKVZ);
 
     int ab_preactivated = 0;
-    if (getenv("BN_CUDA_DISABLE_SSM_F32_AB_PREFILL") == NULL &&
+    if (bn_gpu_policy_cuda_prefill_ssm_f32_ab_enabled() &&
         alpha_type == BN_GGUF_TENSOR_F32 && beta_type == BN_GGUF_TENSOR_F32) {
         ssm_prefill_alpha_beta_f32_kernel<<<dim3(num_v_heads, n_tokens, 1),
                                             threads, 16 * sizeof(float),
@@ -17524,7 +17526,7 @@ static int cuda_prefill_ssm_layer(
     size_t conv_off = (size_t)ssm_idx * (size_t)(conv_kernel - 1) *
                       (size_t)qkv_dim;
     int fast_prefill = head_k_dim == 128 && head_v_dim == 128 &&
-                       !getenv("BN_CUDA_DISABLE_SSM_PREFILL_SCAN");
+                       bn_gpu_policy_cuda_prefill_ssm_scan_enabled();
     if (fast_prefill) {
         ssm_prefill_conv_silu_kernel<<<(qkv_dim + threads - 1) / threads,
                                        threads, 0, ssm_stream>>>(
@@ -17631,7 +17633,7 @@ static int cuda_prefill_ssm_layer(
             }
 
             if (head_k_dim == 128 && head_v_dim == 128 &&
-                getenv("BN_CUDA_DISABLE_SSM_DELTA_128_WARP") == NULL) {
+                bn_gpu_policy_cuda_prefill_ssm_delta_128_warp_enabled()) {
                 ssm_delta_128_warp_kernel<<<dim3(num_v_heads, 32, 1),
                                             dim3(32, 4, 1), 0,
                                             ssm_stream>>>(
@@ -17684,7 +17686,8 @@ static int cuda_prefill_ssm_layer(
     BN_CUDA_SSM_PROFILE_STEP(BN_CUDA_SSM_PROF_OUT);
 
     if (fuse_ffn) {
-        const int ssm_ffn_profile = getenv("BN_CUDA_SSM_FFN_PROFILE") != NULL;
+        const int ssm_ffn_profile =
+            bn_gpu_policy_cuda_prefill_ssm_ffn_profile_enabled();
         static double ssm_ffn_profile_norm = 0.0;
         static double ssm_ffn_profile_gateup = 0.0;
         static double ssm_ffn_profile_act = 0.0;
@@ -17757,8 +17760,7 @@ static int cuda_prefill_ssm_layer(
         int gateup_f16_ready = 0;
         if (stacked_ffn_gateup && ffn_norm_f16 && ffn_gate->f16_data &&
             ffn_down->f16_data &&
-            getenv("BN_CUDA_ENABLE_SSM_FFN_GATEUP_F16_OUT") != NULL &&
-            getenv("BN_CUDA_DISABLE_SSM_FFN_GATEUP_F16_OUT") == NULL) {
+            bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled()) {
             if (cuda_cublas_matmul_f16_preconverted_out_f16(
                     ctx, ctx->d_x, ffn_gate, ffn_norm_f16,
                     hidden_dim * 2, dim, n_tokens) != 0)

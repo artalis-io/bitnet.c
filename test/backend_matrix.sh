@@ -385,6 +385,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH")\|getenv("BN
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_SSM_PROFILE")\|getenv("BN_CUDA_DISABLE_SSM_STACKED_PREFILL")\|getenv("BN_CUDA_DISABLE_SSM_STREAM_PREFILL")\|getenv("BN_CUDA_DISABLE_SSM_PREFILL_INPUT_ALIAS")\|getenv("BN_CUDA_DISABLE_SSM_F32_AB_PREFILL")\|getenv("BN_CUDA_DISABLE_SSM_PREFILL_SCAN")\|getenv("BN_CUDA_DISABLE_SSM_DELTA_128_WARP")\|getenv("BN_CUDA_SSM_FFN_PROFILE")\|getenv("BN_CUDA_ENABLE_SSM_FFN_GATEUP_F16_OUT")\|getenv("BN_CUDA_DISABLE_SSM_FFN_GATEUP_F16_OUT")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA SSM prefill env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA MMVQ argmax variant env policy"
     fail=1
