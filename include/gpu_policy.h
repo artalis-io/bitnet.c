@@ -180,6 +180,8 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
     int use_1warp16);
 int bn_gpu_policy_cuda_argmax_fast_enabled(void);
 int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void);
+int bn_gpu_policy_cuda_q5_matvec4_enabled(void);
+int bn_gpu_policy_cuda_q5_warp_enabled(void);
 int bn_gpu_policy_cuda_readback_debug_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void);
 int bn_gpu_policy_cuda_nan_verbose_debug_enabled(void);

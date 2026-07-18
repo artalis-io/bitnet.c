@@ -13088,13 +13088,13 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             ctx->d_out, (const __half *)w->f16_data, ctx->d_x, NULL,
             rows, cols, 0);
     } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
-        getenv("BN_CUDA_ENABLE_Q5_MATVEC4")) {
+               bn_gpu_policy_cuda_q5_matvec4_enabled()) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
     } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
-               getenv("BN_CUDA_ENABLE_Q5_WARP")) {
+               bn_gpu_policy_cuda_q5_warp_enabled()) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q5_0_matvec_warp_kernel<<<blocks, threads>>>(
@@ -18362,8 +18362,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         fuse_rope_flash_enabled_flag =
             getenv("BN_CUDA_DISABLE_ROPE_FLASH_FUSE") == NULL;
         enable_q5_matvec4_flag =
-            getenv("BN_CUDA_ENABLE_Q5_MATVEC4") != NULL;
-        enable_q5_warp_flag = getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
+            bn_gpu_policy_cuda_q5_matvec4_enabled();
+        enable_q5_warp_flag = bn_gpu_policy_cuda_q5_warp_enabled();
         enable_q4k_dot_flag = getenv("BN_CUDA_DISABLE_Q4K_DOT") == NULL;
         enable_q5k_dot_flag = getenv("BN_CUDA_DISABLE_Q5K_DOT") == NULL;
         enable_q6k_dot_flag = getenv("BN_CUDA_DISABLE_Q6K_DOT") == NULL;

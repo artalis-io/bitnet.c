@@ -1301,6 +1301,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled());
     setenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY", "1", 1);
     assert(bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled());
+    unsetenv("BN_CUDA_ENABLE_Q5_MATVEC4");
+    unsetenv("BN_CUDA_ENABLE_Q5_WARP");
+    assert(!bn_gpu_policy_cuda_q5_matvec4_enabled());
+    assert(!bn_gpu_policy_cuda_q5_warp_enabled());
+    setenv("BN_CUDA_ENABLE_Q5_MATVEC4", "1", 1);
+    setenv("BN_CUDA_ENABLE_Q5_WARP", "1", 1);
+    assert(bn_gpu_policy_cuda_q5_matvec4_enabled());
+    assert(bn_gpu_policy_cuda_q5_warp_enabled());
     unsetenv("BN_CUDA_DEBUG_NAN_VERBOSE");
     unsetenv("BN_CUDA_DISABLE_STREAM_EXEC");
     unsetenv("BN_CUDA_PROFILE");
@@ -1351,6 +1359,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL");
     unsetenv("BN_CUDA_DISABLE_ARGMAX_FAST");
     unsetenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY");
+    unsetenv("BN_CUDA_ENABLE_Q5_MATVEC4");
+    unsetenv("BN_CUDA_ENABLE_Q5_WARP");
     unsetenv("BN_CUDA_DEBUG_NAN_VERBOSE");
     unsetenv("BN_CUDA_DISABLE_STREAM_EXEC");
     unsetenv("BN_CUDA_PROFILE");

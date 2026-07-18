@@ -700,6 +700,14 @@ int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void) {
     return getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
 }
 
+int bn_gpu_policy_cuda_q5_matvec4_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q5_MATVEC4") != NULL;
+}
+
+int bn_gpu_policy_cuda_q5_warp_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
+}
+
 int bn_gpu_policy_cuda_readback_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_READBACK") != NULL;
 }
