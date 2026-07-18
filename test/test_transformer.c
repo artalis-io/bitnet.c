@@ -2280,9 +2280,26 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_DECODE_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE");
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
+    BnTransformerGPULogitsRefinePolicy decode_refine = {0};
+    BnTransformerGPUCPUFallbackPolicy decode_fallback =
+        {-1, -1, -1, -1, -1, -1, -1};
+    BnTransformerGPUComparePolicy decode_compare =
+        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    BnTransformerGPUDecodeCacheabilityPolicy decode_cacheability =
+        bn_transformer_gpu_decode_cacheability_policy(
+            &gpu, &c, NULL, NULL, 1, 0, 0, 0, &decode_refine, 0,
+            &decode_fallback, &decode_compare);
+    assert(!decode_cacheability.resident_moe);
+    assert(decode_cacheability.graph_cacheable);
     assert(bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
+    decode_fallback.layer = 0;
+    decode_cacheability = bn_transformer_gpu_decode_cacheability_policy(
+        &gpu, &c, NULL, NULL, 1, 0, 0, 0, &decode_refine, 0,
+        &decode_fallback, &decode_compare);
+    assert(!decode_cacheability.graph_cacheable);
+    decode_fallback.layer = -1;
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
     assert(!bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,

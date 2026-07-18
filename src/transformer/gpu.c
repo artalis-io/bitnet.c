@@ -890,9 +890,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (!command_buffer)
         return bn_transformer_gpu_reject_forward(
             &emit, "gpu graph allocation failed");
-    int cacheable_resident_moe =
-        policy.has_moe &&
-        bn_transformer_gpu_cuda_moe_decode_cacheable(c, w, backend);
     int gpu_logits_need_cpu =
         bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);
     int use_matvec_argmax =
@@ -908,17 +905,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int small_dense_cuda_exact_q4_q8_to_layer =
         bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
             c, small_dense_cuda_exact_q4_q8_default, q4_q8.to_layer);
-    int cacheable_decode =
-        bn_transformer_gpu_cuda_decode_cacheable(
-            gpu, emit_logits, argmax_token != NULL, gpu_logits_need_cpu,
-            policy.has_moe, cacheable_resident_moe,
-            logits_refine.q6_captures_xb, logits_refine.q8_captures_xb,
-            need_logits, cpu_fallback.layer, cpu_fallback.from_layer,
-            cpu_fallback.attn_layer, cpu_fallback.attn_from_layer,
-            cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer,
-            cpu_fallback.ffn_down_from_layer, compare_attention_layer,
-            compare_gqa_layer, compare_qkv_layer, compare_ffn_down_layer,
-            compare_ffn_state_layer);
+    BnTransformerGPUDecodeCacheabilityPolicy decode_cacheability =
+        bn_transformer_gpu_decode_cacheability_policy(
+            gpu, c, w, backend, emit_logits, argmax_token != NULL,
+            gpu_logits_need_cpu, policy.has_moe, &logits_refine, need_logits,
+            &cpu_fallback, &compare_policy);
+    int cacheable_decode = decode_cacheability.graph_cacheable;
     int cached_n = cacheable_decode
         ? bn_backend_session_gpu_cached_op_count(sess->backend)
         : 0;

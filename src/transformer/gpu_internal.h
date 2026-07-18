@@ -137,6 +137,11 @@ typedef struct {
 } BnTransformerGPUCachedDecodePolicy;
 
 typedef struct {
+    int resident_moe;
+    int graph_cacheable;
+} BnTransformerGPUDecodeCacheabilityPolicy;
+
+typedef struct {
     int from_layer;
     int to_layer;
 } BnTransformerGPUMoERouteLayerPolicy;
@@ -528,6 +533,20 @@ int bn_transformer_gpu_cuda_decode_cacheable(
     int compare_qkv_layer,
     int compare_ffn_down_layer,
     int compare_ffn_state_layer);
+BnTransformerGPUDecodeCacheabilityPolicy
+bn_transformer_gpu_decode_cacheability_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnBackendModel *backend,
+    int emit_logits,
+    int want_argmax,
+    int gpu_logits_need_cpu,
+    int has_moe,
+    const BnTransformerGPULogitsRefinePolicy *logits_refine,
+    int need_logits,
+    const BnTransformerGPUCPUFallbackPolicy *cpu_fallback,
+    const BnTransformerGPUComparePolicy *compare);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w);

@@ -1224,6 +1224,46 @@ int bn_transformer_gpu_cuda_decode_cacheable(
     return 1;
 }
 
+BnTransformerGPUDecodeCacheabilityPolicy
+bn_transformer_gpu_decode_cacheability_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnBackendModel *backend,
+    int emit_logits,
+    int want_argmax,
+    int gpu_logits_need_cpu,
+    int has_moe,
+    const BnTransformerGPULogitsRefinePolicy *logits_refine,
+    int need_logits,
+    const BnTransformerGPUCPUFallbackPolicy *cpu_fallback,
+    const BnTransformerGPUComparePolicy *compare) {
+    BnTransformerGPUDecodeCacheabilityPolicy policy = {0};
+    policy.resident_moe =
+        has_moe &&
+        bn_transformer_gpu_cuda_moe_decode_cacheable(c, w, backend);
+    policy.graph_cacheable =
+        bn_transformer_gpu_cuda_decode_cacheable(
+            gpu, emit_logits, want_argmax, gpu_logits_need_cpu, has_moe,
+            policy.resident_moe,
+            logits_refine ? logits_refine->q6_captures_xb : 0,
+            logits_refine ? logits_refine->q8_captures_xb : 0,
+            need_logits,
+            cpu_fallback ? cpu_fallback->layer : -1,
+            cpu_fallback ? cpu_fallback->from_layer : -1,
+            cpu_fallback ? cpu_fallback->attn_layer : -1,
+            cpu_fallback ? cpu_fallback->attn_from_layer : -1,
+            cpu_fallback ? cpu_fallback->ffn_layer : -1,
+            cpu_fallback ? cpu_fallback->ffn_from_layer : -1,
+            cpu_fallback ? cpu_fallback->ffn_down_from_layer : -1,
+            compare ? compare->attention_layer : -1,
+            compare ? compare->gqa_layer : -1,
+            compare ? compare->qkv_layer : -1,
+            compare ? compare->ffn_down_layer : -1,
+            compare ? compare->ffn_state_layer : -1);
+    return policy;
+}
+
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
