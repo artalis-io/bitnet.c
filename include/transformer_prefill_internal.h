@@ -154,6 +154,17 @@ bn_transformer_prefill_shared_all2_decode_fallback_policy(
     int gpu_available);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
+int bn_transformer_prefill_hybrid_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_prefill_moe_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_prefill_small_dense_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_prefill_moe_enabled(void);
+int bn_transformer_prefill_large_hybrid_disabled(void);
 BnTransformerPrefillDecodeFallbackPolicy
 bn_transformer_prefill_decode_fallback_policy(
     BnTransformerPrefillSequencePolicy sequence,
