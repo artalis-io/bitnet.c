@@ -1831,6 +1831,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == -1);
     assert(!bn_gpu_policy_metal_q4_prepared_enabled());
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());
+    assert(bn_gpu_policy_metal_repacked_buffer_supported(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_gpu_policy_metal_repacked_buffer_supported(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
+        BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 0, 0, 1, 1, 0));
     bn_gpu_policy_metal_apply_q4_q8_default();
@@ -1873,8 +1879,14 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
     assert(bn_gpu_policy_metal_q4_prepared_enabled());
     assert(bn_gpu_policy_metal_q4_prepared_upload_enabled());
+    assert(bn_gpu_policy_metal_prepared_stacked_upload_blocked(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
+        BN_GGUF_TENSOR_Q8_0));
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "1", 1);
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());
+    assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
+        BN_GGUF_TENSOR_Q4_0));
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
     setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());

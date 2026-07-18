@@ -488,7 +488,7 @@ static void *metal_buffer_create(void *vctx, const void *data, size_t size,
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !data || size == 0) return NULL;
 
-    if (type == BN_GGUF_TENSOR_Q4_0)
+    if (bn_gpu_policy_metal_repacked_buffer_supported(type))
         return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols, NULL, 0, 1);
 
     BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
@@ -561,7 +561,7 @@ static void *metal_buffer_create_biased(void *vctx, const void *data, size_t siz
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !data || size == 0 || !bias || bias_size == 0) return NULL;
 
-    if (type == BN_GGUF_TENSOR_Q4_0) {
+    if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         int bias_len = (int)(bias_size / sizeof(float));
         return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols,
                                          (const float *)bias, bias_len, 1);
@@ -592,7 +592,7 @@ static void *metal_buffer_create_stacked2(void *vctx,
     if (!ctx || !data0 || !data1 || size0 == 0 || size1 == 0) return NULL;
 
     size_t total = size0 + size1;
-    if (type == BN_GGUF_TENSOR_Q4_0) {
+    if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         uint8_t *combined = (uint8_t *)malloc(total);
         if (!combined) return NULL;
         memcpy(combined, data0, size0);
@@ -651,8 +651,7 @@ static void *metal_buffer_create_stacked3(void *vctx,
     if (!ctx || !data0 || !data1 || !data2 ||
         size0 == 0 || size1 == 0 || size2 == 0)
         return NULL;
-    if (type == BN_GGUF_TENSOR_Q4_0 &&
-        bn_gpu_policy_metal_q4_prepared_upload_enabled())
+    if (bn_gpu_policy_metal_prepared_stacked_upload_blocked(type))
         return NULL;
 
     size_t total = size0 + size1 + size2;
@@ -663,7 +662,7 @@ static void *metal_buffer_create_stacked3(void *vctx,
     memcpy(combined + size0 + size1, data2, size2);
 
     BnMetalBuf *buf = NULL;
-    if (type == BN_GGUF_TENSOR_Q4_0) {
+    if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         buf = metal_repack_q4_0_for_gpu(
             ctx, combined, total, rows, cols, NULL, 0, 0);
     } else {
@@ -691,8 +690,7 @@ static void *metal_buffer_create_stacked3_biased(void *vctx,
     if (!ctx || !data0 || !data1 || !data2 || !bias ||
         size0 == 0 || size1 == 0 || size2 == 0 || bias_size == 0)
         return NULL;
-    if (type == BN_GGUF_TENSOR_Q4_0 &&
-        bn_gpu_policy_metal_q4_prepared_upload_enabled())
+    if (bn_gpu_policy_metal_prepared_stacked_upload_blocked(type))
         return NULL;
 
     size_t total = size0 + size1 + size2;
@@ -703,7 +701,7 @@ static void *metal_buffer_create_stacked3_biased(void *vctx,
     memcpy(combined + size0 + size1, data2, size2);
 
     BnMetalBuf *buf = NULL;
-    if (type == BN_GGUF_TENSOR_Q4_0) {
+    if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         int bias_len = (int)(bias_size / sizeof(float));
         buf = metal_repack_q4_0_for_gpu(
             ctx, combined, total, rows, cols, (const float *)bias,

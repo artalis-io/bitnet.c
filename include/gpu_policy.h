@@ -161,6 +161,8 @@ void bn_gpu_policy_metal_apply_q4_q8_default(void);
 int bn_gpu_policy_metal_q4_q8_enabled(void);
 int bn_gpu_policy_metal_q4_prepared_enabled(void);
 int bn_gpu_policy_metal_q4_prepared_upload_enabled(void);
+int bn_gpu_policy_metal_repacked_buffer_supported(int tensor_type);
+int bn_gpu_policy_metal_prepared_stacked_upload_blocked(int tensor_type);
 int bn_gpu_policy_metal_shared_weights_enabled(void);
 int bn_gpu_policy_metal_q6_q8k_enabled(void);
 int bn_gpu_policy_metal_q8_barriers_enabled(void);

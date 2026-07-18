@@ -724,6 +724,15 @@ int bn_gpu_policy_metal_q4_prepared_upload_enabled(void) {
            !getenv("BN_GPU_Q4_Q8_FFN_ONLY");
 }
 
+int bn_gpu_policy_metal_repacked_buffer_supported(int tensor_type) {
+    return bn_backend_quant_can_gpu_repack(tensor_type);
+}
+
+int bn_gpu_policy_metal_prepared_stacked_upload_blocked(int tensor_type) {
+    return bn_gpu_policy_metal_repacked_buffer_supported(tensor_type) &&
+           bn_gpu_policy_metal_q4_prepared_upload_enabled();
+}
+
 int bn_gpu_policy_metal_shared_weights_enabled(void) {
     return getenv("BN_METAL_SHARED_WEIGHTS") != NULL;
 }

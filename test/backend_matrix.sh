@@ -616,10 +616,29 @@ if grep -n 'return gpu && gpu->kind == BN_GPU_BACKEND_CUDA' src/transformer/gpu_
     fail=1
 fi
 
-if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
+if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must own Metal feature-policy env vars"
     fail=1
 fi
+
+for fn in \
+    metal_buffer_create \
+    metal_buffer_create_biased \
+    metal_buffer_create_stacked2 \
+    metal_buffer_create_stacked3 \
+    metal_buffer_create_stacked3_biased
+do
+    if awk -v fn="$fn" '
+        $0 ~ "static void \\*" fn "\\(" { in_fn=1 }
+        in_fn && /type == BN_GGUF_TENSOR_/ { bad=1 }
+        in_fn && /bn_gpu_policy_metal_repacked_buffer_supported|bn_gpu_policy_metal_prepared_stacked_upload_blocked/ { saw_policy=1 }
+        in_fn && /^}/ { in_fn=0 }
+        END { exit (bad || !saw_policy) ? 0 : 1 }
+    ' src/gpu_metal.m >/dev/null 2>&1; then
+        echo "Metal buffer upload eligibility in $fn must use GPU policy helpers, not tensor-specific checks"
+        fail=1
+    fi
+done
 
 if awk '
     /static int metal_matvec\(/ { in_fn=1 }
