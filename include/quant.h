@@ -359,6 +359,7 @@ int      bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(int type,
 int      bn_quant_format_cuda_moe_down_q4_f32_cache_supported(int type);
 int      bn_quant_format_cuda_moe_quant_only_after_cache(int type,
                                                          int q8_f16_cache);
+int      bn_quant_format_lazy_moe_aux_cache_candidate(int type);
 int      bn_quant_format_cuda_lazy_moe_aux_cache_candidate(int type);
 int      bn_quant_format_cuda_moe_prefers_quant_only(int type);
 int      bn_quant_format_cuda_aux_cache_supported(int type);

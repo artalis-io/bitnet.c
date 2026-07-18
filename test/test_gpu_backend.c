@@ -1502,8 +1502,9 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_backend_quant_cuda_small_dense_supported(BN_GGUF_TENSOR_F32));
-    assert(bn_backend_quant_cuda_small_dense_supported(BN_GGUF_TENSOR_F16));
+    assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_F32));
+    assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_F16));
+    assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_cuda_small_dense_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_supports_gpu_small_dense(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_Q4_0) ==
@@ -1525,7 +1526,7 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_I2_S));
-    assert(!bn_backend_quant_cuda_small_dense_supported(BN_GGUF_TENSOR_I2_S));
+    assert(!bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_supports_gpu_small_dense(BN_GGUF_TENSOR_I2_S));
     assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_I2_S) == 0);
     assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_I2_S) == 0);
@@ -1549,8 +1550,9 @@ static void test_quant_registry(void) {
            BN_GPU_CAP_Q5K_MATVEC_SPLIT);
     assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CAP_Q8_FUSED_GATEUP_SILU);
+    assert(bn_backend_quant_small_dense_q8_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_small_dense_q8_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_cuda_small_dense_q8_supported(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_cuda_small_dense_q8_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_supports_gpu_small_dense_q8(BN_GGUF_TENSOR_Q8_0));
@@ -1684,8 +1686,12 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_gpu_matvec_exact_q6k_flag(BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_cuda_small_dense_supported(BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_cuda_small_dense_supported(BN_GGUF_TENSOR_Q8_K));
+    assert(bn_backend_quant_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_cuda_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q8_K));
     assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q5_K));

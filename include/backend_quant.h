@@ -25,12 +25,20 @@ static inline int bn_backend_quant_can_gpu_repack(int type) {
     return bn_quant_format_can_gpu_repack(type);
 }
 
-static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
+static inline int bn_backend_quant_small_dense_supported(int type) {
     return bn_quant_format_supports_gpu_small_dense(type);
 }
 
-static inline int bn_backend_quant_cuda_small_dense_q8_supported(int type) {
+static inline int bn_backend_quant_small_dense_q8_supported(int type) {
     return bn_quant_format_supports_gpu_small_dense_q8(type);
+}
+
+static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
+    return bn_backend_quant_small_dense_supported(type);
+}
+
+static inline int bn_backend_quant_cuda_small_dense_q8_supported(int type) {
+    return bn_backend_quant_small_dense_q8_supported(type);
 }
 
 static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) {
@@ -188,8 +196,12 @@ static inline int bn_backend_quant_cuda_moe_quant_only_after_cache(
                                                            q8_f16_cache);
 }
 
+static inline int bn_backend_quant_lazy_moe_aux_cache_candidate(int type) {
+    return bn_quant_format_lazy_moe_aux_cache_candidate(type);
+}
+
 static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(int type) {
-    return bn_quant_format_cuda_lazy_moe_aux_cache_candidate(type);
+    return bn_backend_quant_lazy_moe_aux_cache_candidate(type);
 }
 
 static inline int bn_backend_quant_cuda_moe_prefers_quant_only(int type) {
