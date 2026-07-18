@@ -2125,9 +2125,13 @@ int bn_transformer_gpu_cuda_moe_ffn_disabled(void) {
     return bn_transformer_gpu_moe_ffn_disabled();
 }
 
-int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default) {
+int bn_transformer_gpu_moe_cpu_actual_override_enabled(int safe_default) {
     return safe_default ||
            bn_gpu_policy_cuda_moe_cpu_actual_override_enabled();
+}
+
+int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default) {
+    return bn_transformer_gpu_moe_cpu_actual_override_enabled(safe_default);
 }
 
 BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
@@ -2135,7 +2139,7 @@ BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
     int compare_layer_selected) {
     BnTransformerGPUMoEDebugPolicy policy = {0};
     policy.override_cpu_actual =
-        bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(
+        bn_transformer_gpu_moe_cpu_actual_override_enabled(
             cpu_actual_safe_default);
     policy.compare_layer = compare_layer_selected;
     policy.compare_route =
