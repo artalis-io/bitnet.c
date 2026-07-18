@@ -879,6 +879,44 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_COMPARE_MOE_SHARED_DOWN");
     unsetenv("BN_GPU_COMPARE_MOE_NORM");
 
+    unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
+    BnTransformerGPUMoEDebugPolicy moe_debug =
+        bn_transformer_gpu_moe_debug_policy(0, 0);
+    assert(!moe_debug.override_cpu_actual);
+    assert(!moe_debug.compare_layer);
+    assert(!moe_debug.compare_route);
+    assert(!moe_debug.compare_input_norm);
+    assert(!moe_debug.compare_actual);
+    moe_debug = bn_transformer_gpu_moe_debug_policy(1, 0);
+    assert(moe_debug.override_cpu_actual);
+    assert(!moe_debug.compare_layer);
+    moe_debug = bn_transformer_gpu_moe_debug_policy(0, 1);
+    assert(!moe_debug.override_cpu_actual);
+    assert(moe_debug.compare_layer);
+    assert(!moe_debug.compare_route);
+    assert(!moe_debug.compare_input_norm);
+    assert(!moe_debug.compare_actual);
+    setenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL", "1", 1);
+    setenv("BN_GPU_COMPARE_MOE_ROUTE", "1", 1);
+    setenv("BN_GPU_COMPARE_MOE_INPUT_NORM", "1", 1);
+    setenv("BN_GPU_COMPARE_MOE_ACTUAL", "1", 1);
+    moe_debug = bn_transformer_gpu_moe_debug_policy(0, 0);
+    assert(moe_debug.override_cpu_actual);
+    assert(!moe_debug.compare_layer);
+    assert(!moe_debug.compare_route);
+    assert(!moe_debug.compare_input_norm);
+    assert(!moe_debug.compare_actual);
+    moe_debug = bn_transformer_gpu_moe_debug_policy(0, 1);
+    assert(moe_debug.override_cpu_actual);
+    assert(moe_debug.compare_layer);
+    assert(moe_debug.compare_route);
+    assert(moe_debug.compare_input_norm);
+    assert(moe_debug.compare_actual);
+    unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
+    unsetenv("BN_GPU_COMPARE_MOE_ROUTE");
+    unsetenv("BN_GPU_COMPARE_MOE_INPUT_NORM");
+    unsetenv("BN_GPU_COMPARE_MOE_ACTUAL");
+
     unsetenv("BN_GPU_CPU_LOGITS");
     unsetenv("BN_GPU_DEBUG_ARGMAX_COMPARE");
     unsetenv("BN_GPU_COMPARE_LOGITS");

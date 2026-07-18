@@ -153,6 +153,14 @@ typedef struct {
 } BnTransformerGPUMoEDecodeRoutePolicy;
 
 typedef struct {
+    int override_cpu_actual;
+    int compare_layer;
+    int compare_route;
+    int compare_input_norm;
+    int compare_actual;
+} BnTransformerGPUMoEDebugPolicy;
+
+typedef struct {
     int enabled;
     void *router_diff;
 } BnTransformerGPUMoEDirectRoutePolicy;
@@ -643,6 +651,9 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
     const BnConfig *c);
 int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
 int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);
+BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
+    int cpu_actual_safe_default,
+    int compare_layer_selected);
 int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos);
 int bn_transformer_gpu_moe_compare_input_norm_enabled(void);
 int bn_transformer_gpu_moe_compare_actual_enabled(void);

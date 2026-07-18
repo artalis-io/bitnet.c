@@ -1693,6 +1693,26 @@ int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default) {
            bn_gpu_policy_cuda_moe_cpu_actual_override_enabled();
 }
 
+BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
+    int cpu_actual_safe_default,
+    int compare_layer_selected) {
+    BnTransformerGPUMoEDebugPolicy policy = {0};
+    policy.override_cpu_actual =
+        bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(
+            cpu_actual_safe_default);
+    policy.compare_layer = compare_layer_selected;
+    policy.compare_route =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_route_enabled();
+    policy.compare_input_norm =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_input_norm_enabled();
+    policy.compare_actual =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_actual_enabled();
+    return policy;
+}
+
 int bn_transformer_gpu_moe_compare_layer_selected(int layer, int pos) {
     return bn_gpu_policy_moe_compare_layer_selected(layer, pos);
 }
