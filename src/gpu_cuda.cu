@@ -16115,13 +16115,14 @@ static int cuda_prefill_attention(void *vctx, float *out,
                                   int head_size, int kv_mul, int kv_dim,
                                   float attention_scale) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_ATTN"))
+    if (!bn_gpu_policy_cuda_prefill_attention_enabled())
         return -1;
     if (!ctx || !out || !Q || !K || !V || n_tokens <= 1 ||
         n_heads <= 0 || n_kv_heads <= 0 || head_size <= 0 ||
         kv_mul <= 0 || kv_dim <= 0 || n_heads / kv_mul != n_kv_heads)
         return -1;
-    int min_tokens = cuda_env_int("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", 16);
+    int min_tokens =
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
     if (n_tokens < min_tokens)
         return -1;
     if (n_tokens > 2048)
@@ -16196,7 +16197,8 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         wo_cols != n_heads * head_size || wo->rows != wo_rows ||
         wo->cols != wo_cols || !cuda_type_supported(wo_type))
         return -1;
-    int min_tokens = cuda_env_int("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", 16);
+    int min_tokens =
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
     if (n_tokens < min_tokens || n_tokens > 2048)
         return -1;
 
@@ -16417,9 +16419,10 @@ static int cuda_prefill_qkv_attention_wo_impl(
         (k_bias && (!k_bias->data || k_bias->rows * k_bias->cols < kv_dim)) ||
         (v_bias && (!v_bias->data || v_bias->rows * v_bias->cols < kv_dim)))
         return -1;
-    int min_tokens = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")
-        ? cuda_env_int("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", 64)
-        : 16;
+    int min_tokens =
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_configured()
+            ? bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(64)
+            : 16;
     if (min_tokens_override > 0)
         min_tokens = min_tokens_override;
     if (n_tokens < min_tokens || n_tokens > 2048)
@@ -16846,9 +16849,10 @@ static int cuda_prefill_dense_layer(
         (!stacked_gateup && !cuda_type_supported(up_type)) ||
         !cuda_type_supported(down_type))
         return -1;
-    int min_tokens = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")
-        ? cuda_env_int("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", 64)
-        : (dim <= 2560 ? 2 : 16);
+    int min_tokens =
+        bn_gpu_policy_cuda_prefill_attention_min_tokens_configured()
+            ? bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(64)
+            : (dim <= 2560 ? 2 : 16);
     if (n_tokens < min_tokens || n_tokens > 512)
         return -1;
     int use_gemm_attention =

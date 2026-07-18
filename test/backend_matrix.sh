@@ -360,6 +360,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_ARGMAX_FAST")\|getenv("BN_CUDA_ENABLE_OPTIMI
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_ATTN")\|getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA prefill attention admission env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA MMVQ argmax variant env policy"
     fail=1
