@@ -15036,7 +15036,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
          getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
 
     int use_q8_q8_1_batch =
-        routed_q8 && getenv("BN_CUDA_DISABLE_Q8_MOE_BATCH_Q8_1") == NULL;
+        bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(routed_q8);
     int prefer_q6k_quant_down = cuda_prefer_q6k_moe_quant_down(
         routed_q4, down_type, hidden_dim, n_experts, k);
     if (use_q8_q8_1_batch) {
@@ -15048,8 +15048,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             xq, d_full_x, dim, n_tokens);
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
-        if (hidden_dim <= 1024 &&
-            getenv("BN_CUDA_DISABLE_Q8_MOE_GATEUP_2ROW") == NULL) {
+        if (bn_gpu_policy_cuda_q8_moe_gateup_2row_enabled(hidden_dim)) {
             int gateup2_blocks =
                 (gateup_tasks + warps * 2 - 1) / (warps * 2);
             moe_q8_0_gateup_routed_mid_q8_1_2row_batch_kernel<<<gateup2_blocks, threads, 0>>>(
@@ -15150,15 +15149,13 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             mid_q, d_mid, hidden_dim, n_mid);
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
-        if (hidden_dim <= 1024 &&
-            getenv("BN_CUDA_ENABLE_Q8_MOE_DOWN_4ROW") != NULL) {
+        if (bn_gpu_policy_cuda_q8_moe_down_4row_enabled(hidden_dim)) {
             int down4_blocks = (down_tasks + warps * 4 - 1) / (warps * 4);
             moe_q8_0_down_routed_q8_1_accum_4row_batch_kernel<<<down4_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k,
                 n_tokens);
-        } else if (hidden_dim <= 1024 &&
-            getenv("BN_CUDA_DISABLE_Q8_MOE_DOWN_2ROW") == NULL) {
+        } else if (bn_gpu_policy_cuda_q8_moe_down_2row_enabled(hidden_dim)) {
             int down2_blocks = (down_tasks + warps * 2 - 1) / (warps * 2);
             moe_q8_0_down_routed_q8_1_accum_2row_batch_kernel<<<down2_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
@@ -15660,7 +15657,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         (n_tokens <= 1 ||
          getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
     int use_q8_q8_1_batch =
-        routed_q8 && getenv("BN_CUDA_DISABLE_Q8_MOE_BATCH_Q8_1") == NULL;
+        bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(routed_q8);
 
     if (use_cublas_all2_decode) {
         moe_pack_all2_route_kernel<<<1, 1>>>(d_decode_route, d_indices,
@@ -15744,8 +15741,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(2);
-        if (hidden_dim <= 1024 &&
-            getenv("BN_CUDA_DISABLE_Q8_MOE_GATEUP_2ROW") == NULL) {
+        if (bn_gpu_policy_cuda_q8_moe_gateup_2row_enabled(hidden_dim)) {
             int gateup2_blocks =
                 (gateup_tasks + warps * 2 - 1) / (warps * 2);
             if (use_sorted_slots) {
@@ -15873,15 +15869,13 @@ moe_route_routed_down:
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(4);
-        if (hidden_dim <= 1024 &&
-            getenv("BN_CUDA_ENABLE_Q8_MOE_DOWN_4ROW") != NULL) {
+        if (bn_gpu_policy_cuda_q8_moe_down_4row_enabled(hidden_dim)) {
             int down4_blocks = (down_tasks + warps * 4 - 1) / (warps * 4);
             moe_q8_0_down_routed_q8_1_accum_4row_batch_kernel<<<down4_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k,
                 n_tokens);
-        } else if (hidden_dim <= 1024 &&
-            getenv("BN_CUDA_DISABLE_Q8_MOE_DOWN_2ROW") == NULL) {
+        } else if (bn_gpu_policy_cuda_q8_moe_down_2row_enabled(hidden_dim)) {
             int down2_blocks = (down_tasks + warps * 2 - 1) / (warps * 2);
             moe_q8_0_down_routed_q8_1_accum_2row_batch_kernel<<<down2_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ8_0 *)down->data, mid_q,

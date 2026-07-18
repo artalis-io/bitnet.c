@@ -869,6 +869,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE")\|getenv("BN_CUDA_EN
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q8_MOE_BATCH_Q8_1")\|getenv("BN_CUDA_DISABLE_Q8_MOE_GATEUP_2ROW")\|getenv("BN_CUDA_ENABLE_Q8_MOE_DOWN_4ROW")\|getenv("BN_CUDA_DISABLE_Q8_MOE_DOWN_2ROW")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for Q8 MoE native env vars"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
