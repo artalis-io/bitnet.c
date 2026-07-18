@@ -15,6 +15,13 @@ int bn_transformer_prefill_force_token_attention_enabled(void) {
     return getenv("BN_PREFILL_FORCE_TOKEN_ATTN") != NULL;
 }
 
+BnTransformerPrefillLayerKindPolicy
+bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight) {
+    BnTransformerPrefillLayerKindPolicy policy = {0};
+    policy.uses_moe = moe_router_weight != NULL;
+    return policy;
+}
+
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
     return ops && ops->supports_preq8k &&

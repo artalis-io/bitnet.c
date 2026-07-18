@@ -30,10 +30,16 @@ typedef struct {
     int supports_preq8k;
 } BnPrefillCPUOps;
 
+typedef struct {
+    int uses_moe;
+} BnTransformerPrefillLayerKindPolicy;
+
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
 int bn_transformer_prefill_force_token_attention_enabled(void);
+BnTransformerPrefillLayerKindPolicy
+bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight);
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type);
 int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,

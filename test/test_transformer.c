@@ -3143,6 +3143,13 @@ static void test_block_planning(void) {
     c.policy_flags = 0;
     c.full_attn_interval = 0;
 
+    BnTransformerPrefillLayerKindPolicy prefill_layer_kind =
+        bn_transformer_prefill_layer_kind_policy(NULL);
+    assert(!prefill_layer_kind.uses_moe);
+    prefill_layer_kind =
+        bn_transformer_prefill_layer_kind_policy((void *)1);
+    assert(prefill_layer_kind.uses_moe);
+
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_preq8k =

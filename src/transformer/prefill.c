@@ -1501,7 +1501,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 size_t loff = (size_t)plan.attn_idx * c->seq_len * kv_dim;
                 uint32_t kv_cache_off =
                     (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
-                int layer_rc = lw->moe.router_weight
+                BnTransformerPrefillLayerKindPolicy layer_kind =
+                    bn_transformer_prefill_layer_kind_policy(
+                        lw->moe.router_weight);
+                int layer_rc = layer_kind.uses_moe
                     ? prefill_moe_layer_gpu_batch(
                           m, layer_out, lw, layer_in,
                           direct_gpu_kv ? NULL : K_new,
@@ -1605,7 +1608,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         (size_t)plan.attn_idx * c->seq_len * kv_dim;
                     uint32_t kv_cache_off =
                         (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
-                    int layer_rc = lw->moe.router_weight
+                    BnTransformerPrefillLayerKindPolicy layer_kind =
+                        bn_transformer_prefill_layer_kind_policy(
+                            lw->moe.router_weight);
+                    int layer_rc = layer_kind.uses_moe
                         ? prefill_moe_layer_gpu_batch(
                               m, layer_out, lw, layer_in,
                               direct_gpu_kv ? NULL : K_new,
@@ -1655,7 +1661,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int qkv_dim_ssm = key_dim_ssm * 2 + value_dim;
                     int kern_ssm =
                         c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
-                    int r_is_moe = lw->moe.router_weight != NULL;
+                    BnTransformerPrefillLayerKindPolicy layer_kind =
+                        bn_transformer_prefill_layer_kind_policy(
+                            lw->moe.router_weight);
+                    int r_is_moe = layer_kind.uses_moe;
                     float *ssm_out =
                         (!r_is_moe && l == c->n_layers - 1) ? act : NULL;
                     int ssm_did_ffn = 0;
