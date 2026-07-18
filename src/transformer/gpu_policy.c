@@ -45,6 +45,17 @@ int bn_transformer_gpu_can_use_stacked_qk(int q_type, int k_type) {
     return bn_backend_quant_stacked_pair_same_format(q_type, k_type);
 }
 
+int bn_transformer_gpu_can_use_stacked_qk_weights(const BnQWeight *q,
+                                                  const BnQWeight *k,
+                                                  int q_dim,
+                                                  int kv_dim) {
+    return q && k &&
+           q->rows == q_dim &&
+           k->rows == kv_dim &&
+           q->cols == k->cols &&
+           bn_transformer_gpu_can_use_stacked_qk(q->type, k->type);
+}
+
 int bn_transformer_gpu_can_use_stacked_gateup(const BnQWeight *gate,
                                               const BnQWeight *up) {
     return gate && up &&

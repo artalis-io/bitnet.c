@@ -502,6 +502,22 @@ static void test_gpu_capability_routing(void) {
                                                  BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_gpu_can_use_stacked_qk(BN_GGUF_TENSOR_Q4_K,
                                                   BN_GGUF_TENSOR_Q5_K));
+    BnQWeight q = {0};
+    BnQWeight k = {0};
+    q.type = BN_GGUF_TENSOR_Q4_K;
+    k.type = BN_GGUF_TENSOR_Q4_K;
+    q.rows = 64;
+    k.rows = 32;
+    q.cols = k.cols = 128;
+    assert(bn_transformer_gpu_can_use_stacked_qk_weights(&q, &k, 64, 32));
+    k.cols = 64;
+    assert(!bn_transformer_gpu_can_use_stacked_qk_weights(&q, &k, 64, 32));
+    k.cols = 128;
+    k.rows = 64;
+    assert(!bn_transformer_gpu_can_use_stacked_qk_weights(&q, &k, 64, 32));
+    k.rows = 32;
+    k.type = BN_GGUF_TENSOR_Q5_K;
+    assert(!bn_transformer_gpu_can_use_stacked_qk_weights(&q, &k, 64, 32));
     BnQWeight gate = {0};
     BnQWeight up = {0};
     gate.type = BN_GGUF_TENSOR_Q4_0;

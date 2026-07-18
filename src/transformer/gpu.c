@@ -746,11 +746,8 @@ static int gpu_qkv_resources_missing(
     int has_qkv = res && res->qkv_stacked && !plan->q_gated &&
                   !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias;
     int has_qk = res && res->qk_stacked && !plan->q_gated &&
-                 lw->attn.wq.rows == plan->q_dim &&
-                 lw->attn.wk.rows == plan->kv_dim &&
-                 lw->attn.wq.cols == lw->attn.wk.cols &&
-                 bn_transformer_gpu_can_use_stacked_qk(lw->attn.wq.type,
-                                                       lw->attn.wk.type);
+                 bn_transformer_gpu_can_use_stacked_qk_weights(
+                     &lw->attn.wq, &lw->attn.wk, plan->q_dim, plan->kv_dim);
     if (has_qkv)
         return 0;
     if (has_qk)
