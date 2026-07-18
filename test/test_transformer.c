@@ -1506,8 +1506,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH");
 
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
+    assert(!bn_transformer_gpu_moe_lazy_aux_cache_enabled());
     assert(!bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled());
     setenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE", "1", 1);
+    assert(bn_transformer_gpu_moe_lazy_aux_cache_enabled());
     assert(bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
 

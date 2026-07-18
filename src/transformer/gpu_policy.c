@@ -1206,8 +1206,12 @@ int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
            gpu->dense_ffn_batch;
 }
 
-int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
+int bn_transformer_gpu_moe_lazy_aux_cache_enabled(void) {
     return bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled();
+}
+
+int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
+    return bn_transformer_gpu_moe_lazy_aux_cache_enabled();
 }
 
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(
@@ -1216,7 +1220,7 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     int allow_aux_cache) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            !allow_aux_cache &&
-           !bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled() &&
+           !bn_transformer_gpu_moe_lazy_aux_cache_enabled() &&
            bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(tensor_type);
 }
 

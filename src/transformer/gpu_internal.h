@@ -593,6 +593,7 @@ int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
 int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
     const BnGPUBackend *gpu,
     int n_tokens);
+int bn_transformer_gpu_moe_lazy_aux_cache_enabled(void);
 int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void);
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     const BnGPUBackend *gpu,
