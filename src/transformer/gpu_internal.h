@@ -304,10 +304,24 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w);
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_small_dense_q8_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
@@ -326,6 +340,13 @@ int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
+int bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
@@ -375,6 +396,14 @@ int bn_transformer_gpu_dense_batch_prefill_shape_allowed(
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_large_hybrid_argmax_blocked(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    int want_argmax);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
