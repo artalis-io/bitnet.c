@@ -18799,7 +18799,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 cuda_find_fusable_bias(ops, n_ops, i + 2,
                                        ops[i + 2].buf_out,
                                        ops[i + 2].rows) < 0 &&
-                getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC") != NULL) {
+                bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled()) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)ops[i + 2].W_buf;
                 float *out1 = cuda_act(ctx, ops[i + 2].buf_out);
                 if (w1 && w1->data && out1) {
@@ -18838,9 +18838,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 op->cols % BN_QK_K == 0 &&
                 op->rows > 0 && next->rows > 0 &&
                 bias == NULL && bias_idx < 0 &&
-                (op->cols < 5120 ||
-                 getenv("BN_CUDA_ENABLE_Q6K_Q4K_PAIR_MATVEC") != NULL) &&
-                getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") == NULL) {
+                bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled(op->cols)) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {
@@ -18882,7 +18880,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                          (op->cols >= 5120 && op->cols <= 8192) ||
                          op->cols >= 16384) &&
                         !cuda_disable_q6k_matvec4_shape(op->rows, op->cols) &&
-                        getenv("BN_CUDA_DISABLE_Q6K_MATVEC4") == NULL) {
+                        bn_gpu_policy_cuda_q6k_matvec4_enabled()) {
                         int q6_blocks =
                             (op->rows + warps * 4 - 1) / (warps * 4);
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec4_kernel,
@@ -18909,31 +18907,28 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             int use_f16_q6k_matvec =
-                (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) == 0 &&
-                (getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC") != NULL ||
-                (getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC") == NULL &&
-                 op->rows <= 2048 && op->cols >= 8192));
+                bn_gpu_policy_cuda_f16_q6k_matvec_enabled(
+                    op->rows, op->cols,
+                    (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) != 0);
             int q8_small_ssm_matvec =
                 op->type == BN_GGUF_TENSOR_Q8_0 &&
                 op->rows <= 256 && op->cols >= 4096 &&
                 (op->buf_out == BN_GPU_VALUE_SSM_V ||
                  op->buf_out == BN_GPU_VALUE_SSM_ALPHA ||
                  op->buf_out == BN_GPU_VALUE_SSM_BETA) &&
-                getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") == NULL;
+                bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled();
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 ((op->type == BN_GGUF_TENSOR_Q8_0 &&
                   ((q8_small_ssm_matvec &&
-                    getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC") != NULL &&
-                    getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC") == NULL) ||
+                    bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled()) ||
                    (op->cols <= 2048 &&
-                    getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL)) &&
-                  getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL) ||
+                    bn_gpu_policy_cuda_f16_q8_0_matvec_enabled()))) ||
                  op->type == BN_GGUF_TENSOR_Q3_K ||
                  op->type == BN_GGUF_TENSOR_IQ3_XXS ||
                  op->type == BN_GGUF_TENSOR_IQ4_XS ||
                  (op->type == BN_GGUF_TENSOR_Q5_K &&
-                  getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC") != NULL))) {
+                  bn_gpu_policy_cuda_f16_q5k_matvec_enabled()))) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -19181,7 +19176,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                      (op->cols >= 5120 && op->cols <= 8192) ||
                      op->cols >= 16384) &&
                     !cuda_disable_q6k_matvec4_shape(op->rows, op->cols) &&
-                    getenv("BN_CUDA_DISABLE_Q6K_MATVEC4") == NULL) {
+                    bn_gpu_policy_cuda_q6k_matvec4_enabled()) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec4_kernel, blocks,

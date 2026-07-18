@@ -80,6 +80,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_CUBLAS_LOGITS")\|getenv("BN_CUDA_ENABLE_F32_L
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC")\|getenv("BN_CUDA_ENABLE_Q6K_Q4K_PAIR_MATVEC")\|getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC")\|getenv("BN_CUDA_DISABLE_Q6K_MATVEC4")\|getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC")\|getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC")\|getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC")\|getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC")\|getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC")\|getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC")\|getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC")\|getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA f16/pair matvec env policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

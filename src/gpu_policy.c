@@ -781,6 +781,10 @@ int bn_gpu_policy_cuda_q5_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
 }
 
+int bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC") != NULL;
+}
+
 int bn_gpu_policy_cuda_q4k_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q4K_DOT") == NULL;
 }
@@ -795,6 +799,25 @@ int bn_gpu_policy_cuda_q4k_4warp_enabled(void) {
 
 int bn_gpu_policy_cuda_q8_warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
+}
+
+int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") == NULL;
+}
+
+int bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC") != NULL &&
+           getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC") == NULL &&
+           getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL;
+}
+
+int bn_gpu_policy_cuda_f16_q8_0_matvec_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL &&
+           getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL;
+}
+
+int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC") != NULL;
 }
 
 int bn_gpu_policy_cuda_q4k_q8k_dot_enabled(void) {
@@ -829,12 +852,31 @@ int bn_gpu_policy_cuda_q6k_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
 }
 
+int bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled(int cols) {
+    return (cols < 5120 ||
+            getenv("BN_CUDA_ENABLE_Q6K_Q4K_PAIR_MATVEC") != NULL) &&
+           getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") == NULL;
+}
+
+int bn_gpu_policy_cuda_f16_q6k_matvec_enabled(int rows,
+                                              int cols,
+                                              int exact_q6k) {
+    return !exact_q6k &&
+           (getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC") != NULL ||
+            (getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC") == NULL &&
+             rows <= 2048 && cols >= 8192));
+}
+
 int bn_gpu_policy_cuda_q6k_matmul8_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_MATMUL8") != NULL;
 }
 
 int bn_gpu_policy_cuda_q6k_matmul4_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_MATMUL4") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_matvec4_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_MATVEC4") == NULL;
 }
 
 int bn_gpu_policy_cuda_q6k_batch_warp_enabled(void) {
