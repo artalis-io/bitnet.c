@@ -858,7 +858,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_gpu_prefill_moe_layer_chain_available(
+    if (!bn_transformer_prefill_moe_layer_chain_available(
             gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0,
             n_tokens) ||
         !backend ||
@@ -867,15 +867,14 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
         !plan->is_attn || !lw->moe.router_weight ||
         lw->norm.attn_sub_norm ||
         lw->norm.layer_output_scale) {
-        if (bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled())
+        if (bn_transformer_prefill_moe_chain_debug_enabled())
             fprintf(stderr,
                     "[bn:prefill:moe-chain] reject layer=%d basic gpu=%d hook=%d backend=%d tq=%d toks=%d min=%d theta=%d attn=%d moe=%d shared=%d bias=%d subnorm=%d scale=%d\n",
                     layer, gpu != NULL,
                     gpu && gpu->prefill_moe_layer ? 1 : 0,
                     backend != NULL, bn_model_tq_state(m) != NULL,
                     n_tokens,
-                    bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
-                        c, gpu),
+                    bn_transformer_prefill_moe_chain_min_tokens(c, gpu),
                     layer_rope_theta == c->rope_theta, plan->is_attn,
                     lw->moe.router_weight != NULL, c->has_shared_expert,
                     lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias,
@@ -913,7 +912,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
             prefill_qweight_backend_buf(backend, &lw->shared.shared_up) &&
             prefill_qweight_backend_buf(backend, &lw->shared.shared_down);
     }
-    if (!ready && bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled())
+    if (!ready && bn_transformer_prefill_moe_chain_debug_enabled())
         fprintf(stderr,
                 "[bn:prefill:moe-chain] reject layer=%d handles qk=%d wv=%d wo=%d router=%d gate=%d up=%d down=%d anorm=%d fnorm=%d\n",
                 layer,
@@ -1396,11 +1395,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         bn_transformer_prefill_decode_fallback_policy(
             sequence_policy, gpu_moe_prefill,
             bn_transformer_gpu_cuda_moe_prefill_enabled(), n_tokens,
-            bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
-                c, prefill_gpu),
+            bn_transformer_prefill_moe_chain_min_tokens(c, prefill_gpu),
             cuda_small_dense_prefill_chain,
-            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
-                c, prefill_gpu),
+            bn_transformer_prefill_dense_chain_min_tokens(c, prefill_gpu),
             gpu_hybrid_prefill,
             bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(),
             bn_transformer_prefill_hybrid_batch_allowed());
@@ -2309,7 +2306,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       head_k_dim, num_v_heads, head_v_dim,
                                       kern_ssm, ssm_idx, l,
                                       n_tokens >=
-                                          bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
+                                          bn_transformer_prefill_moe_chain_min_tokens(
                                               c, bn_model_gpu(m)),
                                       c->norm_eps, &ssm_did_ffn) == 0) {
                 if (ssm_did_ffn)

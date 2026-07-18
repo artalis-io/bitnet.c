@@ -4050,6 +4050,24 @@ static void test_block_planning(void) {
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 15));
     assert(bn_transformer_prefill_ssm_moe_chain_available(
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
+    prefill_gpu.prefill_moe_layer = mock_prefill_moe_layer;
+    assert(!bn_transformer_prefill_moe_layer_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 15));
+    assert(bn_transformer_prefill_moe_layer_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
+    prefill_gpu.prefill_moe_layer = NULL;
+    unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
+    assert(bn_transformer_prefill_moe_chain_min_tokens(
+        &prefill_c, &prefill_gpu) == 16);
+    setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "7", 1);
+    assert(bn_transformer_prefill_moe_chain_min_tokens(
+        &prefill_c, &prefill_gpu) == 7);
+    unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
+    unsetenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN");
+    assert(!bn_transformer_prefill_moe_chain_debug_enabled());
+    setenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN", "1", 1);
+    assert(bn_transformer_prefill_moe_chain_debug_enabled());
+    unsetenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN");
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     assert(!bn_transformer_prefill_ssm_moe_chain_available(
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
