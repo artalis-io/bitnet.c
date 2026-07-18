@@ -2097,7 +2097,7 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     int cpu_fallback_ffn_from_layer) {
     if (!bn_transformer_gpu_backend_is_cuda(gpu))
         return 1;
-    if (bn_transformer_gpu_cuda_moe_ffn_disabled())
+    if (bn_transformer_gpu_moe_ffn_disabled())
         return 1;
     if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
             c, map, dim, allow_q4_down))
@@ -2117,8 +2117,12 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
     return bn_transformer_gpu_moe_routed_ffn_batch_allowed(c);
 }
 
-int bn_transformer_gpu_cuda_moe_ffn_disabled(void) {
+int bn_transformer_gpu_moe_ffn_disabled(void) {
     return bn_gpu_policy_cuda_moe_ffn_disabled();
+}
+
+int bn_transformer_gpu_cuda_moe_ffn_disabled(void) {
+    return bn_transformer_gpu_moe_ffn_disabled();
 }
 
 int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default) {
@@ -2366,7 +2370,7 @@ int bn_transformer_gpu_validate_forward(
 
     if (out->has_moe &&
         (!bn_transformer_gpu_backend_is_cuda(gpu) ||
-         bn_transformer_gpu_cuda_moe_ffn_disabled()))
+         bn_transformer_gpu_moe_ffn_disabled()))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
     if (out->has_moe &&
         bn_transformer_gpu_backend_is_cuda(gpu) &&

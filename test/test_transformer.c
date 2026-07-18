@@ -811,8 +811,10 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_auto_caps_sequence(0, 0, 1, 1, 4097, 4096));
 
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
+    assert(!bn_transformer_gpu_moe_ffn_disabled());
     assert(!bn_transformer_gpu_cuda_moe_ffn_disabled());
     setenv("BN_CUDA_DISABLE_MOE_FFN", "1", 1);
+    assert(bn_transformer_gpu_moe_ffn_disabled());
     assert(bn_transformer_gpu_cuda_moe_ffn_disabled());
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
 

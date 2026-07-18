@@ -873,6 +873,7 @@ int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
     const BnConfig *c);
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
     const BnConfig *c);
+int bn_transformer_gpu_moe_ffn_disabled(void);
 int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
 int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);
 BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
