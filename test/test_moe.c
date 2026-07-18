@@ -263,6 +263,36 @@ static void test_qwen2moe_arch_config(void) {
     printf("PASSED\n");
 }
 
+static void test_moe_execution_policy(void) {
+    printf("test_moe_execution_policy... ");
+
+    BnConfig c = {0};
+    c.moe_exact_silu = 1;
+    BnMoEExecutionPolicy policy = bn_moe_execution_policy(&c);
+    assert(!policy.uses_scaled_router_input);
+    assert(!policy.uses_dense_residual_branch);
+    assert(policy.exact_silu == 1);
+
+    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT;
+    policy = bn_moe_execution_policy(&c);
+    assert(policy.uses_scaled_router_input);
+    assert(!policy.uses_dense_residual_branch);
+    assert(policy.exact_silu == 1);
+
+    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH;
+    policy = bn_moe_execution_policy(&c);
+    assert(!policy.uses_scaled_router_input);
+    assert(policy.uses_dense_residual_branch);
+    assert(policy.exact_silu == -1);
+
+    policy = bn_moe_execution_policy(NULL);
+    assert(!policy.uses_scaled_router_input);
+    assert(!policy.uses_dense_residual_branch);
+    assert(policy.exact_silu == -1);
+
+    printf("PASSED\n");
+}
+
 static void test_moe_quant_policy_helpers(void) {
     printf("test_moe_quant_policy_helpers... ");
 
@@ -372,6 +402,7 @@ int main(void) {
     test_moe_config_compat();
     test_model_arch_gguf_uses_moe();
     test_qwen2moe_arch_config();
+    test_moe_execution_policy();
     test_moe_quant_policy_helpers();
     test_moe_resident_routed_ffn_layout_policy();
     test_swiglu();

@@ -1,6 +1,5 @@
 #include "moe_internal.h"
 #include "gpu_moe_bridge.h"
-#include "model_arch.h"
 
 static const void *moe_mmap_expert_proj(const BnMoEIO *io,
                                         const BnMoEExpertMap *map,
@@ -130,26 +129,23 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
     int moe_hidden = c->moe_intermediate_size;
-    int uses_scaled_router_input =
-        bn_model_arch_moe_uses_scaled_router_input(c);
-    int uses_dense_residual_branch =
-        bn_model_arch_moe_uses_dense_residual_branch(c);
-    int exact_silu = uses_dense_residual_branch ? -1 : c->moe_exact_silu;
+    BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(c);
     int K = c->n_experts_active;
     uint32_t gateup_flags = bn_moe_gateup_task_flags(c);
     double t0;
 
     // 1. RMSNorm input
     t0 = bn_moe_time_ms();
-    bn_moe_rmsnorm(s->xb, s->x,
-                   (uses_dense_residual_branch && lw->norm.ffn_sub_norm) ? lw->norm.ffn_sub_norm : lw->norm.ffn_norm,
-                   dim, c->norm_eps);
+    const float *ffn_norm = lw->norm.ffn_norm;
+    if (exec_policy.uses_dense_residual_branch && lw->norm.ffn_sub_norm)
+        ffn_norm = lw->norm.ffn_sub_norm;
+    bn_moe_rmsnorm(s->xb, s->x, ffn_norm, dim, c->norm_eps);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     // 2. Route: select top-K experts (SIMD + threaded)
     t0 = bn_moe_time_ms();
     const float *router_x = s->xb;
-    if (uses_scaled_router_input) {
+    if (exec_policy.uses_scaled_router_input) {
         float inv_sqrt_dim = 1.0f / sqrtf((float)dim);
         moe_rmsnorm_unit(s->xb2, s->x, dim, c->norm_eps);
         for (int d = 0; d < dim; d++)
@@ -236,7 +232,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->expert_hb_batch[k],
                     ms->expert_hb_batch[k],
                     ms->expert_hb2_batch[k],
-                    exact_silu
+                    exec_policy.exact_silu
                 };
                 swiglu_tasks[k] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[k], moe_hidden };
             }
@@ -397,7 +393,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->expert_hb_batch[h],
                     ms->expert_hb_batch[h],
                     ms->expert_hb2_batch[h],
-                    exact_silu
+                    exec_policy.exact_silu
                 };
                 swiglu_tasks[h] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[h], moe_hidden };
             }
@@ -518,7 +514,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // SwiGLU
             t0 = bn_moe_time_ms();
             bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                          moe_hidden, exact_silu);
+                          moe_hidden, exec_policy.exact_silu);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Wait for down I/O
@@ -584,7 +580,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // SwiGLU activation
             t0 = bn_moe_time_ms();
             bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                          moe_hidden, exact_silu);
+                          moe_hidden, exec_policy.exact_silu);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Down projection
@@ -618,7 +614,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             };
             bn_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q, bn_model_pool(m));
         }
-        bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden, exact_silu);
+        bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden,
+                      exec_policy.exact_silu);
         bn_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q, bn_model_pool(m));
 
         // Apply shared expert sigmoid gate if present:
@@ -635,7 +632,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     }
     ms->stats.shared_time_ms += bn_moe_time_ms() - t0;
 
-    if (uses_dense_residual_branch) {
+    if (exec_policy.uses_dense_residual_branch) {
         if (lw->norm.ffn_post_norm_2)
             bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
                            lw->norm.ffn_post_norm_2, dim, c->norm_eps);

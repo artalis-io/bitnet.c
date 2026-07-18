@@ -31,6 +31,12 @@ typedef struct {
     int exact_silu;
 } BnSwiGLUCtx;
 
+typedef struct {
+    int uses_scaled_router_input;
+    int uses_dense_residual_branch;
+    int exact_silu;
+} BnMoEExecutionPolicy;
+
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
@@ -51,6 +57,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     int expert_idx, int proj);
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
 uint32_t bn_moe_gateup_task_flags(const BnConfig *c);
+BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em);

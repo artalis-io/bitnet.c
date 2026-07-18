@@ -8,6 +8,17 @@ uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
         : 0u;
 }
 
+BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
+    BnMoEExecutionPolicy policy = {0};
+    policy.uses_scaled_router_input =
+        bn_model_arch_moe_uses_scaled_router_input(c);
+    policy.uses_dense_residual_branch =
+        bn_model_arch_moe_uses_dense_residual_branch(c);
+    policy.exact_silu =
+        policy.uses_dense_residual_branch || !c ? -1 : c->moe_exact_silu;
+    return policy;
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {
