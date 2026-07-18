@@ -532,6 +532,29 @@ int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
                            "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
 }
 
+int bn_transformer_gpu_small_dense_exact_q4_q8_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int q4_q8_from_layer) {
+    return bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+        gpu, c, q4_q8_from_layer);
+}
+
+int bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
+    const BnConfig *c,
+    int exact_q4_q8_default,
+    int q4_q8_to_layer) {
+    return bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+        c, exact_q4_q8_default, q4_q8_to_layer);
+}
+
+int bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
+        gpu, c);
+}
+
 int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
@@ -1576,10 +1599,10 @@ bn_transformer_gpu_q4_q8_decode_policy(
     int from_layer = layer_policy ? layer_policy->from_layer : -1;
     int to_layer = layer_policy ? layer_policy->to_layer : -1;
     policy.small_dense_exact_default =
-        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+        bn_transformer_gpu_small_dense_exact_q4_q8_default(
             gpu, c, from_layer);
     policy.small_dense_exact_to_layer =
-        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+        bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
             c, policy.small_dense_exact_default, to_layer);
     return policy;
 }
@@ -1613,7 +1636,7 @@ bn_transformer_gpu_q4_q8_layer_use_policy(
     use.use_ffn = use.use_layer && !policy->attn_only;
     use.use_ffn_down = use.use_ffn;
     if (use.small_dense_exact_q4_q8 &&
-        !bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
+        !bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
             gpu, c))
         use.use_ffn_down = 0;
     return use;
