@@ -38,6 +38,11 @@ typedef struct {
     int enabled;
 } BnTransformerPrefillDenseLayerBatchPolicy;
 
+typedef struct {
+    int eligible;
+    int fuses_input_norm;
+} BnTransformerPrefillRawAttentionPolicy;
+
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
@@ -66,6 +71,25 @@ bn_transformer_prefill_dense_layer_batch_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm);
+BnTransformerPrefillRawAttentionPolicy
+bn_transformer_prefill_raw_attention_policy(
+    int gpu_available,
+    int raw_attention_hook_available,
+    int norm_resid_hook_available,
+    int attn_norm_buffer_available,
+    int tq_state_available,
+    int q_gated,
+    int pos0,
+    int n_tokens,
+    int min_tokens,
+    float layer_rope_theta,
+    float config_rope_theta,
+    int has_q_bias,
+    int has_k_bias,
+    int has_v_bias,
+    int has_attn_sub_norm,
+    int uses_post_norm,
+    int has_attn_post_norm);
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type);
 int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,

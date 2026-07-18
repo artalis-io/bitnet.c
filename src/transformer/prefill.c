@@ -1777,20 +1777,27 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             const BnBackendModel *backend = bn_model_backend(m);
             void *attn_norm_buf = backend ? bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_ATTN_NORM) : NULL;
-            int can_fuse_attn_input_norm =
-                gpu && gpu->prefill_qkv_attention_wo_norm_resid &&
-                attn_norm_buf &&
-                n_tokens >=
-                    bn_transformer_gpu_cuda_prefill_attention_min_tokens() &&
-                bn_model_tq_state(m) == NULL &&
-                !q_gated && pos0 == 0 &&
-                layer_rope_theta == c->rope_theta &&
-                !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
-                !lw->norm.attn_sub_norm &&
-                !(bn_transformer_attention_uses_post_norm(c) &&
-                  lw->norm.attn_post_norm);
+            BnTransformerPrefillRawAttentionPolicy raw_attn_policy =
+                bn_transformer_prefill_raw_attention_policy(
+                    gpu != NULL,
+                    gpu && gpu->prefill_qkv_attention_wo,
+                    gpu && gpu->prefill_qkv_attention_wo_norm_resid,
+                    attn_norm_buf != NULL,
+                    bn_model_tq_state(m) != NULL,
+                    q_gated,
+                    pos0,
+                    n_tokens,
+                    bn_transformer_gpu_cuda_prefill_attention_min_tokens(),
+                    layer_rope_theta,
+                    c->rope_theta,
+                    lw->attn.q_bias != NULL,
+                    lw->attn.k_bias != NULL,
+                    lw->attn.v_bias != NULL,
+                    lw->norm.attn_sub_norm != NULL,
+                    bn_transformer_attention_uses_post_norm(c),
+                    lw->norm.attn_post_norm != NULL);
             int attn_norm_ready = 0;
-            if (!can_fuse_attn_input_norm) {
+            if (!raw_attn_policy.fuses_input_norm) {
                 t_prof = prefill_profile_now(&prof);
                 for (int t = 0; t < n_tokens; t++)
                     prefill_cpu_ops()->rmsnorm(Xb + t * dim,
@@ -1800,14 +1807,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 prefill_profile_add(&prof.attn_norm_ms, t_prof);
                 attn_norm_ready = 1;
             }
-            if (gpu && gpu->prefill_qkv_attention_wo &&
-                bn_model_tq_state(m) == NULL &&
-                !q_gated && pos0 == 0 &&
-                layer_rope_theta == c->rope_theta &&
-                !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
-                !lw->norm.attn_sub_norm &&
-                !(bn_transformer_attention_uses_post_norm(c) &&
-                  lw->norm.attn_post_norm)) {
+            if (raw_attn_policy.eligible) {
                 void *qk_buf = backend ? bn_backend_model_handle(
                     backend, l, BN_BACKEND_HANDLE_QK_STACKED) : NULL;
                 void *wv_buf = backend ? bn_backend_model_handle(
@@ -1823,7 +1823,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     backend, l, BN_BACKEND_HANDLE_K_NORM) : NULL;
                 t_prof = prefill_profile_now(&prof);
                 int qkv_fused_rc = -1;
-                if (qk_buf && wv_buf && wo_buf && can_fuse_attn_input_norm) {
+                if (qk_buf && wv_buf && wo_buf &&
+                    raw_attn_policy.fuses_input_norm) {
                     qkv_fused_rc = gpu->prefill_qkv_attention_wo_norm_resid(
                         gpu->ctx, act, qk_buf, wv_buf, wo_buf,
                         attn_norm_buf, q_norm_buf, k_norm_buf, act, K_new,
