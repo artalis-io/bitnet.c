@@ -491,6 +491,17 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
 
+    unsetenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM");
+    unsetenv("BN_CUDA_DEBUG_PREFILL_GEMM");
+    assert(bn_gpu_policy_cuda_prefill_batched_gemm_enabled());
+    assert(!bn_gpu_policy_cuda_prefill_gemm_debug_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM", "1", 1);
+    setenv("BN_CUDA_DEBUG_PREFILL_GEMM", "1", 1);
+    assert(!bn_gpu_policy_cuda_prefill_batched_gemm_enabled());
+    assert(bn_gpu_policy_cuda_prefill_gemm_debug_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM");
+    unsetenv("BN_CUDA_DEBUG_PREFILL_GEMM");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(

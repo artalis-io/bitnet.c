@@ -679,6 +679,14 @@ int bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(
                                        default_tokens);
 }
 
+int bn_gpu_policy_cuda_prefill_batched_gemm_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM") == NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_gemm_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_PREFILL_GEMM") != NULL;
+}
+
 int bn_gpu_policy_cuda_prefill_dense_chain_enabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN") == NULL;
 }

@@ -171,6 +171,8 @@ int bn_gpu_policy_cuda_shared_expert_gate_enabled(void);
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_configured(void);
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(
     int default_tokens);
+int bn_gpu_policy_cuda_prefill_batched_gemm_enabled(void);
+int bn_gpu_policy_cuda_prefill_gemm_debug_enabled(void);
 int bn_gpu_policy_cuda_prefill_dense_chain_enabled(void);
 int bn_gpu_policy_cuda_prefill_hybrid_chain_enabled(void);
 int bn_gpu_policy_cuda_prefill_attention_enabled(void);

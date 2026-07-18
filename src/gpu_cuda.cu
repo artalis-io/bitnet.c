@@ -306,6 +306,14 @@ static double cuda_wall_ms(void) {
     return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
 }
 
+static int cuda_use_prefill_batched_gemm(void) {
+    return bn_gpu_policy_cuda_prefill_batched_gemm_enabled();
+}
+
+static int cuda_debug_prefill_gemm(void) {
+    return bn_gpu_policy_cuda_prefill_gemm_debug_enabled();
+}
+
 static int cuda_env_int(const char *name, int fallback) {
     const char *env = getenv(name);
     if (!env || !*env) return fallback;
@@ -9929,7 +9937,7 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
     const float zero = 0.0f;
     int q_ld = n_heads * head_size;
 
-    if (!getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM") &&
+    if (cuda_use_prefill_batched_gemm() &&
         cuda_ensure_gemm_ptrs(ctx, n_heads * 3) == 0) {
         const float **d_a = (const float **)ctx->d_gemm_ptrs;
         const float **d_b = d_a + n_heads;
@@ -9995,7 +10003,7 @@ static int cuda_prefill_attention_gemm(BnCudaCtx *ctx, float *d_out,
                     (int)st);
             return -1;
         }
-        if (getenv("BN_CUDA_DEBUG_PREFILL_GEMM"))
+        if (cuda_debug_prefill_gemm())
             fprintf(stderr,
                     "[bn:gpu:cuda] prefill batched score gemm unavailable: status %d\n",
                     (int)st);
