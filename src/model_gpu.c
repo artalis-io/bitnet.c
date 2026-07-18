@@ -3,7 +3,6 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_policy.h"
-#include "model_arch.h"
 #include "moe_internal.h"
 #include "quant.h"
 #include <stdlib.h>
@@ -408,7 +407,7 @@ static size_t estimate_cuda_base_model_bytes(const BnConfig *c,
             add_f32_bytes(&total, lw->shared.shared_expert_gate,
                           c->dim) != 0)
             return SIZE_MAX;
-        if (bn_model_arch_uses_all_active_two_expert_moe(c, c->dim) &&
+        if (bn_gpu_policy_moe_router_diff2_upload_enabled(c) &&
             lw->moe.router_weight &&
             add_f32_bytes(&total, lw->moe.router_weight, c->dim) != 0)
             return SIZE_MAX;
@@ -458,7 +457,7 @@ static size_t estimate_cuda_moe_layer_bytes(const BnConfig *c,
                                             const BnMoEExpertMap *em,
                                             const BnGPUBackend *gpu,
                                             int q8_f16_cache) {
-    if (!em || !bn_model_arch_uses_moe(c))
+    if (!em || !bn_gpu_policy_uses_moe(c))
         return 0;
     size_t total = 0;
     size_t proj = 0;
@@ -510,7 +509,7 @@ static size_t estimate_cuda_moe_layer_bytes(const BnConfig *c,
 static size_t estimate_cuda_moe_gateup_f16_all_bytes(const BnConfig *c,
                                                      const BnWeights *w,
                                                      const BnGPUBackend *gpu) {
-    if (!w || !bn_model_arch_uses_moe(c))
+    if (!w || !bn_gpu_policy_uses_moe(c))
         return 0;
     size_t total = 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -547,7 +546,7 @@ static size_t estimate_cuda_moe_all_bytes(const BnConfig *c,
                                           const BnWeights *w,
                                           const BnGPUBackend *gpu,
                                           int q8_f16_cache) {
-    if (!w || !bn_model_arch_uses_moe(c))
+    if (!w || !bn_gpu_policy_uses_moe(c))
         return 0;
     size_t total = 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -693,8 +692,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         int force_f16_cache =
             bn_gpu_policy_cuda_moe_all_f16_cache_forced();
         int auto_f16_cache =
-            bn_model_arch_uses_more_than_two_expert_moe(c) ||
-            bn_model_arch_uses_two_expert_all_active_moe(c);
+            bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(c);
         if ((force_f16_cache || auto_f16_cache) &&
             cuda_moe_all_fits_memory(gpu, c, w, 1)) {
             upload_moe_all_q8_f16_cache = 1;
@@ -808,7 +806,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         void *attn_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_norm, c->dim);
         void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->norm.ffn_norm, c->dim);
         void *moe_router_diff_gpu =
-            bn_model_arch_uses_all_active_two_expert_moe(c, c->dim)
+            bn_gpu_policy_moe_router_diff2_upload_enabled(c)
                 ? upload_moe_router_diff2(gpu, lw->moe.router_weight, c->dim)
                 : NULL;
         void *moe_router_gpu = lw->moe.router_weight

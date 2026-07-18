@@ -359,6 +359,26 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_uses_hybrid_ssm(&layers));
     layers.ssm_inner_size = 128;
     assert(bn_gpu_policy_uses_hybrid_ssm(&layers));
+    assert(!bn_gpu_policy_uses_moe(&layers));
+    assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&layers));
+    assert(!bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&layers));
+
+    BnConfig moe = {0};
+    moe.dim = 2048;
+    moe.hidden_dim = 512;
+    moe.n_experts = 2;
+    moe.n_experts_active = 2;
+    moe.moe_intermediate_size = 4096;
+    assert(bn_gpu_policy_uses_moe(&moe));
+    assert(bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
+    assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
+    moe.dim = 2049;
+    assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
+    assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
+    moe.n_experts = 4;
+    moe.n_experts_active = 2;
+    assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
+    assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
 
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
     assert(bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));

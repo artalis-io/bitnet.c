@@ -28,6 +28,19 @@ int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
     return bn_model_arch_uses_hybrid_ssm(c);
 }
 
+int bn_gpu_policy_uses_moe(const BnConfig *c) {
+    return bn_model_arch_uses_moe(c);
+}
+
+int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c) {
+    return bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0);
+}
+
+int bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(const BnConfig *c) {
+    return bn_model_arch_uses_more_than_two_expert_moe(c) ||
+           bn_model_arch_uses_two_expert_all_active_moe(c);
+}
+
 int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
