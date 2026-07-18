@@ -534,6 +534,10 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type);
+int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int tensor_type);
 int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,

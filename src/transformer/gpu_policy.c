@@ -1097,6 +1097,14 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
                             "BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
 }
 
+int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int tensor_type) {
+    return bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+        gpu, c, tensor_type);
+}
+
 int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -1172,7 +1180,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     int tensor_type = logits ? logits->type : -1;
     p.q8_default =
         small_dense_exact_q4_q8_default &&
-        bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+        bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
             gpu, c, tensor_type);
     p.q8_enabled = bn_transformer_gpu_q8_logits_refine_enabled(
         gpu, p.q8_default);

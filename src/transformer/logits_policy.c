@@ -32,7 +32,7 @@ int bn_transformer_logits_small_backend_q8_refine_enabled(
     const BnConfig *c,
     const BnQWeight *W) {
     return W &&
-           bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+           bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
                gpu, c, W->type);
 }
 
