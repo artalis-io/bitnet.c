@@ -3,7 +3,6 @@
 #include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
-#include "model_arch.h"
 #include "moe.h"
 #include "quant.h"
 #include "transformer_backend_internal.h"
@@ -950,7 +949,7 @@ int bn_transformer_gpu_upload_kv_cache(BnModel *m, BnSession *sess,
     if (pos0 < 0 || n_tokens < 0) return -1;
     if (n_tokens == 0) return 0;
 
-    int n_attn = bn_model_arch_attention_layer_count(c);
+    int n_attn = bn_transformer_attention_layer_count(c);
     if (n_attn <= 0 || c->seq_len <= 0 || c->kv_dim <= 0) return -1;
     size_t elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
     int first = pos0 % c->seq_len;
@@ -980,11 +979,11 @@ int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess) {
     if (!gpu || !gpu->write_activation) return -1;
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
-    if (!bn_model_arch_uses_hybrid_ssm(c))
+    if (!bn_transformer_uses_hybrid_ssm(c))
         return 0;
     if (!s->ssm_state || !s->ssm_conv_state) return -1;
 
-    int n_ssm = bn_model_arch_ssm_layer_count(c);
+    int n_ssm = bn_transformer_ssm_layer_count(c);
     int num_v_heads = c->ssm_time_step_rank;
     int head_k_dim = c->ssm_state_size;
     if (n_ssm <= 0 || num_v_heads <= 0 || head_k_dim <= 0)
@@ -1031,7 +1030,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             lw->ffn.ffn_gate.type, ffn_plan->activation != 1);
         int prefer_gateup_split =
             bn_transformer_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
-            bn_model_arch_uses_hybrid_moe(c);
+            bn_transformer_uses_hybrid_moe(c);
         int use_fused_gateup = !prefer_gateup_split &&
                                gateup_stacked &&
                                bn_transformer_gpu_can_fused_gateup_silu(res->gpu, lw->ffn.ffn_gate.type,

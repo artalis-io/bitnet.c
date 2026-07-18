@@ -2743,12 +2743,24 @@ static void test_model_arch_registry(void) {
     c.n_layers = 12;
     assert(bn_model_arch_attention_layer_count(&c) == 3);
     assert(bn_model_arch_ssm_layer_count(&c) == 9);
+    assert(bn_transformer_attention_layer_count(&c) == 3);
+    assert(bn_transformer_ssm_layer_count(&c) == 9);
+    assert(!bn_transformer_uses_hybrid_ssm(&c));
+    c.ssm_inner_size = 128;
+    assert(bn_transformer_uses_hybrid_ssm(&c));
+    c.ssm_inner_size = 0;
     c.full_attn_interval = 0;
     assert(bn_model_arch_is_attention_layer(&c, 0));
     assert(bn_model_arch_attention_layer_index(&c, 2) == 2);
     assert(bn_model_arch_ssm_layer_index(&c, 2) == -1);
     assert(bn_model_arch_attention_layer_count(&c) == 12);
     assert(bn_model_arch_ssm_layer_count(&c) == 0);
+    assert(bn_transformer_attention_layer_count(&c) == 12);
+    assert(bn_transformer_ssm_layer_count(&c) == 0);
+    assert(!bn_transformer_uses_hybrid_moe(&c));
+    c.n_experts = 1;
+    c.full_attn_interval = 4;
+    assert(bn_transformer_uses_hybrid_moe(&c));
 
     printf("PASSED\n");
 }

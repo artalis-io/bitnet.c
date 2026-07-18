@@ -199,6 +199,10 @@ BnBackendPlacement bn_transformer_gpu_backend_placement(
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer);
 int bn_transformer_attn_index(const BnConfig *c, int layer);
 int bn_transformer_ssm_index(const BnConfig *c, int layer);
+int bn_transformer_attention_layer_count(const BnConfig *c);
+int bn_transformer_ssm_layer_count(const BnConfig *c);
+int bn_transformer_uses_hybrid_ssm(const BnConfig *c);
+int bn_transformer_uses_hybrid_moe(const BnConfig *c);
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled);
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,

@@ -25,6 +25,22 @@ int bn_transformer_ssm_index(const BnConfig *c, int layer) {
     return bn_model_arch_ssm_layer_index(c, layer);
 }
 
+int bn_transformer_attention_layer_count(const BnConfig *c) {
+    return bn_model_arch_attention_layer_count(c);
+}
+
+int bn_transformer_ssm_layer_count(const BnConfig *c) {
+    return bn_model_arch_ssm_layer_count(c);
+}
+
+int bn_transformer_uses_hybrid_ssm(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_ssm(c);
+}
+
+int bn_transformer_uses_hybrid_moe(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_moe(c);
+}
+
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {
     if (c->kv_tq_bits > 0 && tq_enabled) return BN_KV_TQ;
     if (c->kv_f16) return BN_KV_FP16;
