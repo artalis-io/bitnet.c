@@ -3326,6 +3326,40 @@ static void test_block_planning(void) {
             &shared_all2, 0);
     assert(!shared_all2_fallback.enabled);
 
+    BnTransformerPrefillSequencePolicy sequence_policy =
+        bn_transformer_prefill_sequence_policy(NULL);
+    assert(!sequence_policy.uses_hybrid_layer_layout);
+    assert(!sequence_policy.uses_hybrid_ssm);
+    assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+
+    BnConfig sequence = {0};
+    sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);
+    assert(!sequence_policy.uses_hybrid_layer_layout);
+    assert(!sequence_policy.uses_hybrid_ssm);
+    assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+
+    sequence.full_attn_interval = 4;
+    sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);
+    assert(sequence_policy.uses_hybrid_layer_layout);
+    assert(!sequence_policy.uses_hybrid_ssm);
+    assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+
+    sequence.ssm_inner_size = 64;
+    sequence.dim = 2048;
+    sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);
+    assert(sequence_policy.uses_hybrid_layer_layout);
+    assert(sequence_policy.uses_hybrid_ssm);
+    assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+
+    sequence.dim = 4096;
+    sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);
+    assert(sequence_policy.uses_large_dense_hybrid_ssm);
+
+    sequence.n_experts = 1;
+    sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);
+    assert(sequence_policy.uses_hybrid_ssm);
+    assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+
     BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
         bn_transformer_prefill_dense_layer_batch_policy(
             1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,

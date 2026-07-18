@@ -8,7 +8,6 @@
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
-#include "model_arch.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_arena.h"
@@ -1335,6 +1334,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         bn_transformer_gpu_hybrid_prefill_chain_applicable(prefill_gpu, c);
     int gpu_moe_prefill =
         bn_transformer_gpu_moe_prefill_chain_applicable(prefill_gpu, c);
+    BnTransformerPrefillSequencePolicy sequence_policy =
+        bn_transformer_prefill_sequence_policy(c);
     int cuda_small_dense_prefill_chain =
         bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
             prefill_gpu, c);
@@ -1354,12 +1355,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                      all_logits, need_last_logits);
     }
     if (gpu_hybrid_prefill &&
-        bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
+        sequence_policy.uses_large_dense_hybrid_ssm &&
         bn_transformer_gpu_cuda_large_hybrid_prefill_disabled()) {
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
     }
-    if (bn_model_arch_uses_hybrid_ssm(c) &&
+    if (sequence_policy.uses_hybrid_ssm &&
         !gpu_hybrid_prefill &&
         !bn_transformer_prefill_hybrid_batch_allowed()) {
         float *logits = NULL;
@@ -1396,7 +1397,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int xb2_stride = dim;
     int hb_stride = hidden_dim;
     int hb2_stride = hidden_dim;
-    if (bn_model_arch_uses_hybrid_ssm(c)) {
+    if (sequence_policy.uses_hybrid_ssm) {
         int ssm_qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 +
                           c->ssm_inner_size;
         if (ssm_qkv_dim > q_buf_stride)
@@ -2405,7 +2406,7 @@ prefill_ssm_done:
                     ffn_norm_buf != NULL,
                     n_tokens,
                     dense_ffn_batch_min_tokens,
-                    bn_model_arch_uses_hybrid_layer_layout(c),
+                    sequence_policy.uses_hybrid_layer_layout,
                     lw->norm.ffn_sub_norm != NULL,
                     bn_transformer_ffn_uses_post_norm(c),
                     lw->norm.ffn_post_norm != NULL);

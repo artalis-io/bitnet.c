@@ -39,6 +39,12 @@ typedef struct {
 } BnTransformerPrefillSharedAll2DecodeFallbackPolicy;
 
 typedef struct {
+    int uses_hybrid_layer_layout;
+    int uses_hybrid_ssm;
+    int uses_large_dense_hybrid_ssm;
+} BnTransformerPrefillSequencePolicy;
+
+typedef struct {
     int enabled;
 } BnTransformerPrefillDenseLayerBatchPolicy;
 
@@ -95,6 +101,8 @@ BnTransformerPrefillSharedAll2DecodeFallbackPolicy
 bn_transformer_prefill_shared_all2_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available);
+BnTransformerPrefillSequencePolicy
+bn_transformer_prefill_sequence_policy(const BnConfig *c);
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,

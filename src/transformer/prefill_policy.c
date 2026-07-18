@@ -36,6 +36,18 @@ bn_transformer_prefill_shared_all2_decode_fallback_policy(
     return policy;
 }
 
+BnTransformerPrefillSequencePolicy
+bn_transformer_prefill_sequence_policy(const BnConfig *c) {
+    BnTransformerPrefillSequencePolicy policy = {0};
+    policy.uses_hybrid_layer_layout =
+        bn_model_arch_uses_hybrid_layer_layout(c);
+    policy.uses_hybrid_ssm =
+        bn_model_arch_uses_hybrid_ssm(c);
+    policy.uses_large_dense_hybrid_ssm =
+        bn_model_arch_uses_large_dense_hybrid_ssm(c);
+    return policy;
+}
+
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,
