@@ -104,6 +104,30 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
            ffn_plan->activation == 0;
 }
 
+BnTransformerCPUPostNormPolicy
+bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
+                                              int has_attn_post_norm) {
+    BnTransformerCPUPostNormPolicy policy = {0};
+    policy.apply = uses_attention_post_norm && has_attn_post_norm;
+    return policy;
+}
+
+BnTransformerCPUPostNormPolicy
+bn_transformer_cpu_ffn_post_norm_policy(int uses_ffn_post_norm,
+                                        int has_ffn_post_norm) {
+    BnTransformerCPUPostNormPolicy policy = {0};
+    policy.apply = uses_ffn_post_norm && has_ffn_post_norm;
+    return policy;
+}
+
+BnTransformerCPULayerOutputScalePolicy
+bn_transformer_cpu_layer_output_scale_policy(int uses_layer_output_scale,
+                                             int has_layer_output_scale) {
+    BnTransformerCPULayerOutputScalePolicy policy = {0};
+    policy.apply = uses_layer_output_scale && has_layer_output_scale;
+    return policy;
+}
+
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,

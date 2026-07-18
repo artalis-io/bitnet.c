@@ -3469,6 +3469,34 @@ static void test_block_planning(void) {
     ffn_plan.activation = 0;
     route_gpu.dense_ffn = NULL;
 
+    BnTransformerCPUPostNormPolicy cpu_post_norm =
+        bn_transformer_cpu_attention_post_norm_policy(1, 1);
+    assert(cpu_post_norm.apply);
+    cpu_post_norm =
+        bn_transformer_cpu_attention_post_norm_policy(0, 1);
+    assert(!cpu_post_norm.apply);
+    cpu_post_norm =
+        bn_transformer_cpu_attention_post_norm_policy(1, 0);
+    assert(!cpu_post_norm.apply);
+    cpu_post_norm =
+        bn_transformer_cpu_ffn_post_norm_policy(1, 1);
+    assert(cpu_post_norm.apply);
+    cpu_post_norm =
+        bn_transformer_cpu_ffn_post_norm_policy(0, 1);
+    assert(!cpu_post_norm.apply);
+    cpu_post_norm =
+        bn_transformer_cpu_ffn_post_norm_policy(1, 0);
+    assert(!cpu_post_norm.apply);
+    BnTransformerCPULayerOutputScalePolicy cpu_layer_scale =
+        bn_transformer_cpu_layer_output_scale_policy(1, 1);
+    assert(cpu_layer_scale.apply);
+    cpu_layer_scale =
+        bn_transformer_cpu_layer_output_scale_policy(0, 1);
+    assert(!cpu_layer_scale.apply);
+    cpu_layer_scale =
+        bn_transformer_cpu_layer_output_scale_policy(1, 0);
+    assert(!cpu_layer_scale.apply);
+
     const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
     c.policy_flags = 0;
     assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==

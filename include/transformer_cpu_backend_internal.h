@@ -34,6 +34,14 @@ typedef struct {
                         int16_t *x_bsums);
 } BnCPUBackendOps;
 
+typedef struct {
+    int apply;
+} BnTransformerCPUPostNormPolicy;
+
+typedef struct {
+    int apply;
+} BnTransformerCPULayerOutputScalePolicy;
+
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
@@ -70,6 +78,15 @@ int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan);
+BnTransformerCPUPostNormPolicy
+bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
+                                              int has_attn_post_norm);
+BnTransformerCPUPostNormPolicy
+bn_transformer_cpu_ffn_post_norm_policy(int uses_ffn_post_norm,
+                                        int has_ffn_post_norm);
+BnTransformerCPULayerOutputScalePolicy
+bn_transformer_cpu_layer_output_scale_policy(int uses_layer_output_scale,
+                                             int has_layer_output_scale);
 bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnConfig *c,
                                              const BnCPUBackendOps *ops);
 bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnConfig *c,
