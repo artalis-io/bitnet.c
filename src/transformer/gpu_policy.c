@@ -18,7 +18,7 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c) {
 }
 
 int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
-    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+    return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
