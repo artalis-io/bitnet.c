@@ -1517,7 +1517,7 @@ bn_transformer_gpu_decode_cacheability_policy(
     return policy;
 }
 
-int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
+int bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_transformer_gpu_all2_q4q6_moe_model(c, w) &&
@@ -1527,13 +1527,13 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
                             "BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE");
 }
 
-int bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
+int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    return bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(c, w);
+    return bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(c, w);
 }
 
-int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
+int bn_transformer_gpu_moe_exact_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
@@ -1542,10 +1542,10 @@ int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
                             "BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
 }
 
-int bn_transformer_gpu_moe_exact_attention_enabled(
+int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_transformer_gpu_cuda_moe_exact_attention_enabled(gpu, c);
+    return bn_transformer_gpu_moe_exact_attention_enabled(gpu, c);
 }
 
 int bn_transformer_gpu_ssm_cpu_fallback_required(

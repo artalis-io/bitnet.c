@@ -2011,25 +2011,35 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
         &c, &moe_w));
+    assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
+        &c, &moe_w));
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_MOE_SAFE", "1", 1);
     assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
+        &c, &moe_w));
+    assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
         &c, &moe_w));
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_MOE_SAFE");
     setenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE", "1", 1);
     assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
         &c, &moe_w));
+    assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
+        &c, &moe_w));
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE");
     c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION;
     assert(bn_transformer_gpu_cuda_moe_exact_attention_enabled(&gpu, &c));
+    assert(bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN", "1", 1);
     assert(!bn_transformer_gpu_cuda_moe_exact_attention_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN");
     setenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN", "1", 1);
     assert(!bn_transformer_gpu_cuda_moe_exact_attention_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_cuda_moe_exact_attention_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     c.policy_flags = 0;
 
