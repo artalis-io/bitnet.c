@@ -1713,22 +1713,28 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 rope_cache_dims = layer_rope_dims;
                 rope_cache_theta = layer_rope_theta;
             }
-            if (bn_model_gpu(m) &&
-                bn_model_tq_state(m) == NULL &&
-                bn_transformer_gpu_cuda_prefill_dense_chain_enabled() &&
-                n_tokens >=
+            BnTransformerPrefillLayerKindPolicy layer_kind =
+                bn_transformer_prefill_layer_kind_policy(
+                    lw->moe.router_weight);
+            BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
+                bn_transformer_prefill_dense_layer_batch_policy(
+                    bn_model_gpu(m) != NULL,
+                    bn_model_tq_state(m) != NULL,
+                    bn_transformer_gpu_cuda_prefill_dense_chain_enabled(),
+                    n_tokens,
                     bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
-                        c, bn_model_gpu(m)) &&
-                pos0 == 0 &&
-                layer_rope_theta == c->rope_theta &&
-                !lw->moe.router_weight &&
-                c->has_ffn_gate &&
-                lw->ffn.ffn_up.data &&
-                !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias &&
-                !lw->norm.attn_sub_norm && !lw->norm.ffn_sub_norm &&
-                !lw->norm.layer_output_scale &&
-                !(bn_transformer_attention_uses_post_norm(c) &&
-                  (lw->norm.attn_post_norm || lw->norm.ffn_post_norm))) {
+                        c, bn_model_gpu(m)),
+                    pos0, layer_rope_theta, c->rope_theta, layer_kind,
+                    c->has_ffn_gate, lw->ffn.ffn_up.data != NULL,
+                    lw->attn.q_bias != NULL, lw->attn.k_bias != NULL,
+                    lw->attn.v_bias != NULL,
+                    lw->norm.attn_sub_norm != NULL,
+                    lw->norm.ffn_sub_norm != NULL,
+                    lw->norm.layer_output_scale != NULL,
+                    bn_transformer_attention_uses_post_norm(c),
+                    lw->norm.attn_post_norm != NULL,
+                    lw->norm.ffn_post_norm != NULL);
+            if (dense_layer_batch.enabled) {
                 t_prof = prefill_profile_now(&prof);
                 if (prefill_dense_layer_gpu_batch(
                         m, act, lw, act, K_new, V_new, n_tokens, dim,

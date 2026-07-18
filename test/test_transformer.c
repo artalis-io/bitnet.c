@@ -3150,6 +3150,35 @@ static void test_block_planning(void) {
         bn_transformer_prefill_layer_kind_policy((void *)1);
     assert(prefill_layer_kind.uses_moe);
 
+    prefill_layer_kind =
+        bn_transformer_prefill_layer_kind_policy(NULL);
+    BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
+        bn_transformer_prefill_dense_layer_batch_policy(
+            1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
+            prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    assert(dense_layer_batch.enabled);
+    dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
+        0, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_batch.enabled);
+    dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
+        1, 1, 1, 16, 16, 0, 10000.0f, 10000.0f,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_batch.enabled);
+    dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
+        1, 0, 1, 15, 16, 0, 10000.0f, 10000.0f,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_batch.enabled);
+    dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
+        1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
+        bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_batch.enabled);
+    dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
+        1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0);
+    assert(!dense_layer_batch.enabled);
+
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_preq8k =

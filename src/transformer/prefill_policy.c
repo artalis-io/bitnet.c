@@ -22,6 +22,49 @@ bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight) {
     return policy;
 }
 
+BnTransformerPrefillDenseLayerBatchPolicy
+bn_transformer_prefill_dense_layer_batch_policy(
+    int gpu_available,
+    int tq_state_available,
+    int dense_chain_enabled,
+    int n_tokens,
+    int min_tokens,
+    int pos0,
+    float layer_rope_theta,
+    float config_rope_theta,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_gate,
+    int has_ffn_up,
+    int has_q_bias,
+    int has_k_bias,
+    int has_v_bias,
+    int has_attn_sub_norm,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm) {
+    BnTransformerPrefillDenseLayerBatchPolicy policy = {0};
+    policy.enabled =
+        gpu_available &&
+        !tq_state_available &&
+        dense_chain_enabled &&
+        n_tokens >= min_tokens &&
+        pos0 == 0 &&
+        layer_rope_theta == config_rope_theta &&
+        !layer_kind.uses_moe &&
+        has_ffn_gate &&
+        has_ffn_up &&
+        !has_q_bias &&
+        !has_k_bias &&
+        !has_v_bias &&
+        !has_attn_sub_norm &&
+        !has_ffn_sub_norm &&
+        !has_layer_output_scale &&
+        !(uses_post_norm && (has_attn_post_norm || has_ffn_post_norm));
+    return policy;
+}
+
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
     return ops && ops->supports_preq8k &&

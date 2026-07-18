@@ -34,12 +34,38 @@ typedef struct {
     int uses_moe;
 } BnTransformerPrefillLayerKindPolicy;
 
+typedef struct {
+    int enabled;
+} BnTransformerPrefillDenseLayerBatchPolicy;
+
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
 int bn_transformer_prefill_force_token_attention_enabled(void);
 BnTransformerPrefillLayerKindPolicy
 bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight);
+BnTransformerPrefillDenseLayerBatchPolicy
+bn_transformer_prefill_dense_layer_batch_policy(
+    int gpu_available,
+    int tq_state_available,
+    int dense_chain_enabled,
+    int n_tokens,
+    int min_tokens,
+    int pos0,
+    float layer_rope_theta,
+    float config_rope_theta,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_gate,
+    int has_ffn_up,
+    int has_q_bias,
+    int has_k_bias,
+    int has_v_bias,
+    int has_attn_sub_norm,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm);
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type);
 int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,
