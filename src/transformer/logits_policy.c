@@ -27,7 +27,7 @@ int bn_transformer_logits_q6_refine_supported(const BnQWeight *W) {
            bn_backend_quant_supports_q6k_logits_refine(W->type);
 }
 
-int bn_transformer_logits_small_cuda_q8_refine_enabled(
+int bn_transformer_logits_small_backend_q8_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W) {
@@ -36,7 +36,7 @@ int bn_transformer_logits_small_cuda_q8_refine_enabled(
                gpu, c, W->type);
 }
 
-int bn_transformer_logits_small_cuda_q8_refine_top(void) {
+int bn_transformer_logits_small_backend_q8_refine_top(void) {
     return bn_transformer_gpu_q8_logits_refine_top(1);
 }
 
