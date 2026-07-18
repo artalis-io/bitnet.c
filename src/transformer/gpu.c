@@ -896,15 +896,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_matvec_argmax_enabled(
             gpu, c, logit_res, argmax_token != NULL, need_logits,
             gpu_logits_need_cpu);
-    int small_dense_cuda_exact_q4_q8_default =
-        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
-            gpu, c, q4_q8.from_layer);
+    BnTransformerGPUQ4Q8DecodePolicy q4_q8_decode =
+        bn_transformer_gpu_q4_q8_decode_policy(gpu, c, &q4_q8);
     BnTransformerGPULogitsRefinePolicy logits_refine =
         bn_transformer_gpu_logits_refine_policy(
-            gpu, c, w, logit_res, small_dense_cuda_exact_q4_q8_default);
-    int small_dense_cuda_exact_q4_q8_to_layer =
-        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
-            c, small_dense_cuda_exact_q4_q8_default, q4_q8.to_layer);
+            gpu, c, w, logit_res,
+            q4_q8_decode.small_dense_exact_default);
     BnTransformerGPUDecodeCacheabilityPolicy decode_cacheability =
         bn_transformer_gpu_decode_cacheability_policy(
             gpu, c, w, backend, emit_logits, argmax_token != NULL,
@@ -988,8 +985,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
         BnTransformerGPUQ4Q8LayerUsePolicy q4_q8_use =
             bn_transformer_gpu_q4_q8_layer_use_policy(
-                gpu, c, &q4_q8, l, small_dense_cuda_exact_q4_q8_default,
-                small_dense_cuda_exact_q4_q8_to_layer);
+                gpu, c, &q4_q8, l,
+                q4_q8_decode.small_dense_exact_default,
+                q4_q8_decode.small_dense_exact_to_layer);
 
         // ---- SSM layer ----
         if (!is_attn) {

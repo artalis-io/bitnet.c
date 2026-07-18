@@ -124,6 +124,11 @@ typedef struct {
 } BnTransformerGPUQ4Q8LayerPolicy;
 
 typedef struct {
+    int small_dense_exact_default;
+    int small_dense_exact_to_layer;
+} BnTransformerGPUQ4Q8DecodePolicy;
+
+typedef struct {
     int use_layer;
     int small_dense_exact_q4_q8;
     int use_attention;
@@ -574,6 +579,11 @@ int bn_transformer_gpu_cpu_fallback_layer_selected(
     int from_layer);
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
+BnTransformerGPUQ4Q8DecodePolicy
+bn_transformer_gpu_q4_q8_decode_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPUQ4Q8LayerPolicy *layer_policy);
 BnTransformerGPUQ4Q8LayerUsePolicy
 bn_transformer_gpu_q4_q8_layer_use_policy(
     const BnGPUBackend *gpu,

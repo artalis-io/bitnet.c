@@ -1373,6 +1373,23 @@ bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerGPUQ4Q8DecodePolicy
+bn_transformer_gpu_q4_q8_decode_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPUQ4Q8LayerPolicy *layer_policy) {
+    BnTransformerGPUQ4Q8DecodePolicy policy = {0};
+    int from_layer = layer_policy ? layer_policy->from_layer : -1;
+    int to_layer = layer_policy ? layer_policy->to_layer : -1;
+    policy.small_dense_exact_default =
+        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+            gpu, c, from_layer);
+    policy.small_dense_exact_to_layer =
+        bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+            c, policy.small_dense_exact_default, to_layer);
+    return policy;
+}
+
 BnTransformerGPUQ4Q8LayerUsePolicy
 bn_transformer_gpu_q4_q8_layer_use_policy(
     const BnGPUBackend *gpu,
