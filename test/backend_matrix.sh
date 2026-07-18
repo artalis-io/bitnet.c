@@ -281,6 +281,11 @@ if grep -n 'BN_CUDA_[^"]*ALL2_Q4Q6\|BN_CUDA_[^"]*QWEN2MOE' src/transformer/gpu_p
     fail=1
 fi
 
+if grep -n 'BN_CUDA_[^"]*SMALL_DENSE\|BN_CUDA_[^"]*SMALL_QWEN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use backend GPU policy helpers for small-dense compatibility env vars"
+    fail=1
+fi
+
 if grep -n 'cpu_attn_safe_default' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU-aware CPU attention fallback policy helpers"
     fail=1

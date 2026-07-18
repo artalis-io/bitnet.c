@@ -7,11 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static int gpu_env_enabled(const char *name, const char *compat_name) {
-    return getenv(name) != NULL ||
-           (compat_name && getenv(compat_name) != NULL);
-}
-
 int bn_transformer_gpu_graph_op_capacity(const BnConfig *c) {
     /* Max ops per batch. MoE/SSM flush between layers, so single-layer max
      * suffices. Approximate flush batch budget:
@@ -488,8 +483,7 @@ int bn_transformer_gpu_small_dense_q8_cpu_attn_safe_default(
     const BnWeights *w) {
     return bn_model_arch_allows_small_dense_exact_q4_q8(c) &&
            small_dense_backend_q8_native_by_default(c, w) &&
-           !gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE",
-                            "BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
+           !bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
@@ -521,8 +515,7 @@ int bn_transformer_gpu_small_dense_exact_q4_q8_default(
     return q4_q8_from_layer < 0 &&
            bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_allows_small_dense_exact_q4_q8(c) &&
-           !gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8",
-                            "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
+           !bn_gpu_policy_small_dense_exact_q4_q8_disabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
@@ -556,8 +549,7 @@ int bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_allows_small_dense_exact_q4_q8(c) &&
-           gpu_env_enabled("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN",
-                           "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
+           bn_gpu_policy_small_dense_exact_ffn_down_enabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
@@ -614,8 +606,7 @@ int bn_transformer_gpu_small_dense_prefill_decode_fallback_requested(
     const BnConfig *c) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_allows_small_dense_prefill_decode_fallback(c) &&
-           gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_PREFILL",
-                           "BN_CUDA_DISABLE_SMALL_QWEN_PREFILL");
+           bn_gpu_policy_small_dense_prefill_disabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
@@ -1230,10 +1221,8 @@ int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_backend_quant_supports_q8_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_dense_q8_logit_refine(c) &&
-           gpu_env_enabled("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
-                           "BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE") &&
-           !gpu_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
-                            "BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
+           bn_gpu_policy_small_dense_q8_logits_refine_enabled() &&
+           !bn_gpu_policy_small_dense_q8_logits_refine_disabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
