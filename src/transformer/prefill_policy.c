@@ -205,6 +205,12 @@ bn_transformer_prefill_dense_layer_chain_policy(
     return policy;
 }
 
+int bn_transformer_prefill_dense_chain_min_tokens(
+    const BnConfig *c,
+    const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
+}
+
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,

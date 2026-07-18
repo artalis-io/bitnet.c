@@ -225,6 +225,9 @@ bn_transformer_prefill_dense_layer_chain_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm);
+int bn_transformer_prefill_dense_chain_min_tokens(
+    const BnConfig *c,
+    const BnGPUBackend *gpu);
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,

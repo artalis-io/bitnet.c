@@ -3962,6 +3962,19 @@ static void test_block_planning(void) {
         prefill_layer_kind, 1, 1, 0, 0, 0, 1, 1, 0);
     assert(!dense_layer_chain.enabled);
 
+    BnConfig prefill_dense_c = {0};
+    BnGPUBackend prefill_dense_gpu = {0};
+    unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, NULL) == 16);
+    prefill_dense_gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 16);
+    setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "9", 1);
+    assert(bn_transformer_prefill_dense_chain_min_tokens(
+        &prefill_dense_c, &prefill_dense_gpu) == 9);
+    unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+
     BnTransformerPrefillSSMChainPolicy ssm_chain =
         bn_transformer_prefill_ssm_chain_policy(
             1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
