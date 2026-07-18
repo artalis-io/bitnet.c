@@ -2127,12 +2127,20 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
+    assert(!bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
+        &gpu, &c, &dense_w));
     assert(!bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+        &gpu, &c, -1));
+    assert(!bn_transformer_gpu_small_dense_exact_q4_q8_default(
         &gpu, &c, -1));
     assert(!bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
         &gpu, &c));
+    assert(!bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
+        &gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+        &gpu, &c, &dense_w));
+    assert(bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
     fallback = (BnTransformerGPUCPUFallbackPolicy)
         {-1, -1, -1, -1, -1, -1, -1};
@@ -2140,6 +2148,8 @@ static void test_gpu_policy_helpers(void) {
         fallback, &gpu, &c, &dense_w);
     assert(fallback.attn_from_layer == 0);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
+        &gpu, &c, -1));
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_default(
         &gpu, &c, -1));
     BnTransformerGPUQ4Q8LayerPolicy q4_q8_layer =
         {.from_layer = -1, .to_layer = -1};
@@ -2153,11 +2163,15 @@ static void test_gpu_policy_helpers(void) {
     assert(q4_q8_decode.small_dense_exact_to_layer == 27);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
                &c, 1, -1) == 27);
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
+               &c, 1, -1) == 27);
     q4_q8_layer.to_layer = 9;
     q4_q8_decode =
         bn_transformer_gpu_q4_q8_decode_policy(&gpu, &c, &q4_q8_layer);
     assert(q4_q8_decode.small_dense_exact_to_layer == 9);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+               &c, 1, 9) == 9);
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
                &c, 1, 9) == 9);
     q4_q8_layer.to_layer = -1;
     c.n_layers = 33;
@@ -2166,8 +2180,12 @@ static void test_gpu_policy_helpers(void) {
     assert(q4_q8_decode.small_dense_exact_to_layer == -1);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
                &c, 1, -1) == -1);
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
+               &c, 1, -1) == -1);
     c.n_layers = 0;
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
+               &c, 0, -1) == -1);
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
                &c, 0, -1) == -1);
     assert(!bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
         &gpu, &c, 0));
@@ -2194,9 +2212,13 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN", "1", 1);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
         &gpu, &c));
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
+        &gpu, &c));
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     setenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN", "1", 1);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
+        &gpu, &c));
+    assert(bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
         &gpu, &c));
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
     c.policy_flags |= BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK;
@@ -2213,8 +2235,12 @@ static void test_gpu_policy_helpers(void) {
     c.policy_flags |= BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE;
     assert(!bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
         &gpu, &c, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+        &gpu, &c, BN_GGUF_TENSOR_Q8_0));
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+        &gpu, &c, BN_GGUF_TENSOR_Q8_0));
+    assert(bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
         &gpu, &c, BN_GGUF_TENSOR_Q8_0));
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
