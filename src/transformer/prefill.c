@@ -94,6 +94,25 @@ static float *prefill_decode_tokens(BnModel *m, BnSession *sess,
     return sess->state.x;
 }
 
+static float *prefill_decode_tokens_with_logits(BnModel *m, BnSession *sess,
+                                                const int *tokens,
+                                                int n_tokens,
+                                                int pos0,
+                                                float *all_logits,
+                                                int need_last_logits) {
+    BnConfig *c = &m->config;
+    float *logits = NULL;
+    for (int t = 0; t < n_tokens; t++) {
+        logits = bn_transformer_forward(m, sess, tokens[t], pos0 + t);
+        if (!logits)
+            return NULL;
+        if (all_logits)
+            memcpy(all_logits + (size_t)t * c->vocab_size, logits,
+                   (size_t)c->vocab_size * sizeof(float));
+    }
+    return need_last_logits ? logits : (logits ? sess->state.x : NULL);
+}
+
 static int prefill_force_float_kquant(const BnModel *m) {
     return m && bn_transformer_cpu_prefill_force_float_kquant_enabled(
         &m->config);
@@ -1373,41 +1392,24 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int cuda_small_dense_prefill_chain =
         bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
             prefill_gpu, c);
-    if (gpu_moe_prefill &&
-        (!bn_transformer_gpu_cuda_moe_prefill_enabled() ||
-         n_tokens <
-             bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
-                 c, prefill_gpu))) {
-        return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
-                                     all_logits, need_last_logits);
-    }
-    if (cuda_small_dense_prefill_chain &&
-        n_tokens <
+    BnTransformerPrefillDecodeFallbackPolicy decode_fallback =
+        bn_transformer_prefill_decode_fallback_policy(
+            sequence_policy, gpu_moe_prefill,
+            bn_transformer_gpu_cuda_moe_prefill_enabled(), n_tokens,
+            bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
+                c, prefill_gpu),
+            cuda_small_dense_prefill_chain,
             bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
-                c, prefill_gpu)) {
+                c, prefill_gpu),
+            gpu_hybrid_prefill,
+            bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(),
+            bn_transformer_prefill_hybrid_batch_allowed());
+    if (decode_fallback.require_logits_decode)
+        return prefill_decode_tokens_with_logits(
+            m, sess, tokens, n_tokens, pos0, all_logits, need_last_logits);
+    if (decode_fallback.decode)
         return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
                                      all_logits, need_last_logits);
-    }
-    if (gpu_hybrid_prefill &&
-        sequence_policy.uses_large_dense_hybrid_ssm &&
-        bn_transformer_gpu_cuda_large_hybrid_prefill_disabled()) {
-        return prefill_decode_tokens(m, sess, tokens, n_tokens, pos0,
-                                     all_logits, need_last_logits);
-    }
-    if (sequence_policy.uses_hybrid_ssm &&
-        !gpu_hybrid_prefill &&
-        !bn_transformer_prefill_hybrid_batch_allowed()) {
-        float *logits = NULL;
-        for (int t = 0; t < n_tokens; t++) {
-            logits = bn_transformer_forward(m, sess, tokens[t], pos0 + t);
-            if (!logits)
-                return NULL;
-            if (all_logits)
-                memcpy(all_logits + (size_t)t * c->vocab_size, logits,
-                       (size_t)c->vocab_size * sizeof(float));
-        }
-        return need_last_logits ? logits : (logits ? sess->state.x : NULL);
-    }
 
     size_t act_elems = (size_t)n_tokens * dim;
     if (act_elems / n_tokens != (size_t)dim) {

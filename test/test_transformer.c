@@ -3707,6 +3707,41 @@ static void test_block_planning(void) {
     assert(sequence_policy.uses_hybrid_ssm);
     assert(!sequence_policy.uses_large_dense_hybrid_ssm);
 
+    BnTransformerPrefillSequencePolicy decode_sequence = {0};
+    BnTransformerPrefillDecodeFallbackPolicy decode_fallback =
+        bn_transformer_prefill_decode_fallback_policy(
+            decode_sequence, 1, 0, 16, 1, 0, 1, 0, 0, 1);
+    assert(decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 1, 1, 8, 16, 0, 1, 0, 0, 1);
+    assert(decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 0, 1, 8, 1, 1, 16, 0, 0, 1);
+    assert(decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+    decode_sequence.uses_large_dense_hybrid_ssm = 1;
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 0, 1, 16, 1, 0, 1, 1, 1, 1);
+    assert(decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+    decode_sequence.uses_hybrid_ssm = 1;
+    decode_sequence.uses_large_dense_hybrid_ssm = 0;
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 0, 1, 16, 1, 0, 1, 0, 0, 0);
+    assert(decode_fallback.decode);
+    assert(decode_fallback.require_logits_decode);
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 0, 1, 16, 1, 0, 1, 1, 0, 0);
+    assert(!decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+    decode_sequence.uses_hybrid_ssm = 0;
+    decode_fallback = bn_transformer_prefill_decode_fallback_policy(
+        decode_sequence, 0, 1, 16, 1, 0, 1, 0, 0, 1);
+    assert(!decode_fallback.decode);
+    assert(!decode_fallback.require_logits_decode);
+
     BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
         bn_transformer_prefill_dense_layer_batch_policy(
             1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,

@@ -45,6 +45,11 @@ typedef struct {
 } BnTransformerPrefillSequencePolicy;
 
 typedef struct {
+    int decode;
+    int require_logits_decode;
+} BnTransformerPrefillDecodeFallbackPolicy;
+
+typedef struct {
     int enabled;
 } BnTransformerPrefillDenseLayerBatchPolicy;
 
@@ -131,6 +136,18 @@ bn_transformer_prefill_shared_all2_decode_fallback_policy(
     int gpu_available);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
+BnTransformerPrefillDecodeFallbackPolicy
+bn_transformer_prefill_decode_fallback_policy(
+    BnTransformerPrefillSequencePolicy sequence,
+    int gpu_moe_prefill,
+    int moe_prefill_enabled,
+    int n_tokens,
+    int moe_min_tokens,
+    int cuda_small_dense_prefill_chain,
+    int small_dense_min_tokens,
+    int gpu_hybrid_prefill,
+    int large_hybrid_prefill_disabled,
+    int hybrid_batch_allowed);
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,
