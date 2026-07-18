@@ -522,6 +522,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_readback_debug_enabled());
     unsetenv("BN_CUDA_DEBUG_READBACK");
 
+    unsetenv("BN_CUDA_DEBUG_CUBLAS_CACHE");
+    assert(!bn_gpu_policy_cuda_cublas_cache_debug_enabled());
+    setenv("BN_CUDA_DEBUG_CUBLAS_CACHE", "1", 1);
+    assert(bn_gpu_policy_cuda_cublas_cache_debug_enabled());
+    unsetenv("BN_CUDA_DEBUG_CUBLAS_CACHE");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(

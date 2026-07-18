@@ -318,6 +318,10 @@ static int cuda_debug_readback(void) {
     return bn_gpu_policy_cuda_readback_debug_enabled();
 }
 
+static int cuda_debug_cublas_cache(void) {
+    return bn_gpu_policy_cuda_cublas_cache_debug_enabled();
+}
+
 static int cuda_env_int(const char *name, int fallback) {
     const char *env = getenv(name);
     if (!env || !*env) return fallback;
@@ -11410,7 +11414,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         : &buf->f16_data;
     cudaError_t err = cudaMalloc(cache_ptr, bytes);
     if (err != cudaSuccess) {
-        if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+        if (cuda_debug_cublas_cache())
             fprintf(stderr,
                     "[bn:gpu:cuda] cublas cache alloc skipped type=%d rows=%d cols=%d bytes=%zu: %s\n",
                     buf->type, buf->rows, buf->cols, bytes,
@@ -11459,7 +11463,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     }
     err = cudaGetLastError();
     if (err != cudaSuccess) {
-        if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+        if (cuda_debug_cublas_cache())
             fprintf(stderr,
                     "[bn:gpu:cuda] cublas cache dequant skipped type=%d rows=%d cols=%d: %s\n",
                     buf->type, buf->rows, buf->cols,
@@ -11468,7 +11472,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         *cache_ptr = NULL;
         return 0;
     }
-    if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+    if (cuda_debug_cublas_cache())
         fprintf(stderr,
                 "[bn:gpu:cuda] cublas cache ready type=%d rows=%d cols=%d bytes=%zu precision=%s\n",
                 buf->type, buf->rows, buf->cols, bytes,
@@ -11491,7 +11495,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         }
         cudaError_t f32_err = cudaMalloc(&buf->f32_data, f32_bytes);
         if (f32_err != cudaSuccess) {
-            if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+            if (cuda_debug_cublas_cache())
                 fprintf(stderr,
                         "[bn:gpu:cuda] q6 f32 companion cache skipped "
                         "rows=%d cols=%d bytes=%zu: %s\n",
@@ -11505,7 +11509,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
             buf->rows, buf->cols);
         f32_err = cudaGetLastError();
         if (f32_err != cudaSuccess) {
-            if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+            if (cuda_debug_cublas_cache())
                 fprintf(stderr,
                         "[bn:gpu:cuda] q6 f32 companion dequant skipped "
                         "rows=%d cols=%d: %s\n",
@@ -11516,7 +11520,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
             return 0;
         }
         buf->f32_size = f32_bytes;
-        if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+        if (cuda_debug_cublas_cache())
             fprintf(stderr,
                     "[bn:gpu:cuda] q6 f32 companion cache ready rows=%d "
                     "cols=%d bytes=%zu\n",
@@ -11587,13 +11591,13 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
             cudaFree(buf->f16_data);
         buf->f16_data = NULL;
         buf->f16_size = 0;
-        if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE"))
+        if (cuda_debug_cublas_cache())
             fprintf(stderr,
                     "[bn:gpu:cuda] iq f16 cache skipped type=%d rows=%d "
                     "cols=%d bytes=%zu: %s\n",
                     buf->type, buf->rows, buf->cols, bytes,
                     cudaGetErrorString(err));
-    } else if (getenv("BN_CUDA_DEBUG_CUBLAS_CACHE")) {
+    } else if (cuda_debug_cublas_cache()) {
         fprintf(stderr,
                 "[bn:gpu:cuda] iq f16 cache ready type=%d rows=%d cols=%d "
                 "bytes=%zu\n",

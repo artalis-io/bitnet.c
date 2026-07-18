@@ -659,6 +659,10 @@ int bn_gpu_policy_cuda_readback_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_READBACK") != NULL;
 }
 
+int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_CUBLAS_CACHE") != NULL;
+}
+
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }
