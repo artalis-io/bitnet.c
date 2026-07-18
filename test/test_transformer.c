@@ -3777,6 +3777,22 @@ static void test_block_planning(void) {
         bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 1);
     assert(!hybrid_model_chain.enabled);
 
+    BnTransformerPrefillAttentionModePolicy attention_mode =
+        bn_transformer_prefill_attention_mode_policy(0, 0, 0);
+    assert(attention_mode.use_batched_attention);
+    attention_mode =
+        bn_transformer_prefill_attention_mode_policy(1, 0, 0);
+    assert(!attention_mode.use_batched_attention);
+    attention_mode =
+        bn_transformer_prefill_attention_mode_policy(0, 1, 0);
+    assert(!attention_mode.use_batched_attention);
+    attention_mode =
+        bn_transformer_prefill_attention_mode_policy(0, 0, 1);
+    assert(!attention_mode.use_batched_attention);
+    attention_mode =
+        bn_transformer_prefill_attention_mode_policy(1, 1, 1);
+    assert(!attention_mode.use_batched_attention);
+
     BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
         bn_transformer_prefill_dense_layer_batch_policy(
             1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,

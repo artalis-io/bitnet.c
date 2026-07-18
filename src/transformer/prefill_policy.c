@@ -111,6 +111,19 @@ bn_transformer_prefill_hybrid_model_chain_policy(
     return policy;
 }
 
+BnTransformerPrefillAttentionModePolicy
+bn_transformer_prefill_attention_mode_policy(
+    int tq_state_available,
+    int force_token_attention_requested,
+    int gpu_hybrid_prefill) {
+    BnTransformerPrefillAttentionModePolicy policy = {0};
+    policy.use_batched_attention =
+        !tq_state_available &&
+        !force_token_attention_requested &&
+        !gpu_hybrid_prefill;
+    return policy;
+}
+
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,

@@ -1972,10 +1972,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
             }
 
-            int force_token_attn =
-                bn_transformer_prefill_force_token_attention_enabled() ||
-                gpu_hybrid_prefill;
-            if (bn_model_tq_state(m) == NULL && !force_token_attn) {
+            BnTransformerPrefillAttentionModePolicy attention_mode =
+                bn_transformer_prefill_attention_mode_policy(
+                    bn_model_tq_state(m) != NULL,
+                    bn_transformer_prefill_force_token_attention_enabled(),
+                    gpu_hybrid_prefill);
+            if (attention_mode.use_batched_attention) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache
                 t_prof = prefill_profile_now(&prof);
                 if (!used_raw_prefill_attn_wo) {

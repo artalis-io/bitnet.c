@@ -90,6 +90,10 @@ typedef struct {
 } BnTransformerPrefillKVUploadPolicy;
 
 typedef struct {
+    int use_batched_attention;
+} BnTransformerPrefillAttentionModePolicy;
+
+typedef struct {
     int eligible;
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
@@ -169,6 +173,11 @@ bn_transformer_prefill_hybrid_model_chain_policy(
     int pos0,
     int n_layers,
     int tq_state_available);
+BnTransformerPrefillAttentionModePolicy
+bn_transformer_prefill_attention_mode_policy(
+    int tq_state_available,
+    int force_token_attention_requested,
+    int gpu_hybrid_prefill);
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,
