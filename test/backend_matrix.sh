@@ -266,7 +266,7 @@ if grep -n 'BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER\|BN_CUDA_QWEN2MOE_GPU_ROUTE_TO
     fail=1
 fi
 
-if grep -n 'getenv("BN_CUDA_[^"]*QWEN\|cuda_env_enabled("BN_CUDA_[^"]*QWEN\|cuda_env_value("BN_CUDA_[^"]*QWEN\|cuda_env_int("BN_CUDA_[^"]*QWEN\|cuda_env_float("BN_CUDA_[^"]*QWEN\|cuda_env_layer_selected("BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
+if grep -n 'BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1
 fi
