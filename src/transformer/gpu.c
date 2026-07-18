@@ -1180,43 +1180,16 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu moe session state missing");
             void *moe_router = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
-            int all2_q4q6_moe =
-                bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
-                    gpu, c, lw, dim);
-            int all2_q4q6_moe_gpu_route_layer_selected =
-                bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
-                    l, moe_route_layer.from_layer,
-                    moe_route_layer.to_layer);
-            int all2_q4q6_moe_exact_gpu_route =
-                bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
-                    all2_q4q6_moe,
-                    all2_q4q6_moe_gpu_route_layer_selected);
-            moe_router = bn_transformer_gpu_cuda_all2_q4q6_moe_router(
-                c, moe_router, router_diff,
-                all2_q4q6_moe_gpu_route_layer_selected,
-                all2_q4q6_moe_exact_gpu_route);
             void *moe_up_all = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_UP_ALL);
             void *moe_down_all = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-            int moe_routed_q8 =
-                bn_transformer_gpu_moe_routed_q8(&lw->moe.expert_map);
-            uint32_t moe_route_flags = 0u;
-            if (!c->moe_norm_topk_prob)
-                moe_route_flags |= BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
-            int gpu_route_topk =
-                bn_transformer_gpu_cuda_moe_route_topk_enabled(
-                    moe_router, all2_q4q6_moe,
-                    all2_q4q6_moe_gpu_route_layer_selected);
-            int cpu_route_resident_ffn =
-                bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-                    c, all2_q4q6_moe, gpu_route_topk, moe_routed_q8);
-            int gpu_routed_ffn =
-                bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
-                    gpu_route_topk, cpu_route_resident_ffn, moe_gate_all,
-                    moe_up_all, moe_down_all, &lw->moe.expert_map,
-                    c->moe_intermediate_size, dim);
-            if (gpu_routed_ffn) {
+            BnTransformerGPUMoEDecodeRoutePolicy moe_route =
+                bn_transformer_gpu_moe_decode_route_policy(
+                    gpu, c, lw, &moe_route_layer, l, dim, moe_router,
+                    router_diff, moe_gate_all, moe_up_all, moe_down_all);
+            moe_router = moe_route.router;
+            if (moe_route.gpu_routed_ffn) {
                 int all2_q4q6_moe_cpu_moe_safe =
                     bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
                         c, w);
@@ -1307,7 +1280,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         }
                     }
                 }
-                if (cpu_route_resident_ffn) {
+                if (moe_route.cpu_route_resident_ffn) {
                     if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                         bn_transformer_gpu_read_xb(gpu, s->xb,
                                                    (size_t)dim * sizeof(float)) != 0)
@@ -1340,7 +1313,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
                                dim, c->n_experts, c->n_experts_active,
                                c->moe_expert_weights_scale,
-                               moe_route_flags) != 0) {
+                               moe_route.route_flags) != 0) {
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route emit failed");
                 }
@@ -1368,7 +1341,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 if (compare_moe &&
                     bn_transformer_gpu_moe_compare_raw_enabled() &&
                     moe_gate_all && moe_up_all &&
-                    all2_q4q6_moe) {
+                    moe_route.all2_q4q6_moe) {
                     int K = c->n_experts_active;
                     int n_experts = c->n_experts;
                     int moe_hidden = c->moe_intermediate_size;
@@ -1702,12 +1675,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             int compare_moe =
                 bn_transformer_gpu_moe_compare_layer_selected(l, pos);
             int did_gpu_route_topk = 0;
-            if (gpu_route_topk) {
+            if (moe_route.gpu_route_topk) {
                 if (bn_transformer_gpu_emit_context_moe_route_topk(
                         &emit, moe_router, BN_GPU_VALUE_XB,
                         BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
                         dim, c->n_experts, c->n_experts_active,
-                        c->moe_expert_weights_scale, moe_route_flags) != 0)
+                        c->moe_expert_weights_scale,
+                        moe_route.route_flags) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route emit failed");
                 if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)

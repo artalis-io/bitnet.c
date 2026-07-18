@@ -1387,6 +1387,55 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
            map->down_cols == moe_hidden;
 }
 
+BnTransformerGPUMoEDecodeRoutePolicy
+bn_transformer_gpu_moe_decode_route_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoERouteLayerPolicy *layer_policy,
+    int layer,
+    int dim,
+    void *moe_router,
+    void *router_diff,
+    void *moe_gate_all,
+    void *moe_up_all,
+    void *moe_down_all) {
+    BnTransformerGPUMoEDecodeRoutePolicy policy = {0};
+    int from_layer = layer_policy ? layer_policy->from_layer : -1;
+    int to_layer = layer_policy ? layer_policy->to_layer : -1;
+
+    policy.all2_q4q6_moe =
+        bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
+            gpu, c, lw, dim);
+    policy.route_layer_selected =
+        bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
+            layer, from_layer, to_layer);
+    policy.exact_gpu_route =
+        bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
+            policy.all2_q4q6_moe, policy.route_layer_selected);
+    policy.router = bn_transformer_gpu_cuda_all2_q4q6_moe_router(
+        c, moe_router, router_diff, policy.route_layer_selected,
+        policy.exact_gpu_route);
+    if (!c || !c->moe_norm_topk_prob)
+        policy.route_flags |= BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
+
+    int routed_q8 = lw &&
+        bn_transformer_gpu_moe_routed_q8(&lw->moe.expert_map);
+    policy.gpu_route_topk =
+        bn_transformer_gpu_cuda_moe_route_topk_enabled(
+            policy.router, policy.all2_q4q6_moe,
+            policy.route_layer_selected);
+    policy.cpu_route_resident_ffn =
+        bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
+            c, policy.all2_q4q6_moe, policy.gpu_route_topk, routed_q8);
+    policy.gpu_routed_ffn =
+        lw && bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
+            policy.gpu_route_topk, policy.cpu_route_resident_ffn,
+            moe_gate_all, moe_up_all, moe_down_all, &lw->moe.expert_map,
+            c ? c->moe_intermediate_size : 0, dim);
+    return policy;
+}
+
 int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,

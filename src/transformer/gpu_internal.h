@@ -137,6 +137,17 @@ typedef struct {
 } BnTransformerGPUMoERouteLayerPolicy;
 
 typedef struct {
+    int all2_q4q6_moe;
+    int route_layer_selected;
+    int exact_gpu_route;
+    int gpu_route_topk;
+    int cpu_route_resident_ffn;
+    int gpu_routed_ffn;
+    uint32_t route_flags;
+    void *router;
+} BnTransformerGPUMoEDecodeRoutePolicy;
+
+typedef struct {
     int q6_default;
     int q6_enabled;
     int q6_captures_xb;
@@ -520,6 +531,19 @@ int bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
     const BnMoEExpertMap *map,
     int moe_hidden,
     int dim);
+BnTransformerGPUMoEDecodeRoutePolicy
+bn_transformer_gpu_moe_decode_route_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoERouteLayerPolicy *layer_policy,
+    int layer,
+    int dim,
+    void *moe_router,
+    void *router_diff,
+    void *moe_gate_all,
+    void *moe_up_all,
+    void *moe_down_all);
 int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,

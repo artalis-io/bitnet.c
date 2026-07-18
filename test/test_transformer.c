@@ -1533,6 +1533,12 @@ static void test_gpu_policy_helpers(void) {
     map.gate_type = BN_GGUF_TENSOR_Q4_K;
     map.up_type = BN_GGUF_TENSOR_Q4_K;
     map.down_type = BN_GGUF_TENSOR_Q6_K;
+    map.gate_rows = 4096;
+    map.gate_cols = 2048;
+    map.up_rows = 4096;
+    map.up_cols = 2048;
+    map.down_rows = 2048;
+    map.down_cols = 4096;
     assert(bn_transformer_gpu_moe_routed_q4_down(&map, 0));
     assert(bn_transformer_gpu_moe_routed_q4(&map));
     assert(!bn_transformer_gpu_moe_routed_q8(&map));
@@ -1549,6 +1555,7 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4096;
     c.dim = 2048;
+    c.moe_norm_topk_prob = 1;
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
@@ -1572,6 +1579,38 @@ static void test_gpu_policy_helpers(void) {
     assert(fallback.attn_from_layer == -1);
     assert(bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
         &gpu, &c, &moe_layers[0], c.dim));
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK");
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
+    BnTransformerGPUMoERouteLayerPolicy route_layers = {-1, -1};
+    BnTransformerGPUMoEDecodeRoutePolicy route_policy =
+        bn_transformer_gpu_moe_decode_route_policy(
+            &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
+            (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
+    assert(route_policy.all2_q4q6_moe);
+    assert(!route_policy.route_layer_selected);
+    assert(!route_policy.exact_gpu_route);
+    assert(route_policy.router == (void *)2);
+    assert(!route_policy.gpu_route_topk);
+    assert(route_policy.cpu_route_resident_ffn);
+    assert(route_policy.gpu_routed_ffn);
+    assert(route_policy.route_flags == 0);
+    c.moe_norm_topk_prob = 0;
+    route_policy = bn_transformer_gpu_moe_decode_route_policy(
+        &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
+        (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
+    assert(route_policy.route_flags == BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM);
+    c.moe_norm_topk_prob = 1;
+    setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
+    route_policy = bn_transformer_gpu_moe_decode_route_policy(
+        &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
+        (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
+    assert(route_policy.route_layer_selected);
+    assert(route_policy.router == (void *)3);
+    assert(route_policy.gpu_route_topk);
+    assert(!route_policy.cpu_route_resident_ffn);
+    assert(route_policy.gpu_routed_ffn);
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
