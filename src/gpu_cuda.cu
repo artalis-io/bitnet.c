@@ -11897,18 +11897,12 @@ static int cuda_use_q4k_moe_down_8row(int hidden_dim) {
     return bn_gpu_policy_cuda_q4k_moe_down_8row_enabled(hidden_dim);
 }
 
-static cublasGemmAlgo_t cuda_cublas_gemm_algo(void) {
-    const char *env = getenv("BN_CUDA_CUBLAS_GEMM_ALGO");
-    if (!env || !env[0])
-        return CUBLAS_GEMM_DEFAULT_TENSOR_OP;
-    char *end = NULL;
-    long v = strtol(env, &end, 10);
-    if (end == env || *end != '\0')
-        return CUBLAS_GEMM_DEFAULT_TENSOR_OP;
-    if (v < 0)
+static cublasGemmAlgo_t cuda_cublas_gemm_algo_from_policy(void) {
+    int index = bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24);
+    if (index < 0)
         return CUBLAS_GEMM_DEFAULT;
-    if (v >= 0 && v <= 23)
-        return (cublasGemmAlgo_t)((int)CUBLAS_GEMM_ALGO0_TENSOR_OP + (int)v);
+    if (index <= 23)
+        return (cublasGemmAlgo_t)((int)CUBLAS_GEMM_ALGO0_TENSOR_OP + index);
     return CUBLAS_GEMM_DEFAULT_TENSOR_OP;
 }
 
@@ -12003,7 +11997,7 @@ static int cuda_cublas_matmul_f16_preconverted(BnCudaCtx *ctx, float *d_out,
         &beta,
         d_out, CUDA_R_32F, rows,
         CUBLAS_COMPUTE_32F_FAST_16F,
-        cuda_cublas_gemm_algo());
+        cuda_cublas_gemm_algo_from_policy());
     if (st != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[bn:gpu:cuda] cublas matmul failed: status %d\n",
                 (int)st);
@@ -12032,7 +12026,7 @@ static int cuda_cublas_matmul_f16_preconverted_out_f16(
         &beta,
         d_out, CUDA_R_16F, rows,
         CUBLAS_COMPUTE_32F_FAST_16F,
-        cuda_cublas_gemm_algo());
+        cuda_cublas_gemm_algo_from_policy());
     if (st != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[bn:gpu:cuda] cublas matmul f16 out failed: status %d\n",
                 (int)st);

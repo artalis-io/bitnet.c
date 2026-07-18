@@ -502,6 +502,20 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM");
     unsetenv("BN_CUDA_DEBUG_PREFILL_GEMM");
 
+    unsetenv("BN_CUDA_CUBLAS_GEMM_ALGO");
+    assert(bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24) == 24);
+    setenv("BN_CUDA_CUBLAS_GEMM_ALGO", "-1", 1);
+    assert(bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24) == -1);
+    setenv("BN_CUDA_CUBLAS_GEMM_ALGO", "0", 1);
+    assert(bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24) == 0);
+    setenv("BN_CUDA_CUBLAS_GEMM_ALGO", "23", 1);
+    assert(bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24) == 23);
+    setenv("BN_CUDA_CUBLAS_GEMM_ALGO", "24", 1);
+    assert(bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24) == 24);
+    setenv("BN_CUDA_CUBLAS_GEMM_ALGO", "not-an-int", 1);
+    assert(bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(24) == 24);
+    unsetenv("BN_CUDA_CUBLAS_GEMM_ALGO");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(

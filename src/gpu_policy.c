@@ -328,6 +328,22 @@ int bn_gpu_policy_cuda_cublas_matmul_enabled(void) {
     return getenv("BN_CUDA_DISABLE_CUBLAS_MATMUL") == NULL;
 }
 
+int bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(
+    int default_index) {
+    const char *env = getenv("BN_CUDA_CUBLAS_GEMM_ALGO");
+    if (!env || !env[0])
+        return default_index;
+    char *end = NULL;
+    long v = strtol(env, &end, 10);
+    if (end == env || *end != '\0')
+        return default_index;
+    if (v < 0)
+        return -1;
+    if (v >= 0 && v <= 23)
+        return (int)v;
+    return default_index;
+}
+
 int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
            !bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced();
