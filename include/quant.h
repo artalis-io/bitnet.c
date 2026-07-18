@@ -268,6 +268,8 @@ typedef enum {
 typedef enum {
     BN_QUANT_CAP_LOADABLE       = 1u << 0,
     BN_QUANT_CAP_EMBEDDED_SCALE = 1u << 1,
+    BN_QUANT_CAP_MOE_Q4_GATEUP  = 1u << 2,
+    BN_QUANT_CAP_MOE_Q8_ROUTE   = 1u << 3,
     BN_QUANT_CAP_CPU_MATVEC     = 1u << 4,
     BN_QUANT_CAP_CPU_BATCH      = 1u << 5,
     BN_QUANT_CAP_CPU_MATMUL     = 1u << 6,
@@ -295,6 +297,7 @@ typedef enum {
     BN_QUANT_CAP_AUX_CACHE_LARGE_BUDGET = 1u << 28,
     BN_QUANT_CAP_LOGITS_F16_PATH = 1u << 29,
     BN_QUANT_CAP_TIED_LOGITS_QUANT_PATH = 1u << 30,
+    BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU = 1u << 31,
 } BnQuantCapability;
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,

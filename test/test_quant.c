@@ -164,6 +164,26 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F16));
     assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F32));
+    assert(bn_quant_format_supports_moe_q4_gateup(BN_GGUF_TENSOR_Q4_K,
+                                                  BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_quant_format_supports_moe_q4_gateup(BN_GGUF_TENSOR_Q4_K,
+                                                   BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_supports_moe_q4_down_route(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, 0));
+    assert(!bn_quant_format_supports_moe_q4_down_route(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 0));
+    assert(bn_quant_format_supports_moe_q4_down_route(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 1));
+    assert(!bn_quant_format_supports_moe_q4_down_route(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K, 1));
+    assert(bn_quant_format_supports_cpu_fused_q4_gateup_silu(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_quant_format_supports_cpu_fused_q4_gateup_silu(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_supports_moe_q8_route(
+        BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_supports_moe_q8_route(
+        BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_K));
 
     int n_without_f32 = bn_quant_format_gpu_shader_type_count(0);
     int n_with_f32 = bn_quant_format_gpu_shader_type_count(1);
