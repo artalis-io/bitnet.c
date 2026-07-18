@@ -404,6 +404,9 @@ int bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
 int bn_transformer_gpu_cuda_matvec_fallback_kept(
     const BnModel *m,
     const BnGPUBackend *gpu);
+int bn_transformer_gpu_backend_matvec_fallback_kept(
+    const BnModel *m,
+    const BnGPUBackend *gpu);
 BnTransformerGPUMatvecFallbackPolicy
 bn_transformer_gpu_matvec_fallback_policy(
     const BnModel *m,

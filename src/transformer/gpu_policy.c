@@ -677,7 +677,7 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
         gpu, c);
 }
 
-int bn_transformer_gpu_cuda_matvec_fallback_kept(
+int bn_transformer_gpu_backend_matvec_fallback_kept(
     const BnModel *m,
     const BnGPUBackend *gpu) {
     if (!m || !bn_transformer_gpu_backend_is_cuda(gpu) || !gpu->execute)
@@ -716,13 +716,19 @@ int bn_transformer_gpu_cuda_matvec_fallback_kept(
     return 1;
 }
 
+int bn_transformer_gpu_cuda_matvec_fallback_kept(
+    const BnModel *m,
+    const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_backend_matvec_fallback_kept(m, gpu);
+}
+
 BnTransformerGPUMatvecFallbackPolicy
 bn_transformer_gpu_matvec_fallback_policy(
     const BnModel *m,
     const BnGPUBackend *gpu) {
     BnTransformerGPUMatvecFallbackPolicy policy = {0};
     policy.keep_backend_matvec =
-        bn_transformer_gpu_cuda_matvec_fallback_kept(m, gpu);
+        bn_transformer_gpu_backend_matvec_fallback_kept(m, gpu);
     policy.disable_backend_matvec = !policy.keep_backend_matvec;
     return policy;
 }
