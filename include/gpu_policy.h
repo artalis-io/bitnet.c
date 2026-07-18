@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible);
+int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu);
 int bn_gpu_policy_float_buffer_type(void);
 int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
     int gate_type,

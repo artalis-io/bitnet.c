@@ -1125,6 +1125,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+    assert(bn_gpu_policy_backend_is_cuda(&gpu));
     assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 0) == 128);
     assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 1) == 512);
     assert(bn_gpu_policy_cuda_cublas_aux_cache_max_mb(
@@ -1149,6 +1150,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q4_K, 8, 16));
     gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_gpu_policy_backend_is_cuda(&gpu));
     assert(!bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16));
     gpu.kind = BN_GPU_BACKEND_CUDA;

@@ -7,6 +7,10 @@ int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN") == NULL;
 }
 
+int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu) {
+    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
+}
+
 int bn_gpu_policy_float_buffer_type(void) {
     return bn_backend_quant_gpu_float_buffer_type();
 }
@@ -63,7 +67,7 @@ int bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled(void) {
 
 int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+    return bn_gpu_policy_backend_is_cuda(gpu) &&
            gpu->buffer_create_quant_only &&
            !bn_gpu_policy_cuda_keep_individual_f16_cache_enabled();
 }
@@ -71,7 +75,7 @@ int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
 int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+    return bn_gpu_policy_backend_is_cuda(gpu) &&
            gpu->buffer_create_q6_f32_cache &&
            bn_backend_quant_cuda_logits_q6_f32_cache_supported(tensor_type) &&
            getenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE") != NULL &&
@@ -79,7 +83,7 @@ int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
 }
 
 int bn_gpu_policy_cuda_logits_f16_cache_enabled(const BnGPUBackend *gpu) {
-    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA &&
+    return bn_gpu_policy_backend_is_cuda(gpu) &&
            gpu->buffer_create_f16_cache &&
            getenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE") != NULL;
 }
@@ -471,7 +475,7 @@ size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     int tensor_type,
     int rows,
     int cols) {
-    if (!gpu || gpu->kind != BN_GPU_BACKEND_CUDA ||
+    if (!bn_gpu_policy_backend_is_cuda(gpu) ||
         rows <= 0 || cols <= 0 ||
         !bn_backend_quant_cuda_moe_down_cublas_cache_supported(tensor_type) ||
         !bn_gpu_policy_cuda_cublas_matmul_enabled())
