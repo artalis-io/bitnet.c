@@ -977,6 +977,33 @@ int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default) {
         q8_refine_default ? 16 : 8);
 }
 
+BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnTransformerGPULogitResources *logits,
+    int small_dense_exact_q4_q8_default) {
+    BnTransformerGPULogitsRefinePolicy p = {0};
+    p.q6_default =
+        bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+            gpu, c, w);
+    p.q6_enabled = bn_transformer_gpu_q6_logits_refine_enabled(
+        gpu, p.q6_default);
+    p.q6_captures_xb = bn_transformer_gpu_q6_logits_refine_captures_xb(
+        logits, p.q6_enabled, p.q6_default);
+
+    int tensor_type = logits ? logits->type : -1;
+    p.q8_default =
+        small_dense_exact_q4_q8_default &&
+        bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+            gpu, c, tensor_type);
+    p.q8_enabled = bn_transformer_gpu_q8_logits_refine_enabled(
+        gpu, p.q8_default);
+    p.q8_captures_xb = bn_transformer_gpu_q8_logits_refine_captures_xb(
+        logits, p.q8_enabled);
+    return p;
+}
+
 int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu) {
     return gpu_logits_need_cpu || bn_gpu_policy_cpu_logits_enabled();
 }

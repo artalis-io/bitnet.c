@@ -931,16 +931,6 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_cuda_moe_decode_cacheable(c, w, backend);
     int gpu_logits_need_cpu =
         bn_transformer_gpu_logits_needs_cpu_fallback(gpu, logit_res);
-    int all2_q4q6_moe_cuda_q6_logits_refine_default =
-        bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
-            gpu, c, w);
-    int refine_q6_logits =
-        bn_transformer_gpu_q6_logits_refine_enabled(
-            gpu, all2_q4q6_moe_cuda_q6_logits_refine_default);
-    int q6_logits_refine_captures_xb =
-        bn_transformer_gpu_q6_logits_refine_captures_xb(
-            logit_res, refine_q6_logits,
-            all2_q4q6_moe_cuda_q6_logits_refine_default);
     int use_matvec_argmax =
         bn_transformer_gpu_matvec_argmax_enabled(
             gpu, c, logit_res, argmax_token != NULL, need_logits,
@@ -948,16 +938,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int small_dense_cuda_exact_q4_q8_default =
         bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
             gpu, c, q4_q8.from_layer);
-    int small_dense_cuda_q8_logits_refine_default =
-        small_dense_cuda_exact_q4_q8_default &&
-        bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
-            gpu, c, logit_res->type);
-    int refine_q8_logits =
-        bn_transformer_gpu_q8_logits_refine_enabled(
-            gpu, small_dense_cuda_q8_logits_refine_default);
-    int q8_logits_refine_captures_xb =
-        bn_transformer_gpu_q8_logits_refine_captures_xb(
-            logit_res, refine_q8_logits);
+    BnTransformerGPULogitsRefinePolicy logits_refine =
+        bn_transformer_gpu_logits_refine_policy(
+            gpu, c, w, logit_res, small_dense_cuda_exact_q4_q8_default);
     int small_dense_cuda_exact_q4_q8_to_layer =
         bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
             c, small_dense_cuda_exact_q4_q8_default, q4_q8.to_layer);
@@ -965,7 +948,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_cuda_decode_cacheable(
             gpu, emit_logits, argmax_token != NULL, gpu_logits_need_cpu,
             policy.has_moe, cacheable_resident_moe,
-            q6_logits_refine_captures_xb, q8_logits_refine_captures_xb,
+            logits_refine.q6_captures_xb, logits_refine.q8_captures_xb,
             need_logits, cpu_fallback.layer, cpu_fallback.from_layer,
             cpu_fallback.attn_layer, cpu_fallback.attn_from_layer,
             cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer,
@@ -2009,7 +1992,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu logits cpu fallback failed");
             return s->logits;
         }
-        if (need_logits && !argmax_token && q6_logits_refine_captures_xb) {
+        if (need_logits && !argmax_token && logits_refine.q6_captures_xb) {
             if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                 bn_transformer_gpu_read_xb(gpu, s->xb,
                                            (size_t)dim * sizeof(float)) != 0)
@@ -2048,9 +2031,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                    !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&
-            q8_logits_refine_captures_xb) {
+            logits_refine.q8_captures_xb) {
             int refine_top = bn_transformer_gpu_q8_logits_refine_top(
-                small_dense_cuda_q8_logits_refine_default);
+                logits_refine.q8_default);
             if (refine_top > 0 &&
                 gpu->read_activation &&
                 gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
@@ -2140,9 +2123,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_free(&emit);
         return s->x;
     }
-    if (q6_logits_refine_captures_xb) {
+    if (logits_refine.q6_captures_xb) {
         int refine_top = bn_transformer_gpu_q6_logits_refine_top(
-            all2_q4q6_moe_cuda_q6_logits_refine_default);
+            logits_refine.q6_default);
         int has_xb = q6_logits_refine_has_xb_snapshot;
         if (!has_xb && refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
@@ -2154,9 +2137,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                       s->x_q, refine_top);
         }
     }
-    if (q8_logits_refine_captures_xb) {
+    if (logits_refine.q8_captures_xb) {
         int refine_top = bn_transformer_gpu_q8_logits_refine_top(
-            small_dense_cuda_q8_logits_refine_default);
+            logits_refine.q8_default);
         if (refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {

@@ -1122,6 +1122,53 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_q8_logits_refine_captures_xb(&logits, 1));
     logits.cpu_weight = &W;
 
+    memset(&c, 0, sizeof(c));
+    c.dim = 2048;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
+                     BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
+    unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
+    setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
+    BnTransformerGPULogitsRefinePolicy refine_policy =
+        bn_transformer_gpu_logits_refine_policy(&gpu, &c, NULL, &logits, 1);
+    assert(!refine_policy.q6_default);
+    assert(!refine_policy.q6_enabled);
+    assert(!refine_policy.q6_captures_xb);
+    assert(refine_policy.q8_default);
+    assert(refine_policy.q8_enabled);
+    assert(refine_policy.q8_captures_xb);
+    unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
+
+    BnLayerWeights refine_layer;
+    BnWeights refine_weights;
+    memset(&refine_layer, 0, sizeof(refine_layer));
+    memset(&refine_weights, 0, sizeof(refine_weights));
+    c.n_layers = 1;
+    c.n_experts = 2;
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
+    c.policy_flags = 0;
+    refine_layer.moe.router_weight = (void *)1;
+    refine_layer.moe.expert_map.gate_type = BN_GGUF_TENSOR_Q4_K;
+    refine_layer.moe.expert_map.up_type = BN_GGUF_TENSOR_Q4_K;
+    refine_layer.moe.expert_map.down_type = BN_GGUF_TENSOR_Q6_K;
+    refine_weights.layers = &refine_layer;
+    W.type = BN_GGUF_TENSOR_Q6_K;
+    logits.type = BN_GGUF_TENSOR_Q6_K;
+    logits.cpu_weight = &W;
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
+    unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE");
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
+    refine_policy = bn_transformer_gpu_logits_refine_policy(
+        &gpu, &c, &refine_weights, &logits, 0);
+    assert(refine_policy.q6_default);
+    assert(refine_policy.q6_enabled);
+    assert(refine_policy.q6_captures_xb);
+    assert(!refine_policy.q8_default);
+    assert(!refine_policy.q8_captures_xb);
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
+
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
     assert(bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed());
     setenv("BN_CUDA_DISABLE_SSM_FFN_FUSE", "1", 1);

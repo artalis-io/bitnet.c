@@ -124,6 +124,15 @@ typedef struct {
 } BnTransformerGPUQ4Q8LayerPolicy;
 
 typedef struct {
+    int q6_default;
+    int q6_enabled;
+    int q6_captures_xb;
+    int q8_default;
+    int q8_enabled;
+    int q8_captures_xb;
+} BnTransformerGPULogitsRefinePolicy;
+
+typedef struct {
     int attention_layer;
     int attention_pos;
     int gqa_layer;
@@ -397,6 +406,12 @@ int bn_transformer_gpu_q8_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
     int refine_q8_logits);
 int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default);
+BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnTransformerGPULogitResources *logits,
+    int small_dense_exact_q4_q8_default);
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
