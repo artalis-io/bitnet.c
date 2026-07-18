@@ -3290,6 +3290,11 @@ static void test_block_planning(void) {
     c.policy_flags = 0;
     c.full_attn_interval = 0;
 
+    assert(!bn_transformer_ffn_uses_exact_scalar_activation(&c));
+    c.policy_flags = BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
+    assert(bn_transformer_ffn_uses_exact_scalar_activation(&c));
+    c.policy_flags = 0;
+
     BnTransformerPrefillLayerKindPolicy prefill_layer_kind =
         bn_transformer_prefill_layer_kind_policy(NULL);
     assert(!prefill_layer_kind.uses_moe);

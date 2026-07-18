@@ -138,6 +138,11 @@ int bn_transformer_prefill_uses_exact_activation(
     return bn_model_arch_prefill_uses_exact_activation(c);
 }
 
+int bn_transformer_ffn_uses_exact_scalar_activation(
+    const BnConfig *c) {
+    return bn_model_arch_ffn_uses_exact_scalar_activation(c);
+}
+
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,
@@ -200,7 +205,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->has_gate = c->has_ffn_gate;
     p->has_sub_norm = lw->norm.ffn_sub_norm ? 1 : 0;
     p->scalar_exact_activation =
-        bn_model_arch_ffn_uses_exact_scalar_activation(c);
+        bn_transformer_ffn_uses_exact_scalar_activation(c);
 
     void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
                                                             BN_BACKEND_HANDLE_GATEUP_STACKED);

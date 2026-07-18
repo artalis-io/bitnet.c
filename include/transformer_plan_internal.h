@@ -236,6 +236,8 @@ int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c);
 int bn_transformer_prefill_uses_exact_activation(
     const BnConfig *c);
+int bn_transformer_ffn_uses_exact_scalar_activation(
+    const BnConfig *c);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,
                                    const BnLayerWeights *lw,
