@@ -801,6 +801,11 @@ if grep -n 'expert_count\|n_experts > 0' src/main.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'bn_model_arch_gguf_uses_moe' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use GPU policy helpers for GGUF MoE sequence auto-cap policy"
+    fail=1
+fi
+
 if grep -n 'model\(\.config\|->config\)\.n_experts [<>!=]=\? 0' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch helpers for loaded-model MoE presence policy"
     fail=1

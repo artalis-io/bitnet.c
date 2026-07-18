@@ -627,6 +627,17 @@ int bn_gpu_policy_auto_caps_sequence(int webgpu,
     return webgpu || cuda || (metal && has_moe);
 }
 
+int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
+                                          int cuda,
+                                          int metal,
+                                          BnGGUFFile *gf,
+                                          int model_seq_len,
+                                          int cap_seq_len) {
+    return bn_gpu_policy_auto_caps_sequence(
+        webgpu, cuda, metal, bn_model_arch_gguf_uses_moe(gf),
+        model_seq_len, cap_seq_len);
+}
+
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE") != NULL &&
            getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;

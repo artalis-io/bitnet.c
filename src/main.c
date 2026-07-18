@@ -436,7 +436,7 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     if (!bn_gpu_policy_moe_auto_resident_enabled())
         return requested;
     int moe_layers = model_moe_layer_count(model);
-    if (moe_layers <= 0 || !bn_model_arch_uses_moe(&model->config))
+    if (moe_layers <= 0 || !bn_gpu_policy_uses_moe(&model->config))
         return requested;
     size_t all_experts = entry_bytes * (size_t)moe_layers *
                          (size_t)model->config.n_experts;
@@ -491,7 +491,7 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
 static void maybe_create_gpu_moe_cache(BnModel *model,
                                        const CLIArgs *args,
                                        BnGPUBackend *gpu) {
-    if (!model || !args || !gpu || !bn_model_arch_uses_moe(&model->config) ||
+    if (!model || !args || !gpu || !bn_gpu_policy_uses_moe(&model->config) ||
         args->gpu_cache_mb <= 0 || model->config.n_layers <= 0)
         return;
     int routed_moe_layers = 0;
@@ -743,11 +743,9 @@ int main(int argc, char **argv) {
 
     if ((args.webgpu || args.metal || args.cuda) && !args.max_seq_len_set) {
         int model_seq_len = gguf_get_arch_u32(gf, "context_length");
-        if (bn_gpu_policy_auto_caps_sequence(args.webgpu, args.cuda,
-                                             args.metal,
-                                             bn_model_arch_gguf_uses_moe(gf),
-                                             model_seq_len,
-                                             BN_GPU_DEFAULT_MAXSEQ)) {
+        if (bn_gpu_policy_auto_caps_gguf_sequence(
+                args.webgpu, args.cuda, args.metal, gf, model_seq_len,
+                BN_GPU_DEFAULT_MAXSEQ)) {
             args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;
             SH_LOG_WARN(args.webgpu ? "Auto-capping WebGPU sequence length" :
                         (args.cuda ? "Auto-capping CUDA sequence length" :
@@ -844,7 +842,7 @@ int main(int argc, char **argv) {
                     if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
                         SH_LOG_INFO("GPU forward pass ready");
                         // Initialize GPU slab allocator for MoE weight suballocation
-                        if (bn_model_arch_uses_moe(&model.config))
+                        if (bn_gpu_policy_uses_moe(&model.config))
                             bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         maybe_create_gpu_moe_cache(&model, &args, gpu);
                     }
@@ -886,7 +884,7 @@ int main(int argc, char **argv) {
                             setenv("BN_GPU_CPU_LOGITS", "1", 1);
                         if (args.gpu_compare_logits)
                             setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
-                        if (bn_model_arch_uses_moe(&model.config))
+                        if (bn_gpu_policy_uses_moe(&model.config))
                             bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
                         maybe_create_gpu_moe_cache(&model, &args, gpu);
                     }

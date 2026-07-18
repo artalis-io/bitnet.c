@@ -337,6 +337,23 @@ static void test_backend_model_release_owns_buffers(void) {
     printf("PASSED\n");
 }
 
+static BnGGUFKeyValue test_make_u32_kv(char *key, uint32_t value) {
+    BnGGUFKeyValue kv = {0};
+    kv.key = key;
+    kv.type = BN_GGUF_TYPE_UINT32;
+    kv.value.u32 = value;
+    return kv;
+}
+
+static BnGGUFKeyValue test_make_str_kv(char *key, char *value) {
+    BnGGUFKeyValue kv = {0};
+    kv.key = key;
+    kv.type = BN_GGUF_TYPE_STRING;
+    kv.value.str.str = value;
+    kv.value.str.len = strlen(value);
+    return kv;
+}
+
 static void test_gpu_policy_helpers(void) {
     printf("test_gpu_policy_helpers... ");
 
@@ -386,6 +403,30 @@ static void test_gpu_policy_helpers(void) {
     moe.n_experts_active = 2;
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
     assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
+
+    BnGGUFKeyValue dense_kvs[2];
+    dense_kvs[0] = test_make_str_kv("general.architecture", "gemma4");
+    dense_kvs[1] = test_make_u32_kv("gemma4.expert_count", 0);
+    BnGGUFFile dense_gf = {0};
+    dense_gf.n_kv = 2;
+    dense_gf.kvs = dense_kvs;
+    assert(bn_gpu_policy_auto_caps_gguf_sequence(
+        1, 0, 0, &dense_gf, 8192, 4096));
+    assert(bn_gpu_policy_auto_caps_gguf_sequence(
+        0, 1, 0, &dense_gf, 8192, 4096));
+    assert(!bn_gpu_policy_auto_caps_gguf_sequence(
+        0, 0, 1, &dense_gf, 8192, 4096));
+
+    BnGGUFKeyValue moe_kvs[2];
+    moe_kvs[0] = test_make_str_kv("general.architecture", "qwen35moe");
+    moe_kvs[1] = test_make_u32_kv("qwen35moe.expert_count", 4);
+    BnGGUFFile moe_gf = {0};
+    moe_gf.n_kv = 2;
+    moe_gf.kvs = moe_kvs;
+    assert(bn_gpu_policy_auto_caps_gguf_sequence(
+        0, 0, 1, &moe_gf, 8192, 4096));
+    assert(!bn_gpu_policy_auto_caps_gguf_sequence(
+        0, 0, 1, &moe_gf, 4096, 4096));
 
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
     assert(bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));

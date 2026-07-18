@@ -1,6 +1,7 @@
 #ifndef BN_GPU_POLICY_H
 #define BN_GPU_POLICY_H
 
+#include "gguf.h"
 #include "gpu_backend.h"
 #include "model_config.h"
 
@@ -146,6 +147,12 @@ int bn_gpu_policy_auto_caps_sequence(int webgpu,
                                      int has_moe,
                                      int model_seq_len,
                                      int cap_seq_len);
+int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
+                                          int cuda,
+                                          int metal,
+                                          BnGGUFFile *gf,
+                                          int model_seq_len,
+                                          int cap_seq_len);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 void bn_gpu_policy_metal_apply_q4_q8_default(void);
