@@ -75,6 +75,17 @@ static int mock_matvec_argmax_activation(
     return 0;
 }
 
+static int mock_dense_ffn_batch(
+    void *ctx, float *out, void *gate_buf, void *up_buf, void *down_buf,
+    const float *X, int n_tokens, int dim, int hidden_dim, int gate_type,
+    int up_type, int down_type, int act_type) {
+    (void)ctx; (void)out; (void)gate_buf; (void)up_buf;
+    (void)down_buf; (void)X; (void)n_tokens; (void)dim;
+    (void)hidden_dim; (void)gate_type; (void)up_type;
+    (void)down_type; (void)act_type;
+    return 0;
+}
+
 static int mock_moe_route_routed_ffn_batch_norm_resid(
     void *ctx, float *out, void *router_buf, void *gate_all_buf,
     void *up_all_buf, void *down_all_buf, void *shared_gate_buf,
@@ -1673,6 +1684,7 @@ static void test_gpu_policy_helpers(void) {
     gpu.moe_route_batch = mock_moe_route_batch;
     gpu.moe_routed_ffn_batch = mock_moe_routed_ffn_batch;
     gpu.moe_ffn_batch = mock_moe_ffn_batch;
+    gpu.dense_ffn_batch = mock_dense_ffn_batch;
     gpu.prefill_moe_layer = mock_prefill_moe_layer;
     gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
@@ -1711,6 +1723,29 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
         &gpu, &c, 1));
     unsetenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL");
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE");
+    assert(bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 1, 1));
+    assert(!bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 1, 0));
+    gpu.dense_ffn_batch = NULL;
+    assert(!bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 1, 1));
+    gpu.dense_ffn_batch = mock_dense_ffn_batch;
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 1, 1));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "4", 1);
+    assert(!bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 3, 1));
+    assert(bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 4, 1));
+    unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE", "1", 1);
+    assert(!bn_transformer_gpu_moe_prefill_shared_batch_available(
+        &gpu, 1, 1));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE");
     assert(bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_resident_expert_batch_available(

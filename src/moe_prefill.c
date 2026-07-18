@@ -701,8 +701,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             int used_gpu_shared = 0;
             BnGPUBackend *gpu = bn_model_gpu(m);
             BnBackendModel *backend = bn_model_backend(m);
-            if (bn_transformer_gpu_moe_prefill_tokens_allowed(gpu, n_tokens) &&
-                gpu->dense_ffn_batch && backend) {
+            if (bn_transformer_gpu_moe_prefill_shared_batch_available(
+                    gpu, n_tokens, backend != NULL)) {
                 void *gate_gpu = bn_backend_model_handle(
                     backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
                 void *up_gpu = NULL;

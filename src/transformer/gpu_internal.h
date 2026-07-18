@@ -383,6 +383,10 @@ int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
     const BnConfig *c,
     int gpu_moe_cache_available);
 int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void);
+int bn_transformer_gpu_moe_prefill_shared_batch_available(
+    const BnGPUBackend *gpu,
+    int n_tokens,
+    int backend_available);
 int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void);
 int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
