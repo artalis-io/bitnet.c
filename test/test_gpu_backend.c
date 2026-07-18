@@ -528,6 +528,22 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_cublas_cache_debug_enabled());
     unsetenv("BN_CUDA_DEBUG_CUBLAS_CACHE");
 
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT");
+    assert(bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled());
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled());
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT");
+
+    unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE");
+    assert(!bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled());
+    setenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled());
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled());
+    unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(

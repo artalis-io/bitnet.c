@@ -330,6 +330,11 @@ if grep -n 'getenv("BN_CUDA_DEBUG_CUBLAS_CACHE")' src/gpu_cuda.cu >/dev/null 2>&
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT")\|getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE")\|getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for MoE cuBLAS grouped gate/up env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_[^"]*QWEN\|gpu_env_enabled("BN_CUDA_[^"]*QWEN\|gpu_env_value("BN_CUDA_[^"]*QWEN\|gpu_policy_env_int("BN_CUDA_[^"]*QWEN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1

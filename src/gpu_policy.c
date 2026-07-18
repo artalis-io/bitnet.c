@@ -754,6 +754,15 @@ int bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
                                        default_tokens);
 }
 
+int bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE") == NULL;
+}
+
 int bn_gpu_policy_cuda_moe_cache_prefill_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL") == NULL;
 }

@@ -322,6 +322,14 @@ static int cuda_debug_cublas_cache(void) {
     return bn_gpu_policy_cuda_cublas_cache_debug_enabled();
 }
 
+static int cuda_use_moe_cublas_gateup_f16_out(void) {
+    return bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled();
+}
+
+static int cuda_use_moe_cublas_grouped_variable(void) {
+    return bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled();
+}
+
 static int cuda_env_int(const char *name, int fallback) {
     const char *env = getenv(name);
     if (!env || !*env) return fallback;
@@ -12370,8 +12378,7 @@ static int cuda_moe_cublas_grouped_prefill(
     size_t hidden_values = (size_t)n_active * (size_t)max_count *
                            (size_t)hidden_dim;
     size_t out_values = gather_values;
-    int gateup_f16_out =
-        getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT") == NULL;
+    int gateup_f16_out = cuda_use_moe_cublas_gateup_f16_out();
     size_t x_bytes = gather_values * sizeof(__half) +
                      hidden_values * sizeof(__half);
     if (gateup_f16_out)
@@ -12476,9 +12483,7 @@ static int cuda_moe_cublas_grouped_prefill(
     if (ctx->exec_stream)
         cublasSetStream(ctx->cublas, ctx->exec_stream);
     cublasStatus_t st = CUBLAS_STATUS_SUCCESS;
-    int use_grouped_var =
-        getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE") != NULL &&
-        getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE") == NULL;
+    int use_grouped_var = cuda_use_moe_cublas_grouped_variable();
     cublasOperation_t *h_ta = NULL;
     cublasOperation_t *h_tb = NULL;
     int *h_m = NULL;
