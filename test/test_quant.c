@@ -152,6 +152,18 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_aux_cache_prefers_large_budget(BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_aux_cache_prefers_large_budget(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_aux_cache_prefers_large_budget(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_F32));
+    assert(!bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_quant_format_supports_logits_i8_cache(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_supports_logits_i8_cache(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_tied_logits_uses_f16_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_tied_logits_uses_f16_path(BN_GGUF_TENSOR_BF16));
+    assert(bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_BF16));
+    assert(bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_I2_S));
+    assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F16));
+    assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F32));
 
     int n_without_f32 = bn_quant_format_gpu_shader_type_count(0);
     int n_with_f32 = bn_quant_format_gpu_shader_type_count(1);

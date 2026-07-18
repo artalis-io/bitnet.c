@@ -198,6 +198,10 @@ if awk '
     /int bn_quant_format_aux_cache_can_use_f16\(/ { in_fn=1 }
     /int bn_quant_format_aux_cache_uses_f32\(/ { in_fn=1 }
     /int bn_quant_format_aux_cache_prefers_large_budget\(/ { in_fn=1 }
+    /int bn_quant_format_uses_f16_logits_path\(/ { in_fn=1 }
+    /int bn_quant_format_tied_logits_uses_quant_path\(/ { in_fn=1 }
+    /int bn_quant_format_supports_logits_i8_cache\(/ { in_fn=1 }
+    /int bn_quant_format_tied_logits_uses_f16_path\(/ { in_fn=1 }
     in_fn && /BN_GGUF_TENSOR_/ { found=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit found ? 0 : 1 }

@@ -293,6 +293,8 @@ typedef enum {
     BN_QUANT_CAP_AUX_CACHE = 1u << 26,
     BN_QUANT_CAP_AUX_CACHE_F16 = 1u << 27,
     BN_QUANT_CAP_AUX_CACHE_LARGE_BUDGET = 1u << 28,
+    BN_QUANT_CAP_LOGITS_F16_PATH = 1u << 29,
+    BN_QUANT_CAP_TIED_LOGITS_QUANT_PATH = 1u << 30,
 } BnQuantCapability;
 
 typedef void (*BnQuantMatvecFn)(float *out, const BnQWeight *W, const float *x,
