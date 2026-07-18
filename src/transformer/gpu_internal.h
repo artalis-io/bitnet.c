@@ -364,6 +364,7 @@ int bn_transformer_gpu_qkv_split_debug_enabled(void);
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
 int bn_transformer_gpu_ssm_ab_stack_enabled(void);
 int bn_transformer_gpu_split_residual_rmsnorm_enabled(void);
+int bn_transformer_gpu_prefill_ssm_layer_disabled(void);
 int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void);
 int bn_transformer_gpu_batch_prefill_enabled(
     const BnGPUBackend *gpu,
@@ -378,6 +379,12 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnGPUBackend *gpu,
+    int pos0,
+    int n_tokens);
+int bn_transformer_gpu_prefill_direct_kv_allowed(
     const BnConfig *c,
     const BnWeights *w,
     const BnGPUBackend *gpu,

@@ -1,7 +1,6 @@
 #include "transformer_prefill_internal.h"
 #include "backend_quant.h"
 #include "gpu_internal.h"
-#include "gpu_policy.h"
 #include "model_arch.h"
 
 #include <stdlib.h>
@@ -432,7 +431,7 @@ bn_transformer_prefill_ssm_state_upload_policy(
     BnTransformerPrefillSSMStateUploadPolicy policy = {0};
     policy.upload = gpu_attached &&
                     bn_model_arch_uses_hybrid_ssm(c) &&
-                    bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
+                    bn_transformer_gpu_prefill_ssm_layer_disabled();
     return policy;
 }
 
@@ -476,7 +475,7 @@ int bn_transformer_prefill_direct_kv_allowed(
     const BnGPUBackend *gpu,
     int pos0,
     int n_tokens) {
-    return bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+    return bn_transformer_gpu_prefill_direct_kv_allowed(
         c, w, gpu, pos0, n_tokens);
 }
 

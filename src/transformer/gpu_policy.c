@@ -165,6 +165,10 @@ int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
     return bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
 }
 
+int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
+    return bn_transformer_gpu_cuda_prefill_ssm_layer_disabled();
+}
+
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type) {
@@ -701,6 +705,16 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
     if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
         return 0;
     return 1;
+}
+
+int bn_transformer_gpu_prefill_direct_kv_allowed(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnGPUBackend *gpu,
+    int pos0,
+    int n_tokens) {
+    return bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        c, w, gpu, pos0, n_tokens);
 }
 
 int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void) {
