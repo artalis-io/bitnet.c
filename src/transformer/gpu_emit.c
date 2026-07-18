@@ -1159,10 +1159,10 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     void *qkv_stacked = res ? res->qkv_stacked : NULL;
     void *qk_stacked = res ? res->qk_stacked : NULL;
 
-    int use_packed_qkv = lw->ssm.wqkv.data &&
-                         res && res->packed_qkv &&
+    int use_packed_qkv = res && res->packed_qkv &&
                          !q_bias && !k_bias && !v_bias &&
-                         lw->ssm.wqkv.rows == q_dim + 2 * kv_dim;
+                         bn_transformer_weight_is_packed_qkv(
+                             &lw->ssm.wqkv, c->dim, q_dim, kv_dim);
     int q_gated = !use_packed_qkv && plan->q_gated;
     int packed_split_op_code = bn_transformer_gpu_matvec_split_op_code(
         lw->ssm.wqkv.type);

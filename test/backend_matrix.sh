@@ -957,6 +957,11 @@ if grep -n 'full_attn_interval' src/transformer/prefill.c test/test_prefill.c >/
     fail=1
 fi
 
+if grep -n 'ssm\.wqkv\.cols ==\|ssm\.wqkv\.rows == .*2 \*' src/transformer/gpu_emit.c src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer GPU/prefill code must use packed QKV shape policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \

@@ -41,6 +41,15 @@ int bn_transformer_uses_hybrid_moe(const BnConfig *c) {
     return bn_model_arch_uses_hybrid_moe(c);
 }
 
+int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
+                                        int input_dim,
+                                        int q_dim,
+                                        int kv_dim) {
+    return qkv && qkv->data &&
+           qkv->cols == input_dim &&
+           qkv->rows == q_dim + 2 * kv_dim;
+}
+
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {
     if (c->kv_tq_bits > 0 && tq_enabled) return BN_KV_TQ;
     if (c->kv_f16) return BN_KV_FP16;

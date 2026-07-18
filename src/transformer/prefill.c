@@ -399,8 +399,8 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
     int has_packed_qkv =
-        lw->ssm.wqkv.data && lw->ssm.wqkv.cols == dim &&
-        lw->ssm.wqkv.rows == q_dim + 2 * kv_dim;
+        bn_transformer_weight_is_packed_qkv(&lw->ssm.wqkv, dim,
+                                            q_dim, kv_dim);
     if (!gpu || !gpu->prefill_dense_layer || !backend ||
         (!has_split_qkv && !has_packed_qkv) ||
         !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
@@ -754,8 +754,8 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
     int has_packed_qkv =
-        lw->ssm.wqkv.data && lw->ssm.wqkv.cols == c->dim &&
-        lw->ssm.wqkv.rows == q_dim + 2 * plan->kv_dim;
+        bn_transformer_weight_is_packed_qkv(&lw->ssm.wqkv, c->dim,
+                                            q_dim, plan->kv_dim);
     if (!has_split_qkv && !has_packed_qkv)
         return 0;
 

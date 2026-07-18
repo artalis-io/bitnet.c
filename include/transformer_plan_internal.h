@@ -209,6 +209,10 @@ int bn_transformer_attention_layer_count(const BnConfig *c);
 int bn_transformer_ssm_layer_count(const BnConfig *c);
 int bn_transformer_uses_hybrid_ssm(const BnConfig *c);
 int bn_transformer_uses_hybrid_moe(const BnConfig *c);
+int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
+                                        int input_dim,
+                                        int q_dim,
+                                        int kv_dim);
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled);
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,

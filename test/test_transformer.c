@@ -2907,6 +2907,22 @@ static void test_layer_shape_planning(void) {
     assert(!p.is_attn);
     assert(p.ssm_idx == 3);
 
+    BnQWeight packed;
+    memset(&packed, 0, sizeof(packed));
+    packed.data = (void *)1;
+    packed.cols = 64;
+    packed.rows = 96;
+    assert(bn_transformer_weight_is_packed_qkv(&packed, 64, 32, 32));
+    packed.rows = 95;
+    assert(!bn_transformer_weight_is_packed_qkv(&packed, 64, 32, 32));
+    packed.rows = 96;
+    packed.cols = 32;
+    assert(!bn_transformer_weight_is_packed_qkv(&packed, 64, 32, 32));
+    packed.cols = 64;
+    packed.data = NULL;
+    assert(!bn_transformer_weight_is_packed_qkv(&packed, 64, 32, 32));
+    assert(!bn_transformer_weight_is_packed_qkv(NULL, 64, 32, 32));
+
     printf("PASSED\n");
 }
 
