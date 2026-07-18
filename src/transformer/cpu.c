@@ -921,8 +921,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
 
     BnGPUBackend *gpu = bn_model_gpu(m);
-    if (gpu && gpu->dense_ffn && ffn_plan->has_gate &&
-        !ffn_plan->has_sub_norm && ffn_plan->activation == 0) {
+    if (bn_transformer_cpu_gpu_dense_ffn_fast_path_available(gpu, ffn_plan)) {
         const BnBackendModel *backend = bn_model_backend(m);
         void *gate_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_gate);
         void *up_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_up);

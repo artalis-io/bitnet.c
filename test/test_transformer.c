@@ -86,6 +86,16 @@ static int mock_dense_ffn_batch(
     return 0;
 }
 
+static int mock_dense_ffn(
+    void *ctx, float *out, void *gate_buf, void *up_buf, void *down_buf,
+    const float *x, int dim, int hidden_dim, int gate_type, int up_type,
+    int down_type, int act_type) {
+    (void)ctx; (void)out; (void)gate_buf; (void)up_buf;
+    (void)down_buf; (void)x; (void)dim; (void)hidden_dim;
+    (void)gate_type; (void)up_type; (void)down_type; (void)act_type;
+    return 0;
+}
+
 static int mock_moe_route_routed_ffn_batch_norm_resid(
     void *ctx, float *out, void *router_buf, void *gate_all_buf,
     void *up_all_buf, void *down_all_buf, void *shared_gate_buf,
@@ -3223,6 +3233,28 @@ static void test_block_planning(void) {
         NULL, &ffn_plan, 31, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
     assert(!bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
         NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0));
+
+    assert(!bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        NULL, &ffn_plan));
+    assert(!bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        &route_gpu, &ffn_plan));
+    route_gpu.dense_ffn = mock_dense_ffn;
+    assert(!bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        &route_gpu, NULL));
+    assert(!bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        &route_gpu, &ffn_plan));
+    ffn_plan.has_gate = 1;
+    assert(bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        &route_gpu, &ffn_plan));
+    ffn_plan.has_sub_norm = 1;
+    assert(!bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        &route_gpu, &ffn_plan));
+    ffn_plan.has_sub_norm = 0;
+    ffn_plan.activation = 1;
+    assert(!bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+        &route_gpu, &ffn_plan));
+    ffn_plan.activation = 0;
+    route_gpu.dense_ffn = NULL;
 
     const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
     c.policy_flags = 0;

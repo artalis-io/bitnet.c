@@ -67,6 +67,9 @@ int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
     int dim,
     int gate_type,
     int up_type);
+int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+    const BnGPUBackend *gpu,
+    const BnFFNPlan *ffn_plan);
 bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnConfig *c,
                                              const BnCPUBackendOps *ops);
 bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnConfig *c,

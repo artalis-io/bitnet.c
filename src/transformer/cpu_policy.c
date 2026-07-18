@@ -93,6 +93,17 @@ int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
            bn_transformer_cpu_can_fused_q4_gateup_silu(gate_type, up_type);
 }
 
+int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
+    const BnGPUBackend *gpu,
+    const BnFFNPlan *ffn_plan) {
+    return gpu &&
+           gpu->dense_ffn &&
+           ffn_plan &&
+           ffn_plan->has_gate &&
+           !ffn_plan->has_sub_norm &&
+           ffn_plan->activation == 0;
+}
+
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,
