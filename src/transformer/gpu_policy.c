@@ -1269,6 +1269,18 @@ bn_transformer_gpu_q4_q8_layer_use_policy(
     return use;
 }
 
+BnTransformerGPUMoERouteLayerPolicy
+bn_transformer_gpu_moe_route_layer_policy(void) {
+    static int init = 0;
+    static BnTransformerGPUMoERouteLayerPolicy policy = {-1, -1};
+    if (!init) {
+        bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
+            &policy.from_layer, &policy.to_layer);
+        init = 1;
+    }
+    return policy;
+}
+
 BnTransformerGPUComparePolicy
 bn_transformer_gpu_compare_policy(void) {
     BnTransformerGPUComparePolicy policy = {

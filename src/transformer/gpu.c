@@ -847,33 +847,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_q4_q8_layer_policy(c);
     BnTransformerGPUComparePolicy compare_policy =
         bn_transformer_gpu_compare_policy();
-    int all2_q4q6_moe_gpu_route_from_layer = -1;
-    int all2_q4q6_moe_gpu_route_to_layer = -1;
-    {
-        static int init = 0;
-        static int s_all2_q4q6_moe_gpu_route_from_layer = -1;
-        static int s_all2_q4q6_moe_gpu_route_to_layer = -1;
-        if (!init) {
-            bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
-                &s_all2_q4q6_moe_gpu_route_from_layer,
-                &s_all2_q4q6_moe_gpu_route_to_layer);
-            init = 1;
-        }
-        compare_attention_layer = compare_policy.attention_layer;
-        compare_attention_pos = compare_policy.attention_pos;
-        compare_gqa_layer = compare_policy.gqa_layer;
-        compare_gqa_pos = compare_policy.gqa_pos;
-        compare_qkv_layer = compare_policy.qkv_layer;
-        compare_qkv_pos = compare_policy.qkv_pos;
-        compare_ffn_down_layer = compare_policy.ffn_down_layer;
-        compare_ffn_down_pos = compare_policy.ffn_down_pos;
-        compare_ffn_state_layer = compare_policy.ffn_state_layer;
-        compare_ffn_state_pos = compare_policy.ffn_state_pos;
-        all2_q4q6_moe_gpu_route_from_layer =
-            s_all2_q4q6_moe_gpu_route_from_layer;
-        all2_q4q6_moe_gpu_route_to_layer =
-            s_all2_q4q6_moe_gpu_route_to_layer;
-    }
+    BnTransformerGPUMoERouteLayerPolicy moe_route_layer =
+        bn_transformer_gpu_moe_route_layer_policy();
+    compare_attention_layer = compare_policy.attention_layer;
+    compare_attention_pos = compare_policy.attention_pos;
+    compare_gqa_layer = compare_policy.gqa_layer;
+    compare_gqa_pos = compare_policy.gqa_pos;
+    compare_qkv_layer = compare_policy.qkv_layer;
+    compare_qkv_pos = compare_policy.qkv_pos;
+    compare_ffn_down_layer = compare_policy.ffn_down_layer;
+    compare_ffn_down_pos = compare_policy.ffn_down_pos;
+    compare_ffn_state_layer = compare_policy.ffn_state_layer;
+    compare_ffn_state_pos = compare_policy.ffn_state_pos;
     cpu_fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
         cpu_fallback, gpu, c, w);
     if (bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
@@ -1200,8 +1185,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     gpu, c, lw, dim);
             int all2_q4q6_moe_gpu_route_layer_selected =
                 bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
-                    l, all2_q4q6_moe_gpu_route_from_layer,
-                    all2_q4q6_moe_gpu_route_to_layer);
+                    l, moe_route_layer.from_layer,
+                    moe_route_layer.to_layer);
             int all2_q4q6_moe_exact_gpu_route =
                 bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
                     all2_q4q6_moe,

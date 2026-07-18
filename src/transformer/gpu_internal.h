@@ -132,6 +132,11 @@ typedef struct {
 } BnTransformerGPUQ4Q8LayerUsePolicy;
 
 typedef struct {
+    int from_layer;
+    int to_layer;
+} BnTransformerGPUMoERouteLayerPolicy;
+
+typedef struct {
     int q6_default;
     int q6_enabled;
     int q6_captures_xb;
@@ -484,6 +489,8 @@ bn_transformer_gpu_q4_q8_layer_use_policy(
     int layer,
     int small_dense_exact_q4_q8_default,
     int small_dense_exact_q4_q8_to_layer);
+BnTransformerGPUMoERouteLayerPolicy
+bn_transformer_gpu_moe_route_layer_policy(void);
 BnTransformerGPUComparePolicy
 bn_transformer_gpu_compare_policy(void);
 int bn_transformer_gpu_flash_attention_enabled(

@@ -2018,6 +2018,10 @@ static void test_gpu_policy_helpers(void) {
     assert(route_to == 7);
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
     unsetenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+    BnTransformerGPUMoERouteLayerPolicy route_layer_policy =
+        bn_transformer_gpu_moe_route_layer_policy();
+    assert(route_layer_policy.from_layer == -1);
+    assert(route_layer_policy.to_layer == -1);
 
     c.n_experts = 2;
     c.n_experts_active = 2;
