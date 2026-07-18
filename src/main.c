@@ -364,17 +364,6 @@ static CLIArgs parse_args(int argc, char **argv) {
 }
 
 #if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
-static size_t env_mb_or_default(const char *name, int default_mb) {
-    const char *s = getenv(name);
-    if (!s || !*s)
-        return default_mb > 0 ? (size_t)default_mb : 0;
-    char *end = NULL;
-    long v = strtol(s, &end, 10);
-    if (!end || *end != '\0' || v <= 0)
-        return 0;
-    return (size_t)v;
-}
-
 static size_t model_moe_entry_bytes(const BnModel *model,
                                     const BnGPUBackend *gpu) {
     if (!model || model->config.n_layers <= 0)
@@ -459,15 +448,15 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     size_t total_bytes = 0;
     if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
         return requested;
-    size_t reserve_mb = env_mb_or_default("BN_GPU_MOE_CACHE_RESERVE_MB", 4096);
-    size_t reserve = reserve_mb * 1024u * 1024u;
+    size_t reserve = bn_gpu_policy_moe_cache_reserve_bytes();
     if (all_experts > 0 && free_bytes > all_experts + reserve) {
         char total_mb[32], free_mb[32], reserve_mb_s[32];
         snprintf(total_mb, sizeof(total_mb), "%zu",
                  all_experts / (1024u * 1024u));
         snprintf(free_mb, sizeof(free_mb), "%zu",
                  free_bytes / (1024u * 1024u));
-        snprintf(reserve_mb_s, sizeof(reserve_mb_s), "%zu", reserve_mb);
+        snprintf(reserve_mb_s, sizeof(reserve_mb_s), "%zu",
+                 reserve / (1024u * 1024u));
         SH_LOG_INFO("GPU MoE cache auto-resident",
                     "expert_MB", total_mb,
                     "free_MB", free_mb,

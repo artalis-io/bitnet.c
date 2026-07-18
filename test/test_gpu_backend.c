@@ -1395,6 +1395,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+    unsetenv("BN_GPU_MOE_CACHE_RESERVE_MB");
     assert(bn_gpu_policy_backend_is_cuda(&gpu));
     assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 0) == 128);
     assert(bn_gpu_policy_cuda_cublas_cache_max_mb(128, 1) == 512);
@@ -1464,6 +1465,20 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE", "1", 1);
     assert(!bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
     unsetenv("BN_METAL_ENABLE_MMAP_ZERO_COPY");
+    assert(bn_gpu_policy_moe_cache_reserve_bytes() ==
+           4096ull * 1024ull * 1024ull);
+    setenv("BN_GPU_MOE_CACHE_RESERVE_MB", "123", 1);
+    assert(bn_gpu_policy_moe_cache_reserve_bytes() ==
+           123ull * 1024ull * 1024ull);
+    setenv("BN_GPU_MOE_CACHE_RESERVE_MB", "bad", 1);
+    assert(bn_gpu_policy_moe_cache_reserve_bytes() == 0);
+    setenv("BN_GPU_MOE_CACHE_RESERVE_MB", "0", 1);
+    assert(bn_gpu_policy_moe_cache_reserve_bytes() == 0);
+    setenv("BN_GPU_MOE_CACHE_RESERVE_MB", "-1", 1);
+    assert(bn_gpu_policy_moe_cache_reserve_bytes() == 0);
+    setenv("BN_GPU_MOE_CACHE_RESERVE_MB", "18446744073709551615", 1);
+    assert(bn_gpu_policy_moe_cache_reserve_bytes() == SIZE_MAX);
+    unsetenv("BN_GPU_MOE_CACHE_RESERVE_MB");
     assert(!bn_gpu_policy_metal_mmap_zero_copy_enabled());
     setenv("BN_METAL_ENABLE_MMAP_ZERO_COPY", "1", 1);
     assert(bn_gpu_policy_metal_mmap_zero_copy_enabled());

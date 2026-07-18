@@ -260,6 +260,19 @@ static size_t mb_to_bytes_saturating(size_t mb) {
         : mb * 1024u * 1024u;
 }
 
+static size_t positive_env_mb_or_default(const char *name, size_t def) {
+    const char *s = getenv(name);
+    if (!s || !*s)
+        return def;
+    if (*s == '-')
+        return 0;
+    char *end = NULL;
+    unsigned long long v = strtoull(s, &end, 10);
+    if (!end || *end != '\0' || v == 0)
+        return 0;
+    return (size_t)v;
+}
+
 size_t bn_gpu_policy_cuda_layout_reserve_bytes(void) {
     return mb_to_bytes_saturating(
         env_mb_or_default("BN_CUDA_LAYOUT_RESERVE_MB", 512));
@@ -596,6 +609,11 @@ size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
 
 int bn_gpu_policy_moe_auto_resident_enabled(void) {
     return getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT") == NULL;
+}
+
+size_t bn_gpu_policy_moe_cache_reserve_bytes(void) {
+    return mb_to_bytes_saturating(
+        positive_env_mb_or_default("BN_GPU_MOE_CACHE_RESERVE_MB", 4096));
 }
 
 int bn_gpu_policy_auto_caps_sequence(int webgpu,
