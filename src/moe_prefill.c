@@ -2,7 +2,6 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
-#include "model_arch.h"
 #include "transformer/gpu_internal.h"
 
 typedef struct {
@@ -104,12 +103,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int moe_hidden = c->moe_intermediate_size;
     int K = c->n_experts_active;
     int n_experts = c->n_experts;
-    int force_matvec_prefill = bn_model_arch_moe_prefill_forces_matvec(c);
+    BnMoEPrefillPolicy prefill_policy = bn_moe_prefill_policy(c);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
 
     BnAllocator a = bn_allocator_default();
     int did_input_norm = 0;
-    if (bn_model_arch_uses_more_than_two_expert_moe(c)) {
+    if (prefill_policy.uses_grouped_expert_route) {
         BnGPUBackend *gpu = bn_model_gpu(m);
         BnBackendModel *backend = bn_model_backend(m);
         if (bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
@@ -620,7 +619,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch,
                             bn_model_pool(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
-        } else if (force_matvec_prefill) {
+        } else if (prefill_policy.force_matvec_prefill) {
             for (int i = 0; i < T; i++) {
                 float *x_t = gather_buf + (size_t)i * dim;
                 float *gate_t = gate_buf + (size_t)i * moe_hidden;
@@ -727,7 +726,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 }
             }
 
-            if (!used_gpu_shared && force_matvec_prefill) {
+            if (!used_gpu_shared && prefill_policy.force_matvec_prefill) {
                 for (int t = 0; t < n_tokens; t++) {
                     const float *x_t = Xb + (size_t)t * dim;
                     float *gate_t = sh_g + (size_t)t * shared_hidden;

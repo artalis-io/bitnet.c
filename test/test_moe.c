@@ -293,6 +293,40 @@ static void test_moe_execution_policy(void) {
     printf("PASSED\n");
 }
 
+static void test_moe_prefill_policy(void) {
+    printf("test_moe_prefill_policy... ");
+
+    BnConfig c = {0};
+    BnMoEPrefillPolicy policy = bn_moe_prefill_policy(&c);
+    assert(!policy.force_matvec_prefill);
+    assert(!policy.uses_grouped_expert_route);
+
+    c.n_experts = 4;
+    c.n_experts_active = 2;
+    c.has_shared_expert = 1;
+    policy = bn_moe_prefill_policy(&c);
+    assert(!policy.force_matvec_prefill);
+    assert(policy.uses_grouped_expert_route);
+
+    c.n_experts = 2;
+    c.n_experts_active = 2;
+    c.has_shared_expert = 0;
+    policy = bn_moe_prefill_policy(&c);
+    assert(!policy.force_matvec_prefill);
+    assert(!policy.uses_grouped_expert_route);
+
+    c.has_shared_expert = 1;
+    policy = bn_moe_prefill_policy(&c);
+    assert(policy.force_matvec_prefill);
+    assert(!policy.uses_grouped_expert_route);
+
+    policy = bn_moe_prefill_policy(NULL);
+    assert(!policy.force_matvec_prefill);
+    assert(!policy.uses_grouped_expert_route);
+
+    printf("PASSED\n");
+}
+
 static void test_moe_quant_policy_helpers(void) {
     printf("test_moe_quant_policy_helpers... ");
 
@@ -403,6 +437,7 @@ int main(void) {
     test_model_arch_gguf_uses_moe();
     test_qwen2moe_arch_config();
     test_moe_execution_policy();
+    test_moe_prefill_policy();
     test_moe_quant_policy_helpers();
     test_moe_resident_routed_ffn_layout_policy();
     test_swiglu();

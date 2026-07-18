@@ -19,6 +19,15 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
     return policy;
 }
 
+BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
+    BnMoEPrefillPolicy policy = {0};
+    policy.force_matvec_prefill =
+        bn_model_arch_moe_prefill_forces_matvec(c);
+    policy.uses_grouped_expert_route =
+        bn_model_arch_uses_more_than_two_expert_moe(c);
+    return policy;
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {
