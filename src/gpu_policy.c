@@ -648,6 +648,14 @@ size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
     return bytes;
 }
 
+int bn_gpu_policy_cuda_cublas_aux_cache_supported(int tensor_type,
+                                                  int cols) {
+    return cols > 0 &&
+           (cols & 31) == 0 &&
+           bn_gpu_policy_cuda_cublas_matmul_enabled() &&
+           bn_backend_quant_cuda_cublas_aux_cache_supported(tensor_type);
+}
+
 int bn_gpu_policy_moe_auto_resident_enabled(void) {
     return getenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT") == NULL;
 }

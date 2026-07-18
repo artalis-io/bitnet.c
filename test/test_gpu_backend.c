@@ -1697,6 +1697,16 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_K, 8, 32) == 256 * sizeof(uint16_t));
     assert(bn_gpu_policy_cuda_aux_cache_bytes(
         BN_GGUF_TENSOR_I2_S, 8, 32) == 0);
+    assert(bn_gpu_policy_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q4_K, 32));
+    assert(bn_gpu_policy_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q6_K, 32));
+    assert(!bn_gpu_policy_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q4_0, 32));
+    assert(!bn_gpu_policy_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_IQ4_XS, 32));
+    assert(!bn_gpu_policy_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q4_K, 31));
     assert(!bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q4_K, 8, 16));
     gpu.kind = BN_GPU_BACKEND_METAL;
@@ -1712,6 +1722,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16", "1", 1);
     setenv("BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE", "1", 1);
     assert(!bn_gpu_policy_cuda_cublas_matmul_enabled());
+    assert(!bn_gpu_policy_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q4_K, 32));
     assert(!bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled());
     assert(!bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache());
     assert(!bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(

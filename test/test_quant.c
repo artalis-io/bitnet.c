@@ -109,6 +109,24 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_cuda_matvec_supported(BN_GGUF_TENSOR_IQ4_XS));
     assert(!bn_quant_format_cuda_matvec_supported(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_cuda_matvec_supported(BN_GGUF_TENSOR_MXFP4));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_BF16));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q5_0));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q3_K));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_quant_format_cuda_cublas_aux_cache_supported(
+        BN_GGUF_TENSOR_IQ4_XS));
 
     assert(strcmp(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_Q4_0),
                   "q4") == 0);

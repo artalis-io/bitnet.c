@@ -500,6 +500,17 @@ if awk '
     fail=1
 fi
 
+if awk '
+    /static int cuda_buffer_create_f16_cache\(/ { in_fn=1 }
+    in_fn && /buf->type != BN_GGUF_TENSOR_/ { bad=1 }
+    in_fn && /bn_gpu_policy_cuda_cublas_aux_cache_supported/ { saw_policy=1 }
+    in_fn && /^}/ { in_fn=0 }
+    END { exit (bad || !saw_policy) ? 0 : 1 }
+' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA aux-cache eligibility must use GPU policy helpers, not tensor-specific whitelists"
+    fail=1
+fi
+
 if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/moe_execute.c >/dev/null 2>&1; then
     echo "MoE execution must use MoE policy helpers for GPU-resident quant matvec dispatch"
     fail=1

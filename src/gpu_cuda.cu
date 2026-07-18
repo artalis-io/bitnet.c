@@ -11361,15 +11361,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     if (!buf || !buf->data || buf->rows <= 0 || buf->cols <= 0 ||
         (buf->cols & 31) != 0)
         return 0;
-    if (buf->type != BN_GGUF_TENSOR_Q8_0 &&
-        buf->type != BN_GGUF_TENSOR_Q5_0 &&
-        buf->type != BN_GGUF_TENSOR_BF16 &&
-        buf->type != BN_GGUF_TENSOR_Q3_K &&
-        buf->type != BN_GGUF_TENSOR_Q4_K &&
-        buf->type != BN_GGUF_TENSOR_Q5_K &&
-        buf->type != BN_GGUF_TENSOR_Q6_K)
-        return 0;
-    if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
+    if (!bn_gpu_policy_cuda_cublas_aux_cache_supported(buf->type, buf->cols))
         return 0;
 
     int force_q6_f32 = aux_cache_mode == 2;
