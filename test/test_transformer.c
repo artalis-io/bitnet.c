@@ -2854,6 +2854,47 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_can_preq8k_triple(
         bn_transformer_cpu_backend_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+    BnGPUBackend route_gpu = {0};
+    assert(bn_transformer_cpu_route_preq8k_pair_enabled(
+               bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
+           supports_preq8k);
+    assert(!bn_transformer_cpu_route_preq8k_pair_enabled(
+        bn_transformer_cpu_backend_ops(), &route_gpu, BN_QK_K,
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_transformer_cpu_route_preq8k_pair_enabled(
+        bn_transformer_cpu_backend_ops(), NULL, BN_QK_K - 1,
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
+    assert(bn_transformer_cpu_route_preq8k_triple_enabled(
+               bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
+               BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
+               BN_GGUF_TENSOR_Q6_K) == supports_preq8k);
+    assert(!bn_transformer_cpu_route_preq8k_triple_enabled(
+        bn_transformer_cpu_backend_ops(), &route_gpu, BN_QK_K,
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_transformer_cpu_route_preq8k_triple_enabled(
+        bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+
+    BnFFNPlan ffn_plan = {0};
+    ffn_plan.activation = 0;
+    assert(bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+        NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+        &route_gpu, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0,
+        BN_GGUF_TENSOR_Q4_0));
+    ffn_plan.scalar_exact_activation = 1;
+    assert(!bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+        NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    ffn_plan.scalar_exact_activation = 0;
+    ffn_plan.activation = 1;
+    assert(!bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+        NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    ffn_plan.activation = 0;
+    assert(!bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+        NULL, &ffn_plan, 31, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+        NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0));
 
     const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
     c.policy_flags = 0;

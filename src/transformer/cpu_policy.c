@@ -55,6 +55,44 @@ int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
            bn_backend_quant_can_preq8k(third_type);
 }
 
+int bn_transformer_cpu_route_preq8k_pair_enabled(
+    const BnCPUBackendOps *ops,
+    const BnGPUBackend *gpu,
+    int dim,
+    int left_type,
+    int right_type) {
+    return !gpu &&
+           dim % BN_QK_K == 0 &&
+           bn_transformer_cpu_can_preq8k_pair(ops, left_type, right_type);
+}
+
+int bn_transformer_cpu_route_preq8k_triple_enabled(
+    const BnCPUBackendOps *ops,
+    const BnGPUBackend *gpu,
+    int dim,
+    int first_type,
+    int second_type,
+    int third_type) {
+    return !gpu &&
+           dim % BN_QK_K == 0 &&
+           bn_transformer_cpu_can_preq8k_triple(ops, first_type, second_type,
+                                                third_type);
+}
+
+int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+    const BnGPUBackend *gpu,
+    const BnFFNPlan *ffn_plan,
+    int dim,
+    int gate_type,
+    int up_type) {
+    return !gpu &&
+           ffn_plan &&
+           !ffn_plan->scalar_exact_activation &&
+           ffn_plan->activation == 0 &&
+           dim % 32 == 0 &&
+           bn_transformer_cpu_can_fused_q4_gateup_silu(gate_type, up_type);
+}
+
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,

@@ -396,9 +396,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
         /* Fused attn RMSNorm + Q8K: quantize s->xb once, reuse for Q and K+V */
         int attn_preq8k = 0;
-        int attn_kquant = bn_transformer_cpu_can_preq8k_triple(
-            cpu_ops, lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
-            !bn_model_gpu(m) && dim % BN_QK_K == 0;
+        int attn_kquant = bn_transformer_cpu_route_preq8k_triple_enabled(
+            cpu_ops, bn_model_gpu(m), dim,
+            lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type);
         int n_sb_attn = dim / BN_QK_K;
         float attn_q8k_d[n_sb_attn > 0 ? n_sb_attn : 1];
         int16_t attn_q8k_bsums[n_sb_attn > 0 ? n_sb_attn * 16 : 1];
@@ -810,10 +810,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     int n_sb_ssm = dim / BN_QK_K;
     float ssm_q8k_d[n_sb_ssm > 0 ? n_sb_ssm : 1];
     int16_t ssm_q8k_bsums[n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
-    int ssm_kquant =
-        !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
-        bn_transformer_cpu_can_preq8k_pair(cpu_ops, lw->ssm.wqkv.type,
-                                           lw->ssm.wz.type);
+    int ssm_kquant = bn_transformer_cpu_route_preq8k_pair_enabled(
+        cpu_ops, bn_model_gpu(m), dim, lw->ssm.wqkv.type, lw->ssm.wz.type);
     if (ssm_kquant) {
         cpu_ops->rmsnorm_q8k(s->x, lw->norm.attn_norm, dim, c->norm_eps,
                              s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
@@ -945,9 +943,9 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         }
     }
 
-    if (ffn_plan->has_gate && !bn_model_gpu(m) && dim % BN_QK_K == 0 &&
-        bn_transformer_cpu_can_preq8k_pair(
-            cpu_ops, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
+    if (ffn_plan->has_gate &&
+        bn_transformer_cpu_route_preq8k_pair_enabled(
+            cpu_ops, gpu, dim, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
         int n_sb = dim / BN_QK_K;
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
@@ -971,11 +969,9 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_gate);
             const BnPreparedWeight *up_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
-            if (!bn_model_gpu(m) && !ffn_plan->scalar_exact_activation &&
-                ffn_plan->activation == 0 &&
-                bn_transformer_cpu_can_fused_q4_gateup_silu(
+            if (bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+                    gpu, ffn_plan, dim,
                     lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) &&
-                dim % 32 == 0 &&
                 bn_quant_q4_gate_up_silu(s->hb, &lw->ffn.ffn_gate, gate_prepared,
                                          &lw->ffn.ffn_up, up_prepared, s->xb,
                                          s->x_q, bn_model_pool(m)) == 0) {

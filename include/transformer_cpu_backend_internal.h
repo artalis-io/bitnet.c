@@ -48,6 +48,25 @@ int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
+int bn_transformer_cpu_route_preq8k_pair_enabled(
+    const BnCPUBackendOps *ops,
+    const BnGPUBackend *gpu,
+    int dim,
+    int left_type,
+    int right_type);
+int bn_transformer_cpu_route_preq8k_triple_enabled(
+    const BnCPUBackendOps *ops,
+    const BnGPUBackend *gpu,
+    int dim,
+    int first_type,
+    int second_type,
+    int third_type);
+int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+    const BnGPUBackend *gpu,
+    const BnFFNPlan *ffn_plan,
+    int dim,
+    int gate_type,
+    int up_type);
 bn_tp_fn bn_transformer_cpu_ssm_conv_silu_op(const BnConfig *c,
                                              const BnCPUBackendOps *ops);
 bn_tp_fn bn_transformer_cpu_ssm_l2norm_op(const BnConfig *c,
