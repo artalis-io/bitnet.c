@@ -2865,6 +2865,16 @@ static void test_layer_shape_planning(void) {
     assert(p.kind == BN_LAYER_ATTN_GATED_Q);
     assert(p.q_gated);
     assert(!p.q_wide);
+    assert(bn_transformer_attention_q_projection_is_gated(
+        &lw.attn.wq, p.q_dim));
+    lw.attn.wq.rows = p.q_dim;
+    assert(!bn_transformer_attention_q_projection_is_gated(
+        &lw.attn.wq, p.q_dim));
+    lw.attn.wq.rows = 4096;
+    lw.attn.wq.data = NULL;
+    assert(!bn_transformer_attention_q_projection_is_gated(
+        &lw.attn.wq, p.q_dim));
+    lw.attn.wq.data = (void *)1;
 
     lw.attn.wq.rows = 3072;
     lw.attn.head_size = 192;

@@ -1488,7 +1488,8 @@ void bn_transformer_gpu_emit_context_attention_finish(
     void *attn_sub_norm = res ? res->attn_sub_norm : NULL;
     void *ffn_norm = res ? res->ffn_norm : NULL;
 
-    if (lw->attn.wq.rows > q_dim) {
+    if (bn_transformer_attention_q_projection_is_gated(
+            &lw->attn.wq, q_dim)) {
         bn_transformer_gpu_emit_context_activation(
             ctx, BN_GPU_VALUE_XB, BN_GPU_VALUE_QKV, q_dim, head_size,
             BN_GPU_IR_ACTIVATION_SIGMOID);

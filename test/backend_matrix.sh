@@ -967,6 +967,11 @@ if grep -n 'p->q_wide = .*attn\.wq\.rows\|!p->q_gated && lw->attn\.wq\.data' src
     fail=1
 fi
 
+if grep -n 'attn\.wq\.data && .*attn\.wq\.rows >\|attn\.wq\.rows > .*q_dim' src/transformer/plan.c src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "Transformer planning/emit code must use gated-Q projection policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \

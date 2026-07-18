@@ -50,6 +50,11 @@ int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
            qkv->rows == q_dim + 2 * kv_dim;
 }
 
+int bn_transformer_attention_q_projection_is_gated(const BnQWeight *wq,
+                                                   int q_dim) {
+    return wq && wq->data && wq->rows > q_dim;
+}
+
 int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
                                                   int model_dim,
                                                   int q_dim) {
@@ -79,7 +84,8 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
     p->n_kv_heads = lw->attn.n_kv_heads > 0 ? lw->attn.n_kv_heads : c->n_kv_heads;
     p->kv_mul = lw->attn.kv_mul > 0 ? lw->attn.kv_mul : c->kv_mul;
     p->q_dim = c->n_heads * p->head_size;
-    p->q_gated = lw->attn.wq.data && lw->attn.wq.rows > p->q_dim;
+    p->q_gated = bn_transformer_attention_q_projection_is_gated(
+        &lw->attn.wq, p->q_dim);
     p->q_wide = bn_transformer_attention_q_projection_is_wide(
         &lw->attn.wq, c->dim, p->q_dim);
     p->qk_stride = c->qk_norm_per_head ? p->head_size : 0;

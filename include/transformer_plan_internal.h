@@ -213,6 +213,8 @@ int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,
                                         int kv_dim);
+int bn_transformer_attention_q_projection_is_gated(const BnQWeight *wq,
+                                                   int q_dim);
 int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
                                                   int model_dim,
                                                   int q_dim);
