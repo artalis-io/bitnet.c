@@ -2,6 +2,7 @@
 #include "gpu_backend.h"
 #include "model_arch.h"
 #include "transformer_backend_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "transformer_logits_internal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -78,10 +79,8 @@ uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
 
 int bn_transformer_cpu_prefill_force_float_kquant_enabled(
     const BnConfig *c) {
-    BnCPUBackendPlacement backend = bn_transformer_cpu_backend_placement();
     return bn_model_arch_cpu_force_float_kquant(c) &&
-           (backend == BN_CPU_BACKEND_AVX2 ||
-            backend == BN_CPU_BACKEND_AVX512);
+           bn_transformer_cpu_backend_supports_float_kquant_prefill();
 }
 
 int bn_transformer_cpu_prefill_decode_for_parity_enabled(

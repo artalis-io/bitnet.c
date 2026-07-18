@@ -61,10 +61,15 @@ if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
 fi
 
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
-   ! grep -n 'BN_CPU_BACKEND_AVX512' src/transformer/plan.c >/dev/null 2>&1 ||
+   ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/kv_backend.c >/dev/null 2>&1; then
     echo "CPU backend matrix must expose AVX512 as an explicit backend"
+    fail=1
+fi
+
+if grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use CPU backend helpers for AVX-family ISA policy"
     fail=1
 fi
 

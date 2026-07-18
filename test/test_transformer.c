@@ -2719,9 +2719,13 @@ static void test_block_planning(void) {
     assert(!bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
     int force_float_kquant =
         bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
-    assert(force_float_kquant ==
+    int backend_supports_float_kquant_prefill =
+        bn_transformer_cpu_backend_supports_float_kquant_prefill();
+    assert(backend_supports_float_kquant_prefill ==
            (cpu_backend == BN_CPU_BACKEND_AVX2 ||
             cpu_backend == BN_CPU_BACKEND_AVX512));
+    assert(force_float_kquant ==
+           backend_supports_float_kquant_prefill);
     c.policy_flags = 0;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));

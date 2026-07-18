@@ -569,3 +569,9 @@ BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void) {
     return BN_CPU_BACKEND_SCALAR;
 #endif
 }
+
+int bn_transformer_cpu_backend_supports_float_kquant_prefill(void) {
+    BnCPUBackendPlacement backend = bn_transformer_cpu_backend_placement();
+    return backend == BN_CPU_BACKEND_AVX2 ||
+           backend == BN_CPU_BACKEND_AVX512;
+}
