@@ -692,7 +692,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
     BnTransformerPrefillSSMMoEChainPolicy policy =
         bn_transformer_prefill_ssm_moe_chain_policy(
-            bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+            bn_transformer_prefill_ssm_moe_chain_available(
                 gpu, c, &lw->moe.expert_map, c ? c->dim : 0, 0,
                 n_tokens),
             layer_kind,

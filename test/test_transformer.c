@@ -4032,13 +4032,26 @@ static void test_block_planning(void) {
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     assert(bn_transformer_prefill_moe_ffn_batch_available(
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    prefill_gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
+    assert(!bn_transformer_prefill_ssm_moe_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 15));
+    assert(bn_transformer_prefill_ssm_moe_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
+    assert(!bn_transformer_prefill_ssm_moe_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     prefill_gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_prefill_moe_ffn_batch_available(
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    assert(!bn_transformer_prefill_ssm_moe_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
     prefill_gpu.kind = BN_GPU_BACKEND_CUDA;
     prefill_gpu.moe_route_routed_ffn_batch_norm_resid = NULL;
     assert(!bn_transformer_prefill_moe_ffn_batch_available(
         &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    assert(!bn_transformer_prefill_ssm_moe_chain_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0, 16));
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
 
     BnTransformerPrefillSSMFFNFusePolicy ssm_ffn_fuse =
