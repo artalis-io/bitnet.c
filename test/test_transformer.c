@@ -1023,6 +1023,7 @@ static void test_gpu_policy_helpers(void) {
     c.has_shared_expert = 0;
 
     setenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE", "1", 1);
+    assert(!bn_transformer_gpu_moe_decode_cacheable(&c, NULL, NULL));
     assert(!bn_transformer_gpu_cuda_moe_decode_cacheable(
         &c, NULL, NULL));
     unsetenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE");
@@ -2604,6 +2605,9 @@ static void test_gpu_policy_helpers(void) {
             &decode_fallback, &decode_compare);
     assert(!decode_cacheability.resident_moe);
     assert(decode_cacheability.graph_cacheable);
+    assert(bn_transformer_gpu_decode_cacheable(
+        &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     assert(bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
@@ -2614,6 +2618,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!decode_cacheability.graph_cacheable);
     decode_fallback.layer = -1;
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+    assert(!bn_transformer_gpu_decode_cacheable(
+        &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     assert(!bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
@@ -2622,6 +2629,9 @@ static void test_gpu_policy_helpers(void) {
         &gpu, 1, 0, 0, 1, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     setenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE", "1", 1);
+    assert(bn_transformer_gpu_decode_cacheable(
+        &gpu, 1, 0, 0, 1, 0, 0, 0, 0,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     assert(bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 1, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
@@ -2641,6 +2651,9 @@ static void test_gpu_policy_helpers(void) {
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     unsetenv("BN_CUDA_DISABLE_DECODE_CACHE");
     gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_decode_cacheable(
+        &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
     assert(!bn_transformer_gpu_cuda_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
