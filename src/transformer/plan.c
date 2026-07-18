@@ -100,6 +100,15 @@ int bn_transformer_attention_has_bias(const BnLayerWeights *lw) {
     return lw && (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias);
 }
 
+BnLayerKind bn_transformer_layer_kind(int is_attn,
+                                      int q_gated,
+                                      int q_wide) {
+    if (!is_attn) return BN_LAYER_SSM;
+    if (q_gated) return BN_LAYER_ATTN_GATED_Q;
+    if (q_wide) return BN_LAYER_ATTN_WIDE_Q;
+    return BN_LAYER_ATTN_CLASSIC;
+}
+
 int bn_transformer_attention_requires_cpu_fallback(
     const BnLayerShapePlan *shape,
     BnExecPlacement placement) {
@@ -174,10 +183,7 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
     p->has_qk_norm = bn_transformer_attention_has_qk_norm(lw);
     p->has_bias = bn_transformer_attention_has_bias(lw);
     p->kv_mode = bn_transformer_kv_mode(c, tq_enabled);
-    p->kind = p->is_attn
-        ? (p->q_gated ? BN_LAYER_ATTN_GATED_Q
-                      : (p->q_wide ? BN_LAYER_ATTN_WIDE_Q : BN_LAYER_ATTN_CLASSIC))
-        : BN_LAYER_SSM;
+    p->kind = bn_transformer_layer_kind(p->is_attn, p->q_gated, p->q_wide);
 }
 
 BnExecPlacement bn_transformer_preferred_placement(const BnGPUBackend *gpu,

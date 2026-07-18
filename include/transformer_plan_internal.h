@@ -230,6 +230,9 @@ int bn_transformer_attention_qk_stride(const BnConfig *c,
                                        int head_size);
 int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw);
 int bn_transformer_attention_has_bias(const BnLayerWeights *lw);
+BnLayerKind bn_transformer_layer_kind(int is_attn,
+                                      int q_gated,
+                                      int q_wide);
 int bn_transformer_attention_requires_cpu_fallback(
     const BnLayerShapePlan *shape,
     BnExecPlacement placement);

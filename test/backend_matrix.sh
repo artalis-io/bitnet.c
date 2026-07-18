@@ -982,6 +982,11 @@ if grep -n 'p->qk_stride = .*qk_norm_per_head\|p->has_qk_norm = .*attn\.q_norm\|
     fail=1
 fi
 
+if grep -n 'p->kind = .*BN_LAYER_ATTN_\|p->kind = .*BN_LAYER_SSM\|p->kind = p->is_attn' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer layer-shape planning must use layer-kind policy helpers"
+    fail=1
+fi
+
 if grep -n 'p->needs_cpu_fallback = p->placement == BN_EXEC_GPU\|p->use_flash = .*flash_attn\|p->use_packed_qkv = .*qkv_stacked\|p->use_qkv_split = .*qkv_stacked\|p->placement == BN_EXEC_GPU && !k_bias' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer attention execution planning must use attention policy helpers"
     fail=1

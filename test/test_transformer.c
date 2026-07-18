@@ -2846,6 +2846,7 @@ static void test_layer_shape_planning(void) {
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(p.is_attn);
     assert(p.kind == BN_LAYER_ATTN_CLASSIC);
+    assert(bn_transformer_layer_kind(1, 0, 0) == BN_LAYER_ATTN_CLASSIC);
     assert(p.attn_idx == 0);
     assert(p.ssm_idx == -1);
     assert(p.q_dim == 2048);
@@ -2870,6 +2871,7 @@ static void test_layer_shape_planning(void) {
     lw.attn.wq.rows = 4096;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(p.kind == BN_LAYER_ATTN_GATED_Q);
+    assert(bn_transformer_layer_kind(1, 1, 0) == BN_LAYER_ATTN_GATED_Q);
     assert(p.q_gated);
     assert(!p.q_wide);
     assert(bn_transformer_attention_q_projection_is_gated(
@@ -2891,6 +2893,8 @@ static void test_layer_shape_planning(void) {
     c.kv_tq_bits = 3;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 1);
     assert(p.kind == BN_LAYER_ATTN_WIDE_Q);
+    assert(bn_transformer_layer_kind(1, 0, 1) == BN_LAYER_ATTN_WIDE_Q);
+    assert(bn_transformer_layer_kind(1, 1, 1) == BN_LAYER_ATTN_GATED_Q);
     assert(!p.q_gated);
     assert(p.q_wide);
     assert(p.q_dim == 3072);
@@ -2934,6 +2938,7 @@ static void test_layer_shape_planning(void) {
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(!p.is_attn);
     assert(p.kind == BN_LAYER_SSM);
+    assert(bn_transformer_layer_kind(0, 1, 1) == BN_LAYER_SSM);
     assert(p.attn_idx == -1);
     assert(p.ssm_idx == 0);
     assert(p.kv_mode == BN_KV_FP16);
