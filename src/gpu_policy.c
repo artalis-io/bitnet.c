@@ -486,6 +486,103 @@ int bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled(
            getenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW") != NULL;
 }
 
+int bn_gpu_policy_cuda_q6k_moe_float_down_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_pair_down_enabled(
+    int f32_down_default,
+    int pair_down_f32_layer,
+    int all2_disable_pair_down) {
+    return !f32_down_default && !pair_down_f32_layer &&
+           !all2_disable_pair_down &&
+           getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_prefer_f32_down(
+    int has_f32_data,
+    int hidden_dim,
+    int all2_q4q6,
+    int all2_f32_down) {
+    return has_f32_data && hidden_dim >= 4096 &&
+           (!all2_q4q6 || all2_f32_down) &&
+           getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_enabled(int n_experts,
+                                                      int k) {
+    return n_experts == 2 && k == 2 &&
+           getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_PAIR2") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_4row_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_4ROW") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(int all2_q4q6) {
+    return all2_q4q6 &&
+           getenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_ACCUM") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(int all2_q4q6) {
+    return all2_q4q6 &&
+           getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR4_SUM") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_4row_sum_enabled(
+    int all2_q4q6,
+    int k,
+    int hidden_dim) {
+    return !all2_q4q6 && k <= 8 && hidden_dim <= 1024 &&
+           getenv("BN_CUDA_DISABLE_MOE_Q6K_K8_4ROW_SUM") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_8row_sum_enabled(
+    int k8_4row_sum,
+    int hidden_dim) {
+    return k8_4row_sum && hidden_dim <= 1024 &&
+           getenv("BN_CUDA_ENABLE_MOE_Q6K_K8_8ROW_SUM") != NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_fixed_enabled(int all2_q4q6) {
+    return all2_q4q6 &&
+           getenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_FIXED") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_resid_rmsnorm_fuse_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_exact_2048_768_enabled(
+    int dim,
+    int hidden_dim,
+    int k) {
+    return dim == 2048 && hidden_dim == 768 && k == 8 &&
+           getenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_4row_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM_4ROW") != NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair_4row_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN_4ROW") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_f32_cache_enabled(
+    int has_f32_data,
+    int all2_disable_f32_cache) {
+    return has_f32_data && !all2_disable_f32_cache &&
+           getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
+}
+
+int bn_gpu_policy_cuda_q6k_moe_down_f16_cache_enabled(int has_f16_data) {
+    return has_f16_data &&
+           getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F16_CACHE") != NULL &&
+           getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F16_CACHE") == NULL;
+}
+
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
     return getenv("BN_CUDA_ENABLE_LOGITS_CACHE") != NULL &&
            !gpu_logits_need_cpu;

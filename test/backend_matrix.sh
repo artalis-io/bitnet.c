@@ -734,6 +734,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG")\|getenv("BN_CUDA_DISABLE_Q6
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN")\|getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_PAIR2")\|getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_4ROW")\|getenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_ACCUM")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR4_SUM")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_K8_4ROW_SUM")\|getenv("BN_CUDA_ENABLE_MOE_Q6K_K8_8ROW_SUM")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_FIXED")\|getenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768")\|getenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM_4ROW")\|getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN_4ROW")\|getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F16_CACHE")\|getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F16_CACHE")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for Q6K MoE down variant env vars"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
@@ -758,7 +763,23 @@ for fn in \
     cuda_use_q6k_moe_down_halfwarp \
     cuda_use_q6k_moe_down_split4 \
     cuda_use_q6k_moe_down_scatter \
-    cuda_use_q6k_moe_down_scatter_16row
+    cuda_use_q6k_moe_down_scatter_16row \
+    cuda_use_q6k_moe_float_down \
+    cuda_use_q6k_moe_pair_down \
+    cuda_prefer_q6k_moe_f32_down \
+    cuda_use_q6k_moe_down_f32_pair2 \
+    cuda_use_q6k_moe_down_f32_pair2_4row \
+    cuda_use_q6k_moe_down_q8k_all2_accum \
+    cuda_use_q6k_moe_down_q8k_pair4_sum \
+    cuda_use_q6k_moe_down_q8k_k8_4row_sum \
+    cuda_use_q6k_moe_down_q8k_k8_8row_sum \
+    cuda_use_q6k_moe_down_q8k_all2_fixed \
+    cuda_use_q6k_moe_down_resid_rmsnorm_fuse \
+    cuda_use_q6k_moe_down_q8k_k8_exact_2048_768 \
+    cuda_use_q6k_moe_down_q8k_all2_accum_4row \
+    cuda_use_q6k_moe_down_q8k_pair_4row \
+    cuda_use_q6k_moe_down_f32_cache \
+    cuda_use_q6k_moe_down_f16_cache
 do
     if ! awk -v fn="$fn" '
         $0 ~ "static int " fn "\\(" { in_fn=1 }
