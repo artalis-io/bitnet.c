@@ -1214,12 +1214,12 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
            bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(tensor_type);
 }
 
-int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
+int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
     return bn_gpu_policy_cuda_large_hybrid_prefill_disabled();
 }
 
-int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
-    return bn_transformer_gpu_cuda_large_hybrid_prefill_disabled();
+int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
+    return bn_transformer_gpu_large_hybrid_prefill_disabled();
 }
 
 int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(

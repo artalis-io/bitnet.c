@@ -1500,8 +1500,12 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
 
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
+    assert(!bn_transformer_gpu_large_hybrid_prefill_disabled());
+    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
     assert(!bn_transformer_prefill_large_hybrid_disabled());
     setenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL", "1", 1);
+    assert(bn_transformer_gpu_large_hybrid_prefill_disabled());
+    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
     assert(bn_transformer_prefill_large_hybrid_disabled());
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
 
