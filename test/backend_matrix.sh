@@ -729,6 +729,11 @@ if grep -n 'getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL")\|getenv("BN_CUDA_FORCE_Q6K_
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG")\|getenv("BN_CUDA_DISABLE_Q6K_4WARP_1536_8960")\|getenv("BN_CUDA_ENABLE_Q6K_4WARP_5120")\|getenv("BN_CUDA_DISABLE_Q6K_5WARP_1536_8960")\|getenv("BN_CUDA_DISABLE_Q6K_5WARP_2560_9728")\|getenv("BN_CUDA_DISABLE_Q6K_3WARP_1536_8960")\|getenv("BN_CUDA_DISABLE_Q6K_3WARP_2560_9728")\|getenv("BN_CUDA_ENABLE_Q6K_2WARP_LONG")\|getenv("BN_CUDA_DISABLE_Q6K_2WARP_LONG")\|getenv("BN_CUDA_ENABLE_Q6K_MATVEC4_1024_2560")\|getenv("BN_CUDA_ENABLE_Q6K_MATVEC4_512_2048")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for Q6K matvec shape env vars"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
@@ -739,6 +744,25 @@ if ! awk '
     echo "CUDA forced quant matmul selection must delegate tensor/env policy"
     fail=1
 fi
+
+for fn in \
+    cuda_use_q6k_4warp_long \
+    cuda_use_q6k_5warp_exact \
+    cuda_use_q6k_3warp_exact \
+    cuda_use_q6k_2warp_long \
+    cuda_disable_q6k_matvec4_shape
+do
+    if ! awk -v fn="$fn" '
+        $0 ~ "static int " fn "\\(" { in_fn=1 }
+        in_fn && /bn_gpu_policy_cuda_q6k_/ { found=1 }
+        in_fn && /getenv\(/ { bad=1 }
+        in_fn && /^}/ { in_fn=0 }
+        END { exit(found && !bad ? 0 : 1) }
+    ' src/gpu_cuda.cu; then
+        echo "CUDA Q6K matvec shape selection in $fn must delegate to GPU policy"
+        fail=1
+    fi
+done
 
 if grep -n 'getenv("BN_CUDA_ENABLE_LOGITS_CACHE")\|getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE")\|getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE")\|getenv("BN_CUDA_DISABLE_DECODE_CACHE")\|getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA decode-cache env vars"
