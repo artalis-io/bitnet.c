@@ -544,6 +544,13 @@ int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
            bn_model_arch_small_cuda_dense_prefill_min_tokens(c) > 0;
 }
 
+int bn_transformer_gpu_small_dense_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+        gpu, c);
+}
+
 int bn_transformer_gpu_hybrid_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c) {

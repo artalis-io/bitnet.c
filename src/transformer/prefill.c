@@ -1388,14 +1388,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         bn_transformer_prefill_moe_chain_applicable(prefill_gpu, c);
     BnTransformerPrefillSequencePolicy sequence_policy =
         bn_transformer_prefill_sequence_policy(c);
-    int cuda_small_dense_prefill_chain =
+    int small_dense_prefill_chain =
         bn_transformer_prefill_small_dense_chain_applicable(prefill_gpu, c);
     BnTransformerPrefillDecodeFallbackPolicy decode_fallback =
         bn_transformer_prefill_decode_fallback_policy(
             sequence_policy, gpu_moe_prefill,
             bn_transformer_prefill_moe_enabled(), n_tokens,
             bn_transformer_prefill_moe_chain_min_tokens(c, prefill_gpu),
-            cuda_small_dense_prefill_chain,
+            small_dense_prefill_chain,
             bn_transformer_prefill_dense_chain_min_tokens(c, prefill_gpu),
             gpu_hybrid_prefill,
             bn_transformer_prefill_large_hybrid_disabled(),

@@ -173,7 +173,7 @@ bn_transformer_prefill_decode_fallback_policy(
     int moe_prefill_enabled,
     int n_tokens,
     int moe_min_tokens,
-    int cuda_small_dense_prefill_chain,
+    int small_dense_prefill_chain,
     int small_dense_min_tokens,
     int gpu_hybrid_prefill,
     int large_hybrid_prefill_disabled,

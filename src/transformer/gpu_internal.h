@@ -335,6 +335,9 @@ int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
 int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_small_dense_prefill_chain_applicable(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
 int bn_transformer_gpu_hybrid_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c);

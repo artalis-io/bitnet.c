@@ -65,7 +65,7 @@ int bn_transformer_prefill_moe_chain_applicable(
 int bn_transformer_prefill_small_dense_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
+    return bn_transformer_gpu_small_dense_prefill_chain_applicable(
         gpu, c);
 }
 
@@ -84,7 +84,7 @@ bn_transformer_prefill_decode_fallback_policy(
     int moe_prefill_enabled,
     int n_tokens,
     int moe_min_tokens,
-    int cuda_small_dense_prefill_chain,
+    int small_dense_prefill_chain,
     int small_dense_min_tokens,
     int gpu_hybrid_prefill,
     int large_hybrid_prefill_disabled,
@@ -97,7 +97,7 @@ bn_transformer_prefill_decode_fallback_policy(
     policy.decode =
         (gpu_moe_prefill &&
          (!moe_prefill_enabled || n_tokens < moe_min_tokens)) ||
-        (cuda_small_dense_prefill_chain &&
+        (small_dense_prefill_chain &&
          n_tokens < small_dense_min_tokens) ||
         (gpu_hybrid_prefill &&
          sequence.uses_large_dense_hybrid_ssm &&
