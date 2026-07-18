@@ -191,15 +191,12 @@ float *bn_transformer_forward(BnModel *m, BnSession *s, int token, int pos) {
         return gpu_logits;
     }
 
-    // Fall back to CPU orchestration. Existing graph backends disable
-    // per-matvec fallback after graph rejection because many tiny dispatches
-    // are slower there. Dense CUDA keeps per-matvec fallback for now; MoE and
-    // hybrid models detach it because graph rejection means only partial
-    // CUDA matvecs would run, which can flip close greedy decisions.
+    // Fall back to CPU orchestration. Graph backend policy decides whether
+    // per-matvec backend fallback remains useful after full-graph rejection.
     BnGPUBackend *gpu = bn_model_gpu(m);
-    int keep_cuda_matvec =
-        bn_transformer_gpu_cuda_matvec_fallback_kept(m, gpu);
-    int disable_gpu = !keep_cuda_matvec;
+    BnTransformerGPUMatvecFallbackPolicy matvec_fallback =
+        bn_transformer_gpu_matvec_fallback_policy(m, gpu);
+    int disable_gpu = matvec_fallback.disable_backend_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
     int rc = forward_layers(m, s, token, pos);
@@ -216,9 +213,9 @@ int bn_transformer_forward_no_logits(BnModel *m, BnSession *s,
         return 0;
 
     BnGPUBackend *gpu = bn_model_gpu(m);
-    int keep_cuda_matvec =
-        bn_transformer_gpu_cuda_matvec_fallback_kept(m, gpu);
-    int disable_gpu = !keep_cuda_matvec;
+    BnTransformerGPUMatvecFallbackPolicy matvec_fallback =
+        bn_transformer_gpu_matvec_fallback_policy(m, gpu);
+    int disable_gpu = matvec_fallback.disable_backend_matvec;
     if (disable_gpu)
         bn_model_set_gpu_disabled(m, 1);
     int rc = forward_layers(m, s, token, pos);

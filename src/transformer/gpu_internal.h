@@ -121,6 +121,11 @@ typedef struct {
 } BnTransformerGPUCPUFallbackPolicy;
 
 typedef struct {
+    int keep_backend_matvec;
+    int disable_backend_matvec;
+} BnTransformerGPUMatvecFallbackPolicy;
+
+typedef struct {
     int from_layer;
     int to_layer;
     int attn_only;
@@ -344,6 +349,10 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_cuda_matvec_fallback_kept(
+    const BnModel *m,
+    const BnGPUBackend *gpu);
+BnTransformerGPUMatvecFallbackPolicy
+bn_transformer_gpu_matvec_fallback_policy(
     const BnModel *m,
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_qkv_split_enabled(int use_q4_q8);
