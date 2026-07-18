@@ -187,6 +187,17 @@ int bn_gpu_policy_cuda_moe_router_gpu_enabled(void);
 int bn_gpu_policy_cuda_moe_router_diff2_enabled(void);
 int bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(int large_moe);
 int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void);
+int bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled(void);
+int bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled(void);
+int bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled(void);
+int bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled(void);
+int bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled(void);
+int bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled(void);
+int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested(void);
+int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled(void);
+int bn_gpu_policy_all2_q4q6_moe_route_selection_enabled(void);
+void bn_gpu_policy_all2_q4q6_moe_route_layer_range(int *from_layer,
+                                                   int *to_layer);
 int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos);
 int bn_gpu_policy_moe_compare_input_norm_enabled(void);
 int bn_gpu_policy_moe_compare_actual_enabled(void);

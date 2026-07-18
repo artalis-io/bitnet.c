@@ -4,6 +4,17 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+static int gpu_policy_env_enabled(const char *name, const char *compat_name) {
+    return getenv(name) != NULL ||
+           (compat_name && getenv(compat_name) != NULL);
+}
+
+static const char *gpu_policy_env_value(const char *name,
+                                        const char *compat_name) {
+    const char *env = getenv(name);
+    return env ? env : (compat_name ? getenv(compat_name) : NULL);
+}
+
 int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN") == NULL;
 }
@@ -798,6 +809,76 @@ int bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(int large_moe) {
 
 int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void) {
     return getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
+}
+
+int bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled(void) {
+    return gpu_policy_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN",
+                                  "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled(void) {
+    return gpu_policy_env_enabled(
+        "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE",
+        "BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled(void) {
+    return gpu_policy_env_enabled(
+        "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE",
+        "BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled(void) {
+    return gpu_policy_env_enabled(
+        "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_MOE_SAFE",
+        "BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled(void) {
+    return gpu_policy_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN",
+                                  "BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled(void) {
+    return gpu_policy_env_enabled(
+        "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT",
+        "BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested(void) {
+    return gpu_policy_env_enabled(
+        "BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
+        "BN_CUDA_ENABLE_QWEN2MOE_EXACT_GPU_ROUTE");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled(void) {
+    return gpu_policy_env_enabled(
+        "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
+        "BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE");
+}
+
+int bn_gpu_policy_all2_q4q6_moe_route_selection_enabled(void) {
+    return bn_gpu_policy_cuda_moe_router_gpu_enabled() ||
+           bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested();
+}
+
+void bn_gpu_policy_all2_q4q6_moe_route_layer_range(int *from_layer,
+                                                   int *to_layer) {
+    const char *env;
+
+    if (from_layer)
+        *from_layer = -1;
+    if (to_layer)
+        *to_layer = -1;
+
+    env = gpu_policy_env_value("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER",
+                               "BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER");
+    if (env && from_layer)
+        *from_layer = atoi(env);
+    env = gpu_policy_env_value("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER",
+                               "BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER");
+    if (env && to_layer)
+        *to_layer = atoi(env);
 }
 
 int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos) {
