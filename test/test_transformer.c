@@ -3366,6 +3366,35 @@ static void test_block_planning(void) {
     prefill_layer_kind =
         bn_transformer_prefill_layer_kind_policy(NULL);
 
+    BnQWeight prefill_q = {0};
+    BnQWeight prefill_k = {0};
+    BnQWeight prefill_v = {0};
+    prefill_q.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_k.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_v.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_q.rows = 32;
+    prefill_k.rows = 16;
+    prefill_v.rows = 16;
+    prefill_q.cols = prefill_k.cols = prefill_v.cols = 64;
+    assert(bn_transformer_prefill_qk_stack_compatible(
+        &prefill_q, &prefill_k, 48, 64));
+    assert(!bn_transformer_prefill_qk_stack_compatible(
+        &prefill_q, &prefill_k, 47, 64));
+    prefill_k.cols = 32;
+    assert(!bn_transformer_prefill_qk_stack_compatible(
+        &prefill_q, &prefill_k, 48, 64));
+    prefill_k.cols = 64;
+    prefill_k.type = BN_GGUF_TENSOR_Q5_K;
+    assert(!bn_transformer_prefill_qk_stack_compatible(
+        &prefill_q, &prefill_k, 48, 64));
+    prefill_k.type = BN_GGUF_TENSOR_Q4_K;
+    assert(bn_transformer_prefill_qkv_stack_batch_compatible(
+        &prefill_q, &prefill_k, &prefill_v, 48, 64));
+    prefill_v.cols = 32;
+    assert(!bn_transformer_prefill_qkv_stack_batch_compatible(
+        &prefill_q, &prefill_k, &prefill_v, 48, 64));
+    prefill_v.cols = 64;
+
     BnConfig shared_all2 = {0};
     shared_all2.dim = 1024;
     shared_all2.n_experts = 2;

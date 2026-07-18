@@ -233,10 +233,8 @@ static int prefill_qk_stacked_gpu(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     if (!gpu || !gpu->matmul || !backend || !lw || !q_tmp || !k_out || !X)
         return -1;
-    if (!bn_transformer_prefill_stacked_pair_same_format(
-            lw->attn.wq.type, lw->attn.wk.type) ||
-        lw->attn.wq.cols != dim || lw->attn.wk.cols != dim ||
-        q_stride < lw->attn.wq.rows + lw->attn.wk.rows)
+    if (!bn_transformer_prefill_qk_stack_compatible(
+            &lw->attn.wq, &lw->attn.wk, q_stride, dim))
         return -1;
     void *qk_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
@@ -271,11 +269,8 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
     if (!gpu || !gpu->matmul_batch || !backend || !lw || !q_tmp ||
         !k_out || !v_out || !X)
         return -1;
-    if (!bn_transformer_prefill_stacked_pair_same_format(
-            lw->attn.wq.type, lw->attn.wk.type) ||
-        lw->attn.wq.cols != dim || lw->attn.wk.cols != dim ||
-        lw->attn.wv.cols != dim ||
-        q_stride < lw->attn.wq.rows + lw->attn.wk.rows)
+    if (!bn_transformer_prefill_qkv_stack_batch_compatible(
+            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, q_stride, dim))
         return -1;
     void *qk_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);

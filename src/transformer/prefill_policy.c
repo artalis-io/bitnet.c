@@ -292,6 +292,28 @@ int bn_transformer_prefill_stacked_pair_same_format(int left_type,
     return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
 }
 
+int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
+                                               const BnQWeight *k,
+                                               int q_stride,
+                                               int dim) {
+    return q && k &&
+           bn_transformer_prefill_stacked_pair_same_format(q->type,
+                                                           k->type) &&
+           q->cols == dim &&
+           k->cols == dim &&
+           q_stride >= q->rows + k->rows;
+}
+
+int bn_transformer_prefill_qkv_stack_batch_compatible(const BnQWeight *q,
+                                                      const BnQWeight *k,
+                                                      const BnQWeight *v,
+                                                      int q_stride,
+                                                      int dim) {
+    return bn_transformer_prefill_qk_stack_compatible(q, k, q_stride, dim) &&
+           v &&
+           v->cols == dim;
+}
+
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type) {
     return bn_backend_quant_is_kquant_float_fallback_candidate(tensor_type);
 }

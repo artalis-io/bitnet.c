@@ -225,6 +225,15 @@ bn_tp_fn bn_transformer_prefill_ssm_gate_op(
     const BnPrefillCPUOps *ops);
 int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type);
+int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
+                                               const BnQWeight *k,
+                                               int q_stride,
+                                               int dim);
+int bn_transformer_prefill_qkv_stack_batch_compatible(const BnQWeight *q,
+                                                      const BnQWeight *k,
+                                                      const BnQWeight *v,
+                                                      int q_stride,
+                                                      int dim);
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type);
 void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,
                                                     const BnQWeight *W,

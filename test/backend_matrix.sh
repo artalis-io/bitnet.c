@@ -426,6 +426,11 @@ if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same
     fail=1
 fi
 
+if grep -n 'attn\.wq\.cols != dim\|attn\.wk\.cols != dim\|attn\.wv\.cols != dim\|q_stride < .*attn\.wq\.rows' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill execution code must use prefill policy helpers for stacked Q/K shape compatibility"
+    fail=1
+fi
+
 if grep -n '#include "backend_quant.h"\|bn_backend_quant_matmul.*gpu_buf' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for GPU-resident quant matmul dispatch"
     fail=1
