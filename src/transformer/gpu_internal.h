@@ -166,6 +166,10 @@ typedef struct {
 } BnTransformerGPULogitsRefinePolicy;
 
 typedef struct {
+    int enabled;
+} BnTransformerGPUGenerateArgmaxPolicy;
+
+typedef struct {
     int attention_layer;
     int attention_pos;
     int gqa_layer;
@@ -464,6 +468,12 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
     int small_dense_exact_q4_q8_default);
+BnTransformerGPUGenerateArgmaxPolicy
+bn_transformer_gpu_generate_argmax_policy(
+    const BnGPUBackend *gpu,
+    int top_logits,
+    float temperature,
+    float repeat_penalty);
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -638,6 +648,7 @@ int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     int can_split);
 int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu);
 int bn_transformer_gpu_debug_argmax_compare_enabled(void);
+int bn_transformer_gpu_argmax_debug_enabled(void);
 int bn_transformer_gpu_compare_logits_enabled(void);
 int bn_transformer_gpu_moe_route_profile_enabled(void);
 int bn_transformer_gpu_moe_route_profile_every(void);

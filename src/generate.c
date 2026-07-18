@@ -7,7 +7,6 @@
 #include "transformer_prefill_internal.h"
 #include "transformer/gpu_internal.h"
 #include "gpu_backend.h"
-#include "gpu_policy.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +37,16 @@ static int prefill_uploads_ssm_state_after_gpu_batch(const BnModel *model,
         bn_transformer_prefill_ssm_state_upload_policy(
             &model->config, gpu_attached);
     return policy.upload;
+}
+
+static int use_gpu_greedy_argmax(const BnGPUBackend *gpu,
+                                 int top_logits,
+                                 const BnSampler *sampler) {
+    BnTransformerGPUGenerateArgmaxPolicy policy =
+        bn_transformer_gpu_generate_argmax_policy(
+            gpu, top_logits, sampler->temperature,
+            sampler->repeat_penalty);
+    return policy.enabled;
 }
 
 // --- Stop string matching ---
@@ -218,16 +227,12 @@ int bn_generate(BnModel *model, BnSession *s, BnTokenizer *tok, BnSampler *sampl
             break;
 
         BnGPUBackend *gpu = bn_model_gpu(model);
-        int can_gpu_greedy =
-            gpu && gpu->argmax_activation &&
-            top_logits <= 0 && sampler->temperature == 0.0f &&
-            sampler->repeat_penalty >= 1.0f;
-        if (can_gpu_greedy &&
+        if (use_gpu_greedy_argmax(gpu, top_logits, sampler) &&
             bn_transformer_gpu_forward_argmax(
                 model, s, next, *pos,
                 sampler->recent_tokens, sampler->recent_len,
                 sampler->repeat_penalty, &gpu_next) == 0) {
-            if (bn_gpu_policy_argmax_debug_enabled())
+            if (bn_transformer_gpu_argmax_debug_enabled())
                 fprintf(stderr, "[bn:gpu:argmax] step=%d token=%d next=%d\n",
                         i, next, gpu_next);
             have_gpu_next = 1;

@@ -1085,6 +1085,26 @@ int bn_transformer_gpu_debug_argmax_compare_enabled(void) {
     return bn_gpu_policy_debug_argmax_compare_enabled();
 }
 
+int bn_transformer_gpu_argmax_debug_enabled(void) {
+    return bn_gpu_policy_argmax_debug_enabled();
+}
+
+BnTransformerGPUGenerateArgmaxPolicy
+bn_transformer_gpu_generate_argmax_policy(
+    const BnGPUBackend *gpu,
+    int top_logits,
+    float temperature,
+    float repeat_penalty) {
+    BnTransformerGPUGenerateArgmaxPolicy policy = {0};
+    policy.enabled =
+        gpu &&
+        gpu->argmax_activation &&
+        top_logits <= 0 &&
+        temperature == 0.0f &&
+        repeat_penalty >= 1.0f;
+    return policy;
+}
+
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

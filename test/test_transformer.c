@@ -65,6 +65,21 @@ static int mock_gpu_write_activation(void *ctx, int buf_idx,
     return 0;
 }
 
+static int mock_argmax_activation(void *ctx, int buf_idx, int n,
+                                  const int *penalty_tokens,
+                                  int n_penalty_tokens,
+                                  float repeat_penalty,
+                                  int *out_token) {
+    (void)ctx;
+    (void)buf_idx;
+    (void)n;
+    (void)penalty_tokens;
+    (void)n_penalty_tokens;
+    (void)repeat_penalty;
+    (void)out_token;
+    return 0;
+}
+
 static int mock_matvec_argmax_activation(
     void *ctx, void *W_buf, int type, int rows, int cols, int buf_idx,
     const int *penalty_tokens, int n_penalty_tokens, float repeat_penalty,
@@ -2082,6 +2097,28 @@ static void test_gpu_policy_helpers(void) {
     logits.cols = W.cols;
     logits.cpu_weight = &W;
     gpu.matvec_argmax_activation = mock_matvec_argmax_activation;
+    gpu.argmax_activation = mock_argmax_activation;
+    BnTransformerGPUGenerateArgmaxPolicy generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 1.0f);
+    assert(generate_argmax.enabled);
+    generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(NULL, 0, 0.0f, 1.0f);
+    assert(!generate_argmax.enabled);
+    gpu.argmax_activation = NULL;
+    generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 1.0f);
+    assert(!generate_argmax.enabled);
+    gpu.argmax_activation = mock_argmax_activation;
+    generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(&gpu, 1, 0.0f, 1.0f);
+    assert(!generate_argmax.enabled);
+    generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.7f, 1.0f);
+    assert(!generate_argmax.enabled);
+    generate_argmax =
+        bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 0.9f);
+    assert(!generate_argmax.enabled);
+
     c.n_experts = 0;
     unsetenv("BN_GPU_CPU_LOGITS");
     unsetenv("BN_CUDA_DISABLE_LOGITS_ARGMAX");
