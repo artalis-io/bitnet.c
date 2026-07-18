@@ -1512,8 +1512,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         if (chain_ready) {
             BnTransformerPrefillChainKVPolicy chain_kv =
                 bn_transformer_prefill_chain_kv_policy(
-                    bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-                        c, w, bn_model_gpu(m), pos0, n_tokens));
+                    bn_transformer_prefill_direct_kv_allowed(
+                        c, w, prefill_gpu, pos0, n_tokens));
             sess->gpu_kv_direct_valid = 0;
             t_prof = prefill_profile_now(&prof);
             for (int l = 0; l < c->n_layers; l++) {
@@ -1593,8 +1593,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     BnTransformerPrefillHybridModelChainPolicy hybrid_model_chain =
         bn_transformer_prefill_hybrid_model_chain_policy(
-            bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
-                prefill_gpu, c),
+            bn_transformer_prefill_hybrid_chain_enabled(prefill_gpu, c),
             gpu_hybrid_prefill, pos0, c->n_layers,
             bn_model_tq_state(m) != NULL);
     if (hybrid_model_chain.enabled) {
@@ -1612,7 +1611,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         m, lw, &plan, l, n_tokens, layer_rope_theta) &&
                     !prefill_dense_layer_chain_ready(
                         m, lw, &plan, l, n_tokens, layer_rope_theta)) {
-                    if (bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled())
+                    if (bn_transformer_prefill_hybrid_chain_debug_enabled())
                         fprintf(stderr,
                                 "[bn:prefill:hybrid-chain] reject attn layer=%d\n",
                                 l);
@@ -1621,7 +1620,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
             } else if (!prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens) &&
                        !prefill_ssm_layer_chain_ready(m, lw, l, n_tokens)) {
-                if (bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled())
+                if (bn_transformer_prefill_hybrid_chain_debug_enabled())
                     fprintf(stderr,
                             "[bn:prefill:hybrid-chain] reject ssm layer=%d\n",
                             l);
@@ -1632,8 +1631,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         if (chain_ready) {
             BnTransformerPrefillChainKVPolicy chain_kv =
                 bn_transformer_prefill_chain_kv_policy(
-                    bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-                        c, w, bn_model_gpu(m), pos0, n_tokens));
+                    bn_transformer_prefill_direct_kv_allowed(
+                        c, w, prefill_gpu, pos0, n_tokens));
             sess->gpu_kv_direct_valid = 0;
             t_prof = prefill_profile_now(&prof);
             for (int l = 0; l < c->n_layers; l++) {

@@ -139,6 +139,16 @@ bn_transformer_prefill_hybrid_model_chain_policy(
     return policy;
 }
 
+int bn_transformer_prefill_hybrid_chain_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c) {
+    return bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(gpu, c);
+}
+
+int bn_transformer_prefill_hybrid_chain_debug_enabled(void) {
+    return bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled();
+}
+
 BnTransformerPrefillAttentionModePolicy
 bn_transformer_prefill_attention_mode_policy(
     int tq_state_available,
@@ -448,6 +458,16 @@ bn_transformer_prefill_chain_kv_policy(
     policy.write_host_kv = !direct_gpu_kv_requested;
     policy.mark_direct_valid = direct_gpu_kv_requested;
     return policy;
+}
+
+int bn_transformer_prefill_direct_kv_allowed(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnGPUBackend *gpu,
+    int pos0,
+    int n_tokens) {
+    return bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        c, w, gpu, pos0, n_tokens);
 }
 
 BnTransformerPrefillRawAttentionPolicy

@@ -3,6 +3,7 @@
 
 #include "gpu_backend.h"
 #include "model_config.h"
+#include "model_weights.h"
 #include "moe_types.h"
 #include "quant.h"
 #include "threadpool.h"
@@ -190,6 +191,10 @@ bn_transformer_prefill_hybrid_model_chain_policy(
     int pos0,
     int n_layers,
     int tq_state_available);
+int bn_transformer_prefill_hybrid_chain_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_prefill_hybrid_chain_debug_enabled(void);
 BnTransformerPrefillAttentionModePolicy
 bn_transformer_prefill_attention_mode_policy(
     int tq_state_available,
@@ -334,6 +339,12 @@ bn_transformer_prefill_kv_upload_policy(
 BnTransformerPrefillChainKVPolicy
 bn_transformer_prefill_chain_kv_policy(
     int direct_gpu_kv_requested);
+int bn_transformer_prefill_direct_kv_allowed(
+    const BnConfig *c,
+    const BnWeights *w,
+    const BnGPUBackend *gpu,
+    int pos0,
+    int n_tokens);
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,
