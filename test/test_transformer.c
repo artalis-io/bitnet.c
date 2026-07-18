@@ -2421,6 +2421,58 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
     c.policy_flags = 0;
 
+    BnLayerWeights logits_refine_layer;
+    memset(&logits_refine_layer, 0, sizeof(logits_refine_layer));
+    BnWeights logits_refine_weights;
+    memset(&logits_refine_weights, 0, sizeof(logits_refine_weights));
+    logits_refine_weights.layers = &logits_refine_layer;
+    c.dim = 2048;
+    c.n_layers = 1;
+    c.n_experts = 2;
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
+    c.moe_norm_topk_prob = 1;
+    logits_refine_layer.moe.router_weight = (void *)1;
+    logits_refine_layer.moe.expert_map.gate_type = BN_GGUF_TENSOR_Q4_K;
+    logits_refine_layer.moe.expert_map.up_type = BN_GGUF_TENSOR_Q4_K;
+    logits_refine_layer.moe.expert_map.down_type = BN_GGUF_TENSOR_Q6_K;
+    logits_refine_layer.moe.expert_map.gate_rows = c.moe_intermediate_size;
+    logits_refine_layer.moe.expert_map.gate_cols = c.dim;
+    logits_refine_layer.moe.expert_map.up_rows = c.moe_intermediate_size;
+    logits_refine_layer.moe.expert_map.up_cols = c.dim;
+    logits_refine_layer.moe.expert_map.down_rows = c.dim;
+    logits_refine_layer.moe.expert_map.down_cols = c.moe_intermediate_size;
+    assert(!bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
+    assert(bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE", "1", 1);
+    assert(!bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
+    unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE");
+    setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
+    assert(bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    setenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE", "1", 1);
+    assert(!bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+        &gpu, &c, &logits_refine_weights));
+    unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
+    unsetenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");
+    c.dim = 2048;
+    c.n_layers = 0;
+    c.n_experts = 0;
+    c.n_experts_active = 0;
+    c.moe_intermediate_size = 0;
+    c.moe_norm_topk_prob = 0;
+
     BnWeights hybrid_w;
     memset(&hybrid_w, 0, sizeof(hybrid_w));
     c.dim = 4096;

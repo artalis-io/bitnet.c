@@ -1253,7 +1253,7 @@ int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
         gpu, c, tensor_type);
 }
 
-int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+int bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
@@ -1263,6 +1263,14 @@ int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
                            "BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN") &&
            !gpu_env_enabled("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE",
                             "BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");
+}
+
+int bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w) {
+    return bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+        gpu, c, w);
 }
 
 int bn_transformer_gpu_q6_logits_refine_enabled(
@@ -1317,7 +1325,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     int small_dense_exact_q4_q8_default) {
     BnTransformerGPULogitsRefinePolicy p = {0};
     p.q6_default =
-        bn_transformer_gpu_cuda_all2_q4q6_moe_q6_logits_refine_default(
+        bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
             gpu, c, w);
     p.q6_enabled = bn_transformer_gpu_q6_logits_refine_enabled(
         gpu, p.q6_default);
