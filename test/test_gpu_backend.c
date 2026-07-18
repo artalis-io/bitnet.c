@@ -1486,6 +1486,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE");
     unsetenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN");
+    unsetenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN");
+    unsetenv("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS");
     assert(!bn_gpu_policy_cuda_prefill_attention_min_tokens_configured());
     assert(bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16) ==
            16);
@@ -1496,6 +1499,27 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "0", 1);
     assert(bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16) ==
            16);
+    assert(bn_gpu_policy_cuda_prefill_gemm_attention_min_tokens_or_default(
+               256) == 256);
+    assert(!bn_gpu_policy_cuda_prefill_gemm_attention_enabled(255, 512));
+    assert(bn_gpu_policy_cuda_prefill_gemm_attention_enabled(256, 512));
+    assert(!bn_gpu_policy_cuda_prefill_gemm_attention_enabled(513, 512));
+    setenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN", "1", 1);
+    assert(bn_gpu_policy_cuda_prefill_gemm_attention_enabled(1, 512));
+    assert(!bn_gpu_policy_cuda_prefill_gemm_attention_enabled(513, 512));
+    unsetenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN");
+    setenv("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", "64", 1);
+    assert(bn_gpu_policy_cuda_prefill_gemm_attention_min_tokens_or_default(
+               256) == 64);
+    assert(!bn_gpu_policy_cuda_prefill_gemm_attention_enabled(63, 512));
+    assert(bn_gpu_policy_cuda_prefill_gemm_attention_enabled(64, 512));
+    setenv("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", "0", 1);
+    assert(bn_gpu_policy_cuda_prefill_gemm_attention_min_tokens_or_default(
+               256) == 256);
+    setenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN", "1", 1);
+    assert(!bn_gpu_policy_cuda_prefill_gemm_attention_enabled(256, 512));
+    unsetenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN");
+    unsetenv("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS");
     assert(bn_gpu_policy_cuda_prefill_dense_chain_enabled());
     assert(bn_gpu_policy_cuda_prefill_hybrid_chain_enabled());
     assert(bn_gpu_policy_cuda_prefill_attention_enabled());

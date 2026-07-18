@@ -748,6 +748,24 @@ int bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(
                                        default_tokens);
 }
 
+int bn_gpu_policy_cuda_prefill_gemm_attention_min_tokens_or_default(
+    int default_tokens) {
+    return env_positive_int_or_default(
+        "BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", default_tokens);
+}
+
+int bn_gpu_policy_cuda_prefill_gemm_attention_enabled(int n_tokens,
+                                                      int max_tokens) {
+    if (getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN") != NULL)
+        return 0;
+    if (max_tokens > 0 && n_tokens > max_tokens)
+        return 0;
+    return getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") != NULL ||
+           n_tokens >=
+               bn_gpu_policy_cuda_prefill_gemm_attention_min_tokens_or_default(
+                   256);
+}
+
 int bn_gpu_policy_cuda_prefill_batched_gemm_enabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM") == NULL;
 }

@@ -16205,13 +16205,8 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
     size_t q_values = (size_t)n_tokens * (size_t)n_heads *
                       (size_t)head_size;
     size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
-    int gemm_min_tokens =
-        cuda_env_int("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", 256);
     int use_gemm_attention =
-        !getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN") &&
-        (getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") ||
-         n_tokens >= gemm_min_tokens) &&
-        n_tokens <= 512;
+        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 512);
     size_t score_values = use_gemm_attention
         ? (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens
         : 0;
@@ -16433,10 +16428,7 @@ static int cuda_prefill_qkv_attention_wo_impl(
     size_t kv_values = (size_t)n_tokens * (size_t)kv_dim;
     size_t qk_values = (size_t)n_tokens * (size_t)qk_rows;
     int use_gemm_attention =
-        !getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN") &&
-        (getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") ||
-         n_tokens >= cuda_env_int("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", 256)) &&
-        n_tokens <= 512;
+        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 512);
     size_t score_values =
         use_gemm_attention
             ? (size_t)n_heads * (size_t)n_tokens * (size_t)n_tokens
@@ -16856,9 +16848,7 @@ static int cuda_prefill_dense_layer(
     if (n_tokens < min_tokens || n_tokens > 512)
         return -1;
     int use_gemm_attention =
-        !getenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN") &&
-        (getenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN") ||
-         n_tokens >= cuda_env_int("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS", 256));
+        bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 0);
 
     const int dense_profile = getenv("BN_CUDA_PREFILL_DENSE_PROFILE") != NULL;
     static double dense_profile_totals[BN_CUDA_DENSE_PROF_MAX] = {0.0};
