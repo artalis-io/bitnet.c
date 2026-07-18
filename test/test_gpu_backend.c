@@ -641,6 +641,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q8_K));
     assert(!bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q5_0));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q8_K));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_I2_S));
     setenv("BN_CUDA_DISABLE_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_Q8_0", "1", 1);
     setenv("BN_CUDA_DISABLE_Q5_0", "1", 1);
@@ -656,6 +664,13 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q6_K));
     assert(bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q8_K));
     assert(!bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q5_0));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q8_K));
+    assert(bn_gpu_policy_cuda_matvec_type_supported(BN_GGUF_TENSOR_Q4_0));
     unsetenv("BN_CUDA_DISABLE_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_0");
     unsetenv("BN_CUDA_DISABLE_Q5_0");

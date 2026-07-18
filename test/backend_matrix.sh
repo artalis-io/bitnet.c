@@ -490,6 +490,16 @@ if awk '
     fail=1
 fi
 
+if awk '
+    /static int cuda_type_supported\(/ { in_fn=1 }
+    in_fn && /BN_GGUF_TENSOR_/ { bad=1 }
+    in_fn && /^}/ { in_fn=0 }
+    END { exit bad ? 0 : 1 }
+' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA type support must use GPU policy helpers, not tensor-specific checks"
+    fail=1
+fi
+
 if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/moe_execute.c >/dev/null 2>&1; then
     echo "MoE execution must use MoE policy helpers for GPU-resident quant matvec dispatch"
     fail=1

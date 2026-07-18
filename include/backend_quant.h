@@ -287,6 +287,10 @@ static inline int bn_backend_quant_cuda_matvec_type_disabled(int type) {
     return bn_quant_policy_cuda_matvec_type_disabled(type);
 }
 
+static inline int bn_backend_quant_cuda_matvec_supported(int type) {
+    return bn_quant_format_cuda_matvec_supported(type);
+}
+
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     return bn_quant_format_gpu_fused_gateup_silu_cap(type);
 }

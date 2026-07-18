@@ -10774,53 +10774,8 @@ static __global__ void moe_scatter_sorted_grouped_kernel(
 }
 
 static int cuda_type_supported(int type) {
-    static int init = 0;
-    static int disable_matvec = 0;
-    static int disable_q8_0 = 0;
-    static int disable_q5_0 = 0;
-    static int disable_q4_k = 0;
-    static int disable_q5_k = 0;
-    static int disable_q6_k = 0;
-    static int disable_q8_k = 0;
-    if (!init) {
-        disable_matvec = bn_gpu_policy_cuda_matvec_disabled();
-        disable_q8_0 =
-            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q8_0);
-        disable_q5_0 =
-            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q5_0);
-        disable_q4_k =
-            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q4_K);
-        disable_q5_k =
-            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q5_K);
-        disable_q6_k =
-            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q6_K);
-        disable_q8_k =
-            bn_gpu_policy_cuda_matvec_type_disabled(BN_GGUF_TENSOR_Q8_K);
-        init = 1;
-    }
-    if (disable_matvec)
-        return 0;
-    if (type == BN_GGUF_TENSOR_Q8_0 && disable_q8_0)
-        return 0;
-    if (type == BN_GGUF_TENSOR_Q5_0 && disable_q5_0)
-        return 0;
-    if (type == BN_GGUF_TENSOR_Q4_K && disable_q4_k)
-        return 0;
-    if (type == BN_GGUF_TENSOR_Q5_K && disable_q5_k)
-        return 0;
-    if (type == BN_GGUF_TENSOR_Q6_K && disable_q6_k)
-        return 0;
-    if (type == BN_GGUF_TENSOR_Q8_K && disable_q8_k)
-        return 0;
-    return type == BN_GGUF_TENSOR_F32 || type == BN_GGUF_TENSOR_F16 ||
-           type == BN_GGUF_TENSOR_BF16 ||
-           type == BN_GGUF_TENSOR_Q8_0 || type == BN_GGUF_TENSOR_Q4_0 ||
-           type == BN_GGUF_TENSOR_Q5_0 || type == BN_GGUF_TENSOR_Q3_K ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K || type == BN_GGUF_TENSOR_Q8_K ||
-           type == BN_GGUF_TENSOR_IQ3_XXS ||
-           type == BN_GGUF_TENSOR_IQ4_XS;
+    return !bn_gpu_policy_cuda_matvec_disabled() &&
+           bn_gpu_policy_cuda_matvec_type_supported(type);
 }
 
 static int cuda_ensure_scratch(BnCudaCtx *ctx, size_t x_bytes,

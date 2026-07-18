@@ -255,6 +255,11 @@ int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type) {
     return bn_backend_quant_cuda_matvec_type_disabled(tensor_type);
 }
 
+int bn_gpu_policy_cuda_matvec_type_supported(int tensor_type) {
+    return bn_backend_quant_cuda_matvec_supported(tensor_type) &&
+           !bn_backend_quant_cuda_matvec_type_disabled(tensor_type);
+}
+
 int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant) {
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 1;
