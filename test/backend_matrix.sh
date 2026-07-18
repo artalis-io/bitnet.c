@@ -186,6 +186,18 @@ if awk '
     /int bn_quant_format_gpu_requires_exact_silu\(/ { in_fn=1 }
     /int bn_quant_format_gpu_prefers_gateup_split\(/ { in_fn=1 }
     /int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in\(/ { in_fn=1 }
+    /int bn_quant_format_logits_q6_f32_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_all_f16_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_down_q6_f32_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_down_cublas_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_down_q4_f32_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_quant_only_after_cache\(/ { in_fn=1 }
+    /int bn_quant_format_lazy_moe_aux_cache_candidate\(/ { in_fn=1 }
+    /int bn_quant_format_moe_prefers_quant_only\(/ { in_fn=1 }
+    /int bn_quant_format_aux_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_aux_cache_can_use_f16\(/ { in_fn=1 }
+    /int bn_quant_format_aux_cache_uses_f32\(/ { in_fn=1 }
+    /int bn_quant_format_aux_cache_prefers_large_budget\(/ { in_fn=1 }
     in_fn && /BN_GGUF_TENSOR_/ { found=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit found ? 0 : 1 }

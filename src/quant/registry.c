@@ -18,31 +18,37 @@
     (BN_QUANT_CAP_GPU_SMALL_DENSE | BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK)
 #define BN_QUANT_CAP_GPU_SMALL_DENSE_Q6K \
     (BN_QUANT_CAP_GPU_SMALL_DENSE_KQUANT | BN_QUANT_CAP_Q6_LOGITS_REFINE)
+#define BN_QUANT_CAP_LAZY_AUX_CACHE \
+    (BN_QUANT_CAP_LAZY_MOE_AUX_CACHE_CANDIDATE | BN_QUANT_CAP_AUX_CACHE)
+#define BN_QUANT_CAP_MOE_ALL_F16_LAZY_AUX \
+    (BN_QUANT_CAP_MOE_ALL_F16_CACHE | BN_QUANT_CAP_LAZY_AUX_CACHE)
+#define BN_QUANT_CAP_MOE_LARGE_AUX_CACHE \
+    (BN_QUANT_CAP_MOE_ALL_F16_LAZY_AUX | BN_QUANT_CAP_AUX_CACHE_LARGE_BUDGET)
 #define BN_QUANT_CPU_HOOKS bn_quant_matvec, bn_quant_matmul
 #define BN_QUANT_NO_CPU_HOOKS NULL, NULL
 
 static const BnQuantFormatOps g_quant_formats[] = {
     { BN_GGUF_TENSOR_F32,      "F32",      BN_QUANT_LAYOUT_DENSE,    1,   4,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_F16,      "F16",      BN_QUANT_LAYOUT_DENSE,    1,   2,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_BF16,     "BF16",     BN_QUANT_LAYOUT_DENSE,    1,   2,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_BF16,     "BF16",     BN_QUANT_LAYOUT_DENSE,    1,   2,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_AUX_CACHE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q4_0,     "Q4_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  18,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_CPU_REPACKED | BN_QUANT_CAP_GPU_SMALL_DENSE | BN_QUANT_CAP_GPU_NATIVE | BN_QUANT_CAP_GPU_REPACKED, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q4_1,     "Q4_1",     BN_QUANT_LAYOUT_BLOCK32,  32,  20,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q5_0,     "Q5_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  22,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q5_0,     "Q5_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  22,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE | BN_QUANT_CAP_AUX_CACHE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q5_1,     "Q5_1",     BN_QUANT_LAYOUT_BLOCK32,  32,  24,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q8_0,     "Q8_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  34,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE_Q8_FORMAT, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q8_0,     "Q8_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  34,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE_Q8_FORMAT | BN_QUANT_CAP_MOE_ALL_F16_LAZY_AUX | BN_QUANT_CAP_MOE_PREFERS_QUANT_ONLY, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_I2_S,     "I2_S",     BN_QUANT_LAYOUT_I2S,      4,   1,   BN_QUANT_CAP_LOADABLE_CPU, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_MXFP4,    "MXFP4",    BN_QUANT_LAYOUT_BLOCK32,  32,  17,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_TQ1_0,    "TQ1_0",    BN_QUANT_LAYOUT_BLOCK256, 256, 54,  BN_QUANT_CAP_LOADABLE_CPU, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_TQ2_0,    "TQ2_0",    BN_QUANT_LAYOUT_BLOCK256, 256, 66,  BN_QUANT_CAP_LOADABLE_CPU, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q2_K,     "Q2_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 84,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q3_K,     "Q3_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 110, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q4_K,     "Q4_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 144, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K | BN_QUANT_CAP_GPU_SMALL_DENSE_KQUANT, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q5_K,     "Q5_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 176, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K | BN_QUANT_CAP_GPU_SMALL_DENSE_KQUANT | BN_QUANT_CAP_GPU_FUSED_GATEUP_CUDA_OPT_IN, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q6_K,     "Q6_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 210, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K | BN_QUANT_CAP_GPU_SMALL_DENSE_Q6K, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q3_K,     "Q3_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 110, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_LAZY_AUX_CACHE, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q4_K,     "Q4_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 144, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K | BN_QUANT_CAP_GPU_SMALL_DENSE_KQUANT | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE | BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q5_K,     "Q5_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 176, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K | BN_QUANT_CAP_GPU_SMALL_DENSE_KQUANT | BN_QUANT_CAP_GPU_FUSED_GATEUP_CUDA_OPT_IN | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q6_K,     "Q6_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 210, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K | BN_QUANT_CAP_GPU_SMALL_DENSE_Q6K | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE | BN_QUANT_CAP_LOGITS_Q6_F32_CACHE | BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE | BN_QUANT_CAP_MOE_DOWN_CUBLAS_CACHE | BN_QUANT_CAP_AUX_CACHE_F16, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q8_K,     "Q8_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 292, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_SMALL_DENSE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_IQ4_NL,   "IQ4_NL",   BN_QUANT_LAYOUT_BLOCK32,  32,  18,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_IQ4_XS,   "IQ4_XS",   BN_QUANT_LAYOUT_BLOCK256, 256, 136, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_IQ3_XXS,  "IQ3_XXS",  BN_QUANT_LAYOUT_BLOCK256, 256, 98,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_IQ4_XS,   "IQ4_XS",   BN_QUANT_LAYOUT_BLOCK256, 256, 136, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_LAZY_AUX_CACHE, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_IQ3_XXS,  "IQ3_XXS",  BN_QUANT_LAYOUT_BLOCK256, 256, 98,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_LAZY_AUX_CACHE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_IQ3_S,    "IQ3_S",    BN_QUANT_LAYOUT_BLOCK256, 256, 114, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_IQ2_XXS,  "IQ2_XXS",  BN_QUANT_LAYOUT_BLOCK256, 256, 66,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_IQ2_XS,   "IQ2_XS",   BN_QUANT_LAYOUT_BLOCK256, 256, 74,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED, BN_QUANT_CPU_HOOKS },
@@ -281,7 +287,7 @@ int bn_quant_format_convert_dense_to_f32(int type, const void *src,
 }
 
 int bn_quant_format_logits_q6_f32_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_LOGITS_Q6_F32_CACHE);
 }
 
 int bn_quant_format_cuda_logits_q6_f32_cache_supported(int type) {
@@ -289,10 +295,7 @@ int bn_quant_format_cuda_logits_q6_f32_cache_supported(int type) {
 }
 
 int bn_quant_format_moe_all_f16_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_ALL_F16_CACHE);
 }
 
 int bn_quant_format_cuda_moe_all_f16_cache_supported(int type) {
@@ -300,7 +303,7 @@ int bn_quant_format_cuda_moe_all_f16_cache_supported(int type) {
 }
 
 int bn_quant_format_moe_down_q6_f32_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE);
 }
 
 int bn_quant_format_cuda_moe_down_q6_f32_cache_supported(int type) {
@@ -308,7 +311,7 @@ int bn_quant_format_cuda_moe_down_q6_f32_cache_supported(int type) {
 }
 
 int bn_quant_format_moe_down_cublas_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_DOWN_CUBLAS_CACHE);
 }
 
 int bn_quant_format_cuda_moe_down_cublas_cache_supported(int type) {
@@ -328,7 +331,7 @@ int bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(int type,
 }
 
 int bn_quant_format_moe_down_q4_f32_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q4_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE);
 }
 
 int bn_quant_format_cuda_moe_down_q4_f32_cache_supported(int type) {
@@ -337,7 +340,7 @@ int bn_quant_format_cuda_moe_down_q4_f32_cache_supported(int type) {
 
 int bn_quant_format_moe_quant_only_after_cache(int type,
                                                int q8_f16_cache) {
-    return type != BN_GGUF_TENSOR_Q8_0 || !q8_f16_cache;
+    return !q8_f16_cache || !bn_quant_format_moe_prefers_quant_only(type);
 }
 
 int bn_quant_format_cuda_moe_quant_only_after_cache(int type,
@@ -346,13 +349,8 @@ int bn_quant_format_cuda_moe_quant_only_after_cache(int type,
 }
 
 int bn_quant_format_lazy_moe_aux_cache_candidate(int type) {
-    return type == BN_GGUF_TENSOR_Q3_K ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K ||
-           type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_IQ3_XXS ||
-           type == BN_GGUF_TENSOR_IQ4_XS;
+    return bn_quant_format_has_cap(type,
+                                   BN_QUANT_CAP_LAZY_MOE_AUX_CACHE_CANDIDATE);
 }
 
 int bn_quant_format_cuda_lazy_moe_aux_cache_candidate(int type) {
@@ -360,7 +358,7 @@ int bn_quant_format_cuda_lazy_moe_aux_cache_candidate(int type) {
 }
 
 int bn_quant_format_moe_prefers_quant_only(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_PREFERS_QUANT_ONLY);
 }
 
 int bn_quant_format_cuda_moe_prefers_quant_only(int type) {
@@ -368,15 +366,7 @@ int bn_quant_format_cuda_moe_prefers_quant_only(int type) {
 }
 
 int bn_quant_format_aux_cache_supported(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0 ||
-           type == BN_GGUF_TENSOR_Q5_0 ||
-           type == BN_GGUF_TENSOR_BF16 ||
-           type == BN_GGUF_TENSOR_Q3_K ||
-           type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K ||
-           type == BN_GGUF_TENSOR_IQ3_XXS ||
-           type == BN_GGUF_TENSOR_IQ4_XS;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE);
 }
 
 int bn_quant_format_cuda_aux_cache_supported(int type) {
@@ -384,7 +374,7 @@ int bn_quant_format_cuda_aux_cache_supported(int type) {
 }
 
 int bn_quant_format_aux_cache_can_use_f16(int type) {
-    return type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE_F16);
 }
 
 int bn_quant_format_cuda_aux_cache_can_use_f16(int type) {
@@ -392,7 +382,7 @@ int bn_quant_format_cuda_aux_cache_can_use_f16(int type) {
 }
 
 int bn_quant_format_aux_cache_uses_f32(int type, int q6_as_f16) {
-    return type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16;
+    return bn_quant_format_aux_cache_can_use_f16(type) && !q6_as_f16;
 }
 
 int bn_quant_format_cuda_aux_cache_uses_f32(int type, int q6_as_f16) {
@@ -400,9 +390,7 @@ int bn_quant_format_cuda_aux_cache_uses_f32(int type, int q6_as_f16) {
 }
 
 int bn_quant_format_aux_cache_prefers_large_budget(int type) {
-    return type == BN_GGUF_TENSOR_Q4_K ||
-           type == BN_GGUF_TENSOR_Q5_K ||
-           type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE_LARGE_BUDGET);
 }
 
 int bn_quant_format_cuda_aux_cache_prefers_large_budget(int type) {
