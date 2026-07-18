@@ -345,6 +345,11 @@ if grep -n 'getenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL")\|getenv("BN_CUDA_DISA
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST")\|cuda_env_int("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY"\|getenv("BN_CUDA_DEBUG_MOE_CUBLAS_GROUPED")\|getenv("BN_CUDA_DEBUG_MOE_CUBLAS_GATEUP")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for MoE routed prefill profile/debug env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE")\|getenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for MoE cuBLAS decode env policy"
     fail=1

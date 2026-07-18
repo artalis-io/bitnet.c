@@ -633,6 +633,30 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
     unsetenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
 
+    unsetenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST");
+    unsetenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY");
+    unsetenv("BN_CUDA_DEBUG_MOE_CUBLAS_GROUPED");
+    unsetenv("BN_CUDA_DEBUG_MOE_CUBLAS_GATEUP");
+    assert(!bn_gpu_policy_cuda_moe_route_dist_profile_enabled());
+    assert(bn_gpu_policy_cuda_moe_route_dist_profile_every_or_default(48) ==
+           48);
+    setenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST", "1", 1);
+    setenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY", "7", 1);
+    assert(bn_gpu_policy_cuda_moe_route_dist_profile_enabled());
+    assert(bn_gpu_policy_cuda_moe_route_dist_profile_every_or_default(48) ==
+           7);
+    setenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY", "0", 1);
+    assert(bn_gpu_policy_cuda_moe_route_dist_profile_every_or_default(48) ==
+           48);
+    setenv("BN_CUDA_DEBUG_MOE_CUBLAS_GROUPED", "1", 1);
+    setenv("BN_CUDA_DEBUG_MOE_CUBLAS_GATEUP", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled());
+    assert(bn_gpu_policy_cuda_moe_cublas_gateup_debug_enabled());
+    unsetenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST");
+    unsetenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY");
+    unsetenv("BN_CUDA_DEBUG_MOE_CUBLAS_GROUPED");
+    unsetenv("BN_CUDA_DEBUG_MOE_CUBLAS_GATEUP");
+
     unsetenv("BN_CUDA_DISABLE_MOE_FFN_BATCH");
     assert(bn_gpu_policy_cuda_moe_ffn_batch_enabled());
     setenv("BN_CUDA_DISABLE_MOE_FFN_BATCH", "1", 1);

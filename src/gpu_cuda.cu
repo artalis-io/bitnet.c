@@ -15586,7 +15586,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             return -1;
         }
     }
-    if (getenv("BN_CUDA_PROFILE_MOE_ROUTE_DIST")) {
+    if (bn_gpu_policy_cuda_moe_route_dist_profile_enabled()) {
         int *h_indices = (int *)malloc(route_items * sizeof(int));
         int *h_counts = (int *)calloc((size_t)n_experts, sizeof(int));
         if (h_indices && h_counts &&
@@ -15615,8 +15615,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             dist_active += (unsigned long long)active;
             dist_singleton += (unsigned long long)singleton;
             dist_max_sum += (unsigned long long)max_count;
-            int every = cuda_env_int("BN_CUDA_PROFILE_MOE_ROUTE_DIST_EVERY", 48);
-            if (every <= 0) every = 48;
+            int every =
+                bn_gpu_policy_cuda_moe_route_dist_profile_every_or_default(48);
             if ((dist_calls % (unsigned long long)every) == 0) {
                 fprintf(stderr,
                         "[bn:gpu:cuda:moe-route-dist] calls=%llu assign=%zu avg_active=%.2f avg_singleton=%.2f avg_max_per_expert=%.2f experts=%d\n",
@@ -15671,7 +15671,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
             goto moe_route_routed_readback;
         }
-        if (getenv("BN_CUDA_DEBUG_MOE_CUBLAS_GROUPED"))
+        if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled())
             fprintf(stderr,
                     "[bn:gpu:cuda] all2 cublas moe prefill failed; falling back\n");
     } else if (use_cublas_grouped) {
@@ -15687,7 +15687,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
             goto moe_route_routed_readback;
         }
-        if (getenv("BN_CUDA_DEBUG_MOE_CUBLAS_GROUPED"))
+        if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled())
             fprintf(stderr,
                     "[bn:gpu:cuda] grouped cublas moe prefill failed; falling back\n");
     }
@@ -15706,7 +15706,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             BN_CUDA_MOE_PREFILL_PROFILE_STEP(3);
             goto moe_route_routed_down;
         }
-        if (getenv("BN_CUDA_DEBUG_MOE_CUBLAS_GATEUP"))
+        if (bn_gpu_policy_cuda_moe_cublas_gateup_debug_enabled())
             fprintf(stderr,
                     "[bn:gpu:cuda] grouped cublas moe gate/up failed; falling back\n");
     }
