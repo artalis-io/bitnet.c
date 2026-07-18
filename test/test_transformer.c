@@ -777,8 +777,10 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_UNKNOWN;
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    assert(!bn_transformer_gpu_prefill_ssm_layer_disabled());
     assert(!bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
+    assert(bn_transformer_gpu_prefill_ssm_layer_disabled());
     assert(bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
 

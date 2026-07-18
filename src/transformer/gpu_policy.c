@@ -161,12 +161,12 @@ BnBackendPlacement bn_transformer_gpu_backend_placement(
     }
 }
 
-int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
+int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
     return bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
 }
 
-int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
-    return bn_transformer_gpu_cuda_prefill_ssm_layer_disabled();
+int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
+    return bn_transformer_gpu_prefill_ssm_layer_disabled();
 }
 
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
