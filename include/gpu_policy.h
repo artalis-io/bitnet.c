@@ -168,6 +168,16 @@ int bn_gpu_policy_cuda_logits_argmax_disabled(void);
 int bn_gpu_policy_cuda_dense_logits_argmax_enabled(void);
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled(void);
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void);
+int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(int rows,
+                                                           int cols);
+int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_enabled(int use_mmvq,
+                                                           int rows,
+                                                           int cols);
+int bn_gpu_policy_cuda_moe_logits_mmvq_1warp16_1536_enabled(
+    int use_1warp8);
+int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
+    int use_1warp8,
+    int use_1warp16);
 int bn_gpu_policy_cuda_argmax_fast_enabled(void);
 int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void);
 int bn_gpu_policy_cuda_readback_debug_enabled(void);

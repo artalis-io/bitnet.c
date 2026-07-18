@@ -663,6 +663,35 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(int rows,
+                                                           int cols) {
+    return !bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled() &&
+           rows >= 50000 &&
+           (cols == 1536 ||
+            bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled());
+}
+
+int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_enabled(int use_mmvq,
+                                                           int rows,
+                                                           int cols) {
+    return use_mmvq && rows == 151936 && cols == 1536 &&
+           getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_logits_mmvq_1warp16_1536_enabled(
+    int use_1warp8) {
+    return use_1warp8 &&
+           getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
+    int use_1warp8,
+    int use_1warp16) {
+    return use_1warp8 && !use_1warp16 &&
+           getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL") ==
+               NULL;
+}
+
 int bn_gpu_policy_cuda_argmax_fast_enabled(void) {
     return getenv("BN_CUDA_DISABLE_ARGMAX_FAST") == NULL;
 }

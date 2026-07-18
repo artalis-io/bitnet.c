@@ -13686,19 +13686,16 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
     }
     int threads = 256;
     int use_mmvq =
-        getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") == NULL &&
-        rows >= 50000 &&
-        (cols == 1536 ||
-         getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL);
+        bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(rows, cols);
     int use_mmvq_1warp8 =
-        use_mmvq && rows == 151936 && cols == 1536 &&
-        getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536") == NULL;
+        bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_enabled(
+            use_mmvq, rows, cols);
     int use_mmvq_1warp16 =
-        use_mmvq_1warp8 &&
-        getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536") != NULL;
+        bn_gpu_policy_cuda_moe_logits_mmvq_1warp16_1536_enabled(
+            use_mmvq_1warp8);
     int use_mmvq_1warp8_1536 =
-        use_mmvq_1warp8 && !use_mmvq_1warp16 &&
-        getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL") == NULL;
+        bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
+            use_mmvq_1warp8, use_mmvq_1warp16);
     int blocks = use_mmvq
         ? (use_mmvq_1warp16 ? (rows + 15) / 16 :
            (use_mmvq_1warp8 ? (rows + 7) / 8 : (rows + 3) / 4))
