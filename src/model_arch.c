@@ -253,16 +253,20 @@ int bn_model_arch_uses_moe(const BnConfig *c) {
     return c && c->n_experts > 0;
 }
 
-int bn_model_arch_gguf_uses_moe(BnGGUFFile *f) {
-    if (!f) return 0;
+int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix) {
+    if (!f || !suffix) return 0;
     const char *arch = bn_gguf_get_str(f, "general.architecture");
     const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
     const char *prefix = ops && ops->prefix
         ? ops->prefix(arch)
         : bn_model_arch_prefix(arch);
     char key[128];
-    snprintf(key, sizeof(key), "%s.expert_count", prefix);
-    return bn_gguf_get_u32(f, key) > 0;
+    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
+    return (int)bn_gguf_get_u32(f, key);
+}
+
+int bn_model_arch_gguf_uses_moe(BnGGUFFile *f) {
+    return bn_model_arch_gguf_u32(f, "expert_count") > 0;
 }
 
 int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c) {

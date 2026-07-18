@@ -539,17 +539,6 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
 }
 #endif
 
-static int gguf_get_arch_u32(BnGGUFFile *gf, const char *suffix) {
-    const char *arch = bn_gguf_get_str(gf, "general.architecture");
-    char prefix[64] = "llama";
-    char key[128];
-    if (arch) {
-        snprintf(prefix, sizeof(prefix), "%s", arch);
-    }
-    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
-    return (int)bn_gguf_get_u32(gf, key);
-}
-
 // Chat history tracker for prompt caching
 typedef struct {
     int *history;
@@ -742,9 +731,8 @@ int main(int argc, char **argv) {
     }
 
     if ((args.webgpu || args.metal || args.cuda) && !args.max_seq_len_set) {
-        int model_seq_len = gguf_get_arch_u32(gf, "context_length");
         if (bn_gpu_policy_auto_caps_gguf_sequence(
-                args.webgpu, args.cuda, args.metal, gf, model_seq_len,
+                args.webgpu, args.cuda, args.metal, gf,
                 BN_GPU_DEFAULT_MAXSEQ)) {
             args.max_seq_len = BN_GPU_DEFAULT_MAXSEQ;
             SH_LOG_WARN(args.webgpu ? "Auto-capping WebGPU sequence length" :

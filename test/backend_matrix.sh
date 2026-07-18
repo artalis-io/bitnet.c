@@ -806,6 +806,11 @@ if grep -n 'bn_model_arch_gguf_uses_moe' src/main.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'general\.architecture\|context_length\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use model_arch/GPU policy helpers for arch-prefixed GGUF sequence metadata"
+    fail=1
+fi
+
 if grep -n 'model\(\.config\|->config\)\.n_experts [<>!=]=\? 0' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch helpers for loaded-model MoE presence policy"
     fail=1

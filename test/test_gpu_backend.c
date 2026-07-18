@@ -6,6 +6,7 @@
 #include "quant.h"
 #include "transformer_cpu_backend_internal.h"
 #include "model.h"
+#include "model_arch.h"
 #include "gguf.h"
 #include "sh_arena.h"
 #include <stdio.h>
@@ -404,29 +405,33 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
     assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
 
-    BnGGUFKeyValue dense_kvs[2];
+    BnGGUFKeyValue dense_kvs[3];
     dense_kvs[0] = test_make_str_kv("general.architecture", "gemma4");
     dense_kvs[1] = test_make_u32_kv("gemma4.expert_count", 0);
+    dense_kvs[2] = test_make_u32_kv("gemma4.context_length", 8192);
     BnGGUFFile dense_gf = {0};
-    dense_gf.n_kv = 2;
+    dense_gf.n_kv = 3;
     dense_gf.kvs = dense_kvs;
+    assert(bn_model_arch_gguf_u32(&dense_gf, "context_length") == 8192);
     assert(bn_gpu_policy_auto_caps_gguf_sequence(
-        1, 0, 0, &dense_gf, 8192, 4096));
+        1, 0, 0, &dense_gf, 4096));
     assert(bn_gpu_policy_auto_caps_gguf_sequence(
-        0, 1, 0, &dense_gf, 8192, 4096));
+        0, 1, 0, &dense_gf, 4096));
     assert(!bn_gpu_policy_auto_caps_gguf_sequence(
-        0, 0, 1, &dense_gf, 8192, 4096));
+        0, 0, 1, &dense_gf, 4096));
 
-    BnGGUFKeyValue moe_kvs[2];
+    BnGGUFKeyValue moe_kvs[3];
     moe_kvs[0] = test_make_str_kv("general.architecture", "qwen35moe");
     moe_kvs[1] = test_make_u32_kv("qwen35moe.expert_count", 4);
+    moe_kvs[2] = test_make_u32_kv("qwen35moe.context_length", 8192);
     BnGGUFFile moe_gf = {0};
-    moe_gf.n_kv = 2;
+    moe_gf.n_kv = 3;
     moe_gf.kvs = moe_kvs;
     assert(bn_gpu_policy_auto_caps_gguf_sequence(
-        0, 0, 1, &moe_gf, 8192, 4096));
+        0, 0, 1, &moe_gf, 4096));
+    moe_kvs[2].value.u32 = 4096;
     assert(!bn_gpu_policy_auto_caps_gguf_sequence(
-        0, 0, 1, &moe_gf, 4096, 4096));
+        0, 0, 1, &moe_gf, 4096));
 
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
     assert(bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));

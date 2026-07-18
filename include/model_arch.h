@@ -142,6 +142,7 @@ int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
 int bn_model_arch_uses_moe(const BnConfig *c);
+int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix);
 int bn_model_arch_gguf_uses_moe(BnGGUFFile *f);
 int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c);
 int bn_model_arch_uses_hybrid_moe(const BnConfig *c);
