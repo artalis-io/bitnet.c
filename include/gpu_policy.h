@@ -159,6 +159,12 @@ int bn_gpu_policy_cuda_q4k_moe_pair_down_enabled(int n_experts,
                                                  int k,
                                                  int hidden_dim);
 int bn_gpu_policy_cuda_q4k_moe_down_8row_enabled(int hidden_dim);
+int bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled(int n_tokens,
+                                                  int dim,
+                                                  int allow_small_dim);
+int bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(int dim);
+int bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(int dim,
+                                                    int n_experts);
 int bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(int routed_q8);
 int bn_gpu_policy_cuda_q8_moe_gateup_2row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_q8_moe_down_4row_enabled(int hidden_dim);

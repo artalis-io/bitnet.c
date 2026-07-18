@@ -626,6 +626,26 @@ int bn_gpu_policy_cuda_q4k_moe_down_8row_enabled(int hidden_dim) {
            getenv("BN_CUDA_DISABLE_MOE_Q4K_DOWN_8ROW") == NULL;
 }
 
+int bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled(int n_tokens,
+                                                  int dim,
+                                                  int allow_small_dim) {
+    return bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
+           (n_tokens <= 1 || (allow_small_dim && dim <= 2048) ||
+            getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
+}
+
+int bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(int dim) {
+    return dim <= 2048 &&
+           getenv("BN_CUDA_DISABLE_MOE_GATEUP_8ROW") == NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(int dim,
+                                                    int n_experts) {
+    return dim <= 2048 && n_experts > 2 &&
+           getenv("BN_CUDA_ENABLE_MOE_GATEUP_SPLIT") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
+}
+
 int bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(int routed_q8) {
     return routed_q8 &&
            getenv("BN_CUDA_DISABLE_Q8_MOE_BATCH_Q8_1") == NULL;

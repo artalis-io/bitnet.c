@@ -15031,9 +15031,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     int gateup_tasks = n_tokens * k * hidden_dim;
     int gateup_blocks = (gateup_tasks + warps - 1) / warps;
     int use_q4k_q8k_gateup =
-        bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
-        (n_tokens <= 1 || dim <= 2048 ||
-         getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
+        bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled(n_tokens, dim, 1);
 
     int use_q8_q8_1_batch =
         bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(routed_q8);
@@ -15082,12 +15080,10 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                 return -1;
             }
             int use_gateup_8row =
-                dim <= 2048 &&
-                getenv("BN_CUDA_DISABLE_MOE_GATEUP_8ROW") == NULL;
+                bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(dim);
             int use_gateup_split =
-                dim <= 2048 && n_experts > 2 &&
-                getenv("BN_CUDA_ENABLE_MOE_GATEUP_SPLIT") != NULL &&
-                getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
+                bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(dim,
+                                                                n_experts);
             if (use_gateup_split) {
                 int gateup2_blocks =
                     (gateup_tasks + warps * 2 - 1) / (warps * 2);
@@ -15653,9 +15649,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int down_tasks = n_tokens * dim;
     int down_blocks = (down_tasks + warps - 1) / warps;
     int use_q4k_q8k_gateup =
-        bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
-        (n_tokens <= 1 ||
-         getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP") != NULL);
+        bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled(n_tokens, dim, 0);
     int use_q8_q8_1_batch =
         bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(routed_q8);
 
@@ -15780,58 +15774,56 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(2);
-            int use_gateup_8row =
-                dim <= 2048 &&
-                getenv("BN_CUDA_DISABLE_MOE_GATEUP_8ROW") == NULL;
-            int use_gateup_split =
-                dim <= 2048 && n_experts > 2 &&
-                getenv("BN_CUDA_ENABLE_MOE_GATEUP_SPLIT") != NULL &&
-                getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
-            if (use_gateup_split) {
-                int gateup2_blocks =
-                    (gateup_tasks + warps * 2 - 1) / (warps * 2);
-                if (use_sorted_slots) {
-                    moe_q4k_gateup_routed_mid_q8k_2row_split_sorted_batch_kernel<<<gateup2_blocks, threads, 0>>>(
-                        d_mid, (const BnBlockQ4K *)gate->data,
-                        (const BnBlockQ4K *)up->data, xq, d_indices,
-                        d_slot_order, hidden_dim, dim, n_experts, k,
-                        n_tokens);
-                } else {
-                    moe_q4k_gateup_routed_mid_q8k_2row_split_batch_kernel<<<gateup2_blocks, threads, 0>>>(
-                        d_mid, (const BnBlockQ4K *)gate->data,
-                        (const BnBlockQ4K *)up->data, xq, d_indices,
-                        hidden_dim, dim, n_experts, k, n_tokens);
-                }
-            } else if (use_gateup_8row) {
-                int gateup8_blocks =
-                    (gateup_tasks + warps * 8 - 1) / (warps * 8);
-                if (use_sorted_slots) {
-                    moe_q4k_gateup_routed_mid_q8k_8row_sorted_batch_kernel<<<gateup8_blocks, threads, 0>>>(
-                        d_mid, (const BnBlockQ4K *)gate->data,
-                        (const BnBlockQ4K *)up->data, xq, d_indices,
-                        d_slot_order, hidden_dim, dim, n_experts, k,
-                        n_tokens);
-                } else {
-                    moe_q4k_gateup_routed_mid_q8k_8row_batch_kernel<<<gateup8_blocks, threads, 0>>>(
-                        d_mid, (const BnBlockQ4K *)gate->data,
-                        (const BnBlockQ4K *)up->data, xq, d_indices,
-                        hidden_dim, dim, n_experts, k, n_tokens);
-                }
+        int use_gateup_8row =
+            bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(dim);
+        int use_gateup_split =
+            bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(dim,
+                                                            n_experts);
+        if (use_gateup_split) {
+            int gateup2_blocks =
+                (gateup_tasks + warps * 2 - 1) / (warps * 2);
+            if (use_sorted_slots) {
+                moe_q4k_gateup_routed_mid_q8k_2row_split_sorted_batch_kernel<<<gateup2_blocks, threads, 0>>>(
+                    d_mid, (const BnBlockQ4K *)gate->data,
+                    (const BnBlockQ4K *)up->data, xq, d_indices,
+                    d_slot_order, hidden_dim, dim, n_experts, k,
+                    n_tokens);
             } else {
-                int gateup4_tasks = (gateup_tasks + 3) / 4;
-                int gateup4_blocks = (gateup4_tasks + warps - 1) / warps;
-                if (use_sorted_slots) {
-                    moe_q4k_gateup_routed_mid_q8k_4row_sorted_batch_kernel<<<gateup4_blocks, threads, 0>>>(
-                        d_mid, (const BnBlockQ4K *)gate->data,
-                        (const BnBlockQ4K *)up->data, xq, d_indices,
-                        d_slot_order, hidden_dim, dim, n_experts, k, n_tokens);
-                } else {
-                    moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel<<<gateup4_blocks, threads, 0>>>(
-                        d_mid, (const BnBlockQ4K *)gate->data,
-                        (const BnBlockQ4K *)up->data, xq, d_indices,
-                        hidden_dim, dim, n_experts, k, n_tokens);
-                }
+                moe_q4k_gateup_routed_mid_q8k_2row_split_batch_kernel<<<gateup2_blocks, threads, 0>>>(
+                    d_mid, (const BnBlockQ4K *)gate->data,
+                    (const BnBlockQ4K *)up->data, xq, d_indices,
+                    hidden_dim, dim, n_experts, k, n_tokens);
             }
+        } else if (use_gateup_8row) {
+            int gateup8_blocks =
+                (gateup_tasks + warps * 8 - 1) / (warps * 8);
+            if (use_sorted_slots) {
+                moe_q4k_gateup_routed_mid_q8k_8row_sorted_batch_kernel<<<gateup8_blocks, threads, 0>>>(
+                    d_mid, (const BnBlockQ4K *)gate->data,
+                    (const BnBlockQ4K *)up->data, xq, d_indices,
+                    d_slot_order, hidden_dim, dim, n_experts, k,
+                    n_tokens);
+            } else {
+                moe_q4k_gateup_routed_mid_q8k_8row_batch_kernel<<<gateup8_blocks, threads, 0>>>(
+                    d_mid, (const BnBlockQ4K *)gate->data,
+                    (const BnBlockQ4K *)up->data, xq, d_indices,
+                    hidden_dim, dim, n_experts, k, n_tokens);
+            }
+        } else {
+            int gateup4_tasks = (gateup_tasks + 3) / 4;
+            int gateup4_blocks = (gateup4_tasks + warps - 1) / warps;
+            if (use_sorted_slots) {
+                moe_q4k_gateup_routed_mid_q8k_4row_sorted_batch_kernel<<<gateup4_blocks, threads, 0>>>(
+                    d_mid, (const BnBlockQ4K *)gate->data,
+                    (const BnBlockQ4K *)up->data, xq, d_indices,
+                    d_slot_order, hidden_dim, dim, n_experts, k, n_tokens);
+            } else {
+                moe_q4k_gateup_routed_mid_q8k_4row_batch_kernel<<<gateup4_blocks, threads, 0>>>(
+                    d_mid, (const BnBlockQ4K *)gate->data,
+                    (const BnBlockQ4K *)up->data, xq, d_indices,
+                    hidden_dim, dim, n_experts, k, n_tokens);
+            }
+        }
     } else {
         if (profile_prefill_moe)
             profile_path_counts[BN_CUDA_MOE_PROFILE_PATH_QK_NATIVE]++;
