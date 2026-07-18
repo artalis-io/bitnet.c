@@ -370,6 +370,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q5_MATVEC4")\|getenv("BN_CUDA_ENABLE_Q5_WARP"
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_DOT")\|getenv("BN_CUDA_DISABLE_Q5K_DOT")\|getenv("BN_CUDA_DISABLE_Q4K_4WARP")\|getenv("BN_CUDA_DISABLE_Q8_WARP")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA Q4/Q5/Q8 matvec env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_FUSE_BIAS")\|getenv("BN_CUDA_DISABLE_ROPE_FLASH_FUSE")\|getenv("BN_CUDA_ENABLE_BIAS_ROPE_FLASH_FUSE")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA bias/rope fuse env policy"
     fail=1

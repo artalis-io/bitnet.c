@@ -18363,14 +18363,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_q5_matvec4_flag =
             bn_gpu_policy_cuda_q5_matvec4_enabled();
         enable_q5_warp_flag = bn_gpu_policy_cuda_q5_warp_enabled();
-        enable_q4k_dot_flag = getenv("BN_CUDA_DISABLE_Q4K_DOT") == NULL;
-        enable_q5k_dot_flag = getenv("BN_CUDA_DISABLE_Q5K_DOT") == NULL;
+        enable_q4k_dot_flag = bn_gpu_policy_cuda_q4k_dot_enabled();
+        enable_q5k_dot_flag = bn_gpu_policy_cuda_q5k_dot_enabled();
         enable_q6k_dot_flag = getenv("BN_CUDA_DISABLE_Q6K_DOT") == NULL;
         force_q6k_dot_flag = getenv("BN_CUDA_ENABLE_Q6K_DOT") != NULL;
         enable_q6k_warp_flag = getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
-        enable_q4k_4warp_flag =
-            getenv("BN_CUDA_DISABLE_Q4K_4WARP") == NULL;
-        disable_q8_warp_flag = getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
+        enable_q4k_4warp_flag = bn_gpu_policy_cuda_q4k_4warp_enabled();
+        disable_q8_warp_flag = bn_gpu_policy_cuda_q8_warp_disabled();
         disable_qkv_mixed_fuse_flag =
             getenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE") != NULL;
         qkv_fuse_key_cache_flag =
