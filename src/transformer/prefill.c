@@ -964,14 +964,19 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
     void *up_buf = NULL;
     void *down_buf = NULL;
     void *ffn_norm_buf = NULL;
-    if (fuse_ffn &&
-        bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed() &&
-        lw->ffn.ffn_gate.data && lw->ffn.ffn_up.data &&
-        lw->ffn.ffn_down.data && m->config.has_ffn_gate &&
-        !lw->norm.ffn_sub_norm &&
-        !lw->norm.layer_output_scale &&
-        !(bn_transformer_ffn_uses_post_norm(&m->config) &&
-          lw->norm.ffn_post_norm)) {
+    BnTransformerPrefillSSMFFNFusePolicy ffn_fuse =
+        bn_transformer_prefill_ssm_ffn_fuse_policy(
+            fuse_ffn,
+            bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(),
+            lw->ffn.ffn_gate.data != NULL,
+            lw->ffn.ffn_up.data != NULL,
+            lw->ffn.ffn_down.data != NULL,
+            m->config.has_ffn_gate,
+            lw->norm.ffn_sub_norm != NULL,
+            lw->norm.layer_output_scale != NULL,
+            bn_transformer_ffn_uses_post_norm(&m->config),
+            lw->norm.ffn_post_norm != NULL);
+    if (ffn_fuse.enabled) {
         gateup_buf = bn_backend_model_handle(
             backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
         if (gateup_buf &&

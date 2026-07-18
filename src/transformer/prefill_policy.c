@@ -186,6 +186,32 @@ bn_transformer_prefill_ssm_moe_chain_policy(
     return policy;
 }
 
+BnTransformerPrefillSSMFFNFusePolicy
+bn_transformer_prefill_ssm_ffn_fuse_policy(
+    int fuse_requested,
+    int fuse_allowed,
+    int has_ffn_gate_weight,
+    int has_ffn_up,
+    int has_ffn_down,
+    int has_ffn_gate_config,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_ffn_post_norm,
+    int has_ffn_post_norm) {
+    BnTransformerPrefillSSMFFNFusePolicy policy = {0};
+    policy.enabled =
+        fuse_requested &&
+        fuse_allowed &&
+        has_ffn_gate_weight &&
+        has_ffn_up &&
+        has_ffn_down &&
+        has_ffn_gate_config &&
+        !has_ffn_sub_norm &&
+        !has_layer_output_scale &&
+        !(uses_ffn_post_norm && has_ffn_post_norm);
+    return policy;
+}
+
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

@@ -61,6 +61,10 @@ typedef struct {
 } BnTransformerPrefillSSMMoEChainPolicy;
 
 typedef struct {
+    int enabled;
+} BnTransformerPrefillSSMFFNFusePolicy;
+
+typedef struct {
     int eligible;
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
@@ -184,6 +188,18 @@ bn_transformer_prefill_ssm_moe_chain_policy(
     int ssm_state_size,
     int ssm_inner_size,
     int ssm_group_count);
+BnTransformerPrefillSSMFFNFusePolicy
+bn_transformer_prefill_ssm_ffn_fuse_policy(
+    int fuse_requested,
+    int fuse_allowed,
+    int has_ffn_gate_weight,
+    int has_ffn_up,
+    int has_ffn_down,
+    int has_ffn_gate_config,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_ffn_post_norm,
+    int has_ffn_post_norm);
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

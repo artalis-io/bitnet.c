@@ -3695,6 +3695,29 @@ static void test_block_planning(void) {
         0, 0, 0, 0, 0, 16, 0, 256, 4);
     assert(!ssm_moe_chain.enabled);
 
+    BnTransformerPrefillSSMFFNFusePolicy ssm_ffn_fuse =
+        bn_transformer_prefill_ssm_ffn_fuse_policy(
+            1, 1, 1, 1, 1, 1, 0, 0, 0, 0);
+    assert(ssm_ffn_fuse.enabled);
+    ssm_ffn_fuse = bn_transformer_prefill_ssm_ffn_fuse_policy(
+        0, 1, 1, 1, 1, 1, 0, 0, 0, 0);
+    assert(!ssm_ffn_fuse.enabled);
+    ssm_ffn_fuse = bn_transformer_prefill_ssm_ffn_fuse_policy(
+        1, 0, 1, 1, 1, 1, 0, 0, 0, 0);
+    assert(!ssm_ffn_fuse.enabled);
+    ssm_ffn_fuse = bn_transformer_prefill_ssm_ffn_fuse_policy(
+        1, 1, 0, 1, 1, 1, 0, 0, 0, 0);
+    assert(!ssm_ffn_fuse.enabled);
+    ssm_ffn_fuse = bn_transformer_prefill_ssm_ffn_fuse_policy(
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0);
+    assert(!ssm_ffn_fuse.enabled);
+    ssm_ffn_fuse = bn_transformer_prefill_ssm_ffn_fuse_policy(
+        1, 1, 1, 1, 1, 1, 1, 0, 0, 0);
+    assert(!ssm_ffn_fuse.enabled);
+    ssm_ffn_fuse = bn_transformer_prefill_ssm_ffn_fuse_policy(
+        1, 1, 1, 1, 1, 1, 0, 0, 1, 1);
+    assert(!ssm_ffn_fuse.enabled);
+
     BnTransformerPrefillRawAttentionPolicy raw_attention =
         bn_transformer_prefill_raw_attention_policy(
             1, 1, 1, 1, 0, 0, 0, 16, 16, 10000.0f, 10000.0f,
