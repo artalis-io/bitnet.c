@@ -4,6 +4,7 @@
 #include "transformer_batched_attn_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
+#include "quant_dispatch_internal.h"
 #include "quant.h"
 #include "simd_helpers.h"
 
