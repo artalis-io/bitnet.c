@@ -2181,6 +2181,17 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
         &gpu, &c, &hybrid_w));
+    BnTransformerGPUDecodeEntryPolicy decode_entry =
+        bn_transformer_gpu_decode_entry_policy(&gpu, &c, &hybrid_w, 1);
+    assert(decode_entry.block_argmax);
+    decode_entry =
+        bn_transformer_gpu_decode_entry_policy(&gpu, &c, &hybrid_w, 0);
+    assert(!decode_entry.block_argmax);
+    setenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX", "1", 1);
+    decode_entry =
+        bn_transformer_gpu_decode_entry_policy(&gpu, &c, &hybrid_w, 1);
+    assert(!decode_entry.block_argmax);
+    unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX");
     fallback = (BnTransformerGPUCPUFallbackPolicy)
         {-1, -1, -1, -1, -1, -1, -1};
     fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(

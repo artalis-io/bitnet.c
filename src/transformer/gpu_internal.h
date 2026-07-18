@@ -107,6 +107,10 @@ typedef struct {
 } BnTransformerGPUForwardPolicy;
 
 typedef struct {
+    int block_argmax;
+} BnTransformerGPUDecodeEntryPolicy;
+
+typedef struct {
     int layer;
     int from_layer;
     int attn_layer;
@@ -561,6 +565,12 @@ int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
 int bn_transformer_gpu_ssm_cpu_fallback_required(
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    int want_argmax);
+BnTransformerGPUDecodeEntryPolicy
+bn_transformer_gpu_decode_entry_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w,

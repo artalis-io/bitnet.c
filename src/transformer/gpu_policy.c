@@ -1300,6 +1300,19 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
            !bn_gpu_policy_cuda_large_hybrid_argmax_enabled();
 }
 
+BnTransformerGPUDecodeEntryPolicy
+bn_transformer_gpu_decode_entry_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w,
+    int want_argmax) {
+    BnTransformerGPUDecodeEntryPolicy policy = {0};
+    policy.block_argmax =
+        bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
+            gpu, c, w, want_argmax);
+    return policy;
+}
+
 static int gpu_policy_env_int(const char *name, int default_value) {
     const char *env = getenv(name);
     return env ? atoi(env) : default_value;

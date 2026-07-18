@@ -859,8 +859,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     compare_ffn_state_pos = compare_policy.ffn_state_pos;
     cpu_fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
         cpu_fallback, gpu, c, w);
-    if (bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
-            gpu, c, w, argmax_token != NULL))
+    BnTransformerGPUDecodeEntryPolicy decode_entry =
+        bn_transformer_gpu_decode_entry_policy(
+            gpu, c, w, argmax_token != NULL);
+    if (decode_entry.block_argmax)
         return NULL;
 
     // Embed token on CPU, upload to GPU x buffer.
