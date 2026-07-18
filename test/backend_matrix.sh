@@ -606,6 +606,11 @@ if grep -n 'getenv("BN_GPU_CPU_FALLBACK_LAYER")\|getenv("BN_GPU_CPU_FALLBACK_FRO
     fail=1
 fi
 
+if grep -n 'gpu_policy_env_int\|BN_GPU_CPU_FFN_LAYER\|BN_GPU_CPU_FFN_FROM_LAYER\|BN_GPU_CPU_FFN_DOWN_FROM_LAYER\|BN_GPU_COMPARE_ATTENTION_LAYER\|BN_GPU_COMPARE_ATTENTION_POS\|BN_GPU_COMPARE_GQA_LAYER\|BN_GPU_COMPARE_GQA_POS\|BN_GPU_COMPARE_QKV_LAYER\|BN_GPU_COMPARE_QKV_POS\|BN_GPU_COMPARE_FFN_DOWN_LAYER\|BN_GPU_COMPARE_FFN_DOWN_POS\|BN_GPU_COMPARE_FFN_STATE_LAYER\|BN_GPU_COMPARE_FFN_STATE_POS' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for CPU fallback and compare selector env vars"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_SSM_GRAPH")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA SSM graph env vars"
     fail=1

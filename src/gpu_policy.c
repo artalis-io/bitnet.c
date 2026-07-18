@@ -354,6 +354,11 @@ static int env_positive_int_or_default(const char *name, int default_tokens) {
     return n > 0 ? n : default_tokens;
 }
 
+static int env_int_or_default(const char *name, int default_value) {
+    const char *env = getenv(name);
+    return env ? atoi(env) : default_value;
+}
+
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_configured(void) {
     const char *env = getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
     return env && *env;
@@ -473,6 +478,36 @@ int bn_gpu_policy_cpu_decode_fallback_requested(void) {
            getenv("BN_GPU_CPU_FALLBACK_FROM_LAYER") ||
            getenv("BN_GPU_CPU_ATTN_LAYER") ||
            getenv("BN_GPU_CPU_ATTN_FROM_LAYER");
+}
+
+int bn_gpu_policy_cpu_fallback_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_FALLBACK_LAYER", default_layer);
+}
+
+int bn_gpu_policy_cpu_fallback_from_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_FALLBACK_FROM_LAYER",
+                              default_layer);
+}
+
+int bn_gpu_policy_cpu_attention_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_ATTN_LAYER", default_layer);
+}
+
+int bn_gpu_policy_cpu_attention_from_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_ATTN_FROM_LAYER", default_layer);
+}
+
+int bn_gpu_policy_cpu_ffn_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_FFN_LAYER", default_layer);
+}
+
+int bn_gpu_policy_cpu_ffn_from_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_FFN_FROM_LAYER", default_layer);
+}
+
+int bn_gpu_policy_cpu_ffn_down_from_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_CPU_FFN_DOWN_FROM_LAYER",
+                              default_layer);
 }
 
 int bn_gpu_policy_cuda_ssm_graph_disabled(void) {
@@ -958,6 +993,49 @@ int bn_gpu_policy_moe_compare_shared_down_enabled(void) {
 
 int bn_gpu_policy_moe_compare_norm_enabled(void) {
     return getenv("BN_GPU_COMPARE_MOE_NORM") != NULL;
+}
+
+int bn_gpu_policy_compare_attention_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_COMPARE_ATTENTION_LAYER",
+                              default_layer);
+}
+
+int bn_gpu_policy_compare_attention_pos_or_default(int default_pos) {
+    return env_int_or_default("BN_GPU_COMPARE_ATTENTION_POS", default_pos);
+}
+
+int bn_gpu_policy_compare_gqa_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_COMPARE_GQA_LAYER", default_layer);
+}
+
+int bn_gpu_policy_compare_gqa_pos_or_default(int default_pos) {
+    return env_int_or_default("BN_GPU_COMPARE_GQA_POS", default_pos);
+}
+
+int bn_gpu_policy_compare_qkv_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_COMPARE_QKV_LAYER", default_layer);
+}
+
+int bn_gpu_policy_compare_qkv_pos_or_default(int default_pos) {
+    return env_int_or_default("BN_GPU_COMPARE_QKV_POS", default_pos);
+}
+
+int bn_gpu_policy_compare_ffn_down_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_COMPARE_FFN_DOWN_LAYER",
+                              default_layer);
+}
+
+int bn_gpu_policy_compare_ffn_down_pos_or_default(int default_pos) {
+    return env_int_or_default("BN_GPU_COMPARE_FFN_DOWN_POS", default_pos);
+}
+
+int bn_gpu_policy_compare_ffn_state_layer_or_default(int default_layer) {
+    return env_int_or_default("BN_GPU_COMPARE_FFN_STATE_LAYER",
+                              default_layer);
+}
+
+int bn_gpu_policy_compare_ffn_state_pos_or_default(int default_pos) {
+    return env_int_or_default("BN_GPU_COMPARE_FFN_STATE_POS", default_pos);
 }
 
 int bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(int eligible) {

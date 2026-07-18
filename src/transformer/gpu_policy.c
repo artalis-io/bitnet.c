@@ -1620,25 +1620,20 @@ bn_transformer_gpu_decode_entry_policy(
     return policy;
 }
 
-static int gpu_policy_env_int(const char *name, int default_value) {
-    const char *env = getenv(name);
-    return env ? atoi(env) : default_value;
-}
-
 BnTransformerGPUCPUFallbackPolicy
 bn_transformer_gpu_cpu_fallback_policy(void) {
     BnTransformerGPUCPUFallbackPolicy policy = {
-        .layer = gpu_policy_env_int("BN_GPU_CPU_FALLBACK_LAYER", -1),
+        .layer = bn_gpu_policy_cpu_fallback_layer_or_default(-1),
         .from_layer =
-            gpu_policy_env_int("BN_GPU_CPU_FALLBACK_FROM_LAYER", -1),
-        .attn_layer = gpu_policy_env_int("BN_GPU_CPU_ATTN_LAYER", -1),
+            bn_gpu_policy_cpu_fallback_from_layer_or_default(-1),
+        .attn_layer = bn_gpu_policy_cpu_attention_layer_or_default(-1),
         .attn_from_layer =
-            gpu_policy_env_int("BN_GPU_CPU_ATTN_FROM_LAYER", -1),
-        .ffn_layer = gpu_policy_env_int("BN_GPU_CPU_FFN_LAYER", -1),
+            bn_gpu_policy_cpu_attention_from_layer_or_default(-1),
+        .ffn_layer = bn_gpu_policy_cpu_ffn_layer_or_default(-1),
         .ffn_from_layer =
-            gpu_policy_env_int("BN_GPU_CPU_FFN_FROM_LAYER", -1),
+            bn_gpu_policy_cpu_ffn_from_layer_or_default(-1),
         .ffn_down_from_layer =
-            gpu_policy_env_int("BN_GPU_CPU_FFN_DOWN_FROM_LAYER", -1),
+            bn_gpu_policy_cpu_ffn_down_from_layer_or_default(-1),
     };
     return policy;
 }
@@ -1779,21 +1774,21 @@ BnTransformerGPUComparePolicy
 bn_transformer_gpu_compare_policy(void) {
     BnTransformerGPUComparePolicy policy = {
         .attention_layer =
-            gpu_policy_env_int("BN_GPU_COMPARE_ATTENTION_LAYER", -1),
+            bn_gpu_policy_compare_attention_layer_or_default(-1),
         .attention_pos =
-            gpu_policy_env_int("BN_GPU_COMPARE_ATTENTION_POS", -1),
-        .gqa_layer = gpu_policy_env_int("BN_GPU_COMPARE_GQA_LAYER", -1),
-        .gqa_pos = gpu_policy_env_int("BN_GPU_COMPARE_GQA_POS", -1),
-        .qkv_layer = gpu_policy_env_int("BN_GPU_COMPARE_QKV_LAYER", -1),
-        .qkv_pos = gpu_policy_env_int("BN_GPU_COMPARE_QKV_POS", -1),
+            bn_gpu_policy_compare_attention_pos_or_default(-1),
+        .gqa_layer = bn_gpu_policy_compare_gqa_layer_or_default(-1),
+        .gqa_pos = bn_gpu_policy_compare_gqa_pos_or_default(-1),
+        .qkv_layer = bn_gpu_policy_compare_qkv_layer_or_default(-1),
+        .qkv_pos = bn_gpu_policy_compare_qkv_pos_or_default(-1),
         .ffn_down_layer =
-            gpu_policy_env_int("BN_GPU_COMPARE_FFN_DOWN_LAYER", -1),
+            bn_gpu_policy_compare_ffn_down_layer_or_default(-1),
         .ffn_down_pos =
-            gpu_policy_env_int("BN_GPU_COMPARE_FFN_DOWN_POS", -1),
+            bn_gpu_policy_compare_ffn_down_pos_or_default(-1),
         .ffn_state_layer =
-            gpu_policy_env_int("BN_GPU_COMPARE_FFN_STATE_LAYER", -1),
+            bn_gpu_policy_compare_ffn_state_layer_or_default(-1),
         .ffn_state_pos =
-            gpu_policy_env_int("BN_GPU_COMPARE_FFN_STATE_POS", -1),
+            bn_gpu_policy_compare_ffn_state_pos_or_default(-1),
     };
     return policy;
 }
