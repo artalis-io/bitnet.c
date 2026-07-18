@@ -1455,10 +1455,15 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
-    assert(bn_transformer_gpu_cuda_prefill_attention_enabled());
+    assert(bn_transformer_prefill_attention_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_ATTN", "1", 1);
-    assert(!bn_transformer_gpu_cuda_prefill_attention_enabled());
+    assert(!bn_transformer_prefill_attention_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
+    unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+    assert(bn_transformer_prefill_attention_min_tokens() == 16);
+    setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "11", 1);
+    assert(bn_transformer_prefill_attention_min_tokens() == 11);
+    unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
     assert(bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled());

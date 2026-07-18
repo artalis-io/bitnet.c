@@ -223,6 +223,14 @@ int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
                                                              n_tokens);
 }
 
+int bn_transformer_prefill_attention_min_tokens(void) {
+    return bn_transformer_gpu_cuda_prefill_attention_min_tokens();
+}
+
+int bn_transformer_prefill_attention_enabled(void) {
+    return bn_transformer_gpu_cuda_prefill_attention_enabled();
+}
+
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,

@@ -342,6 +342,8 @@ bn_transformer_prefill_raw_attention_policy(
     int has_attn_sub_norm,
     int uses_post_norm,
     int has_attn_post_norm);
+int bn_transformer_prefill_attention_min_tokens(void);
+int bn_transformer_prefill_attention_enabled(void);
 BnTransformerPrefillRawAttentionCallPolicy
 bn_transformer_prefill_raw_attention_call_policy(
     BnTransformerPrefillRawAttentionPolicy policy);
