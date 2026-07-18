@@ -379,6 +379,12 @@ int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
     return bn_model_arch_allows_small_dense_exact_q4_q8(c);
 }
 
+int bn_model_arch_small_dense_exact_q4_q8_to_layer(const BnConfig *c) {
+    if (!c || c->n_layers <= 33)
+        return -1;
+    return c->n_layers - 33 - 1;
+}
+
 int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE) != 0) &&
            bn_model_arch_allows_small_dense_exact_q4_q8(c);

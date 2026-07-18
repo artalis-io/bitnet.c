@@ -161,6 +161,7 @@ int bn_model_arch_uses_full_rope_text_dims(const char *arch);
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model);
 int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c);
+int bn_model_arch_small_dense_exact_q4_q8_to_layer(const BnConfig *c);
 int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c);
 int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c);

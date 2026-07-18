@@ -2315,6 +2315,7 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_q4_q8_decode_policy(&gpu, &c, &q4_q8_layer);
     assert(q4_q8_decode.small_dense_exact_default);
     c.n_layers = 61;
+    assert(bn_model_arch_small_dense_exact_q4_q8_to_layer(&c) == 27);
     q4_q8_decode =
         bn_transformer_gpu_q4_q8_decode_policy(&gpu, &c, &q4_q8_layer);
     assert(q4_q8_decode.small_dense_exact_default);
@@ -2333,6 +2334,7 @@ static void test_gpu_policy_helpers(void) {
                &c, 1, 9) == 9);
     q4_q8_layer.to_layer = -1;
     c.n_layers = 33;
+    assert(bn_model_arch_small_dense_exact_q4_q8_to_layer(&c) == -1);
     q4_q8_decode =
         bn_transformer_gpu_q4_q8_decode_policy(&gpu, &c, &q4_q8_layer);
     assert(q4_q8_decode.small_dense_exact_to_layer == -1);
