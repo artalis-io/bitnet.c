@@ -925,6 +925,13 @@ int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
                c, map, dim, allow_q4_down);
 }
 
+int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+    const BnGPUBackend *gpu,
+    int n_tokens) {
+    return bn_transformer_gpu_moe_prefill_tokens_allowed(gpu, n_tokens) &&
+           gpu->dense_ffn_batch;
+}
+
 int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
     return bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled();
 }

@@ -574,8 +574,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         t0 = bn_moe_time_ms();
         int used_gpu_expert = 0;
         BnGPUBackend *gpu = bn_model_gpu(m);
-        if (bn_transformer_gpu_moe_prefill_tokens_allowed(gpu, T) &&
-            gpu->dense_ffn_batch) {
+        if (bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+                gpu, T)) {
             BnGPUMoETemporaryBuffers temps;
             BnGPUMoEExpertBuffers expert_gpu;
             memset(&temps, 0, sizeof(temps));

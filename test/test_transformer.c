@@ -1787,6 +1787,22 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_split_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 1));
+    assert(bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+        &gpu, 1));
+    setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "4", 1);
+    assert(!bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+        &gpu, 3));
+    assert(bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+        &gpu, 4));
+    gpu.dense_ffn_batch = NULL;
+    assert(!bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+        &gpu, 4));
+    gpu.dense_ffn_batch = mock_dense_ffn_batch;
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_moe_prefill_single_expert_batch_available(
+        &gpu, 4));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     c.n_experts = 3;
     assert(!bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
