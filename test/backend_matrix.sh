@@ -125,6 +125,11 @@ if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same
     fail=1
 fi
 
+if grep -n 'map->up_type == map->gate_type\|map->gate_type == map->up_type' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU policy must use stacked gate/up quant compatibility helpers for MoE split policy"
+    fail=1
+fi
+
 if grep -n 'attn\.wq\.rows ==\|attn\.wk\.rows ==\|attn\.wq\.cols == .*attn\.wk\.cols' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for stacked Q/K shape compatibility"
     fail=1
@@ -452,6 +457,11 @@ fi
 
 if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_cpu_kernels.c >/dev/null 2>&1; then
     echo "MoE CPU kernels must use MoE policy helpers for preq8k quant capability"
+    fail=1
+fi
+
+if grep -n 'shared_gate_type != batch_type\|shared_up_type != batch_type' src/moe_cpu_kernels.c >/dev/null 2>&1; then
+    echo "MoE CPU kernels must use MoE policy helpers for ISA-specific shared gate/up batch compatibility"
     fail=1
 fi
 

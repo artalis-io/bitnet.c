@@ -231,7 +231,8 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     if (!map || !bn_gpu_quant_split_op_is_q4k(split_op_code))
         return 0;
     return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
-           map->up_type == map->gate_type &&
+           bn_transformer_gpu_stacked_pair_same_format(map->up_type,
+                                                       map->gate_type) &&
            map->gate_rows == map->up_rows &&
            map->gate_cols == map->up_cols;
 }
