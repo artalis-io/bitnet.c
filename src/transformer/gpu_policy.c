@@ -1366,6 +1366,24 @@ bn_transformer_gpu_q4_q8_layer_use_policy(
     return use;
 }
 
+BnTransformerGPUCachedDecodePolicy
+bn_transformer_gpu_cached_decode_policy(
+    int cached_op_count,
+    int argmax_requested,
+    int cached_has_logits,
+    int matvec_argmax_available) {
+    BnTransformerGPUCachedDecodePolicy policy = {0};
+    policy.use_cache = cached_op_count > 0;
+    policy.clear_cache =
+        policy.use_cache &&
+        argmax_requested &&
+        !cached_has_logits &&
+        !matvec_argmax_available;
+    if (policy.clear_cache)
+        policy.use_cache = 0;
+    return policy;
+}
+
 BnTransformerGPUMoERouteLayerPolicy
 bn_transformer_gpu_moe_route_layer_policy(void) {
     static int init = 0;

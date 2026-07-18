@@ -922,15 +922,18 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int cached_n = cacheable_decode
         ? bn_backend_session_gpu_cached_op_count(sess->backend)
         : 0;
-    if (argmax_token && cached_n > 0 &&
-        !bn_backend_session_gpu_cached_has_logits(sess->backend) &&
-        !use_matvec_argmax) {
-        bn_backend_session_clear_gpu_cached_ops(sess->backend);
-        cached_n = 0;
-    }
     int cached_has_logits = cached_n > 0 &&
         bn_backend_session_gpu_cached_has_logits(sess->backend);
-    if (cached_n > 0 && cached_n <= command_cap) {
+    BnTransformerGPUCachedDecodePolicy cached_decode =
+        bn_transformer_gpu_cached_decode_policy(
+            cached_n, argmax_token != NULL, cached_has_logits,
+            use_matvec_argmax);
+    if (cached_decode.clear_cache) {
+        bn_backend_session_clear_gpu_cached_ops(sess->backend);
+        cached_n = 0;
+        cached_has_logits = 0;
+    }
+    if (cached_decode.use_cache && cached_n <= command_cap) {
         if (gpu_patch_cached_decode_ops((BnGPUOp *)command_buffer, cached_n,
                                         c, pos) == 0 &&
             bn_transformer_gpu_execute_ops(

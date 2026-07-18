@@ -1611,6 +1611,23 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     c.policy_flags = 0;
 
+    BnTransformerGPUCachedDecodePolicy cached_decode =
+        bn_transformer_gpu_cached_decode_policy(0, 1, 0, 0);
+    assert(!cached_decode.use_cache);
+    assert(!cached_decode.clear_cache);
+    cached_decode = bn_transformer_gpu_cached_decode_policy(4, 0, 0, 0);
+    assert(cached_decode.use_cache);
+    assert(!cached_decode.clear_cache);
+    cached_decode = bn_transformer_gpu_cached_decode_policy(4, 1, 1, 0);
+    assert(cached_decode.use_cache);
+    assert(!cached_decode.clear_cache);
+    cached_decode = bn_transformer_gpu_cached_decode_policy(4, 1, 0, 1);
+    assert(cached_decode.use_cache);
+    assert(!cached_decode.clear_cache);
+    cached_decode = bn_transformer_gpu_cached_decode_policy(4, 1, 0, 0);
+    assert(!cached_decode.use_cache);
+    assert(cached_decode.clear_cache);
+
     setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
     setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
     gpu.caps = BN_GPU_CAP_FLASH_ATTN;
