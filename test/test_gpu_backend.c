@@ -1845,6 +1845,20 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 1, 0));
     assert(bn_gpu_policy_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 1));
+    assert(bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 1, 1));
+    assert(bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 1, 1));
+    assert(!bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 1, 0, 1, 1));
+    assert(!bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q6_K, 1, 0, 0, 1, 1));
+    assert(!bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q4_0, 0, 0, 0, 1, 1));
+    assert(!bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 0, 1));
+    assert(!bn_gpu_policy_metal_q4_q8_graph_path_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 1, 0));
     assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 1, 0, 1, 1, 0));
     assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(

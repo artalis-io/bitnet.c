@@ -761,6 +761,20 @@ int bn_gpu_policy_metal_q4_q8_matvec_supported(
         : has_q4_q8_pipeline;
 }
 
+int bn_gpu_policy_metal_q4_q8_graph_path_supported(
+    int tensor_type,
+    int q4_q8_enabled,
+    int q4_prepared,
+    int prepared_path,
+    int has_q8_quant_pipeline,
+    int has_pipeline) {
+    return q4_prepared == prepared_path &&
+           q4_q8_enabled &&
+           bn_backend_quant_metal_q4_q8_matvec_supported(tensor_type) &&
+           has_q8_quant_pipeline &&
+           has_pipeline;
+}
+
 int bn_gpu_policy_metal_q6_q8k_matvec_supported(
     int tensor_type,
     int cols,
