@@ -535,17 +535,20 @@ int bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled(void);
 int bn_transformer_gpu_cuda_moe_prefill_enabled(void);
 int bn_transformer_gpu_moe_prefill_enabled(void);
 int bn_transformer_gpu_cuda_moe_prefill_min_tokens(void);
+int bn_transformer_gpu_moe_prefill_min_tokens(void);
 int bn_transformer_gpu_moe_prefill_backend_available(
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_moe_prefill_tokens_allowed(
     const BnGPUBackend *gpu,
     int n_tokens);
 int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void);
+int bn_transformer_gpu_moe_cache_prefill_enabled(void);
 int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int gpu_moe_cache_available);
 int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void);
+int bn_transformer_gpu_moe_prefill_shared_fuse_enabled(void);
 int bn_transformer_gpu_moe_prefill_shared_batch_available(
     const BnGPUBackend *gpu,
     int n_tokens,

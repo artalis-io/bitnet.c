@@ -985,15 +985,15 @@ int bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
         gpu, c, n_tokens);
 }
 
-int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void) {
+int bn_transformer_gpu_prefill_dense_chain_enabled(void) {
     return bn_gpu_policy_cuda_prefill_dense_chain_enabled();
 }
 
-int bn_transformer_gpu_prefill_dense_chain_enabled(void) {
-    return bn_transformer_gpu_cuda_prefill_dense_chain_enabled();
+int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void) {
+    return bn_transformer_gpu_prefill_dense_chain_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
+int bn_transformer_gpu_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
     return bn_gpu_policy_cuda_prefill_hybrid_chain_enabled() &&
@@ -1001,62 +1001,66 @@ int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
                gpu, c);
 }
 
-int bn_transformer_gpu_prefill_hybrid_chain_enabled(
+int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(gpu, c);
-}
-
-int bn_transformer_gpu_cuda_prefill_attention_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_attention_enabled();
+    return bn_transformer_gpu_prefill_hybrid_chain_enabled(gpu, c);
 }
 
 int bn_transformer_gpu_prefill_attention_enabled(void) {
-    return bn_transformer_gpu_cuda_prefill_attention_enabled();
+    return bn_gpu_policy_cuda_prefill_attention_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_ssm_run_chain_enabled();
+int bn_transformer_gpu_cuda_prefill_attention_enabled(void) {
+    return bn_transformer_gpu_prefill_attention_enabled();
 }
 
 int bn_transformer_gpu_prefill_ssm_run_chain_enabled(void) {
-    return bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled();
+    return bn_gpu_policy_cuda_prefill_ssm_run_chain_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void) {
-    return bn_gpu_policy_cuda_prefill_ssm_ffn_fuse_allowed();
+int bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled(void) {
+    return bn_transformer_gpu_prefill_ssm_run_chain_enabled();
 }
 
 int bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed(void) {
-    return bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed();
+    return bn_gpu_policy_cuda_prefill_ssm_ffn_fuse_allowed();
 }
 
-int bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_moe_chain_debug_enabled();
+int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void) {
+    return bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed();
 }
 
 int bn_transformer_gpu_prefill_moe_chain_debug_enabled(void) {
-    return bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled();
+    return bn_gpu_policy_cuda_prefill_moe_chain_debug_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_hybrid_chain_debug_enabled();
+int bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled(void) {
+    return bn_transformer_gpu_prefill_moe_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_prefill_hybrid_chain_debug_enabled(void) {
-    return bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled();
+    return bn_gpu_policy_cuda_prefill_hybrid_chain_debug_enabled();
 }
 
-int bn_transformer_gpu_cuda_moe_prefill_enabled(void) {
-    return bn_gpu_policy_cuda_moe_prefill_enabled();
+int bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled(void) {
+    return bn_transformer_gpu_prefill_hybrid_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_enabled(void) {
-    return bn_transformer_gpu_cuda_moe_prefill_enabled();
+    return bn_gpu_policy_cuda_moe_prefill_enabled();
+}
+
+int bn_transformer_gpu_cuda_moe_prefill_enabled(void) {
+    return bn_transformer_gpu_moe_prefill_enabled();
+}
+
+int bn_transformer_gpu_moe_prefill_min_tokens(void) {
+    return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
 }
 
 int bn_transformer_gpu_cuda_moe_prefill_min_tokens(void) {
-    return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
+    return bn_transformer_gpu_moe_prefill_min_tokens();
 }
 
 int bn_transformer_gpu_moe_prefill_backend_available(
@@ -1068,11 +1072,15 @@ int bn_transformer_gpu_moe_prefill_tokens_allowed(
     const BnGPUBackend *gpu,
     int n_tokens) {
     return bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           n_tokens >= bn_transformer_gpu_cuda_moe_prefill_min_tokens();
+           n_tokens >= bn_transformer_gpu_moe_prefill_min_tokens();
+}
+
+int bn_transformer_gpu_moe_cache_prefill_enabled(void) {
+    return bn_gpu_policy_cuda_moe_cache_prefill_enabled();
 }
 
 int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void) {
-    return bn_gpu_policy_cuda_moe_cache_prefill_enabled();
+    return bn_transformer_gpu_moe_cache_prefill_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
@@ -1082,11 +1090,15 @@ int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
     return gpu_moe_cache_available &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
            bn_model_arch_uses_two_expert_all_active_moe(c) &&
-           bn_transformer_gpu_cuda_moe_cache_prefill_enabled();
+           bn_transformer_gpu_moe_cache_prefill_enabled();
+}
+
+int bn_transformer_gpu_moe_prefill_shared_fuse_enabled(void) {
+    return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void) {
-    return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
+    return bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_shared_batch_available(
@@ -1096,7 +1108,7 @@ int bn_transformer_gpu_moe_prefill_shared_batch_available(
     return backend_available &&
            bn_transformer_gpu_moe_prefill_tokens_allowed(gpu, n_tokens) &&
            gpu->dense_ffn_batch &&
-           bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled();
+           bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
@@ -1109,15 +1121,15 @@ int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
            c->has_shared_expert &&
            lw->shared.shared_gate.data &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled();
-}
-
-int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
-    return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
+           bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_moe_route_batch_debug_enabled(void) {
-    return bn_transformer_gpu_cuda_moe_route_batch_debug_enabled();
+    return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
+}
+
+int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
+    return bn_transformer_gpu_moe_route_batch_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_route_batch_available(
