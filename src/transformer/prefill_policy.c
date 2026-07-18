@@ -324,6 +324,15 @@ bn_transformer_prefill_kv_upload_policy(
     return policy;
 }
 
+BnTransformerPrefillChainKVPolicy
+bn_transformer_prefill_chain_kv_policy(
+    int direct_gpu_kv_requested) {
+    BnTransformerPrefillChainKVPolicy policy = {0};
+    policy.write_host_kv = !direct_gpu_kv_requested;
+    policy.mark_direct_valid = direct_gpu_kv_requested;
+    return policy;
+}
+
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

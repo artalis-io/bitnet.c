@@ -3580,6 +3580,14 @@ static void test_block_planning(void) {
     kv_upload = bn_transformer_prefill_kv_upload_policy(1, 1);
     assert(!kv_upload.upload);
 
+    BnTransformerPrefillChainKVPolicy chain_kv =
+        bn_transformer_prefill_chain_kv_policy(0);
+    assert(chain_kv.write_host_kv);
+    assert(!chain_kv.mark_direct_valid);
+    chain_kv = bn_transformer_prefill_chain_kv_policy(1);
+    assert(!chain_kv.write_host_kv);
+    assert(chain_kv.mark_direct_valid);
+
     const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
     c.policy_flags = 0;
     assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==

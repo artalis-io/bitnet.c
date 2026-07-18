@@ -1514,9 +1514,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
         }
         if (chain_ready) {
-            int direct_gpu_kv =
-                bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-                    c, w, bn_model_gpu(m), pos0, n_tokens);
+            BnTransformerPrefillChainKVPolicy chain_kv =
+                bn_transformer_prefill_chain_kv_policy(
+                    bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+                        c, w, bn_model_gpu(m), pos0, n_tokens));
             sess->gpu_kv_direct_valid = 0;
             t_prof = prefill_profile_now(&prof);
             for (int l = 0; l < c->n_layers; l++) {
@@ -1551,8 +1552,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 int layer_rc = layer_kind.uses_moe
                     ? prefill_moe_layer_gpu_batch(
                           m, layer_out, lw, layer_in,
-                          direct_gpu_kv ? NULL : K_new,
-                          direct_gpu_kv ? NULL : V_new,
+                          chain_kv.write_host_kv ? K_new : NULL,
+                          chain_kv.write_host_kv ? V_new : NULL,
                           n_tokens, dim, c->moe_intermediate_size,
                           c->n_heads, layer_n_kv_heads, layer_head_size,
                           layer_kv_mul, layer_kv_dim, layer_rope_dims,
@@ -1560,8 +1561,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                           prefill_attention_scale(c, layer_head_size))
                     : prefill_dense_layer_gpu_batch(
                           m, layer_out, lw, layer_in,
-                          direct_gpu_kv ? NULL : K_new,
-                          direct_gpu_kv ? NULL : V_new, n_tokens,
+                          chain_kv.write_host_kv ? K_new : NULL,
+                          chain_kv.write_host_kv ? V_new : NULL, n_tokens,
                           dim, hidden_dim, c->n_heads, layer_n_kv_heads,
                           layer_head_size, layer_kv_mul, layer_kv_dim,
                           layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
@@ -1570,7 +1571,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     sh_arena_free(pf_arena);
                     return NULL;
                 }
-                if (!direct_gpu_kv) {
+                if (chain_kv.write_host_kv) {
                     for (int t = 0; t < n_tokens; t++) {
                         int pos = pos0 + t;
                         int cache_pos = pos % c->seq_len;
@@ -1587,7 +1588,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     }
                 }
             }
-            if (direct_gpu_kv)
+            if (chain_kv.mark_direct_valid)
                 sess->gpu_kv_direct_valid = 1;
             prefill_profile_add(&prof.qkv_ms, t_prof);
             goto prefill_layers_done;
@@ -1633,9 +1634,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             }
         }
         if (chain_ready) {
-            int direct_gpu_kv =
-                bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-                    c, w, bn_model_gpu(m), pos0, n_tokens);
+            BnTransformerPrefillChainKVPolicy chain_kv =
+                bn_transformer_prefill_chain_kv_policy(
+                    bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+                        c, w, bn_model_gpu(m), pos0, n_tokens));
             sess->gpu_kv_direct_valid = 0;
             t_prof = prefill_profile_now(&prof);
             for (int l = 0; l < c->n_layers; l++) {
@@ -1662,8 +1664,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int layer_rc = layer_kind.uses_moe
                         ? prefill_moe_layer_gpu_batch(
                               m, layer_out, lw, layer_in,
-                              direct_gpu_kv ? NULL : K_new,
-                              direct_gpu_kv ? NULL : V_new,
+                              chain_kv.write_host_kv ? K_new : NULL,
+                              chain_kv.write_host_kv ? V_new : NULL,
                               n_tokens, dim, c->moe_intermediate_size,
                               c->n_heads, layer_n_kv_heads, layer_head_size,
                               layer_kv_mul, layer_kv_dim, layer_rope_dims, l,
@@ -1671,8 +1673,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                               prefill_attention_scale(c, layer_head_size))
                         : prefill_dense_layer_gpu_batch(
                               m, layer_out, lw, layer_in,
-                              direct_gpu_kv ? NULL : K_new,
-                              direct_gpu_kv ? NULL : V_new, n_tokens,
+                              chain_kv.write_host_kv ? K_new : NULL,
+                              chain_kv.write_host_kv ? V_new : NULL,
+                              n_tokens,
                               dim, hidden_dim, c->n_heads, layer_n_kv_heads,
                               layer_head_size, layer_kv_mul, layer_kv_dim,
                               layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
@@ -1681,7 +1684,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         sh_arena_free(pf_arena);
                         return NULL;
                     }
-                    if (!direct_gpu_kv) {
+                    if (chain_kv.write_host_kv) {
                         for (int t = 0; t < n_tokens; t++) {
                             int pos = pos0 + t;
                             int cache_pos = pos % c->seq_len;
@@ -1733,7 +1736,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     }
                 }
             }
-            if (direct_gpu_kv)
+            if (chain_kv.mark_direct_valid)
                 sess->gpu_kv_direct_valid = 1;
             prefill_profile_add(&prof.qkv_ms, t_prof);
             goto prefill_layers_done;

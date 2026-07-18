@@ -90,6 +90,11 @@ typedef struct {
 } BnTransformerPrefillKVUploadPolicy;
 
 typedef struct {
+    int write_host_kv;
+    int mark_direct_valid;
+} BnTransformerPrefillChainKVPolicy;
+
+typedef struct {
     int use_batched_attention;
 } BnTransformerPrefillAttentionModePolicy;
 
@@ -274,6 +279,9 @@ BnTransformerPrefillKVUploadPolicy
 bn_transformer_prefill_kv_upload_policy(
     int gpu_attached,
     int gpu_kv_direct_valid);
+BnTransformerPrefillChainKVPolicy
+bn_transformer_prefill_chain_kv_policy(
+    int direct_gpu_kv_requested);
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,
