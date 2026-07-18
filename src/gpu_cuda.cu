@@ -18101,7 +18101,7 @@ static void cuda_debug_scan_activation(BnCudaCtx *ctx, int buf,
         if (v < min_v) min_v = v;
         if (v > max_v) max_v = v;
     }
-    if (bad || getenv("BN_CUDA_DEBUG_NAN_VERBOSE")) {
+    if (bad || bn_gpu_policy_cuda_nan_verbose_debug_enabled()) {
         fprintf(stderr,
                 "[bn:gpu:cuda:nan] op=%d %s buf=%d n=%zu bad=%d first=%zu "
                 "min=%.9g max=%.9g first_v=%.9g\n",
@@ -18275,16 +18275,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const BnGPUOp *ops = (const BnGPUOp *)ops_raw;
     if (!ctx || !ops || n_ops <= 0) return -1;
     if (cuda_ctx_set_device(ctx) != 0) return -1;
-    ctx->exec_stream = getenv("BN_CUDA_DISABLE_STREAM_EXEC")
-        ? (cudaStream_t)0
-        : ctx->stream;
+    ctx->exec_stream =
+        bn_gpu_policy_cuda_stream_exec_enabled() ? ctx->stream : (cudaStream_t)0;
 
-    const int profile = getenv("BN_CUDA_PROFILE") != NULL;
-    const int profile_wall = getenv("BN_CUDA_PROFILE_WALL") != NULL;
-    const int debug_exec_fail = getenv("BN_CUDA_DEBUG_EXEC_FAIL") != NULL;
+    const int profile = bn_gpu_policy_cuda_profile_enabled();
+    const int profile_wall = bn_gpu_policy_cuda_wall_profile_enabled();
+    const int debug_exec_fail = bn_gpu_policy_cuda_exec_fail_debug_enabled();
     const int debug_sync_each_op =
-        getenv("BN_CUDA_DEBUG_SYNC_EACH_OP") != NULL;
-    const int debug_nan = getenv("BN_CUDA_DEBUG_NAN") != NULL;
+        bn_gpu_policy_cuda_sync_each_op_debug_enabled();
+    const int debug_nan = bn_gpu_policy_cuda_nan_debug_enabled();
     static unsigned long long profile_calls = 0;
     static unsigned long long profile_ops[BN_CUDA_PROFILE_MAX] = {0};
     static double profile_ms[BN_CUDA_PROFILE_MAX] = {0.0};
@@ -18313,9 +18312,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         cudaEventCreate(&ev_stop);
     }
 
-    if (getenv("BN_CUDA_DUMP_OPS") && n_ops > 0) {
+    if (bn_gpu_policy_cuda_dump_ops_enabled() && n_ops > 0) {
         static int dumped = 0;
-        if (!dumped || getenv("BN_CUDA_DUMP_OPS_EVERY")) {
+        if (!dumped || bn_gpu_policy_cuda_dump_ops_every_enabled()) {
             int dump_limit = cuda_env_int("BN_CUDA_DUMP_OPS_LIMIT", 256);
             if (dump_limit <= 0 || dump_limit > n_ops) dump_limit = n_ops;
             int limit = n_ops < dump_limit ? n_ops : dump_limit;

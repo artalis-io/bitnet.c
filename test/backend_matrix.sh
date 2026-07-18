@@ -400,6 +400,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_EN
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DEBUG_NAN_VERBOSE")\|getenv("BN_CUDA_DISABLE_STREAM_EXEC")\|getenv("BN_CUDA_PROFILE")\|getenv("BN_CUDA_PROFILE_WALL")\|getenv("BN_CUDA_DEBUG_EXEC_FAIL")\|getenv("BN_CUDA_DEBUG_SYNC_EACH_OP")\|getenv("BN_CUDA_DEBUG_NAN")\|getenv("BN_CUDA_DUMP_OPS")\|getenv("BN_CUDA_DUMP_OPS_EVERY")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA execution debug/profile env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_[^"]*QWEN\|gpu_env_enabled("BN_CUDA_[^"]*QWEN\|gpu_env_value("BN_CUDA_[^"]*QWEN\|gpu_policy_env_int("BN_CUDA_[^"]*QWEN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1

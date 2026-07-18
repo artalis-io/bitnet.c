@@ -708,6 +708,42 @@ int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_CUBLAS_CACHE") != NULL;
 }
 
+int bn_gpu_policy_cuda_nan_verbose_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_NAN_VERBOSE") != NULL;
+}
+
+int bn_gpu_policy_cuda_stream_exec_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_STREAM_EXEC") == NULL;
+}
+
+int bn_gpu_policy_cuda_profile_enabled(void) {
+    return getenv("BN_CUDA_PROFILE") != NULL;
+}
+
+int bn_gpu_policy_cuda_wall_profile_enabled(void) {
+    return getenv("BN_CUDA_PROFILE_WALL") != NULL;
+}
+
+int bn_gpu_policy_cuda_exec_fail_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_EXEC_FAIL") != NULL;
+}
+
+int bn_gpu_policy_cuda_sync_each_op_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_SYNC_EACH_OP") != NULL;
+}
+
+int bn_gpu_policy_cuda_nan_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_NAN") != NULL;
+}
+
+int bn_gpu_policy_cuda_dump_ops_enabled(void) {
+    return getenv("BN_CUDA_DUMP_OPS") != NULL;
+}
+
+int bn_gpu_policy_cuda_dump_ops_every_enabled(void) {
+    return getenv("BN_CUDA_DUMP_OPS_EVERY") != NULL;
+}
+
 int bn_gpu_policy_cuda_prefill_moe_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER") != NULL;
 }
