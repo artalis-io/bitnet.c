@@ -962,6 +962,11 @@ if grep -n 'ssm\.wqkv\.cols ==\|ssm\.wqkv\.rows == .*2 \*' src/transformer/gpu_e
     fail=1
 fi
 
+if grep -n 'p->q_wide = .*attn\.wq\.rows\|!p->q_gated && lw->attn\.wq\.data' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer planning must use wide-Q projection policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \

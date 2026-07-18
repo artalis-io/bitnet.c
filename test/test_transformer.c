@@ -2880,6 +2880,20 @@ static void test_layer_shape_planning(void) {
     assert(p.head_size == 192);
     assert(p.kv_dim == 768);
     assert(p.kv_mode == BN_KV_TQ);
+    assert(bn_transformer_attention_q_projection_is_wide(
+        &lw.attn.wq, c.dim, p.q_dim));
+    lw.attn.wq.rows = 4096;
+    assert(!bn_transformer_attention_q_projection_is_wide(
+        &lw.attn.wq, c.dim, p.q_dim));
+    lw.attn.wq.rows = c.dim;
+    assert(!bn_transformer_attention_q_projection_is_wide(
+        &lw.attn.wq, c.dim, p.q_dim));
+    lw.attn.wq.data = NULL;
+    lw.attn.wq.rows = 3072;
+    assert(!bn_transformer_attention_q_projection_is_wide(
+        &lw.attn.wq, c.dim, p.q_dim));
+    lw.attn.wq.data = (void *)1;
+    lw.attn.wq.rows = 3072;
 
     c.full_attn_interval = 4;
     c.kv_tq_bits = 0;

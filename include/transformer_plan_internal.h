@@ -213,6 +213,9 @@ int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,
                                         int kv_dim);
+int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
+                                                  int model_dim,
+                                                  int q_dim);
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled);
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,

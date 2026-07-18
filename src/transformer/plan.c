@@ -50,6 +50,14 @@ int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
            qkv->rows == q_dim + 2 * kv_dim;
 }
 
+int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
+                                                  int model_dim,
+                                                  int q_dim) {
+    return wq && wq->data &&
+           wq->rows <= q_dim &&
+           wq->rows != model_dim;
+}
+
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {
     if (c->kv_tq_bits > 0 && tq_enabled) return BN_KV_TQ;
     if (c->kv_f16) return BN_KV_FP16;
@@ -72,7 +80,8 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
     p->kv_mul = lw->attn.kv_mul > 0 ? lw->attn.kv_mul : c->kv_mul;
     p->q_dim = c->n_heads * p->head_size;
     p->q_gated = lw->attn.wq.data && lw->attn.wq.rows > p->q_dim;
-    p->q_wide = !p->q_gated && lw->attn.wq.data && lw->attn.wq.rows != c->dim;
+    p->q_wide = bn_transformer_attention_q_projection_is_wide(
+        &lw->attn.wq, c->dim, p->q_dim);
     p->qk_stride = c->qk_norm_per_head ? p->head_size : 0;
     p->has_qk_norm = (lw->attn.q_norm || lw->attn.k_norm) ? 1 : 0;
     p->has_bias = (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias) ? 1 : 0;
