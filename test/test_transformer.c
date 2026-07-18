@@ -2213,6 +2213,17 @@ static void test_gpu_policy_helpers(void) {
     c.moe_intermediate_size = 4096;
     assert(!bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
         &c, (void *)1, (void *)3));
+    BnTransformerGPUMoEAll2ResourcePolicy all2_resources =
+        bn_transformer_gpu_moe_all2_resource_policy(&c);
+    assert(all2_resources.enabled);
+    c.dim = 2049;
+    all2_resources = bn_transformer_gpu_moe_all2_resource_policy(&c);
+    assert(!all2_resources.enabled);
+    c.dim = 2048;
+    c.n_experts_active = 1;
+    all2_resources = bn_transformer_gpu_moe_all2_resource_policy(&c);
+    assert(!all2_resources.enabled);
+    c.n_experts_active = 2;
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
 
     printf("PASSED\n");

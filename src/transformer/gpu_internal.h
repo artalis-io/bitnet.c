@@ -153,6 +153,10 @@ typedef struct {
 } BnTransformerGPUMoEDirectRoutePolicy;
 
 typedef struct {
+    int enabled;
+} BnTransformerGPUMoEAll2ResourcePolicy;
+
+typedef struct {
     int q6_default;
     int q6_enabled;
     int q6_captures_xb;
@@ -576,6 +580,8 @@ bn_transformer_gpu_moe_direct_route_policy(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);
+BnTransformerGPUMoEAll2ResourcePolicy
+bn_transformer_gpu_moe_all2_resource_policy(const BnConfig *c);
 int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
