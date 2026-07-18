@@ -736,6 +736,35 @@ int bn_gpu_policy_metal_q8_barriers_enabled(void) {
     return getenv("BN_METAL_Q8_BARRIERS") != NULL;
 }
 
+int bn_gpu_policy_metal_q4_q8_matvec_supported(
+    int tensor_type,
+    int q4_q8_enabled,
+    int q4_prepared,
+    int has_q8_quant_pipeline,
+    int has_q4_q8_pipeline,
+    int has_q4_prepared_q8_pipeline) {
+    if (!q4_q8_enabled ||
+        !bn_backend_quant_metal_q4_q8_matvec_supported(tensor_type) ||
+        !has_q8_quant_pipeline)
+        return 0;
+    return q4_prepared
+        ? has_q4_prepared_q8_pipeline
+        : has_q4_q8_pipeline;
+}
+
+int bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    int tensor_type,
+    int cols,
+    int has_q8k_quant_pipeline,
+    int has_q6_q8k_pipeline) {
+    return bn_gpu_policy_metal_q6_q8k_enabled() &&
+           bn_backend_quant_metal_q6_q8k_matvec_supported(tensor_type) &&
+           has_q8k_quant_pipeline &&
+           has_q6_q8k_pipeline &&
+           cols > 0 &&
+           (cols % 256) == 0;
+}
+
 int bn_gpu_policy_metal_cpu_order_rmsnorm_enabled(void) {
     return getenv("BN_METAL_CPU_ORDER_RMSNORM") != NULL;
 }

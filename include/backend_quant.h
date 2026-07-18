@@ -287,6 +287,14 @@ static inline int bn_backend_quant_cuda_cublas_aux_cache_supported(int type) {
     return bn_quant_format_cuda_cublas_aux_cache_supported(type);
 }
 
+static inline int bn_backend_quant_metal_q4_q8_matvec_supported(int type) {
+    return bn_quant_format_metal_q4_q8_matvec_supported(type);
+}
+
+static inline int bn_backend_quant_metal_q6_q8k_matvec_supported(int type) {
+    return bn_quant_format_metal_q6_q8k_matvec_supported(type);
+}
+
 static inline int bn_backend_quant_cuda_matvec_type_disabled(int type) {
     return bn_quant_policy_cuda_matvec_type_disabled(type);
 }

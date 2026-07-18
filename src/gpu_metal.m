@@ -1048,17 +1048,16 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t x_size = (size_t)cols * sizeof(float);
     size_t out_size = (size_t)rows * sizeof(float);
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
-    int use_q4_prepared_q8 = ctx->q4_q8_enabled && type == BN_GGUF_TENSOR_Q4_0 &&
-                    wbuf->q4_prepared &&
-                    ctx->q8_quant_pipeline &&
-                    ctx->q4_prepared_q8_matvec_pipeline;
-    int use_q4_q8 = ctx->q4_q8_enabled && type == BN_GGUF_TENSOR_Q4_0 &&
-                    !wbuf->q4_prepared &&
-                    ctx->q8_quant_pipeline && ctx->q4_q8_matvec_pipeline;
-    int use_q6_q8k = type == BN_GGUF_TENSOR_Q6_K &&
-                     bn_gpu_policy_metal_q6_q8k_enabled() &&
-                     ctx->q8k_quant_pipeline && ctx->q6_q8k_matvec_pipeline &&
-                     (cols % 256) == 0;
+    int use_q4_prepared_q8 = bn_gpu_policy_metal_q4_q8_matvec_supported(
+        type, ctx->q4_q8_enabled, wbuf->q4_prepared,
+        ctx->q8_quant_pipeline != nil, 0,
+        ctx->q4_prepared_q8_matvec_pipeline != nil);
+    int use_q4_q8 = bn_gpu_policy_metal_q4_q8_matvec_supported(
+        type, ctx->q4_q8_enabled, wbuf->q4_prepared,
+        ctx->q8_quant_pipeline != nil, ctx->q4_q8_matvec_pipeline != nil, 0);
+    int use_q6_q8k = bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        type, cols, ctx->q8k_quant_pipeline != nil,
+        ctx->q6_q8k_matvec_pipeline != nil);
     if (wbuf->q4_prepared && !use_q4_prepared_q8) return -1;
     if ((use_q4_prepared_q8 || use_q4_q8) &&
         ensure_q8_scratch(ctx, cols, 1) != 0) return -1;

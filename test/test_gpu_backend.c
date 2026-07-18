@@ -1779,8 +1779,20 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_metal_shared_weights_enabled());
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
     assert(!bn_gpu_policy_metal_q6_q8k_enabled());
+    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        BN_GGUF_TENSOR_Q6_K, 256, 1, 1));
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
     assert(bn_gpu_policy_metal_q6_q8k_enabled());
+    assert(bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        BN_GGUF_TENSOR_Q6_K, 256, 1, 1));
+    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        BN_GGUF_TENSOR_Q4_K, 256, 1, 1));
+    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        BN_GGUF_TENSOR_Q6_K, 128, 1, 1));
+    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        BN_GGUF_TENSOR_Q6_K, 256, 0, 1));
+    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+        BN_GGUF_TENSOR_Q6_K, 256, 1, 0));
     unsetenv("BN_METAL_Q8_BARRIERS");
     assert(!bn_gpu_policy_metal_q8_barriers_enabled());
     setenv("BN_METAL_Q8_BARRIERS", "1", 1);
@@ -1819,8 +1831,22 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == -1);
     assert(!bn_gpu_policy_metal_q4_prepared_enabled());
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());
+    assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q4_0, 0, 0, 1, 1, 0));
     bn_gpu_policy_metal_apply_q4_q8_default();
     assert(bn_gpu_policy_metal_q4_q8_enabled());
+    assert(bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 1, 0));
+    assert(bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 1));
+    assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q6_K, 1, 0, 1, 1, 0));
+    assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 1, 0));
+    assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 0, 0));
+    assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
+        BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 0));
     assert(getenv("BN_GPU_Q4_Q8_FROM_LAYER") != NULL);
     assert(bn_gpu_policy_q4_q8_from_layer_or_default(40) == 0);
     assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == 6);

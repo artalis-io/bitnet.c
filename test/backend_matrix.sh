@@ -621,6 +621,18 @@ if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_pr
     fail=1
 fi
 
+if awk '
+    /static int metal_matvec\(/ { in_fn=1 }
+    in_fn && /type == BN_GGUF_TENSOR_/ { bad=1 }
+    in_fn && /bn_gpu_policy_metal_q4_q8_matvec_supported/ { saw_q4=1 }
+    in_fn && /bn_gpu_policy_metal_q6_q8k_matvec_supported/ { saw_q6=1 }
+    in_fn && /^}/ { in_fn=0 }
+    END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
+' src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal matvec optimized-path eligibility must use GPU policy helpers, not tensor-specific checks"
+    fail=1
+fi
+
 if grep -n 'static const char \*shader_name_for_type\|static const int supported_types' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     echo "GPU backends must use quant format helpers for shader type-name and supported-type policy"
     fail=1
