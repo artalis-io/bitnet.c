@@ -36,6 +36,10 @@ typedef struct {
 
 typedef struct {
     int enabled;
+} BnTransformerPrefillSharedAll2DecodeFallbackPolicy;
+
+typedef struct {
+    int enabled;
 } BnTransformerPrefillDenseLayerBatchPolicy;
 
 typedef struct {
@@ -87,6 +91,10 @@ int bn_transformer_prefill_hybrid_batch_allowed(void);
 int bn_transformer_prefill_force_token_attention_enabled(void);
 BnTransformerPrefillLayerKindPolicy
 bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight);
+BnTransformerPrefillSharedAll2DecodeFallbackPolicy
+bn_transformer_prefill_shared_all2_decode_fallback_policy(
+    const BnConfig *c,
+    int gpu_available);
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,

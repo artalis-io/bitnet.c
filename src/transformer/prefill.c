@@ -1200,11 +1200,10 @@ static float *prefill_logits(BnModel *m, BnSession *sess) {
 static int prefill_use_shared_all2_decode_fallback(const BnModel *m) {
     if (!m)
         return 0;
-    if (!bn_model_arch_uses_all_active_two_expert_moe(&m->config,
-                                                      m->config.dim) ||
-        !m->config.has_shared_expert)
-        return 0;
-    return bn_model_gpu(m) == NULL;
+    BnTransformerPrefillSharedAll2DecodeFallbackPolicy policy =
+        bn_transformer_prefill_shared_all2_decode_fallback_policy(
+            &m->config, bn_model_gpu(m) != NULL);
+    return policy.enabled;
 }
 
 static int prefill_layer_rope_dims(const BnConfig *c, int layer_head_size) {

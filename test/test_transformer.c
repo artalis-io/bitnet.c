@@ -3288,6 +3288,33 @@ static void test_block_planning(void) {
 
     prefill_layer_kind =
         bn_transformer_prefill_layer_kind_policy(NULL);
+
+    BnConfig shared_all2 = {0};
+    shared_all2.dim = 1024;
+    shared_all2.n_experts = 2;
+    shared_all2.n_experts_active = 2;
+    shared_all2.moe_intermediate_size = 4096;
+    shared_all2.has_shared_expert = 1;
+    BnTransformerPrefillSharedAll2DecodeFallbackPolicy shared_all2_fallback =
+        bn_transformer_prefill_shared_all2_decode_fallback_policy(
+            &shared_all2, 0);
+    assert(shared_all2_fallback.enabled);
+    shared_all2_fallback =
+        bn_transformer_prefill_shared_all2_decode_fallback_policy(
+            &shared_all2, 1);
+    assert(!shared_all2_fallback.enabled);
+    shared_all2.has_shared_expert = 0;
+    shared_all2_fallback =
+        bn_transformer_prefill_shared_all2_decode_fallback_policy(
+            &shared_all2, 0);
+    assert(!shared_all2_fallback.enabled);
+    shared_all2.n_experts_active = 1;
+    shared_all2.has_shared_expert = 1;
+    shared_all2_fallback =
+        bn_transformer_prefill_shared_all2_decode_fallback_policy(
+            &shared_all2, 0);
+    assert(!shared_all2_fallback.enabled);
+
     BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
         bn_transformer_prefill_dense_layer_batch_policy(
             1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
