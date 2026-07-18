@@ -2649,6 +2649,10 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, 16));
     assert(bn_transformer_gpu_prefill_ssm_dense_chain_available(
         &gpu, &c, 16));
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
+    assert(!bn_transformer_gpu_prefill_ssm_dense_chain_available(
+        &gpu, &c, 16));
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     gpu.prefill_ssm_layer = NULL;
     assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
         &gpu, &c, 16));

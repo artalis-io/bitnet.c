@@ -760,7 +760,7 @@ int bn_transformer_gpu_batch_prefill_enabled(
         return bn_transformer_gpu_backend_is_cuda(gpu) &&
                gpu->prefill_ssm_layer &&
                bn_gpu_policy_cuda_prefill_hybrid_chain_enabled() &&
-               !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled();
+               !bn_transformer_gpu_prefill_ssm_layer_disabled();
     }
     if (bn_model_arch_uses_moe(c))
         return bn_transformer_gpu_backend_is_cuda(gpu) &&
@@ -949,7 +949,7 @@ int bn_transformer_gpu_prefill_ssm_moe_chain_available(
     int n_tokens) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            gpu->prefill_ssm_layer &&
-           !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
+           !bn_transformer_gpu_prefill_ssm_layer_disabled() &&
            n_tokens >=
                bn_transformer_gpu_prefill_moe_chain_min_tokens(c, gpu) &&
            bn_transformer_gpu_prefill_moe_ffn_batch_available(
@@ -978,7 +978,7 @@ int bn_transformer_gpu_prefill_ssm_dense_chain_available(
     int n_tokens) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            gpu->prefill_ssm_layer &&
-           !bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
+           !bn_transformer_gpu_prefill_ssm_layer_disabled() &&
            n_tokens >=
                bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu);
 }
