@@ -1,5 +1,6 @@
 #include "transformer_prefill_internal.h"
 #include "backend_quant.h"
+#include "gpu_policy.h"
 #include "model_arch.h"
 
 #include <stdlib.h>
@@ -209,6 +210,17 @@ bn_transformer_prefill_ssm_ffn_fuse_policy(
         !has_ffn_sub_norm &&
         !has_layer_output_scale &&
         !(uses_ffn_post_norm && has_ffn_post_norm);
+    return policy;
+}
+
+BnTransformerPrefillSSMStateUploadPolicy
+bn_transformer_prefill_ssm_state_upload_policy(
+    const BnConfig *c,
+    int gpu_attached) {
+    BnTransformerPrefillSSMStateUploadPolicy policy = {0};
+    policy.upload = gpu_attached &&
+                    bn_model_arch_uses_hybrid_ssm(c) &&
+                    bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
     return policy;
 }
 

@@ -4,10 +4,10 @@
 #include "transformer.h"
 #include "transformer_internal.h"
 #include "transformer_plan_internal.h"
+#include "transformer_prefill_internal.h"
 #include "transformer/gpu_internal.h"
 #include "gpu_backend.h"
 #include "gpu_policy.h"
-#include "model_arch.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +30,14 @@ static int use_gpu_batch_prefill(const BnModel *model) {
     if (!model) return 0;
     BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
     return bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
+}
+
+static int prefill_uploads_ssm_state_after_gpu_batch(const BnModel *model,
+                                                     int gpu_attached) {
+    BnTransformerPrefillSSMStateUploadPolicy policy =
+        bn_transformer_prefill_ssm_state_upload_policy(
+            &model->config, gpu_attached);
+    return policy.upload;
 }
 
 // --- Stop string matching ---
@@ -386,9 +394,8 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
             bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                n_tokens) != 0)
             return NULL;
-        if (logits && gpu_attached &&
-            bn_model_arch_uses_hybrid_ssm(&model->config) &&
-            bn_transformer_gpu_cuda_prefill_ssm_layer_disabled() &&
+        if (logits &&
+            prefill_uploads_ssm_state_after_gpu_batch(model, gpu_attached) &&
             bn_transformer_gpu_upload_ssm_state(model, s) != 0)
             return NULL;
     } else {
@@ -417,9 +424,8 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
         if (rc == 0 && gpu_attached && !s->gpu_kv_direct_valid)
             rc = bn_transformer_gpu_upload_kv_cache(model, s, pos0,
                                                     n_tokens);
-        if (rc == 0 && gpu_attached &&
-            bn_model_arch_uses_hybrid_ssm(&model->config) &&
-            bn_transformer_gpu_cuda_prefill_ssm_layer_disabled())
+        if (rc == 0 &&
+            prefill_uploads_ssm_state_after_gpu_batch(model, gpu_attached))
             rc = bn_transformer_gpu_upload_ssm_state(model, s);
         return rc;
     }

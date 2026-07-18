@@ -65,6 +65,10 @@ typedef struct {
 } BnTransformerPrefillSSMFFNFusePolicy;
 
 typedef struct {
+    int upload;
+} BnTransformerPrefillSSMStateUploadPolicy;
+
+typedef struct {
     int eligible;
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
@@ -200,6 +204,10 @@ bn_transformer_prefill_ssm_ffn_fuse_policy(
     int has_layer_output_scale,
     int uses_ffn_post_norm,
     int has_ffn_post_norm);
+BnTransformerPrefillSSMStateUploadPolicy
+bn_transformer_prefill_ssm_state_upload_policy(
+    const BnConfig *c,
+    int gpu_attached);
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

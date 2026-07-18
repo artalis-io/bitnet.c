@@ -3497,6 +3497,30 @@ static void test_block_planning(void) {
         bn_transformer_cpu_layer_output_scale_policy(1, 0);
     assert(!cpu_layer_scale.apply);
 
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+    BnConfig ssm_upload_config = c;
+    ssm_upload_config.full_attn_interval = 2;
+    ssm_upload_config.ssm_inner_size = 16;
+    BnTransformerPrefillSSMStateUploadPolicy ssm_upload =
+        bn_transformer_prefill_ssm_state_upload_policy(
+            &ssm_upload_config, 1);
+    assert(!ssm_upload.upload);
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
+    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
+        &ssm_upload_config, 1);
+    assert(ssm_upload.upload);
+    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
+        &ssm_upload_config, 0);
+    assert(!ssm_upload.upload);
+    ssm_upload_config.full_attn_interval = 0;
+    ssm_upload_config.ssm_inner_size = 0;
+    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(
+        &ssm_upload_config, 1);
+    assert(!ssm_upload.upload);
+    ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(NULL, 1);
+    assert(!ssm_upload.upload);
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+
     const BnCPUBackendOps *cpu_ops = bn_transformer_cpu_backend_ops();
     c.policy_flags = 0;
     assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==
