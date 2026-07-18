@@ -3082,6 +3082,10 @@ static void test_block_planning(void) {
 
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_DENSE_GATE_UP);
+    assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_DENSE_GATE_UP);
+    c.has_ffn_gate = 0;
+    assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_DENSE_UP);
+    c.has_ffn_gate = 1;
     assert(ffn.placement == BN_EXEC_GPU);
     assert(ffn.backend == BN_BACKEND_METAL);
     assert(ffn.hidden_dim == 8192);
@@ -3101,6 +3105,7 @@ static void test_block_planning(void) {
     lw.moe.router_weight = (float *)1;
     bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
     assert(ffn.kind == BN_FFN_MOE);
+    assert(bn_transformer_ffn_kind(&c, &lw) == BN_FFN_MOE);
     assert(ffn.placement == BN_EXEC_CPU_FALLBACK);
     assert(ffn.backend == BN_BACKEND_CPU);
     assert(ffn.needs_cpu_fallback);

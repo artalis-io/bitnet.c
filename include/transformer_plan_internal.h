@@ -249,6 +249,8 @@ int bn_transformer_ffn_uses_post_norm(
     const BnConfig *c);
 int bn_transformer_uses_layer_output_scale(
     const BnConfig *c);
+BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
+                                  const BnLayerWeights *lw);
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                   const BnLayerWeights *lw);
 int bn_transformer_per_layer_embedding_dim(

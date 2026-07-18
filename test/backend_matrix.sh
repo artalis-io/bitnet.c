@@ -977,6 +977,11 @@ if grep -n 'p->hidden_dim = .*ffn\.ffn_up\.rows' src/transformer/plan.c >/dev/nu
     fail=1
 fi
 
+if grep -n 'p->kind = .*ffn_kind == BN_LAYER_FFN_MOE\|p->kind = .*has_ffn_gate' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer FFN planning must use FFN-kind policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \
