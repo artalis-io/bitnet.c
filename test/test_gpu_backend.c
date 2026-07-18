@@ -1248,6 +1248,9 @@ static void test_gpu_policy_helpers(void) {
     assert(getenv("BN_GPU_Q4_Q8_FROM_LAYER") != NULL);
     assert(bn_gpu_policy_q4_q8_from_layer_or_default(40) == 0);
     assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == 6);
+    assert(!bn_gpu_policy_q4_q8_attn_only_enabled());
+    assert(bn_gpu_policy_q4_q8_ffn_only_enabled());
+    unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "10", 1);
     setenv("BN_GPU_Q4_Q8_TO_LAYER", "20", 1);
     setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);

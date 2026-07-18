@@ -548,6 +548,9 @@ void bn_gpu_policy_metal_apply_q4_q8_default(void) {
         setenv("BN_GPU_Q4_Q8", "1", 1);
         if (!getenv("BN_GPU_Q4_Q8_FROM_LAYER"))
             setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
+        if (!getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
+            !getenv("BN_GPU_Q4_Q8_FFN_ONLY"))
+            setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
     }
 }
 

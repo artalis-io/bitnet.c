@@ -1295,7 +1295,6 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     ctx->q8_split_dispatches = 0;
     ctx->q8_gateup_dispatches = 0;
     int full_barriers = bn_gpu_policy_metal_full_barriers_enabled();
-    int enable_barriers = bn_gpu_policy_metal_barriers_enabled();
     int disable_barriers = bn_gpu_policy_metal_barriers_disabled();
 
     @autoreleasepool {

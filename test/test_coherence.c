@@ -355,6 +355,7 @@ static int test_gpu_matvec_weight(const char *backend_name,
     return result;
 }
 
+#ifdef BN_ENABLE_CUDA
 static int test_gpu_moe_expert_weight(const char *backend_name,
                                       BnGPUBackend *gpu,
                                       BnModel *model,
@@ -386,6 +387,7 @@ static int test_gpu_moe_expert_weight(const char *backend_name,
     };
     return test_gpu_matvec_weight(backend_name, gpu, name, &W, NULL);
 }
+#endif
 #endif
 
 static float *coherence_prefill_prompt(BnModel *model, BnSession *s,
