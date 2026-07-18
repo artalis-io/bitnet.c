@@ -1755,6 +1755,30 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_moe_prefill_shared_batch_available(
         &gpu, 1, 1));
     unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE");
+    c.has_shared_expert = 1;
+    moe_layers[0].shared.shared_gate.data = (void *)7;
+    assert(bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+        &gpu, &c, &moe_layers[0], 1));
+    assert(!bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+        &gpu, &c, &moe_layers[0], 0));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+        &gpu, &c, &moe_layers[0], 1));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    c.has_shared_expert = 0;
+    assert(!bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+        &gpu, &c, &moe_layers[0], 1));
+    c.has_shared_expert = 1;
+    moe_layers[0].shared.shared_gate.data = NULL;
+    assert(!bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+        &gpu, &c, &moe_layers[0], 1));
+    moe_layers[0].shared.shared_gate.data = (void *)7;
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE", "1", 1);
+    assert(!bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+        &gpu, &c, &moe_layers[0], 1));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE");
+    c.has_shared_expert = 0;
+    moe_layers[0].shared.shared_gate.data = NULL;
     assert(bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_resident_expert_batch_available(

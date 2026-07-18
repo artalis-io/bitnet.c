@@ -847,6 +847,19 @@ int bn_transformer_gpu_moe_prefill_shared_batch_available(
            bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled();
 }
 
+int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int backend_available) {
+    return backend_available &&
+           c && lw &&
+           c->has_shared_expert &&
+           lw->shared.shared_gate.data &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled();
+}
+
 int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
     return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
 }

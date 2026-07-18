@@ -486,10 +486,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 int shared_gate_type = 0;
                 int shared_up_type = 0;
                 int shared_down_type = 0;
-                int can_fuse_shared =
-                    c->has_shared_expert && lw->shared.shared_gate.data;
-                if (can_fuse_shared && backend &&
-                    bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled()) {
+                if (bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
+                        gpu_batch, c, lw, backend != NULL)) {
                     shared_gate = bn_backend_model_handle(
                         backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
                     if (shared_gate) {
