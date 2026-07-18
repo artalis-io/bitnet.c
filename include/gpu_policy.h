@@ -290,6 +290,13 @@ int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_q4,
                                                 int use_all2_fixed,
                                                 int use_grouped,
                                                 int use_gateup_only);
+int bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled(void);
+int bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+    int add_norm_resid,
+    int out_provided,
+    int has_shared,
+    int init_out_with_residual);
+int bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(int n_experts);
 int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled(void);
 int bn_gpu_policy_cuda_moe_cache_prefill_enabled(void);

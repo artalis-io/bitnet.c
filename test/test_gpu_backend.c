@@ -602,6 +602,37 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_moe_sorted_slots_enabled(0, 1, 2, 0, 0, 0));
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT");
 
+    unsetenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL");
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT");
+    unsetenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
+    unsetenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
+    assert(!bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled());
+    setenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled());
+    unsetenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL");
+    assert(bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+        1, 0, 0, 1));
+    assert(!bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+        0, 0, 0, 1));
+    assert(!bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+        1, 1, 0, 1));
+    assert(!bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+        1, 0, 1, 1));
+    assert(!bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+        1, 0, 0, 0));
+    setenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+        1, 0, 0, 1));
+    unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT");
+    assert(!bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(256));
+    setenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(256));
+    assert(!bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(257));
+    setenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(256));
+    unsetenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
+    unsetenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
+
     unsetenv("BN_CUDA_DISABLE_MOE_FFN_BATCH");
     assert(bn_gpu_policy_cuda_moe_ffn_batch_enabled());
     setenv("BN_CUDA_DISABLE_MOE_FFN_BATCH", "1", 1);

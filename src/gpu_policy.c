@@ -1115,6 +1115,26 @@ int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_q4,
             getenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT") != NULL);
 }
 
+int bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled(void) {
+    return getenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+    int add_norm_resid,
+    int out_provided,
+    int has_shared,
+    int init_out_with_residual) {
+    return add_norm_resid && !out_provided && !has_shared &&
+           init_out_with_residual &&
+           getenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(int n_experts) {
+    return n_experts <= 256 &&
+           getenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK") == NULL;
+}
+
 int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_FFN_BATCH") == NULL;
 }

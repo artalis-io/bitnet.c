@@ -15401,7 +15401,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     size_t route_aux_bytes = sorted_route_aux_bytes + decode_route_bytes;
 
     int profile_prefill_moe =
-        getenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL") != NULL;
+        bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled();
     int prefer_q6k_quant_down = cuda_prefer_q6k_moe_quant_down(
         routed_q4, down_type, hidden_dim, n_experts, k);
     int init_out_with_residual =
@@ -15415,8 +15415,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
               routed_q4, down_type, down, prefer_q6k_quant_down,
               dim, hidden_dim, n_experts, k)));
     int direct_device_resid_out =
-        add_norm_resid && !out && !has_shared && init_out_with_residual &&
-        getenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT") == NULL;
+        bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
+            add_norm_resid, out != NULL, has_shared, init_out_with_residual);
     if (direct_device_resid_out)
         prefill_values = full_values + logits_values + mid_values;
     if (cuda_ensure_prefill(ctx, prefill_values) != 0)
@@ -15527,9 +15527,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int threads = 256;
     int warps = threads / 32;
     int use_fused_batch_route =
-        n_experts <= 256 &&
-        getenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK") != NULL &&
-        getenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK") == NULL;
+        bn_gpu_policy_cuda_moe_batch_fused_route_topk_enabled(n_experts);
     if (use_fused_batch_route) {
         moe_route_fused_batch_warp_topk_kernel<<<n_tokens, threads, 0>>>(
             d_indices, d_weights, (const float *)router->data, d_full_x,
