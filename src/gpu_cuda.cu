@@ -11754,6 +11754,40 @@ static int cuda_use_q6k_moe_down_f32_cache_path(int routed_q4, int down_type,
         prefer_quant_down, dim, hidden_dim, n_experts, k);
 }
 
+static int cuda_use_moe_down_4row(int hidden_dim) {
+    return bn_gpu_policy_cuda_moe_down_4row_enabled(hidden_dim);
+}
+
+static int cuda_use_moe_down_8row(int hidden_dim) {
+    return bn_gpu_policy_cuda_moe_down_8row_enabled(hidden_dim);
+}
+
+static int cuda_use_q6k_moe_down_halfwarp(int down_type,
+                                          int prefer_quant_down,
+                                          int n_experts,
+                                          int k) {
+    return bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+        down_type, prefer_quant_down, n_experts, k);
+}
+
+static int cuda_use_q6k_moe_down_split4(int down_type, int use_halfwarp,
+                                        int n_experts, int k) {
+    return bn_gpu_policy_cuda_q6k_moe_down_split4_enabled(
+        down_type, use_halfwarp, n_experts, k);
+}
+
+static int cuda_use_q6k_moe_down_scatter(int down_type, int use_halfwarp,
+                                         int use_split4) {
+    return bn_gpu_policy_cuda_q6k_moe_down_scatter_enabled(
+        down_type, use_halfwarp, use_split4);
+}
+
+static int cuda_use_q6k_moe_down_scatter_16row(int use_scatter,
+                                               int hidden_dim) {
+    return bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled(
+        use_scatter, hidden_dim);
+}
+
 static cublasGemmAlgo_t cuda_cublas_gemm_algo(void) {
     const char *env = getenv("BN_CUDA_CUBLAS_GEMM_ALGO");
     if (!env || !env[0])
@@ -15004,35 +15038,21 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                     cudaGetErrorString(err));
             return -1;
         }
-        int use_down_4row =
-            hidden_dim <= 1024 &&
-            getenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW") == NULL;
+        int use_down_4row = cuda_use_moe_down_4row(hidden_dim);
         if (use_down_4row) {
             int down4_tasks = n_tokens * dim;
             int down4_blocks = (down4_tasks + warps * 4 - 1) / (warps * 4);
-            int use_down_8row =
-                hidden_dim <= 1024 &&
-                getenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW") == NULL;
+            int use_down_8row = cuda_use_moe_down_8row(hidden_dim);
             if (use_down_8row) {
-                int use_halfwarp =
-                    down_type == BN_GGUF_TENSOR_Q6_K &&
-                    (n_experts > 2 || k > 2) &&
-                    (prefer_q6k_quant_down ||
-                     getenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP") != NULL) &&
-                    getenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP") == NULL;
-                int use_split4 =
-                    !use_halfwarp &&
-                    down_type == BN_GGUF_TENSOR_Q6_K &&
-                    (n_experts > 2 || k > 2) &&
-                    getenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4") != NULL &&
-                    getenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4") == NULL;
-                int use_scatter =
-                    !use_halfwarp && !use_split4 &&
-                    down_type == BN_GGUF_TENSOR_Q6_K &&
-                    getenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER") == NULL;
+                int use_halfwarp = cuda_use_q6k_moe_down_halfwarp(
+                    down_type, prefer_q6k_quant_down, n_experts, k);
+                int use_split4 = cuda_use_q6k_moe_down_split4(
+                    down_type, use_halfwarp, n_experts, k);
+                int use_scatter = cuda_use_q6k_moe_down_scatter(
+                    down_type, use_halfwarp, use_split4);
                 int use_scatter_16row =
-                    use_scatter && hidden_dim <= 768 &&
-                    getenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW") != NULL;
+                    cuda_use_q6k_moe_down_scatter_16row(use_scatter,
+                                                        hidden_dim);
                 int down8_tasks = use_scatter ? n_tokens * k * dim : down4_tasks;
                 int down8_blocks = (down8_tasks + warps * 8 - 1) / (warps * 8);
                 if (use_halfwarp) {
@@ -15251,10 +15271,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         add_norm_resid &&
         ((routed_q8 && hidden_dim <= 1024) ||
          (down_type == BN_GGUF_TENSOR_Q6_K &&
-          hidden_dim <= 1024 &&
-          getenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW") == NULL &&
-          getenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW") == NULL &&
-          getenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER") == NULL &&
+          cuda_use_moe_down_4row(hidden_dim) &&
+          cuda_use_moe_down_8row(hidden_dim) &&
+          cuda_use_q6k_moe_down_scatter(down_type, 0, 0) &&
           !cuda_use_q6k_moe_down_f32_cache_path(
               routed_q4, down_type, down, prefer_q6k_quant_down,
               dim, hidden_dim, n_experts, k)));
@@ -15741,35 +15760,21 @@ moe_route_routed_down:
         err = cudaGetLastError();
         if (err != cudaSuccess) return -1;
         BN_CUDA_MOE_PREFILL_PROFILE_STEP(4);
-        int use_down_4row =
-            hidden_dim <= 1024 &&
-            getenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW") == NULL;
+        int use_down_4row = cuda_use_moe_down_4row(hidden_dim);
         if (use_down_4row) {
             int down4_tasks = n_tokens * dim;
             int down4_blocks = (down4_tasks + warps * 4 - 1) / (warps * 4);
-            int use_down_8row =
-                hidden_dim <= 1024 &&
-                getenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW") == NULL;
+            int use_down_8row = cuda_use_moe_down_8row(hidden_dim);
             if (use_down_8row) {
-                int use_halfwarp =
-                    down_type == BN_GGUF_TENSOR_Q6_K &&
-                    (n_experts > 2 || k > 2) &&
-                    (prefer_q6k_quant_down ||
-                     getenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP") != NULL) &&
-                    getenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP") == NULL;
-                int use_split4 =
-                    !use_halfwarp &&
-                    down_type == BN_GGUF_TENSOR_Q6_K &&
-                    (n_experts > 2 || k > 2) &&
-                    getenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4") != NULL &&
-                    getenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4") == NULL;
-                int use_scatter =
-                    !use_halfwarp && !use_split4 &&
-                    down_type == BN_GGUF_TENSOR_Q6_K &&
-                    getenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER") == NULL;
+                int use_halfwarp = cuda_use_q6k_moe_down_halfwarp(
+                    down_type, prefer_q6k_quant_down, n_experts, k);
+                int use_split4 = cuda_use_q6k_moe_down_split4(
+                    down_type, use_halfwarp, n_experts, k);
+                int use_scatter = cuda_use_q6k_moe_down_scatter(
+                    down_type, use_halfwarp, use_split4);
                 int use_scatter_16row =
-                    use_scatter && hidden_dim <= 768 &&
-                    getenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW") != NULL;
+                    cuda_use_q6k_moe_down_scatter_16row(use_scatter,
+                                                        hidden_dim);
                 int down8_tasks = use_scatter ? n_tokens * k * dim : down4_tasks;
                 int down8_blocks = (down8_tasks + warps * 8 - 1) / (warps * 8);
                 if (use_halfwarp) {

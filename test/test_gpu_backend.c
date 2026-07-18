@@ -902,6 +902,61 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE", "1", 1);
     assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
         1, BN_GGUF_TENSOR_Q6_K, 1, 0, 4096, 1024, 4, 2));
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW");
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP");
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER");
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW");
+    assert(bn_gpu_policy_cuda_moe_down_4row_enabled(1024));
+    assert(!bn_gpu_policy_cuda_moe_down_4row_enabled(1025));
+    assert(bn_gpu_policy_cuda_moe_down_8row_enabled(1024));
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW", "1", 1);
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_down_4row_enabled(1024));
+    assert(!bn_gpu_policy_cuda_moe_down_8row_enabled(1024));
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW");
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+        BN_GGUF_TENSOR_Q6_K, 1, 2, 2));
+    assert(bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+        BN_GGUF_TENSOR_Q6_K, 1, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 2, 2));
+    setenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP", "1", 1);
+    assert(bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 4, 2));
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP", "1", 1);
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+        BN_GGUF_TENSOR_Q6_K, 1, 4, 2));
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP");
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_split4_enabled(
+        BN_GGUF_TENSOR_Q6_K, 1, 4, 2));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_split4_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 4, 2));
+    setenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4", "1", 1);
+    assert(bn_gpu_policy_cuda_q6k_moe_down_split4_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 4, 2));
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4", "1", 1);
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_split4_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 4, 2));
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4");
+    assert(bn_gpu_policy_cuda_q6k_moe_down_scatter_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 0));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_scatter_enabled(
+        BN_GGUF_TENSOR_Q4_K, 0, 0));
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER", "1", 1);
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_scatter_enabled(
+        BN_GGUF_TENSOR_Q6_K, 0, 0));
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER");
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled(1, 1024));
+    setenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW", "1", 1);
+    assert(bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled(1, 768));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled(0, 768));
     unsetenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG");
     unsetenv("BN_CUDA_DISABLE_Q6K_4WARP_1536_8960");
     unsetenv("BN_CUDA_ENABLE_Q6K_4WARP_5120");
@@ -915,6 +970,14 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_Q6K_MATVEC4_512_2048");
     unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_4ROW");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_8ROW");
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP");
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_SCATTER");
+    unsetenv("BN_CUDA_ENABLE_MOE_DOWN_SCATTER_16ROW");
     unsetenv("BN_CUDA_ENABLE_LOGITS_CACHE");
     assert(!bn_gpu_policy_cuda_decode_logits_cache_enabled(0));
     setenv("BN_CUDA_ENABLE_LOGITS_CACHE", "1", 1);

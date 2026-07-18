@@ -97,6 +97,25 @@ int bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled(
     int hidden_dim,
     int n_experts,
     int k);
+int bn_gpu_policy_cuda_moe_down_4row_enabled(int hidden_dim);
+int bn_gpu_policy_cuda_moe_down_8row_enabled(int hidden_dim);
+int bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled(
+    int down_type,
+    int prefer_quant_down,
+    int n_experts,
+    int k);
+int bn_gpu_policy_cuda_q6k_moe_down_split4_enabled(
+    int down_type,
+    int use_halfwarp,
+    int n_experts,
+    int k);
+int bn_gpu_policy_cuda_q6k_moe_down_scatter_enabled(
+    int down_type,
+    int use_halfwarp,
+    int use_split4);
+int bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled(
+    int use_scatter,
+    int hidden_dim);
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu);
 int bn_gpu_policy_cuda_moe_decode_cache_enabled(void);
 int bn_gpu_policy_cuda_moe_decode_cache_disabled(void);
