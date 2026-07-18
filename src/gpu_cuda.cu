@@ -18357,10 +18357,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int enable_q8_preq_all_flag = 0;
     static int disable_q8_preq_logits_flag = 0;
     if (!flags_init) {
-        fuse_bias_enabled_flag =
-            getenv("BN_CUDA_DISABLE_FUSE_BIAS") == NULL;
+        fuse_bias_enabled_flag = bn_gpu_policy_cuda_fuse_bias_enabled();
         fuse_rope_flash_enabled_flag =
-            getenv("BN_CUDA_DISABLE_ROPE_FLASH_FUSE") == NULL;
+            bn_gpu_policy_cuda_rope_flash_fuse_enabled();
         enable_q5_matvec4_flag =
             bn_gpu_policy_cuda_q5_matvec4_enabled();
         enable_q5_warp_flag = bn_gpu_policy_cuda_q5_warp_enabled();
@@ -18383,7 +18382,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         disable_q8_gateup_warp_flag =
             getenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP") != NULL;
         enable_bias_rope_flash_fuse_flag =
-            getenv("BN_CUDA_ENABLE_BIAS_ROPE_FLASH_FUSE") != NULL;
+            bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled();
         enable_graph_exec_flag =
             getenv("BN_CUDA_ENABLE_GRAPH_EXEC") != NULL ||
             getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") != NULL;

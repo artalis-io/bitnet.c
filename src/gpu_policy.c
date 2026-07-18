@@ -708,6 +708,18 @@ int bn_gpu_policy_cuda_q5_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
 }
 
+int bn_gpu_policy_cuda_fuse_bias_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_FUSE_BIAS") == NULL;
+}
+
+int bn_gpu_policy_cuda_rope_flash_fuse_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_ROPE_FLASH_FUSE") == NULL;
+}
+
+int bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_BIAS_ROPE_FLASH_FUSE") != NULL;
+}
+
 int bn_gpu_policy_cuda_readback_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_READBACK") != NULL;
 }

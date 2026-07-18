@@ -370,6 +370,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q5_MATVEC4")\|getenv("BN_CUDA_ENABLE_Q5_WARP"
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_FUSE_BIAS")\|getenv("BN_CUDA_DISABLE_ROPE_FLASH_FUSE")\|getenv("BN_CUDA_ENABLE_BIAS_ROPE_FLASH_FUSE")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA bias/rope fuse env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_ATTN")\|getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA prefill attention admission env policy"
     fail=1
