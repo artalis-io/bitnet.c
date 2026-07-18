@@ -21454,7 +21454,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 profile_ops[profile_code]++;
                 profile_ms[profile_code] += (double)ms;
             }
-            if (getenv("BN_CUDA_PROFILE_SHAPES") &&
+            if (bn_gpu_policy_cuda_profile_shapes_enabled() &&
                 (op->op_code == BN_GPU_CODE_MATVEC ||
                  op->op_code == BN_GPU_CODE_FUSED_GATEUP_SILU ||
                  op->op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT ||
@@ -21608,7 +21608,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         profile_ms[code] * 1000.0 /
                             (double)profile_ops[code]);
             }
-            if (getenv("BN_CUDA_PROFILE_SHAPES")) {
+            if (bn_gpu_policy_cuda_profile_shapes_enabled()) {
                 fprintf(stderr, "[bn:gpu:cuda:profile-shapes]\n");
                 for (int si = 0; si < shape_profile_count; si++) {
                     BnCudaShapeProfile *sp = &shape_profile[si];
@@ -21690,7 +21690,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
         return NULL;
     }
     int device = 0;
-    const char *device_env = getenv("BN_CUDA_DEVICE");
+    const char *device_env = bn_gpu_policy_cuda_device_selector();
     if (device_env && device_env[0]) {
         if (strcmp(device_env, "auto") == 0) {
             size_t best_free = 0;

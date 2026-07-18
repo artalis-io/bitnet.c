@@ -1637,6 +1637,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_STREAM_EXEC");
     unsetenv("BN_CUDA_PROFILE");
     unsetenv("BN_CUDA_PROFILE_WALL");
+    unsetenv("BN_CUDA_PROFILE_SHAPES");
+    unsetenv("BN_CUDA_DEVICE");
     unsetenv("BN_CUDA_DEBUG_EXEC_FAIL");
     unsetenv("BN_CUDA_DEBUG_SYNC_EACH_OP");
     unsetenv("BN_CUDA_DEBUG_NAN");
@@ -1646,6 +1648,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_stream_exec_enabled());
     assert(!bn_gpu_policy_cuda_profile_enabled());
     assert(!bn_gpu_policy_cuda_wall_profile_enabled());
+    assert(!bn_gpu_policy_cuda_profile_shapes_enabled());
+    assert(bn_gpu_policy_cuda_device_selector() == NULL);
     assert(!bn_gpu_policy_cuda_exec_fail_debug_enabled());
     assert(!bn_gpu_policy_cuda_sync_each_op_debug_enabled());
     assert(!bn_gpu_policy_cuda_nan_debug_enabled());
@@ -1655,6 +1659,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_STREAM_EXEC", "1", 1);
     setenv("BN_CUDA_PROFILE", "1", 1);
     setenv("BN_CUDA_PROFILE_WALL", "1", 1);
+    setenv("BN_CUDA_PROFILE_SHAPES", "1", 1);
+    setenv("BN_CUDA_DEVICE", "auto", 1);
     setenv("BN_CUDA_DEBUG_EXEC_FAIL", "1", 1);
     setenv("BN_CUDA_DEBUG_SYNC_EACH_OP", "1", 1);
     setenv("BN_CUDA_DEBUG_NAN", "1", 1);
@@ -1664,6 +1670,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_stream_exec_enabled());
     assert(bn_gpu_policy_cuda_profile_enabled());
     assert(bn_gpu_policy_cuda_wall_profile_enabled());
+    assert(bn_gpu_policy_cuda_profile_shapes_enabled());
+    assert(strcmp(bn_gpu_policy_cuda_device_selector(), "auto") == 0);
     assert(bn_gpu_policy_cuda_exec_fail_debug_enabled());
     assert(bn_gpu_policy_cuda_sync_each_op_debug_enabled());
     assert(bn_gpu_policy_cuda_nan_debug_enabled());

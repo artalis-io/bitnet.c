@@ -223,6 +223,8 @@ int bn_gpu_policy_cuda_nan_verbose_debug_enabled(void);
 int bn_gpu_policy_cuda_stream_exec_enabled(void);
 int bn_gpu_policy_cuda_profile_enabled(void);
 int bn_gpu_policy_cuda_wall_profile_enabled(void);
+int bn_gpu_policy_cuda_profile_shapes_enabled(void);
+const char *bn_gpu_policy_cuda_device_selector(void);
 int bn_gpu_policy_cuda_exec_fail_debug_enabled(void);
 int bn_gpu_policy_cuda_sync_each_op_debug_enabled(void);
 int bn_gpu_policy_cuda_nan_debug_enabled(void);

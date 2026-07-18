@@ -872,6 +872,14 @@ int bn_gpu_policy_cuda_wall_profile_enabled(void) {
     return getenv("BN_CUDA_PROFILE_WALL") != NULL;
 }
 
+int bn_gpu_policy_cuda_profile_shapes_enabled(void) {
+    return getenv("BN_CUDA_PROFILE_SHAPES") != NULL;
+}
+
+const char *bn_gpu_policy_cuda_device_selector(void) {
+    return getenv("BN_CUDA_DEVICE");
+}
+
 int bn_gpu_policy_cuda_exec_fail_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_EXEC_FAIL") != NULL;
 }
