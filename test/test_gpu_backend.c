@@ -1307,6 +1307,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2");
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE");
@@ -1436,6 +1437,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1) == 1);
     assert(bn_gpu_policy_cuda_moe_cache_prefill_enabled());
     assert(bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled());
+    assert(bn_gpu_policy_cuda_moe_route_batch_enabled());
     assert(!bn_gpu_policy_cuda_moe_route_batch_debug_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN", "1", 1);
@@ -1448,6 +1450,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "7", 1);
     setenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL", "1", 1);
     setenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE", "1", 1);
+    setenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH", "1", 1);
     setenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH", "1", 1);
     assert(!bn_gpu_policy_cuda_prefill_dense_chain_enabled());
     assert(!bn_gpu_policy_cuda_prefill_hybrid_chain_enabled());
@@ -1463,6 +1466,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1) == 1);
     assert(!bn_gpu_policy_cuda_moe_cache_prefill_enabled());
     assert(!bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled());
+    assert(!bn_gpu_policy_cuda_moe_route_batch_enabled());
     assert(bn_gpu_policy_cuda_moe_route_batch_debug_enabled());
     assert(!bn_gpu_policy_cuda_large_hybrid_attention_enabled());
     assert(!bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled());
@@ -1472,6 +1476,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_large_hybrid_prefill_chain_enabled());
     assert(!bn_gpu_policy_cuda_large_hybrid_prefill_disabled());
     assert(!bn_gpu_policy_cuda_large_hybrid_argmax_enabled());
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH");
     setenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN", "1", 1);
     setenv("BN_CUDA_ENABLE_LARGE_HYBRID_CPU_ATTN_SAFE", "1", 1);
     setenv("BN_CUDA_DISABLE_LARGE_HYBRID_CPU_ATTN_SAFE", "1", 1);
@@ -1512,6 +1517,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(0));
     assert(!bn_gpu_policy_cuda_moe_router_gpu_enabled());
     assert(bn_gpu_policy_cuda_moe_router_diff2_enabled());
+    assert(bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled());
     assert(bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(0));
     assert(!bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(1));
     assert(!bn_gpu_policy_cuda_moe_cpu_actual_override_enabled());
@@ -1866,6 +1872,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT", "1", 1);
     setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
     setenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2", "1", 1);
+    setenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH", "1", 1);
     setenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE", "1", 1);
     setenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL", "1", 1);
     setenv("BN_GPU_COMPARE_MOE_LAYER", "3", 1);
@@ -1913,6 +1920,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(1));
     assert(bn_gpu_policy_cuda_moe_router_gpu_enabled());
     assert(!bn_gpu_policy_cuda_moe_router_diff2_enabled());
+    assert(!bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled());
     assert(bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(1));
     setenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU", "1", 1);
     assert(!bn_gpu_policy_cuda_moe_router_gpu_enabled());
@@ -1984,6 +1992,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2");
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
@@ -2046,6 +2055,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2");
+    unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");

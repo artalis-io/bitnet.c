@@ -779,6 +779,10 @@ int bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE") == NULL;
 }
 
+int bn_gpu_policy_cuda_moe_route_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH") == NULL;
+}
+
 int bn_gpu_policy_cuda_moe_route_batch_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH") != NULL;
 }
@@ -1280,6 +1284,10 @@ int bn_gpu_policy_cuda_moe_router_gpu_enabled(void) {
 
 int bn_gpu_policy_cuda_moe_router_diff2_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH") == NULL;
 }
 
 int bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(int large_moe) {

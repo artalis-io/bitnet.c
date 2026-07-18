@@ -338,6 +338,18 @@ static int cuda_profile_moe_ffn_batch(void) {
     return bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled();
 }
 
+static int cuda_use_moe_route_batch(void) {
+    return bn_gpu_policy_cuda_moe_route_batch_enabled();
+}
+
+static int cuda_use_moe_routed_ffn_batch(void) {
+    return bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled();
+}
+
+static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
+    return bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(n_experts > 2);
+}
+
 static int cuda_env_int(const char *name, int fallback) {
     const char *env = getenv(name);
     if (!env || !*env) return fallback;
@@ -14822,7 +14834,7 @@ static int cuda_moe_route_batch(void *vctx, int *indices, float *weights,
                                 float expert_weights_scale) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     BnCudaBuffer *router = (BnCudaBuffer *)router_buf;
-    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH"))
+    if (!cuda_use_moe_route_batch())
         return -1;
     if (!ctx || !indices || !weights || !router || !router->data || !X ||
         n_tokens <= 0 || dim <= 0 || n_experts <= 0 || k <= 0 ||
@@ -14896,7 +14908,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     BnCudaBuffer *gate = (BnCudaBuffer *)gate_all_buf;
     BnCudaBuffer *up = (BnCudaBuffer *)up_all_buf;
     BnCudaBuffer *down = (BnCudaBuffer *)down_all_buf;
-    if (getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH"))
+    if (!cuda_use_moe_routed_ffn_batch())
         return -1;
     int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K &&
                     up_type == BN_GGUF_TENSOR_Q4_K &&
@@ -15271,10 +15283,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     BnCudaBuffer *shared_gate_weight =
         (BnCudaBuffer *)shared_gate_weight_buf;
     BnCudaBuffer *norm = (BnCudaBuffer *)norm_buf;
-    if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
-        return -1;
-    if (n_experts > 2 &&
-        getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") == NULL)
+    if (!cuda_use_moe_route_routed_ffn_batch(n_experts))
         return -1;
     int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K &&
                     up_type == BN_GGUF_TENSOR_Q4_K &&

@@ -340,6 +340,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_MOE_FFN_BATCH")\|getenv("BN_CUDA_PROFILE_MOE
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH")\|getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH")\|getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH")\|getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for MoE route batch env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_[^"]*QWEN\|gpu_env_enabled("BN_CUDA_[^"]*QWEN\|gpu_env_value("BN_CUDA_[^"]*QWEN\|gpu_policy_env_int("BN_CUDA_[^"]*QWEN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1
