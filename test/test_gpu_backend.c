@@ -1489,6 +1489,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN");
     unsetenv("BN_CUDA_ENABLE_PREFILL_GEMM_ATTN");
     unsetenv("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_QKV_ATTN_WO");
     assert(!bn_gpu_policy_cuda_prefill_attention_min_tokens_configured());
     assert(bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16) ==
            16);
@@ -1520,6 +1522,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_prefill_gemm_attention_enabled(256, 512));
     unsetenv("BN_CUDA_DISABLE_PREFILL_GEMM_ATTN");
     unsetenv("BN_CUDA_PREFILL_GEMM_ATTN_MIN_TOKENS");
+    assert(bn_gpu_policy_cuda_prefill_attention_wo_enabled());
+    assert(bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO", "1", 1);
+    setenv("BN_CUDA_DISABLE_PREFILL_QKV_ATTN_WO", "1", 1);
+    assert(!bn_gpu_policy_cuda_prefill_attention_wo_enabled());
+    assert(!bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_QKV_ATTN_WO");
     assert(bn_gpu_policy_cuda_prefill_dense_chain_enabled());
     assert(bn_gpu_policy_cuda_prefill_hybrid_chain_enabled());
     assert(bn_gpu_policy_cuda_prefill_attention_enabled());

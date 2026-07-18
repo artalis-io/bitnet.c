@@ -766,6 +766,14 @@ int bn_gpu_policy_cuda_prefill_gemm_attention_enabled(int n_tokens,
                    256);
 }
 
+int bn_gpu_policy_cuda_prefill_attention_wo_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO") == NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_PREFILL_QKV_ATTN_WO") == NULL;
+}
+
 int bn_gpu_policy_cuda_prefill_batched_gemm_enabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM") == NULL;
 }

@@ -16188,7 +16188,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                                      float attention_scale) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
     BnCudaBuffer *wo = (BnCudaBuffer *)wo_buf;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO"))
+    if (!bn_gpu_policy_cuda_prefill_attention_wo_enabled())
         return -1;
     if (!ctx || !out || !wo || !wo->data || !Q || !K || !V ||
         n_tokens <= 1 || n_heads <= 0 || n_kv_heads <= 0 ||
@@ -16388,7 +16388,7 @@ static int cuda_prefill_qkv_attention_wo_impl(
     BnCudaBuffer *q_bias = (BnCudaBuffer *)q_bias_buf;
     BnCudaBuffer *k_bias = (BnCudaBuffer *)k_bias_buf;
     BnCudaBuffer *v_bias = (BnCudaBuffer *)v_bias_buf;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_QKV_ATTN_WO"))
+    if (!bn_gpu_policy_cuda_prefill_qkv_attention_wo_enabled())
         return -1;
     int q_dim = n_heads * head_size;
     int q_gated = qk && qk->data && qk_rows == 2 * q_dim + kv_dim;
