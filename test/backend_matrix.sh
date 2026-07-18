@@ -226,6 +226,11 @@ if grep -n 'gpu_quant_lowering_internal\|bn_gpu_quant_split_op_code' src/gpu_moe
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_cuda_moe_gateup_split_enabled' src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "src/gpu_moe_bridge.c must use behavior-named GPU policy helpers for MoE gate-up split eligibility"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CODE_Q4K_MATVEC_SPLIT' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for dense gate-up split op policy"
     fail=1

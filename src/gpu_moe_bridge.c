@@ -68,7 +68,7 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     int split_op_code = bn_transformer_gpu_matvec_split_op_code(
         em->gate_type);
-    int use_split = bn_transformer_gpu_cuda_moe_gateup_split_enabled(
+    int use_split = bn_transformer_gpu_moe_gateup_split_enabled(
         gpu, bn_transformer_gpu_moe_gateup_split_supported(
                  gpu, em, split_op_code));
 
@@ -254,7 +254,7 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         int split_op_code = bn_transformer_gpu_matvec_split_op_code(
             em->gate_type);
-        int use_split = bn_transformer_gpu_cuda_moe_gateup_split_enabled(
+        int use_split = bn_transformer_gpu_moe_gateup_split_enabled(
             gpu, bn_transformer_gpu_moe_gateup_split_supported(
                      gpu, em, split_op_code));
 

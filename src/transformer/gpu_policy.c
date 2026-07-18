@@ -2168,6 +2168,12 @@ int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
            bn_gpu_policy_cuda_moe_gateup_split_enabled(can_split);
 }
 
+int bn_transformer_gpu_moe_gateup_split_enabled(
+    const BnGPUBackend *gpu,
+    int can_split) {
+    return bn_transformer_gpu_cuda_moe_gateup_split_enabled(gpu, can_split);
+}
+
 int bn_transformer_gpu_moe_route_profile_enabled(void) {
     return bn_gpu_policy_moe_route_profile_enabled();
 }

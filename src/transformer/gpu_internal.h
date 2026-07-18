@@ -871,6 +871,9 @@ bn_transformer_gpu_moe_shared_cpu_fallback_policy(
 int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);
+int bn_transformer_gpu_moe_gateup_split_enabled(
+    const BnGPUBackend *gpu,
+    int can_split);
 int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu);
 int bn_transformer_gpu_debug_argmax_compare_enabled(void);
 int bn_transformer_gpu_argmax_debug_enabled(void);

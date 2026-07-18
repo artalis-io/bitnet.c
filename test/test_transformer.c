@@ -1123,6 +1123,15 @@ static void test_gpu_policy_helpers(void) {
     gpu.caps = 0;
     assert(!bn_transformer_gpu_moe_gateup_split_supported(
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 1));
+    setenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT", "1", 1);
+    assert(!bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 1));
+    unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT");
+    gpu.kind = BN_GPU_BACKEND_WEBGPU;
+    assert(!bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 1));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    assert(!bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 0));
 
     BnQWeight gate_w;
     BnQWeight up_w;
