@@ -36,6 +36,10 @@ int bn_transformer_logits_small_cuda_q8_refine_enabled(
                gpu, c, W->type);
 }
 
+int bn_transformer_logits_small_cuda_q8_refine_top(void) {
+    return bn_transformer_gpu_q8_logits_refine_top(1);
+}
+
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type) {
     return bn_backend_quant_logits_uses_f16_path(tensor_type);
 }

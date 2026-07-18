@@ -2455,6 +2455,12 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_tied_f16_weight_type() == BN_GGUF_TENSOR_F16);
     assert(bn_transformer_logits_tied_f32_weight_type() == BN_GGUF_TENSOR_F32);
 
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
+    assert(bn_transformer_logits_small_cuda_q8_refine_top() == 16);
+    setenv("BN_GPU_Q8_REFINE_TOP", "6", 1);
+    assert(bn_transformer_logits_small_cuda_q8_refine_top() == 6);
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
+
     BnGPUBackend gpu = {0};
     BnConfig c = {0};
     BnQWeight q8 = {0};

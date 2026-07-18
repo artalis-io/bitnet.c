@@ -179,7 +179,7 @@ static void logits_refine_small_cuda_q8(const BnModel *m,
     if (!m || !bn_transformer_logits_small_cuda_q8_refine_enabled(
                   bn_model_gpu(m), &m->config, W))
         return;
-    int refine_top = bn_transformer_gpu_q8_logits_refine_top(1);
+    int refine_top = bn_transformer_logits_small_cuda_q8_refine_top();
     if (refine_top > 0)
         logits_refine_q8_top(s->logits, m->config.vocab_size, W, s->x,
                              s->x_q, refine_top);

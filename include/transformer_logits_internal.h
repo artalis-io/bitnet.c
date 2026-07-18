@@ -57,6 +57,7 @@ int bn_transformer_logits_small_cuda_q8_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W);
+int bn_transformer_logits_small_cuda_q8_refine_top(void);
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type);
 int bn_transformer_logits_tied_uses_quant_path(int tensor_type);
 int bn_transformer_logits_tied_uses_f16_path(int tensor_type);
