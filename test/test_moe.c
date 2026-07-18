@@ -341,6 +341,14 @@ static void test_moe_quant_policy_helpers(void) {
     assert(bn_moe_quant_uses_embedded_tensor_scale(BN_GGUF_TENSOR_I2_S));
     assert(bn_moe_quant_embedded_tensor_scale_offset(BN_GGUF_TENSOR_I2_S,
                                                      4, 32) == 32);
+    assert(bn_moe_policy_supports_shared_gateup_batch_type(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_moe_policy_supports_shared_gateup_batch_type(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_0));
+    assert(bn_moe_policy_supports_shared_gateup_batch_type(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_moe_policy_supports_shared_gateup_batch_type(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q8_K));
 
     printf("PASSED\n");
 }

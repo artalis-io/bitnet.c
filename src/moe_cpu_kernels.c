@@ -129,20 +129,19 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
     if (!tasks || n_tasks <= 0)
         return 0;
     int batch_type = tasks[0].W->type;
-    int can_batch = shared_gate_type == batch_type &&
-                    shared_up_type == batch_type;
+    int can_batch = bn_moe_policy_supports_shared_gateup_batch_type(
+        shared_gate_type, shared_up_type, batch_type);
     for (int i = 1; can_batch && i < n_tasks; i++)
-        can_batch = tasks[i].W->type == batch_type;
+        can_batch = bn_moe_policy_supports_shared_gateup_batch_type(
+            shared_gate_type, shared_up_type, tasks[i].W->type);
 #if BN_TRANSFORMER_CPU_HAS_AVX2
-    if (!can_batch &&
-        bn_moe_quant_supports_prepared_q8k(shared_gate_type) &&
-        bn_moe_quant_supports_prepared_q8k(shared_up_type)) {
-        can_batch = 1;
-        for (int i = 0; can_batch && i < n_tasks; i++)
-            can_batch = bn_moe_quant_supports_prepared_q8k(tasks[i].W->type);
-    }
-#endif
     return can_batch;
+#else
+    if (can_batch &&
+        (shared_gate_type != batch_type || shared_up_type != batch_type))
+        return 0;
+    return can_batch;
+#endif
 }
 
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n) {

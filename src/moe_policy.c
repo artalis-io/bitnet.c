@@ -44,6 +44,16 @@ int bn_moe_policy_supports_resident_routed_ffn_layout(
            em->down_cols == c->moe_intermediate_size;
 }
 
+int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
+                                                    int shared_up_type,
+                                                    int batch_type) {
+    if (shared_gate_type == batch_type && shared_up_type == batch_type)
+        return 1;
+    return bn_moe_quant_supports_prepared_q8k(shared_gate_type) &&
+           bn_moe_quant_supports_prepared_q8k(shared_up_type) &&
+           bn_moe_quant_supports_prepared_q8k(batch_type);
+}
+
 int bn_moe_quant_supports_prepared_q8k(int type) {
     return bn_backend_quant_can_preq8k(type);
 }
