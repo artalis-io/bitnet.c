@@ -18615,7 +18615,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         runtime_params_ready = graph_exec;
     }
     if (!graph_exec && !profile &&
-        getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FLASH_FUSE") == NULL) {
+        bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled()) {
         int wants_qk_norm_flash_runtime = 0;
         for (int ri = 0; ri + 3 < n_ops; ri++) {
             const BnGPUOp *qnorm = &ops[ri];
@@ -20801,7 +20801,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             const BnGPUOp *after_next = (i + 2 < n_ops) ? &ops[i + 2] : NULL;
             const BnGPUOp *flash = (i + 3 < n_ops) ? &ops[i + 3] : NULL;
             if (runtime_params_ready && next && after_next && flash &&
-                getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FLASH_FUSE") == NULL &&
+                bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled() &&
                 op->buf_in == BN_GPU_VALUE_Q &&
                 next->op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
                 next->buf_in == BN_GPU_VALUE_KEY_CACHE &&
@@ -20846,7 +20846,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (const BnCudaRuntimeParams *)ctx->d_runtime);
                 i += 3;
             } else if (next && after_next &&
-                getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FUSE") == NULL &&
+                bn_gpu_policy_cuda_qk_norm_rope_fuse_enabled() &&
                 op->buf_in == BN_GPU_VALUE_Q &&
                 next->op_code == BN_GPU_CODE_PER_HEAD_RMSNORM &&
                 next->buf_in == BN_GPU_VALUE_KEY_CACHE &&
