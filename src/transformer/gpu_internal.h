@@ -869,6 +869,8 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     int layer,
     int cpu_fallback_ffn_layer,
     int cpu_fallback_ffn_from_layer);
+int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
+    const BnConfig *c);
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
     const BnConfig *c);
 int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
