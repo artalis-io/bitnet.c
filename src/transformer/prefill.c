@@ -950,7 +950,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
                                  int *did_ffn) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
-    if (!bn_transformer_gpu_prefill_ssm_layer_backend_available(gpu) ||
+    if (!bn_transformer_prefill_ssm_layer_backend_available(gpu) ||
         !backend || !lw ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
@@ -985,7 +985,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
     BnTransformerPrefillSSMFFNFusePolicy ffn_fuse =
         bn_transformer_prefill_ssm_ffn_fuse_policy(
             fuse_ffn,
-            bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(),
+            bn_transformer_prefill_ssm_ffn_fuse_allowed(),
             lw->ffn.ffn_gate.data != NULL,
             lw->ffn.ffn_up.data != NULL,
             lw->ffn.ffn_down.data != NULL,
@@ -1050,8 +1050,8 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
     BnTransformerPrefillSSMChainPolicy policy =
         bn_transformer_prefill_ssm_chain_policy(
-            bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-                gpu, c, n_tokens),
+            bn_transformer_prefill_ssm_dense_chain_available(gpu, c,
+                                                             n_tokens),
             layer_kind,
             c->has_ffn_gate,
             lw->ffn.ffn_up.data != NULL,
@@ -2238,7 +2238,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int kern_ssm = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
             int ssm_idx = plan.ssm_idx;
 
-            if (bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled() &&
+            if (bn_transformer_prefill_ssm_run_chain_enabled() &&
                 gpu_hybrid_prefill &&
                 (prefill_ssm_layer_chain_ready(m, lw, l, n_tokens) ||
                  prefill_ssm_moe_layer_chain_ready(m, lw, l, n_tokens))) {

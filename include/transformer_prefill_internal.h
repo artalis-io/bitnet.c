@@ -261,6 +261,13 @@ bn_transformer_prefill_ssm_moe_chain_policy(
     int ssm_state_size,
     int ssm_inner_size,
     int ssm_group_count);
+int bn_transformer_prefill_ssm_layer_backend_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_prefill_ssm_dense_chain_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens);
+int bn_transformer_prefill_ssm_run_chain_enabled(void);
 int bn_transformer_prefill_moe_ffn_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -285,6 +292,7 @@ int bn_transformer_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
 int bn_transformer_prefill_moe_chain_debug_enabled(void);
+int bn_transformer_prefill_ssm_ffn_fuse_allowed(void);
 BnTransformerPrefillSSMFFNFusePolicy
 bn_transformer_prefill_ssm_ffn_fuse_policy(
     int fuse_requested,

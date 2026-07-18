@@ -281,6 +281,23 @@ bn_transformer_prefill_ssm_moe_chain_policy(
     return policy;
 }
 
+int bn_transformer_prefill_ssm_layer_backend_available(
+    const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_prefill_ssm_layer_backend_available(gpu);
+}
+
+int bn_transformer_prefill_ssm_dense_chain_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens) {
+    return bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+        gpu, c, n_tokens);
+}
+
+int bn_transformer_prefill_ssm_run_chain_enabled(void) {
+    return bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled();
+}
+
 int bn_transformer_prefill_moe_ffn_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -321,6 +338,10 @@ int bn_transformer_prefill_moe_chain_min_tokens(
 
 int bn_transformer_prefill_moe_chain_debug_enabled(void) {
     return bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled();
+}
+
+int bn_transformer_prefill_ssm_ffn_fuse_allowed(void) {
+    return bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed();
 }
 
 BnTransformerPrefillSSMFFNFusePolicy

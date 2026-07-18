@@ -4010,6 +4010,29 @@ static void test_block_planning(void) {
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
         1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 64, 256, 4);
     assert(!ssm_chain.enabled);
+    assert(!bn_transformer_prefill_ssm_layer_backend_available(NULL));
+    assert(!bn_transformer_prefill_ssm_layer_backend_available(
+        &prefill_dense_gpu));
+    prefill_dense_gpu.kind = BN_GPU_BACKEND_CUDA;
+    prefill_dense_gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
+    assert(bn_transformer_prefill_ssm_layer_backend_available(
+        &prefill_dense_gpu));
+    prefill_dense_c.ssm_inner_size = 128;
+    assert(!bn_transformer_prefill_ssm_dense_chain_available(
+        &prefill_dense_gpu, &prefill_dense_c, 15));
+    assert(bn_transformer_prefill_ssm_dense_chain_available(
+        &prefill_dense_gpu, &prefill_dense_c, 16));
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
+    assert(bn_transformer_prefill_ssm_run_chain_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN", "1", 1);
+    assert(!bn_transformer_prefill_ssm_run_chain_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
+    unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
+    assert(bn_transformer_prefill_ssm_ffn_fuse_allowed());
+    setenv("BN_CUDA_DISABLE_SSM_FFN_FUSE", "1", 1);
+    assert(!bn_transformer_prefill_ssm_ffn_fuse_allowed());
+    unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
+    memset(&prefill_dense_gpu, 0, sizeof(prefill_dense_gpu));
 
     BnTransformerPrefillSSMMoEChainPolicy ssm_moe_chain =
         bn_transformer_prefill_ssm_moe_chain_policy(
