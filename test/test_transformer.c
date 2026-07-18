@@ -1351,6 +1351,14 @@ static void test_gpu_policy_helpers(void) {
     assert(fallback_policy.ffn_layer == 6);
     assert(fallback_policy.ffn_from_layer == 7);
     assert(fallback_policy.ffn_down_from_layer == 8);
+    assert(!bn_transformer_gpu_cpu_fallback_layer_selected(1, 2, -1));
+    assert(bn_transformer_gpu_cpu_fallback_layer_selected(2, 2, -1));
+    assert(!bn_transformer_gpu_cpu_fallback_layer_selected(2, -1, 3));
+    assert(bn_transformer_gpu_cpu_fallback_layer_selected(3, -1, 3));
+    assert(bn_transformer_gpu_cpu_fallback_layer_selected(8, -1, 3));
+    assert(bn_transformer_gpu_cpu_fallback_layer_selected(2, 2, 4));
+    assert(bn_transformer_gpu_cpu_fallback_layer_selected(4, 2, 4));
+    assert(!bn_transformer_gpu_cpu_fallback_layer_selected(1, -1, -1));
     unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
     unsetenv("BN_GPU_CPU_FALLBACK_FROM_LAYER");
     unsetenv("BN_GPU_CPU_ATTN_LAYER");

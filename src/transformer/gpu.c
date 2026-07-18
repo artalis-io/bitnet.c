@@ -1025,8 +1025,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         int attn_idx = plan.attn_idx;
         size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
-        if ((cpu_fallback.layer >= 0 && l == cpu_fallback.layer) ||
-            (cpu_fallback.from_layer >= 0 && l >= cpu_fallback.from_layer)) {
+        if (bn_transformer_gpu_cpu_fallback_layer_selected(
+                l, cpu_fallback.layer, cpu_fallback.from_layer)) {
             void *next_norm = bn_transformer_gpu_resolve_next_norm(
                 backend, l, c->n_layers, output_norm);
             if (bn_transformer_gpu_fallback_cpu_layer(
@@ -1056,9 +1056,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu missing-qweight cpu-layer fallback failed");
             continue;
         }
-        if (cpu_fallback.attn_layer == l ||
-            (cpu_fallback.attn_from_layer >= 0 &&
-             l >= cpu_fallback.attn_from_layer)) {
+        if (bn_transformer_gpu_cpu_fallback_layer_selected(
+                l, cpu_fallback.attn_layer, cpu_fallback.attn_from_layer)) {
             void *ffn_norm = attn_res.ffn_norm;
             if (bn_transformer_gpu_fallback_cpu_attention(
                     &emit, gpu, m, sess, lw, l, pos, cache_pos, rope_dims,
@@ -1845,9 +1844,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             ffn_plan = layer_ffn_plan;
         else
             bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu, backend, l, 1);
-        if ((cpu_fallback.ffn_layer >= 0 && l == cpu_fallback.ffn_layer) ||
-            (cpu_fallback.ffn_from_layer >= 0 &&
-             l >= cpu_fallback.ffn_from_layer)) {
+        if (bn_transformer_gpu_cpu_fallback_layer_selected(
+                l, cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer)) {
             if (bn_transformer_gpu_fallback_cpu_ffn(
                     &emit, gpu, m, sess, lw, &ffn_plan, dim, u_eps,
                     next_norm) != 0)
@@ -1857,8 +1855,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
         BnTransformerGPUDenseFFNResources ffn_res = layer_ffn_res;
         int ffn_down_input_buf = -1;
-        int skip_ffn_down = cpu_fallback.ffn_down_from_layer >= 0 &&
-                            l >= cpu_fallback.ffn_down_from_layer;
+        int skip_ffn_down = bn_transformer_gpu_cpu_fallback_layer_selected(
+            l, -1, cpu_fallback.ffn_down_from_layer);
         int compare_ffn_state = compare_ffn_state_layer == l &&
             (compare_ffn_state_pos < 0 || compare_ffn_state_pos == pos);
         if (compare_ffn_state) {

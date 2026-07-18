@@ -504,6 +504,10 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_cpu_fallback_layer_selected(
+    int layer,
+    int exact_layer,
+    int from_layer);
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
 BnTransformerGPUQ4Q8LayerUsePolicy

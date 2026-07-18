@@ -1243,6 +1243,14 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
     return policy;
 }
 
+int bn_transformer_gpu_cpu_fallback_layer_selected(
+    int layer,
+    int exact_layer,
+    int from_layer) {
+    return (exact_layer >= 0 && layer == exact_layer) ||
+           (from_layer >= 0 && layer >= from_layer);
+}
+
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     int n_layers = c ? c->n_layers : 0;
@@ -1573,9 +1581,8 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     if (bn_transformer_gpu_all2_q4_moe_requires_opt_in(
             c, map, dim, allow_q4_down))
         return 1;
-    return cpu_fallback_ffn_layer == layer ||
-           (cpu_fallback_ffn_from_layer >= 0 &&
-            layer >= cpu_fallback_ffn_from_layer);
+    return bn_transformer_gpu_cpu_fallback_layer_selected(
+        layer, cpu_fallback_ffn_layer, cpu_fallback_ffn_from_layer);
 }
 
 int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
