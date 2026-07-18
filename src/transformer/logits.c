@@ -173,20 +173,11 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
         s->logits[ids[i]] = native_vals[i];
 }
 
-static int logits_small_cuda_q8_refine_enabled(const BnModel *m,
-                                               const BnQWeight *W) {
-    if (!m || !W)
-        return 0;
-    BnGPUBackend *gpu = bn_model_gpu(m);
-    const BnConfig *c = &m->config;
-    return bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
-        gpu, c, W->type);
-}
-
 static void logits_refine_small_cuda_q8(const BnModel *m,
                                         BnRunState *s,
                                         const BnQWeight *W) {
-    if (!logits_small_cuda_q8_refine_enabled(m, W))
+    if (!m || !bn_transformer_logits_small_cuda_q8_refine_enabled(
+                  bn_model_gpu(m), &m->config, W))
         return;
     int refine_top = bn_transformer_gpu_q8_logits_refine_top(1);
     if (refine_top > 0)

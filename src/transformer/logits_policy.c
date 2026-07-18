@@ -1,5 +1,6 @@
 #include "transformer_logits_internal.h"
 #include "backend_quant.h"
+#include "gpu_internal.h"
 
 #include <stdlib.h>
 
@@ -24,6 +25,15 @@ int bn_transformer_logits_q8_refine_supported(
 int bn_transformer_logits_q6_refine_supported(const BnQWeight *W) {
     return W && W->data &&
            bn_backend_quant_supports_q6k_logits_refine(W->type);
+}
+
+int bn_transformer_logits_small_cuda_q8_refine_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnQWeight *W) {
+    return W &&
+           bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
+               gpu, c, W->type);
 }
 
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type) {
