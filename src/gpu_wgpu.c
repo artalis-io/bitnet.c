@@ -653,8 +653,8 @@ static void *wgpu_buffer_create(void *vctx, const void *data, size_t size,
     if (!ctx || !ctx->device || !data || size == 0)
         return NULL;
 
-    /* Q4_0: repack weights for optimized GPU access */
-    if (type == BN_GGUF_TENSOR_Q4_0) {
+    /* Repack formats that have an optimized GPU memory layout. */
+    if (bn_quant_format_gpu_uses_repacked_layout(type)) {
         size_t repacked_size;
         return repack_q4_0_for_gpu(ctx, data, size, rows, cols, &repacked_size,
                                     NULL, 0);
@@ -723,8 +723,8 @@ static void *wgpu_buffer_create_biased(void *vctx, const void *data, size_t size
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
     if (!ctx || !ctx->device || !data || size == 0 || !bias || bias_size == 0)
         return NULL;
-    /* Only Q4_0 supports fused bias (repacked layout with appended bias) */
-    if (type != BN_GGUF_TENSOR_Q4_0) return NULL;
+    if (!bn_quant_format_gpu_supports_repacked_bias(type))
+        return NULL;
 
     int bias_len = (int)(bias_size / sizeof(float));
     size_t repacked_size;
@@ -823,7 +823,7 @@ static int wgpu_matvec(void *vctx, float *out, void *W_buf, const float *x,
         wgpuComputePassEncoderSetPipeline(pass, ctx->pipelines[type]);
         wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, NULL);
         {
-            uint32_t tile = (type == BN_GGUF_TENSOR_Q4_0) ? 8u : 32u;
+            uint32_t tile = bn_quant_format_gpu_dispatch_tile_rows(type);
             wgpuComputePassEncoderDispatchWorkgroups(
                 pass, ((uint32_t)rows + tile - 1u) / tile, 1, 1);
         }
@@ -946,7 +946,7 @@ static int wgpu_matmul(void *vctx, float *out, void *W_buf, const float *X,
         wgpuComputePassEncoderSetPipeline(pass, ctx->pipelines[type]);
         wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, NULL);
         {
-            uint32_t tile = (type == BN_GGUF_TENSOR_Q4_0) ? 8u : 32u;
+            uint32_t tile = bn_quant_format_gpu_dispatch_tile_rows(type);
             wgpuComputePassEncoderDispatchWorkgroups(
                 pass, ((uint32_t)rows + tile - 1u) / tile, (uint32_t)n_tokens, 1);
         }
@@ -1111,7 +1111,7 @@ static int wgpu_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         wgpuComputePassEncoderSetPipeline(pass, ctx->pipelines[op->type]);
         wgpuComputePassEncoderSetBindGroup(pass, 0, bind_groups[i], 0, NULL);
         {
-            uint32_t tile = (op->type == BN_GGUF_TENSOR_Q4_0) ? 8u : 32u;
+            uint32_t tile = bn_quant_format_gpu_dispatch_tile_rows(op->type);
             wgpuComputePassEncoderDispatchWorkgroups(
                 pass, ((uint32_t)op->rows + tile - 1u) / tile, 1, 1);
         }
@@ -1482,7 +1482,7 @@ static int wgpu_execute(void *vctx, const void *ops_raw, int n_ops,
             p[4] = 0;
         }
         if (bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_MATVEC &&
-            ops[i].type != BN_GGUF_TENSOR_Q4_0) {
+            !bn_quant_format_gpu_uses_repacked_layout(ops[i].type)) {
             uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
             p[4] = p[5];
         }

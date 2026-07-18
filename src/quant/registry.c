@@ -97,6 +97,18 @@ int bn_quant_format_can_gpu_repack(int type) {
     return type == BN_GGUF_TENSOR_Q4_0;
 }
 
+int bn_quant_format_gpu_uses_repacked_layout(int type) {
+    return bn_quant_format_can_gpu_repack(type);
+}
+
+int bn_quant_format_gpu_supports_repacked_bias(int type) {
+    return bn_quant_format_gpu_uses_repacked_layout(type);
+}
+
+uint32_t bn_quant_format_gpu_dispatch_tile_rows(int type) {
+    return bn_quant_format_gpu_uses_repacked_layout(type) ? 8u : 32u;
+}
+
 int bn_quant_format_supports_gpu_small_dense(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_SMALL_DENSE);
 }
