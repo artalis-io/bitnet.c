@@ -338,6 +338,7 @@ static void slab_free_range(BnMetalCtx *ctx, size_t offset, size_t size)
 static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
                                              const void *data,
                                              size_t size,
+                                             int type,
                                              int rows,
                                              int cols,
                                              const float *bias,
@@ -408,7 +409,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
         }
         buf->size = prepared_size;
         buf->offset = 0;
-        buf->type = BN_GGUF_TENSOR_Q4_0;
+        buf->type = bn_gpu_policy_metal_repacked_buffer_type(type);
         buf->rows = rows;
         buf->cols = cols;
         buf->bias_offset = bias_offset;
@@ -474,7 +475,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
     }
     buf->size = repacked_size;
     buf->offset = 0;
-    buf->type = BN_GGUF_TENSOR_Q4_0;
+    buf->type = bn_gpu_policy_metal_repacked_buffer_type(type);
     buf->rows = rows;
     buf->cols = cols;
     buf->bias_offset = bias_offset;
@@ -489,7 +490,8 @@ static void *metal_buffer_create(void *vctx, const void *data, size_t size,
     if (!ctx || !data || size == 0) return NULL;
 
     if (bn_gpu_policy_metal_repacked_buffer_supported(type))
-        return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols, NULL, 0, 1);
+        return metal_repack_q4_0_for_gpu(ctx, data, size, type, rows, cols,
+                                         NULL, 0, 1);
 
     BnMetalBuf *buf = (BnMetalBuf *)calloc(1, sizeof(BnMetalBuf));
     if (!buf) return NULL;
@@ -563,7 +565,7 @@ static void *metal_buffer_create_biased(void *vctx, const void *data, size_t siz
 
     if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         int bias_len = (int)(bias_size / sizeof(float));
-        return metal_repack_q4_0_for_gpu(ctx, data, size, rows, cols,
+        return metal_repack_q4_0_for_gpu(ctx, data, size, type, rows, cols,
                                          (const float *)bias, bias_len, 1);
     }
 
@@ -598,7 +600,7 @@ static void *metal_buffer_create_stacked2(void *vctx,
         memcpy(combined, data0, size0);
         memcpy(combined + size0, data1, size1);
         BnMetalBuf *buf = metal_repack_q4_0_for_gpu(
-            ctx, combined, total, rows, cols, NULL, 0, 0);
+            ctx, combined, total, type, rows, cols, NULL, 0, 0);
         free(combined);
         return buf;
     }
@@ -664,7 +666,7 @@ static void *metal_buffer_create_stacked3(void *vctx,
     BnMetalBuf *buf = NULL;
     if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         buf = metal_repack_q4_0_for_gpu(
-            ctx, combined, total, rows, cols, NULL, 0, 0);
+            ctx, combined, total, type, rows, cols, NULL, 0, 0);
     } else {
         buf = (BnMetalBuf *)metal_buffer_create(
             vctx, combined, total, type, rows, cols);
@@ -704,7 +706,7 @@ static void *metal_buffer_create_stacked3_biased(void *vctx,
     if (bn_gpu_policy_metal_repacked_buffer_supported(type)) {
         int bias_len = (int)(bias_size / sizeof(float));
         buf = metal_repack_q4_0_for_gpu(
-            ctx, combined, total, rows, cols, (const float *)bias,
+            ctx, combined, total, type, rows, cols, (const float *)bias,
             bias_len, 0);
     } else {
         size_t combined_biased_size = total + bias_size;

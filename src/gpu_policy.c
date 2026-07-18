@@ -750,6 +750,12 @@ int bn_gpu_policy_metal_repacked_buffer_supported(int tensor_type) {
     return bn_backend_quant_can_gpu_repack(tensor_type);
 }
 
+int bn_gpu_policy_metal_repacked_buffer_type(int tensor_type) {
+    return bn_gpu_policy_metal_repacked_buffer_supported(tensor_type)
+        ? tensor_type
+        : -1;
+}
+
 int bn_gpu_policy_metal_prepared_stacked_upload_blocked(int tensor_type) {
     return bn_gpu_policy_metal_repacked_buffer_supported(tensor_type) &&
            bn_gpu_policy_metal_q4_prepared_upload_enabled();

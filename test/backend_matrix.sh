@@ -616,7 +616,7 @@ if grep -n 'return gpu && gpu->kind == BN_GPU_BACKEND_CUDA' src/transformer/gpu_
     fail=1
 fi
 
-if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
+if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_repacked_buffer_type\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must own Metal feature-policy env vars"
     fail=1
 fi
@@ -686,6 +686,11 @@ fi
 
 if grep -n 'handle->type = BN_GGUF_TENSOR_' src/gpu_wgpu.c >/dev/null 2>&1; then
     echo "WebGPU repacked upload buffers must preserve the selected tensor type instead of hard-coding a format"
+    fail=1
+fi
+
+if grep -n 'buf->type = BN_GGUF_TENSOR_' src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal repacked upload buffers must use GPU policy for selected tensor type"
     fail=1
 fi
 

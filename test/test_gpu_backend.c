@@ -1863,6 +1863,10 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_repacked_buffer_supported(
         BN_GGUF_TENSOR_Q8_0));
+    assert(bn_gpu_policy_metal_repacked_buffer_type(
+        BN_GGUF_TENSOR_Q4_0) == BN_GGUF_TENSOR_Q4_0);
+    assert(bn_gpu_policy_metal_repacked_buffer_type(
+        BN_GGUF_TENSOR_Q8_0) == -1);
     assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
