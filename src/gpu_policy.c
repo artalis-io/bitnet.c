@@ -583,6 +583,25 @@ int bn_gpu_policy_cuda_q6k_moe_down_f16_cache_enabled(int has_f16_data) {
            getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F16_CACHE") == NULL;
 }
 
+int bn_gpu_policy_cuda_q4k_moe_down_f32_cache_enabled(int has_f32_data) {
+    return has_f32_data &&
+           getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE") == NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_moe_pair_down_enabled(int n_experts,
+                                                 int k,
+                                                 int hidden_dim) {
+    return n_experts == 2 && k == 2 && hidden_dim >= 4096 &&
+           getenv("BN_CUDA_ENABLE_MOE_Q4K_PAIR_DOWN") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_Q4K_PAIR_DOWN") == NULL;
+}
+
+int bn_gpu_policy_cuda_q4k_moe_down_8row_enabled(int hidden_dim) {
+    return hidden_dim <= 1024 &&
+           getenv("BN_CUDA_ENABLE_MOE_Q4K_DOWN_8ROW") != NULL &&
+           getenv("BN_CUDA_DISABLE_MOE_Q4K_DOWN_8ROW") == NULL;
+}
+
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
     return getenv("BN_CUDA_ENABLE_LOGITS_CACHE") != NULL &&
            !gpu_logits_need_cpu;

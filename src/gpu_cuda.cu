@@ -11874,6 +11874,21 @@ static int cuda_use_q6k_moe_down_f16_cache(const BnCudaBuffer *down) {
         down && down->f16_data != NULL);
 }
 
+static int cuda_use_q4k_moe_down_f32_cache(const BnCudaBuffer *down) {
+    return bn_gpu_policy_cuda_q4k_moe_down_f32_cache_enabled(
+        down && down->f32_data != NULL);
+}
+
+static int cuda_use_q4k_moe_pair_down(int n_experts, int k,
+                                      int hidden_dim) {
+    return bn_gpu_policy_cuda_q4k_moe_pair_down_enabled(
+        n_experts, k, hidden_dim);
+}
+
+static int cuda_use_q4k_moe_down_8row(int hidden_dim) {
+    return bn_gpu_policy_cuda_q4k_moe_down_8row_enabled(hidden_dim);
+}
+
 static cublasGemmAlgo_t cuda_cublas_gemm_algo(void) {
     const char *env = getenv("BN_CUDA_CUBLAS_GEMM_ALGO");
     if (!env || !env[0])
@@ -20651,8 +20666,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 out, (const BnBlockQ6K *)down->data, mid_q,
                                 route, dim, hidden, n_experts, k);
                         }
-                    } else if (down->f32_data &&
-                               getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE") == NULL) {
+                    } else if (cuda_use_q4k_moe_down_f32_cache(down)) {
                         if (n_experts == 2 && k == 2 &&
                             moe_all2_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
@@ -20667,10 +20681,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, n_experts, k);
                         }
-                    } else if (n_experts == 2 && k == 2 &&
-                               hidden >= 4096 &&
-                               getenv("BN_CUDA_ENABLE_MOE_Q4K_PAIR_DOWN") != NULL &&
-                               getenv("BN_CUDA_DISABLE_MOE_Q4K_PAIR_DOWN") == NULL) {
+                    } else if (cuda_use_q4k_moe_pair_down(
+                                   n_experts, k, hidden)) {
                         if (cuda_ensure_q8_k(ctx, hidden, k) != 0 ||
                             cuda_ensure_prefill(ctx,
                                 (size_t)k * (size_t)dim) != 0)
@@ -20700,9 +20712,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                             mid_q, mid, hidden, k);
                         BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE();
-                        if (hidden <= 1024 &&
-                            getenv("BN_CUDA_ENABLE_MOE_Q4K_DOWN_8ROW") != NULL &&
-                            getenv("BN_CUDA_DISABLE_MOE_Q4K_DOWN_8ROW") == NULL) {
+                        if (cuda_use_q4k_moe_down_8row(hidden)) {
                             int down8_blocks =
                                 (dim + warps * 8 - 1) / (warps * 8);
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,

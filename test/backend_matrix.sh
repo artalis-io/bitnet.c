@@ -739,6 +739,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN")\|getenv("BN_CUDA_DISABL
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_PAIR_DOWN")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_PAIR_DOWN")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_DOWN_8ROW")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_DOWN_8ROW")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must use GPU policy helpers for Q4K MoE down variant env vars"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
@@ -779,7 +784,10 @@ for fn in \
     cuda_use_q6k_moe_down_q8k_all2_accum_4row \
     cuda_use_q6k_moe_down_q8k_pair_4row \
     cuda_use_q6k_moe_down_f32_cache \
-    cuda_use_q6k_moe_down_f16_cache
+    cuda_use_q6k_moe_down_f16_cache \
+    cuda_use_q4k_moe_down_f32_cache \
+    cuda_use_q4k_moe_pair_down \
+    cuda_use_q4k_moe_down_8row
 do
     if ! awk -v fn="$fn" '
         $0 ~ "static int " fn "\\(" { in_fn=1 }
