@@ -1008,27 +1008,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 bn_transformer_gpu_resolve_dense_ffn_resources(
                     gpu, backend, lw, l);
         }
-        int use_q4_q8_layer = q4_q8.from_layer >= 0 &&
-                               l >= q4_q8.from_layer &&
-                               (q4_q8.to_layer < 0 ||
-                                l <= q4_q8.to_layer);
-        int small_dense_cuda_exact_q4_q8 =
-            small_dense_cuda_exact_q4_q8_default &&
-            (small_dense_cuda_exact_q4_q8_to_layer < 0 ||
-             l <= small_dense_cuda_exact_q4_q8_to_layer);
-        if (small_dense_cuda_exact_q4_q8)
-            use_q4_q8_layer = 1;
-        int all2_q4q6_moe_cuda_exact_attn =
-            bn_transformer_gpu_cuda_moe_exact_attention_enabled(gpu, c);
-        int use_q4_q8_attn =
-            (use_q4_q8_layer || all2_q4q6_moe_cuda_exact_attn) &&
-            !q4_q8.ffn_only;
-        int use_q4_q8_ffn = use_q4_q8_layer && !q4_q8.attn_only;
-        int use_q4_q8_ffn_down = use_q4_q8_ffn;
-        if (small_dense_cuda_exact_q4_q8 &&
-            !bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
-                gpu, c))
-            use_q4_q8_ffn_down = 0;
+        BnTransformerGPUQ4Q8LayerUsePolicy q4_q8_use =
+            bn_transformer_gpu_q4_q8_layer_use_policy(
+                gpu, c, &q4_q8, l, small_dense_cuda_exact_q4_q8_default,
+                small_dense_cuda_exact_q4_q8_to_layer);
 
         // ---- SSM layer ----
         if (!is_attn) {
@@ -1112,7 +1095,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             bn_transformer_gpu_emit_context_qkv(
                 &emit, c, lw, &plan, &qkv_res, pos, q_dim,
                 head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
-                use_q4_q8_attn);
+                q4_q8_use.use_attention);
             if (!emit_logits && l + 1 == c->n_layers) {
                 continue;
             }
@@ -1136,12 +1119,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, "gpu gqa compare failed");
                 bn_transformer_gpu_emit_context_attention_finish(
                     &emit, c, lw, &attn_res, dim, q_dim, head_size, u_eps,
-                    use_q4_q8_attn);
+                    q4_q8_use.use_attention);
             } else {
                 bn_transformer_gpu_emit_context_attention(
                     &emit, c, lw, &attn_res, pos, dim, q_dim,
                     head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
-                    kv_cache_off, has_moe, u_eps, use_q4_q8_attn);
+                    kv_cache_off, has_moe, u_eps,
+                    q4_q8_use.use_attention);
             }
             if (compare_attention) {
                 if (bn_transformer_gpu_debug_compare_attention(
@@ -1930,7 +1914,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
             next_norm, skip_ffn_down, &ffn_down_input_buf,
-            use_q4_q8_ffn, use_q4_q8_ffn_down);
+            q4_q8_use.use_ffn, q4_q8_use.use_ffn_down);
         if (!skip_ffn_down &&
             compare_ffn_down_layer == l &&
             (compare_ffn_down_pos < 0 || compare_ffn_down_pos == pos)) {

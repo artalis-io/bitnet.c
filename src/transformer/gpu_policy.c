@@ -1234,6 +1234,41 @@ bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerGPUQ4Q8LayerUsePolicy
+bn_transformer_gpu_q4_q8_layer_use_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPUQ4Q8LayerPolicy *policy,
+    int layer,
+    int small_dense_exact_q4_q8_default,
+    int small_dense_exact_q4_q8_to_layer) {
+    BnTransformerGPUQ4Q8LayerUsePolicy use = {0};
+    if (!policy)
+        return use;
+
+    use.use_layer = policy->from_layer >= 0 &&
+                    layer >= policy->from_layer &&
+                    (policy->to_layer < 0 || layer <= policy->to_layer);
+    use.small_dense_exact_q4_q8 =
+        small_dense_exact_q4_q8_default &&
+        (small_dense_exact_q4_q8_to_layer < 0 ||
+         layer <= small_dense_exact_q4_q8_to_layer);
+    if (use.small_dense_exact_q4_q8)
+        use.use_layer = 1;
+
+    int exact_attention =
+        bn_transformer_gpu_cuda_moe_exact_attention_enabled(gpu, c);
+    use.use_attention =
+        (use.use_layer || exact_attention) && !policy->ffn_only;
+    use.use_ffn = use.use_layer && !policy->attn_only;
+    use.use_ffn_down = use.use_ffn;
+    if (use.small_dense_exact_q4_q8 &&
+        !bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
+            gpu, c))
+        use.use_ffn_down = 0;
+    return use;
+}
+
 BnTransformerGPUComparePolicy
 bn_transformer_gpu_compare_policy(void) {
     BnTransformerGPUComparePolicy policy = {

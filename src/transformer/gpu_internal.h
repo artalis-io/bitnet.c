@@ -124,6 +124,14 @@ typedef struct {
 } BnTransformerGPUQ4Q8LayerPolicy;
 
 typedef struct {
+    int use_layer;
+    int small_dense_exact_q4_q8;
+    int use_attention;
+    int use_ffn;
+    int use_ffn_down;
+} BnTransformerGPUQ4Q8LayerUsePolicy;
+
+typedef struct {
     int q6_default;
     int q6_enabled;
     int q6_captures_xb;
@@ -468,6 +476,14 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
     const BnWeights *w);
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
+BnTransformerGPUQ4Q8LayerUsePolicy
+bn_transformer_gpu_q4_q8_layer_use_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnTransformerGPUQ4Q8LayerPolicy *policy,
+    int layer,
+    int small_dense_exact_q4_q8_default,
+    int small_dense_exact_q4_q8_to_layer);
 BnTransformerGPUComparePolicy
 bn_transformer_gpu_compare_policy(void);
 int bn_transformer_gpu_flash_attention_enabled(

@@ -1449,6 +1449,75 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     unsetenv("BN_METAL_Q4_PREPARED");
 
+    BnTransformerGPUQ4Q8LayerPolicy manual_q4_q8_policy = {
+        .from_layer = 2,
+        .to_layer = 4,
+        .attn_only = 0,
+        .ffn_only = 0,
+    };
+    c.policy_flags = 0;
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    BnTransformerGPUQ4Q8LayerUsePolicy q4_q8_use =
+        bn_transformer_gpu_q4_q8_layer_use_policy(
+            &gpu, &c, &manual_q4_q8_policy, 1, 0, -1);
+    assert(!q4_q8_use.use_layer);
+    assert(!q4_q8_use.use_attention);
+    assert(!q4_q8_use.use_ffn);
+    assert(!q4_q8_use.use_ffn_down);
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 2, 0, -1);
+    assert(q4_q8_use.use_layer);
+    assert(q4_q8_use.use_attention);
+    assert(q4_q8_use.use_ffn);
+    assert(q4_q8_use.use_ffn_down);
+    manual_q4_q8_policy.attn_only = 1;
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 2, 0, -1);
+    assert(q4_q8_use.use_attention);
+    assert(!q4_q8_use.use_ffn);
+    assert(!q4_q8_use.use_ffn_down);
+    manual_q4_q8_policy.attn_only = 0;
+    manual_q4_q8_policy.ffn_only = 1;
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 2, 0, -1);
+    assert(!q4_q8_use.use_attention);
+    assert(q4_q8_use.use_ffn);
+    assert(q4_q8_use.use_ffn_down);
+    manual_q4_q8_policy.from_layer = -1;
+    manual_q4_q8_policy.to_layer = -1;
+    manual_q4_q8_policy.ffn_only = 0;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION;
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 0, 0, -1);
+    assert(!q4_q8_use.use_layer);
+    assert(q4_q8_use.use_attention);
+    assert(!q4_q8_use.use_ffn);
+    manual_q4_q8_policy.ffn_only = 1;
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 0, 0, -1);
+    assert(!q4_q8_use.use_attention);
+    manual_q4_q8_policy.ffn_only = 0;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8;
+    unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
+    unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 4, 1, 3);
+    assert(!q4_q8_use.use_layer);
+    assert(!q4_q8_use.small_dense_exact_q4_q8);
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 3, 1, 3);
+    assert(q4_q8_use.use_layer);
+    assert(q4_q8_use.small_dense_exact_q4_q8);
+    assert(q4_q8_use.use_attention);
+    assert(q4_q8_use.use_ffn);
+    assert(!q4_q8_use.use_ffn_down);
+    setenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN", "1", 1);
+    q4_q8_use = bn_transformer_gpu_q4_q8_layer_use_policy(
+        &gpu, &c, &manual_q4_q8_policy, 3, 1, 3);
+    assert(q4_q8_use.use_ffn_down);
+    unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
+    c.policy_flags = 0;
+
     setenv("BN_GPU_FLASH_MIN_KV", "0", 1);
     setenv("BN_GPU_FLASH_MAX_KV", "2048", 1);
     gpu.caps = BN_GPU_CAP_FLASH_ATTN;
