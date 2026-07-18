@@ -2002,21 +2002,27 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 };
                 t_prof = prefill_profile_now(&prof);
                 int used_gpu_attn = used_raw_prefill_attn_wo;
-                if (!used_raw_prefill_attn_wo &&
-                    gpu && gpu->prefill_attention &&
-                    bn_transformer_gpu_cuda_prefill_attention_enabled() &&
-                    n_tokens >=
-                        bn_transformer_gpu_cuda_prefill_attention_min_tokens() &&
+                void *attn_wo_buf = prefill_backend_role_or_qweight(
+                    backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
+                    &lw->attn.wo);
+                BnTransformerPrefillAttentionBatchPolicy attn_batch_policy =
+                    bn_transformer_prefill_attention_batch_policy(
+                        used_raw_prefill_attn_wo,
+                        gpu != NULL,
+                        gpu && gpu->prefill_attention,
+                        gpu && gpu->prefill_attention_wo,
+                        bn_transformer_gpu_cuda_prefill_attention_enabled(),
+                        attn_wo_buf != NULL,
+                        n_tokens,
+                        bn_transformer_gpu_cuda_prefill_attention_min_tokens(),
+                        lw->norm.attn_sub_norm != NULL,
+                        bn_transformer_attention_uses_post_norm(c),
+                        lw->norm.attn_post_norm != NULL);
+                if (attn_batch_policy.eligible &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
-                    void *wo_buf = prefill_backend_role_or_qweight(
-                        backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
-                        &lw->attn.wo);
-                    if (gpu->prefill_attention_wo && wo_buf &&
-                        !lw->norm.attn_sub_norm &&
-                        !(bn_transformer_attention_uses_post_norm(c) &&
-                          lw->norm.attn_post_norm) &&
+                    if (attn_batch_policy.fuses_output_projection &&
                         gpu->prefill_attention_wo(
-                            gpu->ctx, Xb2, wo_buf, Q_buf, K_new, V_new,
+                            gpu->ctx, Xb2, attn_wo_buf, Q_buf, K_new, V_new,
                             n_tokens, c->n_heads, layer_n_kv_heads,
                             layer_head_size, layer_kv_mul, kv_dim,
                             lw->attn.wo.rows, lw->attn.wo.cols,

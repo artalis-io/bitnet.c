@@ -43,6 +43,11 @@ typedef struct {
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
 
+typedef struct {
+    int eligible;
+    int fuses_output_projection;
+} BnTransformerPrefillAttentionBatchPolicy;
+
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
@@ -87,6 +92,19 @@ bn_transformer_prefill_raw_attention_policy(
     int has_q_bias,
     int has_k_bias,
     int has_v_bias,
+    int has_attn_sub_norm,
+    int uses_post_norm,
+    int has_attn_post_norm);
+BnTransformerPrefillAttentionBatchPolicy
+bn_transformer_prefill_attention_batch_policy(
+    int raw_attention_already_used,
+    int gpu_available,
+    int attention_hook_available,
+    int attention_wo_hook_available,
+    int attention_feature_enabled,
+    int wo_buffer_available,
+    int n_tokens,
+    int min_tokens,
     int has_attn_sub_norm,
     int uses_post_norm,
     int has_attn_post_norm);

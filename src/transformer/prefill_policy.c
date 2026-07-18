@@ -105,6 +105,35 @@ bn_transformer_prefill_raw_attention_policy(
     return policy;
 }
 
+BnTransformerPrefillAttentionBatchPolicy
+bn_transformer_prefill_attention_batch_policy(
+    int raw_attention_already_used,
+    int gpu_available,
+    int attention_hook_available,
+    int attention_wo_hook_available,
+    int attention_feature_enabled,
+    int wo_buffer_available,
+    int n_tokens,
+    int min_tokens,
+    int has_attn_sub_norm,
+    int uses_post_norm,
+    int has_attn_post_norm) {
+    BnTransformerPrefillAttentionBatchPolicy policy = {0};
+    policy.eligible =
+        !raw_attention_already_used &&
+        gpu_available &&
+        attention_hook_available &&
+        attention_feature_enabled &&
+        n_tokens >= min_tokens;
+    policy.fuses_output_projection =
+        policy.eligible &&
+        attention_wo_hook_available &&
+        wo_buffer_available &&
+        !has_attn_sub_norm &&
+        !(uses_post_norm && has_attn_post_norm);
+    return policy;
+}
+
 int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
     return ops && ops->supports_preq8k &&

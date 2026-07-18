@@ -3220,6 +3220,40 @@ static void test_block_planning(void) {
         0, 0, 0, 0, 1, 1);
     assert(!raw_attention.eligible);
 
+    BnTransformerPrefillAttentionBatchPolicy attention_batch =
+        bn_transformer_prefill_attention_batch_policy(
+            0, 1, 1, 1, 1, 1, 16, 16, 0, 0, 0);
+    assert(attention_batch.eligible);
+    assert(attention_batch.fuses_output_projection);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        1, 1, 1, 1, 1, 1, 16, 16, 0, 0, 0);
+    assert(!attention_batch.eligible);
+    assert(!attention_batch.fuses_output_projection);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 0, 1, 1, 1, 1, 16, 16, 0, 0, 0);
+    assert(!attention_batch.eligible);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 0, 1, 1, 1, 16, 16, 0, 0, 0);
+    assert(!attention_batch.eligible);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 1, 1, 0, 1, 16, 16, 0, 0, 0);
+    assert(!attention_batch.eligible);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 1, 1, 1, 1, 15, 16, 0, 0, 0);
+    assert(!attention_batch.eligible);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 1, 1, 1, 0, 16, 16, 0, 0, 0);
+    assert(attention_batch.eligible);
+    assert(!attention_batch.fuses_output_projection);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 1, 1, 1, 1, 16, 16, 1, 0, 0);
+    assert(attention_batch.eligible);
+    assert(!attention_batch.fuses_output_projection);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 1, 1, 1, 1, 16, 16, 0, 1, 1);
+    assert(attention_batch.eligible);
+    assert(!attention_batch.fuses_output_projection);
+
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_preq8k =
