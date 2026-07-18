@@ -376,6 +376,9 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled(
 int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
     const BnGPUBackend *gpu,
     const BnConfig *c);
+int bn_transformer_gpu_small_dense_prefill_decode_fallback_requested(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
 int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c);
@@ -393,6 +396,9 @@ int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
     const BnConfig *c,
     int n_tokens);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_cuda_matvec_fallback_kept(
@@ -428,6 +434,9 @@ int bn_transformer_gpu_large_hybrid_argmax_blocked(
     const BnWeights *w,
     int want_argmax);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
