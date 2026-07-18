@@ -211,6 +211,18 @@ int bn_transformer_prefill_dense_chain_min_tokens(
     return bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu);
 }
 
+int bn_transformer_prefill_dense_chain_enabled(void) {
+    return bn_transformer_gpu_cuda_prefill_dense_chain_enabled();
+}
+
+int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens) {
+    return bn_transformer_gpu_dense_ffn_batch_tokens_allowed(gpu, c,
+                                                             n_tokens);
+}
+
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,

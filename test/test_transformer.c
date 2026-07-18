@@ -3974,6 +3974,18 @@ static void test_block_planning(void) {
     assert(bn_transformer_prefill_dense_chain_min_tokens(
         &prefill_dense_c, &prefill_dense_gpu) == 9);
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+    unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
+    assert(bn_transformer_prefill_dense_chain_enabled());
+    setenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN", "1", 1);
+    assert(!bn_transformer_prefill_dense_chain_enabled());
+    unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
+    assert(!bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
+        &prefill_dense_gpu, &prefill_dense_c, 15));
+    assert(bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
+        &prefill_dense_gpu, &prefill_dense_c, 16));
+    prefill_dense_gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
+        &prefill_dense_gpu, &prefill_dense_c, 1));
 
     BnTransformerPrefillSSMChainPolicy ssm_chain =
         bn_transformer_prefill_ssm_chain_policy(

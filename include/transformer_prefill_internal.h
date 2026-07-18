@@ -228,6 +228,11 @@ bn_transformer_prefill_dense_layer_chain_policy(
 int bn_transformer_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
+int bn_transformer_prefill_dense_chain_enabled(void);
+int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int n_tokens);
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,

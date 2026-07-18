@@ -1490,7 +1490,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     BnTransformerPrefillDenseModelChainPolicy dense_model_chain =
         bn_transformer_prefill_dense_model_chain_policy(
-            bn_transformer_gpu_cuda_prefill_dense_chain_enabled(),
+            bn_transformer_prefill_dense_chain_enabled(),
             bn_model_gpu(m) != NULL, pos0, c->n_layers);
     if (dense_model_chain.enabled) {
         int chain_ready = 1;
@@ -1768,9 +1768,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 bn_transformer_prefill_dense_layer_batch_policy(
                     bn_model_gpu(m) != NULL,
                     bn_model_tq_state(m) != NULL,
-                    bn_transformer_gpu_cuda_prefill_dense_chain_enabled(),
+                    bn_transformer_prefill_dense_chain_enabled(),
                     n_tokens,
-                    bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
+                    bn_transformer_prefill_dense_chain_min_tokens(
                         c, bn_model_gpu(m)),
                     pos0, layer_rope_theta, c->rope_theta, layer_kind,
                     c->has_ffn_gate, lw->ffn.ffn_up.data != NULL,
@@ -2435,10 +2435,9 @@ prefill_ssm_done:
             BnGPUBackend *gpu_ffn = bn_model_gpu(m);
             const BnBackendModel *backend_ffn = bn_model_backend(m);
             int dense_ffn_batch_min_tokens =
-                bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
-                    c, gpu_ffn);
+                bn_transformer_prefill_dense_chain_min_tokens(c, gpu_ffn);
             int can_use_dense_ffn_batch =
-                bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
+                bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
                     gpu_ffn, c, n_tokens);
             void *ffn_norm_buf =
                 backend_ffn ? bn_backend_model_handle(
