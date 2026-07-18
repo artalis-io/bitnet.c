@@ -803,7 +803,7 @@ int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
         gpu, c);
 }
 
-int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+int bn_transformer_gpu_prefill_direct_kv_allowed(
     const BnConfig *c,
     const BnWeights *w,
     const BnGPUBackend *gpu,
@@ -827,13 +827,13 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
     return 1;
 }
 
-int bn_transformer_gpu_prefill_direct_kv_allowed(
+int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
     const BnConfig *c,
     const BnWeights *w,
     const BnGPUBackend *gpu,
     int pos0,
     int n_tokens) {
-    return bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+    return bn_transformer_gpu_prefill_direct_kv_allowed(
         c, w, gpu, pos0, n_tokens);
 }
 

@@ -2451,23 +2451,47 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV");
     unsetenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK");
     unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
+    assert(bn_transformer_gpu_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
+    assert(bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
     assert(bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     setenv("BN_GPU_CPU_FALLBACK_LAYER", "0", 1);
+    assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
+    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     setenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK", "1", 1);
+    assert(bn_transformer_gpu_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
+    assert(bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
     assert(bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
     unsetenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK");
     c.kv_f16 = 1;
+    assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
+    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     c.kv_f16 = 0;
+    assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 24, 16));
+    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 24, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 24, 16));
     setenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV", "1", 1);
+    assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
+    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
+        &c, &dense_w, &gpu, 0, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     unsetenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV");
