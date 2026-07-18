@@ -1,5 +1,6 @@
 #include "gpu_policy.h"
 #include "backend_quant.h"
+#include "model_arch.h"
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -13,6 +14,18 @@ int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu) {
 
 int bn_gpu_policy_float_buffer_type(void) {
     return bn_backend_quant_gpu_float_buffer_type();
+}
+
+int bn_gpu_policy_attention_layer_count(const BnConfig *c) {
+    return bn_model_arch_attention_layer_count(c);
+}
+
+int bn_gpu_policy_ssm_layer_count(const BnConfig *c) {
+    return bn_model_arch_ssm_layer_count(c);
+}
+
+int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_ssm(c);
 }
 
 int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(

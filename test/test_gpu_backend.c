@@ -345,6 +345,21 @@ static void test_gpu_policy_helpers(void) {
     gpu.buffer_create_f16_cache = mock_create;
     gpu.buffer_create_q6_f32_cache = mock_create;
 
+    BnConfig layers = {0};
+    assert(bn_gpu_policy_attention_layer_count(NULL) == 0);
+    assert(bn_gpu_policy_ssm_layer_count(NULL) == 0);
+    assert(!bn_gpu_policy_uses_hybrid_ssm(NULL));
+    layers.n_layers = 12;
+    assert(bn_gpu_policy_attention_layer_count(&layers) == 12);
+    assert(bn_gpu_policy_ssm_layer_count(&layers) == 0);
+    assert(!bn_gpu_policy_uses_hybrid_ssm(&layers));
+    layers.full_attn_interval = 4;
+    assert(bn_gpu_policy_attention_layer_count(&layers) == 3);
+    assert(bn_gpu_policy_ssm_layer_count(&layers) == 9);
+    assert(!bn_gpu_policy_uses_hybrid_ssm(&layers));
+    layers.ssm_inner_size = 128;
+    assert(bn_gpu_policy_uses_hybrid_ssm(&layers));
+
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
     assert(bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));
     assert(!bn_gpu_policy_cuda_moe_routed_ffn_enabled(0));

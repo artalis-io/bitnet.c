@@ -2,6 +2,7 @@
 #define BN_GPU_POLICY_H
 
 #include "gpu_backend.h"
+#include "model_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,6 +11,9 @@ extern "C" {
 int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible);
 int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu);
 int bn_gpu_policy_float_buffer_type(void);
+int bn_gpu_policy_attention_layer_count(const BnConfig *c);
+int bn_gpu_policy_ssm_layer_count(const BnConfig *c);
+int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c);
 int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
