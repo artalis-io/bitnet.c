@@ -1,5 +1,4 @@
 #include "moe_internal.h"
-#include "model_arch.h"
 
 // --- Expert LRU Cache (pread pipeline) ---
 #if !defined(__EMSCRIPTEN__)
@@ -277,7 +276,7 @@ void bn_moe_cache_print_stats(const BnMoEState *ms) {
 
 int bn_moe_prefault_mmap(struct BnModel *m) {
     if (!m || !bn_moe_io_has_mmap(bn_model_moe_io(m)) ||
-        !bn_model_arch_uses_moe(&m->config))
+        !bn_moe_policy_uses_expert_weights(&m->config))
         return -1;
 
 #if defined(__EMSCRIPTEN__)

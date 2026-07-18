@@ -28,6 +28,10 @@ BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
     return policy;
 }
 
+int bn_moe_policy_uses_expert_weights(const BnConfig *c) {
+    return bn_model_arch_uses_moe(c);
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {

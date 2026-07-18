@@ -324,6 +324,11 @@ static void test_moe_prefill_policy(void) {
     assert(!policy.force_matvec_prefill);
     assert(!policy.uses_grouped_expert_route);
 
+    assert(bn_moe_policy_uses_expert_weights(&c));
+    BnConfig dense = {0};
+    assert(!bn_moe_policy_uses_expert_weights(&dense));
+    assert(!bn_moe_policy_uses_expert_weights(NULL));
+
     printf("PASSED\n");
 }
 
