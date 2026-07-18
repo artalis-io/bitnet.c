@@ -3146,6 +3146,15 @@ static void test_block_planning(void) {
 
     lw.ffn_kind = BN_LAYER_FFN_MOE;
     lw.moe.router_weight = (float *)1;
+    assert(bn_transformer_moe_has_shared_expert(&c, &lw));
+    c.has_shared_expert = 0;
+    assert(!bn_transformer_moe_has_shared_expert(&c, &lw));
+    lw.shared.shared_expert_gate = (float *)1;
+    assert(bn_transformer_moe_has_shared_expert(&c, &lw));
+    lw.shared.shared_expert_gate = NULL;
+    c.has_shared_expert = 1;
+    assert(bn_transformer_moe_requires_cpu_fallback(BN_EXEC_GPU, &lw));
+    assert(!bn_transformer_moe_requires_cpu_fallback(BN_EXEC_CPU, &lw));
     bn_transformer_plan_moe(&moe, &c, &lw, &gpu, 0, 1);
     assert(moe.placement == BN_EXEC_CPU_FALLBACK);
     assert(moe.backend == BN_BACKEND_CPU);

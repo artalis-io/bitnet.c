@@ -253,6 +253,10 @@ BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
                                   const BnLayerWeights *lw);
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                   const BnLayerWeights *lw);
+int bn_transformer_moe_has_shared_expert(const BnConfig *c,
+                                         const BnLayerWeights *lw);
+int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
+                                             const BnLayerWeights *lw);
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c);
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(

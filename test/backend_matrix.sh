@@ -982,6 +982,16 @@ if grep -n 'p->kind = .*ffn_kind == BN_LAYER_FFN_MOE\|p->kind = .*has_ffn_gate' 
     fail=1
 fi
 
+if grep -n 'p->has_shared_expert = .*has_shared_expert.*shared_expert_gate' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer MoE planning must use shared-expert policy helpers"
+    fail=1
+fi
+
+if grep -n 'p->placement == BN_EXEC_GPU && .*moe\.router_weight' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer MoE planning must use CPU-fallback policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \

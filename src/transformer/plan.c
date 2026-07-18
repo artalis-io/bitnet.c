@@ -177,6 +177,17 @@ int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                          : c->hidden_dim;
 }
 
+int bn_transformer_moe_has_shared_expert(const BnConfig *c,
+                                         const BnLayerWeights *lw) {
+    return (c && c->has_shared_expert) ||
+           (lw && lw->shared.shared_expert_gate);
+}
+
+int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
+                                             const BnLayerWeights *lw) {
+    return placement == BN_EXEC_GPU && lw && lw->moe.router_weight;
+}
+
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c) {
     return bn_model_arch_per_layer_embedding_dim(c);
@@ -324,9 +335,9 @@ void bn_transformer_plan_moe(BnMoEPlan *p,
     p->n_experts = c->n_experts;
     p->n_active = c->n_experts_active;
     p->hidden_dim = c->moe_intermediate_size;
-    p->has_shared_expert = c->has_shared_expert || lw->shared.shared_expert_gate;
+    p->has_shared_expert = bn_transformer_moe_has_shared_expert(c, lw);
     p->shared_hidden_dim = c->shared_expert_intermediate_size;
-    if (p->placement == BN_EXEC_GPU && lw->moe.router_weight) {
+    if (bn_transformer_moe_requires_cpu_fallback(p->placement, lw)) {
         p->needs_cpu_fallback = 1;
         p->placement = BN_EXEC_CPU_FALLBACK;
         p->backend = bn_transformer_backend_placement(gpu, p->placement);
