@@ -661,7 +661,13 @@ bn_transformer_gpu_decode_cacheability_policy(
 int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w);
+int bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
+    const BnConfig *c,
+    const BnWeights *w);
 int bn_transformer_gpu_cuda_moe_exact_attention_enabled(
+    const BnGPUBackend *gpu,
+    const BnConfig *c);
+int bn_transformer_gpu_moe_exact_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_ssm_cpu_fallback_required(
