@@ -823,6 +823,16 @@ int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void) {
     return bn_gpu_policy_cuda_moe_cache_prefill_enabled();
 }
 
+int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    int gpu_moe_cache_available) {
+    return gpu_moe_cache_available &&
+           bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           bn_model_arch_uses_two_expert_all_active_moe(c) &&
+           bn_transformer_gpu_cuda_moe_cache_prefill_enabled();
+}
+
 int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void) {
     return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
 }

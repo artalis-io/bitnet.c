@@ -420,9 +420,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int used_gpu_shared_batch = 0;
     BnGPUBackend *gpu_batch = bn_model_gpu(m);
     int prefer_cached_expert_batch =
-        bn_model_gpu_moe_cache(m) != NULL &&
-        bn_model_arch_uses_two_expert_all_active_moe(c) &&
-        bn_transformer_gpu_cuda_moe_cache_prefill_enabled();
+        bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+            gpu_batch, c, bn_model_gpu_moe_cache(m) != NULL);
     if (bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
             gpu_batch, c, map, dim, 0, prefer_cached_expert_batch)) {
         const BnBackendModel *backend = bn_model_backend(m);

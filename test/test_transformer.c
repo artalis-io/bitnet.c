@@ -1694,6 +1694,23 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
+    unsetenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL");
+    assert(bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+        &gpu, &c, 1));
+    assert(!bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+        &gpu, &c, 0));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+        &gpu, &c, 1));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
+    c.n_experts_active = 1;
+    assert(!bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+        &gpu, &c, 1));
+    c.n_experts_active = 2;
+    setenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL", "1", 1);
+    assert(!bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
+        &gpu, &c, 1));
+    unsetenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL");
     assert(bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
         &gpu, &c, &map, c.dim, 0, 0));
     assert(!bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
