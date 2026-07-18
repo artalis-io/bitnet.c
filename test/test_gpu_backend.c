@@ -1831,6 +1831,14 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == -1);
     assert(!bn_gpu_policy_metal_q4_prepared_enabled());
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());
+    assert(bn_gpu_policy_webgpu_repacked_buffer_supported(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_gpu_policy_webgpu_repacked_buffer_supported(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(bn_gpu_policy_webgpu_repacked_bias_supported(
+        BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_gpu_policy_webgpu_repacked_bias_supported(
+        BN_GGUF_TENSOR_Q8_0));
     assert(bn_gpu_policy_metal_repacked_buffer_supported(
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_repacked_buffer_supported(

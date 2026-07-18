@@ -156,6 +156,8 @@ int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
                                           BnGGUFFile *gf,
                                           int cap_seq_len);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
+int bn_gpu_policy_webgpu_repacked_buffer_supported(int tensor_type);
+int bn_gpu_policy_webgpu_repacked_bias_supported(int tensor_type);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 void bn_gpu_policy_metal_apply_q4_q8_default(void);
 int bn_gpu_policy_metal_q4_q8_enabled(void);

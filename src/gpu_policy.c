@@ -691,6 +691,14 @@ int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
            getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;
 }
 
+int bn_gpu_policy_webgpu_repacked_buffer_supported(int tensor_type) {
+    return bn_backend_quant_can_gpu_repack(tensor_type);
+}
+
+int bn_gpu_policy_webgpu_repacked_bias_supported(int tensor_type) {
+    return bn_backend_quant_gpu_supports_repacked_bias(tensor_type);
+}
+
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void) {
     return getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") != NULL;
 }

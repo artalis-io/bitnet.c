@@ -557,7 +557,8 @@ static void slab_free_region(BnWgpuCtx *ctx, size_t offset, size_t size) {
  *   Elements stored in sequential order (0..31) for clean GPU access.
  */
 static void *repack_q4_0_for_gpu(BnWgpuCtx *ctx, const void *data, size_t size,
-                                   int rows, int cols, size_t *out_size,
+                                   int type, int rows, int cols,
+                                   size_t *out_size,
                                    const float *bias, int bias_len)
 {
     (void)size;
@@ -637,7 +638,7 @@ static void *repack_q4_0_for_gpu(BnWgpuCtx *ctx, const void *data, size_t size,
     handle->buf = buf;
     handle->size = repacked_size;
     handle->offset = 0;
-    handle->type = BN_GGUF_TENSOR_Q4_0;
+    handle->type = type;
     handle->rows = rows;
     handle->cols = cols;
     handle->bias_offset = fused_bias_offset;
@@ -654,10 +655,10 @@ static void *wgpu_buffer_create(void *vctx, const void *data, size_t size,
         return NULL;
 
     /* Repack formats that have an optimized GPU memory layout. */
-    if (bn_quant_format_gpu_uses_repacked_layout(type)) {
+    if (bn_gpu_policy_webgpu_repacked_buffer_supported(type)) {
         size_t repacked_size;
-        return repack_q4_0_for_gpu(ctx, data, size, rows, cols, &repacked_size,
-                                    NULL, 0);
+        return repack_q4_0_for_gpu(ctx, data, size, type, rows, cols,
+                                    &repacked_size, NULL, 0);
     }
 
     /* Align size to 256 bytes (slab alignment) or 4 bytes (standalone) */
@@ -723,13 +724,14 @@ static void *wgpu_buffer_create_biased(void *vctx, const void *data, size_t size
     BnWgpuCtx *ctx = (BnWgpuCtx *)vctx;
     if (!ctx || !ctx->device || !data || size == 0 || !bias || bias_size == 0)
         return NULL;
-    if (!bn_quant_format_gpu_supports_repacked_bias(type))
+    if (!bn_gpu_policy_webgpu_repacked_bias_supported(type))
         return NULL;
 
     int bias_len = (int)(bias_size / sizeof(float));
     size_t repacked_size;
-    return repack_q4_0_for_gpu(ctx, data, size, rows, cols, &repacked_size,
-                                (const float *)bias, bias_len);
+    return repack_q4_0_for_gpu(ctx, data, size, type, rows, cols,
+                                &repacked_size, (const float *)bias,
+                                bias_len);
 }
 
 /* ── Vtable: buffer_destroy ────────────────────────────────────────── */
@@ -1482,7 +1484,7 @@ static int wgpu_execute(void *vctx, const void *ops_raw, int n_ops,
             p[4] = 0;
         }
         if (bn_gpu_shader_from_op_code(ops[i].op_code) == BN_GPU_SHADER_MATVEC &&
-            !bn_quant_format_gpu_uses_repacked_layout(ops[i].type)) {
+            !bn_gpu_policy_webgpu_repacked_buffer_supported(ops[i].type)) {
             uint32_t *p = (uint32_t *)(uni_data + (size_t)i * uni_stride);
             p[4] = p[5];
         }

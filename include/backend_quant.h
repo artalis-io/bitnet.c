@@ -25,6 +25,10 @@ static inline int bn_backend_quant_can_gpu_repack(int type) {
     return bn_quant_format_can_gpu_repack(type);
 }
 
+static inline int bn_backend_quant_gpu_supports_repacked_bias(int type) {
+    return bn_quant_format_gpu_supports_repacked_bias(type);
+}
+
 static inline int bn_backend_quant_small_dense_supported(int type) {
     return bn_quant_format_supports_gpu_small_dense(type);
 }

@@ -679,6 +679,21 @@ if grep -n 'static const char \*shader_name_for_type\|static const int supported
     fail=1
 fi
 
+if grep -n 'bn_quant_format_gpu_uses_repacked_layout\|bn_quant_format_gpu_supports_repacked_bias' src/gpu_wgpu.c >/dev/null 2>&1; then
+    echo "WebGPU repacked upload eligibility must use GPU policy helpers, not direct quant-format checks"
+    fail=1
+fi
+
+if grep -n 'handle->type = BN_GGUF_TENSOR_' src/gpu_wgpu.c >/dev/null 2>&1; then
+    echo "WebGPU repacked upload buffers must preserve the selected tensor type instead of hard-coding a format"
+    fail=1
+fi
+
+if ! grep -n 'bn_gpu_policy_webgpu_repacked_buffer_supported\|bn_gpu_policy_webgpu_repacked_bias_supported' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c must own WebGPU repacked upload policy helpers"
+    fail=1
+fi
+
 if ! grep -n 'bn_quant_format_gpu_shader_name\|bn_quant_format_gpu_shader_type_count' src/quant/registry.c >/dev/null 2>&1; then
     echo "quant registry must own GPU shader type-name and supported-type policy"
     fail=1
