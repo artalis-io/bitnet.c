@@ -15372,37 +15372,27 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     size_t idx_bytes = route_items * sizeof(int);
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_grouped =
-        gate->f16_data && up->f16_data && down->f16_data &&
-        ((routed_q8 &&
-          getenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GROUPED") == NULL) ||
-         (routed_q4 &&
-          getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED") == NULL));
-    if (use_cublas_grouped && routed_q4 && !(n_experts == 2 && k == 2) &&
-        (n_tokens * k) <= 256 &&
-        getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_SMALL") == NULL) {
-        use_cublas_grouped = 0;
-    }
+        bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+            routed_q8, routed_q4, gate->f16_data != NULL,
+            up->f16_data != NULL, down->f16_data != NULL,
+            n_experts, k, n_tokens * k);
     int use_cublas_gateup_only =
-        !use_cublas_grouped && gate->f16_data && up->f16_data &&
-        !down->f16_data && n_tokens > 1 &&
-        ((routed_q8 &&
-          getenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GATEUP") == NULL) ||
-         (routed_q4 &&
-          getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GATEUP") != NULL &&
-          getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP") == NULL));
+        bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+            use_cublas_grouped, routed_q8, routed_q4,
+            gate->f16_data != NULL, up->f16_data != NULL,
+            down->f16_data != NULL, n_tokens);
     int use_cublas_all2_fixed =
-        use_cublas_grouped && n_experts == 2 && k == 2 &&
-        getenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED") == NULL;
+        bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(
+            use_cublas_grouped, n_experts, k);
     int use_cublas_all2_decode =
         n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
         down_type == BN_GGUF_TENSOR_Q6_K && hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
         bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     int use_sorted_slots =
-        (routed_q4 || routed_q8) && n_tokens > 1 &&
-        !use_cublas_all2_fixed &&
-        (use_cublas_grouped || use_cublas_gateup_only ||
-         getenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT") != NULL);
+        bn_gpu_policy_cuda_moe_sorted_slots_enabled(
+            routed_q4, routed_q8, n_tokens, use_cublas_all2_fixed,
+            use_cublas_grouped, use_cublas_gateup_only);
     size_t sorted_route_aux_bytes = use_sorted_slots
         ? (route_items * sizeof(int) + (size_t)n_experts * 4u * sizeof(int))
         : 0u;

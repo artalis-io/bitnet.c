@@ -544,6 +544,64 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE");
     unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE");
 
+    unsetenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GROUPED");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED");
+    unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_SMALL");
+    unsetenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GATEUP");
+    unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GATEUP");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED");
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT");
+    assert(bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        1, 0, 1, 1, 1, 4, 2, 512));
+    assert(!bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        1, 0, 1, 1, 0, 4, 2, 512));
+    setenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GROUPED", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        1, 0, 1, 1, 1, 4, 2, 512));
+    unsetenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GROUPED");
+    assert(!bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        0, 1, 1, 1, 1, 4, 2, 128));
+    setenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_SMALL", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        0, 1, 1, 1, 1, 4, 2, 128));
+    unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_SMALL");
+    assert(bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        0, 1, 1, 1, 1, 2, 2, 4));
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
+        0, 1, 1, 1, 1, 2, 2, 4));
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED");
+    assert(bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+        0, 1, 0, 1, 1, 0, 2));
+    assert(!bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+        1, 1, 0, 1, 1, 0, 2));
+    setenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GATEUP", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+        0, 1, 0, 1, 1, 0, 2));
+    unsetenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GATEUP");
+    assert(!bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+        0, 0, 1, 1, 1, 0, 2));
+    setenv("BN_CUDA_ENABLE_MOE_CUBLAS_GATEUP", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+        0, 0, 1, 1, 1, 0, 2));
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
+        0, 0, 1, 1, 1, 0, 2));
+    unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GATEUP");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP");
+    assert(bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(1, 2, 2));
+    assert(!bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(1, 4, 2));
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(1, 2, 2));
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED");
+    assert(bn_gpu_policy_cuda_moe_sorted_slots_enabled(1, 0, 2, 0, 1, 0));
+    assert(!bn_gpu_policy_cuda_moe_sorted_slots_enabled(1, 0, 1, 0, 1, 0));
+    assert(!bn_gpu_policy_cuda_moe_sorted_slots_enabled(1, 0, 2, 1, 1, 0));
+    setenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_sorted_slots_enabled(0, 1, 2, 0, 0, 0));
+    unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT");
+
     unsetenv("BN_CUDA_DISABLE_MOE_FFN_BATCH");
     assert(bn_gpu_policy_cuda_moe_ffn_batch_enabled());
     setenv("BN_CUDA_DISABLE_MOE_FFN_BATCH", "1", 1);

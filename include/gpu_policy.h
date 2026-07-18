@@ -266,6 +266,30 @@ int bn_gpu_policy_cuda_dense_ffn_enabled(void);
 int bn_gpu_policy_cuda_dense_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(void);
+int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_q8,
+                                                  int routed_q4,
+                                                  int gate_f16,
+                                                  int up_f16,
+                                                  int down_f16,
+                                                  int n_experts,
+                                                  int k,
+                                                  int route_items);
+int bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(int use_grouped,
+                                                      int routed_q8,
+                                                      int routed_q4,
+                                                      int gate_f16,
+                                                      int up_f16,
+                                                      int down_f16,
+                                                      int n_tokens);
+int bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(int use_grouped,
+                                                     int n_experts,
+                                                     int k);
+int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_q4,
+                                                int routed_q8,
+                                                int n_tokens,
+                                                int use_all2_fixed,
+                                                int use_grouped,
+                                                int use_gateup_only);
 int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled(void);
 int bn_gpu_policy_cuda_moe_cache_prefill_enabled(void);
