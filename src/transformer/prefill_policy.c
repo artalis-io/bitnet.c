@@ -69,11 +69,11 @@ int bn_transformer_prefill_small_dense_chain_applicable(
 }
 
 int bn_transformer_prefill_moe_enabled(void) {
-    return bn_transformer_gpu_cuda_moe_prefill_enabled();
+    return bn_transformer_gpu_moe_prefill_enabled();
 }
 
 int bn_transformer_prefill_large_hybrid_disabled(void) {
-    return bn_transformer_gpu_cuda_large_hybrid_prefill_disabled();
+    return bn_transformer_gpu_large_hybrid_prefill_disabled();
 }
 
 BnTransformerPrefillDecodeFallbackPolicy

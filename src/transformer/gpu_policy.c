@@ -937,6 +937,10 @@ int bn_transformer_gpu_cuda_moe_prefill_enabled(void) {
     return bn_gpu_policy_cuda_moe_prefill_enabled();
 }
 
+int bn_transformer_gpu_moe_prefill_enabled(void) {
+    return bn_transformer_gpu_cuda_moe_prefill_enabled();
+}
+
 int bn_transformer_gpu_cuda_moe_prefill_min_tokens(void) {
     return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
 }
@@ -1082,6 +1086,10 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
 
 int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
     return bn_gpu_policy_cuda_large_hybrid_prefill_disabled();
+}
+
+int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
+    return bn_transformer_gpu_cuda_large_hybrid_prefill_disabled();
 }
 
 int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
