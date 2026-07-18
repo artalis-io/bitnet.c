@@ -716,6 +716,14 @@ int bn_gpu_policy_cuda_prefill_dense_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER") != NULL;
 }
 
+int bn_gpu_policy_cuda_prefill_dense_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER") != NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_dense_profile_enabled(void) {
+    return getenv("BN_CUDA_PREFILL_DENSE_PROFILE") != NULL;
+}
+
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }

@@ -380,6 +380,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER")\|getenv("BN_CUDA_DISABLE
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER")\|getenv("BN_CUDA_PREFILL_DENSE_PROFILE")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA dense prefill env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH")\|getenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH")\|getenv("BN_CUDA_DISABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA prefill fused Q4K gate/up env policy"
     fail=1

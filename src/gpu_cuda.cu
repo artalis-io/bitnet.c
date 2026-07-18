@@ -16789,7 +16789,7 @@ static int cuda_prefill_dense_layer(
     int packed_qkv = qk && qk->data && !wv && qk_rows == q_dim + 2 * kv_dim;
     int q_gated = !packed_qkv && qk_rows == 2 * q_dim + kv_dim;
     int debug_dense_prefill =
-        getenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER") != NULL;
+        bn_gpu_policy_cuda_prefill_dense_debug_enabled();
     if (bn_gpu_policy_cuda_prefill_dense_layer_disabled())
         return -1;
     if (!ctx || !qk || !qk->data || (!packed_qkv && (!wv || !wv->data)) ||
@@ -16850,7 +16850,8 @@ static int cuda_prefill_dense_layer(
     int use_gemm_attention =
         bn_gpu_policy_cuda_prefill_gemm_attention_enabled(n_tokens, 0);
 
-    const int dense_profile = getenv("BN_CUDA_PREFILL_DENSE_PROFILE") != NULL;
+    const int dense_profile =
+        bn_gpu_policy_cuda_prefill_dense_profile_enabled();
     static double dense_profile_totals[BN_CUDA_DENSE_PROF_MAX] = {0.0};
     static unsigned long long dense_profile_layers = 0;
     double dense_profile_t0 = dense_profile ? cuda_wall_ms() : 0.0;

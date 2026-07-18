@@ -1317,6 +1317,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY");
     unsetenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER");
+    unsetenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER");
+    unsetenv("BN_CUDA_PREFILL_DENSE_PROFILE");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH");
     unsetenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH");
@@ -1336,6 +1338,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE");
     assert(!bn_gpu_policy_cuda_prefill_moe_layer_disabled());
     assert(!bn_gpu_policy_cuda_prefill_dense_layer_disabled());
+    assert(!bn_gpu_policy_cuda_prefill_dense_debug_enabled());
+    assert(!bn_gpu_policy_cuda_prefill_dense_profile_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled());
@@ -1353,6 +1357,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_shared_expert_gate_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER", "1", 1);
+    setenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER", "1", 1);
+    setenv("BN_CUDA_PREFILL_DENSE_PROFILE", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH", "1", 1);
     setenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH", "1", 1);
@@ -1370,6 +1376,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE", "1", 1);
     assert(bn_gpu_policy_cuda_prefill_moe_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_dense_layer_disabled());
+    assert(bn_gpu_policy_cuda_prefill_dense_debug_enabled());
+    assert(bn_gpu_policy_cuda_prefill_dense_profile_enabled());
     assert(bn_gpu_policy_cuda_prefill_ssm_layer_disabled());
     assert(!bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled());
     assert(bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled());
@@ -1391,6 +1399,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_shared_expert_gate_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER");
+    unsetenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER");
+    unsetenv("BN_CUDA_PREFILL_DENSE_PROFILE");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH");
     unsetenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH");
