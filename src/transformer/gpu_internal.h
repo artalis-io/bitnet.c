@@ -179,9 +179,11 @@ typedef struct {
     int q6_default;
     int q6_enabled;
     int q6_captures_xb;
+    int q6_refine_top;
     int q8_default;
     int q8_enabled;
     int q8_captures_xb;
+    int q8_refine_top;
 } BnTransformerGPULogitsRefinePolicy;
 
 typedef struct {

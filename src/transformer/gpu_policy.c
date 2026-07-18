@@ -1060,6 +1060,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
         gpu, p.q6_default);
     p.q6_captures_xb = bn_transformer_gpu_q6_logits_refine_captures_xb(
         logits, p.q6_enabled, p.q6_default);
+    p.q6_refine_top = bn_transformer_gpu_q6_logits_refine_top(p.q6_default);
 
     int tensor_type = logits ? logits->type : -1;
     p.q8_default =
@@ -1070,6 +1071,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
         gpu, p.q8_default);
     p.q8_captures_xb = bn_transformer_gpu_q8_logits_refine_captures_xb(
         logits, p.q8_enabled);
+    p.q8_refine_top = bn_transformer_gpu_q8_logits_refine_top(p.q8_default);
     return p;
 }
 

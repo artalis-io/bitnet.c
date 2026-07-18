@@ -1947,8 +1947,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     if (argmax_token) {
         if (!use_matvec_argmax &&
             logits_refine.q8_captures_xb) {
-            int refine_top = bn_transformer_gpu_q8_logits_refine_top(
-                logits_refine.q8_default);
+            int refine_top = logits_refine.q8_refine_top;
             if (refine_top > 0 &&
                 gpu->read_activation &&
                 gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
@@ -2039,8 +2038,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         return s->x;
     }
     if (logits_refine.q6_captures_xb) {
-        int refine_top = bn_transformer_gpu_q6_logits_refine_top(
-            logits_refine.q6_default);
+        int refine_top = logits_refine.q6_refine_top;
         int has_xb = q6_logits_refine_has_xb_snapshot;
         if (!has_xb && refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
@@ -2053,8 +2051,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         }
     }
     if (logits_refine.q8_captures_xb) {
-        int refine_top = bn_transformer_gpu_q8_logits_refine_top(
-            logits_refine.q8_default);
+        int refine_top = logits_refine.q8_refine_top;
         if (refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {

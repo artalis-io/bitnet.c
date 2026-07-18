@@ -1294,9 +1294,19 @@ static void test_gpu_policy_helpers(void) {
     assert(!refine_policy.q6_default);
     assert(!refine_policy.q6_enabled);
     assert(!refine_policy.q6_captures_xb);
+    assert(refine_policy.q6_refine_top == 8);
     assert(refine_policy.q8_default);
     assert(refine_policy.q8_enabled);
     assert(refine_policy.q8_captures_xb);
+    assert(refine_policy.q8_refine_top == 16);
+    setenv("BN_GPU_Q6_Q8K_REFINE_TOP", "13", 1);
+    setenv("BN_GPU_Q8_REFINE_TOP", "7", 1);
+    refine_policy =
+        bn_transformer_gpu_logits_refine_policy(&gpu, &c, NULL, &logits, 1);
+    assert(refine_policy.q6_refine_top == 13);
+    assert(refine_policy.q8_refine_top == 7);
+    unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    unsetenv("BN_GPU_Q8_REFINE_TOP");
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
 
     BnLayerWeights refine_layer;
