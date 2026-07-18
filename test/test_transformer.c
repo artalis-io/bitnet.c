@@ -3390,6 +3390,17 @@ static void test_block_planning(void) {
     assert(attention_batch.eligible);
     assert(!attention_batch.fuses_output_projection);
 
+    BnTransformerPrefillAttentionBatchCallPolicy attention_call =
+        bn_transformer_prefill_attention_batch_call_policy(attention_batch);
+    assert(attention_call.preferred_kind ==
+           BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_PLAIN);
+    attention_batch = bn_transformer_prefill_attention_batch_policy(
+        0, 1, 1, 1, 1, 1, 16, 16, 0, 0, 0);
+    attention_call =
+        bn_transformer_prefill_attention_batch_call_policy(attention_batch);
+    assert(attention_call.preferred_kind ==
+           BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_WO);
+
     BnTransformerPrefillFFNBatchPolicy ffn_batch =
         bn_transformer_prefill_ffn_batch_policy(
             1, 1, 1, 1, 16, 16, 0, 0, 0, 0);

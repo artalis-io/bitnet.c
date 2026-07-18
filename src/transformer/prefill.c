@@ -2025,7 +2025,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->norm.attn_post_norm != NULL);
                 if (attn_batch_policy.eligible &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
-                    if (attn_batch_policy.fuses_output_projection &&
+                    BnTransformerPrefillAttentionBatchCallPolicy
+                        attn_call_policy =
+                            bn_transformer_prefill_attention_batch_call_policy(
+                                attn_batch_policy);
+                    if (attn_call_policy.preferred_kind ==
+                            BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_WO &&
                         gpu->prefill_attention_wo(
                             gpu->ctx, Xb2, attn_wo_buf, Q_buf, K_new, V_new,
                             n_tokens, c->n_heads, layer_n_kv_heads,

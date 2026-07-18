@@ -48,6 +48,15 @@ typedef struct {
     int fuses_output_projection;
 } BnTransformerPrefillAttentionBatchPolicy;
 
+typedef enum {
+    BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_PLAIN = 0,
+    BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_WO
+} BnTransformerPrefillAttentionBatchCallKind;
+
+typedef struct {
+    BnTransformerPrefillAttentionBatchCallKind preferred_kind;
+} BnTransformerPrefillAttentionBatchCallPolicy;
+
 typedef struct {
     int eligible;
     int fuses_norm_residual;
@@ -123,6 +132,9 @@ bn_transformer_prefill_attention_batch_policy(
     int has_attn_sub_norm,
     int uses_post_norm,
     int has_attn_post_norm);
+BnTransformerPrefillAttentionBatchCallPolicy
+bn_transformer_prefill_attention_batch_call_policy(
+    BnTransformerPrefillAttentionBatchPolicy policy);
 BnTransformerPrefillFFNBatchPolicy
 bn_transformer_prefill_ffn_batch_policy(
     int has_ffn_gate,

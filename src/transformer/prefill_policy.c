@@ -134,6 +134,16 @@ bn_transformer_prefill_attention_batch_policy(
     return policy;
 }
 
+BnTransformerPrefillAttentionBatchCallPolicy
+bn_transformer_prefill_attention_batch_call_policy(
+    BnTransformerPrefillAttentionBatchPolicy policy) {
+    BnTransformerPrefillAttentionBatchCallPolicy call_policy = {0};
+    call_policy.preferred_kind = policy.fuses_output_projection
+        ? BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_WO
+        : BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_PLAIN;
+    return call_policy;
+}
+
 BnTransformerPrefillFFNBatchPolicy
 bn_transformer_prefill_ffn_batch_policy(
     int has_ffn_gate,
