@@ -330,6 +330,14 @@ static int cuda_use_moe_cublas_grouped_variable(void) {
     return bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled();
 }
 
+static int cuda_use_moe_ffn_batch(void) {
+    return bn_gpu_policy_cuda_moe_ffn_batch_enabled();
+}
+
+static int cuda_profile_moe_ffn_batch(void) {
+    return bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled();
+}
+
 static int cuda_env_int(const char *name, int fallback) {
     const char *env = getenv(name);
     if (!env || !*env) return fallback;
@@ -14532,7 +14540,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
     BnCudaBuffer *shared_down = (BnCudaBuffer *)shared_down_buf;
     BnCudaBuffer *shared_gate_weight =
         (BnCudaBuffer *)shared_gate_weight_buf;
-    if (getenv("BN_CUDA_DISABLE_MOE_FFN_BATCH"))
+    if (!cuda_use_moe_ffn_batch())
         return -1;
     if (!ctx || !out || !experts || !expert_offsets || !expert_counts ||
         !token_ids || !weights || !X || n_experts <= 0 || n_tokens <= 0 ||
@@ -14591,8 +14599,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
     if (total_assignments <= 0 || max_count <= 0)
         return -1;
 
-    int profile =
-        getenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL") != NULL;
+    int profile = cuda_profile_moe_ffn_batch();
     cudaEvent_t ev_start = NULL;
     cudaEvent_t ev_stop = NULL;
     double prof_upload_ms = 0.0;

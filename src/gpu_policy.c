@@ -763,6 +763,14 @@ int bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(void) {
            getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE") == NULL;
 }
 
+int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_FFN_BATCH") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled(void) {
+    return getenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL") != NULL;
+}
+
 int bn_gpu_policy_cuda_moe_cache_prefill_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL") == NULL;
 }

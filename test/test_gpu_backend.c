@@ -544,6 +544,18 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_VARIABLE");
     unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED_VARIABLE");
 
+    unsetenv("BN_CUDA_DISABLE_MOE_FFN_BATCH");
+    assert(bn_gpu_policy_cuda_moe_ffn_batch_enabled());
+    setenv("BN_CUDA_DISABLE_MOE_FFN_BATCH", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_ffn_batch_enabled());
+    unsetenv("BN_CUDA_DISABLE_MOE_FFN_BATCH");
+
+    unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL");
+    assert(!bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled());
+    setenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL", "1", 1);
+    assert(bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled());
+    unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
