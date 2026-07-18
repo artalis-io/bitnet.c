@@ -54,6 +54,17 @@ static int mock_gpu_execute(void *ctx, const void *ops, int n_ops,
     return 0;
 }
 
+static int mock_gpu_write_activation(void *ctx, int buf_idx,
+                                     const void *data, size_t n_bytes,
+                                     size_t offset_bytes) {
+    (void)ctx;
+    (void)buf_idx;
+    (void)data;
+    (void)n_bytes;
+    (void)offset_bytes;
+    return 0;
+}
+
 static int mock_matvec_argmax_activation(
     void *ctx, void *W_buf, int type, int rows, int cols, int buf_idx,
     const int *penalty_tokens, int n_penalty_tokens, float repeat_penalty,
@@ -610,6 +621,9 @@ static void test_gpu_capability_routing(void) {
 
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
+    assert(!bn_transformer_gpu_can_layerwise_rope(&gpu));
+    gpu.caps |= BN_GPU_CAP_LAYERWISE_ROPE;
+    assert(bn_transformer_gpu_can_layerwise_rope(&gpu));
 
     printf("PASSED\n");
 }
@@ -647,6 +661,38 @@ static void test_gpu_policy_helpers(void) {
            BN_BACKEND_GPU_UNKNOWN);
     assert(bn_transformer_backend_placement(&gpu, BN_EXEC_CPU) ==
            BN_BACKEND_CPU);
+
+    {
+        BnTransformerGPUForwardPolicy forward_policy;
+        BnWeights weights;
+        const char *reject_reason = NULL;
+        float rope_freqs[1] = {1.0f};
+        memset(&weights, 0, sizeof(weights));
+        weights.rope_freqs = rope_freqs;
+        c.vocab_size = 8;
+        c.dim = 2560;
+        c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
+        c.per_layer_input_dim = 128;
+        gpu.kind = BN_GPU_BACKEND_METAL;
+        gpu.execute = mock_gpu_execute;
+        gpu.write_activation = mock_gpu_write_activation;
+        gpu.caps = 0;
+        assert(bn_transformer_gpu_requires_layerwise_rope(&c, &weights));
+        assert(bn_transformer_gpu_validate_forward(
+                   &forward_policy, &gpu, NULL, &c, &weights, 0, 0,
+                   &reject_reason) != 0);
+        assert(reject_reason &&
+               strcmp(reject_reason,
+                      "layerwise rope unsupported by gpu backend") == 0);
+        gpu.caps = BN_GPU_CAP_LAYERWISE_ROPE;
+        reject_reason = NULL;
+        assert(bn_transformer_gpu_validate_forward(
+                   &forward_policy, &gpu, NULL, &c, &weights, 0, 0,
+                   &reject_reason) != 0);
+        assert(reject_reason &&
+               strcmp(reject_reason, "output norm not uploaded") == 0);
+        memset(&gpu, 0, sizeof(gpu));
+    }
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8 |
                      BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE |

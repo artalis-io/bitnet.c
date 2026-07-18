@@ -119,6 +119,17 @@ int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu) {
     return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_FLASH_ATTN);
 }
 
+int bn_transformer_gpu_can_layerwise_rope(const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_LAYERWISE_ROPE);
+}
+
+int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
+                                               const BnWeights *w) {
+    return c && w &&
+           bn_model_arch_uses_per_layer_embedding(c) &&
+           w->rope_freqs != NULL;
+}
+
 BnBackendPlacement bn_transformer_gpu_backend_placement(
     const BnGPUBackend *gpu) {
     if (!gpu)
@@ -1519,6 +1530,9 @@ int bn_transformer_gpu_validate_forward(
     if (!bn_gpu_policy_force_graph_enabled() && !cuda_large_native &&
         bn_model_arch_uses_large_gpu_graph_fallback_shape(c))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
+    if (bn_transformer_gpu_requires_layerwise_rope(c, w) &&
+        !bn_transformer_gpu_can_layerwise_rope(gpu))
+        GPU_POLICY_REJECT("layerwise rope unsupported by gpu backend");
 
     if (bn_transformer_gpu_backend_is_cuda(gpu) &&
         bn_model_arch_uses_small_cuda_dense_shape(c)) {

@@ -476,5 +476,6 @@ struct BnGPUBackend {
 #define BN_GPU_CAP_Q5_MATVEC_SPLIT (1u << 7) // stacked Q5_0 split matvec shader available
 #define BN_GPU_CAP_Q8_FUSED_GATEUP_SILU (1u << 8) // fused Q8_0 gate/up SiLU shader available
 #define BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU (1u << 9) // fused Q5_K gate/up SiLU shader available
+#define BN_GPU_CAP_LAYERWISE_ROPE (1u << 10) // backend can vary RoPE frequency policy per layer
 
 #endif // BN_GPU_BACKEND_H

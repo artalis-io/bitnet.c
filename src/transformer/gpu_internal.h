@@ -146,6 +146,9 @@ int bn_transformer_gpu_validate_forward(
     int pos,
     const char **reject_reason);
 int bn_transformer_gpu_graph_op_capacity(const BnConfig *c);
+int bn_transformer_gpu_can_layerwise_rope(const BnGPUBackend *gpu);
+int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
+                                               const BnWeights *w);
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c);
 int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
