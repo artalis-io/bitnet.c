@@ -556,6 +556,18 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled());
     unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL");
 
+    unsetenv("BN_CUDA_ENABLE_DENSE_FFN");
+    assert(!bn_gpu_policy_cuda_dense_ffn_enabled());
+    setenv("BN_CUDA_ENABLE_DENSE_FFN", "1", 1);
+    assert(bn_gpu_policy_cuda_dense_ffn_enabled());
+    unsetenv("BN_CUDA_ENABLE_DENSE_FFN");
+
+    unsetenv("BN_CUDA_DISABLE_DENSE_FFN_BATCH");
+    assert(bn_gpu_policy_cuda_dense_ffn_batch_enabled());
+    setenv("BN_CUDA_DISABLE_DENSE_FFN_BATCH", "1", 1);
+    assert(!bn_gpu_policy_cuda_dense_ffn_batch_enabled());
+    unsetenv("BN_CUDA_DISABLE_DENSE_FFN_BATCH");
+
     unsetenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(

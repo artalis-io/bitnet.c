@@ -190,6 +190,8 @@ int bn_gpu_policy_cuda_moe_prefill_enabled(void);
 int bn_gpu_policy_cuda_moe_prefill_min_tokens_configured(void);
 int bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
     int default_tokens);
+int bn_gpu_policy_cuda_dense_ffn_enabled(void);
+int bn_gpu_policy_cuda_dense_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(void);
 int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void);

@@ -762,6 +762,14 @@ int bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
                                        default_tokens);
 }
 
+int bn_gpu_policy_cuda_dense_ffn_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_DENSE_FFN") != NULL;
+}
+
+int bn_gpu_policy_cuda_dense_ffn_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_DENSE_FFN_BATCH") == NULL;
+}
+
 int bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT") == NULL;
 }

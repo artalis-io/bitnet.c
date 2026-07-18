@@ -354,6 +354,14 @@ static int cuda_use_moe_routed_ffn_batch(void) {
     return bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled();
 }
 
+static int cuda_use_dense_ffn(void) {
+    return bn_gpu_policy_cuda_dense_ffn_enabled();
+}
+
+static int cuda_use_dense_ffn_batch(void) {
+    return bn_gpu_policy_cuda_dense_ffn_batch_enabled();
+}
+
 static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
     return bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(n_experts > 2);
 }
@@ -13951,7 +13959,7 @@ static int cuda_dense_ffn(void *vctx, float *out,
     BnCudaBuffer *gate = (BnCudaBuffer *)gate_buf;
     BnCudaBuffer *up = (BnCudaBuffer *)up_buf;
     BnCudaBuffer *down = (BnCudaBuffer *)down_buf;
-    if (!getenv("BN_CUDA_ENABLE_DENSE_FFN"))
+    if (!cuda_use_dense_ffn())
         return -1;
     if (!ctx || !out || !gate || !up || !down || !x ||
         !gate->data || !up->data || !down->data ||
@@ -14120,7 +14128,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
     BnCudaBuffer *down = (BnCudaBuffer *)down_buf;
     BnCudaBuffer *norm = (BnCudaBuffer *)norm_buf;
     int stacked_gateup = up == NULL;
-    if (getenv("BN_CUDA_DISABLE_DENSE_FFN_BATCH"))
+    if (!cuda_use_dense_ffn_batch())
         return -1;
     if (!ctx || !out || !gate || !down || !X ||
         !gate->data || !down->data ||
