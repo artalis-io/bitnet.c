@@ -3085,6 +3085,10 @@ static void test_block_planning(void) {
     assert(ffn.placement == BN_EXEC_GPU);
     assert(ffn.backend == BN_BACKEND_METAL);
     assert(ffn.hidden_dim == 8192);
+    assert(bn_transformer_ffn_hidden_dim(&c, &lw) == 8192);
+    lw.ffn.ffn_up.rows = 0;
+    assert(bn_transformer_ffn_hidden_dim(&c, &lw) == c.hidden_dim);
+    lw.ffn.ffn_up.rows = 8192;
     assert(ffn.has_gate);
     assert(ffn.has_sub_norm);
     assert(ffn.use_fused_gateup_silu);

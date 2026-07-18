@@ -163,6 +163,12 @@ int bn_transformer_uses_layer_output_scale(
     return bn_model_arch_uses_layer_output_scale(c);
 }
 
+int bn_transformer_ffn_hidden_dim(const BnConfig *c,
+                                  const BnLayerWeights *lw) {
+    return lw && lw->ffn.ffn_up.rows > 0 ? lw->ffn.ffn_up.rows
+                                         : c->hidden_dim;
+}
+
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c) {
     return bn_model_arch_per_layer_embedding_dim(c);
@@ -240,7 +246,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
     p->kind = lw->ffn_kind == BN_LAYER_FFN_MOE ? BN_FFN_MOE
             : (c->has_ffn_gate ? BN_FFN_DENSE_GATE_UP : BN_FFN_DENSE_UP);
-    p->hidden_dim = lw->ffn.ffn_up.rows > 0 ? lw->ffn.ffn_up.rows : c->hidden_dim;
+    p->hidden_dim = bn_transformer_ffn_hidden_dim(c, lw);
     p->activation = c->act_type;
     p->has_gate = c->has_ffn_gate;
     p->has_sub_norm = lw->norm.ffn_sub_norm ? 1 : 0;
