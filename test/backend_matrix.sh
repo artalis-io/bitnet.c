@@ -185,8 +185,8 @@ for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c
 do
-    if grep -n 'ffn_gate\.rows == .*ffn_up\.rows\|ffn_gate\.cols == .*ffn_up\.cols' "$file" >/dev/null 2>&1; then
-        echo "$file must use GPU policy helpers for dense gate-up stackability policy"
+    if grep -n 'ffn_gate\.rows == .*ffn_up\.rows\|ffn_gate\.cols == .*ffn_up\.cols\|shared_gate\.rows == .*shared_up\.rows\|shared_gate\.cols == .*shared_up\.cols' "$file" >/dev/null 2>&1; then
+        echo "$file must use GPU policy helpers for gate-up stackability policy"
         fail=1
     fi
 done

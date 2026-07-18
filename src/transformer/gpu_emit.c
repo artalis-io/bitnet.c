@@ -1745,10 +1745,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         int use_shared_fused_gateup =
             !prefer_shared_gateup_split &&
             shared->shared_gateup_stacked &&
-            bn_transformer_gpu_stacked_pair_same_format(
-                lw->shared.shared_gate.type, lw->shared.shared_up.type) &&
-            lw->shared.shared_gate.rows == lw->shared.shared_up.rows &&
-            lw->shared.shared_gate.cols == lw->shared.shared_up.cols &&
+            bn_transformer_gpu_can_use_stacked_gateup(
+                &lw->shared.shared_gate, &lw->shared.shared_up) &&
             bn_transformer_gpu_can_fused_gateup_silu(
                 shared->gpu, lw->shared.shared_gate.type, 0);
         if (use_shared_fused_gateup) {
