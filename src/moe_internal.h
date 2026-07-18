@@ -71,7 +71,6 @@ int bn_moe_policy_supports_resident_routed_ffn_layout(
 int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type);
-int bn_moe_quant_supports_prepared_q8k(int type);
 int bn_moe_quant_uses_embedded_tensor_scale(int type);
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
 void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,

@@ -455,6 +455,11 @@ if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_cpu
     fail=1
 fi
 
+if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_policy.c >/dev/null 2>&1; then
+    echo "MoE policy must use shared gate/up batch quant policy helpers for preq8k compatibility"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_has_embedded_tensor_scale\|bn_quant_embedded_tensor_scale_offset' src/moe_math.c >/dev/null 2>&1; then
     echo "MoE math must use MoE policy helpers for embedded tensor scale policy"
     fail=1

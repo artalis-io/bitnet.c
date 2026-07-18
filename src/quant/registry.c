@@ -461,6 +461,17 @@ int bn_quant_format_pair_same_format(int left_type, int right_type) {
     return left_type == right_type;
 }
 
+int bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
+                                                 int shared_up_type,
+                                                 int batch_type) {
+    if (bn_quant_format_pair_same_format(shared_gate_type, batch_type) &&
+        bn_quant_format_pair_same_format(shared_up_type, batch_type))
+        return 1;
+    return bn_quant_format_can_preq8k(shared_gate_type) &&
+           bn_quant_format_can_preq8k(shared_up_type) &&
+           bn_quant_format_can_preq8k(batch_type);
+}
+
 int bn_quant_format_supports_moe_q8_route(int gate_type,
                                           int up_type,
                                           int down_type) {

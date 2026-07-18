@@ -136,6 +136,13 @@ static inline int bn_backend_quant_stacked_pair_same_format(int left_type,
     return bn_quant_format_pair_same_format(left_type, right_type);
 }
 
+static inline int bn_backend_quant_shared_gateup_batch_type_supported(
+    int shared_gate_type, int shared_up_type, int batch_type) {
+    return bn_quant_format_supports_shared_gateup_batch(shared_gate_type,
+                                                        shared_up_type,
+                                                        batch_type);
+}
+
 static inline int bn_backend_quant_allows_stacked_layout(int type) {
     return bn_quant_format_allows_stacked_layout(type);
 }

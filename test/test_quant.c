@@ -164,6 +164,14 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_I2_S));
     assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F16));
     assert(!bn_quant_format_tied_logits_uses_quant_path(BN_GGUF_TENSOR_F32));
+    assert(bn_quant_format_supports_shared_gateup_batch(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+    assert(!bn_quant_format_supports_shared_gateup_batch(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_supports_shared_gateup_batch(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_quant_format_supports_shared_gateup_batch(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q8_K));
     assert(bn_quant_format_supports_moe_q4_gateup(BN_GGUF_TENSOR_Q4_K,
                                                   BN_GGUF_TENSOR_Q4_K));
     assert(!bn_quant_format_supports_moe_q4_gateup(BN_GGUF_TENSOR_Q4_K,
