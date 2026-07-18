@@ -635,6 +635,11 @@ if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/mo
     fail=1
 fi
 
+if grep -n 'gate_rows == c->moe_intermediate_size\|up_rows == c->moe_intermediate_size\|down_cols == c->moe_intermediate_size' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use MoE policy helpers for resident routed-FFN layout eligibility"
+    fail=1
+fi
+
 if grep -n 'c->n_experts <= 0' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use model_arch helpers for loaded-model MoE presence policy"
     fail=1

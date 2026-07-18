@@ -276,6 +276,33 @@ static void test_moe_quant_policy_helpers(void) {
     printf("PASSED\n");
 }
 
+static void test_moe_resident_routed_ffn_layout_policy(void) {
+    printf("test_moe_resident_routed_ffn_layout_policy... ");
+
+    BnConfig c = {0};
+    c.dim = 16;
+    c.moe_intermediate_size = 32;
+
+    BnMoEExpertMap em = {0};
+    em.gate_rows = 32;
+    em.up_rows = 32;
+    em.down_rows = 16;
+    em.gate_cols = 16;
+    em.up_cols = 16;
+    em.down_cols = 32;
+    assert(bn_moe_policy_supports_resident_routed_ffn_layout(&c, &em));
+
+    em.up_cols = 15;
+    assert(!bn_moe_policy_supports_resident_routed_ffn_layout(&c, &em));
+    em.up_cols = 16;
+    em.down_cols = 31;
+    assert(!bn_moe_policy_supports_resident_routed_ffn_layout(&c, &em));
+    assert(!bn_moe_policy_supports_resident_routed_ffn_layout(NULL, &em));
+    assert(!bn_moe_policy_supports_resident_routed_ffn_layout(&c, NULL));
+
+    printf("PASSED\n");
+}
+
 // --- Test: SwiGLU activation (reference check) ---
 
 static void test_swiglu(void) {
@@ -346,6 +373,7 @@ int main(void) {
     test_model_arch_gguf_uses_moe();
     test_qwen2moe_arch_config();
     test_moe_quant_policy_helpers();
+    test_moe_resident_routed_ffn_layout_policy();
     test_swiglu();
     test_route_uniform();
     test_moe_cache();

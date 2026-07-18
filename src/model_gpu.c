@@ -198,12 +198,7 @@ static int can_use_cuda_moe_routed_ffn(const BnConfig *c,
     const BnMoEExpertMap *em = &lw->moe.expert_map;
     return bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
                em->gate_type, em->up_type, em->down_type) &&
-           em->gate_rows == c->moe_intermediate_size &&
-           em->up_rows == c->moe_intermediate_size &&
-           em->gate_cols == c->dim &&
-           em->up_cols == c->dim &&
-           em->down_rows == c->dim &&
-           em->down_cols == c->moe_intermediate_size;
+           bn_moe_policy_supports_resident_routed_ffn_layout(c, em);
 }
 
 static int can_use_cuda_moe_routed_ffn_model(const BnConfig *c,

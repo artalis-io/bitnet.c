@@ -8,6 +8,18 @@ uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
         : 0u;
 }
 
+int bn_moe_policy_supports_resident_routed_ffn_layout(
+    const BnConfig *c,
+    const BnMoEExpertMap *em) {
+    return c && em &&
+           em->gate_rows == c->moe_intermediate_size &&
+           em->up_rows == c->moe_intermediate_size &&
+           em->gate_cols == c->dim &&
+           em->up_cols == c->dim &&
+           em->down_rows == c->dim &&
+           em->down_cols == c->moe_intermediate_size;
+}
+
 int bn_moe_quant_supports_prepared_q8k(int type) {
     return bn_backend_quant_can_preq8k(type);
 }
