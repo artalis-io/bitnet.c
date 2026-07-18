@@ -123,9 +123,12 @@ int bn_model_arch_uses_large_dense_shape(const BnConfig *c);
 int bn_model_arch_uses_large_gpu_graph_fallback_shape(const BnConfig *c);
 int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer);
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c);
+int bn_model_arch_allows_small_dense_prefill_decode_fallback(
+    const BnConfig *c);
 int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c);
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c);
+int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c);
 int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
@@ -146,10 +149,15 @@ int bn_model_arch_loads_extra_ffn_post_norms(const BnConfig *c);
 int bn_model_arch_loads_moe_aux_weights(const BnConfig *c);
 int bn_model_arch_uses_full_rope_text_dims(const char *arch);
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model);
+int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c);
+int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c);
+int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c);
 int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c);
+int bn_model_arch_uses_small_dense_shape(const BnConfig *c);
 int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c);
+int bn_model_arch_uses_small_dense_q8_native_shape(const BnConfig *c);
 int bn_model_arch_uses_small_cuda_dense_q8_native_shape(const BnConfig *c);
 int bn_model_arch_dense_batch_prefill_shape_allowed(
     const BnConfig *c,

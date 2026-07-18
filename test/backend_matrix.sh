@@ -726,6 +726,11 @@ if grep -n 'c->dim > 2560 || c->dim <= 1024' src/transformer/gpu_policy.c >/dev/
     fail=1
 fi
 
+if grep -n 'bn_model_arch_.*cuda' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose behavior-named model_arch helpers, not CUDA-named compatibility aliases"
+    fail=1
+fi
+
 if awk '
     /int bn_transformer_gpu_batch_prefill_enabled\(/ { in_func = 1 }
     in_func && /return c->dim <= (8192|2560)/ { found = 1 }

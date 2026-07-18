@@ -214,10 +214,15 @@ int bn_model_arch_per_layer_embedding_dim(const BnConfig *c) {
     return c->per_layer_input_dim;
 }
 
-int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
+int bn_model_arch_allows_small_dense_prefill_decode_fallback(
+    const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_PREFILL_DECODE_FALLBACK) != 0) &&
            bn_model_arch_uses_dense_attention_only(c) &&
            c->dim <= 2560;
+}
+
+int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
+    return bn_model_arch_allows_small_dense_prefill_decode_fallback(c);
 }
 
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
@@ -228,8 +233,12 @@ int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP) != 0);
 }
 
-int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
+int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_CUDA_EXACT_ATTENTION) != 0);
+}
+
+int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
+    return bn_model_arch_moe_prefers_exact_gpu_attention(c);
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
@@ -331,14 +340,22 @@ int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
     return bn_model_arch_is_gemma4(tokenizer_model);
 }
 
-int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c) {
+int bn_model_arch_uses_small_dense_shape(const BnConfig *c) {
     return bn_model_arch_uses_dense_attention_only(c) &&
            c->dim <= 2560;
 }
 
-int bn_model_arch_uses_small_cuda_dense_q8_native_shape(const BnConfig *c) {
-    return bn_model_arch_uses_small_cuda_dense_shape(c) &&
+int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c) {
+    return bn_model_arch_uses_small_dense_shape(c);
+}
+
+int bn_model_arch_uses_small_dense_q8_native_shape(const BnConfig *c) {
+    return bn_model_arch_uses_small_dense_shape(c) &&
            c->dim > 1024;
+}
+
+int bn_model_arch_uses_small_cuda_dense_q8_native_shape(const BnConfig *c) {
+    return bn_model_arch_uses_small_dense_q8_native_shape(c);
 }
 
 int bn_model_arch_dense_batch_prefill_shape_allowed(
@@ -349,20 +366,32 @@ int bn_model_arch_dense_batch_prefill_shape_allowed(
     return c->dim <= (supports_large_dense_batch_prefill ? 8192 : 2560);
 }
 
-int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
+int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_DENSE_EXACT_Q4_Q8) != 0) &&
-           bn_model_arch_uses_small_cuda_dense_shape(c);
+           bn_model_arch_uses_small_dense_shape(c);
+}
+
+int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
+    return bn_model_arch_allows_small_dense_exact_q4_q8(c);
+}
+
+int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c) {
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE) != 0) &&
+           bn_model_arch_allows_small_dense_exact_q4_q8(c);
 }
 
 int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_CUDA_Q8_LOGIT_REFINE) != 0) &&
-           bn_model_arch_allows_small_cuda_dense_exact_q4_q8(c);
+    return bn_model_arch_allows_small_dense_q8_logit_refine(c);
+}
+
+int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c) {
+    if (!bn_model_arch_allows_small_dense_q8_logit_refine(c))
+        return 0;
+    return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) ? 7 : 2;
 }
 
 int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c) {
-    if (!bn_model_arch_allows_small_cuda_q8_logit_refine(c))
-        return 0;
-    return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) ? 7 : 2;
+    return bn_model_arch_small_dense_prefill_min_tokens(c);
 }
 
 int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {
