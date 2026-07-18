@@ -16736,7 +16736,7 @@ static int cuda_prefill_moe_layer(
         uint32_t kv_cache_off, int kv_cache_stride,
         float attention_scale, int norm_topk_prob,
         float expert_weights_scale) {
-    if (getenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER"))
+    if (bn_gpu_policy_cuda_prefill_moe_layer_disabled())
         return -1;
     if (act_type != 0)
         return -1;
@@ -16790,7 +16790,7 @@ static int cuda_prefill_dense_layer(
     int q_gated = !packed_qkv && qk_rows == 2 * q_dim + kv_dim;
     int debug_dense_prefill =
         getenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER") != NULL;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER"))
+    if (bn_gpu_policy_cuda_prefill_dense_layer_disabled())
         return -1;
     if (!ctx || !qk || !qk->data || (!packed_qkv && (!wv || !wv->data)) ||
         !wo || !wo->data || !gate || !gate->data || !down || !down->data ||
@@ -17235,7 +17235,7 @@ static int cuda_prefill_ssm_layer(
                    act_type == 0;
     if (did_ffn)
         *did_ffn = 0;
-    if (getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER"))
+    if (bn_gpu_policy_cuda_prefill_ssm_layer_disabled())
         return -1;
     if (!ctx || (!X && !ctx->d_out) ||
         !wqkv || !wqkv->data || !wz || !wz->data ||

@@ -375,6 +375,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_ATTN_WO")\|getenv("BN_CUDA_DISABLE_P
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER")\|getenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER")\|getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA prefill layer admission env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA MMVQ argmax variant env policy"
     fail=1
