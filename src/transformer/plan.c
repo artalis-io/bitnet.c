@@ -317,6 +317,18 @@ int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
     return placement == BN_EXEC_GPU && lw && lw->moe.router_weight;
 }
 
+int bn_transformer_ssm_uses_qkvz_stack(
+    BnExecPlacement placement,
+    const void *qkvz_stacked) {
+    return placement == BN_EXEC_GPU && qkvz_stacked;
+}
+
+int bn_transformer_ssm_uses_alpha_beta_stack(
+    BnExecPlacement placement,
+    const void *alpha_beta_stacked) {
+    return placement == BN_EXEC_GPU && alpha_beta_stacked;
+}
+
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c) {
     return bn_model_arch_per_layer_embedding_dim(c);
@@ -436,10 +448,14 @@ void bn_transformer_plan_ssm(BnSSMPlan *p,
     p->inner_size = c->ssm_inner_size;
     p->time_step_rank = c->ssm_time_step_rank;
     p->group_count = c->ssm_group_count;
-    p->use_qkvz_stack = p->placement == BN_EXEC_GPU &&
-        bn_transformer_backend_handle_or(backend, layer, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
-    p->use_alpha_beta_stack = p->placement == BN_EXEC_GPU &&
-        bn_transformer_backend_handle_or(backend, layer, BN_BACKEND_HANDLE_SSM_AB_STACKED);
+    void *qkvz_stacked = bn_transformer_backend_handle_or(
+        backend, layer, BN_BACKEND_HANDLE_SSM_QKVZ_STACKED);
+    void *alpha_beta_stacked = bn_transformer_backend_handle_or(
+        backend, layer, BN_BACKEND_HANDLE_SSM_AB_STACKED);
+    p->use_qkvz_stack = bn_transformer_ssm_uses_qkvz_stack(
+        p->placement, qkvz_stacked);
+    p->use_alpha_beta_stack = bn_transformer_ssm_uses_alpha_beta_stack(
+        p->placement, alpha_beta_stacked);
 }
 
 void bn_transformer_plan_moe(BnMoEPlan *p,

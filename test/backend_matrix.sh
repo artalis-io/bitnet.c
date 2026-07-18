@@ -1012,6 +1012,11 @@ if grep -n 'p->placement == BN_EXEC_GPU && .*moe\.router_weight' src/transformer
     fail=1
 fi
 
+if grep -n 'p->use_qkvz_stack = .*p->placement\|p->use_alpha_beta_stack = .*p->placement' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer SSM execution planning must use SSM policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \

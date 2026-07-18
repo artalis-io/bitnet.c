@@ -308,6 +308,12 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);
+int bn_transformer_ssm_uses_qkvz_stack(
+    BnExecPlacement placement,
+    const void *qkvz_stacked);
+int bn_transformer_ssm_uses_alpha_beta_stack(
+    BnExecPlacement placement,
+    const void *alpha_beta_stacked);
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c);
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(

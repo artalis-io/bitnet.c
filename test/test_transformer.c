@@ -3181,6 +3181,13 @@ static void test_block_planning(void) {
     assert(ssm.inner_size == 4096);
     assert(ssm.time_step_rank == 32);
     assert(ssm.group_count == 16);
+    assert(bn_transformer_ssm_uses_qkvz_stack(BN_EXEC_GPU, (void *)6));
+    assert(!bn_transformer_ssm_uses_qkvz_stack(BN_EXEC_GPU, NULL));
+    assert(!bn_transformer_ssm_uses_qkvz_stack(BN_EXEC_CPU, (void *)6));
+    assert(bn_transformer_ssm_uses_alpha_beta_stack(BN_EXEC_GPU, (void *)7));
+    assert(!bn_transformer_ssm_uses_alpha_beta_stack(BN_EXEC_GPU, NULL));
+    assert(!bn_transformer_ssm_uses_alpha_beta_stack(
+        BN_EXEC_CPU, (void *)7));
     assert(ssm.use_qkvz_stack);
     assert(ssm.use_alpha_beta_stack);
 
