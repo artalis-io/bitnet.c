@@ -1490,6 +1490,17 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
+    BnTransformerGPUCPUFallbackPolicy fallback =
+        {-1, -1, -1, -1, -1, -1, -1};
+    fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback, &gpu, &c, &moe_w);
+    assert(fallback.attn_from_layer == 0);
+    fallback = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, 3, -1, -1, -1, -1};
+    fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback, &gpu, &c, &moe_w);
+    assert(fallback.attn_layer == 3);
+    assert(fallback.attn_from_layer == -1);
     assert(bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
         &gpu, &c, &moe_layers[0], c.dim));
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
@@ -1661,6 +1672,11 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
+    fallback = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, -1, -1, -1, -1, -1};
+    fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback, &gpu, &c, &dense_w);
+    assert(fallback.attn_from_layer == 0);
     assert(bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
         &gpu, &c, -1));
     c.n_layers = 61;
@@ -1744,6 +1760,11 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
         &gpu, &c, &hybrid_w));
+    fallback = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, -1, -1, -1, -1, -1};
+    fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+        fallback, &gpu, &c, &hybrid_w);
+    assert(fallback.attn_from_layer == 0);
     unsetenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE");
     assert(!bn_transformer_gpu_ssm_cpu_fallback_required(&gpu));
     setenv("BN_CUDA_DISABLE_SSM_GRAPH", "1", 1);

@@ -1192,6 +1192,35 @@ bn_transformer_gpu_cpu_fallback_policy(void) {
     return policy;
 }
 
+static int gpu_cpu_attention_fallback_unset(
+    const BnTransformerGPUCPUFallbackPolicy *policy) {
+    return policy &&
+           policy->layer < 0 &&
+           policy->from_layer < 0 &&
+           policy->attn_layer < 0 &&
+           policy->attn_from_layer < 0;
+}
+
+BnTransformerGPUCPUFallbackPolicy
+bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+    BnTransformerGPUCPUFallbackPolicy policy,
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w) {
+    if (!gpu_cpu_attention_fallback_unset(&policy))
+        return policy;
+    int default_cpu_attention =
+        bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
+            gpu, c, w) ||
+        bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
+            gpu, c, w) ||
+        bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
+            gpu, c, w);
+    if (default_cpu_attention)
+        policy.attn_from_layer = 0;
+    return policy;
+}
+
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     int n_layers = c ? c->n_layers : 0;

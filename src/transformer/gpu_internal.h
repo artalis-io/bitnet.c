@@ -460,6 +460,12 @@ int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
     int want_argmax);
 BnTransformerGPUCPUFallbackPolicy
 bn_transformer_gpu_cpu_fallback_policy(void);
+BnTransformerGPUCPUFallbackPolicy
+bn_transformer_gpu_decode_cpu_attention_fallback_policy(
+    BnTransformerGPUCPUFallbackPolicy policy,
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnWeights *w);
 BnTransformerGPUQ4Q8LayerPolicy
 bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
 BnTransformerGPUComparePolicy
