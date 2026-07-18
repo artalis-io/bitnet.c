@@ -3,7 +3,6 @@
 #ifdef BN_ENABLE_CUDA
 
 #include "gguf.h"
-#include "model_arch.h"
 #include "model_config.h"
 #include "moe_types.h"
 #include "quant.h"
@@ -11314,7 +11313,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
     ctx->kv_f16 = c->kv_f16;
     ctx->has_moe_model = c->n_experts > 0;
 
-    int n_attn = bn_model_arch_attention_layer_count(c);
+    int n_attn = bn_gpu_policy_attention_layer_count(c);
     int q_dim = c->n_heads * c->head_size;
     int xb_size = q_dim > c->dim ? q_dim : c->dim;
     int hb_dim = c->hidden_dim;
@@ -11343,7 +11342,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
     {
         size_t qkv_size = (size_t)(q_dim + 2 * c->kv_dim) * sizeof(float);
         size_t gated_q_size = (size_t)(2 * q_dim) * sizeof(float);
-        if (bn_model_arch_uses_hybrid_moe(c)) {
+        if (bn_gpu_policy_uses_hybrid_moe(c)) {
             size_t hybrid_q_size = (size_t)(4 * q_dim) * sizeof(float);
             if (hybrid_q_size > gated_q_size)
                 gated_q_size = hybrid_q_size;
@@ -11369,8 +11368,8 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
         sizes[BN_GPU_VALUE_MOE_OUT] =
             (size_t)c->dim * sizeof(float);
     }
-    if (bn_model_arch_uses_hybrid_ssm(c)) {
-        int n_ssm = bn_model_arch_ssm_layer_count(c);
+    if (bn_gpu_policy_uses_hybrid_ssm(c)) {
+        int n_ssm = bn_gpu_policy_ssm_layer_count(c);
         int num_v_heads = c->ssm_time_step_rank;
         int head_k_dim = c->ssm_state_size;
         int head_v_dim = c->ssm_inner_size /

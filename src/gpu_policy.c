@@ -28,6 +28,10 @@ int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
     return bn_model_arch_uses_hybrid_ssm(c);
 }
 
+int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_moe(c);
+}
+
 int bn_gpu_policy_uses_moe(const BnConfig *c) {
     return bn_model_arch_uses_moe(c);
 }
