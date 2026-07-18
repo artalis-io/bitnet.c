@@ -1524,6 +1524,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_FAST_GRAPH");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_CUBLAS_DECODE");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE");
+    unsetenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT");
@@ -1799,6 +1801,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled());
+    assert(bn_gpu_policy_cuda_moe_cublas_decode_enabled());
+    assert(!bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_all2_fast_enabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_q8k_default_disabled());
     assert(!bn_gpu_policy_all2_q4q6_route_q8k_default_disabled());
@@ -1838,6 +1842,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_FAST_GRAPH", "1", 1);
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_CUBLAS_DECODE", "1", 1);
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE", "1", 1);
+    setenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE", "1", 1);
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT", "1", 1);
@@ -1871,6 +1877,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled());
     assert(bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled());
+    assert(!bn_gpu_policy_cuda_moe_cublas_decode_enabled());
+    assert(bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled());
     assert(bn_gpu_policy_all2_q4q6_moe_all2_fast_enabled());
     assert(bn_gpu_policy_all2_q4q6_moe_q8k_default_disabled());
     assert(bn_gpu_policy_all2_q4q6_route_q8k_default_disabled());
@@ -2019,6 +2027,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_FAST_MOE_GRAPH");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE");
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE");
+    unsetenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_ALL2_FAST");
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_MOE_Q8K_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_ROUTE_Q8K_DEFAULT");

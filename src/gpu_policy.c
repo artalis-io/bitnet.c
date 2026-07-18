@@ -1528,6 +1528,14 @@ int bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled(void) {
                                   "BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE");
 }
 
+int bn_gpu_policy_cuda_moe_cublas_decode_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE") == NULL;
+}
+
+int bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(void) {
+    return getenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE") != NULL;
+}
+
 int bn_gpu_policy_all2_q4q6_moe_all2_fast_enabled(void) {
     return gpu_policy_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST",
                                   "BN_CUDA_ENABLE_QWEN2MOE_MOE_ALL2_FAST");

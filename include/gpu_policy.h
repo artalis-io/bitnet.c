@@ -373,6 +373,8 @@ int bn_gpu_policy_small_dense_q8_logits_refine_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled(void);
 int bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled(void);
+int bn_gpu_policy_cuda_moe_cublas_decode_enabled(void);
+int bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(void);
 int bn_gpu_policy_all2_q4q6_moe_all2_fast_enabled(void);
 int bn_gpu_policy_all2_q4q6_moe_q8k_default_disabled(void);
 int bn_gpu_policy_all2_q4q6_route_q8k_default_disabled(void);

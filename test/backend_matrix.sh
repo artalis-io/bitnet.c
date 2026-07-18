@@ -335,6 +335,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT")\|getenv("BN_CUDA
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE")\|getenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for MoE cuBLAS decode env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_FFN_BATCH")\|getenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for MoE FFN batch env policy"
     fail=1

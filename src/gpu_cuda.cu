@@ -14969,7 +14969,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
         down_type == BN_GGUF_TENSOR_Q6_K && hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
-        getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE") == NULL;
+        bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     size_t decode_route_bytes =
         use_cublas_all2_decode ? 4u * sizeof(float) : 0u;
     if (cuda_ensure_ops(ctx, idx_bytes + weight_bytes + decode_route_bytes) != 0)
@@ -15020,7 +15020,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             }
         }
         d_mid = ctx->d_out;
-        if (getenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE"))
+        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled())
             fprintf(stderr,
                     "[bn:gpu:cuda] all2 cublas moe decode failed; falling back\n");
     }
@@ -15403,7 +15403,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
         down_type == BN_GGUF_TENSOR_Q6_K && hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
-        getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE") == NULL;
+        bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     int use_sorted_slots =
         (routed_q4 || routed_q8) && n_tokens > 1 &&
         !use_cublas_all2_fixed &&
@@ -15677,7 +15677,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             goto moe_route_routed_readback;
         }
         d_mid = ctx->d_out;
-        if (getenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE"))
+        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled())
             fprintf(stderr,
                     "[bn:gpu:cuda] all2 cublas moe decode failed; falling back\n");
     } else if (use_cublas_all2_fixed) {
@@ -18197,7 +18197,7 @@ static int cuda_ops_have_logits(const BnGPUOp *ops, int n_ops) {
 }
 
 static int cuda_ops_have_moe_cublas_decode(const BnGPUOp *ops, int n_ops) {
-    if (!ops || getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE"))
+    if (!ops || !bn_gpu_policy_cuda_moe_cublas_decode_enabled())
         return 0;
     if (!bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled())
         return 0;
@@ -20263,14 +20263,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         moe_all2_q4q6 &&
                         gate->f16_data && up->f16_data && down->f16_data &&
                         bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled() &&
-                        getenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE") == NULL;
+                        bn_gpu_policy_cuda_moe_cublas_decode_enabled();
                     if (use_cublas_all2_decode) {
                         if (cuda_moe_cublas_all2_decode(
                                 ctx, out, gate, up, down, in, route, dim,
                                 hidden, exact_silu) == 0) {
                             break;
                         }
-                        if (getenv("BN_CUDA_DEBUG_MOE_CUBLAS_DECODE")) {
+                        if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled()) {
                             fprintf(stderr,
                                     "[bn:gpu:cuda] all2 cublas moe decode "
                                     "failed; falling back\n");
