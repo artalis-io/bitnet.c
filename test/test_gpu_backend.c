@@ -1258,6 +1258,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled());
     setenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX", "1", 1);
     assert(bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled());
+    unsetenv("BN_CUDA_DISABLE_ARGMAX_FAST");
+    assert(bn_gpu_policy_cuda_argmax_fast_enabled());
+    setenv("BN_CUDA_DISABLE_ARGMAX_FAST", "1", 1);
+    assert(!bn_gpu_policy_cuda_argmax_fast_enabled());
+    unsetenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY");
+    assert(!bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled());
+    setenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY", "1", 1);
+    assert(bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled());
     unsetenv("BN_CUDA_ENABLE_LOGITS_CACHE");
     unsetenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE");
     unsetenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE");
@@ -1267,6 +1275,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX");
     unsetenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX");
     unsetenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX");
+    unsetenv("BN_CUDA_DISABLE_ARGMAX_FAST");
+    unsetenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
     unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");

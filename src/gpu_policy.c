@@ -663,6 +663,14 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_cuda_argmax_fast_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_ARGMAX_FAST") == NULL;
+}
+
+int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
+}
+
 int bn_gpu_policy_cuda_readback_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_READBACK") != NULL;
 }

@@ -362,6 +362,14 @@ static int cuda_use_dense_ffn_batch(void) {
     return bn_gpu_policy_cuda_dense_ffn_batch_enabled();
 }
 
+static int cuda_use_argmax_fast(void) {
+    return bn_gpu_policy_cuda_argmax_fast_enabled();
+}
+
+static int cuda_use_optimistic_argmax_penalty(void) {
+    return bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled();
+}
+
 static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
     return bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(n_experts > 2);
 }
@@ -13570,10 +13578,10 @@ static int cuda_argmax_activation(void *vctx, int buf_idx, int n,
     int *d_result = (int *)(partials + blocks);
     int no_penalty_fast =
         n_penalty_tokens == 0 &&
-        getenv("BN_CUDA_DISABLE_ARGMAX_FAST") == NULL;
+        cuda_use_argmax_fast();
     int optimistic_penalty =
         n_penalty_tokens > 0 &&
-        getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
+        cuda_use_optimistic_argmax_penalty();
     if (no_penalty_fast) {
         argmax_stage1_fast_kernel<<<blocks, threads, 0, stream>>>(
             partials, x, n);
@@ -13714,7 +13722,7 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
     int *d_result = (int *)(partials + blocks);
     int optimistic_penalty =
         n_penalty_tokens > 0 &&
-        getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
+        cuda_use_optimistic_argmax_penalty();
     if (use_mmvq) {
         if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
         BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
