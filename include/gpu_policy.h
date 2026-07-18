@@ -79,6 +79,11 @@ int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_q8_0_quant_matmul_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_matmul_enabled(void);
 int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void);
+int bn_gpu_policy_cuda_q8_preq_all_enabled(void);
+int bn_gpu_policy_cuda_q8_preq_logits_disabled(void);
+int bn_gpu_policy_cuda_q8_preq_logits_default_enabled(
+    int preq_logits_disabled);
+int bn_gpu_policy_cuda_q8k_input_cache_enabled(void);
 int bn_gpu_policy_cuda_force_quant_matmul_for_type(
     int tensor_type,
     int f16_q8_0_matmul_enabled);
@@ -329,6 +334,16 @@ int bn_gpu_policy_cpu_ffn_layer_or_default(int default_layer);
 int bn_gpu_policy_cpu_ffn_from_layer_or_default(int default_layer);
 int bn_gpu_policy_cpu_ffn_down_from_layer_or_default(int default_layer);
 int bn_gpu_policy_cuda_ssm_graph_disabled(void);
+int bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(void);
+int bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled(void);
+int bn_gpu_policy_cuda_qkv_kpair_opt_enabled(void);
+int bn_gpu_policy_cuda_q5_gateup_warp_disabled(void);
+int bn_gpu_policy_cuda_q8_gateup_warp_disabled(void);
+int bn_gpu_policy_cuda_graph_exec_requested(void);
+int bn_gpu_policy_cuda_moe_graph_max_experts_or_default(
+    int default_experts);
+int bn_gpu_policy_cuda_decode_graph_default_enabled(int moe_graph,
+                                                    int default_moe_graph);
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,

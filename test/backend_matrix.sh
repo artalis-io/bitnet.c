@@ -450,6 +450,11 @@ if grep -n 'getenv("BN_CUDA_DEBUG_NAN_VERBOSE")\|getenv("BN_CUDA_DISABLE_STREAM_
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE")\|getenv("BN_CUDA_DISABLE_QKV_KCACHE_FUSE")\|getenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT")\|getenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP")\|getenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP")\|getenv("BN_CUDA_ENABLE_GRAPH_EXEC")\|getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN")\|getenv("BN_CUDA_ENABLE_Q8_PREQ")\|getenv("BN_CUDA_DISABLE_Q8_PREQ")\|getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS")\|getenv("BN_CUDA_DISABLE_Q8K_INPUT_CACHE")\|cuda_env_int("BN_CUDA_MOE_GRAPH_MAX_EXPERTS"\|getenv("BN_CUDA_DISABLE_GRAPH_EXEC")\|getenv("BN_CUDA_ENABLE_MOE_FFN")\|getenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA graph/QKV/Q8 prequant env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_[^"]*QWEN\|gpu_env_enabled("BN_CUDA_[^"]*QWEN\|gpu_env_value("BN_CUDA_[^"]*QWEN\|gpu_policy_env_int("BN_CUDA_[^"]*QWEN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1

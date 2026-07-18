@@ -371,6 +371,26 @@ int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void) {
            getenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT") == NULL;
 }
 
+int bn_gpu_policy_cuda_q8_preq_all_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_Q8_PREQ") != NULL &&
+           getenv("BN_CUDA_DISABLE_Q8_PREQ") == NULL;
+}
+
+int bn_gpu_policy_cuda_q8_preq_logits_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") != NULL;
+}
+
+int bn_gpu_policy_cuda_q8_preq_logits_default_enabled(
+    int preq_logits_disabled) {
+    return !preq_logits_disabled &&
+           (getenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS") != NULL ||
+            getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") == NULL);
+}
+
+int bn_gpu_policy_cuda_q8k_input_cache_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q8K_INPUT_CACHE") == NULL;
+}
+
 int bn_gpu_policy_cuda_force_quant_matmul_for_type(
     int tensor_type,
     int f16_q8_0_matmul_enabled) {
@@ -1264,6 +1284,44 @@ int bn_gpu_policy_cpu_ffn_down_from_layer_or_default(int default_layer) {
 
 int bn_gpu_policy_cuda_ssm_graph_disabled(void) {
     return getenv("BN_CUDA_DISABLE_SSM_GRAPH") != NULL;
+}
+
+int bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE") != NULL;
+}
+
+int bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_QKV_KCACHE_FUSE") == NULL;
+}
+
+int bn_gpu_policy_cuda_qkv_kpair_opt_enabled(void) {
+    return getenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT") != NULL;
+}
+
+int bn_gpu_policy_cuda_q5_gateup_warp_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP") != NULL;
+}
+
+int bn_gpu_policy_cuda_q8_gateup_warp_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP") != NULL;
+}
+
+int bn_gpu_policy_cuda_graph_exec_requested(void) {
+    return getenv("BN_CUDA_ENABLE_GRAPH_EXEC") != NULL ||
+           getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_graph_max_experts_or_default(
+    int default_experts) {
+    return env_positive_int_or_default("BN_CUDA_MOE_GRAPH_MAX_EXPERTS",
+                                       default_experts);
+}
+
+int bn_gpu_policy_cuda_decode_graph_default_enabled(int moe_graph,
+                                                    int default_moe_graph) {
+    return getenv("BN_CUDA_DISABLE_GRAPH_EXEC") == NULL &&
+           getenv("BN_CUDA_ENABLE_MOE_FFN") == NULL &&
+           (!moe_graph || default_moe_graph);
 }
 
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,

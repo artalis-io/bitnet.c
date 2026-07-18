@@ -18346,25 +18346,23 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_q4k_4warp_flag = bn_gpu_policy_cuda_q4k_4warp_enabled();
         disable_q8_warp_flag = bn_gpu_policy_cuda_q8_warp_disabled();
         disable_qkv_mixed_fuse_flag =
-            getenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE") != NULL;
+            bn_gpu_policy_cuda_qkv_mixed_fuse_disabled();
         qkv_fuse_key_cache_flag =
-            getenv("BN_CUDA_DISABLE_QKV_KCACHE_FUSE") == NULL;
+            bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled();
         enable_qkv_kpair_opt_flag =
-            getenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT") != NULL;
+            bn_gpu_policy_cuda_qkv_kpair_opt_enabled();
         disable_q5_gateup_warp_flag =
-            getenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP") != NULL;
+            bn_gpu_policy_cuda_q5_gateup_warp_disabled();
         disable_q8_gateup_warp_flag =
-            getenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP") != NULL;
+            bn_gpu_policy_cuda_q8_gateup_warp_disabled();
         enable_bias_rope_flash_fuse_flag =
             bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled();
         enable_graph_exec_flag =
-            getenv("BN_CUDA_ENABLE_GRAPH_EXEC") != NULL ||
-            getenv("BN_CUDA_ENABLE_UNSAFE_MOE_FFN") != NULL;
+            bn_gpu_policy_cuda_graph_exec_requested();
         enable_q8_preq_all_flag =
-            getenv("BN_CUDA_ENABLE_Q8_PREQ") != NULL &&
-            getenv("BN_CUDA_DISABLE_Q8_PREQ") == NULL;
+            bn_gpu_policy_cuda_q8_preq_all_enabled();
         disable_q8_preq_logits_flag =
-            getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") != NULL;
+            bn_gpu_policy_cuda_q8_preq_logits_disabled();
         flags_init = 1;
     }
     const int fuse_bias_enabled = fuse_bias_enabled_flag;
@@ -18393,7 +18391,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int q8k_input_cache_tokens = 0;
     int q8k_input_cache_mark_op = -1;
     const int enable_q8k_input_cache =
-        getenv("BN_CUDA_DISABLE_Q8K_INPUT_CACHE") == NULL;
+        bn_gpu_policy_cuda_q8k_input_cache_enabled();
 #define BN_CUDA_Q8K_INPUT_CACHE_MARK(buf_, cols_, tokens_) do { \
         q8k_input_cache_valid = enable_q8k_input_cache; \
         q8k_input_cache_buf = (buf_); \
@@ -18434,17 +18432,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         : 0;
     int default_moe_graph =
         moe_graph && !q8_moe_graph && moe_max_experts > 0 &&
-        moe_max_experts <= cuda_env_int("BN_CUDA_MOE_GRAPH_MAX_EXPERTS", 128);
+        moe_max_experts <=
+            bn_gpu_policy_cuda_moe_graph_max_experts_or_default(128);
     int default_graph_exec =
-        getenv("BN_CUDA_DISABLE_GRAPH_EXEC") == NULL &&
-        getenv("BN_CUDA_ENABLE_MOE_FFN") == NULL &&
-        (!moe_graph || default_moe_graph) &&
+        bn_gpu_policy_cuda_decode_graph_default_enabled(
+            moe_graph, default_moe_graph) &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
     int q8_preq_logits_default =
-        !disable_q8_preq_logits &&
-        (getenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS") != NULL ||
-         getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") == NULL);
+        bn_gpu_policy_cuda_q8_preq_logits_default_enabled(
+            disable_q8_preq_logits);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
