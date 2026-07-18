@@ -91,6 +91,43 @@ bn_transformer_prefill_dense_layer_batch_policy(
     return policy;
 }
 
+BnTransformerPrefillDenseLayerChainPolicy
+bn_transformer_prefill_dense_layer_chain_policy(
+    int gpu_available,
+    int dense_layer_hook_available,
+    int tq_state_available,
+    int n_tokens,
+    int min_tokens,
+    float layer_rope_theta,
+    float config_rope_theta,
+    int is_attn,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_gate,
+    int has_ffn_up,
+    int has_attn_sub_norm,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm) {
+    BnTransformerPrefillDenseLayerChainPolicy policy = {0};
+    policy.enabled =
+        gpu_available &&
+        dense_layer_hook_available &&
+        !tq_state_available &&
+        n_tokens >= min_tokens &&
+        layer_rope_theta == config_rope_theta &&
+        is_attn &&
+        !layer_kind.uses_moe &&
+        has_ffn_gate &&
+        has_ffn_up &&
+        !has_attn_sub_norm &&
+        !has_ffn_sub_norm &&
+        !has_layer_output_scale &&
+        !(uses_post_norm && (has_attn_post_norm || has_ffn_post_norm));
+    return policy;
+}
+
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

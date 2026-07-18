@@ -3623,6 +3623,33 @@ static void test_block_planning(void) {
         prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0);
     assert(!dense_layer_batch.enabled);
 
+    BnTransformerPrefillDenseLayerChainPolicy dense_layer_chain =
+        bn_transformer_prefill_dense_layer_chain_policy(
+            1, 1, 0, 16, 16, 10000.0f, 10000.0f, 1,
+            prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0);
+    assert(dense_layer_chain.enabled);
+    dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
+        1, 0, 0, 16, 16, 10000.0f, 10000.0f, 1,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_chain.enabled);
+    dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
+        1, 1, 0, 16, 16, 10000.0f, 10000.0f, 0,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_chain.enabled);
+    dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
+        1, 1, 0, 16, 16, 10000.0f, 10000.0f, 1,
+        bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, 1, 0, 0, 0, 0, 0, 0);
+    assert(!dense_layer_chain.enabled);
+    dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
+        1, 1, 0, 16, 16, 10000.0f, 10000.0f, 1,
+        prefill_layer_kind, 1, 1, 1, 0, 0, 0, 0, 0);
+    assert(!dense_layer_chain.enabled);
+    dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
+        1, 1, 0, 16, 16, 10000.0f, 10000.0f, 1,
+        prefill_layer_kind, 1, 1, 0, 0, 0, 1, 1, 0);
+    assert(!dense_layer_chain.enabled);
+
     BnTransformerPrefillRawAttentionPolicy raw_attention =
         bn_transformer_prefill_raw_attention_policy(
             1, 1, 1, 1, 0, 0, 0, 16, 16, 10000.0f, 10000.0f,

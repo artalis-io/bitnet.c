@@ -736,19 +736,30 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!gpu || !gpu->prefill_dense_layer || !backend ||
-        bn_model_tq_state(m) != NULL ||
-        n_tokens <
-            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu) ||
-        layer_rope_theta != c->rope_theta ||
-        !plan->is_attn ||
-        lw->moe.router_weight || !c->has_ffn_gate || !lw->ffn.ffn_up.data ||
+    BnTransformerPrefillLayerKindPolicy layer_kind =
+        bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+    BnTransformerPrefillDenseLayerChainPolicy policy =
+        bn_transformer_prefill_dense_layer_chain_policy(
+            gpu != NULL,
+            gpu && gpu->prefill_dense_layer,
+            bn_model_tq_state(m) != NULL,
+            n_tokens,
+            bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(c, gpu),
+            layer_rope_theta,
+            c->rope_theta,
+            plan->is_attn,
+            layer_kind,
+            c->has_ffn_gate,
+            lw->ffn.ffn_up.data != NULL,
+            lw->norm.attn_sub_norm != NULL,
+            lw->norm.ffn_sub_norm != NULL,
+            lw->norm.layer_output_scale != NULL,
+            bn_transformer_attention_uses_post_norm(c),
+            lw->norm.attn_post_norm != NULL,
+            lw->norm.ffn_post_norm != NULL);
+    if (!policy.enabled || !backend ||
         !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
-        !lw->ffn.ffn_down.data ||
-        lw->norm.attn_sub_norm || lw->norm.ffn_sub_norm ||
-        lw->norm.layer_output_scale ||
-        (bn_transformer_attention_uses_post_norm(c) &&
-         (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)))
+        !lw->ffn.ffn_down.data)
         return 0;
     int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
     int has_split_qkv =
