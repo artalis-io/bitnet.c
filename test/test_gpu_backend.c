@@ -744,6 +744,17 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6_K");
     unsetenv("BN_CUDA_DISABLE_Q8_K");
 
+    unsetenv("BN_CUDA_DISABLE_MATMUL_BATCH");
+    unsetenv("BN_CUDA_DISABLE_MATVEC_BATCH");
+    assert(bn_gpu_policy_cuda_matmul_batch_enabled());
+    assert(bn_gpu_policy_cuda_matvec_batch_enabled());
+    setenv("BN_CUDA_DISABLE_MATMUL_BATCH", "1", 1);
+    setenv("BN_CUDA_DISABLE_MATVEC_BATCH", "1", 1);
+    assert(!bn_gpu_policy_cuda_matmul_batch_enabled());
+    assert(!bn_gpu_policy_cuda_matvec_batch_enabled());
+    unsetenv("BN_CUDA_DISABLE_MATMUL_BATCH");
+    unsetenv("BN_CUDA_DISABLE_MATVEC_BATCH");
+
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
     assert(bn_gpu_policy_cuda_small_kquant_native_enabled(0));

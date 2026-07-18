@@ -260,6 +260,14 @@ int bn_gpu_policy_cuda_matvec_type_supported(int tensor_type) {
            !bn_backend_quant_cuda_matvec_type_disabled(tensor_type);
 }
 
+int bn_gpu_policy_cuda_matmul_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MATMUL_BATCH") == NULL;
+}
+
+int bn_gpu_policy_cuda_matvec_batch_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_MATVEC_BATCH") == NULL;
+}
+
 int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant) {
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 1;

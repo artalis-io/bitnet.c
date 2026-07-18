@@ -322,6 +322,14 @@ static int cuda_debug_cublas_cache(void) {
     return bn_gpu_policy_cuda_cublas_cache_debug_enabled();
 }
 
+static int cuda_use_matmul_batch(void) {
+    return bn_gpu_policy_cuda_matmul_batch_enabled();
+}
+
+static int cuda_use_matvec_batch(void) {
+    return bn_gpu_policy_cuda_matvec_batch_enabled();
+}
+
 static int cuda_use_moe_cublas_gateup_f16_out(void) {
     return bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled();
 }
@@ -13302,7 +13310,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
 static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                              const float *X, int n_tokens, int x_cols) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (getenv("BN_CUDA_DISABLE_MATMUL_BATCH")) return -1;
+    if (!cuda_use_matmul_batch()) return -1;
     if (!ctx || !ops || !X || n_ops <= 1 || n_ops > 16 ||
         n_tokens <= 1 || x_cols <= 0)
         return -1;
@@ -13842,7 +13850,7 @@ static int cuda_memory_info(void *vctx,
 static int cuda_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                              const float *x, int x_cols) {
     BnCudaCtx *ctx = (BnCudaCtx *)vctx;
-    if (getenv("BN_CUDA_DISABLE_MATVEC_BATCH")) return -1;
+    if (!cuda_use_matvec_batch()) return -1;
     if (!ctx || !ops || !x || n_ops <= 0) return -1;
     size_t total_rows = 0;
     for (int i = 0; i < n_ops; i++) {
