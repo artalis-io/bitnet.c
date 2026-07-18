@@ -475,7 +475,8 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
                      lazy_budget / (1024u * 1024u));
             snprintf(free_mb, sizeof(free_mb), "%zu",
                      free_bytes / (1024u * 1024u));
-            snprintf(reserve_mb_s, sizeof(reserve_mb_s), "%zu", reserve_mb);
+            snprintf(reserve_mb_s, sizeof(reserve_mb_s), "%zu",
+                     reserve / (1024u * 1024u));
             SH_LOG_INFO("GPU MoE cache auto-sized",
                         "budget_MB", budget_mb,
                         "free_MB", free_mb,
