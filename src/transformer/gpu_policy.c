@@ -853,8 +853,10 @@ int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
 
 int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
-    const BnConfig *c) {
-    return bn_model_arch_uses_more_than_two_expert_moe(c) &&
+    const BnConfig *c,
+    int backend_available) {
+    return backend_available &&
+           bn_model_arch_uses_more_than_two_expert_moe(c) &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
            gpu->moe_route_batch;
 }

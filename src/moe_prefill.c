@@ -296,8 +296,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int used_gpu_route = 0;
     BnGPUBackend *route_gpu = bn_model_gpu(m);
     BnBackendModel *route_backend = bn_model_backend(m);
-    if (bn_transformer_gpu_moe_prefill_route_batch_available(route_gpu, c) &&
-        route_backend) {
+    if (bn_transformer_gpu_moe_prefill_route_batch_available(
+            route_gpu, c, route_backend != NULL)) {
         void *router_gpu = bn_backend_model_handle(
             route_backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
         int route_rc = router_gpu

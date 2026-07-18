@@ -390,7 +390,8 @@ int bn_transformer_gpu_moe_prefill_shared_batch_available(
 int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void);
 int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
-    const BnConfig *c);
+    const BnConfig *c,
+    int backend_available);
 int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
     const BnGPUBackend *gpu,
     const BnConfig *c);
