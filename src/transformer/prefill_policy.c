@@ -79,6 +79,38 @@ bn_transformer_prefill_decode_fallback_policy(
     return policy;
 }
 
+BnTransformerPrefillDenseModelChainPolicy
+bn_transformer_prefill_dense_model_chain_policy(
+    int dense_chain_enabled,
+    int gpu_available,
+    int pos0,
+    int n_layers) {
+    BnTransformerPrefillDenseModelChainPolicy policy = {0};
+    policy.enabled =
+        dense_chain_enabled &&
+        gpu_available &&
+        pos0 == 0 &&
+        n_layers > 0;
+    return policy;
+}
+
+BnTransformerPrefillHybridModelChainPolicy
+bn_transformer_prefill_hybrid_model_chain_policy(
+    int hybrid_chain_enabled,
+    int gpu_hybrid_prefill,
+    int pos0,
+    int n_layers,
+    int tq_state_available) {
+    BnTransformerPrefillHybridModelChainPolicy policy = {0};
+    policy.enabled =
+        hybrid_chain_enabled &&
+        gpu_hybrid_prefill &&
+        pos0 == 0 &&
+        n_layers > 0 &&
+        !tq_state_available;
+    return policy;
+}
+
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(
     int gpu_available,

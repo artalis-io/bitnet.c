@@ -1491,8 +1491,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int rope_cache_dims = -1;
     float rope_cache_theta = 0.0f;
 
-    if (bn_transformer_gpu_cuda_prefill_dense_chain_enabled() &&
-        bn_model_gpu(m) && pos0 == 0 && c->n_layers > 0) {
+    BnTransformerPrefillDenseModelChainPolicy dense_model_chain =
+        bn_transformer_prefill_dense_model_chain_policy(
+            bn_transformer_gpu_cuda_prefill_dense_chain_enabled(),
+            bn_model_gpu(m) != NULL, pos0, c->n_layers);
+    if (dense_model_chain.enabled) {
         int chain_ready = 1;
         for (int l = 0; l < c->n_layers; l++) {
             BnLayerWeights *lw = &w->layers[l];
@@ -1591,9 +1594,13 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         }
     }
 
-    if (bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(prefill_gpu, c) &&
-        gpu_hybrid_prefill && pos0 == 0 && c->n_layers > 0 &&
-        bn_model_tq_state(m) == NULL) {
+    BnTransformerPrefillHybridModelChainPolicy hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(
+            bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
+                prefill_gpu, c),
+            gpu_hybrid_prefill, pos0, c->n_layers,
+            bn_model_tq_state(m) != NULL);
+    if (hybrid_model_chain.enabled) {
         int chain_ready = 1;
         for (int l = 0; l < c->n_layers; l++) {
             BnLayerWeights *lw = &w->layers[l];

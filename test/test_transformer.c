@@ -3742,6 +3742,41 @@ static void test_block_planning(void) {
     assert(!decode_fallback.decode);
     assert(!decode_fallback.require_logits_decode);
 
+    BnTransformerPrefillDenseModelChainPolicy dense_model_chain =
+        bn_transformer_prefill_dense_model_chain_policy(1, 1, 0, 1);
+    assert(dense_model_chain.enabled);
+    dense_model_chain =
+        bn_transformer_prefill_dense_model_chain_policy(0, 1, 0, 1);
+    assert(!dense_model_chain.enabled);
+    dense_model_chain =
+        bn_transformer_prefill_dense_model_chain_policy(1, 0, 0, 1);
+    assert(!dense_model_chain.enabled);
+    dense_model_chain =
+        bn_transformer_prefill_dense_model_chain_policy(1, 1, 1, 1);
+    assert(!dense_model_chain.enabled);
+    dense_model_chain =
+        bn_transformer_prefill_dense_model_chain_policy(1, 1, 0, 0);
+    assert(!dense_model_chain.enabled);
+
+    BnTransformerPrefillHybridModelChainPolicy hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 0);
+    assert(hybrid_model_chain.enabled);
+    hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(0, 1, 0, 1, 0);
+    assert(!hybrid_model_chain.enabled);
+    hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 0, 0, 1, 0);
+    assert(!hybrid_model_chain.enabled);
+    hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 1, 1, 0);
+    assert(!hybrid_model_chain.enabled);
+    hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 0, 0);
+    assert(!hybrid_model_chain.enabled);
+    hybrid_model_chain =
+        bn_transformer_prefill_hybrid_model_chain_policy(1, 1, 0, 1, 1);
+    assert(!hybrid_model_chain.enabled);
+
     BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
         bn_transformer_prefill_dense_layer_batch_policy(
             1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
