@@ -158,6 +158,12 @@ typedef struct {
     int compare_route;
     int compare_input_norm;
     int compare_actual;
+    int compare_raw;
+    int compare_mid;
+    int compare_parts;
+    int compare_shared_mid;
+    int compare_shared_down;
+    int compare_norm;
 } BnTransformerGPUMoEDebugPolicy;
 
 typedef struct {

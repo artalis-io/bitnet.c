@@ -1710,6 +1710,24 @@ BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
     policy.compare_actual =
         compare_layer_selected &&
         bn_transformer_gpu_moe_compare_actual_enabled();
+    policy.compare_raw =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_raw_enabled();
+    policy.compare_mid =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_mid_enabled();
+    policy.compare_parts =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_parts_enabled();
+    policy.compare_shared_mid =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_shared_mid_enabled();
+    policy.compare_shared_down =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_shared_down_enabled();
+    policy.compare_norm =
+        compare_layer_selected &&
+        bn_transformer_gpu_moe_compare_norm_enabled();
     return policy;
 }
 
