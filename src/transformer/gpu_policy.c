@@ -837,19 +837,19 @@ int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
         c, w, gpu, pos0, n_tokens);
 }
 
-int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void) {
+int bn_transformer_gpu_prefill_attention_min_tokens(void) {
     return bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
 }
 
-int bn_transformer_gpu_prefill_attention_min_tokens(void) {
-    return bn_transformer_gpu_cuda_prefill_attention_min_tokens();
+int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void) {
+    return bn_transformer_gpu_prefill_attention_min_tokens();
 }
 
 int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu) {
     if (bn_gpu_policy_cuda_prefill_attention_min_tokens_configured())
-        return bn_transformer_gpu_cuda_prefill_attention_min_tokens();
+        return bn_transformer_gpu_prefill_attention_min_tokens();
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c) {
         int arch_min = bn_model_arch_small_dense_prefill_min_tokens(c);
         if (arch_min > 0)
@@ -857,7 +857,7 @@ int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     }
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c)
         return 16;
-    return bn_transformer_gpu_cuda_prefill_attention_min_tokens();
+    return bn_transformer_gpu_prefill_attention_min_tokens();
 }
 
 int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(

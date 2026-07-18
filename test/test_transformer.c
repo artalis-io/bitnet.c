@@ -1580,8 +1580,12 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_prefill_attention_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
+    assert(bn_transformer_gpu_prefill_attention_min_tokens() == 16);
+    assert(bn_transformer_gpu_cuda_prefill_attention_min_tokens() == 16);
     assert(bn_transformer_prefill_attention_min_tokens() == 16);
     setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "11", 1);
+    assert(bn_transformer_gpu_prefill_attention_min_tokens() == 11);
+    assert(bn_transformer_gpu_cuda_prefill_attention_min_tokens() == 11);
     assert(bn_transformer_prefill_attention_min_tokens() == 11);
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
 
