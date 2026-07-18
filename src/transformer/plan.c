@@ -100,6 +100,51 @@ int bn_transformer_attention_has_bias(const BnLayerWeights *lw) {
     return lw && (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias);
 }
 
+int bn_transformer_attention_requires_cpu_fallback(
+    const BnLayerShapePlan *shape,
+    BnExecPlacement placement) {
+    return shape && !shape->is_attn && placement == BN_EXEC_GPU;
+}
+
+int bn_transformer_attention_uses_flash(const BnConfig *c,
+                                        const BnGPUBackend *gpu) {
+    return c && c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);
+}
+
+int bn_transformer_attention_uses_packed_qkv(
+    const BnGPUBackend *gpu,
+    const BnLayerShapePlan *shape,
+    const BnLayerWeights *lw,
+    const void *qkv_stacked,
+    const void *q_bias,
+    const void *k_bias,
+    const void *v_bias) {
+    (void)gpu;
+    return qkv_stacked &&
+           shape && !shape->q_gated &&
+           lw &&
+           bn_transformer_gpu_can_native_qkv(
+               lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
+           q_bias && k_bias && v_bias;
+}
+
+int bn_transformer_attention_uses_qkv_split(
+    const BnGPUBackend *gpu,
+    const BnLayerShapePlan *shape,
+    const BnLayerWeights *lw,
+    const void *qkv_stacked) {
+    return qkv_stacked &&
+           shape && !shape->q_gated &&
+           lw &&
+           bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
+}
+
+int bn_transformer_attention_uses_rope_qk_fusion(
+    BnExecPlacement placement,
+    const void *k_bias) {
+    return placement == BN_EXEC_GPU && !k_bias;
+}
+
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {
     if (c->kv_tq_bits > 0 && tq_enabled) return BN_KV_TQ;
     if (c->kv_f16) return BN_KV_FP16;
@@ -258,7 +303,9 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
     p->placement = bn_transformer_preferred_placement(gpu, prefer_gpu);
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
     if (!p->shape.is_attn) {
-        p->needs_cpu_fallback = p->placement == BN_EXEC_GPU;
+        p->needs_cpu_fallback =
+            bn_transformer_attention_requires_cpu_fallback(
+                &p->shape, p->placement);
         if (p->needs_cpu_fallback) {
             p->placement = BN_EXEC_CPU_FALLBACK;
             p->backend = bn_transformer_backend_placement(gpu, p->placement);
@@ -275,17 +322,14 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
     void *v_bias = bn_transformer_backend_handle_or(backend, layer,
                                                     BN_BACKEND_HANDLE_V_BIAS);
 
-    p->use_flash = c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);
-    p->use_packed_qkv = qkv_stacked && !p->shape.q_gated &&
-                        bn_transformer_gpu_can_native_qkv(
-                            lw->attn.wq.type, lw->attn.wk.type,
-                            lw->attn.wv.type) &&
-                        q_bias && k_bias && v_bias;
-    p->use_qkv_split = qkv_stacked && !p->shape.q_gated &&
-                       bn_transformer_gpu_can_matvec_split(gpu, lw->attn.wq.type);
+    p->use_flash = bn_transformer_attention_uses_flash(c, gpu);
+    p->use_packed_qkv = bn_transformer_attention_uses_packed_qkv(
+        gpu, &p->shape, lw, qkv_stacked, q_bias, k_bias, v_bias);
+    p->use_qkv_split = bn_transformer_attention_uses_qkv_split(
+        gpu, &p->shape, lw, qkv_stacked);
     if (p->use_qkv_split) p->fusion_flags |= BN_FUSION_QKV_SPLIT;
     if (p->use_flash) p->fusion_flags |= BN_FUSION_FLASH_ATTN;
-    if (p->placement == BN_EXEC_GPU && !k_bias)
+    if (bn_transformer_attention_uses_rope_qk_fusion(p->placement, k_bias))
         p->fusion_flags |= BN_FUSION_ROPE_QK;
 }
 

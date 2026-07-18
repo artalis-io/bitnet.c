@@ -230,6 +230,27 @@ int bn_transformer_attention_qk_stride(const BnConfig *c,
                                        int head_size);
 int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw);
 int bn_transformer_attention_has_bias(const BnLayerWeights *lw);
+int bn_transformer_attention_requires_cpu_fallback(
+    const BnLayerShapePlan *shape,
+    BnExecPlacement placement);
+int bn_transformer_attention_uses_flash(const BnConfig *c,
+                                        const BnGPUBackend *gpu);
+int bn_transformer_attention_uses_packed_qkv(
+    const BnGPUBackend *gpu,
+    const BnLayerShapePlan *shape,
+    const BnLayerWeights *lw,
+    const void *qkv_stacked,
+    const void *q_bias,
+    const void *k_bias,
+    const void *v_bias);
+int bn_transformer_attention_uses_qkv_split(
+    const BnGPUBackend *gpu,
+    const BnLayerShapePlan *shape,
+    const BnLayerWeights *lw,
+    const void *qkv_stacked);
+int bn_transformer_attention_uses_rope_qk_fusion(
+    BnExecPlacement placement,
+    const void *k_bias);
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled);
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,

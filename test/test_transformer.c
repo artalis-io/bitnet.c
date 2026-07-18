@@ -3038,6 +3038,18 @@ static void test_block_planning(void) {
                                             BN_BACKEND_HANDLE_V_BIAS,
                                             (void *)4) == 0);
 
+    BnLayerShapePlan attn_shape;
+    bn_transformer_plan_layer_shape(&attn_shape, &c, &lw, 0, 0);
+    assert(!bn_transformer_attention_requires_cpu_fallback(
+        &attn_shape, BN_EXEC_GPU));
+    assert(bn_transformer_attention_uses_flash(&c, &gpu));
+    assert(bn_transformer_attention_uses_packed_qkv(
+        &gpu, &attn_shape, &lw, (void *)1, (void *)2, (void *)3, (void *)4));
+    assert(bn_transformer_attention_uses_qkv_split(
+        &gpu, &attn_shape, &lw, (void *)1));
+    assert(!bn_transformer_attention_uses_rope_qk_fusion(
+        BN_EXEC_GPU, (void *)3));
+
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.placement == BN_EXEC_GPU);
     assert(attn.backend == BN_BACKEND_METAL);
@@ -3053,6 +3065,7 @@ static void test_block_planning(void) {
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_K_BIAS,
                                             NULL) == 0);
+    assert(bn_transformer_attention_uses_rope_qk_fusion(BN_EXEC_GPU, NULL));
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.fusion_flags & BN_FUSION_ROPE_QK);
     assert(bn_backend_model_register_handle(backend, 0,
@@ -3071,6 +3084,11 @@ static void test_block_planning(void) {
 
     lw.attn.wq.type = BN_GGUF_TENSOR_Q4_0;
     lw.attn.wq.rows = 4096;
+    bn_transformer_plan_layer_shape(&attn_shape, &c, &lw, 0, 0);
+    assert(!bn_transformer_attention_uses_packed_qkv(
+        &gpu, &attn_shape, &lw, (void *)1, (void *)2, (void *)3, (void *)4));
+    assert(!bn_transformer_attention_uses_qkv_split(
+        &gpu, &attn_shape, &lw, (void *)1));
     bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
     assert(attn.shape.kind == BN_LAYER_ATTN_GATED_Q);
     assert(!attn.use_packed_qkv);
@@ -3083,6 +3101,8 @@ static void test_block_planning(void) {
     assert(attn.placement == BN_EXEC_CPU_FALLBACK);
     assert(attn.backend == BN_BACKEND_CPU);
     assert(attn.needs_cpu_fallback);
+    assert(bn_transformer_attention_requires_cpu_fallback(
+        &attn.shape, BN_EXEC_GPU));
     c.full_attn_interval = 0;
     lw.block_kind = BN_LAYER_BLOCK_ATTENTION;
     lw.attn.wq.rows = 2048;
