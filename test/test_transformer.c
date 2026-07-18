@@ -4007,6 +4007,40 @@ static void test_block_planning(void) {
         0, 0, 0, 0, 0, 16, 0, 256, 4);
     assert(!ssm_moe_chain.enabled);
 
+    BnGPUBackend prefill_gpu = {0};
+    prefill_gpu.kind = BN_GPU_BACKEND_CUDA;
+    prefill_gpu.moe_route_routed_ffn_batch_norm_resid =
+        mock_moe_route_routed_ffn_batch_norm_resid;
+    BnConfig prefill_c = {0};
+    prefill_c.n_experts = 2;
+    prefill_c.n_experts_active = 2;
+    prefill_c.moe_intermediate_size = 4096;
+    prefill_c.dim = 2048;
+    BnMoEExpertMap prefill_map = {0};
+    prefill_map.gate_type = BN_GGUF_TENSOR_Q4_K;
+    prefill_map.up_type = BN_GGUF_TENSOR_Q4_K;
+    prefill_map.down_type = BN_GGUF_TENSOR_Q6_K;
+    prefill_map.gate_rows = 4096;
+    prefill_map.gate_cols = 2048;
+    prefill_map.up_rows = 4096;
+    prefill_map.up_cols = 2048;
+    prefill_map.down_rows = 2048;
+    prefill_map.down_cols = 4096;
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
+    assert(!bn_transformer_prefill_moe_ffn_batch_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
+    assert(bn_transformer_prefill_moe_ffn_batch_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    prefill_gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_transformer_prefill_moe_ffn_batch_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    prefill_gpu.kind = BN_GPU_BACKEND_CUDA;
+    prefill_gpu.moe_route_routed_ffn_batch_norm_resid = NULL;
+    assert(!bn_transformer_prefill_moe_ffn_batch_available(
+        &prefill_gpu, &prefill_c, &prefill_map, prefill_c.dim, 0));
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
+
     BnTransformerPrefillSSMFFNFusePolicy ssm_ffn_fuse =
         bn_transformer_prefill_ssm_ffn_fuse_policy(
             1, 1, 1, 1, 1, 1, 0, 0, 0, 0);

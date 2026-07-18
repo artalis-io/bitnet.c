@@ -1,5 +1,6 @@
 #include "transformer_prefill_internal.h"
 #include "backend_quant.h"
+#include "gpu_internal.h"
 #include "gpu_policy.h"
 #include "model_arch.h"
 
@@ -260,6 +261,16 @@ bn_transformer_prefill_ssm_moe_chain_policy(
         ssm_inner_size > 0 &&
         ssm_group_count > 0;
     return policy;
+}
+
+int bn_transformer_prefill_moe_ffn_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down) {
+    return bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
+        gpu, c, map, dim, allow_q4_down);
 }
 
 BnTransformerPrefillSSMFFNFusePolicy

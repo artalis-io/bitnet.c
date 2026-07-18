@@ -3,6 +3,7 @@
 
 #include "gpu_backend.h"
 #include "model_config.h"
+#include "moe_types.h"
 #include "quant.h"
 #include "threadpool.h"
 #include <stdint.h>
@@ -252,6 +253,12 @@ bn_transformer_prefill_ssm_moe_chain_policy(
     int ssm_state_size,
     int ssm_inner_size,
     int ssm_group_count);
+int bn_transformer_prefill_moe_ffn_batch_available(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_q4_down);
 BnTransformerPrefillSSMFFNFusePolicy
 bn_transformer_prefill_ssm_ffn_fuse_policy(
     int fuse_requested,
