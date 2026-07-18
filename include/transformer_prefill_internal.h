@@ -53,6 +53,14 @@ typedef struct {
 } BnTransformerPrefillDenseLayerChainPolicy;
 
 typedef struct {
+    int enabled;
+} BnTransformerPrefillSSMChainPolicy;
+
+typedef struct {
+    int enabled;
+} BnTransformerPrefillSSMMoEChainPolicy;
+
+typedef struct {
     int eligible;
     int fuses_input_norm;
 } BnTransformerPrefillRawAttentionPolicy;
@@ -148,6 +156,34 @@ bn_transformer_prefill_dense_layer_chain_policy(
     int uses_post_norm,
     int has_attn_post_norm,
     int has_ffn_post_norm);
+BnTransformerPrefillSSMChainPolicy
+bn_transformer_prefill_ssm_chain_policy(
+    int chain_available,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_gate,
+    int has_ffn_up,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm,
+    int ssm_time_step_rank,
+    int ssm_state_size,
+    int ssm_inner_size,
+    int ssm_group_count);
+BnTransformerPrefillSSMMoEChainPolicy
+bn_transformer_prefill_ssm_moe_chain_policy(
+    int chain_available,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm,
+    int ssm_time_step_rank,
+    int ssm_state_size,
+    int ssm_inner_size,
+    int ssm_group_count);
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

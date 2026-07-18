@@ -667,21 +667,32 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
-            gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0,
-            n_tokens) ||
+    if (!lw)
+        return 0;
+    BnTransformerPrefillLayerKindPolicy layer_kind =
+        bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+    BnTransformerPrefillSSMMoEChainPolicy policy =
+        bn_transformer_prefill_ssm_moe_chain_policy(
+            bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
+                gpu, c, &lw->moe.expert_map, c ? c->dim : 0, 0,
+                n_tokens),
+            layer_kind,
+            lw->norm.ffn_sub_norm != NULL,
+            lw->norm.layer_output_scale != NULL,
+            bn_transformer_attention_uses_post_norm(c),
+            lw->norm.attn_post_norm != NULL,
+            lw->norm.ffn_post_norm != NULL,
+            c->ssm_time_step_rank,
+            c->ssm_state_size,
+            c->ssm_inner_size,
+            c->ssm_group_count);
+    if (!policy.enabled ||
         !backend ||
-        !lw || !lw->moe.router_weight ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
         !lw->ssm.ssm_out.data || !lw->norm.attn_norm ||
         !lw->ssm.ssm_conv1d || !lw->ssm.ssm_dt_bias ||
-        !lw->ssm.ssm_a || !lw->ssm.ssm_norm ||
-        lw->norm.ffn_sub_norm || lw->norm.layer_output_scale ||
-        (bn_transformer_attention_uses_post_norm(c) &&
-         (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
-        c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
-        c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
+        !lw->ssm.ssm_a || !lw->ssm.ssm_norm)
         return 0;
 
     void *wqkv_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
@@ -1010,22 +1021,34 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-            gpu, c, n_tokens) ||
+    if (!lw)
+        return 0;
+    BnTransformerPrefillLayerKindPolicy layer_kind =
+        bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+    BnTransformerPrefillSSMChainPolicy policy =
+        bn_transformer_prefill_ssm_chain_policy(
+            bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
+                gpu, c, n_tokens),
+            layer_kind,
+            c->has_ffn_gate,
+            lw->ffn.ffn_up.data != NULL,
+            lw->norm.ffn_sub_norm != NULL,
+            lw->norm.layer_output_scale != NULL,
+            bn_transformer_attention_uses_post_norm(c),
+            lw->norm.attn_post_norm != NULL,
+            lw->norm.ffn_post_norm != NULL,
+            c->ssm_time_step_rank,
+            c->ssm_state_size,
+            c->ssm_inner_size,
+            c->ssm_group_count);
+    if (!policy.enabled ||
         !backend ||
-        !lw || !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
+        !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
         !lw->ssm.ssm_alpha.data || !lw->ssm.ssm_beta.data ||
         !lw->ssm.ssm_out.data || !lw->norm.attn_norm ||
         !lw->ssm.ssm_conv1d || !lw->ssm.ssm_dt_bias ||
         !lw->ssm.ssm_a || !lw->ssm.ssm_norm ||
-        !lw->ffn.ffn_gate.data || !lw->ffn.ffn_up.data ||
-        !lw->ffn.ffn_down.data || !c->has_ffn_gate ||
-        lw->moe.router_weight || lw->norm.ffn_sub_norm ||
-        lw->norm.layer_output_scale ||
-        (bn_transformer_attention_uses_post_norm(c) &&
-         (lw->norm.attn_post_norm || lw->norm.ffn_post_norm)) ||
-        c->ssm_time_step_rank <= 0 || c->ssm_state_size <= 0 ||
-        c->ssm_inner_size <= 0 || c->ssm_group_count <= 0)
+        !lw->ffn.ffn_gate.data || !lw->ffn.ffn_down.data)
         return 0;
 
     void *wqkv_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);

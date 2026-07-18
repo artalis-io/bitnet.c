@@ -128,6 +128,64 @@ bn_transformer_prefill_dense_layer_chain_policy(
     return policy;
 }
 
+BnTransformerPrefillSSMChainPolicy
+bn_transformer_prefill_ssm_chain_policy(
+    int chain_available,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_gate,
+    int has_ffn_up,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm,
+    int ssm_time_step_rank,
+    int ssm_state_size,
+    int ssm_inner_size,
+    int ssm_group_count) {
+    BnTransformerPrefillSSMChainPolicy policy = {0};
+    policy.enabled =
+        chain_available &&
+        !layer_kind.uses_moe &&
+        has_ffn_gate &&
+        has_ffn_up &&
+        !has_ffn_sub_norm &&
+        !has_layer_output_scale &&
+        !(uses_post_norm && (has_attn_post_norm || has_ffn_post_norm)) &&
+        ssm_time_step_rank > 0 &&
+        ssm_state_size > 0 &&
+        ssm_inner_size > 0 &&
+        ssm_group_count > 0;
+    return policy;
+}
+
+BnTransformerPrefillSSMMoEChainPolicy
+bn_transformer_prefill_ssm_moe_chain_policy(
+    int chain_available,
+    BnTransformerPrefillLayerKindPolicy layer_kind,
+    int has_ffn_sub_norm,
+    int has_layer_output_scale,
+    int uses_post_norm,
+    int has_attn_post_norm,
+    int has_ffn_post_norm,
+    int ssm_time_step_rank,
+    int ssm_state_size,
+    int ssm_inner_size,
+    int ssm_group_count) {
+    BnTransformerPrefillSSMMoEChainPolicy policy = {0};
+    policy.enabled =
+        chain_available &&
+        layer_kind.uses_moe &&
+        !has_ffn_sub_norm &&
+        !has_layer_output_scale &&
+        !(uses_post_norm && (has_attn_post_norm || has_ffn_post_norm)) &&
+        ssm_time_step_rank > 0 &&
+        ssm_state_size > 0 &&
+        ssm_inner_size > 0 &&
+        ssm_group_count > 0;
+    return policy;
+}
+
 BnTransformerPrefillRawAttentionPolicy
 bn_transformer_prefill_raw_attention_policy(
     int gpu_available,

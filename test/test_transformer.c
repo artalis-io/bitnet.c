@@ -3650,6 +3650,51 @@ static void test_block_planning(void) {
         prefill_layer_kind, 1, 1, 0, 0, 0, 1, 1, 0);
     assert(!dense_layer_chain.enabled);
 
+    BnTransformerPrefillSSMChainPolicy ssm_chain =
+        bn_transformer_prefill_ssm_chain_policy(
+            1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        0, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(!ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(!ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        1, prefill_layer_kind, 0, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(!ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        1, prefill_layer_kind, 1, 1, 1, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(!ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        1, prefill_layer_kind, 1, 1, 0, 0, 1, 1, 0, 16, 64, 256, 4);
+    assert(!ssm_chain.enabled);
+    ssm_chain = bn_transformer_prefill_ssm_chain_policy(
+        1, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 0, 64, 256, 4);
+    assert(!ssm_chain.enabled);
+
+    BnTransformerPrefillSSMMoEChainPolicy ssm_moe_chain =
+        bn_transformer_prefill_ssm_moe_chain_policy(
+            1, bn_transformer_prefill_layer_kind_policy((void *)1),
+            0, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(ssm_moe_chain.enabled);
+    ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
+        1, prefill_layer_kind, 0, 0, 0, 0, 0, 16, 64, 256, 4);
+    assert(!ssm_moe_chain.enabled);
+    ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
+        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        0, 1, 0, 0, 0, 16, 64, 256, 4);
+    assert(!ssm_moe_chain.enabled);
+    ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
+        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        0, 0, 1, 0, 1, 16, 64, 256, 4);
+    assert(!ssm_moe_chain.enabled);
+    ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
+        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        0, 0, 0, 0, 0, 16, 0, 256, 4);
+    assert(!ssm_moe_chain.enabled);
+
     BnTransformerPrefillRawAttentionPolicy raw_attention =
         bn_transformer_prefill_raw_attention_policy(
             1, 1, 1, 1, 0, 0, 0, 16, 16, 10000.0f, 10000.0f,
