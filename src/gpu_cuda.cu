@@ -21043,7 +21043,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 return -1;
             int sigmoid_threads = dim >= 1536 ? 512 : 256;
             if (dim <= 8192 && next &&
-                getenv("BN_CUDA_DISABLE_WEIGHTED_ADD_SIGMOID_RESIDUAL_RMSNORM_FUSE") == NULL &&
+                bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled() &&
                 next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                 next->buf_aux == op->buf_in &&
                 (int)next->p[0] == n) {
@@ -21060,7 +21060,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (int)op->p[4], cuda_u32_to_f32(next->p[1]));
                 i++;
             } else if (dim <= 8192 && next &&
-                getenv("BN_CUDA_DISABLE_WEIGHTED_ADD_SIGMOID_RESIDUAL_FUSE") == NULL &&
+                bn_gpu_policy_cuda_weighted_add_sigmoid_residual_fuse_enabled() &&
                 next->op_code == BN_GPU_CODE_RESIDUAL_ADD &&
                 next->buf_aux == op->buf_in &&
                 (int)next->p[0] == n) {

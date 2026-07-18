@@ -217,6 +217,8 @@ int bn_gpu_policy_cuda_rope_flash_fuse_enabled(void);
 int bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled(void);
 int bn_gpu_policy_cuda_qk_norm_rope_flash_fuse_enabled(void);
 int bn_gpu_policy_cuda_qk_norm_rope_fuse_enabled(void);
+int bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled(void);
+int bn_gpu_policy_cuda_weighted_add_sigmoid_residual_fuse_enabled(void);
 int bn_gpu_policy_cuda_readback_debug_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void);
 int bn_gpu_policy_cuda_nan_verbose_debug_enabled(void);

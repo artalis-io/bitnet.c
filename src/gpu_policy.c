@@ -848,6 +848,14 @@ int bn_gpu_policy_cuda_qk_norm_rope_fuse_enabled(void) {
     return getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FUSE") == NULL;
 }
 
+int bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_WEIGHTED_ADD_SIGMOID_RESIDUAL_RMSNORM_FUSE") == NULL;
+}
+
+int bn_gpu_policy_cuda_weighted_add_sigmoid_residual_fuse_enabled(void) {
+    return getenv("BN_CUDA_DISABLE_WEIGHTED_ADD_SIGMOID_RESIDUAL_FUSE") == NULL;
+}
+
 int bn_gpu_policy_cuda_readback_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_READBACK") != NULL;
 }
