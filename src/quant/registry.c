@@ -312,32 +312,16 @@ int bn_quant_format_logits_q6_f32_cache_supported(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_LOGITS_Q6_F32_CACHE);
 }
 
-int bn_quant_format_cuda_logits_q6_f32_cache_supported(int type) {
-    return bn_quant_format_logits_q6_f32_cache_supported(type);
-}
-
 int bn_quant_format_moe_all_f16_cache_supported(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_ALL_F16_CACHE);
-}
-
-int bn_quant_format_cuda_moe_all_f16_cache_supported(int type) {
-    return bn_quant_format_moe_all_f16_cache_supported(type);
 }
 
 int bn_quant_format_moe_down_q6_f32_cache_supported(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE);
 }
 
-int bn_quant_format_cuda_moe_down_q6_f32_cache_supported(int type) {
-    return bn_quant_format_moe_down_q6_f32_cache_supported(type);
-}
-
 int bn_quant_format_moe_down_cublas_cache_supported(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_DOWN_CUBLAS_CACHE);
-}
-
-int bn_quant_format_cuda_moe_down_cublas_cache_supported(int type) {
-    return bn_quant_format_moe_down_cublas_cache_supported(type);
 }
 
 int bn_quant_format_moe_down_cublas_cache_elem_bytes(int type,
@@ -347,17 +331,8 @@ int bn_quant_format_moe_down_cublas_cache_elem_bytes(int type,
     return q6_as_f16 ? (int)sizeof(uint16_t) : (int)sizeof(float);
 }
 
-int bn_quant_format_cuda_moe_down_cublas_cache_elem_bytes(int type,
-                                                          int q6_as_f16) {
-    return bn_quant_format_moe_down_cublas_cache_elem_bytes(type, q6_as_f16);
-}
-
 int bn_quant_format_moe_down_q4_f32_cache_supported(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE);
-}
-
-int bn_quant_format_cuda_moe_down_q4_f32_cache_supported(int type) {
-    return bn_quant_format_moe_down_q4_f32_cache_supported(type);
 }
 
 int bn_quant_format_avoids_quant_matmul_on_f16_input(int type) {
@@ -374,60 +349,30 @@ int bn_quant_format_moe_quant_only_after_cache(int type,
     return !q8_f16_cache || !bn_quant_format_moe_prefers_quant_only(type);
 }
 
-int bn_quant_format_cuda_moe_quant_only_after_cache(int type,
-                                                    int q8_f16_cache) {
-    return bn_quant_format_moe_quant_only_after_cache(type, q8_f16_cache);
-}
-
 int bn_quant_format_lazy_moe_aux_cache_candidate(int type) {
     return bn_quant_format_has_cap(type,
                                    BN_QUANT_CAP_LAZY_MOE_AUX_CACHE_CANDIDATE);
-}
-
-int bn_quant_format_cuda_lazy_moe_aux_cache_candidate(int type) {
-    return bn_quant_format_lazy_moe_aux_cache_candidate(type);
 }
 
 int bn_quant_format_moe_prefers_quant_only(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_MOE_PREFERS_QUANT_ONLY);
 }
 
-int bn_quant_format_cuda_moe_prefers_quant_only(int type) {
-    return bn_quant_format_moe_prefers_quant_only(type);
-}
-
 int bn_quant_format_aux_cache_supported(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE);
-}
-
-int bn_quant_format_cuda_aux_cache_supported(int type) {
-    return bn_quant_format_aux_cache_supported(type);
 }
 
 int bn_quant_format_aux_cache_can_use_f16(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE_F16);
 }
 
-int bn_quant_format_cuda_aux_cache_can_use_f16(int type) {
-    return bn_quant_format_aux_cache_can_use_f16(type);
-}
-
 int bn_quant_format_aux_cache_uses_f32(int type, int q6_as_f16) {
     return bn_quant_format_aux_cache_can_use_f16(type) && !q6_as_f16;
-}
-
-int bn_quant_format_cuda_aux_cache_uses_f32(int type, int q6_as_f16) {
-    return bn_quant_format_aux_cache_uses_f32(type, q6_as_f16);
 }
 
 int bn_quant_format_aux_cache_prefers_large_budget(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE_LARGE_BUDGET);
 }
-
-int bn_quant_format_cuda_aux_cache_prefers_large_budget(int type) {
-    return bn_quant_format_aux_cache_prefers_large_budget(type);
-}
-
 
 int bn_quant_format_uses_f16_logits_path(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_LOGITS_F16_PATH);
