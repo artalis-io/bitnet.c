@@ -3352,6 +3352,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache());
     assert(bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16) == 128 * sizeof(uint16_t));
+    assert(bn_gpu_policy_moe_down_aux_cache_bytes(
+        &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16) == 128 * sizeof(uint16_t));
     assert(bn_gpu_policy_cuda_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 16) == 0);
     assert(bn_gpu_policy_cuda_aux_cache_bytes(
@@ -3423,12 +3425,15 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
     assert(bn_gpu_policy_moe_auto_resident_enabled());
     assert(!bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
+    assert(!bn_gpu_policy_duplicate_moe_cache_enabled());
     setenv("BN_GPU_MOE_DISABLE_AUTO_RESIDENT", "1", 1);
     setenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE", "1", 1);
     assert(!bn_gpu_policy_moe_auto_resident_enabled());
     assert(bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
+    assert(bn_gpu_policy_duplicate_moe_cache_enabled());
     setenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE", "1", 1);
     assert(!bn_gpu_policy_cuda_duplicate_moe_cache_enabled());
+    assert(!bn_gpu_policy_duplicate_moe_cache_enabled());
     unsetenv("BN_METAL_ENABLE_MMAP_ZERO_COPY");
     assert(bn_gpu_policy_moe_cache_reserve_bytes() ==
            4096ull * 1024ull * 1024ull);

@@ -1998,6 +1998,14 @@ size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     return elems * elem_size;
 }
 
+size_t bn_gpu_policy_moe_down_aux_cache_bytes(const BnGPUBackend *gpu,
+                                              int tensor_type,
+                                              int rows,
+                                              int cols) {
+    return bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(gpu, tensor_type,
+                                                          rows, cols);
+}
+
 size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
                                           int rows,
                                           int cols) {
@@ -2073,6 +2081,10 @@ int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE") != NULL &&
            getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;
+}
+
+int bn_gpu_policy_duplicate_moe_cache_enabled(void) {
+    return bn_gpu_policy_cuda_duplicate_moe_cache_enabled();
 }
 
 int bn_gpu_policy_webgpu_repacked_buffer_supported(int tensor_type) {

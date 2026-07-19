@@ -520,6 +520,10 @@ size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     int tensor_type,
     int rows,
     int cols);
+size_t bn_gpu_policy_moe_down_aux_cache_bytes(const BnGPUBackend *gpu,
+                                              int tensor_type,
+                                              int rows,
+                                              int cols);
 size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
                                           int rows,
                                           int cols);
@@ -542,6 +546,7 @@ int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
                                           BnGGUFFile *gf,
                                           int cap_seq_len);
 int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void);
+int bn_gpu_policy_duplicate_moe_cache_enabled(void);
 int bn_gpu_policy_webgpu_repacked_buffer_supported(int tensor_type);
 int bn_gpu_policy_webgpu_repacked_bias_supported(int tensor_type);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);

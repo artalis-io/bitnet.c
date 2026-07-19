@@ -1421,6 +1421,11 @@ if grep -n 'BN_CUDA_DISABLE_CUBLAS_MATMUL\|BN_CUDA_DISABLE_Q6K_CUBLAS_F16\|BN_CU
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_down_cublas_cache_bytes\|bn_gpu_policy_cuda_moe_routed_ffn_enabled\|bn_gpu_policy_cuda_duplicate_moe_cache_enabled\|count_cuda_routed_moe' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use behavior-named GPU policy helpers for MoE cache policy"
+    fail=1
+fi
+
 if grep -n 'snprintf([^,]*, *sizeof([^)]*), *"%zu", *reserve_mb)' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must format GPU MoE reserve policy from reserve bytes, not stale reserve_mb locals"
     fail=1

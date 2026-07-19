@@ -376,7 +376,7 @@ static size_t model_moe_entry_bytes(const BnModel *model,
         size_t entry = em->expert_gate_bytes + em->expert_up_bytes +
                        em->expert_down_bytes;
         size_t cache_bytes =
-            bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
+            bn_gpu_policy_moe_down_aux_cache_bytes(
                 gpu, em->down_type, em->down_rows, em->down_cols);
         if (cache_bytes > SIZE_MAX - entry)
             return 0;
@@ -396,11 +396,11 @@ static int model_moe_layer_count(const BnModel *model) {
     return count;
 }
 
-static int model_count_cuda_routed_moe_resident(const BnModel *model,
-                                                int *moe_layers_out) {
+static int model_count_gpu_routed_moe_resident(const BnModel *model,
+                                               int *moe_layers_out) {
     if (moe_layers_out)
         *moe_layers_out = 0;
-    if (!model || !bn_gpu_policy_cuda_moe_routed_ffn_enabled(1))
+    if (!model || !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
     const BnBackendModel *backend = bn_model_backend(model);
     if (!backend)
@@ -496,7 +496,7 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
         return;
     int routed_moe_layers = 0;
     int routed_resident_layers =
-        model_count_cuda_routed_moe_resident(model, &routed_moe_layers);
+        model_count_gpu_routed_moe_resident(model, &routed_moe_layers);
     if (routed_resident_layers > 0) {
         char resident[32], layers[32];
         snprintf(resident, sizeof(resident), "%d", routed_resident_layers);
@@ -506,7 +506,7 @@ static void maybe_create_gpu_moe_cache(BnModel *model,
                     "moe_layers", layers);
     }
     int duplicate_cache_enabled =
-        bn_gpu_policy_cuda_duplicate_moe_cache_enabled();
+        bn_gpu_policy_duplicate_moe_cache_enabled();
     if (!args->gpu_cache_mb_set && !duplicate_cache_enabled &&
         routed_moe_layers > 0 && routed_resident_layers == routed_moe_layers)
         return;
