@@ -355,7 +355,7 @@ static int cuda_use_moe_route_batch(void) {
 }
 
 static int cuda_use_moe_routed_ffn_batch(void) {
-    return bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled();
+    return bn_gpu_policy_moe_routed_ffn_batch_enabled();
 }
 
 static int cuda_use_dense_ffn(void) {
@@ -375,7 +375,7 @@ static int cuda_use_optimistic_argmax_penalty(void) {
 }
 
 static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
-    return bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(n_experts > 2);
+    return bn_gpu_policy_moe_routed_ffn_batch_allowed(n_experts > 2);
 }
 
 static int cuda_env_int(const char *name, int fallback) {

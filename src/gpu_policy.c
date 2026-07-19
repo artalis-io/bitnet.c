@@ -2500,73 +2500,41 @@ int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top) {
     return env ? atoi(env) : default_top;
 }
 
-int bn_gpu_policy_cuda_moe_ffn_disabled(void) {
+int bn_gpu_policy_moe_ffn_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_FFN") != NULL;
 }
 
-int bn_gpu_policy_moe_ffn_disabled(void) {
-    return bn_gpu_policy_cuda_moe_ffn_disabled();
-}
-
-int bn_gpu_policy_cuda_moe_router_topk_enabled(int eligible) {
+int bn_gpu_policy_moe_router_topk_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK") == NULL;
 }
 
-int bn_gpu_policy_moe_router_topk_enabled(int eligible) {
-    return bn_gpu_policy_cuda_moe_router_topk_enabled(eligible);
-}
-
-int bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(int eligible) {
+int bn_gpu_policy_q8_moe_cpu_route_resident_enabled(int eligible) {
     return eligible &&
            getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT") == NULL;
 }
 
-int bn_gpu_policy_q8_moe_cpu_route_resident_enabled(int eligible) {
-    return bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(eligible);
-}
-
-int bn_gpu_policy_cuda_moe_router_gpu_enabled(void) {
+int bn_gpu_policy_moe_router_gpu_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU") != NULL &&
            getenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU") == NULL;
 }
 
-int bn_gpu_policy_moe_router_gpu_enabled(void) {
-    return bn_gpu_policy_cuda_moe_router_gpu_enabled();
-}
-
-int bn_gpu_policy_cuda_moe_router_diff2_enabled(void) {
+int bn_gpu_policy_moe_router_diff2_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2") == NULL;
 }
 
-int bn_gpu_policy_moe_router_diff2_enabled(void) {
-    return bn_gpu_policy_cuda_moe_router_diff2_enabled();
-}
-
-int bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled(void) {
+int bn_gpu_policy_moe_routed_ffn_batch_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN_BATCH") == NULL;
 }
 
-int bn_gpu_policy_moe_routed_ffn_batch_enabled(void) {
-    return bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled();
-}
-
-int bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(int large_moe) {
+int bn_gpu_policy_moe_routed_ffn_batch_allowed(int large_moe) {
     if (getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH"))
         return 0;
     return !large_moe ||
            getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE") != NULL;
 }
 
-int bn_gpu_policy_moe_routed_ffn_batch_allowed(int large_moe) {
-    return bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(large_moe);
-}
-
-int bn_gpu_policy_cuda_moe_cpu_actual_override_enabled(void) {
-    return getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
-}
-
 int bn_gpu_policy_moe_cpu_actual_override_enabled(void) {
-    return bn_gpu_policy_cuda_moe_cpu_actual_override_enabled();
+    return getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
 }
 
 int bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled(void) {
@@ -2787,7 +2755,7 @@ int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled(void) {
 }
 
 int bn_gpu_policy_all2_q4q6_moe_route_selection_enabled(void) {
-    return bn_gpu_policy_cuda_moe_router_gpu_enabled() ||
+    return bn_gpu_policy_moe_router_gpu_enabled() ||
            bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested();
 }
 
@@ -2899,22 +2867,14 @@ int bn_gpu_policy_compare_ffn_state_pos_or_default(int default_pos) {
     return env_int_or_default("BN_GPU_COMPARE_FFN_STATE_POS", default_pos);
 }
 
-int bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(int eligible) {
+int bn_gpu_policy_moe_shared_cpu_fallback_enabled(int eligible) {
     return eligible &&
            getenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK") != NULL &&
            getenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK") == NULL;
 }
 
-int bn_gpu_policy_moe_shared_cpu_fallback_enabled(int eligible) {
-    return bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(eligible);
-}
-
-int bn_gpu_policy_cuda_moe_gateup_split_enabled(int can_split) {
-    return can_split && getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
-}
-
 int bn_gpu_policy_moe_gateup_split_enabled(int can_split) {
-    return bn_gpu_policy_cuda_moe_gateup_split_enabled(can_split);
+    return can_split && getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
 }
 
 int bn_gpu_policy_moe_route_profile_enabled(void) {
