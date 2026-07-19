@@ -2034,6 +2034,11 @@ if grep -n 'bn_quant_format_supports_gpu_small_dense_q8' include/quant.h include
     fail=1
 fi
 
+if grep -n 'BN_QUANT_CAP_GPU_SMALL_DENSE_Q8\|BN_QUANT_CAP_GPU_SMALL_DENSE_Q8_FORMAT' include/quant.h src/quant/registry.c >/dev/null 2>&1; then
+    echo "Small-dense native-quant capability must use behavior names, not Q8 internal capability names"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/transformer.c >/dev/null 2>&1; then
     echo "src/transformer.c must use transformer planning helpers for model-family policy"
     fail=1
