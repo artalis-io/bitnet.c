@@ -334,6 +334,31 @@ static inline int bn_backend_quant_cuda_q5_0_matmul_candidate(int type) {
     return type == BN_GGUF_TENSOR_Q5_0;
 }
 
+static inline int bn_backend_quant_cuda_q5_0_fused_gateup_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q5_0_matmul_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q8_0_fused_gateup_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q8_0_matmul_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_fused_gateup_q8k_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q4k_q8k_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q4k_q8_1_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q5k_q8_1_matvec_candidate(type);
+}
+
 static inline int bn_backend_quant_cuda_q5_0_pair_matmul(
     int first_type, int second_type) {
     return bn_backend_quant_cuda_q5_0_matmul_candidate(first_type) &&

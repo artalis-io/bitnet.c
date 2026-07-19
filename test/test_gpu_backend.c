@@ -3714,6 +3714,26 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_0));
     assert(!bn_backend_quant_cuda_q5_0_matmul_candidate(
         BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_cuda_q5_0_fused_gateup_candidate(
+        BN_GGUF_TENSOR_Q5_0));
+    assert(!bn_backend_quant_cuda_q5_0_fused_gateup_candidate(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_cuda_q8_0_fused_gateup_candidate(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_cuda_q8_0_fused_gateup_candidate(
+        BN_GGUF_TENSOR_Q5_0));
+    assert(bn_backend_quant_cuda_q4k_fused_gateup_q8k_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q4k_fused_gateup_q8k_candidate(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate(
+        BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
+        BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
+        BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_cuda_q5_0_pair_matmul(
         BN_GGUF_TENSOR_Q5_0, BN_GGUF_TENSOR_Q5_0));
     assert(!bn_backend_quant_cuda_q5_0_pair_matmul(

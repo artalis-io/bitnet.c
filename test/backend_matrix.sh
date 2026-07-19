@@ -152,6 +152,13 @@ if sed -n '/^static int cuda_matvec_argmax_activation(/,/^static int cuda_dense_
     fail=1
 fi
 
+if sed -n '/bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled/,/ffn_act_ready = 1/p' src/gpu_cuda.cu | grep -n 'gate_type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
+   sed -n '/bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled/,/ffn_act_ready = 1/p' src/gpu_cuda.cu | grep -n 'ffn_gate_type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
+   sed -n '/case BN_GPU_CODE_FUSED_GATEUP_SILU:/,/case BN_GPU_CODE_MOE_ROUTE_TOPK:/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA fused gate/up quant predicates"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

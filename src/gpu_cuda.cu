@@ -17069,7 +17069,8 @@ static int cuda_prefill_dense_layer(
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_WO_RESID);
     BN_CUDA_DENSE_PROFILE_STEP(BN_CUDA_DENSE_PROF_FFN_NORM);
     int ffn_act_ready = 0;
-    if (stacked_gateup && gate_type == BN_GGUF_TENSOR_Q4_K &&
+    if (stacked_gateup &&
+        bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate(gate_type) &&
         !gate->f16_data && (dim % BN_QK_K) == 0 &&
         bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled()) {
         int x_blocks = (dim + 31) / 32;
@@ -17770,7 +17771,8 @@ static int cuda_prefill_ssm_layer(
                 return -1;
             gateup_f16_ready = 1;
         } else if (stacked_ffn_gateup &&
-            ffn_gate_type == BN_GGUF_TENSOR_Q4_K &&
+            bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate(
+                ffn_gate_type) &&
             (dim % BN_QK_K) == 0 &&
             bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled()) {
             int x_blocks = (dim + 31) / 32;
@@ -19837,7 +19839,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int stable_decode_gateup = graph_exec;
             int exact_silu =
                 (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
-            if (op->type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
+            if (bn_backend_quant_cuda_q5_0_fused_gateup_candidate(op->type) &&
+                (cols & 31) == 0 &&
                 !disable_q5_gateup_warp) {
                 int q5_gateup_threads = 64;
                 int warps = q5_gateup_threads / 32;
@@ -19846,7 +19849,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     blocks, q5_gateup_threads, 0,
                     out, (const BnBlockQ5_0 *)w->data, in, gate_rows,
                     up_rows, cols);
-            } else if (op->type == BN_GGUF_TENSOR_Q8_0 &&
+            } else if (bn_backend_quant_cuda_q8_0_fused_gateup_candidate(
+                           op->type) &&
                        (cols & 31) == 0 &&
                        !disable_q8_gateup_warp) {
                 int q8_gateup_threads = 64;
@@ -19856,7 +19860,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     blocks, q8_gateup_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, in, gate_rows,
                     up_rows, cols, exact_silu);
-            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+            } else if (bn_backend_quant_cuda_q4k_fused_gateup_q8k_candidate(
+                           op->type) &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot &&
                        bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
                        bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(
@@ -19899,7 +19904,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+            } else if (bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate(
+                           op->type) &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
                 BnCudaBlockQ8_1 *xq =
@@ -19937,7 +19943,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q5_K &&
+            } else if (bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
+                           op->type) &&
                        (cols % BN_QK_K) == 0 && enable_q5k_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
                 BnCudaBlockQ8_1 *xq =
