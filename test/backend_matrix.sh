@@ -905,6 +905,11 @@ if grep -n 'bn_quant_format_cuda_matvec_supported\|bn_quant_policy_cuda_matvec_t
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_matvec_disabled\|bn_gpu_policy_cuda_matvec_type_disabled\|bn_gpu_policy_cuda_matvec_type_supported' include/gpu_policy.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU matvec policy must use neutral behavior helper names"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_Q4_Q8_DISABLE_GATEUP' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for Q4/Q8 fused gate-up compatibility env vars"
     fail=1

@@ -10854,8 +10854,8 @@ static __global__ void moe_scatter_sorted_grouped_kernel(
 }
 
 static int cuda_type_supported(int type) {
-    return !bn_gpu_policy_cuda_matvec_disabled() &&
-           bn_gpu_policy_cuda_matvec_type_supported(type);
+    return !bn_gpu_policy_matvec_disabled() &&
+           bn_gpu_policy_matvec_type_supported(type);
 }
 
 static int cuda_ensure_scratch(BnCudaCtx *ctx, size_t x_bytes,

@@ -368,11 +368,11 @@ int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
            bn_backend_quant_moe_prefers_quant_only(tensor_type);
 }
 
-int bn_gpu_policy_cuda_matvec_disabled(void) {
+int bn_gpu_policy_matvec_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MATVEC") != NULL;
 }
 
-int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type) {
+int bn_gpu_policy_matvec_type_disabled(int tensor_type) {
     if (bn_backend_quant_is_q8_0(tensor_type))
         return getenv("BN_CUDA_DISABLE_Q8_0") != NULL;
     if (bn_backend_quant_is_q5_0(tensor_type))
@@ -388,9 +388,9 @@ int bn_gpu_policy_cuda_matvec_type_disabled(int tensor_type) {
     return 0;
 }
 
-int bn_gpu_policy_cuda_matvec_type_supported(int tensor_type) {
+int bn_gpu_policy_matvec_type_supported(int tensor_type) {
     return bn_backend_quant_cuda_matvec_supported(tensor_type) &&
-           !bn_gpu_policy_cuda_matvec_type_disabled(tensor_type);
+           !bn_gpu_policy_matvec_type_disabled(tensor_type);
 }
 
 int bn_gpu_policy_cuda_matmul_batch_enabled(void) {
