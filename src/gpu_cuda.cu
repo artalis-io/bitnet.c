@@ -13716,7 +13716,7 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
     if (!ctx || !w || !w->data || !out_token || rows <= 0 || cols <= 0 ||
         buf_idx < 0 || buf_idx >= BN_GPU_VALUE_COUNT)
         return -1;
-    if (!bn_backend_quant_q6_logits_argmax_candidate(type) ||
+    if (!bn_backend_quant_kquant_logits_argmax_candidate(type) ||
         (cols % BN_QK_K) != 0)
         return -1;
     float *x = cuda_act(ctx, buf_idx);

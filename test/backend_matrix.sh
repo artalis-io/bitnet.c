@@ -1072,7 +1072,7 @@ if grep -n 'bn_backend_quant_q5k_deint_pair_matvec\|bn_backend_quant_q6q4_pair_m
     fail=1
 fi
 
-if grep -n 'bn_backend_quant_q8_small_ssm_matvec_candidate\|bn_backend_quant_f16_q8_matvec_candidate\|bn_backend_quant_f16_q5k_matvec_candidate\|bn_backend_quant_f16_q6k_matvec_candidate\|bn_backend_quant_logits_q6_matvec_candidate\|bn_backend_quant_q5_0_matvec_candidate' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_backend_quant_q8_small_ssm_matvec_candidate\|bn_backend_quant_f16_q8_matvec_candidate\|bn_backend_quant_f16_q5k_matvec_candidate\|bn_backend_quant_f16_q6k_matvec_candidate\|bn_backend_quant_logits_q6_matvec_candidate\|bn_backend_quant_q6_logits_argmax_candidate\|bn_backend_quant_q5_0_matvec_candidate' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "backend quant matvec candidate helpers must use behavior names"
     fail=1
 fi

@@ -482,7 +482,7 @@ static inline int bn_backend_quant_q5k_pair_matmul(
            bn_backend_quant_q5k_q8_1_matmul_candidate(second_type);
 }
 
-static inline int bn_backend_quant_q6_logits_argmax_candidate(int type) {
+static inline int bn_backend_quant_kquant_logits_argmax_candidate(int type) {
     return bn_backend_quant_moe_down_is_q6k(type);
 }
 
