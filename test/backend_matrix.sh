@@ -117,9 +117,9 @@ if sed -n '/int reserve_q8_1_cols = 0;/,/cuda_ensure_q8_1/p' src/gpu_cuda.cu | g
     fail=1
 fi
 
-if sed -n '/bn_backend_quant_cuda_q5k_deint_pair_matvec/,/bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q5_K' >/dev/null 2>&1 ||
-   sed -n '/bn_backend_quant_cuda_q6q4_pair_matvec/,/bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q6_K\|BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
-   sed -n '/bn_backend_quant_cuda_q4_pair_matvec/,/bn_gpu_policy_cuda_q4k_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1; then
+if sed -n '/bn_backend_quant_q5k_deint_pair_matvec/,/bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q5_K' >/dev/null 2>&1 ||
+   sed -n '/bn_backend_quant_q6q4_pair_matvec/,/bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q6_K\|BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
+   sed -n '/bn_backend_quant_q4_pair_matvec/,/bn_gpu_policy_cuda_q4k_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA pair matvec quant predicates"
     fail=1
 fi
@@ -167,7 +167,7 @@ if sed -n '/^static int cuda_prefill_ssm(/,/int ab_preactivated = 0/p' src/gpu_c
     fail=1
 fi
 
-if sed -n '/bn_backend_quant_cuda_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+if sed -n '/bn_backend_quant_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA matvec dispatch quant predicates"
     fail=1
 fi
@@ -209,6 +209,11 @@ fi
 
 if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/int next_moe_all_active_two_kquant =/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA route-topk dense-F32 policy"
+    fail=1
+fi
+
+if grep -n 'bn_backend_quant_cuda_q5k_deint_pair_matvec\|bn_backend_quant_cuda_q6q4_pair_matvec\|bn_backend_quant_cuda_q4_pair_matvec\|bn_backend_quant_cuda_q8_small_ssm_matvec_candidate\|bn_backend_quant_cuda_f16_q8_matvec_candidate\|bn_backend_quant_cuda_f16_float_cache_matvec_candidate\|bn_backend_quant_cuda_f16_q5k_matvec_candidate\|bn_backend_quant_cuda_f16_q6k_matvec_candidate\|bn_backend_quant_cuda_logits_q6_matvec_candidate\|bn_backend_quant_cuda_q5_0_matvec_candidate\|bn_backend_quant_cuda_q6k_q8k_matvec_candidate\|bn_backend_quant_cuda_q6k_warp_matvec_candidate\|bn_backend_quant_cuda_q4k_q8k_matvec_candidate\|bn_backend_quant_cuda_q4k_q8_1_matvec_candidate\|bn_backend_quant_cuda_q5k_q8_1_matvec_candidate\|bn_backend_quant_cuda_q8_0_preq_matvec_candidate\|bn_backend_quant_cuda_q8_0_warp_matvec_candidate\|bn_backend_quant_cuda_q4k_q8k_matmul_candidate\|bn_backend_quant_cuda_q4k_q8_1_matmul_candidate\|bn_backend_quant_cuda_q5k_q8_1_matmul_candidate\|bn_backend_quant_cuda_q6k_q8k_matmul_candidate\|bn_backend_quant_cuda_q8_0_matmul_candidate\|bn_backend_quant_cuda_q5_0_matmul_candidate\|bn_backend_quant_cuda_q5_0_fused_gateup_candidate\|bn_backend_quant_cuda_q8_0_fused_gateup_candidate\|bn_backend_quant_cuda_q4k_fused_gateup_q8k_candidate\|bn_backend_quant_cuda_q4k_fused_gateup_q8_1_candidate\|bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate\|bn_backend_quant_cuda_matvec_allows_fused_bias\|bn_backend_quant_cuda_split_allows_fused_bias\|bn_backend_quant_cuda_q4k_split_q8k_candidate\|bn_backend_quant_cuda_q4k_split_q8_1_candidate\|bn_backend_quant_cuda_q5k_split_q8_1_candidate\|bn_backend_quant_cuda_q8_0_split_candidate\|bn_backend_quant_cuda_q4k_split_value_fuse_candidate\|bn_backend_quant_cuda_q6k_split_value_fuse_candidate\|bn_backend_quant_cuda_split_value_fuse_candidate\|bn_backend_quant_cuda_q5_0_pair_matmul\|bn_backend_quant_cuda_q8_0_pair_matmul\|bn_backend_quant_cuda_q4k_pair_matmul\|bn_backend_quant_cuda_q5k_pair_matmul\|bn_backend_quant_cuda_q6_logits_argmax_candidate' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use neutral backend quant candidate helpers"
     fail=1
 fi
 
