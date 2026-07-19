@@ -339,7 +339,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 (const int32_t *)bn_model_arch_gguf_arr_data(f, suffix);
             c->rope_text_dims =
                 bn_model_arch_rope_text_dims(c->rope_dim_count, sections, nsect);
-            if (bn_model_arch_uses_full_rope_text_dims(arch))
+            if (bn_model_arch_config_uses_full_rope_text_dims(c))
                 c->rope_text_dims = c->rope_dim_count;
         }
     }

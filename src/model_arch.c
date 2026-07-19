@@ -253,18 +253,6 @@ int bn_model_arch_uses_moe(const BnConfig *c) {
     return c && c->n_experts > 0;
 }
 
-int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix) {
-    if (!f || !suffix) return 0;
-    const char *arch = bn_gguf_get_str(f, "general.architecture");
-    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
-    const char *prefix = ops && ops->prefix
-        ? ops->prefix(arch)
-        : bn_model_arch_prefix(arch);
-    char key[128];
-    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
-    return (int)bn_gguf_get_u32(f, key);
-}
-
 static int bn_model_arch_gguf_key(BnGGUFFile *f,
                                   const char *suffix,
                                   char *key,
@@ -277,6 +265,12 @@ static int bn_model_arch_gguf_key(BnGGUFFile *f,
         : bn_model_arch_prefix(arch);
     int n = snprintf(key, key_size, "%s.%s", prefix, suffix);
     return (n < 0 || (size_t)n >= key_size) ? -1 : 0;
+}
+
+int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix) {
+    char key[128];
+    if (bn_model_arch_gguf_key(f, suffix, key, sizeof(key)) != 0) return 0;
+    return (int)bn_gguf_get_u32(f, key);
 }
 
 int bn_model_arch_gguf_u32_or_i32_array(BnGGUFFile *f,
@@ -430,6 +424,11 @@ int bn_model_arch_uses_full_rope_text_dims(const char *arch) {
     const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
     return ops &&
            ((ops->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS) != 0);
+}
+
+int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c) {
+    return c &&
+           ((c->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS) != 0);
 }
 
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {

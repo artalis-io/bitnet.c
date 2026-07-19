@@ -1477,6 +1477,11 @@ if grep -n 'snprintf(key, sizeof(key), "%s\\.' src/model.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'bn_model_arch_uses_full_rope_text_dims(arch)' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use config policy helpers for full RoPE text dims"
+    fail=1
+fi
+
 if grep -n 'if (c->full_attn_interval > 0)' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model_arch helpers for hybrid layout predicates"
     fail=1

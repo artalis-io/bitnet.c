@@ -3158,6 +3158,11 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_full_rope_text_dims("qwen35"));
     assert(bn_model_arch_uses_full_rope_text_dims("qwen35moe"));
     assert(!bn_model_arch_uses_full_rope_text_dims("qwen3"));
+    memset(&c, 0, sizeof(c));
+    c.policy_flags = BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS;
+    assert(bn_model_arch_config_uses_full_rope_text_dims(&c));
+    c.policy_flags = 0;
+    assert(!bn_model_arch_config_uses_full_rope_text_dims(&c));
     assert(bn_model_arch_tokenizer_uses_metaspace("gemma4"));
     assert(!bn_model_arch_tokenizer_uses_metaspace("llama"));
 

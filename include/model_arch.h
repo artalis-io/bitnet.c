@@ -167,6 +167,7 @@ int bn_model_arch_kv_reuse_layer(const BnConfig *c, int layer);
 int bn_model_arch_loads_extra_ffn_post_norms(const BnConfig *c);
 int bn_model_arch_loads_moe_aux_weights(const BnConfig *c);
 int bn_model_arch_uses_full_rope_text_dims(const char *arch);
+int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c);
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model);
 int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c);
 int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c);
