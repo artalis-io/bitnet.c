@@ -2002,6 +2002,11 @@ if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_e
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_gpu_matvec_q8k_dot_flag\|bn_backend_quant_gpu_matvec_exact_q6k_flag' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer GPU matvec flag policy must use behavior-named backend K-quant helpers"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_qkv_split_q[58]_supported\|bn_transformer_gpu_qkv_split_byte_quant_supported\|use_q[58]_split\|use_byte_quant_split\|use_packed_q5_split' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU QKV split policy must use behavior-named helpers"
     fail=1

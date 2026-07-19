@@ -687,13 +687,15 @@ static inline int bn_backend_quant_can_gpu_gateup_split_activation(int type,
     return bn_quant_format_gpu_allows_gateup_split_activation(type, act_type);
 }
 
-static inline uint32_t bn_backend_quant_gpu_matvec_q8k_dot_flag(int type,
-                                                               int enabled) {
+static inline uint32_t bn_backend_quant_gpu_matvec_kquant_dot_flag(
+    int type,
+    int enabled) {
     return bn_quant_format_gpu_matvec_q8k_dot_flag(type, enabled);
 }
 
-static inline uint32_t bn_backend_quant_gpu_matvec_exact_q6k_flag(int type,
-                                                                 int enabled) {
+static inline uint32_t bn_backend_quant_gpu_matvec_exact_kquant_flag(
+    int type,
+    int enabled) {
     return bn_quant_format_gpu_matvec_exact_q6k_flag(type, enabled);
 }
 
