@@ -591,15 +591,24 @@ int bn_gpu_policy_split_residual_rmsnorm_enabled(void);
 int bn_gpu_policy_debug_fallback_enabled(void);
 int bn_gpu_policy_force_graph_enabled(void);
 int bn_gpu_policy_flash_min_kv_or_default(int default_min_kv);
+int bn_gpu_policy_backend_flash_max_kv_or_default(const BnGPUBackend *gpu,
+                                                  int default_max_kv);
+int bn_gpu_policy_backend_flash_default_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
                                           int default_max_kv);
 int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_cpu_logits_enabled(void);
 int bn_gpu_policy_compare_logits_enabled(void);
 int bn_gpu_policy_debug_argmax_compare_enabled(void);
+int bn_gpu_policy_backend_q6_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q6_refine_default);
 int bn_gpu_policy_q6_logits_refine_enabled(int cuda_backend,
                                            int q6_refine_default);
 int bn_gpu_policy_q6_logits_refine_top_or_default(int default_top);
+int bn_gpu_policy_backend_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q8_refine_default);
 int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
                                            int q8_refine_default);
 int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top);

@@ -2287,6 +2287,16 @@ int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
     return cuda_backend ? 2048 : default_max_kv;
 }
 
+int bn_gpu_policy_backend_flash_max_kv_or_default(const BnGPUBackend *gpu,
+                                                  int default_max_kv) {
+    return bn_gpu_policy_flash_max_kv_or_default(
+        bn_gpu_policy_backend_is_cuda(gpu), default_max_kv);
+}
+
+int bn_gpu_policy_backend_flash_default_enabled(const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }
@@ -2311,6 +2321,13 @@ int bn_gpu_policy_q6_logits_refine_enabled(int cuda_backend,
             getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") == NULL);
 }
 
+int bn_gpu_policy_backend_q6_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q6_refine_default) {
+    return bn_gpu_policy_q6_logits_refine_enabled(
+        bn_gpu_policy_backend_is_cuda(gpu), q6_refine_default);
+}
+
 int bn_gpu_policy_q6_logits_refine_top_or_default(int default_top) {
     const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
     return env ? atoi(env) : default_top;
@@ -2322,6 +2339,13 @@ int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
            q8_refine_default ||
            (!cuda_backend &&
             getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") == NULL);
+}
+
+int bn_gpu_policy_backend_q8_logits_refine_enabled(
+    const BnGPUBackend *gpu,
+    int q8_refine_default) {
+    return bn_gpu_policy_q8_logits_refine_enabled(
+        bn_gpu_policy_backend_is_cuda(gpu), q8_refine_default);
 }
 
 int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top) {

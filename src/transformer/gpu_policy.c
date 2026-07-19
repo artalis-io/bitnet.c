@@ -988,8 +988,8 @@ int bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
 int bn_transformer_gpu_q6_logits_refine_enabled(
     const BnGPUBackend *gpu,
     int q6_refine_default) {
-    return bn_gpu_policy_q6_logits_refine_enabled(
-        transformer_gpu_backend_is_cuda(gpu), q6_refine_default);
+    return bn_gpu_policy_backend_q6_logits_refine_enabled(
+        gpu, q6_refine_default);
 }
 
 int bn_transformer_gpu_q6_logits_refine_captures_xb(
@@ -1011,8 +1011,8 @@ int bn_transformer_gpu_q6_logits_refine_top(int q6_refine_default) {
 int bn_transformer_gpu_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     int q8_refine_default) {
-    return bn_gpu_policy_q8_logits_refine_enabled(
-        transformer_gpu_backend_is_cuda(gpu), q8_refine_default);
+    return bn_gpu_policy_backend_q8_logits_refine_enabled(
+        gpu, q8_refine_default);
 }
 
 int bn_transformer_gpu_q8_logits_refine_captures_xb(
@@ -1471,13 +1471,13 @@ int bn_transformer_gpu_flash_attention_enabled(
     int config_flash_attn,
     int has_moe,
     int n_kv) {
-    int cuda_backend = transformer_gpu_backend_is_cuda(gpu);
+    int flash_default = bn_gpu_policy_backend_flash_default_enabled(gpu);
     int flash_min_kv = bn_gpu_policy_flash_min_kv_or_default(0);
     int flash_max_kv =
-        bn_gpu_policy_flash_max_kv_or_default(cuda_backend, 0);
+        bn_gpu_policy_backend_flash_max_kv_or_default(gpu, 0);
 
     return bn_transformer_gpu_can_flash_attn(gpu) &&
-           (has_moe || config_flash_attn || cuda_backend) &&
+           (has_moe || config_flash_attn || flash_default) &&
            n_kv >= flash_min_kv &&
            (flash_max_kv <= 0 || n_kv <= flash_max_kv);
 }

@@ -1496,6 +1496,11 @@ if grep -n 'getenv("BN_GPU_FLASH_MIN_KV")\|getenv("BN_GPU_FLASH_MAX_KV")' src/tr
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_flash_max_kv_or_default\|bn_gpu_policy_q6_logits_refine_enabled\|bn_gpu_policy_q8_logits_refine_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend-aware helpers for flash/logits refine policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK")\|getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT")\|getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN")\|getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2")\|getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH")\|getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA MoE route env vars"
     fail=1
