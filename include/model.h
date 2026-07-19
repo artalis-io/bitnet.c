@@ -37,6 +37,7 @@ int bn_model_ensure_backend(BnModel *model);
 BnTQState *bn_model_tq_state(const BnModel *model);
 void bn_model_set_tq_state(BnModel *model, BnTQState *state, int owned);
 int bn_model_has_tq(const BnModel *model);
+int bn_model_uses_moe(const BnModel *model);
 BnMoEIO *bn_model_moe_io(BnModel *model);
 const BnMoEIO *bn_model_moe_io_const(const BnModel *model);
 void bn_model_set_moe_mmap_base(BnModel *model, const uint8_t *base);

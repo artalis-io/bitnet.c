@@ -1456,6 +1456,11 @@ if grep -n 'model\(\.config\|->config\)\.n_experts [<>!=]=\? 0' src/main.c >/dev
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use loaded-model policy helpers instead of reaching into model_arch"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for CUDA prefill chain debug env vars"
     fail=1

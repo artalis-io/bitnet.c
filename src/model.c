@@ -87,6 +87,10 @@ int bn_model_has_tq(const BnModel *model) {
     return bn_model_tq_state(model) != NULL;
 }
 
+int bn_model_uses_moe(const BnModel *model) {
+    return model && bn_model_arch_uses_moe(&model->config);
+}
+
 BnMoEIO *bn_model_moe_io(BnModel *model) {
     if (model_ensure_io(model) != 0) return NULL;
     return &model->io->moe_io;

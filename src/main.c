@@ -2,7 +2,6 @@
 #include "backend_model.h"
 #include "gguf.h"
 #include "model.h"
-#include "model_arch.h"
 #include "moe.h"
 #include "gpu_policy.h"
 #include "generate.h"
@@ -752,7 +751,7 @@ int main(int argc, char **argv) {
     model.config.flash_attn = args.flash_attn;
 
     // Set expert I/O for MoE: prefer mmap, fallback to pread
-    if (bn_model_arch_uses_moe(&model.config)) {
+    if (bn_model_uses_moe(&model)) {
         BnMoEIO *moe_io = bn_model_moe_io(&model);
         if (gf->n_shards > 1 && !args.force_pread && gf->shard_raws) {
             bn_model_set_moe_mmap_shards(&model, (const uint8_t **)gf->shard_raws,

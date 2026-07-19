@@ -412,6 +412,9 @@ static void test_gpu_policy_helpers(void) {
     layers.ssm_inner_size = 128;
     assert(bn_gpu_policy_uses_hybrid_ssm(&layers));
     assert(!bn_gpu_policy_uses_moe(&layers));
+    BnModel dense_model = {0};
+    dense_model.config = layers;
+    assert(!bn_model_uses_moe(&dense_model));
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&layers));
     assert(!bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&layers));
 
@@ -422,6 +425,9 @@ static void test_gpu_policy_helpers(void) {
     moe.n_experts_active = 2;
     moe.moe_intermediate_size = 4096;
     assert(bn_gpu_policy_uses_moe(&moe));
+    BnModel moe_model = {0};
+    moe_model.config = moe;
+    assert(bn_model_uses_moe(&moe_model));
     assert(!bn_gpu_policy_uses_hybrid_moe(&moe));
     assert(bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
     assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
