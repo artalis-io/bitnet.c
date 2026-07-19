@@ -3924,13 +3924,13 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_symmetric_kquant_pair_matvec(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_q8_small_ssm_matvec_candidate(
+    assert(bn_backend_quant_native_quant_small_state_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_q8_small_ssm_matvec_candidate(
+    assert(!bn_backend_quant_native_quant_small_state_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_f16_q8_matvec_candidate(
+    assert(bn_backend_quant_native_quant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_f16_q8_matvec_candidate(
+    assert(!bn_backend_quant_native_quant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_f16_float_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q3_K));
@@ -3940,21 +3940,21 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_IQ4_XS));
     assert(!bn_backend_quant_f16_float_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_f16_q5k_matvec_candidate(
+    assert(bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_backend_quant_f16_q5k_matvec_candidate(
+    assert(!bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_f16_q6k_matvec_candidate(
+    assert(bn_backend_quant_down_kquant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_f16_q6k_matvec_candidate(
+    assert(!bn_backend_quant_down_kquant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_logits_q6_matvec_candidate(
+    assert(bn_backend_quant_kquant_logits_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_logits_q6_matvec_candidate(
+    assert(!bn_backend_quant_kquant_logits_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_q5_0_matvec_candidate(
+    assert(bn_backend_quant_legacy_block_matvec_candidate(
         BN_GGUF_TENSOR_Q5_0));
-    assert(!bn_backend_quant_q5_0_matvec_candidate(
+    assert(!bn_backend_quant_legacy_block_matvec_candidate(
         BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_q6k_q8k_matvec_candidate(
         BN_GGUF_TENSOR_Q6_K));

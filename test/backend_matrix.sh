@@ -124,7 +124,7 @@ if sed -n '/bn_backend_quant_deinterleaved_kquant_pair_matvec/,/bn_gpu_policy_cu
     fail=1
 fi
 
-if sed -n '/int q8_small_ssm_matvec =/,/bn_gpu_policy_cuda_q4k_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q3_K\|op->type == BN_GGUF_TENSOR_IQ3_XXS\|op->type == BN_GGUF_TENSOR_IQ4_XS\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
+if sed -n '/int small_state_native_matvec =/,/bn_gpu_policy_cuda_q4k_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q3_K\|op->type == BN_GGUF_TENSOR_IQ3_XXS\|op->type == BN_GGUF_TENSOR_IQ4_XS\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA f16/logits matvec quant predicates"
     fail=1
 fi
@@ -167,7 +167,7 @@ if sed -n '/^static int cuda_prefill_ssm(/,/int ab_preactivated = 0/p' src/gpu_c
     fail=1
 fi
 
-if sed -n '/bn_backend_quant_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+if sed -n '/bn_backend_quant_legacy_block_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA matvec dispatch quant predicates"
     fail=1
 fi
@@ -1069,6 +1069,11 @@ fi
 
 if grep -n 'bn_backend_quant_q5k_deint_pair_matvec\|bn_backend_quant_q6q4_pair_matvec\|bn_backend_quant_q4_pair_matvec\|bn_backend_quant_q4k_split_value_fuse_candidate\|bn_backend_quant_q6k_split_value_fuse_candidate' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "backend quant K-quant pair/split-value helpers must use behavior names"
+    fail=1
+fi
+
+if grep -n 'bn_backend_quant_q8_small_ssm_matvec_candidate\|bn_backend_quant_f16_q8_matvec_candidate\|bn_backend_quant_f16_q5k_matvec_candidate\|bn_backend_quant_f16_q6k_matvec_candidate\|bn_backend_quant_logits_q6_matvec_candidate\|bn_backend_quant_q5_0_matvec_candidate' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "backend quant matvec candidate helpers must use behavior names"
     fail=1
 fi
 

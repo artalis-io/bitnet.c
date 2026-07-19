@@ -13119,14 +13119,14 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         f16_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const __half *)w->f16_data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_q5_0_matvec_candidate(type) &&
+    } else if (bn_backend_quant_legacy_block_matvec_candidate(type) &&
                (cols & 31) == 0 &&
                bn_gpu_policy_cuda_q5_matvec4_enabled()) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_q5_0_matvec_candidate(type) &&
+    } else if (bn_backend_quant_legacy_block_matvec_candidate(type) &&
                (cols & 31) == 0 &&
                bn_gpu_policy_cuda_q5_warp_enabled()) {
         int warps = threads / 32;
@@ -18966,8 +18966,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_gpu_policy_cuda_f16_q6k_matvec_enabled(
                     op->rows, op->cols,
                     (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) != 0);
-            int q8_small_ssm_matvec =
-                bn_backend_quant_q8_small_ssm_matvec_candidate(
+            int small_state_native_matvec =
+                bn_backend_quant_native_quant_small_state_matvec_candidate(
                     op->type) &&
                 op->rows <= 256 && op->cols >= 4096 &&
                 (op->buf_out == BN_GPU_VALUE_SSM_V ||
@@ -18976,14 +18976,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled();
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                ((bn_backend_quant_f16_q8_matvec_candidate(op->type) &&
-                  ((q8_small_ssm_matvec &&
+                ((bn_backend_quant_native_quant_f16_cache_matvec_candidate(
+                      op->type) &&
+                  ((small_state_native_matvec &&
                     bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled()) ||
                    (op->cols <= 2048 &&
                     bn_gpu_policy_cuda_f16_q8_0_matvec_enabled()))) ||
                  bn_backend_quant_f16_float_cache_matvec_candidate(
                      op->type) ||
-                 (bn_backend_quant_f16_q5k_matvec_candidate(op->type) &&
+                 (bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
+                      op->type) &&
                   bn_gpu_policy_cuda_f16_q5k_matvec_enabled()))) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
@@ -18996,7 +18998,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_backend_quant_f16_q6k_matvec_candidate(op->type) &&
+                bn_backend_quant_down_kquant_f16_cache_matvec_candidate(
+                    op->type) &&
                 use_f16_q6k_matvec) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
@@ -19018,7 +19021,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f32_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_backend_quant_logits_q6_matvec_candidate(op->type) &&
+                bn_backend_quant_kquant_logits_cache_matvec_candidate(
+                    op->type) &&
                 op->rows >= 65536 &&
                 bn_gpu_policy_cuda_f32_logits_matvec_enabled()) {
                 int q_threads = 256;
@@ -19031,7 +19035,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_backend_quant_logits_q6_matvec_candidate(op->type) &&
+                bn_backend_quant_kquant_logits_cache_matvec_candidate(
+                    op->type) &&
                 op->rows >= 65536 &&
                 bn_gpu_policy_cuda_f16_logits_matvec_enabled()) {
                 int q_threads = 256;
@@ -19076,14 +19081,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     break;
                 }
             }
-            if (bn_backend_quant_q5_0_matvec_candidate(op->type) &&
+            if (bn_backend_quant_legacy_block_matvec_candidate(op->type) &&
                 (op->cols & 31) == 0 && enable_q5_matvec4) {
                 BN_CUDA_LAUNCH(ctx, q5_0_matvec4_kernel,
                     (op->rows + 3) / 4, threads,
                     (size_t)threads * sizeof(float) * 4,
                     out, (const BnBlockQ5_0 *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (bn_backend_quant_q5_0_matvec_candidate(op->type) &&
+            } else if (bn_backend_quant_legacy_block_matvec_candidate(op->type) &&
                        (op->cols & 31) == 0 && enable_q5_warp) {
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
@@ -19363,7 +19368,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         op->rows, op->cols, out_offset);
                 }
             } else if ((enable_q8_prepared_input_all ||
-                        (q8_small_ssm_matvec &&
+                        (small_state_native_matvec &&
                          bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled()) ||
                         (is_logits_op && q8_prepared_input_logits_default)) &&
                        bn_backend_quant_q8_0_prepared_input_matvec_candidate(

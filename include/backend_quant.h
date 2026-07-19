@@ -308,12 +308,13 @@ static inline int bn_backend_quant_symmetric_kquant_pair_matvec(
            bn_backend_quant_is_q4k(second_type);
 }
 
-static inline int bn_backend_quant_q8_small_ssm_matvec_candidate(
+static inline int bn_backend_quant_native_quant_small_state_matvec_candidate(
     int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
-static inline int bn_backend_quant_f16_q8_matvec_candidate(int type) {
+static inline int bn_backend_quant_native_quant_f16_cache_matvec_candidate(
+    int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
@@ -322,19 +323,22 @@ static inline int bn_backend_quant_f16_float_cache_matvec_candidate(
     return bn_quant_format_is_f16_float_cache_matvec_candidate(type);
 }
 
-static inline int bn_backend_quant_f16_q5k_matvec_candidate(int type) {
+static inline int bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
+    int type) {
     return bn_backend_quant_is_q5k(type);
 }
 
-static inline int bn_backend_quant_f16_q6k_matvec_candidate(int type) {
+static inline int bn_backend_quant_down_kquant_f16_cache_matvec_candidate(
+    int type) {
     return bn_backend_quant_moe_down_is_q6k(type);
 }
 
-static inline int bn_backend_quant_logits_q6_matvec_candidate(int type) {
+static inline int bn_backend_quant_kquant_logits_cache_matvec_candidate(
+    int type) {
     return bn_backend_quant_moe_down_is_q6k(type);
 }
 
-static inline int bn_backend_quant_q5_0_matvec_candidate(int type) {
+static inline int bn_backend_quant_legacy_block_matvec_candidate(int type) {
     return bn_quant_format_is_q5_0(type);
 }
 
