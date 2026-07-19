@@ -481,11 +481,11 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     if (!bn_model_arch_uses_large_dense_shape(c) || !w ||
-        bn_gpu_policy_cuda_large_hybrid_attention_enabled() ||
-        bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_disabled())
+        bn_gpu_policy_large_hybrid_attention_enabled() ||
+        bn_gpu_policy_large_hybrid_cpu_attention_safe_disabled())
         return 0;
-    if (!bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled() &&
-        !bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_forced())
+    if (!bn_gpu_policy_large_hybrid_cpu_attention_safe_enabled() &&
+        !bn_gpu_policy_large_hybrid_cpu_attention_safe_forced())
         return 0;
     if (bn_model_arch_uses_hybrid_ssm(c))
         return 1;
@@ -539,7 +539,7 @@ int bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
     const BnConfig *c) {
     return transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
-           !bn_gpu_policy_cuda_large_hybrid_prefill_enabled();
+           !bn_gpu_policy_large_hybrid_prefill_enabled();
 }
 
 int bn_transformer_gpu_backend_matvec_fallback_kept(
@@ -618,12 +618,12 @@ int bn_transformer_gpu_batch_prefill_enabled(
     if (bn_model_arch_uses_hybrid_ssm(c)) {
         return transformer_gpu_backend_is_cuda(gpu) &&
                gpu->prefill_ssm_layer &&
-               bn_gpu_policy_cuda_prefill_hybrid_chain_enabled() &&
+               bn_gpu_policy_prefill_hybrid_chain_enabled() &&
                !bn_transformer_gpu_prefill_ssm_layer_disabled();
     }
     if (bn_model_arch_uses_moe(c))
         return transformer_gpu_backend_is_cuda(gpu) &&
-               bn_gpu_policy_cuda_moe_prefill_enabled();
+               bn_gpu_policy_moe_prefill_enabled();
     return bn_transformer_gpu_dense_batch_prefill_shape_allowed(gpu, c);
 }
 
@@ -633,11 +633,11 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
     if (!c || !transformer_gpu_backend_is_cuda(gpu) ||
         !bn_model_arch_uses_large_dense_hybrid_ssm(c))
         return 0;
-    if (bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_enabled())
+    if (bn_gpu_policy_large_hybrid_cpu_attention_safe_enabled())
         return 1;
-    return !bn_gpu_policy_cuda_large_hybrid_attention_enabled() &&
-           !bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_disabled() &&
-           bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe_forced();
+    return !bn_gpu_policy_large_hybrid_attention_enabled() &&
+           !bn_gpu_policy_large_hybrid_cpu_attention_safe_disabled() &&
+           bn_gpu_policy_large_hybrid_cpu_attention_safe_forced();
 }
 
 int bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
@@ -645,7 +645,7 @@ int bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
     const BnConfig *c) {
     return transformer_gpu_backend_is_cuda(gpu) &&
            bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
-           !bn_gpu_policy_cuda_large_hybrid_prefill_chain_enabled();
+           !bn_gpu_policy_large_hybrid_prefill_chain_enabled();
 }
 
 int bn_transformer_gpu_prefill_direct_kv_allowed(
@@ -656,7 +656,7 @@ int bn_transformer_gpu_prefill_direct_kv_allowed(
     int n_tokens) {
     if (!c || !transformer_gpu_backend_is_cuda(gpu))
         return 0;
-    if (bn_gpu_policy_cuda_prefill_direct_kv_disabled())
+    if (bn_gpu_policy_prefill_direct_kv_disabled())
         return 0;
     if ((bn_gpu_policy_cpu_decode_fallback_requested() ||
          bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
@@ -665,7 +665,7 @@ int bn_transformer_gpu_prefill_direct_kv_allowed(
              gpu, c, w) ||
          bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
              gpu, c)) &&
-        !bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled())
+        !bn_gpu_policy_prefill_direct_kv_with_cpu_fallback_enabled())
         return 0;
     if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
         return 0;
@@ -673,13 +673,13 @@ int bn_transformer_gpu_prefill_direct_kv_allowed(
 }
 
 int bn_transformer_gpu_prefill_attention_min_tokens(void) {
-    return bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
+    return bn_gpu_policy_prefill_attention_min_tokens_or_default(16);
 }
 
 int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu) {
-    if (bn_gpu_policy_cuda_prefill_attention_min_tokens_configured())
+    if (bn_gpu_policy_prefill_attention_min_tokens_configured())
         return bn_transformer_gpu_prefill_attention_min_tokens();
     if (transformer_gpu_backend_is_cuda(gpu) && c) {
         int arch_min = bn_model_arch_small_dense_prefill_min_tokens(c);
@@ -703,11 +703,11 @@ int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
 int bn_transformer_gpu_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu) {
-    if (bn_gpu_policy_cuda_moe_prefill_min_tokens_configured())
-        return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
+    if (bn_gpu_policy_moe_prefill_min_tokens_configured())
+        return bn_gpu_policy_moe_prefill_min_tokens_or_default(1);
     if (transformer_gpu_backend_is_cuda(gpu) && c)
-        return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(16);
-    return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
+        return bn_gpu_policy_moe_prefill_min_tokens_or_default(16);
+    return bn_gpu_policy_moe_prefill_min_tokens_or_default(
         bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu));
 }
 
@@ -782,43 +782,43 @@ int bn_transformer_gpu_prefill_ssm_dense_chain_available(
 }
 
 int bn_transformer_gpu_prefill_dense_chain_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_dense_chain_enabled();
+    return bn_gpu_policy_prefill_dense_chain_enabled();
 }
 
 int bn_transformer_gpu_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_gpu_policy_cuda_prefill_hybrid_chain_enabled() &&
+    return bn_gpu_policy_prefill_hybrid_chain_enabled() &&
            !bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
                gpu, c);
 }
 
 int bn_transformer_gpu_prefill_attention_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_attention_enabled();
+    return bn_gpu_policy_prefill_attention_enabled();
 }
 
 int bn_transformer_gpu_prefill_ssm_run_chain_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_ssm_run_chain_enabled();
+    return bn_gpu_policy_prefill_ssm_run_chain_enabled();
 }
 
 int bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed(void) {
-    return bn_gpu_policy_cuda_prefill_ssm_ffn_fuse_allowed();
+    return bn_gpu_policy_prefill_ssm_ffn_fuse_allowed();
 }
 
 int bn_transformer_gpu_prefill_moe_chain_debug_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_moe_chain_debug_enabled();
+    return bn_gpu_policy_prefill_moe_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_prefill_hybrid_chain_debug_enabled(void) {
-    return bn_gpu_policy_cuda_prefill_hybrid_chain_debug_enabled();
+    return bn_gpu_policy_prefill_hybrid_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_enabled(void) {
-    return bn_gpu_policy_cuda_moe_prefill_enabled();
+    return bn_gpu_policy_moe_prefill_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_min_tokens(void) {
-    return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
+    return bn_gpu_policy_moe_prefill_min_tokens_or_default(1);
 }
 
 int bn_transformer_gpu_moe_prefill_backend_available(
@@ -834,7 +834,7 @@ int bn_transformer_gpu_moe_prefill_tokens_allowed(
 }
 
 int bn_transformer_gpu_moe_cache_prefill_enabled(void) {
-    return bn_gpu_policy_cuda_moe_cache_prefill_enabled();
+    return bn_gpu_policy_moe_cache_prefill_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
@@ -848,7 +848,7 @@ int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
 }
 
 int bn_transformer_gpu_moe_prefill_shared_fuse_enabled(void) {
-    return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
+    return bn_gpu_policy_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_shared_batch_available(
@@ -875,7 +875,7 @@ int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
 }
 
 int bn_transformer_gpu_moe_route_batch_debug_enabled(void) {
-    return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
+    return bn_gpu_policy_moe_route_batch_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_route_batch_available(
@@ -961,7 +961,7 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
 }
 
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
-    return bn_gpu_policy_cuda_large_hybrid_prefill_disabled();
+    return bn_gpu_policy_large_hybrid_prefill_disabled();
 }
 
 int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
@@ -1277,7 +1277,7 @@ int bn_transformer_gpu_large_hybrid_argmax_blocked(
     return want_argmax &&
            transformer_gpu_backend_is_cuda(gpu) &&
            bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(c, w) &&
-           !bn_gpu_policy_cuda_large_hybrid_argmax_enabled();
+           !bn_gpu_policy_large_hybrid_argmax_enabled();
 }
 
 BnTransformerGPUDecodeEntryPolicy
