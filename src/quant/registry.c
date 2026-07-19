@@ -141,7 +141,7 @@ int bn_quant_format_supports_gpu_small_dense(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_SMALL_DENSE);
 }
 
-int bn_quant_format_supports_gpu_small_dense_q8(int type) {
+int bn_quant_format_supports_gpu_small_dense_native_quant(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_SMALL_DENSE_Q8);
 }
 

@@ -3698,7 +3698,7 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_supports_native_quant_logits_refine(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_quant_format_supports_gpu_small_dense_q8(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_quant_format_supports_gpu_small_dense_native_quant(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_supports_q8_logits_refine(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_F16));
     assert(!bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_Q8_0));

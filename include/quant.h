@@ -320,7 +320,7 @@ int      bn_quant_format_gpu_uses_repacked_layout(int type);
 int      bn_quant_format_gpu_supports_repacked_bias(int type);
 uint32_t bn_quant_format_gpu_dispatch_tile_rows(int type);
 int      bn_quant_format_supports_gpu_small_dense(int type);
-int      bn_quant_format_supports_gpu_small_dense_q8(int type);
+int      bn_quant_format_supports_gpu_small_dense_native_quant(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);

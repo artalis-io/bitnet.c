@@ -34,7 +34,7 @@ static inline int bn_backend_quant_small_dense_supported(int type) {
 }
 
 static inline int bn_backend_quant_small_dense_native_quant_supported(int type) {
-    return bn_quant_format_supports_gpu_small_dense_q8(type);
+    return bn_quant_format_supports_gpu_small_dense_native_quant(type);
 }
 
 static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
