@@ -571,11 +571,11 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_PROFILE", profile_env, 1);
     }
     if (args.metal_disable_barriers)
-        setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
+        bn_gpu_policy_apply_metal_barrier_disable_override();
     if (args.metal_enable_q6_q8k)
-        setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+        bn_gpu_policy_apply_specialized_q6_q8k_override();
     if (args.metal_q4_prepared)
-        setenv("BN_METAL_Q4_PREPARED", "1", 1);
+        bn_gpu_policy_apply_q4_q8_prepared_override();
     if (args.top_logits > 0) {
         char top_env[16];
         snprintf(top_env, sizeof(top_env), "%d", args.top_logits);
@@ -592,9 +592,9 @@ int main(int argc, char **argv) {
     if (args.gpu_split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
     if (args.metal_disable_q4_q8)
-        setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
+        bn_gpu_policy_apply_metal_q4_q8_default_disable_override();
     if (args.metal_private_weights)
-        setenv("BN_METAL_PRIVATE_WEIGHTS", "1", 1);
+        bn_gpu_policy_apply_metal_private_weights_override();
     if (args.q4_q8_to_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", args.q4_q8_to_layer);

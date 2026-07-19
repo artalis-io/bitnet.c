@@ -2099,6 +2099,26 @@ int bn_gpu_policy_metal_mmap_zero_copy_enabled(void) {
     return getenv("BN_METAL_ENABLE_MMAP_ZERO_COPY") != NULL;
 }
 
+void bn_gpu_policy_apply_metal_barrier_disable_override(void) {
+    setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
+}
+
+void bn_gpu_policy_apply_specialized_q6_q8k_override(void) {
+    setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+}
+
+void bn_gpu_policy_apply_q4_q8_prepared_override(void) {
+    setenv("BN_METAL_Q4_PREPARED", "1", 1);
+}
+
+void bn_gpu_policy_apply_metal_q4_q8_default_disable_override(void) {
+    setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
+}
+
+void bn_gpu_policy_apply_metal_private_weights_override(void) {
+    setenv("BN_METAL_PRIVATE_WEIGHTS", "1", 1);
+}
+
 void bn_gpu_policy_metal_apply_q4_q8_default(void) {
     if (!getenv("BN_GPU_Q4_Q8") &&
         !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {

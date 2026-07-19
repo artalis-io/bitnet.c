@@ -3488,6 +3488,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_metal_full_barriers_enabled());
     assert(!bn_gpu_policy_metal_barriers_enabled());
     assert(bn_gpu_policy_metal_barriers_disabled());
+    bn_gpu_policy_apply_metal_barrier_disable_override();
+    assert(bn_gpu_policy_metal_barriers_disabled());
+    unsetenv("BN_METAL_DISABLE_BARRIERS");
     setenv("BN_METAL_ENABLE_BARRIERS", "1", 1);
     assert(!bn_gpu_policy_metal_full_barriers_enabled());
     assert(bn_gpu_policy_metal_barriers_enabled());
@@ -3505,6 +3508,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
     unsetenv("BN_METAL_Q4_PREPARED");
+    unsetenv("BN_METAL_PRIVATE_WEIGHTS");
     assert(!bn_gpu_policy_metal_q4_q8_enabled());
     assert(!bn_gpu_policy_q4_q8_attn_only_enabled());
     assert(!bn_gpu_policy_q4_q8_ffn_only_enabled());
@@ -3584,6 +3588,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
+    bn_gpu_policy_apply_q4_q8_prepared_override();
+    assert(bn_gpu_policy_metal_q4_prepared_enabled());
+    unsetenv("BN_METAL_Q4_PREPARED");
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
     assert(bn_gpu_policy_metal_q4_prepared_enabled());
     assert(bn_gpu_policy_q4_q8_prepared_layer_default_enabled());
@@ -3610,6 +3617,18 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
     bn_gpu_policy_metal_apply_q4_q8_default();
     assert(!bn_gpu_policy_metal_q4_q8_enabled());
+    unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
+    bn_gpu_policy_apply_metal_q4_q8_default_disable_override();
+    bn_gpu_policy_metal_apply_q4_q8_default();
+    assert(!bn_gpu_policy_metal_q4_q8_enabled());
+    bn_gpu_policy_apply_metal_private_weights_override();
+    assert(getenv("BN_METAL_PRIVATE_WEIGHTS") != NULL);
+    unsetenv("BN_METAL_PRIVATE_WEIGHTS");
+    unsetenv("BN_METAL_ENABLE_Q6_Q8K");
+    bn_gpu_policy_apply_specialized_q6_q8k_override();
+    assert(bn_gpu_policy_specialized_q6_q8k_path_enabled());
+    unsetenv("BN_METAL_ENABLE_Q6_Q8K");
+    unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
     unsetenv("BN_GPU_DEBUG_ARGMAX");
     assert(!bn_gpu_policy_argmax_debug_enabled());
     setenv("BN_GPU_DEBUG_ARGMAX", "1", 1);
