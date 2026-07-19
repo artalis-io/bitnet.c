@@ -924,7 +924,9 @@ int bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(
            all_active_two_kquant &&
            !bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled() &&
            !bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled() &&
-           getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT") == NULL;
+           !gpu_policy_compat_env_enabled(
+               "BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREPARED_INPUT",
+               "BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT");
 }
 
 int bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(
@@ -935,10 +937,14 @@ int bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(
            all_active_two_kquant &&
            !exact_silu &&
            (bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled() ||
-            getenv("BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT") != NULL) &&
+            gpu_policy_compat_env_enabled(
+                "BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREPARED_INPUT",
+                "BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT")) &&
            getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT") == NULL &&
            getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2") == NULL &&
-           getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT") == NULL;
+           !gpu_policy_compat_env_enabled(
+               "BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREPARED_INPUT",
+               "BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT");
 }
 
 int bn_gpu_policy_cuda_moe_router_fused_topk_enabled(int n_experts,
@@ -1264,13 +1270,17 @@ int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void) {
 }
 
 int bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ") == NULL;
+    return !gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_Q8_0_SSM_PREPARED_INPUT",
+        "BN_CUDA_DISABLE_Q8_0_SSM_PREQ");
 }
 
 int bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(int type_a,
                                                        int type_b,
                                                        int cols) {
-    return getenv("BN_CUDA_ENABLE_Q8_MIXED_PREQ") != NULL &&
+    return gpu_policy_compat_env_enabled(
+               "BN_CUDA_ENABLE_Q8_MIXED_PREPARED_INPUT",
+               "BN_CUDA_ENABLE_Q8_MIXED_PREQ") &&
            (bn_backend_quant_is_q8_0(type_a) ||
             bn_backend_quant_is_q8_0(type_b)) &&
            (cols & 31) == 0;
