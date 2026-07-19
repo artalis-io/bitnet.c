@@ -1680,6 +1680,11 @@ if grep -n 'BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT\|transformer_cpu_features_in
     fail=1
 fi
 
+if grep -n '__ARM_NEON\|arm_neon.h\|vdupq_n_f32\|vmaxq_f32\|vst1q_f32' include/transformer_math_internal.h >/dev/null 2>&1; then
+    echo "include/transformer_math_internal.h must keep ISA-specific softmax policy in transformer backend sources"
+    fail=1
+fi
+
 for file in \
     src/model_gpu.c \
     src/gpu_moe_bridge.c \

@@ -103,6 +103,8 @@ emcc \
     "$PROJECT_DIR/src/transformer/gpu_emit.c" \
     "$PROJECT_DIR/src/transformer/kv.c" \
     "$PROJECT_DIR/src/transformer/logits.c" \
+    "$PROJECT_DIR/src/transformer/math_scalar.c" \
+    "$PROJECT_DIR/src/transformer/math_backend.c" \
     "$PROJECT_DIR/src/transformer/plan.c" \
     "$PROJECT_DIR/src/transformer/prefill.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \
