@@ -2051,6 +2051,16 @@ do
     fi
 done
 
+if awk '/^static int small_dense_backend_native_by_default/{flag=1} /^int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_backend_quant_small_dense' >/dev/null 2>&1; then
+    echo "Small-dense backend default policy must compose behavior-named quant helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_backend_matvec_fallback_kept/{flag=1} /^BnTransformerGPUMatvecFallbackPolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_backend_quant_small_dense' >/dev/null 2>&1; then
+    echo "GPU matvec fallback policy must compose behavior-named small-dense quant helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer/cpu_backend.c \
     src/transformer/prefill_backend.c \

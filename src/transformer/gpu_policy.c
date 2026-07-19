@@ -365,15 +365,27 @@ static int all2_q4q6_moe_requires_opt_in(const BnConfig *c,
            bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled();
 }
 
-static int small_dense_backend_native_by_default(
-    const BnConfig *c,
-    const BnWeights *w) {
-    if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
+static int small_dense_tensor_quant_supported(int tensor_type, int q8_only) {
+    return q8_only
+        ? bn_backend_quant_small_dense_q8_supported(tensor_type)
+        : bn_backend_quant_small_dense_supported(tensor_type);
+}
+
+static int small_dense_weight_quant_supported(const BnQWeight *w,
+                                              int q8_only) {
+    return !w || !w->data ||
+           small_dense_tensor_quant_supported(w->type, q8_only);
+}
+
+static int small_dense_model_quant_supported(const BnWeights *w,
+                                             const BnConfig *c,
+                                             int q8_only) {
+    if (!w || !c)
         return 0;
     if (w->output_weight.data) {
-        if (!bn_backend_quant_small_dense_supported(w->output_weight.type))
+        if (!small_dense_weight_quant_supported(&w->output_weight, q8_only))
             return 0;
-    } else if (!bn_backend_quant_small_dense_supported(w->emb_type)) {
+    } else if (!small_dense_tensor_quant_supported(w->emb_type, q8_only)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -384,12 +396,19 @@ static int small_dense_backend_native_by_default(
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (weights[i]->data &&
-                !bn_backend_quant_small_dense_supported(weights[i]->type))
+            if (!small_dense_weight_quant_supported(weights[i], q8_only))
                 return 0;
         }
     }
     return 1;
+}
+
+static int small_dense_backend_native_by_default(
+    const BnConfig *c,
+    const BnWeights *w) {
+    if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
+        return 0;
+    return small_dense_model_quant_supported(w, c, 0);
 }
 
 static int small_dense_backend_q8_native_by_default(
@@ -397,26 +416,7 @@ static int small_dense_backend_q8_native_by_default(
     const BnWeights *w) {
     if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
         return 0;
-    if (w->output_weight.data) {
-        if (!bn_backend_quant_small_dense_q8_supported(w->output_weight.type))
-            return 0;
-    } else if (!bn_backend_quant_small_dense_q8_supported(w->emb_type)) {
-        return 0;
-    }
-    for (int l = 0; l < c->n_layers; l++) {
-        const BnLayerWeights *lw = &w->layers[l];
-        const BnQWeight *weights[] = {
-            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
-            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
-        };
-        int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
-        for (int i = 0; i < n_weights; i++) {
-            if (weights[i]->data &&
-                !bn_backend_quant_small_dense_q8_supported(weights[i]->type))
-                return 0;
-        }
-    }
-    return 1;
+    return small_dense_model_quant_supported(w, c, 1);
 }
 
 int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
@@ -558,29 +558,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     if (!bn_model_arch_uses_small_dense_q8_native_shape(c))
         return 1;
 
-    const BnWeights *w = &m->weights;
-    if (w->output_weight.data) {
-        if (!bn_backend_quant_small_dense_q8_supported(
-                w->output_weight.type))
-            return 0;
-    } else if (!bn_backend_quant_small_dense_q8_supported(w->emb_type)) {
-        return 0;
-    }
-    for (int l = 0; l < c->n_layers; l++) {
-        const BnLayerWeights *lw = &w->layers[l];
-        const BnQWeight *weights[] = {
-            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
-            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
-        };
-        int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
-        for (int i = 0; i < n_weights; i++) {
-            if (weights[i]->data &&
-                !bn_backend_quant_small_dense_q8_supported(
-                    weights[i]->type))
-                return 0;
-        }
-    }
-    return 1;
+    return small_dense_model_quant_supported(&m->weights, c, 1);
 }
 
 BnTransformerGPUMatvecFallbackPolicy
