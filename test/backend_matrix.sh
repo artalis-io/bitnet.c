@@ -197,6 +197,11 @@ if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/case BN_GPU_CODE_MOE_ROUTED_FFN:/
     fail=1
 fi
 
+if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/int next_moe_all2_q4q6 =/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA route-topk dense-F32 policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

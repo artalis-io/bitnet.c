@@ -20006,7 +20006,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int route_diff2 = n_experts == 2 && k == 2 && w && w->rows == 1;
             if (!w || !w->data || !in || !route || !logits ||
                 n_experts <= 0 || k <= 0 || dim <= 0 ||
-                w->type != BN_GGUF_TENSOR_F32 ||
+                !bn_backend_quant_already_f32(w->type) ||
                 (!route_diff2 && w->rows < n_experts) || w->cols < dim ||
                 ctx->act_sizes[op->buf_aux] <
                     (size_t)n_experts * sizeof(float) ||
