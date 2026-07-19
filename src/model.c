@@ -298,28 +298,24 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     // Build key names with architecture prefix
     char key[128];
 
-    snprintf(key, sizeof(key), "%s.embedding_length", prefix);
-    c->dim = (int)bn_gguf_get_u32(f, key);
+    c->dim = bn_model_arch_gguf_u32(f, "embedding_length");
 
     snprintf(key, sizeof(key), "%s.feed_forward_length", prefix);
     c->hidden_dim = gguf_get_u32_or_i32_array(f, key, 0);
 
-    snprintf(key, sizeof(key), "%s.block_count", prefix);
-    c->n_layers = (int)bn_gguf_get_u32(f, key);
-    snprintf(key, sizeof(key), "%s.nextn_predict_layers", prefix);
-    int n_nextn_layers = (int)bn_gguf_get_u32(f, key);
+    c->n_layers = bn_model_arch_gguf_u32(f, "block_count");
+    int n_nextn_layers =
+        bn_model_arch_gguf_u32(f, "nextn_predict_layers");
     if (n_nextn_layers > 0 && n_nextn_layers < c->n_layers)
         c->n_layers -= n_nextn_layers;
 
-    snprintf(key, sizeof(key), "%s.attention.head_count", prefix);
-    c->n_heads = (int)bn_gguf_get_u32(f, key);
+    c->n_heads = bn_model_arch_gguf_u32(f, "attention.head_count");
 
     snprintf(key, sizeof(key), "%s.attention.head_count_kv", prefix);
     c->n_kv_heads = gguf_get_u32_or_i32_array(f, key, 0);
     if (c->n_kv_heads == 0) c->n_kv_heads = c->n_heads;
 
-    snprintf(key, sizeof(key), "%s.context_length", prefix);
-    c->seq_len = (int)bn_gguf_get_u32(f, key);
+    c->seq_len = bn_model_arch_gguf_u32(f, "context_length");
     if (max_seq_len > 0 && max_seq_len < c->seq_len) c->seq_len = max_seq_len;
 
     snprintf(key, sizeof(key), "%s.rope.freq_base", prefix);
@@ -336,8 +332,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     c->vocab_size = (int)bn_gguf_get_arr_n(f, "tokenizer.ggml.tokens");
 
     // Early MoE expert count read (needed for validation — hidden_dim can be 0 for MoE-only FFN)
-    snprintf(key, sizeof(key), "%s.expert_count", prefix);
-    int early_n_experts = (int)bn_gguf_get_u32(f, key);
+    int early_n_experts = bn_model_arch_gguf_u32(f, "expert_count");
 
     // #15, #38: Validate BEFORE computing derived dimensions to avoid division by zero
     // hidden_dim may be 0 for pure MoE models (all FFN is expert-based)
@@ -350,8 +345,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // Derived dimensions (safe now — denominators validated above)
     // Check for explicit head size when key length differs from dim/n_heads.
-    snprintf(key, sizeof(key), "%s.attention.key_length", prefix);
-    int explicit_head_size = (int)bn_gguf_get_u32(f, key);
+    int explicit_head_size =
+        bn_model_arch_gguf_u32(f, "attention.key_length");
     c->head_size = (explicit_head_size > 0) ? explicit_head_size : (c->dim / c->n_heads);
     c->kv_dim = c->head_size * c->n_kv_heads;
     c->kv_mul = c->n_heads / c->n_kv_heads;
@@ -378,10 +373,10 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // Hybrid SSM + Attention config (all default to 0 for pure attention models)
-    snprintf(key, sizeof(key), "%s.rope.dimension_count", prefix);
-    c->rope_dim_count = (int)bn_gguf_get_u32(f, key);
-    snprintf(key, sizeof(key), "%s.rope.dimension_count_swa", prefix);
-    c->rope_dim_count_swa = (int)bn_gguf_get_u32(f, key);
+    c->rope_dim_count =
+        bn_model_arch_gguf_u32(f, "rope.dimension_count");
+    c->rope_dim_count_swa =
+        bn_model_arch_gguf_u32(f, "rope.dimension_count_swa");
 
     // MROPE: dimension_sections[0] = text-only RoPE pairs (sections 1,2 are vision)
     // For text-only inference, only apply RoPE to the first section's dimensions.
@@ -397,27 +392,23 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
     }
 
-    snprintf(key, sizeof(key), "%s.full_attention_interval", prefix);
-    c->full_attn_interval = (int)bn_gguf_get_u32(f, key);
+    c->full_attn_interval =
+        bn_model_arch_gguf_u32(f, "full_attention_interval");
 
-    snprintf(key, sizeof(key), "%s.ssm.state_size", prefix);
-    c->ssm_state_size = (int)bn_gguf_get_u32(f, key);
+    c->ssm_state_size = bn_model_arch_gguf_u32(f, "ssm.state_size");
 
-    snprintf(key, sizeof(key), "%s.ssm.conv_kernel", prefix);
-    c->ssm_conv_kernel = (int)bn_gguf_get_u32(f, key);
+    c->ssm_conv_kernel = bn_model_arch_gguf_u32(f, "ssm.conv_kernel");
 
-    snprintf(key, sizeof(key), "%s.ssm.inner_size", prefix);
-    c->ssm_inner_size = (int)bn_gguf_get_u32(f, key);
+    c->ssm_inner_size = bn_model_arch_gguf_u32(f, "ssm.inner_size");
 
-    snprintf(key, sizeof(key), "%s.ssm.time_step_rank", prefix);
-    c->ssm_time_step_rank = (int)bn_gguf_get_u32(f, key);
+    c->ssm_time_step_rank =
+        bn_model_arch_gguf_u32(f, "ssm.time_step_rank");
 
-    snprintf(key, sizeof(key), "%s.ssm.group_count", prefix);
-    c->ssm_group_count = (int)bn_gguf_get_u32(f, key);
+    c->ssm_group_count = bn_model_arch_gguf_u32(f, "ssm.group_count");
 
     if (bn_model_arch_loads_extra_metadata(c)) {
-        snprintf(key, sizeof(key), "%s.attention.shared_kv_layers", prefix);
-        int shared_kv_layers = (int)bn_gguf_get_u32(f, key);
+        int shared_kv_layers =
+            bn_model_arch_gguf_u32(f, "attention.shared_kv_layers");
         c->kv_unique_layer_count = c->n_layers - shared_kv_layers;
         if (c->kv_unique_layer_count <= 0 || c->kv_unique_layer_count > c->n_layers)
             c->kv_unique_layer_count = c->n_layers;
@@ -427,8 +418,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     : (int)(sizeof(c->sliding_window_pattern) / sizeof(c->sliding_window_pattern[0]));
         for (int i = 0; i < max_swa; i++)
             c->sliding_window_pattern[i] = gguf_get_bool_array(f, key, i);
-        snprintf(key, sizeof(key), "%s.embedding_length_per_layer_input", prefix);
-        c->per_layer_input_dim = (int)bn_gguf_get_u32(f, key);
+        c->per_layer_input_dim =
+            bn_model_arch_gguf_u32(f, "embedding_length_per_layer_input");
         snprintf(key, sizeof(key), "%s.final_logit_softcapping", prefix);
         c->final_logit_softcap = bn_gguf_get_f32(f, key);
     }

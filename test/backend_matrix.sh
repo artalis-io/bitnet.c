@@ -1457,6 +1457,11 @@ if grep -n 'c->n_experts > 0' src/model.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'bn_gguf_get_u32(f, key)' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use model_arch helpers for arch-prefixed scalar GGUF metadata"
+    fail=1
+fi
+
 if grep -n 'if (c->full_attn_interval > 0)' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model_arch helpers for hybrid layout predicates"
     fail=1
