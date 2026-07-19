@@ -263,8 +263,8 @@ typedef enum {
     BN_QUANT_CAP_CPU_MATMUL     = 1u << 6,
     BN_QUANT_CAP_CPU_PREQ8K     = 1u << 7,
     BN_QUANT_CAP_CPU_REPACKED   = 1u << 8,
-    BN_QUANT_CAP_GPU_SMALL_DENSE = 1u << 9,
-    BN_QUANT_CAP_GPU_SMALL_DENSE_NATIVE_QUANT = 1u << 10,
+    BN_QUANT_CAP_GPU_DENSE_GRAPH = 1u << 9,
+    BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT = 1u << 10,
     BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK = 1u << 11,
     BN_QUANT_CAP_Q8_LOGITS_REFINE = 1u << 12,
     BN_QUANT_CAP_Q6_LOGITS_REFINE = 1u << 13,
@@ -319,8 +319,8 @@ int      bn_quant_format_can_gpu_repack(int type);
 int      bn_quant_format_gpu_uses_repacked_layout(int type);
 int      bn_quant_format_gpu_supports_repacked_bias(int type);
 uint32_t bn_quant_format_gpu_dispatch_tile_rows(int type);
-int      bn_quant_format_supports_gpu_small_dense(int type);
-int      bn_quant_format_supports_gpu_small_dense_native_quant(int type);
+int      bn_quant_format_supports_gpu_dense_graph(int type);
+int      bn_quant_format_supports_gpu_dense_graph_native_quant(int type);
 int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
 int      bn_quant_format_supports_q8_logits_refine(int type);
 int      bn_quant_format_supports_q6_logits_refine(int type);

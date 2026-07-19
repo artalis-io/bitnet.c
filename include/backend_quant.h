@@ -30,12 +30,12 @@ static inline int bn_backend_quant_gpu_supports_repacked_bias(int type) {
     return bn_quant_format_gpu_supports_repacked_bias(type);
 }
 
-static inline int bn_backend_quant_small_dense_supported(int type) {
-    return bn_quant_format_supports_gpu_small_dense(type);
+static inline int bn_backend_quant_dense_graph_supported(int type) {
+    return bn_quant_format_supports_gpu_dense_graph(type);
 }
 
-static inline int bn_backend_quant_small_dense_native_quant_supported(int type) {
-    return bn_quant_format_supports_gpu_small_dense_native_quant(type);
+static inline int bn_backend_quant_dense_graph_native_quant_supported(int type) {
+    return bn_quant_format_supports_gpu_dense_graph_native_quant(type);
 }
 
 static inline int bn_backend_quant_dense_graph_weight_supported(
@@ -44,16 +44,16 @@ static inline int bn_backend_quant_dense_graph_weight_supported(
     if (!w || !w->data)
         return 1;
     return native_quant_only
-        ? bn_backend_quant_small_dense_native_quant_supported(w->type)
-        : bn_backend_quant_small_dense_supported(w->type);
+        ? bn_backend_quant_dense_graph_native_quant_supported(w->type)
+        : bn_backend_quant_dense_graph_supported(w->type);
 }
 
 static inline int bn_backend_quant_dense_graph_tensor_supported(
     int tensor_type,
     int native_quant_only) {
     return native_quant_only
-        ? bn_backend_quant_small_dense_native_quant_supported(tensor_type)
-        : bn_backend_quant_small_dense_supported(tensor_type);
+        ? bn_backend_quant_dense_graph_native_quant_supported(tensor_type)
+        : bn_backend_quant_dense_graph_supported(tensor_type);
 }
 
 static inline int bn_backend_quant_dense_graph_model_supported(

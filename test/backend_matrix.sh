@@ -2118,17 +2118,22 @@ if grep -n 'full_attn_interval\|n_attn_layers = (c->full_attn_interval > 0)\|n_s
     fail=1
 fi
 
-if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_small_dense_q8\|bn_model_arch_cpu_force_float_kquant' src/transformer.c >/dev/null 2>&1; then
+if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_dense_graph_q8\|bn_model_arch_cpu_force_float_kquant' src/transformer.c >/dev/null 2>&1; then
     echo "src/transformer.c must use GPU policy helpers for CUDA matvec fallback policy"
     fail=1
 fi
 
-if grep -n 'bn_quant_format_supports_gpu_small_dense_q8' include/quant.h include/backend_quant.h src/quant/registry.c test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_supports_gpu_dense_graph_q8' include/quant.h include/backend_quant.h src/quant/registry.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Small-dense native-quant format policy must use behavior names, not Q8 internal helper names"
     fail=1
 fi
 
-if grep -n 'BN_QUANT_CAP_GPU_SMALL_DENSE_Q8\|BN_QUANT_CAP_GPU_SMALL_DENSE_Q8_FORMAT' include/quant.h src/quant/registry.c >/dev/null 2>&1; then
+if grep -n 'BN_QUANT_CAP_GPU_SMALL_DENSE\|bn_quant_format_supports_gpu_small_dense\|bn_backend_quant_small_dense_' include/quant.h include/backend_quant.h src/quant/registry.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Dense graph quant capability helpers must not use small-dense model-shape names"
+    fail=1
+fi
+
+if grep -n 'BN_QUANT_CAP_GPU_DENSE_GRAPH_Q8\|BN_QUANT_CAP_GPU_DENSE_GRAPH_Q8_FORMAT' include/quant.h src/quant/registry.c >/dev/null 2>&1; then
     echo "Small-dense native-quant capability must use behavior names, not Q8 internal capability names"
     fail=1
 fi
