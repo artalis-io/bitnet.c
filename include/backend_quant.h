@@ -53,8 +53,16 @@ static inline int bn_backend_quant_is_q5k(int type) {
     return bn_quant_format_is_q5k(type);
 }
 
+static inline int bn_backend_quant_is_q8k(int type) {
+    return bn_quant_format_is_q8k(type);
+}
+
 static inline int bn_backend_quant_is_q8_0(int type) {
     return bn_quant_format_is_q8_0(type);
+}
+
+static inline int bn_backend_quant_is_q5_0(int type) {
+    return bn_quant_format_is_q5_0(type);
 }
 
 static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) {
@@ -608,12 +616,8 @@ static inline int bn_backend_quant_metal_q6_q8k_matvec_supported(int type) {
     return bn_quant_format_metal_q6_q8k_matvec_supported(type);
 }
 
-static inline int bn_backend_quant_cuda_matvec_type_disabled(int type) {
-    return bn_quant_policy_cuda_matvec_type_disabled(type);
-}
-
 static inline int bn_backend_quant_cuda_matvec_supported(int type) {
-    return bn_quant_format_cuda_matvec_supported(type);
+    return bn_quant_format_gpu_matvec_supported(type);
 }
 
 static inline int bn_backend_quant_cuda_q8_quant_matmul_on_f16_disable(

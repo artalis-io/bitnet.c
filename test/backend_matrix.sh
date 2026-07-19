@@ -820,6 +820,11 @@ if grep -n '== BN_GGUF_TENSOR_\|!= BN_GGUF_TENSOR_' include/backend_quant.h >/de
     fail=1
 fi
 
+if grep -n 'bn_quant_format_cuda_matvec_supported\|bn_quant_policy_cuda_matvec_type_disabled' include/quant.h src/quant test/test_quant.c >/dev/null 2>&1; then
+    echo "quant format helpers must expose GPU matvec capability without CUDA env policy"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_Q4_Q8_DISABLE_GATEUP' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for Q4/Q8 fused gate-up compatibility env vars"
     fail=1

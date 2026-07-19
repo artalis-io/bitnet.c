@@ -83,6 +83,10 @@ int bn_quant_format_is_q6k(int type) {
     return type == BN_GGUF_TENSOR_Q6_K;
 }
 
+int bn_quant_format_is_q8k(int type) {
+    return type == BN_GGUF_TENSOR_Q8_K;
+}
+
 int bn_quant_format_is_q8_0(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
 }
@@ -120,7 +124,7 @@ int bn_quant_format_metal_q6_q8k_matvec_supported(int type) {
     return type == BN_GGUF_TENSOR_Q6_K;
 }
 
-int bn_quant_format_cuda_matvec_supported(int type) {
+int bn_quant_format_gpu_matvec_supported(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_F32:
         case BN_GGUF_TENSOR_F16:
@@ -136,25 +140,6 @@ int bn_quant_format_cuda_matvec_supported(int type) {
         case BN_GGUF_TENSOR_IQ3_XXS:
         case BN_GGUF_TENSOR_IQ4_XS:
             return 1;
-        default:
-            return 0;
-    }
-}
-
-int bn_quant_policy_cuda_matvec_type_disabled(int type) {
-    switch (type) {
-        case BN_GGUF_TENSOR_Q8_0:
-            return getenv("BN_CUDA_DISABLE_Q8_0") != NULL;
-        case BN_GGUF_TENSOR_Q5_0:
-            return getenv("BN_CUDA_DISABLE_Q5_0") != NULL;
-        case BN_GGUF_TENSOR_Q4_K:
-            return getenv("BN_CUDA_DISABLE_Q4_K") != NULL;
-        case BN_GGUF_TENSOR_Q5_K:
-            return getenv("BN_CUDA_DISABLE_Q5_K") != NULL;
-        case BN_GGUF_TENSOR_Q6_K:
-            return getenv("BN_CUDA_DISABLE_Q6_K") != NULL;
-        case BN_GGUF_TENSOR_Q8_K:
-            return getenv("BN_CUDA_DISABLE_Q8_K") != NULL;
         default:
             return 0;
     }
