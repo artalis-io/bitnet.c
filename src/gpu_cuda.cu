@@ -17344,8 +17344,8 @@ static int cuda_prefill_ssm_layer(
         !cuda_force_quant_matmul_for_type(out_type) &&
         ((use_qkvz && qkvz->f16_data) ||
          (!use_qkvz && wqkv->f16_data && wz->f16_data)) &&
-        ((alpha_type == BN_GGUF_TENSOR_F32 &&
-          beta_type == BN_GGUF_TENSOR_F32) ||
+        ((bn_backend_quant_already_f32(alpha_type) &&
+          bn_backend_quant_already_f32(beta_type)) ||
          (use_ab && ab->f16_data) ||
          (!use_ab && alpha->f16_data && beta->f16_data)) &&
         ssm_out->f16_data &&
@@ -17494,7 +17494,8 @@ static int cuda_prefill_ssm_layer(
 
     int ab_preactivated = 0;
     if (bn_gpu_policy_cuda_prefill_ssm_f32_ab_enabled() &&
-        alpha_type == BN_GGUF_TENSOR_F32 && beta_type == BN_GGUF_TENSOR_F32) {
+        bn_backend_quant_already_f32(alpha_type) &&
+        bn_backend_quant_already_f32(beta_type)) {
         ssm_prefill_alpha_beta_f32_kernel<<<dim3(num_v_heads, n_tokens, 1),
                                             threads, 16 * sizeof(float),
                                             ssm_stream>>>(
