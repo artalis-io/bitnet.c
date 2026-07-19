@@ -14446,7 +14446,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                 ctx->d_out, (const BnBlockQ5K *)down->data, xq,
                 dim, hidden_dim, n_tokens, 0);
         }
-    } else if (down_type == BN_GGUF_TENSOR_Q6_K &&
+    } else if (bn_backend_quant_moe_down_is_q6k(down_type) &&
                (hidden_dim % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_dot_enabled()) {
         int x_blocks = hidden_dim / BN_QK_K;
@@ -14468,7 +14468,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                 ctx->d_out, (const BnBlockQ6K *)down->data, xq,
                 dim, hidden_dim, n_tokens, 0);
         }
-    } else if (down_type == BN_GGUF_TENSOR_Q6_K &&
+    } else if (bn_backend_quant_moe_down_is_q6k(down_type) &&
                (hidden_dim % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_batch_warp_enabled()) {
         dim3 grid((dim + warps - 1) / warps, n_tokens, 1);
@@ -14932,13 +14932,10 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     BnCudaBuffer *down = (BnCudaBuffer *)down_all_buf;
     if (!cuda_use_moe_routed_ffn_batch())
         return -1;
-    int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K &&
-                    up_type == BN_GGUF_TENSOR_Q4_K &&
-                    (down_type == BN_GGUF_TENSOR_Q4_K ||
-                     down_type == BN_GGUF_TENSOR_Q6_K);
-    int routed_q8 = gate_type == BN_GGUF_TENSOR_Q8_0 &&
-                    up_type == BN_GGUF_TENSOR_Q8_0 &&
-                    down_type == BN_GGUF_TENSOR_Q8_0;
+    int routed_q4 =
+        bn_backend_quant_moe_routed_q4(gate_type, up_type, down_type);
+    int routed_q8 =
+        bn_backend_quant_moe_routed_q8(gate_type, up_type, down_type);
     if (!ctx || !out || !gate || !up || !down || !indices || !weights ||
         !X || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
@@ -14968,7 +14965,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_all2_decode =
         n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
-        down_type == BN_GGUF_TENSOR_Q6_K && hidden_dim >= 4096 &&
+        bn_backend_quant_moe_down_is_q6k(down_type) && hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
         bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     size_t decode_route_bytes =
@@ -15228,7 +15225,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                             d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                             d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
                     }
-                } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
+                } else if (bn_backend_quant_moe_down_is_q6k(down_type)) {
                     moe_q6k_down_routed_q8k_accum_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
                         d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                         d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15237,7 +15234,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                         d_full_out, (const BnBlockQ4K *)down->data, mid_q,
                         d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
                 }
-            } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
+            } else if (bn_backend_quant_moe_down_is_q6k(down_type)) {
                 moe_q6k_down_routed_q8k_accum_4row_batch_kernel<<<down4_blocks, threads, 0>>>(
                     d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                     d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15246,7 +15243,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                     d_full_out, (const BnBlockQ4K *)down->data, mid_q,
                     d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
             }
-        } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
+        } else if (bn_backend_quant_moe_down_is_q6k(down_type)) {
             moe_q6k_down_routed_q8k_accum_batch_kernel<<<down_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15300,13 +15297,10 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     BnCudaBuffer *norm = (BnCudaBuffer *)norm_buf;
     if (!cuda_use_moe_route_routed_ffn_batch(n_experts))
         return -1;
-    int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K &&
-                    up_type == BN_GGUF_TENSOR_Q4_K &&
-                    (down_type == BN_GGUF_TENSOR_Q4_K ||
-                     down_type == BN_GGUF_TENSOR_Q6_K);
-    int routed_q8 = gate_type == BN_GGUF_TENSOR_Q8_0 &&
-                    up_type == BN_GGUF_TENSOR_Q8_0 &&
-                    down_type == BN_GGUF_TENSOR_Q8_0;
+    int routed_q4 =
+        bn_backend_quant_moe_routed_q4(gate_type, up_type, down_type);
+    int routed_q8 =
+        bn_backend_quant_moe_routed_q8(gate_type, up_type, down_type);
     if (!ctx || !router || !gate || !up || !down || (!X && !ctx->d_out) ||
         !router->data || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
@@ -15386,7 +15380,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             use_cublas_grouped, n_experts, k);
     int use_cublas_all2_decode =
         n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
-        down_type == BN_GGUF_TENSOR_Q6_K && hidden_dim >= 4096 &&
+        bn_backend_quant_moe_down_is_q6k(down_type) && hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
         bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     int use_sorted_slots =
@@ -15407,7 +15401,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int init_out_with_residual =
         add_norm_resid &&
         ((routed_q8 && hidden_dim <= 1024) ||
-         (down_type == BN_GGUF_TENSOR_Q6_K &&
+         (bn_backend_quant_moe_down_is_q6k(down_type) &&
           cuda_use_moe_down_4row(hidden_dim) &&
           cuda_use_moe_down_8row(hidden_dim) &&
           cuda_use_q6k_moe_down_scatter(down_type, 0, 0) &&
@@ -15935,7 +15929,7 @@ moe_route_routed_down:
                                 d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
                         }
                     }
-                } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
+                } else if (bn_backend_quant_moe_down_is_q6k(down_type)) {
                     moe_q6k_down_routed_q8k_accum_8row_batch_kernel<<<down8_blocks, threads, 0>>>(
                         d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                         d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15944,7 +15938,7 @@ moe_route_routed_down:
                         d_full_out, (const BnBlockQ4K *)down->data, mid_q,
                         d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
                 }
-            } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
+            } else if (bn_backend_quant_moe_down_is_q6k(down_type)) {
                 moe_q6k_down_routed_q8k_accum_4row_batch_kernel<<<down4_blocks, threads, 0>>>(
                     d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                     d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15953,7 +15947,7 @@ moe_route_routed_down:
                     d_full_out, (const BnBlockQ4K *)down->data, mid_q,
                     d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
             }
-        } else if (down_type == BN_GGUF_TENSOR_Q6_K) {
+        } else if (bn_backend_quant_moe_down_is_q6k(down_type)) {
             moe_q6k_down_routed_q8k_accum_batch_kernel<<<down_blocks, threads, 0>>>(
                 d_full_out, (const BnBlockQ6K *)down->data, mid_q,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -18514,8 +18508,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     } else if (rop->type == BN_GGUF_TENSOR_Q4_K) {
                         if (rop->cols > reserve_q8_1_cols)
                             reserve_q8_1_cols = rop->cols;
-                        if (down_type == BN_GGUF_TENSOR_Q6_K ||
-                            down_type == BN_GGUF_TENSOR_Q4_K) {
+                        if (bn_backend_quant_moe_down_is_q4k_or_q6k(
+                                down_type)) {
                             if (hidden > reserve_q8_k_cols)
                                 reserve_q8_k_cols = hidden;
                             if (k > reserve_q8_k_batch)
@@ -20086,18 +20080,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int down_type = (int)op->p[3];
             int moe_layer = (int)op->p[5];
             int dim = op->cols;
-            int routed_q4 = op->type == BN_GGUF_TENSOR_Q4_K &&
-                            gate && gate->type == BN_GGUF_TENSOR_Q4_K &&
-                            up && up->type == BN_GGUF_TENSOR_Q4_K &&
-                            down &&
-                            (down_type == BN_GGUF_TENSOR_Q6_K ||
-                             down_type == BN_GGUF_TENSOR_Q4_K) &&
-                            down->type == down_type;
-            int routed_q8 = op->type == BN_GGUF_TENSOR_Q8_0 &&
-                            gate && gate->type == BN_GGUF_TENSOR_Q8_0 &&
-                            up && up->type == BN_GGUF_TENSOR_Q8_0 &&
-                            down && down_type == BN_GGUF_TENSOR_Q8_0 &&
-                            down->type == BN_GGUF_TENSOR_Q8_0;
+            int routed_q4 =
+                gate && up && down && gate->type == op->type &&
+                down->type == down_type &&
+                bn_backend_quant_moe_routed_q4(op->type, up->type,
+                                               down_type);
+            int routed_q8 =
+                gate && up && down && gate->type == op->type &&
+                down->type == down_type &&
+                bn_backend_quant_moe_routed_q8(op->type, up->type,
+                                               down_type);
             if (!gate || !gate->data || !up || !up->data ||
                 !down || !down->data || !in || !route || !mid || !out ||
                 (!routed_q4 && !routed_q8) ||
@@ -20161,14 +20153,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     /* Q8_1 is faster for small routed inputs; large hidden
                        alone does not amortize Q8_K quantization overhead. */
                     int moe_all2_q4q6 =
-                        n_experts == 2 && k == 2 &&
-                        down_type == BN_GGUF_TENSOR_Q6_K &&
-                        hidden >= 4096 && dim <= 2048;
+                        bn_backend_quant_moe_all2_q4q6_shape(
+                            n_experts, k, down_type, hidden, dim);
                     int moe_all2_q4_or_q6 =
-                        n_experts == 2 && k == 2 &&
-                        (down_type == BN_GGUF_TENSOR_Q6_K ||
-                         down_type == BN_GGUF_TENSOR_Q4_K) &&
-                        hidden >= 4096 && dim <= 2048;
+                        bn_backend_quant_moe_all2_q4_or_q6_shape(
+                            n_experts, k, down_type, hidden, dim);
                     int moe_all2_fast_moe_ffn =
                         bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled();
                     int moe_all2_fast_enabled =
@@ -20316,7 +20305,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         profile_ms[BN_CUDA_PROFILE_MOE_GATEUP] += (double)ms;
                         cudaEventRecord(moe_ev_start, ctx->exec_stream);
                     }
-                    if (down_type == BN_GGUF_TENSOR_Q6_K) {
+                    if (bn_backend_quant_moe_down_is_q6k(down_type)) {
                         int use_q6_float_down = cuda_use_q6k_moe_float_down();
                         int moe_all2_pair_down_enabled =
                             bn_gpu_policy_all2_q4q6_q6k_pair_down_enabled();

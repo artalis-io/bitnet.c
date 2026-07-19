@@ -100,6 +100,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT")\|getenv("BN_CUDA_EN
     fail=1
 fi
 
+if grep -n 'int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K\|int routed_q8 = gate_type == BN_GGUF_TENSOR_Q8_0\|int routed_q4 = op->type == BN_GGUF_TENSOR_Q4_K\|int routed_q8 = op->type == BN_GGUF_TENSOR_Q8_0' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for routed MoE quant groups"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

@@ -132,6 +132,13 @@ static inline int bn_backend_quant_moe_route_q4_down(int gate_type,
                                                       allow_q4_down);
 }
 
+static inline int bn_backend_quant_moe_routed_q4(int gate_type,
+                                                 int up_type,
+                                                 int down_type) {
+    return bn_backend_quant_moe_route_q4_down(gate_type, up_type, down_type,
+                                              1);
+}
+
 static inline int bn_backend_quant_moe_gateup_q4(int gate_type,
                                                  int up_type) {
     return bn_quant_format_supports_moe_q4_gateup(gate_type, up_type);
@@ -174,6 +181,45 @@ static inline int bn_backend_quant_moe_route_q8(int gate_type,
     return bn_quant_format_supports_moe_q8_route(gate_type,
                                                  up_type,
                                                  down_type);
+}
+
+static inline int bn_backend_quant_moe_routed_q8(int gate_type,
+                                                 int up_type,
+                                                 int down_type) {
+    return bn_backend_quant_moe_route_q8(gate_type, up_type, down_type);
+}
+
+static inline int bn_backend_quant_moe_down_is_q6k(int down_type) {
+    return down_type == BN_GGUF_TENSOR_Q6_K;
+}
+
+static inline int bn_backend_quant_moe_down_is_q4k(int down_type) {
+    return down_type == BN_GGUF_TENSOR_Q4_K;
+}
+
+static inline int bn_backend_quant_moe_down_is_q4k_or_q6k(int down_type) {
+    return bn_backend_quant_moe_down_is_q4k(down_type) ||
+           bn_backend_quant_moe_down_is_q6k(down_type);
+}
+
+static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
+                                                       int k,
+                                                       int down_type,
+                                                       int hidden_dim,
+                                                       int dim) {
+    return n_experts == 2 && k == 2 &&
+           bn_backend_quant_moe_down_is_q6k(down_type) &&
+           hidden_dim >= 4096 && dim <= 2048;
+}
+
+static inline int bn_backend_quant_moe_all2_q4_or_q6_shape(int n_experts,
+                                                           int k,
+                                                           int down_type,
+                                                           int hidden_dim,
+                                                           int dim) {
+    return n_experts == 2 && k == 2 &&
+           bn_backend_quant_moe_down_is_q4k_or_q6k(down_type) &&
+           hidden_dim >= 4096 && dim <= 2048;
 }
 
 static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
