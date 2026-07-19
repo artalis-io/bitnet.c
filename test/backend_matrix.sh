@@ -880,6 +880,11 @@ if grep -n 'BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_REFERENCE_DOT\|BN_C
     fail=1
 fi
 
+if grep -n 'BN_MATVEC_TASK_LLAMA_DOT' include/quant.h src test/test_*.c >/dev/null 2>&1; then
+    echo "Matvec task flags must use behavior names, not model-family aliases"
+    fail=1
+fi
+
 if ! grep -n 'BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_REFERENCE_DOT\|BN_CPU_REFERENCE_Q4_DOT\|BN_CPU_REFERENCE_Q6_DOT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT\|BN_CPU_LLAMA_Q6_DOT\|BN_WASM_Q4_CANONICAL4\|BN_DISABLE_Q8_0_MATMUL_BATCH' src/quant/policy.c >/dev/null 2>&1; then
     echo "quant env compatibility policy must live in src/quant/policy.c"
     fail=1
