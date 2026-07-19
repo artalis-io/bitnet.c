@@ -145,6 +145,13 @@ if sed -n '/^static int cuda_matmul_device_out(/,/^static int cuda_matmul_batch(
     fail=1
 fi
 
+if sed -n '/^static int cuda_matvec_argmax_activation(/,/^static int cuda_dense_ffn(/p' src/gpu_cuda.cu | grep -n 'type != BN_GGUF_TENSOR_Q6_K\|type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1 ||
+   sed -n '/^static int cuda_dense_ffn_batch_impl(/,/^static int cuda_dense_ffn_batch(/p' src/gpu_cuda.cu | grep -n 'gate_type == BN_GGUF_TENSOR_Q5_0\|gate_type == BN_GGUF_TENSOR_Q6_K\|gate_type == BN_GGUF_TENSOR_Q4_K\|gate_type == BN_GGUF_TENSOR_Q5_K\|gate_type == BN_GGUF_TENSOR_Q8_0\|up_type == BN_GGUF_TENSOR_Q5_0\|up_type == BN_GGUF_TENSOR_Q4_K\|up_type == BN_GGUF_TENSOR_Q5_K\|up_type == BN_GGUF_TENSOR_Q8_0\|down_type == BN_GGUF_TENSOR_Q5_0\|down_type == BN_GGUF_TENSOR_Q4_K\|down_type == BN_GGUF_TENSOR_Q5_K\|down_type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
+   sed -n '/^static int cuda_prefill_attention_wo(/,/^static int cuda_prefill_qkv_attention_wo_impl(/p' src/gpu_cuda.cu | grep -n 'wo_type == BN_GGUF_TENSOR_Q5_0\|wo_type == BN_GGUF_TENSOR_Q6_K\|wo_type == BN_GGUF_TENSOR_Q4_K\|wo_type == BN_GGUF_TENSOR_Q5_K\|wo_type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA FFN/prefill output dispatch quant predicates"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

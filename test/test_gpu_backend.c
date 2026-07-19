@@ -3714,6 +3714,26 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_0));
     assert(!bn_backend_quant_cuda_q5_0_matmul_candidate(
         BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_cuda_q5_0_pair_matmul(
+        BN_GGUF_TENSOR_Q5_0, BN_GGUF_TENSOR_Q5_0));
+    assert(!bn_backend_quant_cuda_q5_0_pair_matmul(
+        BN_GGUF_TENSOR_Q5_0, BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_cuda_q8_0_pair_matmul(
+        BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_cuda_q8_0_pair_matmul(
+        BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q5_0));
+    assert(bn_backend_quant_cuda_q4k_pair_matmul(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q4k_pair_matmul(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_cuda_q5k_pair_matmul(
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_cuda_q5k_pair_matmul(
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_q6_logits_argmax_candidate(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_cuda_q6_logits_argmax_candidate(
+        BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_moe_all2_q4q6_shape(2, 2,
                                                 BN_GGUF_TENSOR_Q6_K,
                                                 4096, 2048));

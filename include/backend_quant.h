@@ -334,6 +334,34 @@ static inline int bn_backend_quant_cuda_q5_0_matmul_candidate(int type) {
     return type == BN_GGUF_TENSOR_Q5_0;
 }
 
+static inline int bn_backend_quant_cuda_q5_0_pair_matmul(
+    int first_type, int second_type) {
+    return bn_backend_quant_cuda_q5_0_matmul_candidate(first_type) &&
+           bn_backend_quant_cuda_q5_0_matmul_candidate(second_type);
+}
+
+static inline int bn_backend_quant_cuda_q8_0_pair_matmul(
+    int first_type, int second_type) {
+    return bn_backend_quant_cuda_q8_0_matmul_candidate(first_type) &&
+           bn_backend_quant_cuda_q8_0_matmul_candidate(second_type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_pair_matmul(
+    int first_type, int second_type) {
+    return bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(first_type) &&
+           bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(second_type);
+}
+
+static inline int bn_backend_quant_cuda_q5k_pair_matmul(
+    int first_type, int second_type) {
+    return bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(first_type) &&
+           bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(second_type);
+}
+
+static inline int bn_backend_quant_cuda_q6_logits_argmax_candidate(int type) {
+    return bn_backend_quant_moe_down_is_q6k(type);
+}
+
 static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
                                                        int k,
                                                        int down_type,

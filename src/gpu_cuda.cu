@@ -13690,7 +13690,8 @@ static int cuda_matvec_argmax_activation(void *vctx, void *W_buf, int type,
     if (!ctx || !w || !w->data || !out_token || rows <= 0 || cols <= 0 ||
         buf_idx < 0 || buf_idx >= BN_GPU_VALUE_COUNT)
         return -1;
-    if (type != BN_GGUF_TENSOR_Q6_K || (cols % BN_QK_K) != 0)
+    if (!bn_backend_quant_cuda_q6_logits_argmax_candidate(type) ||
+        (cols % BN_QK_K) != 0)
         return -1;
     float *x = cuda_act(ctx, buf_idx);
     if (!x) return -1;
@@ -14231,7 +14232,8 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         cuda_cublas_matmul_f16(ctx, ctx->d_out, gate, gate_input,
                                hidden_dim * 2, dim, n_tokens) == 0) {
         err = cudaSuccess;
-    } else if (stacked_gateup && gate_type == BN_GGUF_TENSOR_Q4_K &&
+    } else if (stacked_gateup &&
+               bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(gate_type) &&
                (dim % BN_QK_K) == 0) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
@@ -14262,7 +14264,8 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                 ctx->d_out, (const BnBlockQ4K *)gate->data, xq,
                 hidden_dim * 2, dim, n_tokens, 0);
         }
-    } else if (stacked_gateup && gate_type == BN_GGUF_TENSOR_Q5_K &&
+    } else if (stacked_gateup &&
+               bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(gate_type) &&
                (dim % BN_QK_K) == 0) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
@@ -14284,14 +14287,16 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                 ctx->d_out, (const BnBlockQ5K *)gate->data, xq,
                 hidden_dim * 2, dim, n_tokens, 0);
         }
-    } else if (stacked_gateup && gate_type == BN_GGUF_TENSOR_Q5_0 &&
+    } else if (stacked_gateup &&
+               bn_backend_quant_cuda_q5_0_matmul_candidate(gate_type) &&
                (dim & 31) == 0) {
         dim3 grid((((hidden_dim * 2) + 3) / 4 + warps - 1) / warps,
                   n_tokens, 1);
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ5_0 *)gate->data, gate_input,
             hidden_dim * 2, dim, n_tokens, 0);
-    } else if (stacked_gateup && gate_type == BN_GGUF_TENSOR_Q8_0 &&
+    } else if (stacked_gateup &&
+               bn_backend_quant_cuda_q8_0_matmul_candidate(gate_type) &&
                (dim & 31) == 0) {
         if (cuda_launch_q8_0_matmul(ctx, ctx->d_out,
                 (const BnBlockQ8_0 *)gate->data, gate_input,
@@ -14306,8 +14311,8 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                                up, gate_input, hidden_dim, dim,
                                n_tokens) == 0) {
         err = cudaSuccess;
-    } else if (!stacked_gateup && gate_type == BN_GGUF_TENSOR_Q5_0 &&
-        up_type == BN_GGUF_TENSOR_Q5_0 &&
+    } else if (!stacked_gateup &&
+        bn_backend_quant_cuda_q5_0_pair_matmul(gate_type, up_type) &&
         (dim & 31) == 0) {
         dim3 grid(((hidden_dim + 3) / 4 + warps - 1) / warps,
                   n_tokens, 1);
@@ -14317,8 +14322,9 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ5_0 *)up->data, gate_input,
             hidden_dim, dim, n_tokens, (size_t)n_tokens * hidden_dim);
-    } else if (!stacked_gateup && gate_type == BN_GGUF_TENSOR_Q8_0 &&
-               up_type == BN_GGUF_TENSOR_Q8_0 && (dim & 31) == 0) {
+    } else if (!stacked_gateup &&
+               bn_backend_quant_cuda_q8_0_pair_matmul(gate_type, up_type) &&
+               (dim & 31) == 0) {
         if (cuda_launch_q8_0_matmul(ctx, ctx->d_out,
                 (const BnBlockQ8_0 *)gate->data, gate_input,
                 hidden_dim, dim, n_tokens, 0) != 0)
@@ -14327,8 +14333,9 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                 (const BnBlockQ8_0 *)up->data, gate_input,
                 hidden_dim, dim, n_tokens, (size_t)n_tokens * hidden_dim) != 0)
             return -1;
-    } else if (!stacked_gateup && gate_type == BN_GGUF_TENSOR_Q4_K &&
-               up_type == BN_GGUF_TENSOR_Q4_K && (dim % BN_QK_K) == 0) {
+    } else if (!stacked_gateup &&
+               bn_backend_quant_cuda_q4k_pair_matmul(gate_type, up_type) &&
+               (dim % BN_QK_K) == 0) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -14369,8 +14376,9 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
                 ctx->d_out, (const BnBlockQ4K *)up->data, xq, hidden_dim,
                 dim, n_tokens, (size_t)n_tokens * hidden_dim);
         }
-    } else if (!stacked_gateup && gate_type == BN_GGUF_TENSOR_Q5_K &&
-               up_type == BN_GGUF_TENSOR_Q5_K && (dim % BN_QK_K) == 0) {
+    } else if (!stacked_gateup &&
+               bn_backend_quant_cuda_q5k_pair_matmul(gate_type, up_type) &&
+               (dim % BN_QK_K) == 0) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -14435,17 +14443,19 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         cuda_cublas_matmul_f16(ctx, ctx->d_out, down, ctx->d_x,
                                dim, hidden_dim, n_tokens) == 0) {
         err = cudaSuccess;
-    } else if (down_type == BN_GGUF_TENSOR_Q8_0 && (hidden_dim & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q8_0_matmul_candidate(down_type) &&
+               (hidden_dim & 31) == 0) {
         if (cuda_launch_q8_0_matmul(ctx, ctx->d_out,
                 (const BnBlockQ8_0 *)down->data, ctx->d_x,
                 dim, hidden_dim, n_tokens, 0) != 0)
             return -1;
-    } else if (down_type == BN_GGUF_TENSOR_Q5_0 && (hidden_dim & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q5_0_matmul_candidate(down_type) &&
+               (hidden_dim & 31) == 0) {
         dim3 grid(((dim + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ5_0 *)down->data, ctx->d_x,
             dim, hidden_dim, n_tokens, 0);
-    } else if (down_type == BN_GGUF_TENSOR_Q5_K &&
+    } else if (bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(down_type) &&
                (hidden_dim % BN_QK_K) == 0) {
         int x_blocks = (hidden_dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
@@ -16250,7 +16260,8 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         cuda_cublas_matmul_f16(ctx, ctx->d_out, wo, ctx->d_x, wo_rows,
                                wo_cols, n_tokens) == 0) {
         err = cudaSuccess;
-    } else if (wo_type == BN_GGUF_TENSOR_Q4_K && (wo_cols % BN_QK_K) == 0) {
+    } else if (bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(wo_type) &&
+               (wo_cols % BN_QK_K) == 0) {
         int x_blocks = (wo_cols + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -16278,7 +16289,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                 ctx->d_out, (const BnBlockQ4K *)wo->data, xq, wo_rows,
                 wo_cols, n_tokens, 0);
         }
-    } else if (wo_type == BN_GGUF_TENSOR_Q5_K &&
+    } else if (bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(wo_type) &&
                (wo_cols % BN_QK_K) == 0) {
         int x_blocks = (wo_cols + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
@@ -16298,7 +16309,8 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                 ctx->d_out, (const BnBlockQ5K *)wo->data, xq, wo_rows,
                 wo_cols, n_tokens, 0);
         }
-    } else if (wo_type == BN_GGUF_TENSOR_Q6_K && (wo_cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q6k_q8k_matmul_candidate(wo_type) &&
+               (wo_cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_dot_enabled()) {
         int x_blocks = wo_cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, wo_cols, n_tokens) != 0)
@@ -16318,12 +16330,14 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
                 ctx->d_out, (const BnBlockQ6K *)wo->data, xq, wo_rows,
                 wo_cols, n_tokens, 0);
         }
-    } else if (wo_type == BN_GGUF_TENSOR_Q5_0 && (wo_cols & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q5_0_matmul_candidate(wo_type) &&
+               (wo_cols & 31) == 0) {
         dim3 grid(((wo_rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ5_0 *)wo->data, ctx->d_x, wo_rows,
             wo_cols, n_tokens, 0);
-    } else if (wo_type == BN_GGUF_TENSOR_Q8_0 && (wo_cols & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q8_0_matmul_candidate(wo_type) &&
+               (wo_cols & 31) == 0) {
         if (cuda_launch_q8_0_matmul(ctx, ctx->d_out,
                 (const BnBlockQ8_0 *)wo->data, ctx->d_x, wo_rows, wo_cols,
                 n_tokens, 0) != 0)
