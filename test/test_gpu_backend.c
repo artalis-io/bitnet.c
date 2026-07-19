@@ -3618,6 +3618,18 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
         BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_cuda_q5k_deint_pair_matvec(
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_cuda_q5k_deint_pair_matvec(
+        BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_q6q4_pair_matvec(BN_GGUF_TENSOR_Q6_K,
+                                                  BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q6q4_pair_matvec(BN_GGUF_TENSOR_Q4_K,
+                                                   BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_cuda_q4_pair_matvec(BN_GGUF_TENSOR_Q4_K,
+                                                BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q4_pair_matvec(BN_GGUF_TENSOR_Q4_K,
+                                                 BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_moe_all2_q4q6_shape(2, 2,
                                                 BN_GGUF_TENSOR_Q6_K,
                                                 4096, 2048));

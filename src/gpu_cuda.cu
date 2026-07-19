@@ -18773,14 +18773,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 graph_exec && out_offset == 0 && !direct_kv_f16 &&
                 fused_copy_idx < 0;
             if (!direct_kv_f16 && next && i + 2 < n_ops &&
-                op->type == BN_GGUF_TENSOR_Q5_K &&
+                bn_backend_quant_cuda_q5k_deint_pair_matvec(
+                    op->type, ops[i + 2].type) &&
                 (op->cols % BN_QK_K) == 0 && enable_q5k_dot &&
                 out_offset == 0 && bias == NULL && bias_idx < 0 &&
                 fused_copy_idx < 0 &&
                 next->op_code == BN_GPU_CODE_DEINTERLEAVE_Q &&
                 next->buf_in == op->buf_out &&
                 ops[i + 2].op_code == BN_GPU_CODE_MATVEC &&
-                ops[i + 2].type == BN_GGUF_TENSOR_Q5_K &&
                 ops[i + 2].buf_in == op->buf_in &&
                 ops[i + 2].cols == op->cols &&
                 ops[i + 2].rows > 0 &&
@@ -18818,9 +18818,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             if (!direct_kv_f16 && next &&
-                op->type == BN_GGUF_TENSOR_Q6_K &&
+                bn_backend_quant_cuda_q6q4_pair_matvec(op->type,
+                                                       next->type) &&
                 next->op_code == BN_GPU_CODE_MATVEC &&
-                next->type == BN_GGUF_TENSOR_Q4_K &&
                 next->buf_in == op->buf_in &&
                 next->cols == op->cols &&
                 op->cols % BN_QK_K == 0 &&
@@ -18971,9 +18971,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (const float *)NULL, op->rows, op->cols, out_offset);
                 break;
             }
-            if (!direct_kv_f16 && next && op->type == BN_GGUF_TENSOR_Q4_K &&
+            if (!direct_kv_f16 && next &&
+                bn_backend_quant_cuda_q4_pair_matvec(op->type, next->type) &&
                 next->op_code == BN_GPU_CODE_MATVEC &&
-                next->type == BN_GGUF_TENSOR_Q4_K &&
                 next->buf_in == op->buf_in &&
                 next->rows == op->rows &&
                 next->cols == op->cols &&

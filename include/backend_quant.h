@@ -232,6 +232,24 @@ static inline int bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
     return bn_backend_quant_is_q4k(type);
 }
 
+static inline int bn_backend_quant_cuda_q5k_deint_pair_matvec(
+    int first_type, int second_type) {
+    return bn_backend_quant_is_q5k(first_type) &&
+           bn_backend_quant_is_q5k(second_type);
+}
+
+static inline int bn_backend_quant_cuda_q6q4_pair_matvec(
+    int first_type, int second_type) {
+    return bn_backend_quant_moe_down_is_q6k(first_type) &&
+           bn_backend_quant_is_q4k(second_type);
+}
+
+static inline int bn_backend_quant_cuda_q4_pair_matvec(int first_type,
+                                                       int second_type) {
+    return bn_backend_quant_is_q4k(first_type) &&
+           bn_backend_quant_is_q4k(second_type);
+}
+
 static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
                                                        int k,
                                                        int down_type,
