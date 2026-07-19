@@ -1773,6 +1773,11 @@ if grep -n 'bn_gpu_policy_flash_max_kv_or_default\|bn_gpu_policy_kquant_logits_r
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_flash_max_kv_or_default\|bn_gpu_policy_kquant_logits_refine_enabled\|bn_gpu_policy_native_quant_logits_refine_enabled' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU policy API/tests must use backend-aware helpers instead of raw backend booleans"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_backend_small_dense_q8_logits_refine\|bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine\|bn_gpu_policy_backend_q[68]_logits_refine\|bn_gpu_policy_q[68]_logits_refine\|bn_gpu_policy_small_dense_q8_logits_refine\|bn_gpu_policy_all2_q4q6_moe_q6_logits_refine' include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "GPU policy logits refine helpers must use behavior names, not quant-format helper names"
     fail=1

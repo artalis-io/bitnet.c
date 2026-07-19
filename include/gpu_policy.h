@@ -567,8 +567,6 @@ int bn_gpu_policy_backend_resident_moe_ffn_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_moe_gateup_split_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
-                                          int default_max_kv);
 int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_cpu_logits_enabled(void);
 int bn_gpu_policy_compare_logits_enabled(void);
@@ -576,14 +574,9 @@ int bn_gpu_policy_debug_argmax_compare_enabled(void);
 int bn_gpu_policy_backend_kquant_logits_refine_enabled(
     const BnGPUBackend *gpu,
     int kquant_refine_default);
-int bn_gpu_policy_kquant_logits_refine_enabled(int cuda_backend,
-                                               int kquant_refine_default);
 int bn_gpu_policy_kquant_logits_refine_top_or_default(int default_top);
 int bn_gpu_policy_backend_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int native_quant_refine_default);
-int bn_gpu_policy_native_quant_logits_refine_enabled(
-    int cuda_backend,
     int native_quant_refine_default);
 int bn_gpu_policy_native_quant_logits_refine_top_or_default(int default_top);
 int bn_gpu_policy_moe_ffn_disabled(void);
