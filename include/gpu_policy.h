@@ -203,14 +203,33 @@ int bn_gpu_policy_cuda_q5_warp_enabled(void);
 int bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled(void);
 int bn_gpu_policy_cuda_q5k_4warp_enabled(int cols);
 int bn_gpu_policy_cuda_q5k_split_4warp_enabled(int cols);
+int bn_gpu_policy_cuda_q5k_gateup_2warp_enabled(void);
 int bn_gpu_policy_cuda_q4k_dot_enabled(void);
 int bn_gpu_policy_cuda_q5k_dot_enabled(void);
 int bn_gpu_policy_cuda_q4k_4warp_enabled(void);
 int bn_gpu_policy_cuda_q4k_4warp_shape_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled(void);
+int bn_gpu_policy_cuda_q4k_qkv_mixed_fuse_enabled(int tensor_type);
+int bn_gpu_policy_cuda_q4k_split_k_rope_cache_fuse_enabled(void);
+int bn_gpu_policy_cuda_q4k_split_qk_rope_cache_fuse_enabled(void);
+int bn_gpu_policy_cuda_q4k_split_4warp_enabled(int cols);
+int bn_gpu_policy_cuda_q4k_split_5warp_enabled(int cols);
+int bn_gpu_policy_cuda_q4k_split_value_rows(int total_rows, int cols);
+int bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(int value_rows);
+int bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(int q8k_flag);
+int bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(int cols);
+int bn_gpu_policy_cuda_q4k_gateup_5warp_enabled(int enable_q4k_4warp,
+                                                int cols);
+int bn_gpu_policy_cuda_q4k_gateup_2warp_enabled(int enable_q4k_4warp,
+                                                int cols);
+int bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(int enable_q4k_4warp,
+                                                int cols);
 int bn_gpu_policy_cuda_q8_warp_disabled(void);
 int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void);
 int bn_gpu_policy_cuda_q8_0_ssm_preq_enabled(void);
+int bn_gpu_policy_cuda_q8_mixed_preq_enabled(int type_a,
+                                             int type_b,
+                                             int cols);
 int bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void);

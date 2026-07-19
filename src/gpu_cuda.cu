@@ -19382,10 +19382,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_EXEC_FAIL("matvec split invalid args");
             if (split1 > split0 && (!out2 || split1 > total_rows))
                 BN_CUDA_EXEC_FAIL("matvec split invalid third output");
-            int q4k_qkv_mixed_slow =
-                op->type == BN_GGUF_TENSOR_Q4_K &&
-                getenv("BN_CUDA_ENABLE_Q4K_QKV_MIXED_FUSE") == NULL;
-            if (!disable_qkv_mixed_fuse && !q4k_qkv_mixed_slow &&
+            int qkv_mixed_type_enabled =
+                bn_gpu_policy_cuda_q4k_qkv_mixed_fuse_enabled(op->type);
+            if (!disable_qkv_mixed_fuse && qkv_mixed_type_enabled &&
                 next && i + 7 < n_ops &&
                 next->op_code == BN_GPU_CODE_BIAS_ADD &&
                 next->buf_in == op->buf_out &&
@@ -19437,10 +19436,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         ? (total_rows - split0 + 1) / 2
                         : total_rows - split0;
                     const BnCudaBlockQ8_1 *xq_mixed = NULL;
-                    if (getenv("BN_CUDA_ENABLE_Q8_MIXED_PREQ") &&
-                        (op->type == BN_GGUF_TENSOR_Q8_0 ||
-                         ops[i + 5].type == BN_GGUF_TENSOR_Q8_0) &&
-                        (cols & 31) == 0) {
+                    if (bn_gpu_policy_cuda_q8_mixed_preq_enabled(
+                            op->type, ops[i + 5].type, cols)) {
                         if (cuda_ensure_q8_1(ctx, cols) != 0)
                             BN_CUDA_EXEC_FAIL("qkv mixed q8 scratch alloc failed");
                         BnCudaBlockQ8_1 *xq =
@@ -19565,9 +19562,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int fused_k_rope_cache = 0;
                 int fused_q_rope_idx = -1;
                 int k_bias_idx = -1;
-                if (getenv("BN_CUDA_ENABLE_Q4K_SPLIT_K_ROPE_CACHE_FUSE") != NULL &&
+                if (bn_gpu_policy_cuda_q4k_split_k_rope_cache_fuse_enabled() &&
                     next && i + 4 < n_ops &&
-                    getenv("BN_CUDA_DISABLE_Q4K_SPLIT_K_ROPE_CACHE_FUSE") == NULL &&
                     split1 <= split0 &&
                     next->op_code == BN_GPU_CODE_BIAS_ADD &&
                     next->buf_in == op->buf_out &&
@@ -19594,7 +19590,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int rope_dims = (int)ops[i + 3].p[3];
                         int q_rope_idx = i + 8;
                         if (q_rope_idx < n_ops &&
-                            getenv("BN_CUDA_DISABLE_Q4K_SPLIT_QK_ROPE_CACHE_FUSE") == NULL &&
+                            bn_gpu_policy_cuda_q4k_split_qk_rope_cache_fuse_enabled() &&
                             ops[q_rope_idx].op_code == BN_GPU_CODE_ROPE &&
                             ops[q_rope_idx].buf_in == op->buf_out &&
                             (int)ops[q_rope_idx].p[1] == head_size &&
@@ -19641,15 +19637,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     skip_ops[i + 4] = 1;
                     if (fused_q_rope_idx >= 0)
                         skip_ops[fused_q_rope_idx] = 1;
-                } else if (cols == 2048 &&
-                           getenv("BN_CUDA_DISABLE_Q4K_SPLIT_4WARP_2048") == NULL) {
+                } else if (bn_gpu_policy_cuda_q4k_split_4warp_enabled(cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_4warp_kernel,
                         total_rows, 128, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
-                } else if (cols == 2560 &&
-                           getenv("BN_CUDA_DISABLE_Q4K_SPLIT_5WARP_2560") == NULL) {
+                } else if (bn_gpu_policy_cuda_q4k_split_5warp_enabled(cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_5warp_kernel,
                         total_rows, 160, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
@@ -19663,16 +19657,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
                 }
-                int value_rows = 0;
-                if (total_rows == 4608 && cols == 2048)
-                    value_rows = 512;
-                else if (total_rows == 2304 && cols == 2048)
-                    value_rows = 256;
-                else if (total_rows == 1792 && cols == 1536 &&
-                         getenv("BN_CUDA_ENABLE_Q4K_SPLIT_VALUE_FUSE_1792") != NULL)
-                    value_rows = 256;
-                if (getenv("BN_CUDA_DISABLE_Q4K_SPLIT_VALUE_FUSE") == NULL &&
-                    value_rows > 0) {
+                int value_rows =
+                    bn_gpu_policy_cuda_q4k_split_value_rows(total_rows, cols);
+                if (bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(
+                        value_rows)) {
                     int v_idx = -1;
                     for (int si = i + 1; si < n_ops && si <= i + 6; si++) {
                         const BnGPUOp *scan = &ops[si];
@@ -19839,8 +19827,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot &&
                        bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
-                       ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                        getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST") != NULL)) {
+                       bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(
+                           (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) != 0)) {
                 const BnGPUOp *prev_q8k = (i > 0) ? &ops[i - 1] : NULL;
                 int prev_routed_same_input =
                     prev_q8k &&
@@ -19864,8 +19852,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
                 int q4_gateup_threads = 256;
                 int warps = q4_gateup_threads / 32;
-                if (cols <= 4096 &&
-                    getenv("BN_CUDA_DISABLE_Q4K_GATEUP_QWARP4") == NULL) {
+                if (bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(cols)) {
                     int blocks = ((gate_rows + 3) / 4 + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_q8k_dot_fused_gateup_silu_qwarp4_kernel,
@@ -19887,21 +19874,22 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                if (enable_q4k_4warp && cols == 2560 &&
-                    getenv("BN_CUDA_DISABLE_Q4K_GATEUP_5WARP_2560") == NULL) {
+                if (bn_gpu_policy_cuda_q4k_gateup_5warp_enabled(
+                        enable_q4k_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_5warp_kernel,
                         gate_rows, 160, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
-                } else if (enable_q4k_4warp && cols <= 5120 &&
-                    getenv("BN_CUDA_DISABLE_Q4K_GATEUP_2WARP") == NULL) {
+                } else if (bn_gpu_policy_cuda_q4k_gateup_2warp_enabled(
+                               enable_q4k_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_2warp_kernel,
                         gate_rows, 64, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
-                } else if (enable_q4k_4warp && cols <= 8192) {
+                } else if (bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(
+                               enable_q4k_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_4warp_kernel,
                         gate_rows, 128, 0,
@@ -19924,7 +19912,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                if (getenv("BN_CUDA_DISABLE_Q5K_GATEUP_2WARP") == NULL) {
+                if (bn_gpu_policy_cuda_q5k_gateup_2warp_enabled()) {
                     int q5_gateup_threads = 256;
                     int groups = q5_gateup_threads / 64;
                     int blocks = (gate_rows + groups - 1) / groups;

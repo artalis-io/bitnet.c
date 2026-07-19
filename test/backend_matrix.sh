@@ -90,6 +90,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC")\|getenv("BN_CUDA_ENABLE_Q6
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_ENABLE_Q4K_QKV_MIXED_FUSE")\|getenv("BN_CUDA_ENABLE_Q8_MIXED_PREQ")\|getenv("BN_CUDA_ENABLE_Q4K_SPLIT_K_ROPE_CACHE_FUSE")\|getenv("BN_CUDA_DISABLE_Q4K_SPLIT_K_ROPE_CACHE_FUSE")\|getenv("BN_CUDA_DISABLE_Q4K_SPLIT_QK_ROPE_CACHE_FUSE")\|getenv("BN_CUDA_DISABLE_Q4K_SPLIT_4WARP_2048")\|getenv("BN_CUDA_DISABLE_Q4K_SPLIT_5WARP_2560")\|getenv("BN_CUDA_ENABLE_Q4K_SPLIT_VALUE_FUSE_1792")\|getenv("BN_CUDA_DISABLE_Q4K_SPLIT_VALUE_FUSE")\|getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST")\|getenv("BN_CUDA_DISABLE_Q4K_GATEUP_QWARP4")\|getenv("BN_CUDA_DISABLE_Q4K_GATEUP_5WARP_2560")\|getenv("BN_CUDA_DISABLE_Q4K_GATEUP_2WARP")\|getenv("BN_CUDA_DISABLE_Q5K_GATEUP_2WARP")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA QKV split/gate-up env policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||
