@@ -2294,12 +2294,12 @@ int bn_gpu_policy_backend_lazy_moe_aux_cache_supported(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
-int bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+int bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
-int bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+int bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
@@ -2354,42 +2354,44 @@ int bn_gpu_policy_debug_argmax_compare_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX_COMPARE") != NULL;
 }
 
-int bn_gpu_policy_q6_logits_refine_enabled(int cuda_backend,
-                                           int q6_refine_default) {
-    return q6_refine_default ||
+int bn_gpu_policy_kquant_logits_refine_enabled(
+    int cuda_backend,
+    int kquant_refine_default) {
+    return kquant_refine_default ||
            getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL ||
            (!cuda_backend &&
             getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") == NULL);
 }
 
-int bn_gpu_policy_backend_q6_logits_refine_enabled(
+int bn_gpu_policy_backend_kquant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int q6_refine_default) {
-    return bn_gpu_policy_q6_logits_refine_enabled(
-        bn_gpu_policy_backend_is_cuda(gpu), q6_refine_default);
+    int kquant_refine_default) {
+    return bn_gpu_policy_kquant_logits_refine_enabled(
+        bn_gpu_policy_backend_is_cuda(gpu), kquant_refine_default);
 }
 
-int bn_gpu_policy_q6_logits_refine_top_or_default(int default_top) {
+int bn_gpu_policy_kquant_logits_refine_top_or_default(int default_top) {
     const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
     return env ? atoi(env) : default_top;
 }
 
-int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
-                                           int q8_refine_default) {
+int bn_gpu_policy_native_quant_logits_refine_enabled(
+    int cuda_backend,
+    int native_quant_refine_default) {
     return getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL ||
-           q8_refine_default ||
+           native_quant_refine_default ||
            (!cuda_backend &&
             getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") == NULL);
 }
 
-int bn_gpu_policy_backend_q8_logits_refine_enabled(
+int bn_gpu_policy_backend_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int q8_refine_default) {
-    return bn_gpu_policy_q8_logits_refine_enabled(
-        bn_gpu_policy_backend_is_cuda(gpu), q8_refine_default);
+    int native_quant_refine_default) {
+    return bn_gpu_policy_native_quant_logits_refine_enabled(
+        bn_gpu_policy_backend_is_cuda(gpu), native_quant_refine_default);
 }
 
-int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top) {
+int bn_gpu_policy_native_quant_logits_refine_top_or_default(int default_top) {
     const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
     return env ? atoi(env) : default_top;
 }
@@ -2452,13 +2454,13 @@ int bn_gpu_policy_small_dense_prefill_disabled(void) {
                                   "BN_CUDA_DISABLE_SMALL_QWEN_PREFILL");
 }
 
-int bn_gpu_policy_small_dense_q8_logits_refine_enabled(void) {
+int bn_gpu_policy_native_quant_logits_refine_requested(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
         "BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
 }
 
-int bn_gpu_policy_small_dense_q8_logits_refine_disabled(void) {
+int bn_gpu_policy_native_quant_logits_refine_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
         "BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
@@ -2613,7 +2615,7 @@ int bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled(void) {
         "BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
 }
 
-int bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled(void) {
+int bn_gpu_policy_all2_kquant_moe_logits_refine_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE",
         "BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");

@@ -543,9 +543,9 @@ int bn_gpu_policy_backend_dense_batch_prefill_shape_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_lazy_moe_aux_cache_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+int bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+int bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_decode_graph_cache_supported(
     const BnGPUBackend *gpu);
@@ -566,18 +566,19 @@ int bn_gpu_policy_argmax_debug_enabled(void);
 int bn_gpu_policy_cpu_logits_enabled(void);
 int bn_gpu_policy_compare_logits_enabled(void);
 int bn_gpu_policy_debug_argmax_compare_enabled(void);
-int bn_gpu_policy_backend_q6_logits_refine_enabled(
+int bn_gpu_policy_backend_kquant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int q6_refine_default);
-int bn_gpu_policy_q6_logits_refine_enabled(int cuda_backend,
-                                           int q6_refine_default);
-int bn_gpu_policy_q6_logits_refine_top_or_default(int default_top);
-int bn_gpu_policy_backend_q8_logits_refine_enabled(
+    int kquant_refine_default);
+int bn_gpu_policy_kquant_logits_refine_enabled(int cuda_backend,
+                                               int kquant_refine_default);
+int bn_gpu_policy_kquant_logits_refine_top_or_default(int default_top);
+int bn_gpu_policy_backend_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int q8_refine_default);
-int bn_gpu_policy_q8_logits_refine_enabled(int cuda_backend,
-                                           int q8_refine_default);
-int bn_gpu_policy_q8_logits_refine_top_or_default(int default_top);
+    int native_quant_refine_default);
+int bn_gpu_policy_native_quant_logits_refine_enabled(
+    int cuda_backend,
+    int native_quant_refine_default);
+int bn_gpu_policy_native_quant_logits_refine_top_or_default(int default_top);
 int bn_gpu_policy_moe_ffn_disabled(void);
 int bn_gpu_policy_moe_router_topk_enabled(int eligible);
 int bn_gpu_policy_q8_moe_cpu_route_resident_enabled(int eligible);
@@ -590,8 +591,8 @@ int bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled(void);
 int bn_gpu_policy_small_dense_exact_q4_q8_disabled(void);
 int bn_gpu_policy_small_dense_exact_ffn_down_enabled(void);
 int bn_gpu_policy_small_dense_prefill_disabled(void);
-int bn_gpu_policy_small_dense_q8_logits_refine_enabled(void);
-int bn_gpu_policy_small_dense_q8_logits_refine_disabled(void);
+int bn_gpu_policy_native_quant_logits_refine_requested(void);
+int bn_gpu_policy_native_quant_logits_refine_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled(void);
 int bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled(void);
@@ -620,7 +621,7 @@ int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_default_disabled(void);
 int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_disabled(void);
 float bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(float default_eps);
 int bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled(void);
+int bn_gpu_policy_all2_kquant_moe_logits_refine_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled(void);

@@ -785,30 +785,30 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
-    assert(!bn_gpu_policy_q6_logits_refine_enabled(1, 0));
-    assert(bn_gpu_policy_q6_logits_refine_enabled(0, 0));
-    assert(bn_gpu_policy_q6_logits_refine_enabled(1, 1));
-    assert(!bn_gpu_policy_backend_q6_logits_refine_enabled(&gpu, 0));
-    assert(bn_gpu_policy_backend_q6_logits_refine_enabled(&gpu, 1));
+    assert(!bn_gpu_policy_kquant_logits_refine_enabled(1, 0));
+    assert(bn_gpu_policy_kquant_logits_refine_enabled(0, 0));
+    assert(bn_gpu_policy_kquant_logits_refine_enabled(1, 1));
+    assert(!bn_gpu_policy_backend_kquant_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_backend_kquant_logits_refine_enabled(&gpu, 1));
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(bn_gpu_policy_backend_q6_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_backend_kquant_logits_refine_enabled(&gpu, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    assert(bn_gpu_policy_q6_logits_refine_top_or_default(64) == 64);
+    assert(bn_gpu_policy_kquant_logits_refine_top_or_default(64) == 64);
     setenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE", "1", 1);
-    assert(bn_gpu_policy_q6_logits_refine_enabled(1, 0));
-    assert(bn_gpu_policy_backend_q6_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_kquant_logits_refine_enabled(1, 0));
+    assert(bn_gpu_policy_backend_kquant_logits_refine_enabled(&gpu, 0));
     setenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE", "1", 1);
-    assert(bn_gpu_policy_q6_logits_refine_enabled(0, 0));
+    assert(bn_gpu_policy_kquant_logits_refine_enabled(0, 0));
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(bn_gpu_policy_backend_q6_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_backend_kquant_logits_refine_enabled(&gpu, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
-    assert(!bn_gpu_policy_q6_logits_refine_enabled(0, 0));
+    assert(!bn_gpu_policy_kquant_logits_refine_enabled(0, 0));
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_gpu_policy_backend_q6_logits_refine_enabled(&gpu, 0));
+    assert(!bn_gpu_policy_backend_kquant_logits_refine_enabled(&gpu, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     setenv("BN_GPU_Q6_Q8K_REFINE_TOP", "11", 1);
-    assert(bn_gpu_policy_q6_logits_refine_top_or_default(64) == 11);
+    assert(bn_gpu_policy_kquant_logits_refine_top_or_default(64) == 11);
     unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
@@ -816,30 +816,30 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
-    assert(!bn_gpu_policy_q8_logits_refine_enabled(1, 0));
-    assert(bn_gpu_policy_q8_logits_refine_enabled(0, 0));
-    assert(bn_gpu_policy_q8_logits_refine_enabled(1, 1));
-    assert(!bn_gpu_policy_backend_q8_logits_refine_enabled(&gpu, 0));
-    assert(bn_gpu_policy_backend_q8_logits_refine_enabled(&gpu, 1));
+    assert(!bn_gpu_policy_native_quant_logits_refine_enabled(1, 0));
+    assert(bn_gpu_policy_native_quant_logits_refine_enabled(0, 0));
+    assert(bn_gpu_policy_native_quant_logits_refine_enabled(1, 1));
+    assert(!bn_gpu_policy_backend_native_quant_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_backend_native_quant_logits_refine_enabled(&gpu, 1));
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(bn_gpu_policy_backend_q8_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_backend_native_quant_logits_refine_enabled(&gpu, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    assert(bn_gpu_policy_q8_logits_refine_top_or_default(16) == 16);
+    assert(bn_gpu_policy_native_quant_logits_refine_top_or_default(16) == 16);
     setenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE", "1", 1);
-    assert(bn_gpu_policy_q8_logits_refine_enabled(1, 0));
-    assert(bn_gpu_policy_backend_q8_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_native_quant_logits_refine_enabled(1, 0));
+    assert(bn_gpu_policy_backend_native_quant_logits_refine_enabled(&gpu, 0));
     setenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE", "1", 1);
-    assert(bn_gpu_policy_q8_logits_refine_enabled(0, 0));
+    assert(bn_gpu_policy_native_quant_logits_refine_enabled(0, 0));
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(bn_gpu_policy_backend_q8_logits_refine_enabled(&gpu, 0));
+    assert(bn_gpu_policy_backend_native_quant_logits_refine_enabled(&gpu, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
-    assert(!bn_gpu_policy_q8_logits_refine_enabled(0, 0));
+    assert(!bn_gpu_policy_native_quant_logits_refine_enabled(0, 0));
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_gpu_policy_backend_q8_logits_refine_enabled(&gpu, 0));
+    assert(!bn_gpu_policy_backend_native_quant_logits_refine_enabled(&gpu, 0));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     setenv("BN_GPU_Q8_REFINE_TOP", "5", 1);
-    assert(bn_gpu_policy_q8_logits_refine_top_or_default(16) == 5);
+    assert(bn_gpu_policy_native_quant_logits_refine_top_or_default(16) == 5);
     unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
@@ -2554,10 +2554,10 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_backend_matvec_fallback_supported(&gpu));
     assert(bn_gpu_policy_backend_dense_batch_prefill_shape_supported(&gpu));
     assert(bn_gpu_policy_backend_lazy_moe_aux_cache_supported(&gpu));
-    assert(bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+    assert(bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
         &gpu));
     assert(
-        bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+        bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
             &gpu));
     assert(bn_gpu_policy_backend_decode_graph_cache_supported(&gpu));
     assert(bn_gpu_policy_backend_moe_exact_attention_supported(&gpu));
@@ -2579,10 +2579,10 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_backend_matvec_fallback_supported(&gpu));
     assert(!bn_gpu_policy_backend_dense_batch_prefill_shape_supported(&gpu));
     assert(!bn_gpu_policy_backend_lazy_moe_aux_cache_supported(&gpu));
-    assert(!bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+    assert(!bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
         &gpu));
     assert(
-        !bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+        !bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
             &gpu));
     assert(!bn_gpu_policy_backend_decode_graph_cache_supported(&gpu));
     assert(!bn_gpu_policy_backend_moe_exact_attention_supported(&gpu));
@@ -2610,8 +2610,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_small_dense_exact_q4_q8_disabled());
     assert(!bn_gpu_policy_small_dense_exact_ffn_down_enabled());
     assert(!bn_gpu_policy_small_dense_prefill_disabled());
-    assert(!bn_gpu_policy_small_dense_q8_logits_refine_enabled());
-    assert(!bn_gpu_policy_small_dense_q8_logits_refine_disabled());
+    assert(!bn_gpu_policy_native_quant_logits_refine_requested());
+    assert(!bn_gpu_policy_native_quant_logits_refine_disabled());
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE", "1", 1);
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8", "1", 1);
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN", "1", 1);
@@ -2622,8 +2622,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_small_dense_exact_q4_q8_disabled());
     assert(bn_gpu_policy_small_dense_exact_ffn_down_enabled());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
-    assert(bn_gpu_policy_small_dense_q8_logits_refine_enabled());
-    assert(bn_gpu_policy_small_dense_q8_logits_refine_disabled());
+    assert(bn_gpu_policy_native_quant_logits_refine_requested());
+    assert(bn_gpu_policy_native_quant_logits_refine_disabled());
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE");
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8");
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
@@ -2640,8 +2640,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_small_dense_exact_q4_q8_disabled());
     assert(bn_gpu_policy_small_dense_exact_ffn_down_enabled());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
-    assert(bn_gpu_policy_small_dense_q8_logits_refine_enabled());
-    assert(bn_gpu_policy_small_dense_q8_logits_refine_disabled());
+    assert(bn_gpu_policy_native_quant_logits_refine_requested());
+    assert(bn_gpu_policy_native_quant_logits_refine_disabled());
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
@@ -2676,7 +2676,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) ==
            0.25f);
     assert(!bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled());
-    assert(!bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled());
+    assert(!bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled());
@@ -2756,7 +2756,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) <
            0.126f);
     assert(bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled());
+    assert(bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled());
@@ -2863,7 +2863,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) <
            0.063f);
     assert(bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled());
+    assert(bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled());

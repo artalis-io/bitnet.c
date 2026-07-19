@@ -950,29 +950,29 @@ int bn_transformer_gpu_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type) {
-    return bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+    return bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
                gpu) &&
            bn_backend_quant_supports_native_quant_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_dense_q8_logit_refine(c) &&
-           bn_gpu_policy_small_dense_q8_logits_refine_enabled() &&
-           !bn_gpu_policy_small_dense_q8_logits_refine_disabled();
+           bn_gpu_policy_native_quant_logits_refine_requested() &&
+           !bn_gpu_policy_native_quant_logits_refine_disabled();
 }
 
 int bn_transformer_gpu_all2_moe_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
-    return bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+    return bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
                gpu) &&
            bn_transformer_gpu_all_active_two_kquant_moe_model(c, w) &&
            bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled() &&
-           !bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled();
+           !bn_gpu_policy_all2_kquant_moe_logits_refine_disabled();
 }
 
 int bn_transformer_gpu_kquant_logits_refine_enabled(
     const BnGPUBackend *gpu,
     int kquant_refine_default) {
-    return bn_gpu_policy_backend_q6_logits_refine_enabled(
+    return bn_gpu_policy_backend_kquant_logits_refine_enabled(
         gpu, kquant_refine_default);
 }
 
@@ -988,14 +988,14 @@ int bn_transformer_gpu_kquant_logits_refine_captures_xb(
 }
 
 int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default) {
-    return bn_gpu_policy_q6_logits_refine_top_or_default(
+    return bn_gpu_policy_kquant_logits_refine_top_or_default(
         kquant_refine_default ? 64 : 8);
 }
 
 int bn_transformer_gpu_native_quant_logits_refine_active(
     const BnGPUBackend *gpu,
     int native_quant_refine_default) {
-    return bn_gpu_policy_backend_q8_logits_refine_enabled(
+    return bn_gpu_policy_backend_native_quant_logits_refine_enabled(
         gpu, native_quant_refine_default);
 }
 
@@ -1010,7 +1010,7 @@ int bn_transformer_gpu_native_quant_logits_refine_captures_xb(
 
 int bn_transformer_gpu_native_quant_logits_refine_top(
     int native_quant_refine_default) {
-    return bn_gpu_policy_q8_logits_refine_top_or_default(
+    return bn_gpu_policy_native_quant_logits_refine_top_or_default(
         native_quant_refine_default ? 16 : 8);
 }
 
