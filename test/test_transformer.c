@@ -1874,12 +1874,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!route_policy.gpu_route_topk);
     assert(route_policy.cpu_route_resident_ffn);
     assert(route_policy.gpu_routed_ffn);
-    assert(!bn_transformer_gpu_cuda_moe_route_topk_enabled(
-        (void *)2, 1, 0));
     assert(!bn_transformer_gpu_moe_route_topk_enabled(
         (void *)2, 1, 0));
-    assert(bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
-        0, 1, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
     assert(bn_transformer_gpu_moe_routed_ffn_enabled(
         0, 1, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
     assert(route_policy.route_flags == 0);
@@ -1906,12 +1902,8 @@ static void test_gpu_policy_helpers(void) {
     assert(route_policy.gpu_route_topk);
     assert(!route_policy.cpu_route_resident_ffn);
     assert(route_policy.gpu_routed_ffn);
-    assert(bn_transformer_gpu_cuda_moe_route_topk_enabled(
-        (void *)2, 1, 1));
     assert(bn_transformer_gpu_moe_route_topk_enabled(
         (void *)2, 1, 1));
-    assert(bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
-        1, 0, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
     assert(bn_transformer_gpu_moe_routed_ffn_enabled(
         1, 0, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");

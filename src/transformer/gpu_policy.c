@@ -1582,15 +1582,6 @@ int bn_transformer_gpu_moe_route_topk_enabled(
     return bn_gpu_policy_cuda_moe_router_topk_enabled(eligible);
 }
 
-int bn_transformer_gpu_cuda_moe_route_topk_enabled(
-    void *moe_router,
-    int all2_q4q6_moe,
-    int all2_q4q6_moe_gpu_route_layer_selected) {
-    return bn_transformer_gpu_moe_route_topk_enabled(
-        moe_router, all2_q4q6_moe,
-        all2_q4q6_moe_gpu_route_layer_selected);
-}
-
 int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     const BnConfig *c,
     int all2_q4q6_moe,
@@ -1625,20 +1616,6 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
            map->up_cols == dim &&
            map->down_rows == dim &&
            map->down_cols == moe_hidden;
-}
-
-int bn_transformer_gpu_cuda_moe_routed_ffn_enabled(
-    int gpu_route_topk,
-    int cpu_route_resident_ffn,
-    void *moe_gate_all,
-    void *moe_up_all,
-    void *moe_down_all,
-    const BnMoEExpertMap *map,
-    int moe_hidden,
-    int dim) {
-    return bn_transformer_gpu_moe_routed_ffn_enabled(
-        gpu_route_topk, cpu_route_resident_ffn, moe_gate_all, moe_up_all,
-        moe_down_all, map, moe_hidden, dim);
 }
 
 BnTransformerGPUMoEDecodeRoutePolicy
