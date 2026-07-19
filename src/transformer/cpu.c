@@ -79,13 +79,13 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
 
-static void cpu_quant_matvec_batch_preq8k(const BnModel *m,
-                                          const BnMatvecTask *tasks,
-                                          int n_tasks,
-                                          const int8_t *x_q,
-                                          const float *x_d,
-                                          const int16_t *x_bsums,
-                                          const float *x_float) {
+static void cpu_quant_matvec_batch_prepared_kquant(const BnModel *m,
+                                                   const BnMatvecTask *tasks,
+                                                   int n_tasks,
+                                                   const int8_t *x_q,
+                                                   const float *x_d,
+                                                   const int16_t *x_bsums,
+                                                   const float *x_float) {
     if (bn_model_gpu(m)) {
         cpu_quant_matvec_batch_prepared(m, tasks, n_tasks, x_float,
                                         (int8_t *)x_q);
@@ -421,7 +421,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         int q_gated = shape->q_gated;
         int q_wide = shape->q_wide;
 
-        /* Fused attn RMSNorm + Q8K: quantize s->xb once, reuse for Q and K+V */
+        /* Prepared K-quant attn RMSNorm: quantize s->xb once, reuse for Q and K+V */
         int attn_prepared_kquant = 0;
         int attn_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_triple_enabled(
             cpu_ops, bn_model_gpu(m), dim,
@@ -448,7 +448,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             float *k_tmp = s->hb2;
             float *v_tmp = s->hb2 + kv_dim;
 
-            // Q+K+V matvecs (reuse cached Q8K if available)
+            // Q+K+V matvecs (reuse cached prepared K-quant activation if available)
             if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m)) && !c->kv_f16) {
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
@@ -458,7 +458,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
                 k_tmp = key_cache_row;
@@ -470,7 +470,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
             }
@@ -640,7 +640,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
@@ -680,7 +680,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
@@ -714,7 +714,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_preq8k(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
@@ -851,8 +851,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
         { z,   &lw->ssm.wz, NULL, 0 },
     };
     if (ssm_prepared_kquant)
-        cpu_quant_matvec_batch_preq8k(m, qz_tasks, 2, s->x_q,
-                                     ssm_q8k_d, ssm_q8k_bsums, s->xb);
+        cpu_quant_matvec_batch_prepared_kquant(m, qz_tasks, 2, s->x_q,
+                                               ssm_q8k_d, ssm_q8k_bsums, s->xb);
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
@@ -886,8 +886,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     if (ssm_prepared_kquant &&
         bn_transformer_cpu_can_prepared_kquant_pair(
             cpu_ops, lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type)) {
-        cpu_quant_matvec_batch_preq8k(m, ab, 2, s->x_q,
-                                     ssm_q8k_d, ssm_q8k_bsums, s->xb);
+        cpu_quant_matvec_batch_prepared_kquant(m, ab, 2, s->x_q,
+                                               ssm_q8k_d, ssm_q8k_bsums, s->xb);
     } else {
         cpu_quant_matvec_batch_prepared(m, ab, 2, s->xb, s->x_q);
     }
@@ -976,8 +976,8 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
              { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
             { s->hb2, &lw->ffn.ffn_up, NULL, 0 },
         };
-        cpu_quant_matvec_batch_preq8k(m, ffn, 2, s->x_q, q8k_d, q8k_bsums,
-                                     s->xb);
+        cpu_quant_matvec_batch_prepared_kquant(m, ffn, 2, s->x_q, q8k_d,
+                                               q8k_bsums, s->xb);
         fused_gate_up = 1;
     }
 

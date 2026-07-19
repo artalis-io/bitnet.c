@@ -840,6 +840,11 @@ if grep -n 'bn_transformer_cpu_can_preq8k\|bn_transformer_cpu_route_preq8k\|attn
     fail=1
 fi
 
+if grep -n 'cpu_quant_matvec_batch_preq8k' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "Transformer CPU prepared K-quant execution helpers must use behavior names, not preq8k helper names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for preq8k quant capability"
     fail=1
