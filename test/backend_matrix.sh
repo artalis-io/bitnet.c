@@ -1726,6 +1726,11 @@ if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_mo
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_large_hybrid_attention\|bn_gpu_policy_cuda_large_hybrid_cpu_attention_safe\|bn_gpu_policy_cuda_large_hybrid_prefill\|bn_gpu_policy_cuda_large_hybrid_argmax\|bn_gpu_policy_cuda_prefill_dense_chain\|bn_gpu_policy_cuda_prefill_hybrid_chain\|bn_gpu_policy_cuda_prefill_ssm_run_chain\|bn_gpu_policy_cuda_prefill_ssm_ffn_fuse\|bn_gpu_policy_cuda_prefill_moe_chain_debug\|bn_gpu_policy_cuda_prefill_hybrid_chain_debug\|bn_gpu_policy_cuda_moe_prefill_enabled\|bn_gpu_policy_cuda_moe_prefill_min_tokens\|bn_gpu_policy_cuda_moe_cache_prefill\|bn_gpu_policy_cuda_moe_prefill_shared_fuse\|bn_gpu_policy_cuda_moe_route_batch_debug\|bn_gpu_policy_cuda_shared_q4_q8_dot_enabled\|bn_gpu_policy_cuda_shared_expert_gate_enabled' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Prefill and large-hybrid policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT\|BN_CUDA_DISABLE_SHARED_EXPERT_GATE' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for shared MoE compatibility env vars"
     fail=1
