@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// Q4_0 repacked fused gate/up matvec with prequantized Q8 activation blocks.
+// Q4_0 repacked fused gate/up matvec with prepared Q8 activation blocks.
 
 #define TILE_ROWS 16u
 
@@ -47,7 +47,7 @@ static inline float bn_fast_silu(float x) {
     return x / (1.0f + bn_fast_exp(-x));
 }
 
-kernel void q4_fused_gateup_silu_q8_prequant(
+kernel void q4_fused_gateup_silu_prepared_q8(
     device const uint  *weights  [[buffer(0)]],
     device const char  *x_q      [[buffer(1)]],
     device const float *x_scales [[buffer(2)]],

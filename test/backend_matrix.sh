@@ -1262,6 +1262,12 @@ if grep -n 'q8_0_matvec_preq\|cuda_dot_row_q8_0_preq\|prequant scratch\|preq scr
     fail=1
 fi
 
+if grep -n 'q4_native_q8_prequant_matvec\|q4_matvec_split_q8_prequant\|q4_fused_gateup_silu_q8_prequant\|prequantized Q8 activation' \
+    src/gpu_metal.m shaders/metal >/dev/null 2>&1; then
+    echo "Metal prepared-input shader names must use behavior names, not prequant shorthand"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL")\|getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for forced quant matmul env vars"
     fail=1

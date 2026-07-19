@@ -2182,8 +2182,8 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
             ctx->q8_quant_pipeline = compile_shader(ctx, dir,
                 "q8_quantize.metal", "q8_quantize");
             ctx->q4_q8_matvec_pipeline = compile_shader(ctx, dir,
-                "q4_native_q8_prequant_matvec.metal",
-                "q4_native_q8_prequant_matvec");
+                "q4_native_prepared_q8_matvec.metal",
+                "q4_native_prepared_q8_matvec");
             ctx->q4_prepared_q8_matvec_pipeline = compile_shader(ctx, dir,
                 "q4_prepared_q8_matvec.metal",
                 "q4_prepared_q8_matvec");
@@ -2194,11 +2194,11 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 "q4_prepared_q8_gateup.metal",
                 "q4_prepared_q8_gateup");
             ctx->q4_q8_split_pipeline = compile_shader(ctx, dir,
-                "q4_matvec_split_q8_prequant.metal",
-                "q4_matvec_split_q8_prequant");
+                "q4_matvec_split_prepared_q8.metal",
+                "q4_matvec_split_prepared_q8");
             ctx->q4_q8_gateup_pipeline = compile_shader(ctx, dir,
-                "q4_fused_gateup_silu_q8_prequant.metal",
-                "q4_fused_gateup_silu_q8_prequant");
+                "q4_fused_gateup_silu_prepared_q8.metal",
+                "q4_fused_gateup_silu_prepared_q8");
         }
 
         /* Build vtable */
