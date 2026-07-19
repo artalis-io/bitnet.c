@@ -1002,6 +1002,11 @@ if grep -n '== BN_GGUF_TENSOR_\|!= BN_GGUF_TENSOR_' include/backend_quant.h >/de
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_cuda_\|BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_\|BnBackendQuantCudaAuxCacheDequant' include/backend_quant.h >/dev/null 2>&1; then
+    echo "backend quant wrappers must expose backend-neutral helper names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_cuda_matvec_supported\|bn_quant_policy_cuda_matvec_type_disabled\|bn_quant_format_cuda_cublas_aux_cache_supported\|bn_quant_format_cuda_q8_quant_matmul_on_f16_disable\|bn_quant_format_cuda_force_q[46]k_quant_matmul_candidate\|bn_quant_format_cuda_\(logits_q6_f32_cache_supported\|moe_all_f16_cache_supported\|moe_down_q6_f32_cache_supported\|moe_down_cublas_cache_supported\|moe_down_cublas_cache_elem_bytes\|moe_down_q4_f32_cache_supported\|moe_quant_only_after_cache\|lazy_moe_aux_cache_candidate\|moe_prefers_quant_only\|aux_cache_supported\|aux_cache_can_use_f16\|aux_cache_uses_f32\|aux_cache_prefers_large_budget\)' include/quant.h src/quant test/test_quant.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "quant format helpers must expose GPU matvec capability without CUDA env policy"
     fail=1
