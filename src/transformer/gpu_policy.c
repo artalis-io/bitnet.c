@@ -958,16 +958,8 @@ int bn_transformer_gpu_moe_prefill_enabled(void) {
     return bn_gpu_policy_cuda_moe_prefill_enabled();
 }
 
-int bn_transformer_gpu_cuda_moe_prefill_enabled(void) {
-    return bn_transformer_gpu_moe_prefill_enabled();
-}
-
 int bn_transformer_gpu_moe_prefill_min_tokens(void) {
     return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(1);
-}
-
-int bn_transformer_gpu_cuda_moe_prefill_min_tokens(void) {
-    return bn_transformer_gpu_moe_prefill_min_tokens();
 }
 
 int bn_transformer_gpu_moe_prefill_backend_available(
@@ -986,10 +978,6 @@ int bn_transformer_gpu_moe_cache_prefill_enabled(void) {
     return bn_gpu_policy_cuda_moe_cache_prefill_enabled();
 }
 
-int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void) {
-    return bn_transformer_gpu_moe_cache_prefill_enabled();
-}
-
 int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -1002,10 +990,6 @@ int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
 
 int bn_transformer_gpu_moe_prefill_shared_fuse_enabled(void) {
     return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
-}
-
-int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void) {
-    return bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_shared_batch_available(
@@ -1033,10 +1017,6 @@ int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
 
 int bn_transformer_gpu_moe_route_batch_debug_enabled(void) {
     return bn_gpu_policy_cuda_moe_route_batch_debug_enabled();
-}
-
-int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void) {
-    return bn_transformer_gpu_moe_route_batch_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_route_batch_available(
@@ -1109,10 +1089,6 @@ int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
 
 int bn_transformer_gpu_moe_lazy_aux_cache_enabled(void) {
     return bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled();
-}
-
-int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void) {
-    return bn_transformer_gpu_moe_lazy_aux_cache_enabled();
 }
 
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(

@@ -502,22 +502,18 @@ int bn_transformer_gpu_prefill_ssm_run_chain_enabled(void);
 int bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed(void);
 int bn_transformer_gpu_prefill_moe_chain_debug_enabled(void);
 int bn_transformer_gpu_prefill_hybrid_chain_debug_enabled(void);
-int bn_transformer_gpu_cuda_moe_prefill_enabled(void);
 int bn_transformer_gpu_moe_prefill_enabled(void);
-int bn_transformer_gpu_cuda_moe_prefill_min_tokens(void);
 int bn_transformer_gpu_moe_prefill_min_tokens(void);
 int bn_transformer_gpu_moe_prefill_backend_available(
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_moe_prefill_tokens_allowed(
     const BnGPUBackend *gpu,
     int n_tokens);
-int bn_transformer_gpu_cuda_moe_cache_prefill_enabled(void);
 int bn_transformer_gpu_moe_cache_prefill_enabled(void);
 int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int gpu_moe_cache_available);
-int bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled(void);
 int bn_transformer_gpu_moe_prefill_shared_fuse_enabled(void);
 int bn_transformer_gpu_moe_prefill_shared_batch_available(
     const BnGPUBackend *gpu,
@@ -528,7 +524,6 @@ int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
     const BnConfig *c,
     const BnLayerWeights *lw,
     int backend_available);
-int bn_transformer_gpu_cuda_moe_route_batch_debug_enabled(void);
 int bn_transformer_gpu_moe_route_batch_debug_enabled(void);
 int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
@@ -561,7 +556,6 @@ int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
     const BnGPUBackend *gpu,
     int n_tokens);
 int bn_transformer_gpu_moe_lazy_aux_cache_enabled(void);
-int bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled(void);
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     const BnGPUBackend *gpu,
     int tensor_type,

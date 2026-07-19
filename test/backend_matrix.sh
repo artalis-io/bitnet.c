@@ -1271,6 +1271,11 @@ if grep -n 'bn_transformer_gpu_cuda_prefill_\(dense_chain_enabled\|hybrid_chain_
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_cuda_moe_\(prefill_enabled\|prefill_min_tokens\|cache_prefill_enabled\|prefill_shared_fuse_enabled\|route_batch_debug_enabled\|lazy_aux_cache_enabled\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+    echo "MoE prefill transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
+    fail=1
+fi
+
 if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arch.h src/model_arch.c >/dev/null 2>&1; then
     echo "model_arch must expose backend-neutral policy names, not CUDA-named aliases"
     fail=1

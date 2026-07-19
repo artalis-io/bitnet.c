@@ -1433,21 +1433,16 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_prefill_moe_chain_applicable(&gpu, &c));
 
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
-    assert(bn_transformer_gpu_cuda_moe_prefill_min_tokens() == 1);
     assert(bn_transformer_gpu_moe_prefill_min_tokens() == 1);
     setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "0", 1);
-    assert(bn_transformer_gpu_cuda_moe_prefill_min_tokens() == 1);
     assert(bn_transformer_gpu_moe_prefill_min_tokens() == 1);
     setenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS", "9", 1);
-    assert(bn_transformer_gpu_cuda_moe_prefill_min_tokens() == 9);
     assert(bn_transformer_gpu_moe_prefill_min_tokens() == 9);
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
 
     unsetenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL");
-    assert(bn_transformer_gpu_cuda_moe_cache_prefill_enabled());
     assert(bn_transformer_gpu_moe_cache_prefill_enabled());
     setenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL", "1", 1);
-    assert(!bn_transformer_gpu_cuda_moe_cache_prefill_enabled());
     assert(!bn_transformer_gpu_moe_cache_prefill_enabled());
     unsetenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL");
 
@@ -1499,27 +1494,21 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT");
 
     unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE");
-    assert(bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled());
     assert(bn_transformer_gpu_moe_prefill_shared_fuse_enabled());
     setenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE", "1", 1);
-    assert(!bn_transformer_gpu_cuda_moe_prefill_shared_fuse_enabled());
     assert(!bn_transformer_gpu_moe_prefill_shared_fuse_enabled());
     unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE");
 
     unsetenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH");
-    assert(!bn_transformer_gpu_cuda_moe_route_batch_debug_enabled());
     assert(!bn_transformer_gpu_moe_route_batch_debug_enabled());
     setenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH", "1", 1);
-    assert(bn_transformer_gpu_cuda_moe_route_batch_debug_enabled());
     assert(bn_transformer_gpu_moe_route_batch_debug_enabled());
     unsetenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH");
 
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
     assert(!bn_transformer_gpu_moe_lazy_aux_cache_enabled());
-    assert(!bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled());
     setenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE", "1", 1);
     assert(bn_transformer_gpu_moe_lazy_aux_cache_enabled());
-    assert(bn_transformer_gpu_cuda_moe_lazy_aux_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
 
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
