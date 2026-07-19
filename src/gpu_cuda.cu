@@ -14013,7 +14013,7 @@ static int cuda_dense_ffn(void *vctx, float *out,
         return -1;
     if (!ctx || !out || !gate || !up || !down || !x ||
         !gate->data || !up->data || !down->data ||
-        dim <= 0 || hidden_dim <= 0 || act_type != 0)
+        dim <= 0 || hidden_dim <= 0 || !cuda_activation_is_silu(act_type))
         return -1;
     if (gate->rows != hidden_dim || up->rows != hidden_dim ||
         gate->cols != dim || up->cols != dim ||
@@ -14110,7 +14110,8 @@ static int cuda_dense_ffn_batch_device(BnCudaCtx *ctx, float *d_out,
     int stacked_gateup = up == NULL;
     if (!ctx || !d_out || !gate || !down || !d_X ||
         !gate->data || !down->data ||
-        n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 || act_type != 0)
+        n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
+        !cuda_activation_is_silu(act_type))
         return -1;
     if ((!stacked_gateup &&
          (up == NULL || !up->data || up->rows != hidden_dim ||
@@ -14182,7 +14183,8 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         return -1;
     if (!ctx || !out || !gate || !down || !X ||
         !gate->data || !down->data ||
-        n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 || act_type != 0)
+        n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
+        !cuda_activation_is_silu(act_type))
         return -1;
     if ((!stacked_gateup &&
          (up == NULL || !up->data || up->rows != hidden_dim ||
@@ -14631,7 +14633,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
         return -1;
     if (!ctx || !out || !experts || !expert_offsets || !expert_counts ||
         !token_ids || !weights || !X || n_experts <= 0 || n_tokens <= 0 ||
-        dim <= 0 || hidden_dim <= 0 || act_type != 0)
+        dim <= 0 || hidden_dim <= 0 || !cuda_activation_is_silu(act_type))
         return -1;
     int has_shared = shared_gate || shared_up || shared_down ||
                      shared_gate_weight || shared_hidden_dim > 0;
@@ -14992,7 +14994,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     if (!ctx || !out || !gate || !up || !down || !indices || !weights ||
         !X || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
-        n_experts <= 0 || k <= 0 || act_type != 0 ||
+        n_experts <= 0 || k <= 0 || !cuda_activation_is_silu(act_type) ||
         (!routed_q4 && !routed_q8) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
         return -1;
@@ -15357,7 +15359,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     if (!ctx || !router || !gate || !up || !down || (!X && !ctx->d_out) ||
         !router->data || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
-        n_experts <= 0 || k <= 0 || k > BN_MAX_MOE_K || act_type != 0 ||
+        n_experts <= 0 || k <= 0 || k > BN_MAX_MOE_K ||
+        !cuda_activation_is_silu(act_type) ||
         !bn_backend_quant_already_f32(router->type) ||
         router->rows < n_experts || router->cols < dim ||
         (!routed_q4 && !routed_q8) ||
@@ -16764,7 +16767,7 @@ static int cuda_prefill_moe_layer(
         float expert_weights_scale) {
     if (bn_gpu_policy_cuda_prefill_moe_layer_disabled())
         return -1;
-    if (act_type != 0)
+    if (!cuda_activation_is_silu(act_type))
         return -1;
     if (cuda_prefill_qkv_attention_wo_impl(
             vctx, NULL, qk_buf, wv_buf, wo_buf, attn_norm_buf, q_norm_buf,
@@ -16825,7 +16828,8 @@ static int cuda_prefill_dense_layer(
         hidden_dim <= 0 || n_heads <= 0 || n_kv_heads <= 0 ||
         head_size <= 0 || kv_mul <= 0 || kv_dim <= 0 ||
         kv_cache_stride < kv_dim ||
-        n_heads / kv_mul != n_kv_heads || act_type != 0 ||
+        n_heads / kv_mul != n_kv_heads ||
+        !cuda_activation_is_silu(act_type) ||
         (!packed_qkv && !q_gated && qk_rows != q_dim + kv_dim) ||
         (!packed_qkv && wv_rows != kv_dim) ||
         wo_cols != n_heads * head_size || wo->rows != wo_rows ||

@@ -559,6 +559,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_DENSE_FFN")\|getenv("BN_CUDA_DISABLE_DENSE_FF
     fail=1
 fi
 
+if grep -n 'act_type != 0' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use activation policy helpers instead of raw SiLU activation sentinel checks"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_ARGMAX_FAST")\|getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA argmax env policy"
     fail=1
