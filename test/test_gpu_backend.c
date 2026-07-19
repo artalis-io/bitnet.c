@@ -1163,7 +1163,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q8_preq_all_enabled());
     assert(!bn_gpu_policy_cuda_q8_preq_logits_disabled());
     assert(bn_gpu_policy_cuda_q8_preq_logits_default_enabled(0));
-    assert(bn_gpu_policy_cuda_q8k_input_cache_enabled());
+    assert(bn_gpu_policy_prepared_kquant_input_cache_enabled());
     setenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL", "1", 1);
     setenv("BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT", "1", 1);
     setenv("BN_CUDA_ENABLE_Q8_PREQ", "1", 1);
@@ -1184,7 +1184,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q8_preq_all_enabled());
     assert(bn_gpu_policy_cuda_q8_preq_logits_disabled());
     assert(!bn_gpu_policy_cuda_q8_preq_logits_default_enabled(1));
-    assert(!bn_gpu_policy_cuda_q8k_input_cache_enabled());
+    assert(!bn_gpu_policy_prepared_kquant_input_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q8_0_QUANT_MATMUL");
     unsetenv("BN_CUDA_DISABLE_F16_Q8_0_MATMUL");
@@ -1746,8 +1746,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_q4k_split_value_rows(1792, 1536) == 0);
     assert(bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(256));
     assert(!bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(0));
-    assert(!bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(0));
-    assert(bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(1));
+    assert(!bn_gpu_policy_kquant_gateup_prepared_path_enabled(0));
+    assert(bn_gpu_policy_kquant_gateup_prepared_path_enabled(1));
     assert(bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(4096));
     assert(!bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(4097));
     assert(bn_gpu_policy_cuda_q4k_gateup_5warp_enabled(1, 2560));
@@ -1847,7 +1847,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q4k_split_5warp_enabled(2560));
     assert(bn_gpu_policy_cuda_q4k_split_value_rows(1792, 1536) == 256);
     assert(!bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(256));
-    assert(bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(0));
+    assert(bn_gpu_policy_kquant_gateup_prepared_path_enabled(0));
     assert(!bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(4096));
     assert(!bn_gpu_policy_cuda_q4k_gateup_5warp_enabled(1, 2560));
     assert(!bn_gpu_policy_cuda_q4k_gateup_2warp_enabled(1, 5120));
@@ -1899,11 +1899,11 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_Q4K_MATMUL8");
     unsetenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH");
     unsetenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH");
-    assert(bn_gpu_policy_cuda_q4k_q8k_dot_enabled());
-    assert(!bn_gpu_policy_cuda_q4k_q8k_dot_forced());
+    assert(bn_gpu_policy_kquant_dot_enabled());
+    assert(!bn_gpu_policy_kquant_dot_forced());
     assert(bn_gpu_policy_cuda_q4k_pair_matvec_enabled());
-    assert(!bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled(8192));
-    assert(bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled(16384));
+    assert(!bn_gpu_policy_kquant_matvec4_enabled(8192));
+    assert(bn_gpu_policy_kquant_matvec4_enabled(16384));
     assert(!bn_gpu_policy_cuda_q4k_matmul8_enabled());
     assert(bn_gpu_policy_cuda_q4k_sharedx_enabled());
     assert(!bn_gpu_policy_cuda_q4k_batch_sharedx_enabled());
@@ -1914,10 +1914,10 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_Q4K_MATMUL8", "1", 1);
     setenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH", "1", 1);
     setenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH", "1", 1);
-    assert(!bn_gpu_policy_cuda_q4k_q8k_dot_enabled());
-    assert(bn_gpu_policy_cuda_q4k_q8k_dot_forced());
+    assert(!bn_gpu_policy_kquant_dot_enabled());
+    assert(bn_gpu_policy_kquant_dot_forced());
     assert(!bn_gpu_policy_cuda_q4k_pair_matvec_enabled());
-    assert(!bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled(16384));
+    assert(!bn_gpu_policy_kquant_matvec4_enabled(16384));
     assert(bn_gpu_policy_cuda_q4k_matmul8_enabled());
     assert(!bn_gpu_policy_cuda_q4k_sharedx_enabled());
     assert(bn_gpu_policy_cuda_q4k_batch_sharedx_enabled());

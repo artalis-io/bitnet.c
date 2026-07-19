@@ -634,6 +634,18 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT")\|getenv("BN_CUDA_ENABLE_Q4K_Q8
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q8k_input_cache_enabled\|bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled\|bn_gpu_policy_cuda_q4k_q8k_dot_enabled\|bn_gpu_policy_cuda_q4k_q8k_dot_forced\|bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "K-quant GPU policy helpers must use backend-neutral behavior names"
+    fail=1
+fi
+
+if ! grep -n 'bn_gpu_policy_prepared_kquant_input_cache_enabled' src/gpu_cuda.cu >/dev/null 2>&1 ||
+   ! grep -n 'bn_gpu_policy_kquant_dot_enabled' src/gpu_cuda.cu >/dev/null 2>&1 ||
+   ! grep -n 'bn_gpu_policy_kquant_gateup_prepared_path_enabled' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA backend must compose K-quant GPU policy through behavior-named helpers"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_DOT")\|getenv("BN_CUDA_ENABLE_Q6K_DOT")\|getenv("BN_CUDA_ENABLE_Q6K_WARP")\|getenv("BN_CUDA_ENABLE_Q6K_MATMUL8")\|getenv("BN_CUDA_DISABLE_Q6K_MATMUL4")\|getenv("BN_CUDA_ENABLE_Q6K_BATCH_WARP")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA Q6 matvec/matmul env policy"
     fail=1

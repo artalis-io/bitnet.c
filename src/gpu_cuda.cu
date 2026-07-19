@@ -12958,7 +12958,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
     } else if (bn_backend_quant_q4k_q8k_matmul_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
                n_tokens > 1 &&
-               bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
+               bn_gpu_policy_kquant_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
             return -1;
@@ -13136,7 +13136,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_q4k_q8k_matvec_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
+               bn_gpu_policy_kquant_dot_enabled()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(cols / BN_QK_K, 1, 1),
@@ -13230,7 +13230,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         err = cudaSuccess;
     } else if (bn_backend_quant_q4k_q8k_matmul_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
+               bn_gpu_policy_kquant_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
             return -1;
@@ -18445,7 +18445,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     int q8k_input_cache_tokens = 0;
     int q8k_input_cache_mark_op = -1;
     const int enable_q8k_input_cache =
-        bn_gpu_policy_cuda_q8k_input_cache_enabled();
+        bn_gpu_policy_prepared_kquant_input_cache_enabled();
 #define BN_CUDA_Q8K_INPUT_CACHE_MARK(buf_, cols_, tokens_) do { \
         q8k_input_cache_valid = enable_q8k_input_cache; \
         q8k_input_cache_buf = (buf_); \
@@ -18545,8 +18545,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                rop->type) &&
                            (rop->cols % BN_QK_K) == 0 && enable_q4k_dot &&
                            ((rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                            bn_gpu_policy_cuda_q4k_q8k_dot_forced()) &&
-                           bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
+                            bn_gpu_policy_kquant_dot_forced()) &&
+                           bn_gpu_policy_kquant_dot_enabled()) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
                 } else if (bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch(
@@ -19247,8 +19247,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_q4k_dot &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                        bn_gpu_policy_cuda_q4k_q8k_dot_forced()) &&
-                       bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
+                        bn_gpu_policy_kquant_dot_forced()) &&
+                       bn_gpu_policy_kquant_dot_enabled()) {
                 int reuse_q8k_input =
                     BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, op->cols, 1) &&
                     q8k_input_cache_mark_op == i - 1;
@@ -19265,7 +19265,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, op->cols, 1);
                 int q4_threads = 256;
                 int warps = q4_threads / 32;
-                if (bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled(op->cols)) {
+                if (bn_gpu_policy_kquant_matvec4_enabled(op->cols)) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_q8k_dot_matvec4_kernel, blocks,
@@ -19594,7 +19594,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (bn_backend_quant_q4k_split_q8k_candidate(op->type) &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_q4k_dot &&
                 (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) &&
-                bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
+                bn_gpu_policy_kquant_dot_enabled()) {
                 int reuse_q8k_input =
                     BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, cols, 1) &&
                     q8k_input_cache_mark_op == i - 1;
@@ -19900,8 +19900,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (bn_backend_quant_q4k_fused_gateup_q8k_candidate(
                            op->type) &&
                        (cols % BN_QK_K) == 0 && enable_q4k_dot &&
-                       bn_gpu_policy_cuda_q4k_q8k_dot_enabled() &&
-                       bn_gpu_policy_cuda_q4k_gateup_q8k_path_enabled(
+                       bn_gpu_policy_kquant_dot_enabled() &&
+                       bn_gpu_policy_kquant_gateup_prepared_path_enabled(
                            (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) != 0)) {
                 const BnGPUOp *prev_q8k = (i > 0) ? &ops[i - 1] : NULL;
                 int prev_routed_same_input =
