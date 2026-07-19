@@ -1316,6 +1316,11 @@ if grep -n 'bn_gpu_policy_cuda_layout_reserve_bytes\|optional CUDA layout\|estim
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_layout_reserve_bytes\|bn_gpu_policy_cuda_moe_full_reserve_bytes' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU reserve policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled\|bn_gpu_policy_cuda_logits_f16_cache_enabled' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use behavior-named GPU policy helpers for logits upload cache policy"
     fail=1

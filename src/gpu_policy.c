@@ -468,22 +468,22 @@ static size_t positive_env_mb_or_default(const char *name, size_t def) {
     return (size_t)v;
 }
 
-size_t bn_gpu_policy_cuda_layout_reserve_bytes(void) {
+static size_t gpu_policy_layout_reserve_bytes(void) {
     return mb_to_bytes_saturating(
         env_mb_or_default("BN_CUDA_LAYOUT_RESERVE_MB", 512));
 }
 
 size_t bn_gpu_policy_layout_reserve_bytes(void) {
-    return bn_gpu_policy_cuda_layout_reserve_bytes();
+    return gpu_policy_layout_reserve_bytes();
 }
 
-size_t bn_gpu_policy_cuda_moe_full_reserve_bytes(void) {
+static size_t gpu_policy_moe_full_reserve_bytes(void) {
     return mb_to_bytes_saturating(
         env_mb_or_default("BN_CUDA_MOE_FULL_RESERVE_MB", 512));
 }
 
 size_t bn_gpu_policy_moe_full_reserve_bytes(void) {
-    return bn_gpu_policy_cuda_moe_full_reserve_bytes();
+    return gpu_policy_moe_full_reserve_bytes();
 }
 
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void) {
