@@ -18994,7 +18994,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bias == NULL && bias_idx < 0 &&
                 (op->cols % BN_QK_K) == 0 &&
                 enable_q4k_dot &&
-                getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC") == NULL) {
+                bn_gpu_policy_cuda_q4k_pair_matvec_enabled()) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {
@@ -19038,24 +19038,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                         (enable_q6k_dot && op->cols >= 2048))) {
                 int use_q6k_q8_1 =
-                    getenv("BN_CUDA_ENABLE_Q6K_Q8_1_DOT") != NULL &&
-                    getenv("BN_CUDA_DISABLE_Q6K_Q8_1_DOT") == NULL &&
-                    (is_logits_op ||
-                     getenv("BN_CUDA_ENABLE_Q6K_Q8_1_ALL") != NULL);
+                    bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(is_logits_op);
                 int use_q6k_mmvq =
-                    (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) == 0 &&
-                    getenv("BN_CUDA_DISABLE_Q6K_MMVQ") == NULL &&
-                    ((op->cols >= 4096 && op->rows >= 5120) ||
-                     (op->cols >= 2048 && op->rows >= 50000) ||
-                     (op->rows == 512 && op->cols == 2048 &&
-                      getenv("BN_CUDA_DISABLE_Q6K_MMVQ_512_2048") == NULL) ||
-                     (op->rows == 1536 && op->cols == 8960 &&
-                      getenv("BN_CUDA_DISABLE_Q6K_MMVQ_1536_8960") == NULL) ||
-                     ((op->rows == 2560 && op->cols == 9728) &&
-                      getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2560_9728") == NULL) ||
-                     (is_logits_op && op->cols == 1536 &&
-                      op->rows >= 50000 &&
-                      getenv("BN_CUDA_DISABLE_Q6K_MMVQ_LOGITS_1536") == NULL)) &&
+                    bn_gpu_policy_cuda_q6k_mmvq_enabled(
+                        op->rows, op->cols, is_logits_op,
+                        (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) != 0) &&
                     bias == NULL && bias_idx < 0;
                 if (use_q6k_mmvq) {
                     if (cuda_ensure_q8_1(ctx, op->cols) != 0)
@@ -19064,13 +19051,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         quantize_q8_1_kernel, (op->cols + 31) / 32, 32, 0,
                         xq, in, op->cols);
-                    if (is_logits_op && op->cols <= 2560 &&
-                        op->rows >= 50000 &&
-                        ((op->cols == 1536 &&
-                          getenv("BN_CUDA_DISABLE_Q6K_MMVQ_LOGITS_1536") == NULL) ||
-                         (op->cols > 1536 &&
-                          getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_LOGITS_SMALL") == NULL)) &&
-                        getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_1536") == NULL) {
+                    if (bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled(
+                            op->rows, op->cols, is_logits_op)) {
                         BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                             q6k_dot_matvec_mmvq_2warp_kernel, op->rows,
                             64, 0, out, (const BnBlockQ6K *)w->data, xq,
@@ -19138,7 +19120,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if (cuda_use_q6k_4warp_long(op->rows, op->cols)) {
                     int blocks = op->rows;
                     int fuse_resid_norm =
-                        getenv("BN_CUDA_ENABLE_Q6K_DOWN_RESID_RMSNORM_FUSE") != NULL &&
+                        bn_gpu_policy_cuda_q6k_down_residual_rmsnorm_fuse_enabled() &&
                         next && next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                         next->buf_in == BN_GPU_VALUE_X &&
                         next->buf_aux == op->buf_out &&
@@ -19222,8 +19204,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, op->cols, 1);
                 int q4_threads = 256;
                 int warps = q4_threads / 32;
-                if (op->cols >= 16384 &&
-                    getenv("BN_CUDA_DISABLE_Q4K_Q8K_MATVEC4") == NULL) {
+                if (bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled(op->cols)) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_q8k_dot_matvec4_kernel, blocks,
@@ -19247,13 +19228,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
                 if (enable_q4k_4warp &&
-                    (op->cols <= 8192 ||
-                     (op->rows == 1536 && op->cols == 8960 &&
-                      getenv("BN_CUDA_DISABLE_Q4K_4WARP_1536_8960") == NULL) ||
-                     (op->rows == 2560 && op->cols == 9728 &&
-                      getenv("BN_CUDA_DISABLE_Q4K_4WARP_2560_9728") == NULL))) {
+                    bn_gpu_policy_cuda_q4k_4warp_shape_enabled(op->rows,
+                                                               op->cols)) {
                     int fuse_resid_norm =
-                        getenv("BN_CUDA_ENABLE_Q4K_OUT_RESID_RMSNORM_FUSE") != NULL &&
+                        bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled() &&
                         next && next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                         next->buf_in == BN_GPU_VALUE_X &&
                         next->buf_aux == op->buf_out &&
@@ -19305,8 +19283,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
-                if (op->cols <= 8192 &&
-                    getenv("BN_CUDA_DISABLE_Q5K_4WARP") == NULL) {
+                if (bn_gpu_policy_cuda_q5k_4warp_enabled(op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q5k_dot_matvec_4warp_kernel, op->rows, 128, 0,
                         out, (const BnBlockQ5K *)w->data, xq, bias,
@@ -19322,7 +19299,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if ((enable_q8_preq_all ||
                         (q8_small_ssm_matvec &&
-                         getenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ") == NULL) ||
+                         bn_gpu_policy_cuda_q8_0_ssm_preq_enabled()) ||
                         (is_logits_op && q8_preq_logits_default)) &&
                        op->type == BN_GGUF_TENSOR_Q8_0 &&
                        (op->cols & 31) == 0) {
@@ -19774,9 +19751,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
-                if (cols <= 8192 &&
-                    getenv("BN_CUDA_ENABLE_Q5K_SPLIT_4WARP") != NULL &&
-                    getenv("BN_CUDA_DISABLE_Q5K_4WARP") == NULL) {
+                if (bn_gpu_policy_cuda_q5k_split_4warp_enabled(cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         q5k_dot_matvec_split_4warp_kernel, total_rows, 128,
                         0, out0, out1, out2,

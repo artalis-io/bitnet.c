@@ -85,6 +85,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC")\|getenv("BN_CUDA_ENAB
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC")\|getenv("BN_CUDA_ENABLE_Q6K_Q8_1_DOT")\|getenv("BN_CUDA_DISABLE_Q6K_Q8_1_DOT")\|getenv("BN_CUDA_ENABLE_Q6K_Q8_1_ALL")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_512_2048")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_1536_8960")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2560_9728")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_LOGITS_1536")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_LOGITS_SMALL")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_1536")\|getenv("BN_CUDA_ENABLE_Q6K_DOWN_RESID_RMSNORM_FUSE")\|getenv("BN_CUDA_DISABLE_Q4K_Q8K_MATVEC4")\|getenv("BN_CUDA_DISABLE_Q4K_4WARP_1536_8960")\|getenv("BN_CUDA_DISABLE_Q4K_4WARP_2560_9728")\|getenv("BN_CUDA_ENABLE_Q4K_OUT_RESID_RMSNORM_FUSE")\|getenv("BN_CUDA_DISABLE_Q5K_4WARP")\|getenv("BN_CUDA_ENABLE_Q5K_SPLIT_4WARP")\|getenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA Q4/Q6/Q8 matvec variant env policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

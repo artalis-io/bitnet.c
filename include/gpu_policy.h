@@ -201,16 +201,23 @@ int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void);
 int bn_gpu_policy_cuda_q5_matvec4_enabled(void);
 int bn_gpu_policy_cuda_q5_warp_enabled(void);
 int bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled(void);
+int bn_gpu_policy_cuda_q5k_4warp_enabled(int cols);
+int bn_gpu_policy_cuda_q5k_split_4warp_enabled(int cols);
 int bn_gpu_policy_cuda_q4k_dot_enabled(void);
 int bn_gpu_policy_cuda_q5k_dot_enabled(void);
 int bn_gpu_policy_cuda_q4k_4warp_enabled(void);
+int bn_gpu_policy_cuda_q4k_4warp_shape_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled(void);
 int bn_gpu_policy_cuda_q8_warp_disabled(void);
 int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void);
+int bn_gpu_policy_cuda_q8_0_ssm_preq_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void);
+int bn_gpu_policy_cuda_q4k_pair_matvec_enabled(void);
 int bn_gpu_policy_cuda_q4k_q8k_dot_enabled(void);
 int bn_gpu_policy_cuda_q4k_q8k_dot_forced(void);
+int bn_gpu_policy_cuda_q4k_q8k_matvec4_enabled(int cols);
 int bn_gpu_policy_cuda_q4k_matmul8_enabled(void);
 int bn_gpu_policy_cuda_q4k_sharedx_enabled(void);
 int bn_gpu_policy_cuda_q4k_batch_sharedx_enabled(void);
@@ -218,6 +225,15 @@ int bn_gpu_policy_cuda_q6k_dot_enabled(void);
 int bn_gpu_policy_cuda_q6k_dot_forced(void);
 int bn_gpu_policy_cuda_q6k_warp_enabled(void);
 int bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled(int cols);
+int bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(int is_logits_op);
+int bn_gpu_policy_cuda_q6k_mmvq_enabled(int rows,
+                                        int cols,
+                                        int is_logits_op,
+                                        int exact_q6k);
+int bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled(int rows,
+                                                     int cols,
+                                                     int is_logits_op);
+int bn_gpu_policy_cuda_q6k_down_residual_rmsnorm_fuse_enabled(void);
 int bn_gpu_policy_cuda_f16_q6k_matvec_enabled(int rows,
                                               int cols,
                                               int exact_q6k);
