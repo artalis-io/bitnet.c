@@ -3832,6 +3832,19 @@ static void test_block_planning(void) {
     ffn_plan.activation = 0;
     route_gpu.dense_ffn = NULL;
 
+    assert(bn_transformer_cpu_activation_is_relu2(
+        BN_MODEL_ACTIVATION_RELU2));
+    assert(!bn_transformer_cpu_activation_is_relu2(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(bn_transformer_cpu_activation_is_gelu(
+        BN_MODEL_ACTIVATION_GELU));
+    assert(!bn_transformer_cpu_activation_is_gelu(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(bn_transformer_cpu_activation_uses_silu_path(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(!bn_transformer_cpu_activation_uses_silu_path(
+        BN_MODEL_ACTIVATION_RELU2));
+
     BnTransformerCPUPostNormPolicy cpu_post_norm =
         bn_transformer_cpu_attention_post_norm_policy(1, 1);
     assert(cpu_post_norm.apply);
@@ -3883,6 +3896,19 @@ static void test_block_planning(void) {
     ssm_upload = bn_transformer_prefill_ssm_state_upload_policy(NULL, 1);
     assert(!ssm_upload.upload);
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
+
+    assert(bn_transformer_prefill_activation_is_relu2(
+        BN_MODEL_ACTIVATION_RELU2));
+    assert(!bn_transformer_prefill_activation_is_relu2(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(bn_transformer_prefill_activation_is_gelu(
+        BN_MODEL_ACTIVATION_GELU));
+    assert(!bn_transformer_prefill_activation_is_gelu(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(bn_transformer_prefill_activation_uses_silu_path(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(!bn_transformer_prefill_activation_uses_silu_path(
+        BN_MODEL_ACTIVATION_RELU2));
 
     BnTransformerPrefillEntryPolicy prefill_entry =
         bn_transformer_prefill_entry_policy(0, 0, 2, 0, 0);

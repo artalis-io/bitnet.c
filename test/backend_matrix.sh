@@ -1941,6 +1941,18 @@ do
 done
 
 for file in \
+    src/transformer/cpu_backend.c \
+    src/transformer/prefill_backend.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/gpu_emit.c
+do
+    if grep -n '#include "model_arch.h"\|bn_model_arch_activation_' "$file" >/dev/null 2>&1; then
+        echo "$file must use transformer policy helpers for activation classification"
+        fail=1
+    fi
+done
+
+for file in \
     src/moe_route.c \
     src/moe_math.c \
     src/moe_prefill.c \

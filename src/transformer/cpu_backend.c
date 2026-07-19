@@ -4,7 +4,6 @@
 #include "transformer_batched_attn_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
-#include "model_arch.h"
 #include "quant_dispatch_internal.h"
 #include "quant.h"
 #include "simd_helpers.h"
@@ -216,12 +215,12 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
                                             const BnFFNPlan *ffn_plan,
                                             int hidden_dim) {
     if (ffn_plan->has_gate) {
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float g = s->hb[i] > 0 ? s->hb[i] : 0;
                 s->hb[i] = g * g * s->hb2[i];
             }
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float x = s->hb[i];
                 float g;
@@ -243,12 +242,12 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
             }
         }
     } else {
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i] > 0 ? s->hb[i] : 0;
                 s->hb[i] = v * v;
             }
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float x = s->hb[i];
                 if (ffn_plan->scalar_exact_activation)
@@ -276,14 +275,14 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
     if (ffn_plan->has_gate) {
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             float32x4_t zero = vdupq_n_f32(0);
             for (int i = 0; i < hidden_dim; i += 4) {
                 float32x4_t g = vmaxq_f32(vld1q_f32(s->hb + i), zero);
                 vst1q_f32(s->hb + i, vmulq_f32(vmulq_f32(g, g),
                                                 vld1q_f32(s->hb2 + i)));
             }
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i += 4) {
                 float32x4_t g = vld1q_f32(s->hb + i);
                 float32x4_t u = vld1q_f32(s->hb2 + i);
@@ -304,12 +303,12 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
             }
         }
     } else {
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i] > 0 ? s->hb[i] : 0;
                 s->hb[i] = v * v;
             }
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i += 4) {
                 float32x4_t v = vld1q_f32(s->hb + i);
                 vst1q_f32(s->hb + i, bn_neon_fast_gelu_f32(v));
@@ -334,7 +333,7 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
     if (ffn_plan->has_gate) {
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             __m256 zero = _mm256_setzero_ps();
             for (int i = 0; i < hidden_dim; i += 8) {
                 __m256 g = _mm256_max_ps(_mm256_loadu_ps(s->hb + i), zero);
@@ -342,7 +341,7 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
                     _mm256_mul_ps(_mm256_mul_ps(g, g),
                                   _mm256_loadu_ps(s->hb2 + i)));
             }
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i += 8) {
                 __m256 g = _mm256_loadu_ps(s->hb + i);
                 __m256 u = _mm256_loadu_ps(s->hb2 + i);
@@ -358,12 +357,12 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
             }
         }
     } else {
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i] > 0 ? s->hb[i] : 0;
                 s->hb[i] = v * v;
             }
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i += 8) {
                 __m256 v = _mm256_loadu_ps(s->hb + i);
                 _mm256_storeu_ps(s->hb + i, bn_avx2_fast_gelu_ps(v));
@@ -382,7 +381,7 @@ static void cpu_apply_ffn_activation_avx2(BnRunState *s,
 static void cpu_apply_ffn_activation_wasm(BnRunState *s,
                                           const BnFFNPlan *ffn_plan,
                                           int hidden_dim) {
-    if (ffn_plan->has_gate && bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+    if (ffn_plan->has_gate && bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
         v128_t zero = wasm_f32x4_splat(0);
         for (int i = 0; i < hidden_dim; i += 4) {
             v128_t g = wasm_f32x4_max(wasm_v128_load(s->hb + i), zero);
@@ -397,9 +396,9 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
         for (int i = 0; i < hidden_dim; i++) {
             float x = s->hb[i];
             float g;
-            if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+            if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
                 g = x > 0 ? x * x : 0.0f;
-            } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+            } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
                 g = 0.5f * x *
                     (1.0f + tanhf(0.7978845608028654f * x *
                                   (1.0f + 0.044715f * x * x)));
@@ -413,10 +412,10 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
 
     for (int i = 0; i < hidden_dim; i++) {
         float x = s->hb[i];
-        if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+        if (bn_transformer_cpu_activation_is_relu2(ffn_plan->activation)) {
             float v = x > 0 ? x : 0.0f;
             s->hb[i] = v * v;
-        } else if (bn_model_arch_activation_is_gelu(ffn_plan->activation)) {
+        } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             s->hb[i] = 0.5f * x *
                        (1.0f + tanhf(0.7978845608028654f * x *
                                      (1.0f + 0.044715f * x * x)));

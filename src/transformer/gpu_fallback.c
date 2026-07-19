@@ -4,7 +4,6 @@
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
-#include "model_arch.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "moe.h"
@@ -584,7 +583,8 @@ int bn_transformer_gpu_debug_compare_ffn_state(
                                         s->xb, s->x_q);
             for (int i = 0; i < hidden_dim; i++) {
                 float g = cpu_hb[i];
-                if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+                if (bn_transformer_gpu_ffn_activation_kind(
+                        ffn_plan->activation) == BN_GPU_IR_ACTIVATION_RELU2) {
                     float r = g > 0.0f ? g : 0.0f;
                     cpu_hb[i] = r * r * cpu_hb2[i];
                 } else {
@@ -596,7 +596,8 @@ int bn_transformer_gpu_debug_compare_ffn_state(
                                         s->xb, s->x_q);
             for (int i = 0; i < hidden_dim; i++) {
                 float v = cpu_hb[i];
-                if (bn_model_arch_activation_is_relu2(ffn_plan->activation)) {
+                if (bn_transformer_gpu_ffn_activation_kind(
+                        ffn_plan->activation) == BN_GPU_IR_ACTIVATION_RELU2) {
                     float r = v > 0.0f ? v : 0.0f;
                     cpu_hb[i] = r * r;
                 } else {

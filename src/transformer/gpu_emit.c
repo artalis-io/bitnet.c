@@ -3,7 +3,6 @@
 #include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
-#include "model_arch.h"
 #include "moe.h"
 #include "quant.h"
 #include "transformer_backend_internal.h"

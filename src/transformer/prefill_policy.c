@@ -680,6 +680,18 @@ int bn_transformer_prefill_stacked_pair_same_format(int left_type,
     return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
 }
 
+int bn_transformer_prefill_activation_is_relu2(int activation) {
+    return bn_model_arch_activation_is_relu2(activation);
+}
+
+int bn_transformer_prefill_activation_is_gelu(int activation) {
+    return bn_model_arch_activation_is_gelu(activation);
+}
+
+int bn_transformer_prefill_activation_uses_silu_path(int activation) {
+    return bn_model_arch_activation_uses_silu_path(activation);
+}
+
 int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
                                                const BnQWeight *k,
                                                int q_stride,

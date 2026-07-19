@@ -78,6 +78,9 @@ int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan);
+int bn_transformer_cpu_activation_is_relu2(int activation);
+int bn_transformer_cpu_activation_is_gelu(int activation);
+int bn_transformer_cpu_activation_uses_silu_path(int activation);
 BnTransformerCPUPostNormPolicy
 bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
                                               int has_attn_post_norm);

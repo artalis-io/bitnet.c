@@ -105,6 +105,18 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
            bn_model_arch_activation_uses_silu_path(ffn_plan->activation);
 }
 
+int bn_transformer_cpu_activation_is_relu2(int activation) {
+    return bn_model_arch_activation_is_relu2(activation);
+}
+
+int bn_transformer_cpu_activation_is_gelu(int activation) {
+    return bn_model_arch_activation_is_gelu(activation);
+}
+
+int bn_transformer_cpu_activation_uses_silu_path(int activation) {
+    return bn_model_arch_activation_uses_silu_path(activation);
+}
+
 BnTransformerCPUPostNormPolicy
 bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
                                               int has_attn_post_norm) {

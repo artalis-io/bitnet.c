@@ -453,6 +453,9 @@ bn_tp_fn bn_transformer_prefill_ssm_gate_op(
     const BnPrefillCPUOps *ops);
 int bn_transformer_prefill_stacked_pair_same_format(int left_type,
                                                     int right_type);
+int bn_transformer_prefill_activation_is_relu2(int activation);
+int bn_transformer_prefill_activation_is_gelu(int activation);
+int bn_transformer_prefill_activation_uses_silu_path(int activation);
 int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
                                                const BnQWeight *k,
                                                int q_stride,
