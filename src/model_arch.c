@@ -221,10 +221,6 @@ int bn_model_arch_allows_small_dense_prefill_decode_fallback(
            c->dim <= 2560;
 }
 
-int bn_model_arch_allows_small_cuda_prefill_decode_fallback(const BnConfig *c) {
-    return bn_model_arch_allows_small_dense_prefill_decode_fallback(c);
-}
-
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY) != 0);
 }
@@ -235,10 +231,6 @@ int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
 
 int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION) != 0);
-}
-
-int bn_model_arch_moe_prefers_cuda_exact_attention(const BnConfig *c) {
-    return bn_model_arch_moe_prefers_exact_gpu_attention(c);
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
@@ -434,17 +426,9 @@ int bn_model_arch_uses_small_dense_shape(const BnConfig *c) {
            c->dim <= 2560;
 }
 
-int bn_model_arch_uses_small_cuda_dense_shape(const BnConfig *c) {
-    return bn_model_arch_uses_small_dense_shape(c);
-}
-
 int bn_model_arch_uses_small_dense_q8_native_shape(const BnConfig *c) {
     return bn_model_arch_uses_small_dense_shape(c) &&
            c->dim > 1024;
-}
-
-int bn_model_arch_uses_small_cuda_dense_q8_native_shape(const BnConfig *c) {
-    return bn_model_arch_uses_small_dense_q8_native_shape(c);
 }
 
 int bn_model_arch_dense_batch_prefill_shape_allowed(
@@ -460,10 +444,6 @@ int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c) {
            bn_model_arch_uses_small_dense_shape(c);
 }
 
-int bn_model_arch_allows_small_cuda_dense_exact_q4_q8(const BnConfig *c) {
-    return bn_model_arch_allows_small_dense_exact_q4_q8(c);
-}
-
 int bn_model_arch_small_dense_exact_q4_q8_to_layer(const BnConfig *c) {
     if (!c || c->n_layers <= 33)
         return -1;
@@ -475,18 +455,10 @@ int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c) {
            bn_model_arch_allows_small_dense_exact_q4_q8(c);
 }
 
-int bn_model_arch_allows_small_cuda_q8_logit_refine(const BnConfig *c) {
-    return bn_model_arch_allows_small_dense_q8_logit_refine(c);
-}
-
 int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c) {
     if (!bn_model_arch_allows_small_dense_q8_logit_refine(c))
         return 0;
     return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) ? 7 : 2;
-}
-
-int bn_model_arch_small_cuda_dense_prefill_min_tokens(const BnConfig *c) {
-    return bn_model_arch_small_dense_prefill_min_tokens(c);
 }
 
 int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {

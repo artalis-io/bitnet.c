@@ -1261,6 +1261,11 @@ if grep -n 'bn_model_arch_.*cuda' src/transformer/gpu_policy.c >/dev/null 2>&1; 
     fail=1
 fi
 
+if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arch.h src/model_arch.c >/dev/null 2>&1; then
+    echo "model_arch must expose backend-neutral policy names, not CUDA-named aliases"
+    fail=1
+fi
+
 if awk '
     /int bn_transformer_gpu_batch_prefill_enabled\(/ { in_func = 1 }
     in_func && /return c->dim <= (8192|2560)/ { found = 1 }
