@@ -204,17 +204,11 @@ int bn_gpu_policy_cuda_moe_q4k_all2_fixed_4row_enabled(
     int prequantized_q8k,
     int all2_fast_enabled);
 int bn_gpu_policy_cuda_moe_q4k_gateup_4row_disabled(void);
-int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu);
 int bn_gpu_policy_decode_logits_cache_enabled(int gpu_logits_need_cpu);
-int bn_gpu_policy_cuda_moe_decode_cache_enabled(void);
 int bn_gpu_policy_moe_decode_cache_enabled(void);
-int bn_gpu_policy_cuda_moe_decode_cache_disabled(void);
 int bn_gpu_policy_moe_decode_cache_disabled(void);
-int bn_gpu_policy_cuda_decode_cache_disabled(void);
 int bn_gpu_policy_decode_cache_disabled(void);
-int bn_gpu_policy_cuda_q4_q8_decode_cache_disabled(void);
 int bn_gpu_policy_q4_q8_decode_cache_disabled(void);
-int bn_gpu_policy_cuda_logits_argmax_disabled(void);
 int bn_gpu_policy_logits_argmax_disabled(void);
 int bn_gpu_policy_cuda_dense_logits_argmax_enabled(void);
 int bn_gpu_policy_dense_logits_argmax_enabled(void);

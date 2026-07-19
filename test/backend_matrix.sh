@@ -1181,6 +1181,11 @@ if grep -n 'bn_gpu_policy_cuda_decode_logits_cache_enabled\|bn_gpu_policy_cuda_m
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_decode_logits_cache_enabled\|bn_gpu_policy_cuda_moe_decode_cache_enabled\|bn_gpu_policy_cuda_moe_decode_cache_disabled\|bn_gpu_policy_cuda_decode_cache_disabled\|bn_gpu_policy_cuda_q4_q8_decode_cache_disabled' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Decode cache policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX")\|getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX")\|getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX")\|getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA logits argmax env vars"
     fail=1
@@ -1188,6 +1193,11 @@ fi
 
 if grep -n 'bn_gpu_policy_cuda_logits_argmax_disabled\|bn_gpu_policy_cuda_dense_logits_argmax_enabled\|bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled\|bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use behavior-named GPU policy helpers for logits argmax compatibility policy"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_cuda_logits_argmax_disabled' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Logits argmax disable policy must expose/test behavior-named helpers, not CUDA implementation aliases"
     fail=1
 fi
 
