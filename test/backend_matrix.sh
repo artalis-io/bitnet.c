@@ -1196,6 +1196,11 @@ if grep -n 'bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled\|bn_gpu_policy_cuda_
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_individual_upload_quant_only_enabled' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use behavior-named GPU policy helpers for individual quant-only upload policy"
+    fail=1
+fi
+
 if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use model_arch helpers for MoE shape policy"
     fail=1

@@ -35,6 +35,8 @@ int bn_gpu_policy_cuda_keep_individual_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled(void);
 int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu);
+int bn_gpu_policy_individual_upload_quant_only_enabled(
+    const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type);

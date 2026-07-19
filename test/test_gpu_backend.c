@@ -390,6 +390,7 @@ static void test_gpu_policy_helpers(void) {
 
     BnGPUBackend gpu = mock_gpu;
     gpu.kind = BN_GPU_BACKEND_CUDA;
+    gpu.buffer_create_quant_only = mock_create;
     gpu.buffer_create_f16_cache = mock_create;
     gpu.buffer_create_q6_f32_cache = mock_create;
 
@@ -525,12 +526,19 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
     assert(!bn_gpu_policy_cuda_moe_fit_debug_enabled());
     assert(!bn_gpu_policy_cuda_keep_individual_f16_cache_enabled());
+    assert(bn_gpu_policy_cuda_individual_upload_quant_only_enabled(&gpu));
+    assert(bn_gpu_policy_individual_upload_quant_only_enabled(&gpu));
     setenv("BN_CUDA_DEBUG_MOE_FIT", "1", 1);
     setenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE", "1", 1);
     assert(bn_gpu_policy_cuda_moe_fit_debug_enabled());
     assert(bn_gpu_policy_cuda_keep_individual_f16_cache_enabled());
+    assert(!bn_gpu_policy_cuda_individual_upload_quant_only_enabled(&gpu));
+    assert(!bn_gpu_policy_individual_upload_quant_only_enabled(&gpu));
     unsetenv("BN_CUDA_DEBUG_MOE_FIT");
     unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_gpu_policy_individual_upload_quant_only_enabled(&gpu));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
 
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
     assert(!bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());

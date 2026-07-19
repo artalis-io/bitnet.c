@@ -149,6 +149,11 @@ int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
            !bn_gpu_policy_cuda_keep_individual_f16_cache_enabled();
 }
 
+int bn_gpu_policy_individual_upload_quant_only_enabled(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_cuda_individual_upload_quant_only_enabled(gpu);
+}
+
 int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
