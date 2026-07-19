@@ -1195,7 +1195,7 @@ int bn_transformer_gpu_decode_cacheable(
     if (bn_gpu_policy_native_quant_decode_cache_disabled() ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_transformer_gpu_compare_logits_enabled() ||
-        bn_gpu_policy_specialized_q6_q8k_path_enabled())
+        bn_gpu_policy_specialized_native_quant_decode_path_enabled())
         return 0;
     return 1;
 }

@@ -2071,7 +2071,7 @@ int bn_gpu_policy_metal_q6_q8k_enabled(void) {
     return getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL;
 }
 
-int bn_gpu_policy_specialized_q6_q8k_path_enabled(void) {
+int bn_gpu_policy_specialized_native_quant_decode_path_enabled(void) {
     return bn_gpu_policy_metal_q6_q8k_enabled();
 }
 
