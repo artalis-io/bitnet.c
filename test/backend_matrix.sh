@@ -1256,6 +1256,12 @@ if grep -n 'bn_backend_quant_q8_0_preq_matvec_candidate' \
     fail=1
 fi
 
+if grep -n 'q8_0_matvec_preq\|cuda_dot_row_q8_0_preq\|prequant scratch\|preq scratch' \
+    src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA prepared-input execution helpers must use behavior names, not preq/prequant shorthand"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL")\|getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for forced quant matmul env vars"
     fail=1

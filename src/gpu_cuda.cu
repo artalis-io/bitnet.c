@@ -934,7 +934,7 @@ static __device__ __forceinline__ int cuda_dot_i8x32_dp4a(const int8_t *a,
     return acc;
 }
 
-static __global__ void q8_0_matvec_preq_warp8_kernel(
+static __global__ void q8_0_matvec_prepared_input_warp8_kernel(
     float *out,
     const BnBlockQ8_0 *blocks,
     const BnCudaBlockQ8_1 *xq,
@@ -964,7 +964,7 @@ static __global__ void q8_0_matvec_preq_warp8_kernel(
     }
 }
 
-static __device__ float cuda_dot_row_q8_0_preq(
+static __device__ float cuda_dot_row_q8_0_prepared_input(
     const void *wdata, const BnCudaBlockQ8_1 *xq, int row, int cols) {
     const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)wdata;
     int n_bpr = cols / 32;
@@ -2038,7 +2038,7 @@ static __global__ void q4k_dot_matvec_split_qk_rope_cache_kernel(
     }
 }
 
-static __global__ void q8_0_matvec_split_preq_warp8_kernel(
+static __global__ void q8_0_matvec_split_prepared_input_warp8_kernel(
     float *out0, float *out1, float *out2, const BnBlockQ8_0 *blocks,
     const BnCudaBlockQ8_1 *xq, const float *bias0, int total_rows, int cols,
     int split0, int split1, size_t out1_offset, size_t out2_offset) {
@@ -4397,7 +4397,7 @@ static __global__ void qkv_mixed_matvec_kernel(
 
     int dot_row = out_kind == 2 ? local : row;
     float sum = (type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
-        ? cuda_dot_row_q8_0_preq(wdata, xq, dot_row, cols)
+        ? cuda_dot_row_q8_0_prepared_input(wdata, xq, dot_row, cols)
         : cuda_dot_row(wdata, x, dot_row, cols, type);
     if (out_kind == 1 && k_rotate) {
         int half_rope = rope_dims / 2;
@@ -4407,7 +4407,7 @@ static __global__ void qkv_mixed_matvec_kernel(
         int pair_row = q_rows + k_head * head_size + pair_dim;
         pair_sum =
             (qk_type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
-            ? cuda_dot_row_q8_0_preq(qk_wdata, xq, pair_row, cols)
+            ? cuda_dot_row_q8_0_prepared_input(qk_wdata, xq, pair_row, cols)
             : cuda_dot_row(qk_wdata, x, pair_row, cols, qk_type);
     }
     extern __shared__ float scratch[];
@@ -4515,7 +4515,7 @@ static __global__ void qkv_mixed_matvec_runtime_kernel(
 
     int dot_row = out_kind == 2 ? local : row;
     float sum = (type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
-        ? cuda_dot_row_q8_0_preq(wdata, xq, dot_row, cols)
+        ? cuda_dot_row_q8_0_prepared_input(wdata, xq, dot_row, cols)
         : cuda_dot_row(wdata, x, dot_row, cols, type);
     if (out_kind == 1 && k_rotate) {
         int half_rope = rope_dims / 2;
@@ -4525,7 +4525,7 @@ static __global__ void qkv_mixed_matvec_runtime_kernel(
         int pair_row = q_rows + k_head * head_size + pair_dim;
         pair_sum =
             (qk_type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
-            ? cuda_dot_row_q8_0_preq(qk_wdata, xq, pair_row, cols)
+            ? cuda_dot_row_q8_0_prepared_input(qk_wdata, xq, pair_row, cols)
             : cuda_dot_row(qk_wdata, x, pair_row, cols, qk_type);
     }
     extern __shared__ float scratch[];
@@ -4623,7 +4623,7 @@ static __global__ void kv_mixed_matvec_kernel(
 
     int dot_row = out_kind == 1 ? q_offset + local : local;
     float sum = (type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
-        ? cuda_dot_row_q8_0_preq(wdata, xq, dot_row, cols)
+        ? cuda_dot_row_q8_0_prepared_input(wdata, xq, dot_row, cols)
         : cuda_dot_row(wdata, x, dot_row, cols, type);
     if (out_kind == 1 && k_rotate) {
         int half_rope = rope_dims / 2;
@@ -4633,7 +4633,7 @@ static __global__ void kv_mixed_matvec_kernel(
         int pair_row = q_offset + k_head * head_size + pair_dim;
         pair_sum =
             (qk_type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
-            ? cuda_dot_row_q8_0_preq(qk_wdata, xq, pair_row, cols)
+            ? cuda_dot_row_q8_0_prepared_input(qk_wdata, xq, pair_row, cols)
             : cuda_dot_row(qk_wdata, x, pair_row, cols, qk_type);
     }
 
@@ -19369,7 +19369,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                            op->type) &&
                        (op->cols & 31) == 0) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
-                    BN_CUDA_EXEC_FAIL("q8 preq scratch alloc failed");
+                    BN_CUDA_EXEC_FAIL("q8 prepared-input scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
@@ -19377,7 +19377,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int q8_threads = 256;
                 int blocks = (op->rows + (q8_threads / 32) - 1) /
                              (q8_threads / 32);
-                BN_CUDA_LAUNCH(ctx, q8_0_matvec_preq_warp8_kernel,
+                BN_CUDA_LAUNCH(ctx, q8_0_matvec_prepared_input_warp8_kernel,
                     blocks, q8_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, xq, bias, op->rows,
                     op->cols, out_offset);
@@ -19838,7 +19838,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                         (cols + 31) / 32, 32, 0, xq, in, cols);
-                    BN_CUDA_LAUNCH(ctx, q8_0_matvec_split_preq_warp8_kernel,
+                    BN_CUDA_LAUNCH(ctx, q8_0_matvec_split_prepared_input_warp8_kernel,
                         blocks, q8_threads, 0,
                         out0, out1, out2, (const BnBlockQ8_0 *)w->data, xq,
                         bias0, total_rows, cols, split0, split1,
@@ -20056,7 +20056,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     moe_all_active_two_route_q8k_default_enabled;
                 if (route_prepared_input_q8_1) {
                     if (cuda_ensure_q8_1(ctx, dim) != 0)
-                        BN_CUDA_EXEC_FAIL("moe route q8_1 prequant scratch alloc failed");
+                        BN_CUDA_EXEC_FAIL("moe route q8_1 prepared-input scratch alloc failed");
                     BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         moe_route_diff2_quantize_q8_1_kernel,
@@ -20065,7 +20065,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         expert_weights_scale);
                 } else if (route_prepared_input_q8k) {
                     if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
-                        BN_CUDA_EXEC_FAIL("moe route q8k prequant scratch alloc failed");
+                        BN_CUDA_EXEC_FAIL("moe route q8k prepared-input scratch alloc failed");
                     BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         moe_route_diff2_quantize_q8k_kernel,
@@ -20084,7 +20084,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                        moe_all_active_two_route_q8k_default_enabled &&
                        !bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled()) {
                 if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
-                    BN_CUDA_EXEC_FAIL("moe exact route q8k prequant scratch alloc failed");
+                    BN_CUDA_EXEC_FAIL("moe exact route q8k prepared-input scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                     moe_route_all2_avx2_quantize_q8k_kernel,
