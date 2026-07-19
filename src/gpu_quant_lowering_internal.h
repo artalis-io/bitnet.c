@@ -23,15 +23,15 @@ static inline int bn_gpu_quant_split_op_is_standard(int op_code) {
     return op_code == BN_GPU_CODE_MATVEC_SPLIT;
 }
 
-static inline int bn_gpu_quant_split_op_is_q4k(int op_code) {
+static inline int bn_gpu_quant_split_op_is_asymmetric_kquant(int op_code) {
     return op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT;
 }
 
-static inline int bn_gpu_quant_split_op_is_q5k(int op_code) {
+static inline int bn_gpu_quant_split_op_is_deinterleaved_kquant(int op_code) {
     return op_code == BN_GPU_CODE_Q5K_MATVEC_SPLIT;
 }
 
-static inline int bn_gpu_quant_split_op_is_q8(int op_code) {
+static inline int bn_gpu_quant_split_op_is_native_quant(int op_code) {
     return op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT;
 }
 

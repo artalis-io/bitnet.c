@@ -486,6 +486,11 @@ if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q8_MATVEC_SPLIT\|BN_GPU_CODE_Q
     fail=1
 fi
 
+if grep -n 'bn_gpu_quant_split_op_is_q4k\|bn_gpu_quant_split_op_is_q5k\|bn_gpu_quant_split_op_is_q8' src/gpu_quant_lowering_internal.h src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU split op predicates must use behavior names, not exact tensor format names"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_moe_routed_q[48]\|bn_transformer_gpu_moe_routed_byte_quant\|allow_q4_down\|moe_routed_q8\|moe_routed_byte_quant\|routed_q[48]\|routed_byte_quant' \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_internal.h \

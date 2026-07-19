@@ -221,7 +221,7 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,
     int split_op_code) {
-    if (!map || !bn_gpu_quant_split_op_is_q4k(split_op_code))
+    if (!map || !bn_gpu_quant_split_op_is_asymmetric_kquant(split_op_code))
         return 0;
     return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
            bn_transformer_gpu_stacked_pair_same_format(map->up_type,
@@ -240,7 +240,7 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     int activation,
     int split_op_code) {
     if (!gate || !up || bn_model_arch_activation_is_relu2(activation) ||
-        !bn_gpu_quant_split_op_is_q4k(split_op_code))
+        !bn_gpu_quant_split_op_is_asymmetric_kquant(split_op_code))
         return 0;
     return bn_transformer_gpu_can_use_stacked_gateup(gate, up) &&
            bn_transformer_gpu_can_matvec_split(gpu, gate->type);
@@ -253,7 +253,7 @@ int bn_transformer_gpu_packed_qkv_split_supported(
     int kv_f16,
     int split_op_code) {
     return qkv && use_packed_qkv && !kv_f16 &&
-           bn_gpu_quant_split_op_is_q5k(split_op_code) &&
+           bn_gpu_quant_split_op_is_deinterleaved_kquant(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
 }
 
@@ -269,7 +269,7 @@ int bn_transformer_gpu_qkv_split_native_quant_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code) {
-    return q && bn_gpu_quant_split_op_is_q8(split_op_code) &&
+    return q && bn_gpu_quant_split_op_is_native_quant(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
@@ -277,7 +277,7 @@ int bn_transformer_gpu_qkv_split_packed_kquant_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code) {
-    return q && bn_gpu_quant_split_op_is_q5k(split_op_code) &&
+    return q && bn_gpu_quant_split_op_is_deinterleaved_kquant(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
