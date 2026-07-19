@@ -1307,6 +1307,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER")\|getenv("BN_CUDA_ENABLE_
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_explicit_q5k_fused_gateup_enabled' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU fused gate/up opt-in policy must expose behavior-named helpers"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_DISABLE_PREFILL_ATTN")\|getenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN")\|getenv("BN_CUDA_DISABLE_SSM_FFN_FUSE")\|getenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN")\|getenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN")\|getenv("BN_CUDA_ENABLE_MOE_PREFILL")\|getenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS")\|getenv("BN_CUDA_DISABLE_MOE_CACHE_PREFILL")\|getenv("BN_CUDA_DISABLE_MOE_PREFILL_SHARED_FUSE")\|getenv("BN_CUDA_DEBUG_MOE_ROUTE_BATCH")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA prefill env vars"
     fail=1

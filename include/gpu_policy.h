@@ -321,7 +321,7 @@ int bn_gpu_policy_cuda_prefill_ssm_scan_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_delta_128_warp_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_ffn_profile_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled(void);
-int bn_gpu_policy_explicit_q5k_fused_gateup_enabled(void);
+int bn_gpu_policy_backend_opt_in_fused_gateup_enabled(void);
 int bn_gpu_policy_fused_gateup_silu_allowed(const BnGPUBackend *gpu,
                                             int tensor_type);
 int bn_gpu_policy_shared_kquant_dot_enabled(void);
