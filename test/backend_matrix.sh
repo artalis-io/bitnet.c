@@ -139,6 +139,11 @@ if sed -n '/^static int cuda_buffer_create_iq_f16_cache/,/bn_gpu_policy_cuda_cub
     fail=1
 fi
 
+if sed -n '/^static BnCudaBuffer \*cuda_buffer_create_impl/,/^static void \*cuda_buffer_create(/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_IQ3_XXS\|BN_GGUF_TENSOR_IQ4_XS' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA IQ aux-cache routing"
+    fail=1
+fi
+
 if sed -n '/bn_backend_quant_cuda_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA matvec dispatch quant predicates"
     fail=1

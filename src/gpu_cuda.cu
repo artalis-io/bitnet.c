@@ -11699,8 +11699,7 @@ static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
         return NULL;
     }
     if (create_aux_cache) {
-        if (type == BN_GGUF_TENSOR_IQ3_XXS ||
-            type == BN_GGUF_TENSOR_IQ4_XS)
+        if (bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(type))
             cuda_buffer_create_iq_f16_cache(buf, data);
         else
             cuda_buffer_create_f16_cache(buf, create_aux_cache);
