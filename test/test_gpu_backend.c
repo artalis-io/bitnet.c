@@ -4237,6 +4237,12 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
+    float lazy_aux_tmp[BN_QK_K];
+    BnBlockIQ3XXS lazy_aux_iq3 = {0};
+    assert(bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+        BN_GGUF_TENSOR_IQ3_XXS, &lazy_aux_iq3, 0, lazy_aux_tmp) == 0);
+    assert(bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+        BN_GGUF_TENSOR_F32, &lazy_aux_iq3, 0, lazy_aux_tmp) == -1);
     assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q8_K));
     assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q5_K));

@@ -285,6 +285,27 @@ int bn_quant_dequant_row(int type, const void *data, int row, int n,
     }
 }
 
+int bn_quant_dequant_lazy_aux_cache_block(int type, const void *blocks,
+                                          size_t block_idx, float *out) {
+    if (!blocks || !out)
+        return -1;
+
+    switch (type) {
+        case BN_GGUF_TENSOR_IQ3_XXS: {
+            const BnBlockIQ3XXS *src = (const BnBlockIQ3XXS *)blocks;
+            bn_quant_dequant_iq3xxs(&src[block_idx], out);
+            return 0;
+        }
+        case BN_GGUF_TENSOR_IQ4_XS: {
+            const BnBlockIQ4XS *src = (const BnBlockIQ4XS *)blocks;
+            bn_quant_dequant_iq4xs(&src[block_idx], out);
+            return 0;
+        }
+        default:
+            return -1;
+    }
+}
+
 #if !BN_QUANT_HAS_NATIVE_F16_ROWS_TO_I8
 static void bn_quant_f16_rows_to_i8_scalar(const uint16_t *f16,
                                            int8_t *i8_out,

@@ -548,6 +548,11 @@ static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(int type) {
     return bn_backend_quant_lazy_moe_aux_cache_candidate(type);
 }
 
+static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+    int type, const void *blocks, size_t block_idx, float *out) {
+    return bn_quant_dequant_lazy_aux_cache_block(type, blocks, block_idx, out);
+}
+
 static inline int bn_backend_quant_moe_prefers_quant_only(int type) {
     return bn_quant_format_moe_prefers_quant_only(type);
 }

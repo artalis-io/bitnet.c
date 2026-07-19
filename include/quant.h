@@ -440,6 +440,8 @@ void     bn_quant_dequant_iq2xs(const BnBlockIQ2XS *block, float *out);
 void     bn_quant_dequant_iq2s(const BnBlockIQ2S *block, float *out);
 float    bn_bf16_to_fp32(uint16_t h);
 void     bn_quant_dequant_i2s(const uint8_t *data, float *out, int n, float scale);
+int      bn_quant_dequant_lazy_aux_cache_block(int type, const void *blocks,
+                                               size_t block_idx, float *out);
 int      bn_quant_dequant_row(int type, const void *data, int row, int n,
                               float *out);
 void     bn_quant_matvec(float *out, const BnQWeight *W, const float *x,

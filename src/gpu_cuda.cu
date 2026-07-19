@@ -11644,14 +11644,10 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     for (int r = 0; r < buf->rows; r++) {
         for (int b = 0; b < blocks_per_row; b++) {
             size_t block_idx = (size_t)r * (size_t)blocks_per_row + (size_t)b;
-            if (buf->type == BN_GGUF_TENSOR_IQ3_XXS) {
-                const BnBlockIQ3XXS *blocks =
-                    (const BnBlockIQ3XXS *)host_data;
-                bn_quant_dequant_iq3xxs(&blocks[block_idx], tmp);
-            } else {
-                const BnBlockIQ4XS *blocks =
-                    (const BnBlockIQ4XS *)host_data;
-                bn_quant_dequant_iq4xs(&blocks[block_idx], tmp);
+            if (bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+                    buf->type, host_data, block_idx, tmp) != 0) {
+                free(h_f16);
+                return 0;
             }
             size_t out = ((size_t)r * (size_t)buf->cols +
                           (size_t)b * BN_QK_K);

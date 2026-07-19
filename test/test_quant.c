@@ -222,6 +222,15 @@ static void test_quant_policy_helpers(void) {
     assert(bn_quant_format_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_IQ4_XS));
     assert(!bn_quant_format_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_0));
+    float iq_tmp[BN_QK_K];
+    BnBlockIQ3XXS iq3 = {0};
+    BnBlockIQ4XS iq4 = {0};
+    assert(bn_quant_dequant_lazy_aux_cache_block(
+        BN_GGUF_TENSOR_IQ3_XXS, &iq3, 0, iq_tmp) == 0);
+    assert(bn_quant_dequant_lazy_aux_cache_block(
+        BN_GGUF_TENSOR_IQ4_XS, &iq4, 0, iq_tmp) == 0);
+    assert(bn_quant_dequant_lazy_aux_cache_block(
+        BN_GGUF_TENSOR_F32, &iq4, 0, iq_tmp) == -1);
     assert(bn_quant_format_moe_prefers_quant_only(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_moe_prefers_quant_only(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_aux_cache_supported(BN_GGUF_TENSOR_BF16));
