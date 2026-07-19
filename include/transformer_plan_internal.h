@@ -1,6 +1,7 @@
 #ifndef BN_TRANSFORMER_PLAN_INTERNAL_H
 #define BN_TRANSFORMER_PLAN_INTERNAL_H
 
+#include "backend_placement.h"
 #include "model_config.h"
 #include "model_weights.h"
 #include <stdint.h>
@@ -26,14 +27,6 @@ typedef enum {
     BN_EXEC_GPU = 1,
     BN_EXEC_CPU_FALLBACK = 2,
 } BnExecPlacement;
-
-typedef enum {
-    BN_BACKEND_CPU = 0,
-    BN_BACKEND_METAL = 1,
-    BN_BACKEND_WEBGPU = 2,
-    BN_BACKEND_CUDA = 3,
-    BN_BACKEND_GPU_UNKNOWN = 4,
-} BnBackendPlacement;
 
 typedef enum {
     BN_CPU_BACKEND_SCALAR = 0,

@@ -1,0 +1,12 @@
+#ifndef BN_BACKEND_PLACEMENT_H
+#define BN_BACKEND_PLACEMENT_H
+
+typedef enum {
+    BN_BACKEND_CPU = 0,
+    BN_BACKEND_METAL = 1,
+    BN_BACKEND_WEBGPU = 2,
+    BN_BACKEND_CUDA = 3,
+    BN_BACKEND_GPU_UNKNOWN = 4,
+} BnBackendPlacement;
+
+#endif // BN_BACKEND_PLACEMENT_H

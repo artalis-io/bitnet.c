@@ -137,14 +137,7 @@ int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
 
 BnBackendPlacement bn_transformer_gpu_backend_placement(
     const BnGPUBackend *gpu) {
-    if (!gpu)
-        return BN_BACKEND_GPU_UNKNOWN;
-    switch (gpu->kind) {
-        case BN_GPU_BACKEND_METAL: return BN_BACKEND_METAL;
-        case BN_GPU_BACKEND_WEBGPU: return BN_BACKEND_WEBGPU;
-        case BN_GPU_BACKEND_CUDA: return BN_BACKEND_CUDA;
-        default: return BN_BACKEND_GPU_UNKNOWN;
-    }
+    return bn_gpu_policy_backend_placement(gpu);
 }
 
 int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
