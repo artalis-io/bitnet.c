@@ -430,6 +430,7 @@ int bn_quant_format_cuda_aux_cache_prefers_large_budget(int type) {
     return bn_quant_format_aux_cache_prefers_large_budget(type);
 }
 
+
 int bn_quant_format_uses_f16_logits_path(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_LOGITS_F16_PATH);
 }

@@ -101,7 +101,7 @@ int bn_quant_format_is_f16_float_cache_matvec_candidate(int type) {
            type == BN_GGUF_TENSOR_IQ4_XS;
 }
 
-int bn_quant_format_cuda_cublas_aux_cache_supported(int type) {
+int bn_quant_format_eager_aux_cache_supported(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_BF16:
         case BN_GGUF_TENSOR_Q8_0:

@@ -397,7 +397,7 @@ int      bn_quant_format_aux_cache_uses_f32(int type, int q6_as_f16);
 int      bn_quant_format_cuda_aux_cache_uses_f32(int type, int q6_as_f16);
 int      bn_quant_format_aux_cache_prefers_large_budget(int type);
 int      bn_quant_format_cuda_aux_cache_prefers_large_budget(int type);
-int      bn_quant_format_cuda_cublas_aux_cache_supported(int type);
+int      bn_quant_format_eager_aux_cache_supported(int type);
 int      bn_quant_format_gpu_matvec_supported(int type);
 int      bn_quant_format_cuda_q8_quant_matmul_on_f16_disable(int type);
 int      bn_quant_format_cuda_force_q4k_quant_matmul_candidate(int type);

@@ -605,7 +605,7 @@ static inline int bn_backend_quant_cuda_aux_cache_f32_storage(
 }
 
 static inline int bn_backend_quant_cuda_cublas_aux_cache_supported(int type) {
-    return bn_quant_format_cuda_cublas_aux_cache_supported(type);
+    return bn_quant_format_eager_aux_cache_supported(type);
 }
 
 static inline int bn_backend_quant_metal_q4_q8_matvec_supported(int type) {
