@@ -141,9 +141,9 @@ int bn_gpu_policy_cuda_q6k_moe_prefer_f32_down(
 int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_enabled(int n_experts,
                                                       int k);
 int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_4row_enabled(void);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled(
+int bn_gpu_policy_all_active_two_kquant_moe_down_accum_enabled(
     int all_active_two_kquant);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(int all_active_two_kquant);
+int bn_gpu_policy_all_active_two_kquant_moe_down_pair4_sum_enabled(int all_active_two_kquant);
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_4row_sum_enabled(
     int all_active_two_kquant,
     int k,
@@ -151,14 +151,14 @@ int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_4row_sum_enabled(
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_8row_sum_enabled(
     int k8_4row_sum,
     int hidden_dim);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_fixed_enabled(
+int bn_gpu_policy_all_active_two_kquant_moe_down_fixed_enabled(
     int all_active_two_kquant);
 int bn_gpu_policy_cuda_q6k_moe_down_resid_rmsnorm_fuse_enabled(void);
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_exact_2048_768_enabled(
     int dim,
     int hidden_dim,
     int k);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_4row_enabled(
+int bn_gpu_policy_all_active_two_kquant_moe_down_accum_4row_enabled(
     void);
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair_4row_enabled(void);
 int bn_gpu_policy_cuda_q6k_moe_down_f32_cache_enabled(

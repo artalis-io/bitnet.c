@@ -1272,14 +1272,10 @@ for fn in \
     cuda_prefer_q6k_moe_f32_down \
     cuda_use_q6k_moe_down_f32_pair2 \
     cuda_use_q6k_moe_down_f32_pair2_4row \
-    cuda_use_q6k_moe_down_q8k_all_active_two_accum \
-    cuda_use_q6k_moe_down_q8k_pair4_sum \
     cuda_use_q6k_moe_down_q8k_k8_4row_sum \
     cuda_use_q6k_moe_down_q8k_k8_8row_sum \
-    cuda_use_q6k_moe_down_q8k_all_active_two_fixed \
     cuda_use_q6k_moe_down_resid_rmsnorm_fuse \
     cuda_use_q6k_moe_down_q8k_k8_exact_2048_768 \
-    cuda_use_q6k_moe_down_q8k_all_active_two_accum_4row \
     cuda_use_q6k_moe_down_q8k_pair_4row \
     cuda_use_q6k_moe_down_f32_cache \
     cuda_use_q6k_moe_down_f16_cache \
@@ -1296,6 +1292,28 @@ do
         END { exit(found && !bad ? 0 : 1) }
     ' src/gpu_cuda.cu; then
         echo "CUDA Q6K matvec shape selection in $fn must delegate to GPU policy"
+        fail=1
+    fi
+done
+
+for mapping in \
+    "cuda_use_all_active_two_kquant_moe_down_accum bn_gpu_policy_all_active_two_kquant_moe_down_accum_enabled" \
+    "cuda_use_all_active_two_kquant_moe_down_pair4_sum bn_gpu_policy_all_active_two_kquant_moe_down_pair4_sum_enabled" \
+    "cuda_use_all_active_two_kquant_moe_down_fixed bn_gpu_policy_all_active_two_kquant_moe_down_fixed_enabled" \
+    "cuda_use_all_active_two_kquant_moe_down_accum_4row bn_gpu_policy_all_active_two_kquant_moe_down_accum_4row_enabled"
+do
+    set -- $mapping
+    fn="$1"
+    policy="$2"
+    if ! awk -v fn="$fn" -v policy="$policy" '
+        $0 ~ "static int " fn "\\(" { in_fn=1 }
+        in_fn && index($0, policy) { found=1 }
+        in_fn && /getenv\(/ { bad=1 }
+        in_fn && /BN_GGUF_TENSOR_/ { bad=1 }
+        in_fn && /^}/ { in_fn=0 }
+        END { exit(found && !bad ? 0 : 1) }
+    ' src/gpu_cuda.cu; then
+        echo "CUDA all-active-two K-quant MoE down selection in $fn must delegate to $policy"
         fail=1
     fi
 done
@@ -1874,6 +1892,11 @@ fi
 if grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1 ||
    grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks' src/gpu_cuda.cu | grep -v '_kernel' >/dev/null 2>&1; then
     echo "CUDA all-active-two MoE policy and helper names must not use all2 shorthand"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_fixed_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_4row_enabled' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "All-active-two K-quant MoE down policy must use behavior names"
     fail=1
 fi
 
