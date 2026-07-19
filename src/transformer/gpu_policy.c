@@ -203,7 +203,7 @@ int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
 
 int bn_transformer_gpu_shared_kquant_dot_enabled(int eligible) {
     return eligible &&
-           bn_gpu_policy_shared_q4_q8_dot_enabled();
+           bn_gpu_policy_shared_kquant_dot_enabled();
 }
 
 int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {

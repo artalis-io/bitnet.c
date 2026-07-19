@@ -1465,7 +1465,7 @@ int bn_gpu_policy_fused_gateup_silu_allowed(const BnGPUBackend *gpu,
     return 1;
 }
 
-int bn_gpu_policy_shared_q4_q8_dot_enabled(void) {
+int bn_gpu_policy_shared_kquant_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
 }
 

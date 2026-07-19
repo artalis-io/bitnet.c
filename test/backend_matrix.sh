@@ -1817,7 +1817,7 @@ if grep -n 'bn_backend_quant_small_dense_q8_supported\|bn_backend_quant_cuda_sma
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_shared_q4_q8\|shared_q4_q8_eligible\|use_shared_q4_q8' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_shared_q4_q8\|bn_gpu_policy_shared_q4_q8_dot_enabled\|shared_q4_q8_eligible\|use_shared_q4_q8' include/gpu_policy.h include/transformer_plan_internal.h src/gpu_policy.c src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Transformer GPU shared MoE dot policy must expose behavior-named helpers"
     fail=1
 fi

@@ -2183,7 +2183,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_fused_gateup_silu_allowed(
         &gpu, BN_GGUF_TENSOR_Q5_K));
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    assert(bn_gpu_policy_shared_q4_q8_dot_enabled());
+    assert(bn_gpu_policy_shared_kquant_dot_enabled());
     assert(bn_gpu_policy_shared_expert_gate_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER", "1", 1);
@@ -2232,7 +2232,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
     assert(bn_gpu_policy_fused_gateup_silu_allowed(
         &gpu, BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_gpu_policy_shared_q4_q8_dot_enabled());
+    assert(!bn_gpu_policy_shared_kquant_dot_enabled());
     assert(!bn_gpu_policy_shared_expert_gate_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER");
