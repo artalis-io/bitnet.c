@@ -1196,14 +1196,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_qkv_split_standard_supported(
         &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
     q_w.type = BN_GGUF_TENSOR_Q8_0;
-    assert(bn_transformer_gpu_qkv_split_q8_supported(
+    assert(bn_transformer_gpu_qkv_split_byte_quant_supported(
         &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_qkv_split_q8_supported(
+    assert(!bn_transformer_gpu_qkv_split_byte_quant_supported(
         &gpu, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
     q_w.type = BN_GGUF_TENSOR_Q5_K;
-    assert(bn_transformer_gpu_qkv_split_q5_supported(
+    assert(bn_transformer_gpu_qkv_split_packed_kquant_supported(
         &gpu, &q_w, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_qkv_split_q5_supported(
+    assert(!bn_transformer_gpu_qkv_split_packed_kquant_supported(
         &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
     q_w.type = BN_GGUF_TENSOR_Q4_0;
     assert(bn_transformer_gpu_qk_split_supported(

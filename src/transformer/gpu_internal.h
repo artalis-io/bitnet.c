@@ -264,11 +264,11 @@ int bn_transformer_gpu_qkv_split_standard_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code);
-int bn_transformer_gpu_qkv_split_q8_supported(
+int bn_transformer_gpu_qkv_split_byte_quant_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code);
-int bn_transformer_gpu_qkv_split_q5_supported(
+int bn_transformer_gpu_qkv_split_packed_kquant_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code);
