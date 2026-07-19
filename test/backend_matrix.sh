@@ -921,12 +921,17 @@ fi
 
 if grep -n 'bn_quant_matvec_batch_preq8k\|bn_quant_matmul_preq8k' \
     include/quant.h \
-    src/quant/batch_preq8k.c \
+    src/quant/batch_prepared_kquant_input.c \
     src/quant/matmul.c \
     src/transformer/cpu.c \
     src/transformer/prefill.c \
     test/test_quant.c >/dev/null 2>&1; then
     echo "Prepared K-quant public quant APIs must not use preq8k implementation names"
+    fail=1
+fi
+
+if [ -e src/quant/batch_preq8k.c ]; then
+    echo "Prepared K-quant source file must use behavior names, not preq8k implementation names"
     fail=1
 fi
 

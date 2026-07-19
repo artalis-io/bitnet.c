@@ -27,7 +27,7 @@ emcc \
     "$PROJECT_DIR/src/quant/matvec_batch.c" \
     "$PROJECT_DIR/src/quant/matmul.c" \
     "$PROJECT_DIR/src/quant/fused_gateup.c" \
-    "$PROJECT_DIR/src/quant/batch_preq8k.c" \
+    "$PROJECT_DIR/src/quant/batch_prepared_kquant_input.c" \
     "$PROJECT_DIR/src/quant/matvec_multi.c" \
     "$PROJECT_DIR/src/quant/x_quant_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_wasm.c" \
