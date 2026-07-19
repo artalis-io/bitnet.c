@@ -1982,6 +1982,11 @@ do
     fi
 done
 
+if grep -n 'bn_backend_quant_cuda_lazy_moe_aux_cache_candidate\|bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block\|bn_backend_quant_cuda_aux_cache_force_q4_f32\|bn_backend_quant_cuda_aux_cache_q6_can_use_f16\|bn_backend_quant_cuda_aux_cache_add_q6_f32\|bn_backend_quant_cuda_aux_cache_f32_storage\|bn_backend_quant_cuda_aux_cache_dequant_route\|BnBackendQuantCudaAuxCacheDequant\|BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use neutral backend quant aux-cache helpers for quant-format policy"
+    fail=1
+fi
+
 for file in \
     src/transformer/cpu.c \
     src/transformer/gpu.c \

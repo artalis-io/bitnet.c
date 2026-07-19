@@ -598,9 +598,15 @@ static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(int type) {
     return bn_backend_quant_lazy_moe_aux_cache_candidate(type);
 }
 
-static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+static inline int bn_backend_quant_lazy_moe_aux_cache_dequant_block(
     int type, const void *blocks, size_t block_idx, float *out) {
     return bn_quant_dequant_lazy_aux_cache_block(type, blocks, block_idx, out);
+}
+
+static inline int bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+    int type, const void *blocks, size_t block_idx, float *out) {
+    return bn_backend_quant_lazy_moe_aux_cache_dequant_block(type, blocks,
+                                                            block_idx, out);
 }
 
 static inline int bn_backend_quant_moe_prefers_quant_only(int type) {
@@ -645,64 +651,116 @@ static inline int bn_backend_quant_cuda_aux_cache_prefers_large_budget(int type)
     return bn_backend_quant_aux_cache_prefers_large_budget(type);
 }
 
-static inline int bn_backend_quant_cuda_aux_cache_force_q4_f32(int type,
-                                                               int force_f32) {
+static inline int bn_backend_quant_aux_cache_force_q4_f32(int type,
+                                                          int force_f32) {
     return force_f32 && bn_backend_quant_moe_down_is_q4k(type);
 }
 
-static inline int bn_backend_quant_cuda_aux_cache_q6_can_use_f16(
+static inline int bn_backend_quant_cuda_aux_cache_force_q4_f32(int type,
+                                                               int force_f32) {
+    return bn_backend_quant_aux_cache_force_q4_f32(type, force_f32);
+}
+
+static inline int bn_backend_quant_aux_cache_q6_can_use_f16(
     int type, int force_f16, int force_q6_f32) {
     return bn_backend_quant_moe_down_is_q6k(type) &&
            (force_f16 || !force_q6_f32);
 }
 
-static inline int bn_backend_quant_cuda_aux_cache_add_q6_f32(
+static inline int bn_backend_quant_cuda_aux_cache_q6_can_use_f16(
+    int type, int force_f16, int force_q6_f32) {
+    return bn_backend_quant_aux_cache_q6_can_use_f16(type, force_f16,
+                                                    force_q6_f32);
+}
+
+static inline int bn_backend_quant_aux_cache_add_q6_f32(
     int type, int force_f16) {
     return force_f16 && bn_backend_quant_moe_down_is_q6k(type);
 }
 
-static inline int bn_backend_quant_cuda_aux_cache_f32_storage(
-    int type, int force_q4_f32, int q6_as_f16) {
-    return force_q4_f32 ||
-           bn_backend_quant_cuda_aux_cache_uses_f32(type, q6_as_f16);
+static inline int bn_backend_quant_cuda_aux_cache_add_q6_f32(
+    int type, int force_f16) {
+    return bn_backend_quant_aux_cache_add_q6_f32(type, force_f16);
 }
 
-typedef enum BnBackendQuantCudaAuxCacheDequant {
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_NONE = 0,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_BF16_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q8_0_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5_0_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q3K_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F32,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5K_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F16,
-    BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F32,
-} BnBackendQuantCudaAuxCacheDequant;
+static inline int bn_backend_quant_aux_cache_f32_storage(
+    int type, int force_q4_f32, int q6_as_f16) {
+    return force_q4_f32 ||
+           bn_backend_quant_aux_cache_uses_f32(type, q6_as_f16);
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_f32_storage(
+    int type, int force_q4_f32, int q6_as_f16) {
+    return bn_backend_quant_aux_cache_f32_storage(type, force_q4_f32,
+                                                  q6_as_f16);
+}
+
+typedef enum BnBackendQuantAuxCacheDequant {
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE = 0,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q8_0_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5_0_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q3K_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F32,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16,
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32,
+} BnBackendQuantAuxCacheDequant;
+
+typedef BnBackendQuantAuxCacheDequant BnBackendQuantCudaAuxCacheDequant;
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_NONE \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_BF16_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q8_0_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q8_0_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5_0_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5_0_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q3K_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q3K_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F32 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F32
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5K_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F16 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16
+#define BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F32 \
+    BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32
+
+static inline BnBackendQuantAuxCacheDequant
+bn_backend_quant_aux_cache_dequant_route(int type,
+                                         int force_q4_f32,
+                                         int q6_as_f16) {
+    if (bn_backend_quant_is_bf16(type))
+        return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16;
+    if (bn_backend_quant_is_q8_0(type))
+        return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q8_0_TO_F16;
+    if (bn_backend_quant_is_q5_0(type))
+        return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5_0_TO_F16;
+    if (bn_backend_quant_is_q3k(type))
+        return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q3K_TO_F16;
+    if (bn_backend_quant_is_q4k(type))
+        return force_q4_f32
+            ? BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F32
+            : BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F16;
+    if (bn_backend_quant_is_q5k(type))
+        return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16;
+    if (bn_backend_quant_moe_down_is_q6k(type))
+        return q6_as_f16
+            ? BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16
+            : BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32;
+    return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE;
+}
 
 static inline BnBackendQuantCudaAuxCacheDequant
 bn_backend_quant_cuda_aux_cache_dequant_route(int type,
                                               int force_q4_f32,
                                               int q6_as_f16) {
-    if (bn_backend_quant_is_bf16(type))
-        return BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_BF16_TO_F16;
-    if (bn_backend_quant_is_q8_0(type))
-        return BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q8_0_TO_F16;
-    if (bn_backend_quant_is_q5_0(type))
-        return BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5_0_TO_F16;
-    if (bn_backend_quant_is_q3k(type))
-        return BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q3K_TO_F16;
-    if (bn_backend_quant_is_q4k(type))
-        return force_q4_f32
-            ? BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F32
-            : BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F16;
-    if (bn_backend_quant_is_q5k(type))
-        return BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5K_TO_F16;
-    if (bn_backend_quant_moe_down_is_q6k(type))
-        return q6_as_f16
-            ? BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F16
-            : BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F32;
-    return BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_NONE;
+    return bn_backend_quant_aux_cache_dequant_route(type, force_q4_f32,
+                                                    q6_as_f16);
 }
 
 static inline int bn_backend_quant_cuda_cublas_aux_cache_supported(int type) {

@@ -11446,16 +11446,16 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
 
     int force_q6_f32 = aux_cache_mode == 2;
     int force_f16 = aux_cache_mode == 3;
-    int force_q4_f32 = bn_backend_quant_cuda_aux_cache_force_q4_f32(
+    int force_q4_f32 = bn_backend_quant_aux_cache_force_q4_f32(
         buf->type, aux_cache_mode == 2);
-    int q6_as_f16 = bn_backend_quant_cuda_aux_cache_q6_can_use_f16(
+    int q6_as_f16 = bn_backend_quant_aux_cache_q6_can_use_f16(
                         buf->type, force_f16, force_q6_f32) &&
                     bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
     int add_q6_f32_cache =
-        bn_backend_quant_cuda_aux_cache_add_q6_f32(buf->type, force_f16) &&
+        bn_backend_quant_aux_cache_add_q6_f32(buf->type, force_f16) &&
         bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache();
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
-    int f32_cache = bn_backend_quant_cuda_aux_cache_f32_storage(
+    int f32_cache = bn_backend_quant_aux_cache_f32_storage(
         buf->type, force_q4_f32, q6_as_f16);
     size_t bytes = n * (f32_cache
                         ? sizeof(float)
@@ -11488,57 +11488,57 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     }
     int threads = 256;
     int blocks = (int)((n + (size_t)threads - 1u) / (size_t)threads);
-    BnBackendQuantCudaAuxCacheDequant dequant_route =
-        bn_backend_quant_cuda_aux_cache_dequant_route(buf->type,
-                                                      force_q4_f32,
-                                                      q6_as_f16);
+    BnBackendQuantAuxCacheDequant dequant_route =
+        bn_backend_quant_aux_cache_dequant_route(buf->type,
+                                                 force_q4_f32,
+                                                 q6_as_f16);
     switch (dequant_route) {
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_BF16_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16:
         dequant_bf16_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const uint16_t *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q8_0_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q8_0_TO_F16:
         dequant_q8_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ8_0 *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5_0_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5_0_TO_F16:
         dequant_q5_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5_0 *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q3K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q3K_TO_F16:
         dequant_q3k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ3K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F32:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F32:
         dequant_q4k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F16:
         dequant_q4k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16:
         dequant_q5k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16:
         dequant_q6k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F32:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32:
         dequant_q6k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_NONE:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE:
         cudaFree(*cache_ptr);
         *cache_ptr = NULL;
         return 0;
@@ -11616,7 +11616,7 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     if (!buf || !host_data || !buf->data || buf->rows <= 0 ||
         buf->cols <= 0 || (buf->cols % BN_QK_K) != 0)
         return 0;
-    if (!bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(buf->type))
+    if (!bn_backend_quant_lazy_moe_aux_cache_candidate(buf->type))
         return 0;
     if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
         return 0;
@@ -11644,7 +11644,7 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     for (int r = 0; r < buf->rows; r++) {
         for (int b = 0; b < blocks_per_row; b++) {
             size_t block_idx = (size_t)r * (size_t)blocks_per_row + (size_t)b;
-            if (bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block(
+            if (bn_backend_quant_lazy_moe_aux_cache_dequant_block(
                     buf->type, host_data, block_idx, tmp) != 0) {
                 free(h_f16);
                 return 0;
@@ -11713,7 +11713,7 @@ static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
         return NULL;
     }
     if (create_aux_cache) {
-        if (bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(type))
+        if (bn_backend_quant_lazy_moe_aux_cache_candidate(type))
             cuda_buffer_create_iq_f16_cache(buf, data);
         else
             cuda_buffer_create_f16_cache(buf, create_aux_cache);
