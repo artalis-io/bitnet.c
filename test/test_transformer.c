@@ -1413,10 +1413,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
 
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
-    assert(bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed());
     assert(bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed());
     setenv("BN_CUDA_DISABLE_SSM_FFN_FUSE", "1", 1);
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed());
     assert(!bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed());
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");
 
@@ -1535,10 +1533,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
-    assert(bn_transformer_gpu_cuda_prefill_dense_chain_enabled());
     assert(bn_transformer_gpu_prefill_dense_chain_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN", "1", 1);
-    assert(!bn_transformer_gpu_cuda_prefill_dense_chain_enabled());
     assert(!bn_transformer_gpu_prefill_dense_chain_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN");
 
@@ -1555,11 +1551,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
         &gpu, &c));
     assert(bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
-    assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
     assert(bn_transformer_gpu_prefill_hybrid_chain_enabled(&gpu, &c));
     setenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN", "1", 1);
     assert(!bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
-    assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(&gpu, &c));
     assert(!bn_transformer_gpu_prefill_hybrid_chain_enabled(&gpu, &c));
     unsetenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN");
     c.ssm_inner_size = 0;
@@ -1585,11 +1579,9 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
     assert(bn_transformer_prefill_attention_enabled());
-    assert(bn_transformer_gpu_cuda_prefill_attention_enabled());
     assert(bn_transformer_gpu_prefill_attention_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_ATTN", "1", 1);
     assert(!bn_transformer_prefill_attention_enabled());
-    assert(!bn_transformer_gpu_cuda_prefill_attention_enabled());
     assert(!bn_transformer_gpu_prefill_attention_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
@@ -1603,28 +1595,22 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
-    assert(bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled());
     assert(bn_transformer_gpu_prefill_ssm_run_chain_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN", "1", 1);
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled());
     assert(!bn_transformer_gpu_prefill_ssm_run_chain_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN");
 
     unsetenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN");
-    assert(!bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled());
     assert(!bn_transformer_gpu_prefill_moe_chain_debug_enabled());
     setenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN", "1", 1);
-    assert(bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled());
     assert(bn_transformer_gpu_prefill_moe_chain_debug_enabled());
     unsetenv("BN_CUDA_DEBUG_PREFILL_MOE_CHAIN");
 
     unsetenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN");
     assert(!bn_transformer_prefill_hybrid_chain_debug_enabled());
-    assert(!bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled());
     assert(!bn_transformer_gpu_prefill_hybrid_chain_debug_enabled());
     setenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN", "1", 1);
     assert(bn_transformer_prefill_hybrid_chain_debug_enabled());
-    assert(bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled());
     assert(bn_transformer_gpu_prefill_hybrid_chain_debug_enabled());
     unsetenv("BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN");
 

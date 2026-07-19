@@ -926,10 +926,6 @@ int bn_transformer_gpu_prefill_dense_chain_enabled(void) {
     return bn_gpu_policy_cuda_prefill_dense_chain_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_dense_chain_enabled(void) {
-    return bn_transformer_gpu_prefill_dense_chain_enabled();
-}
-
 int bn_transformer_gpu_prefill_hybrid_chain_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
@@ -938,50 +934,24 @@ int bn_transformer_gpu_prefill_hybrid_chain_enabled(
                gpu, c);
 }
 
-int bn_transformer_gpu_cuda_prefill_hybrid_chain_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c) {
-    return bn_transformer_gpu_prefill_hybrid_chain_enabled(gpu, c);
-}
-
 int bn_transformer_gpu_prefill_attention_enabled(void) {
     return bn_gpu_policy_cuda_prefill_attention_enabled();
-}
-
-int bn_transformer_gpu_cuda_prefill_attention_enabled(void) {
-    return bn_transformer_gpu_prefill_attention_enabled();
 }
 
 int bn_transformer_gpu_prefill_ssm_run_chain_enabled(void) {
     return bn_gpu_policy_cuda_prefill_ssm_run_chain_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_ssm_run_chain_enabled(void) {
-    return bn_transformer_gpu_prefill_ssm_run_chain_enabled();
-}
-
 int bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed(void) {
     return bn_gpu_policy_cuda_prefill_ssm_ffn_fuse_allowed();
-}
-
-int bn_transformer_gpu_cuda_prefill_ssm_ffn_fuse_allowed(void) {
-    return bn_transformer_gpu_prefill_ssm_ffn_fuse_allowed();
 }
 
 int bn_transformer_gpu_prefill_moe_chain_debug_enabled(void) {
     return bn_gpu_policy_cuda_prefill_moe_chain_debug_enabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_moe_chain_debug_enabled(void) {
-    return bn_transformer_gpu_prefill_moe_chain_debug_enabled();
-}
-
 int bn_transformer_gpu_prefill_hybrid_chain_debug_enabled(void) {
     return bn_gpu_policy_cuda_prefill_hybrid_chain_debug_enabled();
-}
-
-int bn_transformer_gpu_cuda_prefill_hybrid_chain_debug_enabled(void) {
-    return bn_transformer_gpu_prefill_hybrid_chain_debug_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_enabled(void) {
