@@ -143,6 +143,9 @@ int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
 int bn_model_arch_uses_moe(const BnConfig *c);
 int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix);
+int bn_model_arch_gguf_u32_or_i32_array(BnGGUFFile *f,
+                                         const char *suffix,
+                                         int idx);
 float bn_model_arch_gguf_f32(BnGGUFFile *f, const char *suffix);
 int bn_model_arch_gguf_uses_moe(BnGGUFFile *f);
 int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c);

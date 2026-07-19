@@ -220,28 +220,6 @@ static float *load_float_tensor_data(BnGGUFFile *f, const char *name,
     return (float *)bn_gguf_tensor_data(f, ti);
 }
 
-static int gguf_get_u32_or_i32_array(BnGGUFFile *f, const char *key, int idx) {
-    int ki = bn_gguf_find_key(f, key);
-    if (ki < 0) return 0;
-    BnGGUFKeyValue *kv = &f->kvs[ki];
-    if (kv->type == BN_GGUF_TYPE_UINT32) return (int)kv->value.u32;
-    if (kv->type == BN_GGUF_TYPE_INT32) return kv->value.i32;
-    if (kv->type != BN_GGUF_TYPE_ARRAY || idx < 0) return 0;
-    BnGGUFArray *a = &kv->value.arr;
-    if ((uint64_t)idx >= a->n || !a->data) return 0;
-    if (a->elem_type == BN_GGUF_TYPE_INT32) {
-        int32_t v;
-        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
-        return v;
-    }
-    if (a->elem_type == BN_GGUF_TYPE_UINT32) {
-        uint32_t v;
-        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
-        return (int)v;
-    }
-    return 0;
-}
-
 static int tensor_dim0(BnGGUFFile *f, const char *name) {
     int ti = bn_gguf_find_tensor(f, name);
     if (ti < 0 || f->tensors[ti].n_dims < 1 || f->tensors[ti].dims[0] > INT_MAX)
@@ -300,8 +278,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     c->dim = bn_model_arch_gguf_u32(f, "embedding_length");
 
-    snprintf(key, sizeof(key), "%s.feed_forward_length", prefix);
-    c->hidden_dim = gguf_get_u32_or_i32_array(f, key, 0);
+    c->hidden_dim =
+        bn_model_arch_gguf_u32_or_i32_array(f, "feed_forward_length", 0);
 
     c->n_layers = bn_model_arch_gguf_u32(f, "block_count");
     int n_nextn_layers =
@@ -311,8 +289,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     c->n_heads = bn_model_arch_gguf_u32(f, "attention.head_count");
 
-    snprintf(key, sizeof(key), "%s.attention.head_count_kv", prefix);
-    c->n_kv_heads = gguf_get_u32_or_i32_array(f, key, 0);
+    c->n_kv_heads = bn_model_arch_gguf_u32_or_i32_array(
+        f, "attention.head_count_kv", 0);
     if (c->n_kv_heads == 0) c->n_kv_heads = c->n_heads;
 
     c->seq_len = bn_model_arch_gguf_u32(f, "context_length");
@@ -760,8 +738,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                        lw->attn.wq.rows % c->n_heads == 0) {
                 lw->attn.head_size = lw->attn.wq.rows / c->n_heads;
             }
-            snprintf(key, sizeof(key), "%s.attention.head_count_kv", prefix);
-            lw->attn.n_kv_heads = gguf_get_u32_or_i32_array(f, key, i);
+            lw->attn.n_kv_heads = bn_model_arch_gguf_u32_or_i32_array(
+                f, "attention.head_count_kv", i);
             if (lw->attn.n_kv_heads <= 0 && lw->attn.head_size > 0)
                 lw->attn.n_kv_heads = lw->attn.wk.rows / lw->attn.head_size;
             if (lw->attn.n_kv_heads <= 0) lw->attn.n_kv_heads = c->n_kv_heads;
