@@ -2015,7 +2015,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     }
                 }
                 fprintf(stderr,
-                        "[bn:gpu:argmax:cmp] cuda=%d cpu=%d cpu_logit=%.6g\n",
+                        "[bn:gpu:argmax:cmp] gpu=%d cpu=%d cpu_logit=%.6g\n",
                         *argmax_token, cpu_argmax, cpu_best);
             }
             free(dbg_logits);
