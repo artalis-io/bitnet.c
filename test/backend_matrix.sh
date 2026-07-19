@@ -134,6 +134,11 @@ if sed -n '/^static int cuda_buffer_create_f16_cache/,/size_t bytes = n/p' src/g
     fail=1
 fi
 
+if sed -n '/bn_backend_quant_cuda_aux_cache_dequant_route/,/err = cudaGetLastError()/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA aux cache dequant routing"
+    fail=1
+fi
+
 if sed -n '/^static int cuda_buffer_create_iq_f16_cache/,/bn_gpu_policy_cuda_cublas_matmul_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_IQ3_XXS\|BN_GGUF_TENSOR_IQ4_XS' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA IQ aux-cache eligibility"
     fail=1

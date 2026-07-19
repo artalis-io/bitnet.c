@@ -357,6 +357,8 @@ int      bn_quant_format_metal_q6_q8k_matvec_supported(int type);
 int      bn_quant_format_dense_f32_type(void);
 int      bn_quant_format_gpu_float_buffer_type(void);
 int      bn_quant_format_is_f32(int type);
+int      bn_quant_format_is_bf16(int type);
+int      bn_quant_format_is_q3k(int type);
 int      bn_quant_format_is_q4k(int type);
 int      bn_quant_format_is_q5k(int type);
 int      bn_quant_format_is_q6k(int type);

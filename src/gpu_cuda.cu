@@ -11488,42 +11488,60 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     }
     int threads = 256;
     int blocks = (int)((n + (size_t)threads - 1u) / (size_t)threads);
-    if (buf->type == BN_GGUF_TENSOR_BF16) {
+    BnBackendQuantCudaAuxCacheDequant dequant_route =
+        bn_backend_quant_cuda_aux_cache_dequant_route(buf->type,
+                                                      force_q4_f32,
+                                                      q6_as_f16);
+    switch (dequant_route) {
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_BF16_TO_F16:
         dequant_bf16_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const uint16_t *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q8_0) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q8_0_TO_F16:
         dequant_q8_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ8_0 *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q5_0) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5_0_TO_F16:
         dequant_q5_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5_0 *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q3_K) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q3K_TO_F16:
         dequant_q3k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ3K *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q4_K && force_q4_f32) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F32:
         dequant_q4k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q4_K) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q4K_TO_F16:
         dequant_q4k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q5_K) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q5K_TO_F16:
         dequant_q5k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5K *)buf->data,
             buf->rows, buf->cols);
-    } else if (buf->type == BN_GGUF_TENSOR_Q6_K && q6_as_f16) {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F16:
         dequant_q6k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);
-    } else {
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_Q6K_TO_F32:
         dequant_q6k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);
+        break;
+    case BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_NONE:
+        cudaFree(*cache_ptr);
+        *cache_ptr = NULL;
+        return 0;
     }
     err = cudaGetLastError();
     if (err != cudaSuccess) {

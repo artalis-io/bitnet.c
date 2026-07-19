@@ -114,6 +114,10 @@ static void test_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_IQ4_XS));
     assert(!bn_quant_format_is_f16_float_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_is_bf16(BN_GGUF_TENSOR_BF16));
+    assert(!bn_quant_format_is_bf16(BN_GGUF_TENSOR_F16));
+    assert(bn_quant_format_is_q3k(BN_GGUF_TENSOR_Q3_K));
+    assert(!bn_quant_format_is_q3k(BN_GGUF_TENSOR_Q4_K));
 
     assert(bn_quant_format_gpu_matvec_supported(BN_GGUF_TENSOR_F32));
     assert(bn_quant_format_gpu_matvec_supported(BN_GGUF_TENSOR_F16));

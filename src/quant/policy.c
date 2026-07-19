@@ -75,6 +75,14 @@ int bn_quant_format_is_q4k(int type) {
     return type == BN_GGUF_TENSOR_Q4_K;
 }
 
+int bn_quant_format_is_bf16(int type) {
+    return type == BN_GGUF_TENSOR_BF16;
+}
+
+int bn_quant_format_is_q3k(int type) {
+    return type == BN_GGUF_TENSOR_Q3_K;
+}
+
 int bn_quant_format_is_q5k(int type) {
     return type == BN_GGUF_TENSOR_Q5_K;
 }
