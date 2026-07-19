@@ -778,10 +778,8 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     assert(!bn_transformer_gpu_prefill_ssm_layer_disabled());
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     assert(bn_transformer_gpu_prefill_ssm_layer_disabled());
-    assert(bn_transformer_gpu_cuda_prefill_ssm_layer_disabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
 
     unsetenv("BN_GPU_PROFILE");
@@ -1513,11 +1511,9 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
     assert(!bn_transformer_gpu_large_hybrid_prefill_disabled());
-    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
     assert(!bn_transformer_prefill_large_hybrid_disabled());
     setenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL", "1", 1);
     assert(bn_transformer_gpu_large_hybrid_prefill_disabled());
-    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_disabled());
     assert(bn_transformer_prefill_large_hybrid_disabled());
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
 
@@ -1575,11 +1571,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_ATTN");
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
     assert(bn_transformer_gpu_prefill_attention_min_tokens() == 16);
-    assert(bn_transformer_gpu_cuda_prefill_attention_min_tokens() == 16);
     assert(bn_transformer_prefill_attention_min_tokens() == 16);
     setenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS", "11", 1);
     assert(bn_transformer_gpu_prefill_attention_min_tokens() == 11);
-    assert(bn_transformer_gpu_cuda_prefill_attention_min_tokens() == 11);
     assert(bn_transformer_prefill_attention_min_tokens() == 11);
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
 

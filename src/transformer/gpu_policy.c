@@ -155,10 +155,6 @@ int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
     return bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
 }
 
-int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void) {
-    return bn_transformer_gpu_prefill_ssm_layer_disabled();
-}
-
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type) {
@@ -772,10 +768,6 @@ int bn_transformer_gpu_prefill_attention_min_tokens(void) {
     return bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(16);
 }
 
-int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void) {
-    return bn_transformer_gpu_prefill_attention_min_tokens();
-}
-
 int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu) {
@@ -789,12 +781,6 @@ int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     if (bn_transformer_gpu_backend_is_cuda(gpu) && c)
         return 16;
     return bn_transformer_gpu_prefill_attention_min_tokens();
-}
-
-int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
-    const BnConfig *c,
-    const BnGPUBackend *gpu) {
-    return bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu);
 }
 
 int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
@@ -815,12 +801,6 @@ int bn_transformer_gpu_prefill_moe_chain_min_tokens(
         return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(16);
     return bn_gpu_policy_cuda_moe_prefill_min_tokens_or_default(
         bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu));
-}
-
-int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
-    const BnConfig *c,
-    const BnGPUBackend *gpu) {
-    return bn_transformer_gpu_prefill_moe_chain_min_tokens(c, gpu);
 }
 
 int bn_transformer_gpu_prefill_moe_ffn_batch_available(
@@ -1103,10 +1083,6 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
 
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
     return bn_gpu_policy_cuda_large_hybrid_prefill_disabled();
-}
-
-int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void) {
-    return bn_transformer_gpu_large_hybrid_prefill_disabled();
 }
 
 int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(

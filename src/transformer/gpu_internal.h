@@ -394,7 +394,6 @@ int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
 int bn_transformer_gpu_ssm_ab_stack_enabled(void);
 int bn_transformer_gpu_split_residual_rmsnorm_enabled(void);
 int bn_transformer_gpu_prefill_ssm_layer_disabled(void);
-int bn_transformer_gpu_cuda_prefill_ssm_layer_disabled(void);
 int bn_transformer_gpu_batch_prefill_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
@@ -435,13 +434,6 @@ int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_prefill_moe_chain_min_tokens(
-    const BnConfig *c,
-    const BnGPUBackend *gpu);
-int bn_transformer_gpu_cuda_prefill_attention_min_tokens(void);
-int bn_transformer_gpu_cuda_prefill_dense_chain_min_tokens(
-    const BnConfig *c,
-    const BnGPUBackend *gpu);
-int bn_transformer_gpu_cuda_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
@@ -560,7 +552,6 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     const BnGPUBackend *gpu,
     int tensor_type,
     int allow_aux_cache);
-int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void);
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void);
 int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
