@@ -37,7 +37,7 @@ int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void) {
 
 int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type) {
     return bn_transformer_cpu_fused_kquant_gateup_silu_allowed() &&
-           bn_backend_quant_cpu_fused_q4_gateup_silu(gate_type, up_type);
+           bn_backend_quant_cpu_fused_kquant_gateup_silu(gate_type, up_type);
 }
 
 int bn_transformer_cpu_can_prepared_kquant_pair(const BnCPUBackendOps *ops,

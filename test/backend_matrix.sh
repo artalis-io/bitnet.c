@@ -812,7 +812,8 @@ if grep -n 'BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_REFE
     fail=1
 fi
 
-if grep -n 'bn_quant_format_supports_cpu_fused_q4_gateup_silu\|bn_backend_quant_cpu_fused_q4_gateup_silu' src/transformer/cpu.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_supports_cpu_fused_q4_gateup_silu' src/transformer/cpu.c src/transformer/cpu_policy.c >/dev/null 2>&1 ||
+   grep -n 'bn_backend_quant_cpu_fused_q4_gateup_silu' include/backend_quant.h src/transformer/cpu.c src/transformer/cpu_policy.c >/dev/null 2>&1; then
     echo "CPU execution code must use CPU backend policy helpers for fused gate-up quant capability"
     fail=1
 fi

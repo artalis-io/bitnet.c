@@ -164,8 +164,8 @@ static inline int bn_backend_quant_moe_gateup_q4(int gate_type,
     return bn_quant_format_supports_moe_q4_gateup(gate_type, up_type);
 }
 
-static inline int bn_backend_quant_cpu_fused_q4_gateup_silu(int gate_type,
-                                                            int up_type) {
+static inline int bn_backend_quant_cpu_fused_kquant_gateup_silu(int gate_type,
+                                                                int up_type) {
     return bn_quant_format_supports_cpu_fused_q4_gateup_silu(gate_type,
                                                              up_type);
 }
