@@ -539,6 +539,17 @@ if grep -n 'BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_CUDA_[^"]*\(QWEN\|GEMMA\)' \
+    include/gpu_policy.h \
+    src/gpu_cuda.cu \
+    src/gpu_metal.m \
+    src/transformer.c \
+    src/transformer/*.c \
+    shaders/metal/* >/dev/null 2>&1; then
+    echo "model-family CUDA compatibility env vars must stay in backend GPU policy/tests, not execution or shared interfaces"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM")\|getenv("BN_CUDA_DEBUG_PREFILL_GEMM")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for prefill GEMM env policy"
     fail=1
