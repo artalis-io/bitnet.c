@@ -841,8 +841,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int compare_ffn_state_pos = -1;
     BnTransformerGPUCPUFallbackPolicy cpu_fallback =
         bn_transformer_gpu_cpu_fallback_policy();
-    BnTransformerGPUQ4Q8LayerPolicy q4_q8 =
-        bn_transformer_gpu_q4_q8_layer_policy(c);
+    BnTransformerGPUSmallDenseExactLayerPolicy small_dense_exact =
+        bn_transformer_gpu_small_dense_exact_layer_policy(c);
     BnTransformerGPUComparePolicy compare_policy =
         bn_transformer_gpu_compare_policy();
     BnTransformerGPUMoERouteLayerPolicy moe_route_layer =
@@ -898,12 +898,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_matvec_argmax_enabled(
             gpu, c, logit_res, argmax_token != NULL, need_logits,
             gpu_logits_need_cpu);
-    BnTransformerGPUQ4Q8DecodePolicy q4_q8_decode =
-        bn_transformer_gpu_q4_q8_decode_policy(gpu, c, &q4_q8);
+    BnTransformerGPUSmallDenseExactDecodePolicy small_dense_exact_decode =
+        bn_transformer_gpu_small_dense_exact_decode_policy(gpu, c, &small_dense_exact);
     BnTransformerGPULogitsRefinePolicy logits_refine =
         bn_transformer_gpu_logits_refine_policy(
             gpu, c, w, logit_res,
-            q4_q8_decode.small_dense_exact_default);
+            small_dense_exact_decode.small_dense_exact_default);
     BnTransformerGPUDecodeCacheabilityPolicy decode_cacheability =
         bn_transformer_gpu_decode_cacheability_policy(
             gpu, c, w, backend, emit_logits, argmax_token != NULL,
@@ -985,11 +985,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 bn_transformer_gpu_resolve_dense_ffn_resources(
                     gpu, backend, lw, l);
         }
-        BnTransformerGPUQ4Q8LayerUsePolicy q4_q8_use =
-            bn_transformer_gpu_q4_q8_layer_use_policy(
-                gpu, c, &q4_q8, l,
-                q4_q8_decode.small_dense_exact_default,
-                q4_q8_decode.small_dense_exact_to_layer);
+        BnTransformerGPUSmallDenseExactLayerUsePolicy small_dense_exact_use =
+            bn_transformer_gpu_small_dense_exact_layer_use_policy(
+                gpu, c, &small_dense_exact, l,
+                small_dense_exact_decode.small_dense_exact_default,
+                small_dense_exact_decode.small_dense_exact_to_layer);
 
         // ---- SSM layer ----
         if (!is_attn) {
@@ -1072,7 +1072,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             bn_transformer_gpu_emit_context_qkv(
                 &emit, c, lw, &plan, &qkv_res, pos, q_dim,
                 head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
-                q4_q8_use.use_attention);
+                small_dense_exact_use.use_attention);
             if (!emit_logits && l + 1 == c->n_layers) {
                 continue;
             }
@@ -1096,13 +1096,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, "gpu gqa compare failed");
                 bn_transformer_gpu_emit_context_attention_finish(
                     &emit, c, lw, &attn_res, dim, q_dim, head_size, u_eps,
-                    q4_q8_use.use_attention);
+                    small_dense_exact_use.use_attention);
             } else {
                 bn_transformer_gpu_emit_context_attention(
                     &emit, c, lw, &attn_res, pos, dim, q_dim,
                     head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
                     kv_cache_off, has_moe, u_eps,
-                    q4_q8_use.use_attention);
+                    small_dense_exact_use.use_attention);
             }
             if (compare_attention) {
                 if (bn_transformer_gpu_debug_compare_attention(
@@ -1325,7 +1325,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 }
                 if (moe_debug.compare_raw &&
                     moe_gate_all && moe_up_all &&
-                    moe_route.all2_q4q6_moe) {
+                    moe_route.all_active_two_kquant_moe) {
                     int K = c->n_experts_active;
                     int n_experts = c->n_experts;
                     int moe_hidden = c->moe_intermediate_size;
@@ -1854,7 +1854,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_dense_ffn(
             &emit, c, lw, &ffn_plan, &ffn_res, dim, u_eps,
             next_norm, skip_ffn_down, &ffn_down_input_buf,
-            q4_q8_use.use_ffn, q4_q8_use.use_ffn_down);
+            small_dense_exact_use.use_ffn, small_dense_exact_use.use_ffn_down);
         if (!skip_ffn_down &&
             compare_ffn_down_layer == l &&
             (compare_ffn_down_pos < 0 || compare_ffn_down_pos == pos)) {

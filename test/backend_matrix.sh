@@ -699,7 +699,7 @@ if grep -n 'BN_CUDA_DISABLE_SSM_FFN_FUSE\|BN_CUDA_ENABLE_MOE_PREFILL\|BN_CUDA_DI
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_backend_is_cuda(gpu)\|bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_backend_is_cuda(gpu)\|bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU-aware prefill backend policy helpers"
     fail=1
 fi
@@ -945,7 +945,7 @@ if grep -n 'BN_CUDA_DISABLE_MOE_FFN' src/transformer/gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_all2_q4q6_moe_layer(c, lw' src/transformer/gpu.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in\|bn_transformer_gpu_cuda_all_active_two_kquant_moe_layer(c, lw' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU-aware MoE FFN fallback and route policy helpers"
     fail=1
 fi
@@ -1316,7 +1316,7 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_pre
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_all2_q4_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed\|bn_transformer_gpu_cuda_moe_route_batch_debug_enabled' src/moe_prefill.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in\|bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed\|bn_transformer_gpu_cuda_moe_route_batch_debug_enabled' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use behavior-named GPU policy helpers for MoE prefill eligibility"
     fail=1
 fi
@@ -1491,12 +1491,12 @@ if grep -n 'bn_transformer_gpu_cuda_\(moe_decode_cacheable\|decode_cacheable\|la
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_cuda_\(all2_q4q6_moe_q6_logits_refine_default\|all2_q4q6_moe_cpu_moe_safe_default\|all2_q4q6_moe_model\|all2_q4q6_moe_layer\|all2_q4q6_moe_layer_enabled\|all2_q4q6_moe_cpu_attn_safe_default\|all2_q4q6_moe_cpu_attn_fallback_enabled\|moe_exact_attention_enabled\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_cuda_\(all_active_two_kquant_moe_q6_logits_refine_default\|all_active_two_kquant_moe_cpu_moe_safe_default\|all_active_two_kquant_moe_model\|all_active_two_kquant_moe_layer\|all_active_two_kquant_moe_layer_enabled\|all_active_two_kquant_moe_cpu_attn_safe_default\|all_active_two_kquant_moe_cpu_attn_fallback_enabled\|moe_exact_attention_enabled\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "MoE refine/exact-attention transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_cuda_\(all2_moe_direct_route_enabled\|all2_q4q6_moe_route_layer_selected\|all2_q4q6_moe_route_layer_range\|all2_q4q6_moe_exact_gpu_route_enabled\|all2_q4q6_moe_router\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_cuda_\(all2_moe_direct_route_enabled\|all_active_two_kquant_moe_route_layer_selected\|all_active_two_kquant_moe_route_layer_range\|all_active_two_kquant_moe_exact_gpu_route_enabled\|all_active_two_kquant_moe_router\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "MoE route transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1
 fi
@@ -1711,12 +1711,17 @@ if grep -n 'bn_transformer_gpu_small_backend_q8_logits_refine\|bn_transformer_gp
     fail=1
 fi
 
+if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_all2_q4q6_moe\|bn_transformer_gpu_all2_q4_moe\|\.all2_q4q6_moe\|use_q4_q8' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer GPU small-dense and all-active-two MoE policy must expose behavior-named helpers"
+    fail=1
+fi
+
 if sed -n '/bn_transformer_gpu_validate_forward/,/if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)/p' src/transformer/gpu_policy.c | grep -n 'backend_large_native = transformer_gpu_backend_is_cuda\|transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for native graph policy"
     fail=1
 fi
 
-if awk '/^int bn_transformer_gpu_all2_q4q6_moe_layer_enabled/{flag=1} /^int bn_transformer_gpu_batch_prefill_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
+if awk '/^int bn_transformer_gpu_all_active_two_kquant_moe_layer_enabled/{flag=1} /^int bn_transformer_gpu_batch_prefill_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for fallback/exact/prefill support"
     fail=1
 fi
@@ -2061,7 +2066,7 @@ do
     fi
 done
 
-if awk '/^static int small_dense_backend_native_by_default/{flag=1} /^int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_backend_quant_small_dense' >/dev/null 2>&1; then
+if awk '/^static int small_dense_backend_native_by_default/{flag=1} /^int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_backend_quant_small_dense' >/dev/null 2>&1; then
     echo "Small-dense backend default policy must compose behavior-named quant helpers"
     fail=1
 fi

@@ -133,20 +133,20 @@ typedef struct {
     int to_layer;
     int attn_only;
     int ffn_only;
-} BnTransformerGPUQ4Q8LayerPolicy;
+} BnTransformerGPUSmallDenseExactLayerPolicy;
 
 typedef struct {
     int small_dense_exact_default;
     int small_dense_exact_to_layer;
-} BnTransformerGPUQ4Q8DecodePolicy;
+} BnTransformerGPUSmallDenseExactDecodePolicy;
 
 typedef struct {
     int use_layer;
-    int small_dense_exact_q4_q8;
+    int small_dense_exact_path;
     int use_attention;
     int use_ffn;
     int use_ffn_down;
-} BnTransformerGPUQ4Q8LayerUsePolicy;
+} BnTransformerGPUSmallDenseExactLayerUsePolicy;
 
 typedef struct {
     int use_cache;
@@ -164,7 +164,7 @@ typedef struct {
 } BnTransformerGPUMoERouteLayerPolicy;
 
 typedef struct {
-    int all2_q4q6_moe;
+    int all_active_two_kquant_moe;
     int route_layer_selected;
     int exact_gpu_route;
     int gpu_route_topk;
@@ -288,22 +288,22 @@ int bn_transformer_gpu_can_use_stacked_alpha_beta(const BnQWeight *alpha,
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);
-int bn_transformer_gpu_all2_q4q6_moe_model(
+int bn_transformer_gpu_all_active_two_kquant_moe_model(
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_all2_q4q6_moe_layer(
+int bn_transformer_gpu_all_active_two_kquant_moe_layer(
     const BnConfig *c,
     const BnLayerWeights *lw,
     int dim);
-int bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
+int bn_transformer_gpu_all_active_two_kquant_moe_layer_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnLayerWeights *lw,
     int dim);
-int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
+int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
+int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
@@ -314,15 +314,15 @@ int bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_small_dense_exact_q4_q8_default(
+int bn_transformer_gpu_small_dense_exact_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    int q4_q8_from_layer);
-int bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
+    int small_dense_exact_from_layer);
+int bn_transformer_gpu_small_dense_exact_to_layer(
     const BnConfig *c,
-    int exact_q4_q8_default,
-    int q4_q8_to_layer);
-int bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
+    int small_dense_exact_default,
+    int small_dense_exact_to_layer);
+int bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
@@ -358,7 +358,11 @@ BnTransformerGPUMatvecFallbackPolicy
 bn_transformer_gpu_matvec_fallback_policy(
     const BnModel *m,
     const BnGPUBackend *gpu);
-int bn_transformer_gpu_qkv_split_enabled(int use_q4_q8);
+int bn_transformer_gpu_small_dense_exact_fused_gateup_enabled(
+    int use_small_dense_exact);
+int bn_transformer_gpu_small_dense_exact_down_enabled(
+    int use_small_dense_exact_down);
+int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_exact);
 int bn_transformer_gpu_qk_split_enabled(void);
 int bn_transformer_gpu_qkv_split_debug_enabled(void);
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
@@ -524,7 +528,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnConfig *c,
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
-    int small_dense_exact_q4_q8_default);
+    int small_dense_small_dense_exact_default);
 BnTransformerGPUGenerateArgmaxPolicy
 bn_transformer_gpu_generate_argmax_policy(
     const BnGPUBackend *gpu,
@@ -578,7 +582,7 @@ bn_transformer_gpu_decode_cacheability_policy(
     int need_logits,
     const BnTransformerGPUCPUFallbackPolicy *cpu_fallback,
     const BnTransformerGPUComparePolicy *compare);
-int bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
+int bn_transformer_gpu_all_active_two_kquant_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w);
 int bn_transformer_gpu_moe_exact_attention_enabled(
@@ -604,21 +608,21 @@ int bn_transformer_gpu_cpu_fallback_layer_selected(
     int layer,
     int exact_layer,
     int from_layer);
-BnTransformerGPUQ4Q8LayerPolicy
-bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c);
-BnTransformerGPUQ4Q8DecodePolicy
-bn_transformer_gpu_q4_q8_decode_policy(
+BnTransformerGPUSmallDenseExactLayerPolicy
+bn_transformer_gpu_small_dense_exact_layer_policy(const BnConfig *c);
+BnTransformerGPUSmallDenseExactDecodePolicy
+bn_transformer_gpu_small_dense_exact_decode_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    const BnTransformerGPUQ4Q8LayerPolicy *layer_policy);
-BnTransformerGPUQ4Q8LayerUsePolicy
-bn_transformer_gpu_q4_q8_layer_use_policy(
+    const BnTransformerGPUSmallDenseExactLayerPolicy *layer_policy);
+BnTransformerGPUSmallDenseExactLayerUsePolicy
+bn_transformer_gpu_small_dense_exact_layer_use_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    const BnTransformerGPUQ4Q8LayerPolicy *policy,
+    const BnTransformerGPUSmallDenseExactLayerPolicy *policy,
     int layer,
-    int small_dense_exact_q4_q8_default,
-    int small_dense_exact_q4_q8_to_layer);
+    int small_dense_small_dense_exact_default,
+    int small_dense_exact_to_layer);
 BnTransformerGPUCachedDecodePolicy
 bn_transformer_gpu_cached_decode_policy(
     int cached_op_count,
@@ -640,11 +644,11 @@ int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
 int bn_transformer_gpu_moe_routed_q8(const BnMoEExpertMap *map);
 int bn_transformer_gpu_moe_route_topk_enabled(
     void *moe_router,
-    int all2_q4q6_moe,
-    int all2_q4q6_moe_gpu_route_layer_selected);
+    int all_active_two_kquant_moe,
+    int all_active_two_kquant_moe_gpu_route_layer_selected);
 int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     const BnConfig *c,
-    int all2_q4q6_moe,
+    int all_active_two_kquant_moe,
     int gpu_route_topk,
     int moe_routed_q8);
 int bn_transformer_gpu_moe_routed_ffn_enabled(
@@ -681,23 +685,23 @@ int bn_transformer_gpu_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);
-int bn_transformer_gpu_all2_q4q6_moe_route_layer_selected(
+int bn_transformer_gpu_all_active_two_kquant_moe_route_layer_selected(
     int layer,
     int route_from_layer,
     int route_to_layer);
-void bn_transformer_gpu_all2_q4q6_moe_route_layer_range(
+void bn_transformer_gpu_all_active_two_kquant_moe_route_layer_range(
     int *route_from_layer,
     int *route_to_layer);
-int bn_transformer_gpu_all2_q4q6_moe_exact_gpu_route_enabled(
-    int all2_q4q6_moe,
+int bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled(
+    int all_active_two_kquant_moe,
     int route_layer_selected);
-void *bn_transformer_gpu_all2_q4q6_moe_router(
+void *bn_transformer_gpu_all_active_two_kquant_moe_router(
     const BnConfig *c,
     void *moe_router,
     void *router_diff,
     int route_layer_selected,
     int exact_gpu_route);
-int bn_transformer_gpu_all2_q4_moe_requires_opt_in(
+int bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
@@ -901,7 +905,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int gate_rows,
     int up_rows,
     int cols,
-    int use_q4_q8,
+    int use_small_dense_exact,
     uint32_t flags);
 int bn_transformer_gpu_emit_context_moe_route_topk(
     BnTransformerGPUEmitContext *ctx,
@@ -1106,8 +1110,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     void *next_norm,
     int skip_down,
     int *down_input_buf,
-    int use_q4_q8,
-    int use_q4_q8_down);
+    int use_small_dense_exact,
+    int use_small_dense_exact_down);
 void bn_transformer_gpu_emit_context_attention(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -1125,7 +1129,7 @@ void bn_transformer_gpu_emit_context_attention(
     uint32_t kv_cache_off,
     int has_moe,
     uint32_t u_eps,
-    int use_q4_q8);
+    int use_small_dense_exact);
 void bn_transformer_gpu_emit_context_attention_gqa(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -1150,7 +1154,7 @@ void bn_transformer_gpu_emit_context_attention_finish(
     int q_dim,
     int head_size,
     uint32_t u_eps,
-    int use_q4_q8);
+    int use_small_dense_exact);
 void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          const BnConfig *c,
                                          const BnLayerWeights *lw,
@@ -1164,7 +1168,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          int rope_dims,
                                          uint32_t kv_cache_off,
                                          uint32_t u_eps,
-                                         int use_q4_q8);
+                                         int use_small_dense_exact);
 void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                                          const BnConfig *c,
                                          const BnLayerWeights *lw,
