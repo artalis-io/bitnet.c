@@ -158,13 +158,7 @@ int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    if (!bn_gpu_policy_fused_gateup_enabled())
-        return 0;
-    if (bn_transformer_gpu_backend_is_cuda(gpu) &&
-        bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
-        !bn_gpu_policy_cuda_q5k_fused_gateup_enabled())
-        return 0;
-    return 1;
+    return bn_gpu_policy_fused_gateup_silu_allowed(gpu, tensor_type);
 }
 
 int bn_transformer_gpu_q4_q8_fused_gateup_enabled(int use_q4_q8) {

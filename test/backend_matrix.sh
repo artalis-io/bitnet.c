@@ -1276,6 +1276,11 @@ if grep -n 'bn_transformer_gpu_cuda_prefill_\(dense_chain_enabled\|hybrid_chain_
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_gpu_policy_cuda_q5k_fused_gateup_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose GPU fused gate/up policy through behavior-named helpers"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_cuda_large_hybrid_prefill_disabled' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "large-hybrid prefill transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1

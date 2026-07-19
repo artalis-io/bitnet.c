@@ -1284,6 +1284,17 @@ int bn_gpu_policy_cuda_q5k_fused_gateup_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP") != NULL;
 }
 
+int bn_gpu_policy_fused_gateup_silu_allowed(const BnGPUBackend *gpu,
+                                            int tensor_type) {
+    if (!bn_gpu_policy_fused_gateup_enabled())
+        return 0;
+    if (bn_gpu_policy_backend_is_cuda(gpu) &&
+        bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(tensor_type) &&
+        !bn_gpu_policy_cuda_q5k_fused_gateup_enabled())
+        return 0;
+    return 1;
+}
+
 int bn_gpu_policy_cuda_shared_q4_q8_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
 }

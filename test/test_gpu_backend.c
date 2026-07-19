@@ -2129,6 +2129,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_prefill_ssm_ffn_profile_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled());
     assert(!bn_gpu_policy_cuda_q5k_fused_gateup_enabled());
+    assert(bn_gpu_policy_fused_gateup_silu_allowed(
+        &gpu, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_gpu_policy_fused_gateup_silu_allowed(
+        &gpu, BN_GGUF_TENSOR_Q5_K));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(bn_gpu_policy_fused_gateup_silu_allowed(
+        &gpu, BN_GGUF_TENSOR_Q5_K));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_gpu_policy_cuda_shared_q4_q8_dot_enabled());
     assert(bn_gpu_policy_cuda_shared_expert_gate_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER", "1", 1);
@@ -2150,6 +2158,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP", "1", 1);
     setenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT", "1", 1);
     setenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE", "1", 1);
+    setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     assert(bn_gpu_policy_cuda_prefill_moe_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_dense_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_dense_debug_enabled());
@@ -2171,6 +2180,11 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_SSM_FFN_GATEUP_F16_OUT", "1", 1);
     assert(!bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled());
     assert(bn_gpu_policy_cuda_q5k_fused_gateup_enabled());
+    assert(!bn_gpu_policy_fused_gateup_silu_allowed(
+        &gpu, BN_GGUF_TENSOR_Q4_K));
+    unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
+    assert(bn_gpu_policy_fused_gateup_silu_allowed(
+        &gpu, BN_GGUF_TENSOR_Q5_K));
     assert(!bn_gpu_policy_cuda_shared_q4_q8_dot_enabled());
     assert(!bn_gpu_policy_cuda_shared_expert_gate_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER");
@@ -2192,6 +2206,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_SSM_FFN_GATEUP_F16_OUT");
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_GATEUP_F16_OUT");
     unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
+    unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
     unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");
     unsetenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE");
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
