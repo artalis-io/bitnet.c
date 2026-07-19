@@ -1521,6 +1521,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_GPU_BACKEND_METAL\|BN_GPU_BACKEND_WEBGPU\|BN
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_q4_prepared_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use behavior-named helpers for specialized Q6/Q8 and prepared Q4/Q8 policy"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_gpu_moe_quant_only_without_aux_cache/{flag=1} /^int bn_transformer_gpu_large_hybrid_prefill_disabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for lazy MoE aux cache support"
     fail=1

@@ -1194,7 +1194,7 @@ int bn_transformer_gpu_decode_cacheable(
     if (bn_gpu_policy_q4_q8_decode_cache_disabled() ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_transformer_gpu_compare_logits_enabled() ||
-        bn_gpu_policy_metal_q6_q8k_enabled())
+        bn_gpu_policy_specialized_q6_q8k_path_enabled())
         return 0;
     return 1;
 }
@@ -1346,7 +1346,8 @@ bn_transformer_gpu_q4_q8_layer_policy(const BnConfig *c) {
     BnTransformerGPUQ4Q8LayerPolicy policy = {
         .from_layer = bn_gpu_policy_q4_q8_from_layer_or_default(n_layers),
         .to_layer = bn_gpu_policy_q4_q8_to_layer_or_default(
-            n_layers, bn_gpu_policy_metal_q4_prepared_enabled()),
+            n_layers,
+            bn_gpu_policy_q4_q8_prepared_layer_default_enabled()),
         .attn_only = bn_gpu_policy_q4_q8_attn_only_enabled(),
         .ffn_only = bn_gpu_policy_q4_q8_ffn_only_enabled(),
     };

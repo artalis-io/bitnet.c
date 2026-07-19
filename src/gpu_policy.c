@@ -2119,6 +2119,10 @@ int bn_gpu_policy_metal_q4_prepared_enabled(void) {
     return getenv("BN_METAL_Q4_PREPARED") != NULL;
 }
 
+int bn_gpu_policy_q4_q8_prepared_layer_default_enabled(void) {
+    return bn_gpu_policy_metal_q4_prepared_enabled();
+}
+
 int bn_gpu_policy_metal_q4_prepared_upload_enabled(void) {
     const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
     return bn_gpu_policy_metal_q4_prepared_enabled() &&
@@ -2149,6 +2153,10 @@ int bn_gpu_policy_metal_shared_weights_enabled(void) {
 
 int bn_gpu_policy_metal_q6_q8k_enabled(void) {
     return getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL;
+}
+
+int bn_gpu_policy_specialized_q6_q8k_path_enabled(void) {
+    return bn_gpu_policy_metal_q6_q8k_enabled();
 }
 
 int bn_gpu_policy_metal_q8_barriers_enabled(void) {
