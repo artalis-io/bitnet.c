@@ -5,11 +5,11 @@
 #include <stdlib.h>
 
 int bn_transformer_logits_cpu_tied_kquant_refine_top(void) {
-    return bn_backend_quant_cpu_tied_q6k_refine_top();
+    return bn_backend_quant_cpu_tied_kquant_refine_top();
 }
 
 int bn_transformer_logits_cpu_tied_kquant_hybrid_top(void) {
-    return bn_backend_quant_cpu_tied_q6k_hybrid_top();
+    return bn_backend_quant_cpu_tied_kquant_hybrid_top();
 }
 
 int bn_transformer_logits_cpu_native_tied_quant_enabled(void) {

@@ -289,7 +289,7 @@ if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_suppo
     fail=1
 fi
 
-if grep -n 'bn_backend_quant_supports_q8_logits_refine\|bn_backend_quant_supports_q6k_logits_refine' include/backend_quant.h src/transformer/gpu_policy.c src/transformer/logits_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_backend_quant_supports_q8_logits_refine\|bn_backend_quant_supports_q6k_logits_refine\|bn_backend_quant_cpu_tied_q6k_\(refine\|hybrid\)_top' include/backend_quant.h src/backend_quant.c src/transformer/gpu_policy.c src/transformer/logits_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Backend logits refine capability helpers must use behavior names, not quant-format names"
     fail=1
 fi

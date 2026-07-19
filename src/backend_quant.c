@@ -11,11 +11,11 @@ static int backend_quant_env_top_n(const char *name, int min_value) {
     return top_n > 128 ? 128 : top_n;
 }
 
-int bn_backend_quant_cpu_tied_q6k_refine_top(void) {
+int bn_backend_quant_cpu_tied_kquant_refine_top(void) {
     return backend_quant_env_top_n("BN_CPU_TIED_Q6K_REFINE_TOP", 1);
 }
 
-int bn_backend_quant_cpu_tied_q6k_hybrid_top(void) {
+int bn_backend_quant_cpu_tied_kquant_hybrid_top(void) {
     return backend_quant_env_top_n("BN_CPU_TIED_Q6K_HYBRID_TOP", 2);
 }
 

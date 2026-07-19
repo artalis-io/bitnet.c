@@ -475,8 +475,8 @@ static inline int bn_backend_quant_supports_kquant_logits_refine(int type) {
     return bn_quant_format_supports_q6_logits_refine(type);
 }
 
-int bn_backend_quant_cpu_tied_q6k_refine_top(void);
-int bn_backend_quant_cpu_tied_q6k_hybrid_top(void);
+int bn_backend_quant_cpu_tied_kquant_refine_top(void);
+int bn_backend_quant_cpu_tied_kquant_hybrid_top(void);
 
 static inline int bn_backend_quant_logits_q6_f32_cache_supported(int type) {
     return bn_quant_format_logits_q6_f32_cache_supported(type);
