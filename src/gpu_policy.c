@@ -2307,6 +2307,41 @@ int bn_gpu_policy_backend_small_dense_native_enabled(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
+int bn_gpu_policy_backend_all2_q4q6_moe_enabled(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_cpu_attention_fallback_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_small_dense_exact_q4_q8_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_prefill_decode_fallback_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_prefill_chain_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_matvec_fallback_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_dense_batch_prefill_shape_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }

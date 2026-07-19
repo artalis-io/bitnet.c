@@ -1506,6 +1506,11 @@ if sed -n '/bn_transformer_gpu_validate_forward/,/if (c->dim > BN_TRANSFORMER_GP
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_all2_q4q6_moe_layer_enabled/{flag=1} /^int bn_transformer_gpu_batch_prefill_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend-aware helpers for fallback/exact/prefill support"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK")\|getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT")\|getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN")\|getenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2")\|getenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH")\|getenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA MoE route env vars"
     fail=1
