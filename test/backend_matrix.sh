@@ -1812,6 +1812,11 @@ if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_a
     fail=1
 fi
 
+if grep -n 'BnTransformerGPUMoEAll2ResourcePolicy\|bn_transformer_gpu_moe_all2_resource_policy\|gpu_resolve_moe_all2_resources\|BnTransformerPrefillSharedAll2DecodeFallbackPolicy\|bn_transformer_prefill_shared_all2_decode_fallback_policy\|prefill_use_shared_all2_decode_fallback' include/transformer_prefill_internal.h src/transformer/prefill_policy.c src/transformer/prefill.c src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer all-active-two MoE policies must not use all2 shorthand in policy names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_all2_q4q6_moe_\(fast_ffn_enabled\|cpu_attention_safe_disabled\|cpu_moe_safe_disabled\|exact_attention_disabled\|cpu_route_resident_disabled\|exact_gpu_route_requested\|exact_gpu_route_disabled\|route_selection_enabled\|route_layer_range\)' include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "All-active-two K-quant MoE policy must expose behavior-named helpers"
     fail=1

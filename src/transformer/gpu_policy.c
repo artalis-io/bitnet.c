@@ -1610,9 +1610,9 @@ bn_transformer_gpu_moe_direct_route_policy(
     return policy;
 }
 
-BnTransformerGPUMoEAll2ResourcePolicy
-bn_transformer_gpu_moe_all2_resource_policy(const BnConfig *c) {
-    BnTransformerGPUMoEAll2ResourcePolicy policy = {0};
+BnTransformerGPUMoEAllActiveTwoResourcePolicy
+bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c) {
+    BnTransformerGPUMoEAllActiveTwoResourcePolicy policy = {0};
     policy.enabled =
         bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0);
     return policy;

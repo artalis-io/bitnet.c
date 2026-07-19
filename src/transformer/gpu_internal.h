@@ -199,7 +199,7 @@ typedef struct {
 
 typedef struct {
     int enabled;
-} BnTransformerGPUMoEAll2ResourcePolicy;
+} BnTransformerGPUMoEAllActiveTwoResourcePolicy;
 
 typedef struct {
     int kquant_default;
@@ -684,8 +684,8 @@ bn_transformer_gpu_moe_direct_route_policy(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);
-BnTransformerGPUMoEAll2ResourcePolicy
-bn_transformer_gpu_moe_all2_resource_policy(const BnConfig *c);
+BnTransformerGPUMoEAllActiveTwoResourcePolicy
+bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c);
 int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,

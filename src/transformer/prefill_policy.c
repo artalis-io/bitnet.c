@@ -24,11 +24,11 @@ bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight) {
     return policy;
 }
 
-BnTransformerPrefillSharedAll2DecodeFallbackPolicy
-bn_transformer_prefill_shared_all2_decode_fallback_policy(
+BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
+bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available) {
-    BnTransformerPrefillSharedAll2DecodeFallbackPolicy policy = {0};
+    BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy = {0};
     policy.enabled =
         c &&
         bn_model_arch_uses_all_active_two_expert_moe(c, c->dim) &&

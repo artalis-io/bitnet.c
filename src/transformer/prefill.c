@@ -1249,11 +1249,11 @@ static float *prefill_logits(BnModel *m, BnSession *sess) {
     return bn_transformer_forward_logits(m, sess);
 }
 
-static int prefill_use_shared_all2_decode_fallback(const BnModel *m) {
+static int prefill_use_shared_all_active_two_decode_fallback(const BnModel *m) {
     if (!m)
         return 0;
-    BnTransformerPrefillSharedAll2DecodeFallbackPolicy policy =
-        bn_transformer_prefill_shared_all2_decode_fallback_policy(
+    BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy =
+        bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
             &m->config, bn_model_gpu(m) != NULL);
     return policy.enabled;
 }
@@ -2608,7 +2608,7 @@ prefill_layers_done:
 
 float *bn_transformer_prefill(BnModel *m, BnSession *s, const int *tokens,
                               int n_tokens, int pos0) {
-    if (prefill_use_shared_all2_decode_fallback(m)) {
+    if (prefill_use_shared_all_active_two_decode_fallback(m)) {
         for (int i = 0; i + 1 < n_tokens; i++)
             if (bn_transformer_forward_no_logits(m, s, tokens[i], pos0 + i) != 0)
                 return NULL;
@@ -2622,7 +2622,7 @@ float *bn_transformer_prefill(BnModel *m, BnSession *s, const int *tokens,
 
 int bn_transformer_prefill_no_logits(BnModel *m, BnSession *s, const int *tokens,
                                      int n_tokens, int pos0) {
-    if (prefill_use_shared_all2_decode_fallback(m)) {
+    if (prefill_use_shared_all_active_two_decode_fallback(m)) {
         for (int i = 0; i < n_tokens; i++)
             if (bn_transformer_forward_no_logits(m, s, tokens[i], pos0 + i) != 0)
                 return -1;
@@ -2635,7 +2635,7 @@ int bn_transformer_prefill_all(BnModel *m, BnSession *s, const int *tokens,
                                int n_tokens, int pos0, float *all_logits) {
     if (!all_logits || n_tokens <= 0) return -1;
 
-    if (prefill_use_shared_all2_decode_fallback(m)) {
+    if (prefill_use_shared_all_active_two_decode_fallback(m)) {
         size_t row_bytes = (size_t)m->config.vocab_size * sizeof(float);
         for (int i = 0; i < n_tokens; i++) {
             float *logits = bn_transformer_forward(m, s, tokens[i], pos0 + i);

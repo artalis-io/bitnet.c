@@ -38,7 +38,7 @@ typedef struct {
 
 typedef struct {
     int enabled;
-} BnTransformerPrefillSharedAll2DecodeFallbackPolicy;
+} BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy;
 
 typedef struct {
     int uses_hybrid_layer_layout;
@@ -149,8 +149,8 @@ int bn_transformer_prefill_hybrid_batch_allowed(void);
 int bn_transformer_prefill_force_token_attention_enabled(void);
 BnTransformerPrefillLayerKindPolicy
 bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight);
-BnTransformerPrefillSharedAll2DecodeFallbackPolicy
-bn_transformer_prefill_shared_all2_decode_fallback_policy(
+BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
+bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available);
 BnTransformerPrefillSequencePolicy

@@ -544,19 +544,20 @@ static void gpu_moe_route_profile_add(int dim,
     }
 }
 
-static int gpu_resolve_moe_all2_resources(BnGPUMoEResources *out,
-                                          BnGPUMoEResolvedExpert *storage,
-                                          BnModel *m,
-                                          BnSession *sess,
-                                          const BnLayerWeights *lw,
-                                          int layer,
-                                          void *router_diff,
-                                          BnGPUMoETemporaryBuffers *temps) {
+static int gpu_resolve_moe_all_active_two_resources(
+    BnGPUMoEResources *out,
+    BnGPUMoEResolvedExpert *storage,
+    BnModel *m,
+    BnSession *sess,
+    const BnLayerWeights *lw,
+    int layer,
+    void *router_diff,
+    BnGPUMoETemporaryBuffers *temps) {
     if (!out || !storage || !m || !sess || !lw || !router_diff || !temps)
         return -1;
     BnConfig *c = &m->config;
-    BnTransformerGPUMoEAll2ResourcePolicy policy =
-        bn_transformer_gpu_moe_all2_resource_policy(c);
+    BnTransformerGPUMoEAllActiveTwoResourcePolicy policy =
+        bn_transformer_gpu_moe_all_active_two_resource_policy(c);
     if (!policy.enabled)
         return -1;
     memset(out, 0, sizeof(*out));
@@ -1144,11 +1145,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 bn_transformer_gpu_moe_direct_route_policy(
                     gpu, c, router_diff, moe_gate_all);
             if (direct_route.enabled) {
-                if (gpu_resolve_moe_all2_resources(
+                if (gpu_resolve_moe_all_active_two_resources(
                         &moe_res, expert_emit, m, sess, lw, l,
                         direct_route.router_diff, &moe_temporaries) != 0)
                     return bn_transformer_gpu_reject_forward(
-                        &emit, "gpu moe all2 resource resolution failed");
+                        &emit, "gpu moe all-active-two resource resolution failed");
                 BnTransformerGPUMoESharedResources moe_shared =
                     bn_transformer_gpu_resolve_moe_shared_resources(
                         gpu, backend, lw, l);

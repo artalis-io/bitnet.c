@@ -2639,16 +2639,18 @@ static void test_gpu_policy_helpers(void) {
     c.moe_intermediate_size = 4096;
     assert(!bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
         &c, (void *)1, (void *)3));
-    BnTransformerGPUMoEAll2ResourcePolicy all2_resources =
-        bn_transformer_gpu_moe_all2_resource_policy(&c);
-    assert(all2_resources.enabled);
+    BnTransformerGPUMoEAllActiveTwoResourcePolicy all_active_two_resources =
+        bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
+    assert(all_active_two_resources.enabled);
     c.dim = 2049;
-    all2_resources = bn_transformer_gpu_moe_all2_resource_policy(&c);
-    assert(!all2_resources.enabled);
+    all_active_two_resources =
+        bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
+    assert(!all_active_two_resources.enabled);
     c.dim = 2048;
     c.n_experts_active = 1;
-    all2_resources = bn_transformer_gpu_moe_all2_resource_policy(&c);
-    assert(!all2_resources.enabled);
+    all_active_two_resources =
+        bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
+    assert(!all_active_two_resources.enabled);
     c.n_experts_active = 2;
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
 
@@ -4058,31 +4060,32 @@ static void test_block_planning(void) {
         &prefill_q, &prefill_k, &prefill_v, 48, 64));
     prefill_v.cols = 64;
 
-    BnConfig shared_all2 = {0};
-    shared_all2.dim = 1024;
-    shared_all2.n_experts = 2;
-    shared_all2.n_experts_active = 2;
-    shared_all2.moe_intermediate_size = 4096;
-    shared_all2.has_shared_expert = 1;
-    BnTransformerPrefillSharedAll2DecodeFallbackPolicy shared_all2_fallback =
-        bn_transformer_prefill_shared_all2_decode_fallback_policy(
-            &shared_all2, 0);
-    assert(shared_all2_fallback.enabled);
-    shared_all2_fallback =
-        bn_transformer_prefill_shared_all2_decode_fallback_policy(
-            &shared_all2, 1);
-    assert(!shared_all2_fallback.enabled);
-    shared_all2.has_shared_expert = 0;
-    shared_all2_fallback =
-        bn_transformer_prefill_shared_all2_decode_fallback_policy(
-            &shared_all2, 0);
-    assert(!shared_all2_fallback.enabled);
-    shared_all2.n_experts_active = 1;
-    shared_all2.has_shared_expert = 1;
-    shared_all2_fallback =
-        bn_transformer_prefill_shared_all2_decode_fallback_policy(
-            &shared_all2, 0);
-    assert(!shared_all2_fallback.enabled);
+    BnConfig shared_all_active_two = {0};
+    shared_all_active_two.dim = 1024;
+    shared_all_active_two.n_experts = 2;
+    shared_all_active_two.n_experts_active = 2;
+    shared_all_active_two.moe_intermediate_size = 4096;
+    shared_all_active_two.has_shared_expert = 1;
+    BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
+        shared_all_active_two_fallback =
+            bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+                &shared_all_active_two, 0);
+    assert(shared_all_active_two_fallback.enabled);
+    shared_all_active_two_fallback =
+        bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+            &shared_all_active_two, 1);
+    assert(!shared_all_active_two_fallback.enabled);
+    shared_all_active_two.has_shared_expert = 0;
+    shared_all_active_two_fallback =
+        bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+            &shared_all_active_two, 0);
+    assert(!shared_all_active_two_fallback.enabled);
+    shared_all_active_two.n_experts_active = 1;
+    shared_all_active_two.has_shared_expert = 1;
+    shared_all_active_two_fallback =
+        bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+            &shared_all_active_two, 0);
+    assert(!shared_all_active_two_fallback.enabled);
 
     BnTransformerPrefillSequencePolicy sequence_policy =
         bn_transformer_prefill_sequence_policy(NULL);
