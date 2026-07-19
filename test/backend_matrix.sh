@@ -139,6 +139,12 @@ if sed -n '/bn_backend_quant_cuda_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(
     fail=1
 fi
 
+if sed -n '/^static int cuda_matmul_device_out(/,/^static int cuda_matmul_batch(/p' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_Q3_K\|type == BN_GGUF_TENSOR_IQ3_XXS\|type == BN_GGUF_TENSOR_IQ4_XS\|type == BN_GGUF_TENSOR_Q5_0\|type == BN_GGUF_TENSOR_Q6_K\|type == BN_GGUF_TENSOR_Q4_K\|type == BN_GGUF_TENSOR_Q5_K\|type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
+   sed -n '/^static int cuda_matmul_batch(/,/^static int cuda_argmax_activation(/p' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_Q5_0\|type == BN_GGUF_TENSOR_Q6_K\|type == BN_GGUF_TENSOR_Q4_K\|type == BN_GGUF_TENSOR_Q5_K\|type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for direct CUDA matvec/matmul dispatch quant predicates"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

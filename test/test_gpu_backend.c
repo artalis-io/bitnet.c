@@ -3690,6 +3690,30 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_cuda_q8_0_warp_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_q4k_q8k_matmul_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q4k_q8k_matmul_candidate(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(
+        BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_q6k_q8k_matmul_candidate(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_cuda_q6k_q8k_matmul_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_q8_0_matmul_candidate(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_cuda_q8_0_matmul_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_q5_0_matmul_candidate(
+        BN_GGUF_TENSOR_Q5_0));
+    assert(!bn_backend_quant_cuda_q5_0_matmul_candidate(
+        BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_moe_all2_q4q6_shape(2, 2,
                                                 BN_GGUF_TENSOR_Q6_K,
                                                 4096, 2048));

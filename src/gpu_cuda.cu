@@ -12929,7 +12929,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         cuda_cublas_matmul_f16(ctx, d_dst, w, d_x, rows, cols,
                                n_tokens) == 0) {
         err = cudaSuccess;
-    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q4k_q8k_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                n_tokens > 1 &&
                bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
@@ -12950,7 +12951,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                 d_dst, (const BnBlockQ4K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0) {
+    } else if (bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0) {
         int x_blocks = (cols + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -12990,7 +12992,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                 d_dst, (const BnBlockQ4K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q5_K && (cols % BN_QK_K) == 0) {
+    } else if (bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0) {
         int x_blocks = (cols + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -13010,7 +13013,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                 d_dst, (const BnBlockQ5K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q6_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q6k_q8k_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
@@ -13036,12 +13040,14 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                 d_dst, (const BnBlockQ6K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q8_0 && (cols & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q8_0_matmul_candidate(type) &&
+               (cols & 31) == 0) {
         if (cuda_launch_q8_0_matmul(ctx, d_dst,
                 (const BnBlockQ8_0 *)w->data, d_x, rows, cols,
                 n_tokens, 0) != 0)
             return -1;
-    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q5_0_matmul_candidate(type) &&
+               (cols & 31) == 0) {
         dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             d_dst, (const BnBlockQ5_0 *)w->data, d_x, rows, cols,
@@ -13080,28 +13086,30 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
     }
 
     int threads = 256;
-    if ((type == BN_GGUF_TENSOR_Q3_K ||
-         type == BN_GGUF_TENSOR_IQ3_XXS ||
-         type == BN_GGUF_TENSOR_IQ4_XS) && w->f16_data) {
+    if (bn_backend_quant_cuda_f16_float_cache_matvec_candidate(type) &&
+        w->f16_data) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         f16_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const __half *)w->f16_data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
+    } else if (bn_backend_quant_cuda_q5_0_matvec_candidate(type) &&
+               (cols & 31) == 0 &&
                bn_gpu_policy_cuda_q5_matvec4_enabled()) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0 &&
+    } else if (bn_backend_quant_cuda_q5_0_matvec_candidate(type) &&
+               (cols & 31) == 0 &&
                bn_gpu_policy_cuda_q5_warp_enabled()) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q5_0_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q4k_q8k_matvec_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -13112,7 +13120,8 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         q4k_q8k_dot_matvec_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ4K *)w->data, xq, NULL,
             rows, cols, 0);
-    } else if (type == BN_GGUF_TENSOR_Q6_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q6k_q8k_matvec_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_dot_forced()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -13123,14 +13132,16 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         q6k_dot_matvec_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ6K *)w->data, xq, NULL,
             rows, cols, 0);
-    } else if (type == BN_GGUF_TENSOR_Q6_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q6k_warp_matvec_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_warp_enabled()) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q6k_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ6K *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (type == BN_GGUF_TENSOR_Q8_0 && rows >= 16384 &&
+    } else if (bn_backend_quant_cuda_q8_0_warp_matvec_candidate(type) &&
+               rows >= 16384 &&
                (cols & 31) == 0) {
         int warps = threads / 32;
         int blocks = ((rows + 3) / 4 + warps - 1) / warps;
@@ -13191,7 +13202,8 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         cuda_cublas_matmul_f16(ctx, ctx->d_out, w, ctx->d_x, rows, cols,
                                n_tokens) == 0) {
         err = cudaSuccess;
-    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q4k_q8k_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0)
@@ -13212,7 +13224,8 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
                 ctx->d_out, (const BnBlockQ4K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q4_K && (cols % BN_QK_K) == 0) {
+    } else if (bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0) {
         int x_blocks = (cols + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -13241,7 +13254,8 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
                 ctx->d_out, (const BnBlockQ4K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q5_K && (cols % BN_QK_K) == 0) {
+    } else if (bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0) {
         int x_blocks = (cols + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -13261,7 +13275,8 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
                 ctx->d_out, (const BnBlockQ5K *)w->data, xq, rows, cols,
                 n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q6_K && (cols % BN_QK_K) == 0 &&
+    } else if (bn_backend_quant_cuda_q6k_q8k_matmul_candidate(type) &&
+               (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_q6k_dot_forced()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
@@ -13287,12 +13302,14 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
                 ctx->d_out, (const BnBlockQ6K *)w->data, xq, rows,
                 cols, n_tokens, 0);
         }
-    } else if (type == BN_GGUF_TENSOR_Q8_0 && (cols & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q8_0_matmul_candidate(type) &&
+               (cols & 31) == 0) {
         if (cuda_launch_q8_0_matmul(ctx, ctx->d_out,
                 (const BnBlockQ8_0 *)w->data, ctx->d_x, rows, cols,
                 n_tokens, 0) != 0)
             return -1;
-    } else if (type == BN_GGUF_TENSOR_Q5_0 && (cols & 31) == 0) {
+    } else if (bn_backend_quant_cuda_q5_0_matmul_candidate(type) &&
+               (cols & 31) == 0) {
         dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
         q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, rows, cols,
@@ -13398,17 +13415,19 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                                    ctx->d_x, rows, x_cols,
                                    n_tokens) == 0) {
             err = cudaSuccess;
-        } else if (type == BN_GGUF_TENSOR_Q8_0 && (x_cols & 31) == 0) {
+        } else if (bn_backend_quant_cuda_q8_0_matmul_candidate(type) &&
+                   (x_cols & 31) == 0) {
             if (cuda_launch_q8_0_matmul(ctx, ctx->d_out,
                     (const BnBlockQ8_0 *)w->data, ctx->d_x, rows, x_cols,
                     n_tokens, out_offset) != 0)
                 return -1;
-        } else if (type == BN_GGUF_TENSOR_Q5_0 && (x_cols & 31) == 0) {
+        } else if (bn_backend_quant_cuda_q5_0_matmul_candidate(type) &&
+                   (x_cols & 31) == 0) {
             dim3 grid(((rows + 3) / 4 + warps - 1) / warps, n_tokens, 1);
             q5_0_matmul4_warp_kernel<<<grid, threads, 0>>>(
                 ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x,
                 rows, x_cols, n_tokens, out_offset);
-        } else if (type == BN_GGUF_TENSOR_Q4_K &&
+        } else if (bn_backend_quant_cuda_q4k_q8_1_matmul_candidate(type) &&
                    (x_cols % BN_QK_K) == 0) {
             int x_blocks = (x_cols + 31) / 32;
             if (!q8_1_ready) {
@@ -13444,7 +13463,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                     (const BnCudaBlockQ8_1 *)ctx->d_q8_1, rows, x_cols,
                     n_tokens, out_offset);
             }
-        } else if (type == BN_GGUF_TENSOR_Q5_K &&
+        } else if (bn_backend_quant_cuda_q5k_q8_1_matmul_candidate(type) &&
                    (x_cols % BN_QK_K) == 0) {
             int x_blocks = (x_cols + 31) / 32;
             if (!q8_1_ready) {
@@ -13470,7 +13489,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
                     (const BnCudaBlockQ8_1 *)ctx->d_q8_1, rows, x_cols,
                     n_tokens, out_offset);
             }
-        } else if (type == BN_GGUF_TENSOR_Q6_K &&
+        } else if (bn_backend_quant_cuda_q6k_q8k_matmul_candidate(type) &&
                    (x_cols % BN_QK_K) == 0 &&
                    bn_gpu_policy_cuda_q6k_dot_enabled()) {
             int x_blocks = x_cols / BN_QK_K;
