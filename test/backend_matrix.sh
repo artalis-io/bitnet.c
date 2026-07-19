@@ -309,7 +309,7 @@ if awk '
     /int bn_quant_format_can_gpu_repack\(/ { in_fn=1 }
     /int bn_quant_format_gpu_requires_exact_silu\(/ { in_fn=1 }
     /int bn_quant_format_gpu_prefers_gateup_split\(/ { in_fn=1 }
-    /int bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in\(/ { in_fn=1 }
+    /int bn_quant_format_gpu_fused_gateup_requires_backend_opt_in\(/ { in_fn=1 }
     /int bn_quant_format_logits_q6_f32_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_all_f16_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_down_q6_f32_cache_supported\(/ { in_fn=1 }
@@ -1346,8 +1346,8 @@ if grep -n 'bn_transformer_gpu_cuda_prefill_\(dense_chain_enabled\|hybrid_chain_
     fail=1
 fi
 
-if grep -n 'bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_gpu_policy_cuda_q5k_fused_gateup_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
-    echo "src/transformer/gpu_policy.c must compose GPU fused gate/up policy through behavior-named helpers"
+if grep -n 'bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_gpu_policy_cuda_q5k_fused_gateup_enabled' src/gpu_policy.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU policy must compose fused gate/up policy through behavior-named helpers"
     fail=1
 fi
 

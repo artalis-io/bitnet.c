@@ -641,8 +641,9 @@ static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
     return bn_quant_format_gpu_fused_gateup_silu_cap(type);
 }
 
-static inline int bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in(int type) {
-    return bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(type);
+static inline int bn_backend_quant_gpu_fused_gateup_requires_backend_opt_in(
+    int type) {
+    return bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(type);
 }
 
 static inline int bn_backend_quant_can_gpu_gateup_split_activation(int type,

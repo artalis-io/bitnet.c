@@ -270,7 +270,7 @@ typedef enum {
     BN_QUANT_CAP_Q6_LOGITS_REFINE = 1u << 13,
     BN_QUANT_CAP_GPU_EXACT_SILU = 1u << 14,
     BN_QUANT_CAP_GPU_GATEUP_SPLIT_PREFERRED = 1u << 15,
-    BN_QUANT_CAP_GPU_FUSED_GATEUP_CUDA_OPT_IN = 1u << 16,
+    BN_QUANT_CAP_GPU_FUSED_GATEUP_BACKEND_OPT_IN = 1u << 16,
     BN_QUANT_CAP_GPU_NATIVE = 1u << 17,
     BN_QUANT_CAP_GPU_REPACKED = 1u << 18,
     BN_QUANT_CAP_LOGITS_Q6_F32_CACHE = 1u << 19,
@@ -347,7 +347,7 @@ int      bn_quant_format_can_gpu_split(int type);
 int      bn_quant_format_gpu_requires_exact_silu(int type);
 int      bn_quant_format_gpu_prefers_gateup_split(int type);
 uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type);
-int      bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(int type);
+int      bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type);
 int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
 uint32_t bn_quant_format_gpu_matvec_q8k_dot_flag(int type, int enabled);

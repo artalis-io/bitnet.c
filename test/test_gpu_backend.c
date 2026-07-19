@@ -2273,7 +2273,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_prefill_ssm_delta_128_warp_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_ffn_profile_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled());
-    assert(!bn_gpu_policy_cuda_q5k_fused_gateup_enabled());
+    assert(!bn_gpu_policy_explicit_q5k_fused_gateup_enabled());
     assert(bn_gpu_policy_fused_gateup_silu_allowed(
         &gpu, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_gpu_policy_fused_gateup_silu_allowed(
@@ -2327,7 +2327,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled());
     setenv("BN_CUDA_DISABLE_SSM_FFN_GATEUP_F16_OUT", "1", 1);
     assert(!bn_gpu_policy_cuda_prefill_ssm_ffn_gateup_f16_out_enabled());
-    assert(bn_gpu_policy_cuda_q5k_fused_gateup_enabled());
+    assert(bn_gpu_policy_explicit_q5k_fused_gateup_enabled());
     assert(!bn_gpu_policy_fused_gateup_silu_allowed(
         &gpu, BN_GGUF_TENSOR_Q4_K));
     unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
@@ -4245,8 +4245,8 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q5_K) ==
            BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU);
-    assert(bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_moe_all_f16_cache_supported(
         BN_GGUF_TENSOR_Q8_0));

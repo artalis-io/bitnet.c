@@ -186,9 +186,9 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(
+    assert(bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(
         BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_quant_format_gpu_fused_gateup_requires_cuda_opt_in(
+    assert(!bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_logits_q6_f32_cache_supported(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_logits_q6_f32_cache_supported(BN_GGUF_TENSOR_Q4_K));
