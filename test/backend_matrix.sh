@@ -95,6 +95,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q4K_QKV_MIXED_FUSE")\|getenv("BN_CUDA_ENABLE_
     fail=1
 fi
 
+if grep -n 'getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT")\|getenv("BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2")\|getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT")\|getenv("BN_CUDA_ENABLE_MOE_ROUTER_FUSED_TOPK")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_FUSED_TOPK")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_4WARP")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_2WARP")\|getenv("BN_CUDA_DISABLE_MOE_ROUTER_WARP_TOPK")\|getenv("BN_CUDA_DISABLE_Q8_MOE_Q8X")\|getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_Q8K_DOT")\|getenv("BN_CUDA_PROFILE_MOE_INTERNAL")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_ALL2_FIXED")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_GATEUP_4ROW")' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA MoE route/gate-up env policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

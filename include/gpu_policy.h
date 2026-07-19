@@ -173,10 +173,33 @@ int bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled(int n_tokens,
 int bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(int dim);
 int bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(int dim,
                                                     int n_experts);
+int bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(int dim,
+                                                      int all2_q4q6);
+int bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(int dim,
+                                                       int all2_q4q6,
+                                                       int exact_silu);
+int bn_gpu_policy_cuda_moe_router_fused_topk_enabled(int n_experts,
+                                                     int route_block);
+int bn_gpu_policy_cuda_moe_router_warp_disabled(int route_block);
+int bn_gpu_policy_cuda_moe_router_4warp_enabled(int dim);
+int bn_gpu_policy_cuda_moe_router_2warp_enabled(int dim);
+int bn_gpu_policy_cuda_moe_router_warp_topk_enabled(int n_experts);
 int bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled(int routed_q8);
+int bn_gpu_policy_cuda_q8_moe_q8x_enabled(void);
 int bn_gpu_policy_cuda_q8_moe_gateup_2row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_q8_moe_down_4row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_q8_moe_down_2row_enabled(int hidden_dim);
+int bn_gpu_policy_cuda_moe_all2_fast_enabled(int all2_q4_or_q6);
+int bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled(int use_all2_q8k_default,
+                                               int fast_q8k_gateup,
+                                               int all2_q4q6,
+                                               int hidden_dim,
+                                               int dim);
+int bn_gpu_policy_cuda_moe_internal_profile_enabled(int profile);
+int bn_gpu_policy_cuda_moe_q4k_all2_fixed_4row_enabled(
+    int prequantized_q8k,
+    int all2_fast_enabled);
+int bn_gpu_policy_cuda_moe_q4k_gateup_4row_disabled(void);
 int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu);
 int bn_gpu_policy_cuda_moe_decode_cache_enabled(void);
 int bn_gpu_policy_cuda_moe_decode_cache_disabled(void);
