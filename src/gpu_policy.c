@@ -686,9 +686,9 @@ int bn_gpu_policy_cuda_q6k_moe_float_down_enabled(void) {
 int bn_gpu_policy_cuda_q6k_moe_pair_down_enabled(
     int f32_down_default,
     int pair_down_f32_layer,
-    int all2_disable_pair_down) {
+    int all_active_two_disable_pair_down) {
     return !f32_down_default && !pair_down_f32_layer &&
-           !all2_disable_pair_down &&
+           !all_active_two_disable_pair_down &&
            getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN") == NULL;
 }
 
@@ -696,9 +696,9 @@ int bn_gpu_policy_cuda_q6k_moe_prefer_f32_down(
     int has_f32_data,
     int hidden_dim,
     int all_active_two_kquant,
-    int all2_f32_down) {
+    int all_active_two_f32_down) {
     return has_f32_data && hidden_dim >= 4096 &&
-           (!all_active_two_kquant || all2_f32_down) &&
+           (!all_active_two_kquant || all_active_two_f32_down) &&
            getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
 }
 
@@ -712,13 +712,15 @@ int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_4row_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_4ROW") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(int all_active_two_kquant) {
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled(
+    int all_active_two_kquant) {
     return all_active_two_kquant &&
            getenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM") != NULL &&
            getenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_ACCUM") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(int all_active_two_kquant) {
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(
+    int all_active_two_kquant) {
     return all_active_two_kquant &&
            getenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR4_SUM") == NULL;
 }
@@ -738,7 +740,8 @@ int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_8row_sum_enabled(
            getenv("BN_CUDA_ENABLE_MOE_Q6K_K8_8ROW_SUM") != NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_fixed_enabled(int all_active_two_kquant) {
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_fixed_enabled(
+    int all_active_two_kquant) {
     return all_active_two_kquant &&
            getenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_FIXED") == NULL;
 }
@@ -755,7 +758,8 @@ int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_exact_2048_768_enabled(
            getenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_4row_enabled(void) {
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_4row_enabled(
+    void) {
     return getenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM_4ROW") != NULL;
 }
 
@@ -765,8 +769,8 @@ int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair_4row_enabled(void) {
 
 int bn_gpu_policy_cuda_q6k_moe_down_f32_cache_enabled(
     int has_f32_data,
-    int all2_disable_f32_cache) {
-    return has_f32_data && !all2_disable_f32_cache &&
+    int all_active_two_disable_f32_cache) {
+    return has_f32_data && !all_active_two_disable_f32_cache &&
            getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
 }
 
@@ -888,18 +892,19 @@ int bn_gpu_policy_cuda_q8_moe_down_2row_enabled(int hidden_dim) {
            getenv("BN_CUDA_DISABLE_Q8_MOE_DOWN_2ROW") == NULL;
 }
 
-int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(int all_active_two_q4_or_q6) {
+int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
+    int all_active_two_q4_or_q6) {
     return getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST") == NULL &&
            (!all_active_two_q4_or_q6 ||
             bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled());
 }
 
-int bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled(int use_all2_q8k_default,
+int bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled(int use_all_active_two_q8k_default,
                                                int fast_q8k_gateup,
                                                int all_active_two_kquant,
                                                int hidden_dim,
                                                int dim) {
-    return (use_all2_q8k_default ||
+    return (use_all_active_two_q8k_default ||
             fast_q8k_gateup ||
             (all_active_two_kquant &&
              getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2") != NULL) ||
@@ -912,11 +917,11 @@ int bn_gpu_policy_cuda_moe_internal_profile_enabled(int profile) {
     return profile && getenv("BN_CUDA_PROFILE_MOE_INTERNAL") != NULL;
 }
 
-int bn_gpu_policy_cuda_moe_q4k_all2_fixed_4row_enabled(
+int bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(
     int prequantized_q8k,
-    int all2_fast_enabled) {
+    int all_active_two_fast_enabled) {
     return prequantized_q8k &&
-           all2_fast_enabled &&
+           all_active_two_fast_enabled &&
            getenv("BN_CUDA_DISABLE_MOE_Q4K_ALL2_FIXED") == NULL &&
            getenv("BN_CUDA_DISABLE_MOE_Q4K_GATEUP_4ROW") == NULL;
 }
@@ -1639,9 +1644,10 @@ int bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(int use_grouped,
           getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP") == NULL));
 }
 
-int bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(int use_grouped,
-                                                     int n_experts,
-                                                     int k) {
+int bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
+    int use_grouped,
+    int n_experts,
+    int k) {
     return use_grouped && n_experts == 2 && k == 2 &&
            getenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED") == NULL;
 }
@@ -1649,10 +1655,11 @@ int bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(int use_grouped,
 int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_q4,
                                                 int routed_q8,
                                                 int n_tokens,
-                                                int use_all2_fixed,
+                                                int use_all_active_two_fixed,
                                                 int use_grouped,
                                                 int use_gateup_only) {
-    return (routed_q4 || routed_q8) && n_tokens > 1 && !use_all2_fixed &&
+    return (routed_q4 || routed_q8) && n_tokens > 1 &&
+           !use_all_active_two_fixed &&
            (use_grouped || use_gateup_only ||
             getenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT") != NULL);
 }

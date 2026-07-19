@@ -653,10 +653,10 @@ static void test_gpu_policy_helpers(void) {
         0, 0, 1, 1, 1, 0, 2));
     unsetenv("BN_CUDA_ENABLE_MOE_CUBLAS_GATEUP");
     unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP");
-    assert(bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(1, 2, 2));
-    assert(!bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(1, 4, 2));
+    assert(bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(1, 2, 2));
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(1, 4, 2));
     setenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_cublas_all2_fixed_enabled(1, 2, 2));
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(1, 2, 2));
     unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED");
     assert(bn_gpu_policy_cuda_moe_sorted_slots_enabled(1, 0, 2, 0, 1, 0));
     assert(!bn_gpu_policy_cuda_moe_sorted_slots_enabled(1, 0, 1, 0, 1, 0));
@@ -1404,12 +1404,12 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_4ROW", "1", 1);
     assert(!bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_4row_enabled());
     unsetenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_4ROW");
-    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(1));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled(1));
     setenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM", "1", 1);
-    assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(1));
-    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(0));
+    assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled(1));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled(0));
     setenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_ACCUM", "1", 1);
-    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(1));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_enabled(1));
     unsetenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM");
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_ACCUM");
     assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(1));
@@ -1435,9 +1435,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_8row_sum_enabled(
         0, 1024));
     unsetenv("BN_CUDA_ENABLE_MOE_Q6K_K8_8ROW_SUM");
-    assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_fixed_enabled(1));
+    assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_fixed_enabled(1));
     setenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_FIXED", "1", 1);
-    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_fixed_enabled(1));
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_fixed_enabled(1));
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_FIXED");
     assert(bn_gpu_policy_cuda_q6k_moe_down_resid_rmsnorm_fuse_enabled());
     setenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE", "1", 1);
@@ -1451,9 +1451,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_exact_2048_768_enabled(
         2048, 768, 8));
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768");
-    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_4row_enabled());
+    assert(!bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_4row_enabled());
     setenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM_4ROW", "1", 1);
-    assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_4row_enabled());
+    assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_all_active_two_accum_4row_enabled());
     unsetenv("BN_CUDA_ENABLE_MOE_Q6K_ALL2_ACCUM_4ROW");
     assert(bn_gpu_policy_cuda_q6k_moe_down_q8k_pair_4row_enabled());
     setenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR_DOWN_4ROW", "1", 1);
@@ -1791,8 +1791,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled(0, 0, 0, 2049,
                                                       2049));
     assert(!bn_gpu_policy_cuda_moe_internal_profile_enabled(1));
-    assert(bn_gpu_policy_cuda_moe_q4k_all2_fixed_4row_enabled(1, 1));
-    assert(!bn_gpu_policy_cuda_moe_q4k_all2_fixed_4row_enabled(0, 1));
+    assert(bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(1, 1));
+    assert(!bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(0, 1));
     assert(!bn_gpu_policy_cuda_moe_q4k_gateup_4row_disabled());
     assert(!bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled());
     assert(!bn_gpu_policy_cuda_f16_q8_0_matvec_enabled());
@@ -1891,7 +1891,7 @@ static void test_gpu_policy_helpers(void) {
                                                       2048));
     assert(bn_gpu_policy_cuda_moe_internal_profile_enabled(1));
     assert(!bn_gpu_policy_cuda_moe_internal_profile_enabled(0));
-    assert(!bn_gpu_policy_cuda_moe_q4k_all2_fixed_4row_enabled(1, 1));
+    assert(!bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(1, 1));
     assert(bn_gpu_policy_cuda_moe_q4k_gateup_4row_disabled());
     assert(!bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled());
     assert(!bn_gpu_policy_cuda_f16_q8_0_matvec_enabled());
