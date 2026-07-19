@@ -264,7 +264,7 @@ int bn_transformer_gpu_qkv_split_standard_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code);
-int bn_transformer_gpu_qkv_split_byte_quant_supported(
+int bn_transformer_gpu_qkv_split_native_quant_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code);
@@ -646,7 +646,7 @@ int bn_transformer_gpu_moe_routed_kquant_down(const BnMoEExpertMap *map);
 int bn_transformer_gpu_moe_routed_kquant_down_allowed(
     const BnMoEExpertMap *map,
     int allow_kquant_down);
-int bn_transformer_gpu_moe_routed_byte_quant(const BnMoEExpertMap *map);
+int bn_transformer_gpu_moe_routed_native_quant(const BnMoEExpertMap *map);
 int bn_transformer_gpu_moe_route_topk_enabled(
     void *moe_router,
     int all_active_two_kquant_moe,
@@ -655,7 +655,7 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     const BnConfig *c,
     int all_active_two_kquant_moe,
     int gpu_route_topk,
-    int moe_routed_byte_quant);
+    int moe_routed_native_quant);
 int bn_transformer_gpu_moe_routed_ffn_enabled(
     int gpu_route_topk,
     int cpu_route_resident_ffn,

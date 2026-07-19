@@ -1196,9 +1196,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_qkv_split_standard_supported(
         &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
     q_w.type = BN_GGUF_TENSOR_Q8_0;
-    assert(bn_transformer_gpu_qkv_split_byte_quant_supported(
+    assert(bn_transformer_gpu_qkv_split_native_quant_supported(
         &gpu, &q_w, BN_GPU_CODE_Q8_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_qkv_split_byte_quant_supported(
+    assert(!bn_transformer_gpu_qkv_split_native_quant_supported(
         &gpu, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
     q_w.type = BN_GGUF_TENSOR_Q5_K;
     assert(bn_transformer_gpu_qkv_split_packed_kquant_supported(
@@ -1804,7 +1804,7 @@ static void test_gpu_policy_helpers(void) {
     map.down_cols = 4096;
     assert(bn_transformer_gpu_moe_routed_kquant_down_allowed(&map, 0));
     assert(bn_transformer_gpu_moe_routed_kquant_down(&map));
-    assert(!bn_transformer_gpu_moe_routed_byte_quant(&map));
+    assert(!bn_transformer_gpu_moe_routed_native_quant(&map));
 
     BnWeights moe_w;
     BnLayerWeights moe_layers[1];
@@ -2567,7 +2567,7 @@ static void test_gpu_policy_helpers(void) {
     map.up_type = BN_GGUF_TENSOR_Q8_0;
     map.down_type = BN_GGUF_TENSOR_Q8_0;
     assert(!bn_transformer_gpu_moe_routed_kquant_down(&map));
-    assert(bn_transformer_gpu_moe_routed_byte_quant(&map));
+    assert(bn_transformer_gpu_moe_routed_native_quant(&map));
 
     int route_from = 0;
     int route_to = 0;

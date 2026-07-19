@@ -1182,10 +1182,10 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                     bn_transformer_gpu_qkv_split_standard_supported(
                         res ? res->gpu : NULL, &lw->attn.wq,
                         qkv_split_op_code);
-    int use_byte_quant_split =
+    int use_native_quant_split =
         qkv_split_enabled && !c->kv_f16 && qkv_stacked && !q_gated &&
         !q_bias && !k_bias && !v_bias &&
-        bn_transformer_gpu_qkv_split_byte_quant_supported(
+        bn_transformer_gpu_qkv_split_native_quant_supported(
             res ? res->gpu : NULL, &lw->attn.wq, qkv_split_op_code);
     int use_packed_kquant_split =
         qkv_split_enabled && !c->kv_f16 && qkv_stacked && !q_gated &&
@@ -1208,7 +1208,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 !qkv_split_enabled, qkv_stacked, qk_stacked, q_gated, q_bias, k_bias,
                 v_bias, qkv_split_op_code,
                 bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type),
-                use_split || use_byte_quant_split || use_packed_kquant_split, use_qk_split,
+                use_split || use_native_quant_split || use_packed_kquant_split, use_qk_split,
                 c->kv_f16, lw->attn.wq.rows, q_dim, lw->attn.wk.rows, kv_dim,
                 lw->attn.wq.cols, lw->attn.wk.cols, lw->attn.wq.type,
                 lw->attn.wk.type);
@@ -1235,7 +1235,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
         bn_transformer_gpu_emit_context_copy(
             ctx, BN_GPU_VALUE_QKV, BN_GPU_VALUE_VALUE_CACHE, q_dim + kv_dim,
             (int)kv_cache_off, kv_dim);
-    } else if (use_packed_kquant_split || use_byte_quant_split || use_split) {
+    } else if (use_packed_kquant_split || use_native_quant_split || use_split) {
         int total_rows = lw->attn.wq.rows + lw->attn.wk.rows + lw->attn.wv.rows;
         emit_context_matvec_split(
             ctx, lw->attn.wq.type, qkv_stacked, BN_GPU_VALUE_XB,

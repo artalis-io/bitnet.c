@@ -2598,8 +2598,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_moe_ffn_disabled());
     assert(bn_gpu_policy_moe_router_topk_enabled(1));
     assert(!bn_gpu_policy_moe_router_topk_enabled(0));
-    assert(bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(1));
-    assert(!bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(0));
+    assert(bn_gpu_policy_native_quant_moe_cpu_route_resident_enabled(1));
+    assert(!bn_gpu_policy_native_quant_moe_cpu_route_resident_enabled(0));
     assert(!bn_gpu_policy_moe_router_gpu_enabled());
     assert(bn_gpu_policy_moe_router_diff2_enabled());
     assert(bn_gpu_policy_moe_routed_ffn_batch_enabled());
@@ -3014,7 +3014,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_debug_argmax_compare_enabled());
     assert(bn_gpu_policy_moe_ffn_disabled());
     assert(!bn_gpu_policy_moe_router_topk_enabled(1));
-    assert(!bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(1));
+    assert(!bn_gpu_policy_native_quant_moe_cpu_route_resident_enabled(1));
     assert(bn_gpu_policy_moe_router_gpu_enabled());
     assert(!bn_gpu_policy_moe_router_diff2_enabled());
     assert(!bn_gpu_policy_moe_routed_ffn_batch_enabled());

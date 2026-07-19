@@ -264,7 +264,7 @@ int bn_transformer_gpu_qkv_split_standard_supported(
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
-int bn_transformer_gpu_qkv_split_byte_quant_supported(
+int bn_transformer_gpu_qkv_split_native_quant_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *q,
     int split_op_code) {
@@ -1125,7 +1125,7 @@ int bn_transformer_gpu_moe_decode_cacheable(
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         int routed_kquant_down = bn_transformer_gpu_moe_routed_kquant_down(em);
-        int routed_byte_quant = bn_transformer_gpu_moe_routed_byte_quant(em);
+        int routed_native_quant = bn_transformer_gpu_moe_routed_native_quant(em);
         int has_router =
             bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_ROUTER) ||
             bn_backend_model_handle(backend, l,
@@ -1137,7 +1137,7 @@ int bn_transformer_gpu_moe_decode_cacheable(
                                      BN_BACKEND_HANDLE_MOE_UP_ALL) ||
             !bn_backend_model_handle(backend, l,
                                      BN_BACKEND_HANDLE_MOE_DOWN_ALL) ||
-            (!routed_kquant_down && !routed_byte_quant) ||
+            (!routed_kquant_down && !routed_native_quant) ||
             !bn_moe_policy_supports_resident_routed_ffn_layout(c, em))
             return 0;
     }
@@ -1489,7 +1489,7 @@ int bn_transformer_gpu_moe_routed_kquant_down_allowed(
                                               allow_kquant_down);
 }
 
-int bn_transformer_gpu_moe_routed_byte_quant(const BnMoEExpertMap *map) {
+int bn_transformer_gpu_moe_routed_native_quant(const BnMoEExpertMap *map) {
     return map &&
            bn_backend_quant_moe_route_q8(map->gate_type,
                                          map->up_type,
@@ -1510,12 +1510,12 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     const BnConfig *c,
     int all_active_two_kquant_moe,
     int gpu_route_topk,
-    int moe_routed_byte_quant) {
+    int moe_routed_native_quant) {
     if (all_active_two_kquant_moe && !gpu_route_topk &&
         !bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled())
         return 1;
-    return bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(
-        !gpu_route_topk && moe_routed_byte_quant &&
+    return bn_gpu_policy_native_quant_moe_cpu_route_resident_enabled(
+        !gpu_route_topk && moe_routed_native_quant &&
         bn_model_arch_uses_more_than_two_expert_moe(c));
 }
 
@@ -1531,7 +1531,7 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
     if ((!gpu_route_topk && !cpu_route_resident_ffn) ||
         !moe_gate_all || !moe_up_all || !moe_down_all ||
         (!bn_transformer_gpu_moe_routed_kquant_down(map) &&
-         !bn_transformer_gpu_moe_routed_byte_quant(map)) ||
+         !bn_transformer_gpu_moe_routed_native_quant(map)) ||
         !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
     BnConfig c = {0};
@@ -1572,8 +1572,8 @@ bn_transformer_gpu_moe_decode_route_policy(
     if (!c || !c->moe_norm_topk_prob)
         policy.route_flags |= BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
 
-    int routed_byte_quant = lw &&
-        bn_transformer_gpu_moe_routed_byte_quant(&lw->moe.expert_map);
+    int routed_native_quant = lw &&
+        bn_transformer_gpu_moe_routed_native_quant(&lw->moe.expert_map);
     policy.gpu_route_topk =
         bn_transformer_gpu_moe_route_topk_enabled(
             policy.router, policy.all_active_two_kquant_moe,
@@ -1581,7 +1581,7 @@ bn_transformer_gpu_moe_decode_route_policy(
     policy.cpu_route_resident_ffn =
         bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
             c, policy.all_active_two_kquant_moe, policy.gpu_route_topk,
-            routed_byte_quant);
+            routed_native_quant);
     policy.gpu_routed_ffn =
         lw && bn_transformer_gpu_moe_routed_ffn_enabled(
             policy.gpu_route_topk, policy.cpu_route_resident_ffn,

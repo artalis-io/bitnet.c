@@ -470,7 +470,7 @@ if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q8_MATVEC_SPLIT\|BN_GPU_CODE_Q
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_moe_routed_q[48]\|allow_q4_down\|moe_routed_q8\|routed_q[48]' \
+if grep -n 'bn_transformer_gpu_moe_routed_q[48]\|bn_transformer_gpu_moe_routed_byte_quant\|allow_q4_down\|moe_routed_q8\|moe_routed_byte_quant\|routed_q[48]\|routed_byte_quant' \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_internal.h \
     src/transformer/prefill_policy.c \
@@ -1822,7 +1822,7 @@ if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_e
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_qkv_split_q[58]_supported\|use_q[58]_split\|use_packed_q5_split' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_qkv_split_q[58]_supported\|bn_transformer_gpu_qkv_split_byte_quant_supported\|use_q[58]_split\|use_byte_quant_split\|use_packed_q5_split' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU QKV split policy must use behavior-named helpers"
     fail=1
 fi
@@ -1852,7 +1852,7 @@ if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_mo
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled\|bn_gpu_policy_cuda_moe_router_gpu_enabled\|bn_gpu_policy_cuda_moe_router_diff2_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed\|bn_gpu_policy_cuda_moe_ffn_disabled\|bn_gpu_policy_cuda_moe_cpu_actual_override_enabled\|bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled\|bn_gpu_policy_cuda_moe_gateup_split_enabled\|bn_gpu_policy_q8_moe_cpu_route_resident_enabled' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled\|bn_gpu_policy_cuda_moe_router_gpu_enabled\|bn_gpu_policy_cuda_moe_router_diff2_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed\|bn_gpu_policy_cuda_moe_ffn_disabled\|bn_gpu_policy_cuda_moe_cpu_actual_override_enabled\|bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled\|bn_gpu_policy_cuda_moe_gateup_split_enabled\|bn_gpu_policy_q8_moe_cpu_route_resident_enabled\|bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "MoE route policy must expose/test behavior-named helpers, not CUDA implementation aliases"
     fail=1
 fi

@@ -581,7 +581,7 @@ int bn_gpu_policy_native_quant_logits_refine_enabled(
 int bn_gpu_policy_native_quant_logits_refine_top_or_default(int default_top);
 int bn_gpu_policy_moe_ffn_disabled(void);
 int bn_gpu_policy_moe_router_topk_enabled(int eligible);
-int bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(int eligible);
+int bn_gpu_policy_native_quant_moe_cpu_route_resident_enabled(int eligible);
 int bn_gpu_policy_moe_router_gpu_enabled(void);
 int bn_gpu_policy_moe_router_diff2_enabled(void);
 int bn_gpu_policy_moe_routed_ffn_batch_enabled(void);
