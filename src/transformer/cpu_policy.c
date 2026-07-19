@@ -40,7 +40,7 @@ int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type) 
            bn_backend_quant_cpu_fused_q4_gateup_silu(gate_type, up_type);
 }
 
-int bn_transformer_cpu_can_preq8k_pair(const BnCPUBackendOps *ops,
+int bn_transformer_cpu_can_prepared_kquant_pair(const BnCPUBackendOps *ops,
                                        int left_type,
                                        int right_type) {
     return ops && ops->supports_preq8k &&
@@ -48,15 +48,15 @@ int bn_transformer_cpu_can_preq8k_pair(const BnCPUBackendOps *ops,
            bn_backend_quant_can_preq8k(right_type);
 }
 
-int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
+int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type) {
-    return bn_transformer_cpu_can_preq8k_pair(ops, first_type, second_type) &&
+    return bn_transformer_cpu_can_prepared_kquant_pair(ops, first_type, second_type) &&
            bn_backend_quant_can_preq8k(third_type);
 }
 
-int bn_transformer_cpu_route_preq8k_pair_enabled(
+int bn_transformer_cpu_route_prepared_kquant_pair_enabled(
     const BnCPUBackendOps *ops,
     const BnGPUBackend *gpu,
     int dim,
@@ -64,10 +64,10 @@ int bn_transformer_cpu_route_preq8k_pair_enabled(
     int right_type) {
     return !gpu &&
            dim % BN_QK_K == 0 &&
-           bn_transformer_cpu_can_preq8k_pair(ops, left_type, right_type);
+           bn_transformer_cpu_can_prepared_kquant_pair(ops, left_type, right_type);
 }
 
-int bn_transformer_cpu_route_preq8k_triple_enabled(
+int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
     const BnCPUBackendOps *ops,
     const BnGPUBackend *gpu,
     int dim,
@@ -76,7 +76,7 @@ int bn_transformer_cpu_route_preq8k_triple_enabled(
     int third_type) {
     return !gpu &&
            dim % BN_QK_K == 0 &&
-           bn_transformer_cpu_can_preq8k_triple(ops, first_type, second_type,
+           bn_transformer_cpu_can_prepared_kquant_triple(ops, first_type, second_type,
                                                 third_type);
 }
 

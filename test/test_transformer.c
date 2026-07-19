@@ -3802,42 +3802,42 @@ static void test_block_planning(void) {
         BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
 
-    assert(!bn_transformer_cpu_can_preq8k_pair(
+    assert(!bn_transformer_cpu_can_prepared_kquant_pair(
         NULL, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
-    int supports_preq8k = bn_transformer_cpu_backend_ops()->supports_preq8k;
-    assert(bn_transformer_cpu_can_preq8k_pair(
+    int supports_prepared_kquant = bn_transformer_cpu_backend_ops()->supports_preq8k;
+    assert(bn_transformer_cpu_can_prepared_kquant_pair(
                bn_transformer_cpu_backend_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
-           supports_preq8k);
-    assert(bn_transformer_cpu_can_preq8k_triple(
+           supports_prepared_kquant);
+    assert(bn_transformer_cpu_can_prepared_kquant_triple(
                bn_transformer_cpu_backend_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
-               BN_GGUF_TENSOR_Q6_K) == supports_preq8k);
-    assert(!bn_transformer_cpu_can_preq8k_pair(
+               BN_GGUF_TENSOR_Q6_K) == supports_prepared_kquant);
+    assert(!bn_transformer_cpu_can_prepared_kquant_pair(
         bn_transformer_cpu_backend_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_transformer_cpu_can_preq8k_triple(
+    assert(!bn_transformer_cpu_can_prepared_kquant_triple(
         bn_transformer_cpu_backend_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
     BnGPUBackend route_gpu = {0};
-    assert(bn_transformer_cpu_route_preq8k_pair_enabled(
+    assert(bn_transformer_cpu_route_prepared_kquant_pair_enabled(
                bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
-           supports_preq8k);
-    assert(!bn_transformer_cpu_route_preq8k_pair_enabled(
+           supports_prepared_kquant);
+    assert(!bn_transformer_cpu_route_prepared_kquant_pair_enabled(
         bn_transformer_cpu_backend_ops(), &route_gpu, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_transformer_cpu_route_preq8k_pair_enabled(
+    assert(!bn_transformer_cpu_route_prepared_kquant_pair_enabled(
         bn_transformer_cpu_backend_ops(), NULL, BN_QK_K - 1,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
-    assert(bn_transformer_cpu_route_preq8k_triple_enabled(
+    assert(bn_transformer_cpu_route_prepared_kquant_triple_enabled(
                bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
-               BN_GGUF_TENSOR_Q6_K) == supports_preq8k);
-    assert(!bn_transformer_cpu_route_preq8k_triple_enabled(
+               BN_GGUF_TENSOR_Q6_K) == supports_prepared_kquant);
+    assert(!bn_transformer_cpu_route_prepared_kquant_triple_enabled(
         bn_transformer_cpu_backend_ops(), &route_gpu, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_transformer_cpu_route_preq8k_triple_enabled(
+    assert(!bn_transformer_cpu_route_prepared_kquant_triple_enabled(
         bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
 
@@ -4585,25 +4585,25 @@ static void test_block_planning(void) {
 
     assert(!bn_transformer_prefill_can_preq8k_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
-    int prefill_supports_preq8k =
+    int prefill_supports_prepared_kquant =
         bn_transformer_prefill_cpu_ops()->supports_preq8k;
     assert(bn_transformer_prefill_can_preq8k_type(
                bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K) ==
-           prefill_supports_preq8k);
+           prefill_supports_prepared_kquant);
     assert(bn_transformer_prefill_can_preq8k_pair(
                bn_transformer_prefill_cpu_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
-           prefill_supports_preq8k);
+           prefill_supports_prepared_kquant);
     assert(bn_transformer_prefill_can_preq8k_triple(
                bn_transformer_prefill_cpu_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
-               BN_GGUF_TENSOR_Q6_K) == prefill_supports_preq8k);
+               BN_GGUF_TENSOR_Q6_K) == prefill_supports_prepared_kquant);
     assert(!bn_transformer_prefill_can_preq8k_pair(
         bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q8_0));
     assert(bn_transformer_prefill_route_preq8k_type_enabled(
                bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
-               BN_GGUF_TENSOR_Q4_K) == prefill_supports_preq8k);
+               BN_GGUF_TENSOR_Q4_K) == prefill_supports_prepared_kquant);
     assert(!bn_transformer_prefill_route_preq8k_type_enabled(
         bn_transformer_prefill_cpu_ops(), &route_gpu, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K));
@@ -4616,14 +4616,14 @@ static void test_block_planning(void) {
     assert(bn_transformer_prefill_route_preq8k_pair_enabled(
                bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
-           prefill_supports_preq8k);
+           prefill_supports_prepared_kquant);
     assert(!bn_transformer_prefill_route_preq8k_pair_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q8_0));
     assert(bn_transformer_prefill_route_preq8k_triple_enabled(
                bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
-               BN_GGUF_TENSOR_Q6_K) == prefill_supports_preq8k);
+               BN_GGUF_TENSOR_Q6_K) == prefill_supports_prepared_kquant);
     assert(!bn_transformer_prefill_route_preq8k_triple_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));

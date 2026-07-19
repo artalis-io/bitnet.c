@@ -49,20 +49,20 @@ int bn_transformer_cpu_debug_dump_pos_selected(int pos);
 int bn_transformer_cpu_debug_dump_heads_enabled(void);
 int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void);
 int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type);
-int bn_transformer_cpu_can_preq8k_pair(const BnCPUBackendOps *ops,
+int bn_transformer_cpu_can_prepared_kquant_pair(const BnCPUBackendOps *ops,
                                        int left_type,
                                        int right_type);
-int bn_transformer_cpu_can_preq8k_triple(const BnCPUBackendOps *ops,
+int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
-int bn_transformer_cpu_route_preq8k_pair_enabled(
+int bn_transformer_cpu_route_prepared_kquant_pair_enabled(
     const BnCPUBackendOps *ops,
     const BnGPUBackend *gpu,
     int dim,
     int left_type,
     int right_type);
-int bn_transformer_cpu_route_preq8k_triple_enabled(
+int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
     const BnCPUBackendOps *ops,
     const BnGPUBackend *gpu,
     int dim,
