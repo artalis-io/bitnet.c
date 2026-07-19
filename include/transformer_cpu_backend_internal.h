@@ -29,6 +29,7 @@ typedef struct {
                              int rope_dims, const float *rc,
                              const float *rs);
     int supports_prepared_kquant;
+    int supports_float_kquant_prefill;
     void (*rmsnorm_prepared_kquant)(const float *x, const float *w, int dim,
                                     float eps, float *out, int8_t *x_q,
                                     float *x_d, int16_t *x_bsums);

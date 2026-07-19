@@ -3735,8 +3735,7 @@ static void test_block_planning(void) {
     int backend_supports_float_kquant_prefill =
         bn_transformer_cpu_backend_supports_float_kquant_prefill();
     assert(backend_supports_float_kquant_prefill ==
-           (cpu_backend == BN_CPU_BACKEND_AVX2 ||
-            cpu_backend == BN_CPU_BACKEND_AVX512));
+           bn_transformer_cpu_backend_ops()->supports_float_kquant_prefill);
     assert(force_float_kquant ==
            backend_supports_float_kquant_prefill);
     c.policy_flags = 0;

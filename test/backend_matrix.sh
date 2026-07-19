@@ -225,6 +225,12 @@ if grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' src/transformer/plan.c >
     fail=1
 fi
 
+if sed -n '/^int bn_transformer_cpu_backend_supports_float_kquant_prefill/,/^}/p' \
+    src/transformer/cpu_backend.c | grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' >/dev/null 2>&1; then
+    echo "CPU float K-quant prefill support must use backend ops capability, not AVX placement checks"
+    fail=1
+fi
+
 if grep -n 'BN_TRANSFORMER_CPU_HAS_' src/moe_policy.c >/dev/null 2>&1; then
     echo "src/moe_policy.c must use CPU backend helpers for ISA capability policy"
     fail=1
