@@ -594,7 +594,7 @@ int bn_gpu_policy_small_dense_exact_ffn_down_enabled(void);
 int bn_gpu_policy_small_dense_prefill_disabled(void);
 int bn_gpu_policy_native_quant_logits_refine_requested(void);
 int bn_gpu_policy_native_quant_logits_refine_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled(void);
 int bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled(void);
 int bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_decode_enabled(void);
@@ -621,15 +621,15 @@ int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_layer_selected(
 int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_default_disabled(void);
 int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_disabled(void);
 float bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(float default_eps);
-int bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled(void);
 int bn_gpu_policy_all2_kquant_moe_logits_refine_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested(void);
-int bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_route_selection_enabled(void);
-void bn_gpu_policy_all2_q4q6_moe_route_layer_range(int *from_layer,
+int bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_requested(void);
+int bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_route_selection_enabled(void);
+void bn_gpu_policy_all_active_two_kquant_moe_route_layer_range(int *from_layer,
                                                    int *to_layer);
 int bn_gpu_policy_moe_compare_layer_selected(int layer, int pos);
 int bn_gpu_policy_moe_compare_input_norm_enabled(void);

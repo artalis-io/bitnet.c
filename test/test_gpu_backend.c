@@ -2648,7 +2648,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL");
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
-    assert(!bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled());
     assert(!bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled());
     assert(bn_gpu_policy_cuda_moe_cublas_decode_enabled());
@@ -2675,17 +2675,17 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_disabled());
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) ==
            0.25f);
-    assert(!bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
     assert(!bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
-    assert(!bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled());
-    assert(!bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled());
-    assert(!bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled());
-    assert(!bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested());
-    assert(!bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled());
-    assert(!bn_gpu_policy_all2_q4q6_moe_route_selection_enabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_requested());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_route_selection_enabled());
     int route_from_layer = 99;
     int route_to_layer = 99;
-    bn_gpu_policy_all2_q4q6_moe_route_layer_range(&route_from_layer,
+    bn_gpu_policy_all_active_two_kquant_moe_route_layer_range(&route_from_layer,
                                                   &route_to_layer);
     assert(route_from_layer == -1);
     assert(route_to_layer == -1);
@@ -2724,7 +2724,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE", "1", 1);
     setenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER", "3", 1);
     setenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER", "5", 1);
-    assert(bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled());
     assert(bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled());
     assert(!bn_gpu_policy_cuda_moe_cublas_decode_enabled());
@@ -2755,15 +2755,15 @@ static void test_gpu_policy_helpers(void) {
            0.124f);
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) <
            0.126f);
-    assert(bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
     assert(bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested());
-    assert(bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_route_selection_enabled());
-    bn_gpu_policy_all2_q4q6_moe_route_layer_range(&route_from_layer,
+    assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_requested());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_route_selection_enabled());
+    bn_gpu_policy_all_active_two_kquant_moe_route_layer_range(&route_from_layer,
                                                   &route_to_layer);
     assert(route_from_layer == 3);
     assert(route_to_layer == 5);
@@ -2833,7 +2833,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE", "1", 1);
     setenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER", "4", 1);
     setenv("BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER", "6", 1);
-    assert(bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled());
     assert(bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled());
     assert(bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled());
     assert(bn_gpu_policy_all2_q4q6_moe_all2_fast_enabled());
@@ -2862,15 +2862,15 @@ static void test_gpu_policy_helpers(void) {
            0.062f);
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) <
            0.063f);
-    assert(bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
     assert(bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_cpu_moe_safe_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_requested());
-    assert(bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled());
-    assert(bn_gpu_policy_all2_q4q6_moe_route_selection_enabled());
-    bn_gpu_policy_all2_q4q6_moe_route_layer_range(&route_from_layer,
+    assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_requested());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_route_selection_enabled());
+    bn_gpu_policy_all_active_two_kquant_moe_route_layer_range(&route_from_layer,
                                                   &route_to_layer);
     assert(route_from_layer == 4);
     assert(route_to_layer == 6);
