@@ -840,6 +840,15 @@ if grep -n 'bn_transformer_cpu_can_preq8k\|bn_transformer_cpu_route_preq8k\|attn
     fail=1
 fi
 
+if grep -n 'supports_preq8k\|rmsnorm_q8k' \
+    include/transformer_cpu_backend_internal.h \
+    src/transformer/cpu_policy.c \
+    src/transformer/cpu.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer CPU backend ops must use prepared K-quant behavior names, not preq8k/Q8K field names"
+    fail=1
+fi
+
 if grep -n 'cpu_quant_matvec_batch_preq8k' src/transformer/cpu.c >/dev/null 2>&1; then
     echo "Transformer CPU prepared K-quant execution helpers must use behavior names, not preq8k helper names"
     fail=1
@@ -856,6 +865,16 @@ if grep -n 'bn_transformer_prefill_can_preq8k\|bn_transformer_prefill_route_preq
     src/transformer/prefill.c \
     test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer prefill prepared K-quant route policy must use behavior names, not preq8k helper names"
+    fail=1
+fi
+
+if grep -n 'supports_preq8k\|prepare_preq8k\|prefill_prepare_preq8k' \
+    include/transformer_prefill_internal.h \
+    src/transformer/prefill_policy.c \
+    src/transformer/prefill_backend.c \
+    src/transformer/prefill.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer prefill backend ops must use prepared K-quant behavior names, not preq8k helper names"
     fail=1
 fi
 

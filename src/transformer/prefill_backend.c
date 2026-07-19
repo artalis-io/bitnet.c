@@ -127,13 +127,13 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
 #endif
 
 #if BN_TRANSFORMER_CPU_HAS_AVX2
-static int prefill_prepare_preq8k_avx2(int8_t *xq,
-                                       float *xd,
-                                       int16_t *xbs,
-                                       int n_bpr,
-                                       const float *x,
-                                       int dim,
-                                       int n_tokens) {
+static int prefill_prepare_prepared_kquant_avx2(int8_t *xq,
+                                                float *xd,
+                                                int16_t *xbs,
+                                                int n_bpr,
+                                                const float *x,
+                                                int dim,
+                                                int n_tokens) {
     if (!xq || !xd || !xbs || !x || dim <= 0 ||
         n_tokens <= 0 || n_bpr <= 0)
         return 0;
@@ -167,7 +167,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_l2norm_avx2_range,
     bn_transformer_ssm_delta_avx2_range,
     bn_transformer_ssm_gate_avx2_range,
-    prefill_prepare_preq8k_avx2,
+    prefill_prepare_prepared_kquant_avx2,
     1,
 };
 #elif BN_TRANSFORMER_CPU_HAS_AVX2
@@ -179,7 +179,7 @@ static const BnPrefillCPUOps BN_PREFILL_CPU_OPS = {
     bn_transformer_ssm_l2norm_avx2_range,
     bn_transformer_ssm_delta_avx2_range,
     bn_transformer_ssm_gate_avx2_range,
-    prefill_prepare_preq8k_avx2,
+    prefill_prepare_prepared_kquant_avx2,
     1,
 };
 #elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128

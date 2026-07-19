@@ -43,7 +43,7 @@ int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type) 
 int bn_transformer_cpu_can_prepared_kquant_pair(const BnCPUBackendOps *ops,
                                        int left_type,
                                        int right_type) {
-    return ops && ops->supports_preq8k &&
+    return ops && ops->supports_prepared_kquant &&
            bn_backend_quant_can_preq8k(left_type) &&
            bn_backend_quant_can_preq8k(right_type);
 }

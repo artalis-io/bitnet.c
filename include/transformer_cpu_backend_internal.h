@@ -28,10 +28,10 @@ typedef struct {
     void (*apply_rope_heads)(float *buf, int n_heads, int head_size,
                              int rope_dims, const float *rc,
                              const float *rs);
-    int supports_preq8k;
-    void (*rmsnorm_q8k)(const float *x, const float *w, int dim, float eps,
-                        float *out, int8_t *x_q, float *x_d,
-                        int16_t *x_bsums);
+    int supports_prepared_kquant;
+    void (*rmsnorm_prepared_kquant)(const float *x, const float *w, int dim,
+                                    float eps, float *out, int8_t *x_q,
+                                    float *x_d, int16_t *x_bsums);
 } BnCPUBackendOps;
 
 typedef struct {

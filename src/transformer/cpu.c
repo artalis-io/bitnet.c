@@ -430,7 +430,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         float attn_q8k_d[n_sb_attn > 0 ? n_sb_attn : 1];
         int16_t attn_q8k_bsums[n_sb_attn > 0 ? n_sb_attn * 16 : 1];
         if (attn_prepared_kquant_route) {
-            cpu_ops->rmsnorm_q8k(s->x, lw->norm.attn_norm, dim, c->norm_eps,
+            cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, c->norm_eps,
                                  s->xb, s->x_q, attn_q8k_d,
                                  attn_q8k_bsums);
             attn_prepared_kquant = 1;
@@ -836,7 +836,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     int ssm_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_pair_enabled(
         cpu_ops, bn_model_gpu(m), dim, lw->ssm.wqkv.type, lw->ssm.wz.type);
     if (ssm_prepared_kquant_route) {
-        cpu_ops->rmsnorm_q8k(s->x, lw->norm.attn_norm, dim, c->norm_eps,
+        cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, c->norm_eps,
                              s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
         ssm_prepared_kquant = 1;
     } else
@@ -970,7 +970,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         int n_sb = dim / BN_QK_K;
         float q8k_d[n_sb];
         int16_t q8k_bsums[n_sb * 16];
-        cpu_ops->rmsnorm_q8k(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
+        cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
                              s->xb, s->x_q, q8k_d, q8k_bsums);
         BnMatvecTask ffn[2] = {
              { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },

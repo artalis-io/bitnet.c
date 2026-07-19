@@ -1151,7 +1151,7 @@ static const BnPrefillCPUOps *prefill_cpu_ops(void) {
 }
 
 static size_t prefill_prepared_kquant_arena_bytes(int dim, int n_tokens) {
-    if (!prefill_cpu_ops()->supports_preq8k)
+    if (!prefill_cpu_ops()->supports_prepared_kquant)
         return 0;
     if (dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
         return 0;
@@ -1166,7 +1166,7 @@ prefill_alloc_prepared_kquant_buffers(SHArena *arena,
                                       int dim,
                                       int n_tokens) {
     BnPrefillPreparedKQuantBuffers b = { NULL, NULL, NULL, 0 };
-    if (!prefill_cpu_ops()->supports_preq8k)
+    if (!prefill_cpu_ops()->supports_prepared_kquant)
         return b;
     if (!arena || dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
         return b;
@@ -1191,9 +1191,9 @@ static int prefill_prepare_prepared_kquant(BnPrefillPreparedKQuantBuffers *b,
                                            int n_tokens) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
     if (!b || !b->xq || !b->xd || !b->xbs || !x || dim <= 0 ||
-        n_tokens <= 0 || b->n_bpr <= 0 || !ops->prepare_preq8k)
+        n_tokens <= 0 || b->n_bpr <= 0 || !ops->prepare_prepared_kquant)
         return 0;
-    return ops->prepare_preq8k(b->xq, b->xd, b->xbs, b->n_bpr,
+    return ops->prepare_prepared_kquant(b->xq, b->xd, b->xbs, b->n_bpr,
                                x, dim, n_tokens);
 }
 

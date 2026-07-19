@@ -3804,7 +3804,7 @@ static void test_block_planning(void) {
 
     assert(!bn_transformer_cpu_can_prepared_kquant_pair(
         NULL, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
-    int supports_prepared_kquant = bn_transformer_cpu_backend_ops()->supports_preq8k;
+    int supports_prepared_kquant = bn_transformer_cpu_backend_ops()->supports_prepared_kquant;
     assert(bn_transformer_cpu_can_prepared_kquant_pair(
                bn_transformer_cpu_backend_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
@@ -4586,7 +4586,7 @@ static void test_block_planning(void) {
     assert(!bn_transformer_prefill_can_prepared_kquant_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_prepared_kquant =
-        bn_transformer_prefill_cpu_ops()->supports_preq8k;
+        bn_transformer_prefill_cpu_ops()->supports_prepared_kquant;
     assert(bn_transformer_prefill_can_prepared_kquant_type(
                bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K) ==
            prefill_supports_prepared_kquant);

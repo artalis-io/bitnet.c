@@ -617,7 +617,7 @@ bn_transformer_prefill_ffn_batch_call_policy(
 
 int bn_transformer_prefill_can_prepared_kquant_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
-    return ops && ops->supports_preq8k &&
+    return ops && ops->supports_prepared_kquant &&
            bn_backend_quant_can_preq8k(tensor_type);
 }
 
