@@ -148,17 +148,15 @@ static void test_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_quant_format_eager_aux_cache_supported(
         BN_GGUF_TENSOR_IQ4_XS));
-    assert(bn_quant_format_cuda_q8_quant_matmul_on_f16_disable(
+    assert(bn_quant_format_avoids_quant_matmul_on_f16_input(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_quant_format_cuda_q8_quant_matmul_on_f16_disable(
+    assert(!bn_quant_format_avoids_quant_matmul_on_f16_input(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_cuda_force_q4k_quant_matmul_candidate(
+    assert(bn_quant_format_force_quant_matmul_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_quant_format_cuda_force_q4k_quant_matmul_candidate(
+    assert(bn_quant_format_force_quant_matmul_candidate(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_quant_format_cuda_force_q6k_quant_matmul_candidate(
-        BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_quant_format_cuda_force_q6k_quant_matmul_candidate(
+    assert(!bn_quant_format_force_quant_matmul_candidate(
         BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q4_0));

@@ -622,17 +622,19 @@ static inline int bn_backend_quant_cuda_matvec_supported(int type) {
 
 static inline int bn_backend_quant_cuda_q8_quant_matmul_on_f16_disable(
     int type) {
-    return bn_quant_format_cuda_q8_quant_matmul_on_f16_disable(type);
+    return bn_quant_format_avoids_quant_matmul_on_f16_input(type);
 }
 
 static inline int bn_backend_quant_cuda_force_q4k_quant_matmul_candidate(
     int type) {
-    return bn_quant_format_cuda_force_q4k_quant_matmul_candidate(type);
+    return bn_backend_quant_is_q4k(type) &&
+           bn_quant_format_force_quant_matmul_candidate(type);
 }
 
 static inline int bn_backend_quant_cuda_force_q6k_quant_matmul_candidate(
     int type) {
-    return bn_quant_format_cuda_force_q6k_quant_matmul_candidate(type);
+    return bn_backend_quant_moe_down_is_q6k(type) &&
+           bn_quant_format_force_quant_matmul_candidate(type);
 }
 
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {
