@@ -14,7 +14,7 @@ typedef struct {
                     int size, float eps);
     bn_tp_fn i8_logits;
     int i8_uses_standard_quant;
-    int supports_q8_refine;
+    int supports_native_quant_refine;
     bn_tp_fn f16_logits;
     void (*prepare_f16_x)(uint16_t *dst, const float *src, int dim);
 } BnLogitsBackendOps;

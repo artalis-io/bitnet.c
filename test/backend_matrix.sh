@@ -314,7 +314,7 @@ if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_suppo
     fail=1
 fi
 
-if grep -n 'bn_transformer_logits_q[68]_refine_supported\|bn_transformer_logits_small_backend\|logits_refine_q8\|logits_refine_tied_q6k\|logits_hybrid_tied_q6k\|logits_refine_small_backend' src/transformer/logits.c src/transformer/logits_policy.c include/transformer_logits_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'supports_q8_refine\|bn_transformer_logits_q[68]_refine_supported\|bn_transformer_logits_small_backend\|logits_refine_q8\|logits_refine_tied_q6k\|logits_hybrid_tied_q6k\|logits_refine_small_backend' src/transformer/logits.c src/transformer/logits_policy.c include/transformer_logits_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer logits refine policy must expose behavior-named helpers, not quant-format helper names"
     fail=1
 fi
