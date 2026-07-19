@@ -678,11 +678,6 @@ int bn_transformer_gpu_moe_route_topk_enabled(
     void *moe_router,
     int all2_q4q6_moe,
     int all2_q4q6_moe_gpu_route_layer_selected);
-int bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-    const BnConfig *c,
-    int all2_q4q6_moe,
-    int gpu_route_topk,
-    int moe_routed_q8);
 int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     const BnConfig *c,
     int all2_q4q6_moe,

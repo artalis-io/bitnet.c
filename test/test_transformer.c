@@ -1425,30 +1425,18 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT");
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ROUTE_RESIDENT");
-    assert(!bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 0, 0, 1));
     assert(!bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 0, 0, 1));
     c.n_experts = 3;
-    assert(bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 0, 0, 1));
     assert(bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 0, 0, 1));
-    assert(!bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 0, 1, 1));
     assert(!bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 0, 1, 1));
-    assert(!bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 0, 0, 0));
     assert(!bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 0, 0, 0));
-    assert(!bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        NULL, 0, 0, 1));
     assert(!bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         NULL, 0, 0, 1));
     setenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT", "1", 1);
-    assert(!bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 0, 0, 1));
     assert(!bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 0, 0, 1));
     unsetenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT");
@@ -1456,13 +1444,9 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4096;
     c.dim = 2048;
-    assert(bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 1, 0, 0));
     assert(bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 1, 0, 0));
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT", "1", 1);
-    assert(!bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-        &c, 1, 0, 0));
     assert(!bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         &c, 1, 0, 0));
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ROUTE_RESIDENT");

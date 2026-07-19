@@ -1604,15 +1604,6 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
         bn_model_arch_uses_more_than_two_expert_moe(c));
 }
 
-int bn_transformer_gpu_cuda_moe_cpu_route_resident_ffn_enabled(
-    const BnConfig *c,
-    int all2_q4q6_moe,
-    int gpu_route_topk,
-    int moe_routed_q8) {
-    return bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
-        c, all2_q4q6_moe, gpu_route_topk, moe_routed_q8);
-}
-
 int bn_transformer_gpu_moe_routed_ffn_enabled(
     int gpu_route_topk,
     int cpu_route_resident_ffn,
