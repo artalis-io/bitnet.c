@@ -342,7 +342,7 @@ int bn_transformer_gpu_all_active_two_kquant_moe_layer_enabled(
     const BnConfig *c,
     const BnLayerWeights *lw,
     int dim) {
-    return bn_gpu_policy_backend_all2_q4q6_moe_enabled(gpu) &&
+    return bn_gpu_policy_backend_all_active_two_kquant_moe_supported(gpu) &&
            bn_transformer_gpu_all_active_two_kquant_moe_layer(c, lw, dim);
 }
 
@@ -1959,7 +1959,7 @@ int bn_transformer_gpu_validate_forward(
          bn_transformer_gpu_moe_ffn_disabled()))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
     if (out->has_moe &&
-        bn_gpu_policy_backend_all2_q4q6_moe_enabled(gpu) &&
+        bn_gpu_policy_backend_all_active_two_kquant_moe_supported(gpu) &&
         all_active_two_kquant_moe_requires_opt_in(c, w))
         GPU_POLICY_REJECT("all-active-two K-quant MoE gpu-resident forward requires opt-in");
     if (out->has_ssm && (!gpu->read_activation || !gpu->write_activation))

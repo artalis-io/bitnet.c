@@ -2255,7 +2255,7 @@ int bn_gpu_policy_backend_small_dense_native_enabled(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
-int bn_gpu_policy_backend_all2_q4q6_moe_enabled(
+int bn_gpu_policy_backend_all_active_two_kquant_moe_supported(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }

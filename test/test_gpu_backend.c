@@ -2546,7 +2546,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_backend_flash_max_kv_or_default(&gpu, 0) == 2048);
     assert(bn_gpu_policy_backend_large_graph_native_enabled(&gpu));
     assert(bn_gpu_policy_backend_small_dense_native_enabled(&gpu));
-    assert(bn_gpu_policy_backend_all2_q4q6_moe_enabled(&gpu));
+    assert(bn_gpu_policy_backend_all_active_two_kquant_moe_supported(&gpu));
     assert(bn_gpu_policy_backend_cpu_attention_fallback_supported(&gpu));
     assert(bn_gpu_policy_backend_small_dense_exact_native_supported(&gpu));
     assert(bn_gpu_policy_backend_prefill_decode_fallback_supported(&gpu));
@@ -2571,7 +2571,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_backend_flash_max_kv_or_default(&gpu, 0) == 0);
     assert(!bn_gpu_policy_backend_large_graph_native_enabled(&gpu));
     assert(!bn_gpu_policy_backend_small_dense_native_enabled(&gpu));
-    assert(!bn_gpu_policy_backend_all2_q4q6_moe_enabled(&gpu));
+    assert(!bn_gpu_policy_backend_all_active_two_kquant_moe_supported(&gpu));
     assert(!bn_gpu_policy_backend_cpu_attention_fallback_supported(&gpu));
     assert(!bn_gpu_policy_backend_small_dense_exact_native_supported(&gpu));
     assert(!bn_gpu_policy_backend_prefill_decode_fallback_supported(&gpu));

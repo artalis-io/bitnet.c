@@ -528,7 +528,7 @@ int bn_gpu_policy_backend_large_graph_native_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_small_dense_native_enabled(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_all2_q4q6_moe_enabled(
+int bn_gpu_policy_backend_all_active_two_kquant_moe_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_cpu_attention_fallback_supported(
     const BnGPUBackend *gpu);
