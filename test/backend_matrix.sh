@@ -129,6 +129,11 @@ if sed -n '/int q8_small_ssm_matvec =/,/bn_gpu_policy_cuda_q4k_pair_matvec_enabl
     fail=1
 fi
 
+if sed -n '/^static int cuda_buffer_create_f16_cache/,/size_t bytes = n/p' src/gpu_cuda.cu | grep -n 'buf->type == BN_GGUF_TENSOR_Q4_K\|buf->type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA aux cache quant policy"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

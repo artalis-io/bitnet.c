@@ -428,6 +428,28 @@ static inline int bn_backend_quant_cuda_aux_cache_prefers_large_budget(int type)
     return bn_backend_quant_aux_cache_prefers_large_budget(type);
 }
 
+static inline int bn_backend_quant_cuda_aux_cache_force_q4_f32(int type,
+                                                               int force_f32) {
+    return force_f32 && bn_backend_quant_moe_down_is_q4k(type);
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_q6_can_use_f16(
+    int type, int force_f16, int force_q6_f32) {
+    return bn_backend_quant_moe_down_is_q6k(type) &&
+           (force_f16 || !force_q6_f32);
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_add_q6_f32(
+    int type, int force_f16) {
+    return force_f16 && bn_backend_quant_moe_down_is_q6k(type);
+}
+
+static inline int bn_backend_quant_cuda_aux_cache_f32_storage(
+    int type, int force_q4_f32, int q6_as_f16) {
+    return force_q4_f32 ||
+           bn_backend_quant_cuda_aux_cache_uses_f32(type, q6_as_f16);
+}
+
 static inline int bn_backend_quant_cuda_cublas_aux_cache_supported(int type) {
     return bn_quant_format_cuda_cublas_aux_cache_supported(type);
 }

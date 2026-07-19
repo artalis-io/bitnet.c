@@ -11434,17 +11434,17 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
 
     int force_q6_f32 = aux_cache_mode == 2;
     int force_f16 = aux_cache_mode == 3;
-    int force_q4_f32 =
-        aux_cache_mode == 2 && buf->type == BN_GGUF_TENSOR_Q4_K;
-    int q6_as_f16 = buf->type == BN_GGUF_TENSOR_Q6_K &&
-                    (force_f16 || !force_q6_f32) &&
+    int force_q4_f32 = bn_backend_quant_cuda_aux_cache_force_q4_f32(
+        buf->type, aux_cache_mode == 2);
+    int q6_as_f16 = bn_backend_quant_cuda_aux_cache_q6_can_use_f16(
+                        buf->type, force_f16, force_q6_f32) &&
                     bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
     int add_q6_f32_cache =
-        force_f16 && buf->type == BN_GGUF_TENSOR_Q6_K &&
+        bn_backend_quant_cuda_aux_cache_add_q6_f32(buf->type, force_f16) &&
         bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache();
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
-    int f32_cache =
-        force_q4_f32 || (buf->type == BN_GGUF_TENSOR_Q6_K && !q6_as_f16);
+    int f32_cache = bn_backend_quant_cuda_aux_cache_f32_storage(
+        buf->type, force_q4_f32, q6_as_f16);
     size_t bytes = n * (f32_cache
                         ? sizeof(float)
                         : sizeof(__half));
