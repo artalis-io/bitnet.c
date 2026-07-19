@@ -1206,6 +1206,11 @@ if grep -n 'can_use_cuda_moe_routed_ffn\|bn_gpu_policy_cuda_moe_routed_ffn_enabl
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_all_f16_cache\|bn_gpu_policy_cuda_moe_gateup_f16_cache\|bn_gpu_policy_cuda_partial_moe_f16_cache\|bn_gpu_policy_cuda_moe_f16_aux_cache_auto\|bn_gpu_policy_cuda_moe_full_reserve\|bn_gpu_policy_cuda_moe_down_q6_f32_cache\|bn_gpu_policy_cuda_moe_down_q4_f32_cache\|bn_gpu_policy_cuda_moe_quant_only_after_cache\|bn_gpu_policy_cuda_aux_cache_bytes\|bn_gpu_policy_cuda_moe_fit_debug' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use behavior-named GPU policy helpers for MoE residency and aux-cache policy"
+    fail=1
+fi
+
 if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use model_arch helpers for MoE shape policy"
     fail=1
