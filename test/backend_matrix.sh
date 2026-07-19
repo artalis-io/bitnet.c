@@ -1721,6 +1721,11 @@ if grep -n 'bn_transformer_gpu_shared_q4_q8\|shared_q4_q8_eligible\|use_shared_q
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_exact_q6k_flags' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer GPU matvec flag policy must use behavior-named K-quant helpers"
+    fail=1
+fi
+
 if sed -n '/bn_transformer_gpu_validate_forward/,/if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)/p' src/transformer/gpu_policy.c | grep -n 'backend_large_native = transformer_gpu_backend_is_cuda\|transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for native graph policy"
     fail=1

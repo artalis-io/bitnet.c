@@ -96,12 +96,12 @@ int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
                                                            act_type);
 }
 
-uint32_t bn_transformer_gpu_matvec_q8k_dot_flags(int tensor_type,
+uint32_t bn_transformer_gpu_matvec_kquant_dot_flags(int tensor_type,
                                                  int enabled) {
     return bn_backend_quant_gpu_matvec_q8k_dot_flag(tensor_type, enabled);
 }
 
-uint32_t bn_transformer_gpu_matvec_exact_q6k_flags(int tensor_type,
+uint32_t bn_transformer_gpu_matvec_exact_kquant_flags(int tensor_type,
                                                    int enabled) {
     return bn_backend_quant_gpu_matvec_exact_q6k_flag(tensor_type, enabled);
 }
