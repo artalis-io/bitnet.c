@@ -3734,6 +3734,10 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_cuda_matvec_allows_fused_bias(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_cuda_matvec_allows_fused_bias(
+        BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_cuda_split_allows_fused_bias(
         BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_cuda_split_allows_fused_bias(

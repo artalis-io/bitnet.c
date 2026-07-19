@@ -359,8 +359,12 @@ static inline int bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
     return bn_backend_quant_cuda_q5k_q8_1_matvec_candidate(type);
 }
 
-static inline int bn_backend_quant_cuda_split_allows_fused_bias(int type) {
+static inline int bn_backend_quant_cuda_matvec_allows_fused_bias(int type) {
     return !bn_backend_quant_cuda_q8_0_warp_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_split_allows_fused_bias(int type) {
+    return bn_backend_quant_cuda_matvec_allows_fused_bias(type);
 }
 
 static inline int bn_backend_quant_cuda_q4k_split_q8k_candidate(int type) {

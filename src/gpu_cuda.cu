@@ -18777,7 +18777,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             bias_idx = (fused_copy_idx < 0 && fuse_bias_enabled &&
-                        op->type != BN_GGUF_TENSOR_Q8_0)
+                        bn_backend_quant_cuda_matvec_allows_fused_bias(
+                            op->type))
                 ? cuda_find_fusable_bias(ops, n_ops, i, op->buf_out,
                                           op->rows)
                 : -1;
@@ -20004,11 +20005,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int next_moe_all2_q4q6 =
                 next &&
                 next->op_code == BN_GPU_CODE_MOE_ROUTED_FFN &&
-                next->type == BN_GGUF_TENSOR_Q4_K &&
                 next->cols == dim &&
-                (int)next->p[1] == 2 &&
-                (int)next->p[2] == 2 &&
-                (int)next->p[3] == BN_GGUF_TENSOR_Q6_K;
+                bn_backend_quant_moe_all2_q4q6_routed_op(
+                    next->type, (int)next->p[1], (int)next->p[2],
+                    (int)next->p[3], dim, (int)next->p[0]);
             int moe_all2_route_q8k_default_enabled =
                 bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(
                     dim, next_moe_all2_q4q6);

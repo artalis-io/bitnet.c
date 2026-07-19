@@ -139,6 +139,11 @@ if sed -n '/bn_backend_quant_cuda_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(
     fail=1
 fi
 
+if sed -n '/case BN_GPU_CODE_MATVEC:/,/case BN_GPU_CODE_MATVEC_SPLIT:/p' src/gpu_cuda.cu | grep -n 'op->type != BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA graph matvec bias quant predicates"
+    fail=1
+fi
+
 if sed -n '/^static int cuda_matmul_device_out(/,/^static int cuda_matmul_batch(/p' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_Q3_K\|type == BN_GGUF_TENSOR_IQ3_XXS\|type == BN_GGUF_TENSOR_IQ4_XS\|type == BN_GGUF_TENSOR_Q5_0\|type == BN_GGUF_TENSOR_Q6_K\|type == BN_GGUF_TENSOR_Q4_K\|type == BN_GGUF_TENSOR_Q5_K\|type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
    sed -n '/^static int cuda_matmul_batch(/,/^static int cuda_argmax_activation(/p' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_Q5_0\|type == BN_GGUF_TENSOR_Q6_K\|type == BN_GGUF_TENSOR_Q4_K\|type == BN_GGUF_TENSOR_Q5_K\|type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for direct CUDA matvec/matmul dispatch quant predicates"
@@ -161,6 +166,11 @@ fi
 
 if sed -n '/case BN_GPU_CODE_MATVEC_SPLIT:/,/case BN_GPU_CODE_FUSED_GATEUP_SILU:/p' src/gpu_cuda.cu | grep -n 'op->type != BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0\|scan->type == BN_GGUF_TENSOR_Q4_K\|scan->type == BN_GGUF_TENSOR_Q6_K\|vop->type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA graph split matvec quant predicates"
+    fail=1
+fi
+
+if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/case BN_GPU_CODE_MOE_ROUTED_FFN:/p' src/gpu_cuda.cu | grep -n 'next->type == BN_GGUF_TENSOR_Q4_K\|(int)next->p\[3\] == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA route-topk next-op quant predicates"
     fail=1
 fi
 
