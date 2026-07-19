@@ -323,13 +323,6 @@ int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_safe_default(
-    const BnConfig *c,
-    const BnWeights *w);
-int bn_transformer_gpu_cuda_small_dense_q8_cpu_attn_fallback_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnWeights *w);
 int bn_transformer_gpu_small_dense_q8_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
@@ -337,17 +330,6 @@ int bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_default(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    int q4_q8_from_layer);
-int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_to_layer(
-    const BnConfig *c,
-    int exact_q4_q8_default,
-    int q4_q8_to_layer);
-int bn_transformer_gpu_cuda_small_dense_exact_q4_q8_ffn_down_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c);
 int bn_transformer_gpu_small_dense_exact_q4_q8_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -373,13 +355,7 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_cuda_small_dense_prefill_decode_fallback_requested(
-    const BnGPUBackend *gpu,
-    const BnConfig *c);
 int bn_transformer_gpu_small_dense_prefill_decode_fallback_requested(
-    const BnGPUBackend *gpu,
-    const BnConfig *c);
-int bn_transformer_gpu_cuda_small_dense_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_small_dense_prefill_chain_applicable(
@@ -601,10 +577,6 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     int allow_aux_cache);
 int bn_transformer_gpu_cuda_large_hybrid_prefill_disabled(void);
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void);
-int bn_transformer_gpu_cuda_small_dense_q8_logits_refine_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    int tensor_type);
 int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
