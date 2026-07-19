@@ -48,6 +48,10 @@ int bn_transformer_cpu_has_native_q8x_quant(void) {
     return BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT;
 }
 
+int bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch(void) {
+    return BN_TRANSFORMER_CPU_HAS_AVX2;
+}
+
 void bn_transformer_cpu_quantize_q8k_activation(const float *x,
                                                 int8_t *x_q,
                                                 float *x_d,

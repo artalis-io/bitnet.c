@@ -1,7 +1,7 @@
 #include "moe_internal.h"
 #include "backend_quant.h"
 #include "model_arch.h"
-#include "transformer_cpu_features_internal.h"
+#include "transformer_cpu_backend_internal.h"
 
 uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
     return bn_model_arch_moe_forces_float_kquant_gateup(c)
@@ -59,14 +59,12 @@ int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
     if (!bn_moe_policy_supports_shared_gateup_batch_type(
             shared_gate_type, shared_up_type, batch_type))
         return 0;
-#if BN_TRANSFORMER_CPU_HAS_AVX2
-    return 1;
-#else
+    if (bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch())
+        return 1;
     return bn_backend_quant_stacked_pair_same_format(shared_gate_type,
                                                      batch_type) &&
            bn_backend_quant_stacked_pair_same_format(shared_up_type,
                                                      batch_type);
-#endif
 }
 
 int bn_moe_quant_uses_embedded_tensor_scale(int type) {

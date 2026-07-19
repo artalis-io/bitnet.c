@@ -187,6 +187,11 @@ if grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' src/transformer/plan.c >
     fail=1
 fi
 
+if grep -n 'BN_TRANSFORMER_CPU_HAS_' src/moe_policy.c >/dev/null 2>&1; then
+    echo "src/moe_policy.c must use CPU backend helpers for ISA capability policy"
+    fail=1
+fi
+
 if ! grep -n 'BnPrefillCPUOps' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill must dispatch CPU kernels through an explicit backend ops table"
     fail=1
