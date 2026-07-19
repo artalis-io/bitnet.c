@@ -420,12 +420,6 @@ int bn_model_arch_loads_moe_aux_weights(const BnConfig *c) {
     return bn_model_arch_moe_uses_scaled_router_input(c);
 }
 
-int bn_model_arch_uses_full_rope_text_dims(const char *arch) {
-    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
-    return ops &&
-           ((ops->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS) != 0);
-}
-
 int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c) {
     return c &&
            ((c->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS) != 0);
