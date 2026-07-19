@@ -1716,6 +1716,11 @@ if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_a
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_shared_q4_q8\|shared_q4_q8_eligible\|use_shared_q4_q8' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer GPU shared MoE dot policy must expose behavior-named helpers"
+    fail=1
+fi
+
 if sed -n '/bn_transformer_gpu_validate_forward/,/if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)/p' src/transformer/gpu_policy.c | grep -n 'backend_large_native = transformer_gpu_backend_is_cuda\|transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for native graph policy"
     fail=1

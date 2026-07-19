@@ -1734,13 +1734,13 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
     }
 
     if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
-        int shared_q4_q8_eligible =
-            bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+        int shared_kquant_dot_eligible =
+            bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                 lw->shared.shared_gate.type, lw->shared.shared_up.type,
                 lw->shared.shared_gate.cols);
-        int use_shared_q4_q8 =
-            bn_transformer_gpu_shared_q4_q8_dot_enabled(
-                shared_q4_q8_eligible);
+        int use_shared_kquant_dot =
+            bn_transformer_gpu_shared_kquant_dot_enabled(
+                shared_kquant_dot_eligible);
         int prefer_shared_gateup_split =
             bn_transformer_gpu_prefers_gateup_split(
                 lw->shared.shared_gate.type);
@@ -1757,7 +1757,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 shared->shared_gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
                 lw->shared.shared_gate.rows, lw->shared.shared_up.rows,
-                lw->shared.shared_gate.cols, use_shared_q4_q8,
+                lw->shared.shared_gate.cols, use_shared_kquant_dot,
                 exact_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    shared->shared_gateup_stacked &&
@@ -1773,10 +1773,10 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         } else {
             uint32_t shared_gate_flags =
                 bn_transformer_gpu_matvec_q8k_dot_flags(
-                    lw->shared.shared_gate.type, use_shared_q4_q8);
+                    lw->shared.shared_gate.type, use_shared_kquant_dot);
             uint32_t shared_up_flags =
                 bn_transformer_gpu_matvec_q8k_dot_flags(
-                    lw->shared.shared_up.type, use_shared_q4_q8);
+                    lw->shared.shared_up.type, use_shared_kquant_dot);
             emit_context_matvec_flags(
                 ctx, lw->shared.shared_gate.type,
                 shared->shared_gate,
@@ -1798,7 +1798,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         }
         uint32_t shared_down_flags =
             bn_transformer_gpu_matvec_exact_q6k_flags(
-                lw->shared.shared_down.type, use_shared_q4_q8);
+                lw->shared.shared_down.type, use_shared_kquant_dot);
         emit_context_matvec_flags(
             ctx, lw->shared.shared_down.type,
             shared->shared_down,

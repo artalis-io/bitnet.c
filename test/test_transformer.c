@@ -587,11 +587,11 @@ static void test_gpu_capability_routing(void) {
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_gpu_stacked_pair_same_format(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
-    assert(bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+    assert(bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 256));
-    assert(!bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+    assert(!bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 128));
-    assert(!bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(
+    assert(!bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, 256));
 
     setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
@@ -674,10 +674,10 @@ static void test_gpu_capability_routing(void) {
     unsetenv("BN_GPU_DEBUG_FALLBACK");
 
     unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");
-    assert(!bn_transformer_gpu_shared_q4_q8_dot_enabled(0));
-    assert(bn_transformer_gpu_shared_q4_q8_dot_enabled(1));
+    assert(!bn_transformer_gpu_shared_kquant_dot_enabled(0));
+    assert(bn_transformer_gpu_shared_kquant_dot_enabled(1));
     setenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT", "1", 1);
-    assert(!bn_transformer_gpu_shared_q4_q8_dot_enabled(1));
+    assert(!bn_transformer_gpu_shared_kquant_dot_enabled(1));
     unsetenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT");
 
     unsetenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE");

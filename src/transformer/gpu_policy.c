@@ -126,7 +126,7 @@ int bn_transformer_gpu_stacked_pair_same_format(int left_type,
     return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
 }
 
-int bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(int gate_type,
+int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
                                                         int up_type,
                                                         int cols) {
     return cols % 256 == 0 &&
@@ -200,7 +200,7 @@ int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
     return bn_gpu_policy_split_residual_rmsnorm_enabled();
 }
 
-int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible) {
+int bn_transformer_gpu_shared_kquant_dot_enabled(int eligible) {
     return eligible &&
            bn_gpu_policy_shared_q4_q8_dot_enabled();
 }
