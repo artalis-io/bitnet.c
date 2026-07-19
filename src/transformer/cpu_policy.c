@@ -44,8 +44,8 @@ int bn_transformer_cpu_can_prepared_kquant_pair(const BnCPUBackendOps *ops,
                                        int left_type,
                                        int right_type) {
     return ops && ops->supports_prepared_kquant &&
-           bn_backend_quant_can_preq8k(left_type) &&
-           bn_backend_quant_can_preq8k(right_type);
+           bn_backend_quant_supports_prepared_kquant(left_type) &&
+           bn_backend_quant_supports_prepared_kquant(right_type);
 }
 
 int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
@@ -53,7 +53,7 @@ int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
                                          int second_type,
                                          int third_type) {
     return bn_transformer_cpu_can_prepared_kquant_pair(ops, first_type, second_type) &&
-           bn_backend_quant_can_preq8k(third_type);
+           bn_backend_quant_supports_prepared_kquant(third_type);
 }
 
 int bn_transformer_cpu_route_prepared_kquant_pair_enabled(

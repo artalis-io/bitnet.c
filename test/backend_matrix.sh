@@ -856,7 +856,7 @@ if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/tr
     fail=1
 fi
 
-if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transformer/cpu.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/transformer/cpu.c >/dev/null 2>&1; then
     echo "CPU execution code must use CPU backend policy helpers for preq8k quant capability"
     fail=1
 fi
@@ -884,7 +884,7 @@ if grep -n 'cpu_quant_matvec_batch_preq8k' src/transformer/cpu.c >/dev/null 2>&1
     fail=1
 fi
 
-if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for preq8k quant capability"
     fail=1
 fi
@@ -908,12 +908,23 @@ if grep -n 'supports_preq8k\|prepare_preq8k\|prefill_prepare_preq8k' \
     fail=1
 fi
 
+if grep -n 'BN_QUANT_CAP_CPU_PREQ8K\|BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K\|bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' \
+    include/quant.h \
+    include/backend_quant.h \
+    src/quant/registry.c \
+    src/transformer/cpu_policy.c \
+    src/transformer/prefill_policy.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Prepared K-quant capability helpers must not use preq8k implementation names"
+    fail=1
+fi
+
 if grep -n 'BnPrefillPreQ8KBuffers\|prefill_quant_matmul_preq8k_multi\|prefill_preq8k_arena_bytes\|prefill_alloc_preq8k_buffers\|prefill_prepare_preq8k\|prefill_try_preq8k' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution prepared K-quant helpers must use behavior names, not preq8k helper names"
     fail=1
 fi
 
-if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_cpu_kernels.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/moe_cpu_kernels.c >/dev/null 2>&1; then
     echo "MoE CPU kernels must use MoE policy helpers for preq8k quant capability"
     fail=1
 fi
@@ -923,7 +934,7 @@ if grep -n 'shared_gate_type != batch_type\|shared_up_type != batch_type' src/mo
     fail=1
 fi
 
-if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_policy.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/moe_policy.c >/dev/null 2>&1; then
     echo "MoE policy must use shared gate/up batch quant policy helpers for preq8k compatibility"
     fail=1
 fi

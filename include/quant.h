@@ -261,7 +261,7 @@ typedef enum {
     BN_QUANT_CAP_CPU_MATVEC     = 1u << 4,
     BN_QUANT_CAP_CPU_BATCH      = 1u << 5,
     BN_QUANT_CAP_CPU_MATMUL     = 1u << 6,
-    BN_QUANT_CAP_CPU_PREQ8K     = 1u << 7,
+    BN_QUANT_CAP_CPU_PREPARED_KQUANT     = 1u << 7,
     BN_QUANT_CAP_CPU_REPACKED   = 1u << 8,
     BN_QUANT_CAP_GPU_DENSE_GRAPH = 1u << 9,
     BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT = 1u << 10,
@@ -312,7 +312,7 @@ int      bn_quant_format_uses_embedded_scale(int type);
 int      bn_quant_format_has_cpu_matvec(int type);
 int      bn_quant_format_has_cpu_batch(int type);
 int      bn_quant_format_has_cpu_matmul(int type);
-int      bn_quant_format_can_preq8k(int type);
+int      bn_quant_format_supports_prepared_kquant(int type);
 int      bn_quant_format_can_cpu_repack(int type);
 int      bn_quant_format_can_gpu_native(int type);
 int      bn_quant_format_can_gpu_repack(int type);

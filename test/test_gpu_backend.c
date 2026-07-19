@@ -3750,7 +3750,7 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_is_float_kquant_fallback_candidate(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_Q4_K));
@@ -3816,7 +3816,7 @@ static void test_quant_registry(void) {
     assert(!bn_backend_quant_moe_routed_op_is_q8(BN_GGUF_TENSOR_Q4_K));
     assert(!bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
-    assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_moe_down_is_q6k(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_backend_quant_moe_down_is_q6k(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_moe_down_is_q4k(BN_GGUF_TENSOR_Q4_K));
@@ -4074,7 +4074,7 @@ static void test_quant_registry(void) {
            BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K);
     assert(bn_quant_format_gpu_matvec_exact_q6k_flag(BN_GGUF_TENSOR_Q6_K, 0) == 0);
     assert(bn_quant_format_gpu_matvec_exact_q6k_flag(BN_GGUF_TENSOR_Q4_K, 1) == 0);
-    assert(bn_quant_format_can_preq8k(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
