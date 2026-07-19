@@ -2314,6 +2314,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT");
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREPARED_INPUT");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP");
@@ -2698,7 +2699,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT", "1", 1);
-    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT", "1", 1);
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREPARED_INPUT", "1", 1);
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP", "1", 1);
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_PAIR_DOWN", "1", 1);
@@ -2774,6 +2775,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_ALL2_FAST");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q8K_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_ROUTE_Q8K_DEFAULT");
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREPARED_INPUT");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP");
@@ -2801,6 +2803,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE");
     unsetenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_FROM_LAYER");
     unsetenv("BN_CUDA_ALL2_Q4Q6_MOE_GPU_ROUTE_TO_LAYER");
+    assert(!bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled());
+    setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT", "1", 1);
+    assert(bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled());
+    unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT");
     setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
     setenv("BN_CUDA_DISABLE_QWEN2MOE_FAST_MOE_GRAPH", "1", 1);
     setenv("BN_CUDA_ENABLE_QWEN2MOE_MOE_CUBLAS_DECODE", "1", 1);

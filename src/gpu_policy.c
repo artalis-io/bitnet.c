@@ -10,6 +10,13 @@ static int gpu_policy_compat_env_enabled(const char *name,
            (compat_name && getenv(compat_name) != NULL);
 }
 
+static int gpu_policy_compat_env_enabled2(const char *name,
+                                          const char *compat_name,
+                                          const char *compat_name2) {
+    return gpu_policy_compat_env_enabled(name, compat_name) ||
+           (compat_name2 && getenv(compat_name2) != NULL);
+}
+
 static const char *gpu_policy_compat_env_value(const char *name,
                                                const char *compat_name) {
     const char *env = getenv(name);
@@ -2579,8 +2586,10 @@ int bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled(void) {
 }
 
 int bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled(void) {
-    return gpu_policy_compat_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT",
-                                  "BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT");
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREPARED_INPUT",
+        "BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT",
+        "BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT");
 }
 
 int bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_enabled(void) {
