@@ -318,14 +318,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     c->seq_len = bn_model_arch_gguf_u32(f, "context_length");
     if (max_seq_len > 0 && max_seq_len < c->seq_len) c->seq_len = max_seq_len;
 
-    snprintf(key, sizeof(key), "%s.rope.freq_base", prefix);
-    c->rope_theta = bn_gguf_get_f32(f, key);
+    c->rope_theta = bn_model_arch_gguf_f32(f, "rope.freq_base");
     if (c->rope_theta == 0.0f) c->rope_theta = BN_DEFAULT_ROPE_THETA;
-    snprintf(key, sizeof(key), "%s.rope.freq_base_swa", prefix);
-    c->rope_theta_swa = bn_gguf_get_f32(f, key);
+    c->rope_theta_swa =
+        bn_model_arch_gguf_f32(f, "rope.freq_base_swa");
 
-    snprintf(key, sizeof(key), "%s.attention.layer_norm_rms_epsilon", prefix);
-    c->norm_eps = bn_gguf_get_f32(f, key);
+    c->norm_eps =
+        bn_model_arch_gguf_f32(f, "attention.layer_norm_rms_epsilon");
     if (c->norm_eps == 0.0f) c->norm_eps = BN_DEFAULT_NORM_EPS;
 
     // Vocab size from tokenizer metadata
@@ -420,8 +419,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             c->sliding_window_pattern[i] = gguf_get_bool_array(f, key, i);
         c->per_layer_input_dim =
             bn_model_arch_gguf_u32(f, "embedding_length_per_layer_input");
-        snprintf(key, sizeof(key), "%s.final_logit_softcapping", prefix);
-        c->final_logit_softcap = bn_gguf_get_f32(f, key);
+        c->final_logit_softcap =
+            bn_model_arch_gguf_f32(f, "final_logit_softcapping");
     }
 
     // Validate SSM config when hybrid model

@@ -346,6 +346,14 @@ static BnGGUFKeyValue test_make_u32_kv(char *key, uint32_t value) {
     return kv;
 }
 
+static BnGGUFKeyValue test_make_f32_kv(char *key, float value) {
+    BnGGUFKeyValue kv = {0};
+    kv.key = key;
+    kv.type = BN_GGUF_TYPE_FLOAT32;
+    kv.value.f32 = value;
+    return kv;
+}
+
 static BnGGUFKeyValue test_make_str_kv(char *key, char *value) {
     BnGGUFKeyValue kv = {0};
     kv.key = key;
@@ -405,14 +413,17 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
     assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
 
-    BnGGUFKeyValue dense_kvs[3];
+    BnGGUFKeyValue dense_kvs[4];
     dense_kvs[0] = test_make_str_kv("general.architecture", "gemma4");
     dense_kvs[1] = test_make_u32_kv("gemma4.expert_count", 0);
     dense_kvs[2] = test_make_u32_kv("gemma4.context_length", 8192);
+    dense_kvs[3] = test_make_f32_kv("gemma4.rope.freq_base", 1000000.0f);
     BnGGUFFile dense_gf = {0};
-    dense_gf.n_kv = 3;
+    dense_gf.n_kv = 4;
     dense_gf.kvs = dense_kvs;
     assert(bn_model_arch_gguf_u32(&dense_gf, "context_length") == 8192);
+    assert(bn_model_arch_gguf_f32(&dense_gf, "rope.freq_base") ==
+           1000000.0f);
     assert(bn_gpu_policy_auto_caps_gguf_sequence(
         1, 0, 0, &dense_gf, 4096));
     assert(bn_gpu_policy_auto_caps_gguf_sequence(

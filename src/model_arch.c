@@ -265,6 +265,18 @@ int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix) {
     return (int)bn_gguf_get_u32(f, key);
 }
 
+float bn_model_arch_gguf_f32(BnGGUFFile *f, const char *suffix) {
+    if (!f || !suffix) return 0.0f;
+    const char *arch = bn_gguf_get_str(f, "general.architecture");
+    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
+    const char *prefix = ops && ops->prefix
+        ? ops->prefix(arch)
+        : bn_model_arch_prefix(arch);
+    char key[128];
+    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
+    return bn_gguf_get_f32(f, key);
+}
+
 int bn_model_arch_gguf_uses_moe(BnGGUFFile *f) {
     return bn_model_arch_gguf_u32(f, "expert_count") > 0;
 }
