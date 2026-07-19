@@ -1830,6 +1830,28 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_all2_q4q6_moe_model(&c, &moe_w));
     assert(bn_transformer_gpu_all2_q4q6_moe_layer(
         &c, &moe_layers[0], c.dim));
+    unsetenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE");
+    BnBackendModel *resident_backend = bn_backend_model_create();
+    assert(resident_backend);
+    assert(bn_backend_model_register_handle(
+               resident_backend, 0, BN_BACKEND_HANDLE_MOE_ROUTER,
+               (void *)2) == 0);
+    assert(bn_backend_model_register_handle(
+               resident_backend, 0, BN_BACKEND_HANDLE_MOE_GATE_ALL,
+               (void *)3) == 0);
+    assert(bn_backend_model_register_handle(
+               resident_backend, 0, BN_BACKEND_HANDLE_MOE_UP_ALL,
+               (void *)4) == 0);
+    assert(bn_backend_model_register_handle(
+               resident_backend, 0, BN_BACKEND_HANDLE_MOE_DOWN_ALL,
+               (void *)5) == 0);
+    assert(bn_transformer_gpu_moe_decode_cacheable(
+        &c, &moe_w, resident_backend));
+    moe_layers[0].moe.expert_map.down_cols = 4095;
+    assert(!bn_transformer_gpu_moe_decode_cacheable(
+        &c, &moe_w, resident_backend));
+    moe_layers[0].moe.expert_map.down_cols = 4096;
+    bn_backend_model_free(resident_backend);
     assert(bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
         &c, &moe_w));
     assert(bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(

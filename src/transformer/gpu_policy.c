@@ -2,6 +2,7 @@
 #include "gpu_policy.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../gpu_quant_lowering_internal.h"
+#include "../moe_internal.h"
 #include "backend_quant.h"
 #include "model_arch.h"
 #include <stdio.h>
@@ -1148,12 +1149,7 @@ int bn_transformer_gpu_moe_decode_cacheable(
             !bn_backend_model_handle(backend, l,
                                      BN_BACKEND_HANDLE_MOE_DOWN_ALL) ||
             (!routed_q4 && !routed_q8) ||
-            em->gate_rows != c->moe_intermediate_size ||
-            em->up_rows != c->moe_intermediate_size ||
-            em->gate_cols != c->dim ||
-            em->up_cols != c->dim ||
-            em->down_rows != c->dim ||
-            em->down_cols != c->moe_intermediate_size)
+            !bn_moe_policy_supports_resident_routed_ffn_layout(c, em))
             return 0;
     }
     return 1;
@@ -1547,12 +1543,10 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
          !bn_transformer_gpu_moe_routed_q8(map)) ||
         !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
-    return map->gate_rows == moe_hidden &&
-           map->up_rows == moe_hidden &&
-           map->gate_cols == dim &&
-           map->up_cols == dim &&
-           map->down_rows == dim &&
-           map->down_cols == moe_hidden;
+    BnConfig c = {0};
+    c.dim = dim;
+    c.moe_intermediate_size = moe_hidden;
+    return bn_moe_policy_supports_resident_routed_ffn_layout(&c, map);
 }
 
 BnTransformerGPUMoEDecodeRoutePolicy

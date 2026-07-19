@@ -1476,6 +1476,11 @@ if grep -n 'logits->rows > 262144\|logits->cols == 1536' src/transformer/gpu_pol
     fail=1
 fi
 
+if grep -n 'em->gate_rows != c->moe_intermediate_size\|map->gate_rows == moe_hidden' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose MoE policy helpers for resident routed FFN layout"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval\|c && c->n_experts > 0 && c->full_attn_interval > 0' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must compose model_arch helpers for hybrid layout policy"
     fail=1
