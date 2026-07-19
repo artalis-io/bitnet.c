@@ -1711,12 +1711,12 @@ if grep -n 'bn_transformer_gpu_small_backend_q8_logits_refine\|bn_transformer_gp
     fail=1
 fi
 
-if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_all2_q4q6_moe\|bn_transformer_gpu_all2_q4_moe\|\.all2_q4q6_moe\|use_q4_q8' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_all2_q4q6_moe\|bn_transformer_gpu_all2_q4_moe\|\.all2_q4q6_moe\|use_q4_q8' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU small-dense and all-active-two MoE policy must expose behavior-named helpers"
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_shared_q4_q8\|shared_q4_q8_eligible\|use_shared_q4_q8' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_shared_q4_q8\|shared_q4_q8_eligible\|use_shared_q4_q8' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU shared MoE dot policy must expose behavior-named helpers"
     fail=1
 fi

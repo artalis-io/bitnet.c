@@ -175,20 +175,22 @@ uint32_t bn_transformer_gpu_exact_silu_flags(int tensor_type,
 int bn_transformer_gpu_prefers_gateup_split(int tensor_type);
 int bn_transformer_gpu_stacked_pair_same_format(int left_type,
                                                 int right_type);
-int bn_transformer_gpu_shared_q4_q8_gateup_dot_eligible(int gate_type,
-                                                        int up_type,
-                                                        int cols);
+int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
+                                                         int up_type,
+                                                         int cols);
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type);
-int bn_transformer_gpu_q4_q8_fused_gateup_enabled(int use_q4_q8);
+int bn_transformer_gpu_small_dense_exact_fused_gateup_enabled(
+    int use_small_dense_exact);
 int bn_transformer_gpu_gateup_split_enabled(void);
-int bn_transformer_gpu_q4_q8_ffn_down_enabled(int use_q4_q8_down);
-int bn_transformer_gpu_qkv_split_enabled(int use_q4_q8);
+int bn_transformer_gpu_small_dense_exact_down_enabled(
+    int use_small_dense_exact_down);
+int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_exact);
 int bn_transformer_gpu_qk_split_enabled(void);
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
 int bn_transformer_gpu_ssm_ab_stack_enabled(void);
-int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible);
+int bn_transformer_gpu_shared_kquant_dot_enabled(int eligible);
 int bn_transformer_gpu_shared_expert_gate_enabled(int eligible);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
 BnBackendPlacement bn_transformer_gpu_backend_placement(
