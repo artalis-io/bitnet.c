@@ -408,26 +408,26 @@ int bn_transformer_gpu_prefill_moe_ffn_batch_available(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down);
+    int allow_kquant_down);
 int bn_transformer_gpu_prefill_moe_layer_backend_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down);
+    int allow_kquant_down);
 int bn_transformer_gpu_prefill_moe_layer_chain_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int n_tokens);
 int bn_transformer_gpu_prefill_ssm_moe_chain_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int n_tokens);
 int bn_transformer_gpu_prefill_ssm_layer_backend_available(
     const BnGPUBackend *gpu);
@@ -479,20 +479,20 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down);
+    int allow_kquant_down);
 int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int prefer_cached_expert_batch);
 int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int used_resident_expert_batch);
 int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
     const BnGPUBackend *gpu,
@@ -642,10 +642,11 @@ int bn_transformer_gpu_flash_attention_enabled(
     int config_flash_attn,
     int has_moe,
     int n_kv);
-int bn_transformer_gpu_moe_routed_q4(const BnMoEExpertMap *map);
-int bn_transformer_gpu_moe_routed_q4_down(const BnMoEExpertMap *map,
-                                          int allow_q4_down);
-int bn_transformer_gpu_moe_routed_q8(const BnMoEExpertMap *map);
+int bn_transformer_gpu_moe_routed_kquant_down(const BnMoEExpertMap *map);
+int bn_transformer_gpu_moe_routed_kquant_down_allowed(
+    const BnMoEExpertMap *map,
+    int allow_kquant_down);
+int bn_transformer_gpu_moe_routed_byte_quant(const BnMoEExpertMap *map);
 int bn_transformer_gpu_moe_route_topk_enabled(
     void *moe_router,
     int all_active_two_kquant_moe,
@@ -654,7 +655,7 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     const BnConfig *c,
     int all_active_two_kquant_moe,
     int gpu_route_topk,
-    int moe_routed_q8);
+    int moe_routed_byte_quant);
 int bn_transformer_gpu_moe_routed_ffn_enabled(
     int gpu_route_topk,
     int cpu_route_resident_ffn,
@@ -709,13 +710,13 @@ int bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down);
+    int allow_kquant_down);
 int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int layer,
     int cpu_fallback_ffn_layer,
     int cpu_fallback_ffn_from_layer);

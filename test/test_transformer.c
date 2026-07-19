@@ -1802,9 +1802,9 @@ static void test_gpu_policy_helpers(void) {
     map.up_cols = 2048;
     map.down_rows = 2048;
     map.down_cols = 4096;
-    assert(bn_transformer_gpu_moe_routed_q4_down(&map, 0));
-    assert(bn_transformer_gpu_moe_routed_q4(&map));
-    assert(!bn_transformer_gpu_moe_routed_q8(&map));
+    assert(bn_transformer_gpu_moe_routed_kquant_down_allowed(&map, 0));
+    assert(bn_transformer_gpu_moe_routed_kquant_down(&map));
+    assert(!bn_transformer_gpu_moe_routed_byte_quant(&map));
 
     BnWeights moe_w;
     BnLayerWeights moe_layers[1];
@@ -2559,15 +2559,15 @@ static void test_gpu_policy_helpers(void) {
     gpu.prefill_ssm_layer = mock_prefill_ssm_layer;
 
     map.down_type = BN_GGUF_TENSOR_Q4_K;
-    assert(!bn_transformer_gpu_moe_routed_q4_down(&map, 0));
-    assert(bn_transformer_gpu_moe_routed_q4_down(&map, 1));
-    assert(bn_transformer_gpu_moe_routed_q4(&map));
+    assert(!bn_transformer_gpu_moe_routed_kquant_down_allowed(&map, 0));
+    assert(bn_transformer_gpu_moe_routed_kquant_down_allowed(&map, 1));
+    assert(bn_transformer_gpu_moe_routed_kquant_down(&map));
 
     map.gate_type = BN_GGUF_TENSOR_Q8_0;
     map.up_type = BN_GGUF_TENSOR_Q8_0;
     map.down_type = BN_GGUF_TENSOR_Q8_0;
-    assert(!bn_transformer_gpu_moe_routed_q4(&map));
-    assert(bn_transformer_gpu_moe_routed_q8(&map));
+    assert(!bn_transformer_gpu_moe_routed_kquant_down(&map));
+    assert(bn_transformer_gpu_moe_routed_byte_quant(&map));
 
     int route_from = 0;
     int route_to = 0;

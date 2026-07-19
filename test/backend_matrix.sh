@@ -464,6 +464,16 @@ if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q8_MATVEC_SPLIT\|BN_GPU_CODE_Q
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_moe_routed_q[48]\|allow_q4_down\|moe_routed_q8\|routed_q[48]' \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_internal.h \
+    src/transformer/prefill_policy.c \
+    include/transformer_prefill_internal.h \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer MoE route policy must use behavior names, not routed Q4/Q8 helper names"
+    fail=1
+fi
+
 if grep -n 'gpu_quant_lowering_internal\|bn_gpu_quant_split_op_code' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for split op policy"
     fail=1

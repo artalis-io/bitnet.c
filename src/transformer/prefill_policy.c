@@ -347,9 +347,9 @@ int bn_transformer_prefill_moe_ffn_batch_available(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down) {
+    int allow_kquant_down) {
     return bn_transformer_gpu_prefill_moe_ffn_batch_available(
-        gpu, c, map, dim, allow_q4_down);
+        gpu, c, map, dim, allow_kquant_down);
 }
 
 int bn_transformer_prefill_moe_layer_backend_available(
@@ -357,9 +357,9 @@ int bn_transformer_prefill_moe_layer_backend_available(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down) {
+    int allow_kquant_down) {
     return bn_transformer_gpu_prefill_moe_layer_backend_available(
-        gpu, c, map, dim, allow_q4_down);
+        gpu, c, map, dim, allow_kquant_down);
 }
 
 int bn_transformer_prefill_ssm_moe_chain_available(
@@ -367,10 +367,10 @@ int bn_transformer_prefill_ssm_moe_chain_available(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int n_tokens) {
     return bn_transformer_gpu_prefill_ssm_moe_chain_available(
-        gpu, c, map, dim, allow_q4_down, n_tokens);
+        gpu, c, map, dim, allow_kquant_down, n_tokens);
 }
 
 int bn_transformer_prefill_moe_layer_chain_available(
@@ -378,10 +378,10 @@ int bn_transformer_prefill_moe_layer_chain_available(
     const BnConfig *c,
     const BnMoEExpertMap *map,
     int dim,
-    int allow_q4_down,
+    int allow_kquant_down,
     int n_tokens) {
     return bn_transformer_gpu_prefill_moe_layer_chain_available(
-        gpu, c, map, dim, allow_q4_down, n_tokens);
+        gpu, c, map, dim, allow_kquant_down, n_tokens);
 }
 
 int bn_transformer_prefill_moe_chain_min_tokens(
