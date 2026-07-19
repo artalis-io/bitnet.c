@@ -368,10 +368,6 @@ int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
            bn_backend_quant_moe_prefers_quant_only(tensor_type);
 }
 
-int bn_gpu_policy_cuda_moe_prefers_quant_only(int tensor_type) {
-    return bn_backend_quant_moe_prefers_quant_only(tensor_type);
-}
-
 int bn_gpu_policy_cuda_matvec_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MATVEC") != NULL;
 }

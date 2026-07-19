@@ -444,6 +444,11 @@ if grep -n 'bn_gpu_policy_cuda_moe_prefers_quant_only' src/gpu_moe_bridge.c >/de
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_prefers_quant_only' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "MoE quant-only preference policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CODE_Q4K_MATVEC_SPLIT' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for dense gate-up split op policy"
     fail=1
