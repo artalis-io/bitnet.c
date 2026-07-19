@@ -1017,8 +1017,6 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK");
     assert(!bn_gpu_policy_prefill_matmul_disabled());
     assert(!bn_gpu_policy_prefill_matmul_enabled());
-    assert(!bn_gpu_policy_cuda_prefill_direct_kv_disabled());
-    assert(!bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled());
     assert(!bn_gpu_policy_prefill_direct_kv_disabled());
     assert(!bn_gpu_policy_prefill_direct_kv_with_cpu_fallback_enabled());
     setenv("BN_GPU_DISABLE_PREFILL_MATMUL", "1", 1);
@@ -1027,8 +1025,6 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK", "1", 1);
     assert(bn_gpu_policy_prefill_matmul_disabled());
     assert(bn_gpu_policy_prefill_matmul_enabled());
-    assert(bn_gpu_policy_cuda_prefill_direct_kv_disabled());
-    assert(bn_gpu_policy_cuda_prefill_direct_kv_with_cpu_fallback_enabled());
     assert(bn_gpu_policy_prefill_direct_kv_disabled());
     assert(bn_gpu_policy_prefill_direct_kv_with_cpu_fallback_enabled());
     unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
@@ -1079,10 +1075,8 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
     assert(!bn_gpu_policy_ssm_graph_disabled());
-    assert(!bn_gpu_policy_cuda_ssm_graph_disabled());
     setenv("BN_CUDA_DISABLE_SSM_GRAPH", "1", 1);
     assert(bn_gpu_policy_ssm_graph_disabled());
-    assert(bn_gpu_policy_cuda_ssm_graph_disabled());
     unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
 
     unsetenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE");
