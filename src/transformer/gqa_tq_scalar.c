@@ -61,10 +61,3 @@ void bn_transformer_gqa_tq_scalar_range(void *ctx, int h_start, int h_end) {
         }
     }
 }
-
-// NEON stub: falls back to scalar for now (NEON optimized version in gqa_tq_neon.c)
-#ifndef __ARM_NEON
-void bn_transformer_gqa_tq_neon_range(void *ctx, int start, int end) {
-    bn_transformer_gqa_tq_scalar_range(ctx, start, end);
-}
-#endif

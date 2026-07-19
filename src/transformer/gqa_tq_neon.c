@@ -9,4 +9,10 @@ void bn_transformer_gqa_tq_neon_range(void *ctx, int start, int end) {
     bn_transformer_gqa_tq_scalar_range(ctx, start, end);
 }
 
+#else
+
+void bn_transformer_gqa_tq_neon_range(void *ctx, int start, int end) {
+    bn_transformer_gqa_tq_scalar_range(ctx, start, end);
+}
+
 #endif // __ARM_NEON
