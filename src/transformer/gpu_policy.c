@@ -955,7 +955,7 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     const BnGPUBackend *gpu,
     int tensor_type,
     int allow_aux_cache) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_lazy_moe_aux_cache_supported(gpu) &&
            !allow_aux_cache &&
            !bn_transformer_gpu_moe_lazy_aux_cache_enabled() &&
            bn_backend_quant_lazy_moe_aux_cache_candidate(tensor_type);
@@ -969,7 +969,8 @@ int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+               gpu) &&
            bn_backend_quant_supports_q8_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_dense_q8_logit_refine(c) &&
            bn_gpu_policy_small_dense_q8_logits_refine_enabled() &&
@@ -980,7 +981,8 @@ int bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+               gpu) &&
            bn_transformer_gpu_all2_q4q6_moe_model(c, w) &&
            bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled() &&
            !bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled();

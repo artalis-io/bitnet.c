@@ -2342,6 +2342,21 @@ int bn_gpu_policy_backend_dense_batch_prefill_shape_supported(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
+int bn_gpu_policy_backend_lazy_moe_aux_cache_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }

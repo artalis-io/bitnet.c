@@ -1501,6 +1501,16 @@ if grep -n 'bn_gpu_policy_flash_max_kv_or_default\|bn_gpu_policy_q6_logits_refin
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_moe_quant_only_without_aux_cache/{flag=1} /^int bn_transformer_gpu_large_hybrid_prefill_disabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend-aware helpers for lazy MoE aux cache support"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_small_backend_q8_logits_refine_enabled/{flag=1} /^int bn_transformer_gpu_q6_logits_refine_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend-aware helpers for logits refine defaults"
+    fail=1
+fi
+
 if sed -n '/bn_transformer_gpu_validate_forward/,/if (c->dim > BN_TRANSFORMER_GPU_MAX_VLA_ELEMS)/p' src/transformer/gpu_policy.c | grep -n 'backend_large_native = transformer_gpu_backend_is_cuda\|transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for native graph policy"
     fail=1

@@ -2693,6 +2693,12 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_backend_prefill_chain_supported(&gpu));
     assert(bn_gpu_policy_backend_matvec_fallback_supported(&gpu));
     assert(bn_gpu_policy_backend_dense_batch_prefill_shape_supported(&gpu));
+    assert(bn_gpu_policy_backend_lazy_moe_aux_cache_supported(&gpu));
+    assert(bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+        &gpu));
+    assert(
+        bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+            &gpu));
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_gpu_policy_backend_flash_default_enabled(&gpu));
     assert(bn_gpu_policy_backend_flash_max_kv_or_default(&gpu, 0) == 0);
@@ -2705,6 +2711,12 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_backend_prefill_chain_supported(&gpu));
     assert(!bn_gpu_policy_backend_matvec_fallback_supported(&gpu));
     assert(!bn_gpu_policy_backend_dense_batch_prefill_shape_supported(&gpu));
+    assert(!bn_gpu_policy_backend_lazy_moe_aux_cache_supported(&gpu));
+    assert(!bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+        &gpu));
+    assert(
+        !bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+            &gpu));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(!bn_gpu_policy_cpu_logits_enabled());
     assert(!bn_gpu_policy_compare_logits_enabled());

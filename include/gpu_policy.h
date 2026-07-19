@@ -612,6 +612,12 @@ int bn_gpu_policy_backend_matvec_fallback_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_dense_batch_prefill_shape_supported(
     const BnGPUBackend *gpu);
+int bn_gpu_policy_backend_lazy_moe_aux_cache_supported(
+    const BnGPUBackend *gpu);
+int bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
+    const BnGPUBackend *gpu);
+int bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
+    const BnGPUBackend *gpu);
 int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
                                           int default_max_kv);
 int bn_gpu_policy_argmax_debug_enabled(void);
