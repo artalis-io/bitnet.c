@@ -49,6 +49,10 @@ static inline int bn_backend_quant_is_q4k(int type) {
     return type == BN_GGUF_TENSOR_Q4_K;
 }
 
+static inline int bn_backend_quant_is_q5k(int type) {
+    return type == BN_GGUF_TENSOR_Q5_K;
+}
+
 static inline int bn_backend_quant_is_q8_0(int type) {
     return type == BN_GGUF_TENSOR_Q8_0;
 }
@@ -204,6 +208,28 @@ static inline int bn_backend_quant_moe_down_is_q4k(int down_type) {
 static inline int bn_backend_quant_moe_down_is_q4k_or_q6k(int down_type) {
     return bn_backend_quant_moe_down_is_q4k(down_type) ||
            bn_backend_quant_moe_down_is_q6k(down_type);
+}
+
+static inline int bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+    int type) {
+    return bn_backend_quant_is_q4k(type) ||
+           bn_backend_quant_is_q5k(type) ||
+           bn_backend_quant_is_q8_0(type);
+}
+
+static inline int bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch(
+    int type) {
+    return bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(type);
+}
+
+static inline int bn_backend_quant_gpu_graph_matvec_q6_needs_q8k_scratch(
+    int type) {
+    return bn_backend_quant_moe_down_is_q6k(type);
+}
+
+static inline int bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
+    int type) {
+    return bn_backend_quant_is_q4k(type);
 }
 
 static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,

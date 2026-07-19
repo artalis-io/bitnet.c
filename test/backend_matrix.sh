@@ -112,6 +112,11 @@ if sed -n '/^static int cuda_ops_have_q8_moe_routed_ffn/,/^static int cuda_ops_h
     fail=1
 fi
 
+if sed -n '/int reserve_q8_1_cols = 0;/,/cuda_ensure_q8_1/p' src/gpu_cuda.cu | grep -n 'rop->type == BN_GGUF_TENSOR_Q4_K\|rop->type == BN_GGUF_TENSOR_Q5_K\|rop->type == BN_GGUF_TENSOR_Q6_K\|rop->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for graph scratch quant predicates"
+    fail=1
+fi
+
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
    ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||

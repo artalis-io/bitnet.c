@@ -18462,29 +18462,29 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (rop->op_code == BN_GPU_CODE_FUSED_GATEUP_SILU) {
                 int cols = (int)rop->p[1];
-                if (rop->type == BN_GGUF_TENSOR_Q4_K ||
-                    rop->type == BN_GGUF_TENSOR_Q5_K ||
-                    rop->type == BN_GGUF_TENSOR_Q8_0) {
+                if (bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+                        rop->type)) {
                     if (cols > reserve_q8_1_cols) reserve_q8_1_cols = cols;
                 }
             } else if (rop->op_code == BN_GPU_CODE_MATVEC) {
-                if (rop->type == BN_GGUF_TENSOR_Q6_K &&
+                if (bn_backend_quant_gpu_graph_matvec_q6_needs_q8k_scratch(
+                        rop->type) &&
                     (rop->cols % BN_QK_K) == 0 &&
                     (force_q6k_dot ||
                      (rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                      (enable_q6k_dot && rop->cols >= 2048))) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
-                } else if (rop->type == BN_GGUF_TENSOR_Q4_K &&
+                } else if (bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
+                               rop->type) &&
                            (rop->cols % BN_QK_K) == 0 && enable_q4k_dot &&
                            ((rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                             bn_gpu_policy_cuda_q4k_q8k_dot_forced()) &&
                            bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
-                } else if ((rop->type == BN_GGUF_TENSOR_Q4_K ||
-                            rop->type == BN_GGUF_TENSOR_Q5_K ||
-                            rop->type == BN_GGUF_TENSOR_Q8_0) &&
+                } else if (bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch(
+                               rop->type) &&
                            (rop->cols % BN_QK_K) == 0) {
                     if (rop->cols > reserve_q8_1_cols)
                         reserve_q8_1_cols = rop->cols;
