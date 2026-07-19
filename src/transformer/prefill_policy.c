@@ -715,7 +715,7 @@ int bn_transformer_prefill_qkv_stack_batch_compatible(const BnQWeight *q,
 }
 
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type) {
-    return bn_backend_quant_is_kquant_float_fallback_candidate(tensor_type);
+    return bn_backend_quant_requires_float_kquant_fallback(tensor_type);
 }
 
 void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,

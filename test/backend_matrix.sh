@@ -290,6 +290,11 @@ do
     fi
 done
 
+if grep -n 'bn_backend_quant_is_kquant_float_fallback_candidate' src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill_policy.c must use behavior-named float K-quant fallback capability helpers"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must use backend_quant helpers for quant-format policy"
     fail=1
