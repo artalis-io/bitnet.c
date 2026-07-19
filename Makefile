@@ -492,7 +492,7 @@ test_prompt_cache: test/test_prompt_cache.c src/prompt_cache.c src/session.c src
 test_turboquant: test/test_turboquant.c src/turboquant.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
-test_gpu_graph_ir: test/test_gpu_graph_ir.c
+test_gpu_graph_ir: test/test_gpu_graph_ir.c $(QUANT_SRCS) src/threadpool.c src/sh_arena.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_gpu_backend: test/test_gpu_backend.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \

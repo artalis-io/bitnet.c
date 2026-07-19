@@ -464,6 +464,11 @@ if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q4K_MATVEC_SPLIT\|BN_GPU_CODE_
     fail=1
 fi
 
+if grep -n 'BN_GGUF_TENSOR_' src/gpu_quant_lowering_internal.h >/dev/null 2>&1; then
+    echo "src/gpu_quant_lowering_internal.h must map quant split capabilities, not raw tensor identities"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CODE_' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must classify backend shader op codes through GPU IR helpers"
     fail=1
