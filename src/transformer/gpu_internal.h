@@ -311,10 +311,10 @@ int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_small_dense_q8_cpu_attn_safe_default(
+int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
+int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);

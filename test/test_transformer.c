@@ -2164,14 +2164,14 @@ static void test_gpu_policy_helpers(void) {
     c.dim = 2048;
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8;
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
+    assert(!bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
     assert(!bn_transformer_gpu_small_dense_exact_default(
         &gpu, &c, -1));
     assert(!bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
         &gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    assert(bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
+    assert(bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
     fallback = (BnTransformerGPUCPUFallbackPolicy)
         {-1, -1, -1, -1, -1, -1, -1};
@@ -2217,11 +2217,11 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
     assert(!small_dense_exact_decode.small_dense_exact_default);
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE", "1", 1);
-    assert(!bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
+    assert(!bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE");
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE", "1", 1);
-    assert(!bn_transformer_gpu_small_dense_q8_cpu_attn_fallback_enabled(
+    assert(!bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8", "1", 1);

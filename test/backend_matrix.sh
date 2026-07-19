@@ -474,6 +474,14 @@ if grep -n 'bn_transformer_gpu_moe_routed_q[48]\|allow_q4_down\|moe_routed_q8\|r
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_small_dense_q8_cpu_attn' \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_internal.h \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer small-dense CPU attention fallback policy must use behavior names, not Q8 helper names"
+    fail=1
+fi
+
 if grep -n 'gpu_quant_lowering_internal\|bn_gpu_quant_split_op_code' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for split op policy"
     fail=1
