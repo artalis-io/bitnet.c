@@ -3912,18 +3912,18 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_q5k_deint_pair_matvec(
+    assert(bn_backend_quant_deinterleaved_kquant_pair_matvec(
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_backend_quant_q5k_deint_pair_matvec(
+    assert(!bn_backend_quant_deinterleaved_kquant_pair_matvec(
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_q6q4_pair_matvec(BN_GGUF_TENSOR_Q6_K,
-                                                  BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_q6q4_pair_matvec(BN_GGUF_TENSOR_Q4_K,
-                                                   BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_q4_pair_matvec(BN_GGUF_TENSOR_Q4_K,
-                                                BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_q4_pair_matvec(BN_GGUF_TENSOR_Q4_K,
-                                                 BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_asymmetric_kquant_pair_matvec(
+        BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_asymmetric_kquant_pair_matvec(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_symmetric_kquant_pair_matvec(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_symmetric_kquant_pair_matvec(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_q8_small_ssm_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_q8_small_ssm_matvec_candidate(
@@ -4052,13 +4052,13 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_q8_0_split_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_q4k_split_value_fuse_candidate(
+    assert(bn_backend_quant_split_value_4warp_dot_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_q4k_split_value_fuse_candidate(
+    assert(!bn_backend_quant_split_value_4warp_dot_candidate(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_q6k_split_value_fuse_candidate(
+    assert(bn_backend_quant_split_value_mmvq_candidate(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_q6k_split_value_fuse_candidate(
+    assert(!bn_backend_quant_split_value_mmvq_candidate(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_split_value_fuse_candidate(
         BN_GGUF_TENSOR_Q4_K));

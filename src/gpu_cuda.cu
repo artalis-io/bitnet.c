@@ -18841,7 +18841,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 graph_exec && out_offset == 0 && !direct_kv_f16 &&
                 fused_copy_idx < 0;
             if (!direct_kv_f16 && next && i + 2 < n_ops &&
-                bn_backend_quant_q5k_deint_pair_matvec(
+                bn_backend_quant_deinterleaved_kquant_pair_matvec(
                     op->type, ops[i + 2].type) &&
                 (op->cols % BN_QK_K) == 0 && enable_q5k_dot &&
                 out_offset == 0 && bias == NULL && bias_idx < 0 &&
@@ -18886,8 +18886,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             if (!direct_kv_f16 && next &&
-                bn_backend_quant_q6q4_pair_matvec(op->type,
-                                                       next->type) &&
+                bn_backend_quant_asymmetric_kquant_pair_matvec(op->type,
+                                                               next->type) &&
                 next->op_code == BN_GPU_CODE_MATVEC &&
                 next->buf_in == op->buf_in &&
                 next->cols == op->cols &&
@@ -19043,7 +19043,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 break;
             }
             if (!direct_kv_f16 && next &&
-                bn_backend_quant_q4_pair_matvec(op->type, next->type) &&
+                bn_backend_quant_symmetric_kquant_pair_matvec(op->type,
+                                                              next->type) &&
                 next->op_code == BN_GPU_CODE_MATVEC &&
                 next->buf_in == op->buf_in &&
                 next->rows == op->rows &&
@@ -19778,7 +19779,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         }
                         if (vw && vw->data && vw->cols == cols &&
                             vw->rows >= vop->rows) {
-                            if (bn_backend_quant_q4k_split_value_fuse_candidate(
+                            if (bn_backend_quant_split_value_4warp_dot_candidate(
                                     vop->type)) {
                                 BN_CUDA_LAUNCH(ctx,
                                     q4k_dot_matvec_4warp_kernel, vop->rows,

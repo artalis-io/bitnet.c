@@ -289,20 +289,21 @@ static inline int bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
     return bn_backend_quant_is_q4k(type);
 }
 
-static inline int bn_backend_quant_q5k_deint_pair_matvec(
+static inline int bn_backend_quant_deinterleaved_kquant_pair_matvec(
     int first_type, int second_type) {
     return bn_backend_quant_is_q5k(first_type) &&
            bn_backend_quant_is_q5k(second_type);
 }
 
-static inline int bn_backend_quant_q6q4_pair_matvec(
+static inline int bn_backend_quant_asymmetric_kquant_pair_matvec(
     int first_type, int second_type) {
     return bn_backend_quant_moe_down_is_q6k(first_type) &&
            bn_backend_quant_is_q4k(second_type);
 }
 
-static inline int bn_backend_quant_q4_pair_matvec(int first_type,
-                                                  int second_type) {
+static inline int bn_backend_quant_symmetric_kquant_pair_matvec(
+    int first_type,
+    int second_type) {
     return bn_backend_quant_is_q4k(first_type) &&
            bn_backend_quant_is_q4k(second_type);
 }
@@ -438,19 +439,19 @@ static inline int bn_backend_quant_q8_0_split_candidate(int type) {
     return bn_backend_quant_q8_0_warp_matvec_candidate(type);
 }
 
-static inline int bn_backend_quant_q4k_split_value_fuse_candidate(
+static inline int bn_backend_quant_split_value_4warp_dot_candidate(
     int type) {
     return bn_backend_quant_q4k_q8_1_matvec_candidate(type);
 }
 
-static inline int bn_backend_quant_q6k_split_value_fuse_candidate(
+static inline int bn_backend_quant_split_value_mmvq_candidate(
     int type) {
     return bn_backend_quant_q6k_warp_matvec_candidate(type);
 }
 
 static inline int bn_backend_quant_split_value_fuse_candidate(int type) {
-    return bn_backend_quant_q4k_split_value_fuse_candidate(type) ||
-           bn_backend_quant_q6k_split_value_fuse_candidate(type);
+    return bn_backend_quant_split_value_4warp_dot_candidate(type) ||
+           bn_backend_quant_split_value_mmvq_candidate(type);
 }
 
 static inline int bn_backend_quant_q5_0_pair_matmul(
