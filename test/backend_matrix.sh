@@ -213,6 +213,17 @@ if ! grep -n 'prepare_f16_x' src/transformer/logits.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'activation == [012]\|act_type == [012]\|activation != [12]\|act_type != [12]' \
+    src/transformer/cpu_policy.c \
+    src/transformer/cpu_backend.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/prefill_backend.c >/dev/null 2>&1; then
+    echo "Transformer activation policy must use model_arch activation helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/gpu.c \

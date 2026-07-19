@@ -90,6 +90,10 @@ typedef enum {
 
 const char *bn_model_arch_prefix(const char *arch);
 int bn_model_arch_activation(const char *arch);
+int bn_model_arch_activation_is_silu(int act_type);
+int bn_model_arch_activation_is_relu2(int act_type);
+int bn_model_arch_activation_is_gelu(int act_type);
+int bn_model_arch_activation_uses_silu_path(int act_type);
 int bn_model_arch_attention_value_shares_key(const char *arch);
 const char *bn_model_arch_tensor_suffix(BnModelTensorRole role);
 int bn_model_arch_default_tensor_name(char *out, size_t out_size,

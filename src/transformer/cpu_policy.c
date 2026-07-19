@@ -1,5 +1,6 @@
 #include "transformer_cpu_backend_internal.h"
 #include "backend_quant.h"
+#include "model_arch.h"
 
 #include <stdlib.h>
 
@@ -88,7 +89,7 @@ int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
     return !gpu &&
            ffn_plan &&
            !ffn_plan->scalar_exact_activation &&
-           ffn_plan->activation == 0 &&
+           bn_model_arch_activation_uses_silu_path(ffn_plan->activation) &&
            dim % 32 == 0 &&
            bn_transformer_cpu_can_fused_q4_gateup_silu(gate_type, up_type);
 }
@@ -101,7 +102,7 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
            ffn_plan &&
            ffn_plan->has_gate &&
            !ffn_plan->has_sub_norm &&
-           ffn_plan->activation == 0;
+           bn_model_arch_activation_uses_silu_path(ffn_plan->activation);
 }
 
 BnTransformerCPUPostNormPolicy

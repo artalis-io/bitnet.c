@@ -3,6 +3,7 @@
 #include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
+#include "model_arch.h"
 #include "moe.h"
 #include "quant.h"
 #include "transformer_backend_internal.h"
@@ -1027,7 +1028,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
 
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
         uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
-            lw->ffn.ffn_gate.type, ffn_plan->activation != 1);
+            lw->ffn.ffn_gate.type, bn_model_arch_activation_uses_silu_path(ffn_plan->activation));
         int prefer_gateup_split =
             bn_transformer_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
             bn_transformer_uses_hybrid_moe(c);
@@ -1083,7 +1084,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 lw->ffn.ffn_up.cols, 0,
                 bn_transformer_gpu_matvec_q8k_dot_flags(
                     lw->ffn.ffn_up.type, use_q4_q8));
-            BnGPUIRActivationKind act_kind = (ffn_plan->activation == 1)
+            BnGPUIRActivationKind act_kind =
+                bn_model_arch_activation_is_relu2(ffn_plan->activation)
                 ? BN_GPU_IR_ACTIVATION_RELU2
                 : BN_GPU_IR_ACTIVATION_SILU;
             emit_context_activation_flags(
@@ -1098,7 +1100,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             BN_GPU_VALUE_HB, lw->ffn.ffn_up.rows, lw->ffn.ffn_up.cols, 0,
             bn_transformer_gpu_matvec_q8k_dot_flags(lw->ffn.ffn_up.type,
                                                      use_q4_q8));
-        BnGPUIRActivationKind act_kind = (ffn_plan->activation == 1)
+        BnGPUIRActivationKind act_kind =
+            bn_model_arch_activation_is_relu2(ffn_plan->activation)
             ? BN_GPU_IR_ACTIVATION_RELU2
             : BN_GPU_IR_ACTIVATION_SILU;
         uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(

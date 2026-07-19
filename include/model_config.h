@@ -6,13 +6,19 @@
 #define BN_DEFAULT_ROPE_THETA  10000.0f
 #define BN_DEFAULT_NORM_EPS    1e-5f
 
+typedef enum {
+    BN_MODEL_ACTIVATION_SILU = 0,
+    BN_MODEL_ACTIVATION_RELU2 = 1,
+    BN_MODEL_ACTIVATION_GELU = 2,
+} BnModelActivation;
+
 typedef struct {
     int dim, hidden_dim, n_layers, n_heads, n_kv_heads;
     int vocab_size, seq_len;
     float rope_theta, norm_eps;
     float rope_theta_swa;
     int head_size, kv_dim, kv_mul;  // derived
-    int has_ffn_gate, act_type;     // 0=SiLU, 1=ReLU², 2=GELU
+    int has_ffn_gate, act_type;     // BnModelActivation
     uint32_t policy_flags;          // BnModelArchOps behavior policies for planner/backend constraints
     int qk_norm_per_head;           // 1 = per-head separate norms [dim], 0 = shared [head_size]
     int flash_attn;                 // use flash attention (online softmax)

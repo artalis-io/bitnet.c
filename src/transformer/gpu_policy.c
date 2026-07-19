@@ -62,7 +62,9 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
     if (!bn_transformer_gpu_fused_gateup_silu_policy_allows(gpu, tensor_type))
         return 0;
     uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
-    return cap != 0 && act_type != 1 && bn_transformer_gpu_has_cap(gpu, cap);
+    return cap != 0 &&
+           bn_model_arch_activation_uses_silu_path(act_type) &&
+           bn_transformer_gpu_has_cap(gpu, cap);
 }
 
 int bn_transformer_gpu_can_fused_gateup_silu_pair(const BnGPUBackend *gpu,
@@ -226,7 +228,7 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     const BnQWeight *up,
     int activation,
     int split_op_code) {
-    if (!gate || !up || activation == 1 ||
+    if (!gate || !up || bn_model_arch_activation_is_relu2(activation) ||
         !bn_gpu_quant_split_op_is_q4k(split_op_code))
         return 0;
     return bn_transformer_gpu_can_use_stacked_gateup(gate, up) &&

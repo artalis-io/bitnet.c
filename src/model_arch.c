@@ -15,7 +15,24 @@ int bn_model_arch_activation(const char *arch) {
     const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
     if (ops && ops->activation)
         return ops->activation(arch);
-    return 0;
+    return BN_MODEL_ACTIVATION_SILU;
+}
+
+int bn_model_arch_activation_is_silu(int act_type) {
+    return act_type == BN_MODEL_ACTIVATION_SILU;
+}
+
+int bn_model_arch_activation_is_relu2(int act_type) {
+    return act_type == BN_MODEL_ACTIVATION_RELU2;
+}
+
+int bn_model_arch_activation_is_gelu(int act_type) {
+    return act_type == BN_MODEL_ACTIVATION_GELU;
+}
+
+int bn_model_arch_activation_uses_silu_path(int act_type) {
+    return !bn_model_arch_activation_is_relu2(act_type) &&
+           !bn_model_arch_activation_is_gelu(act_type);
 }
 
 int bn_model_arch_attention_value_shares_key(const char *arch) {
@@ -620,17 +637,17 @@ static void bn_model_arch_apply_default_shapes(BnConfig *c,
 
 static int bn_model_arch_default_activation(const char *arch) {
     (void)arch;
-    return 0;
+    return BN_MODEL_ACTIVATION_SILU;
 }
 
 static int bn_model_arch_bitnet_activation(const char *arch) {
     (void)arch;
-    return 1;
+    return BN_MODEL_ACTIVATION_RELU2;
 }
 
 static int bn_model_arch_gemma4_activation(const char *arch) {
     (void)arch;
-    return 2;
+    return BN_MODEL_ACTIVATION_GELU;
 }
 
 static int bn_model_arch_attention_value_unique(const char *arch) {
