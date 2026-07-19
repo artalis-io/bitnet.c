@@ -3892,25 +3892,25 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_moe_down_is_q4k_or_q6k(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_moe_down_is_q4k_or_q6k(BN_GGUF_TENSOR_Q6_K));
     assert(!bn_backend_quant_moe_down_is_q4k_or_q6k(BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+    assert(bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+    assert(bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+    assert(bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+    assert(!bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch(
+    assert(bn_backend_quant_gpu_graph_matvec_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch(
+    assert(!bn_backend_quant_gpu_graph_matvec_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_gpu_graph_matvec_q6_needs_q8k_scratch(
+    assert(bn_backend_quant_gpu_graph_matvec_down_kquant_needs_dot_scratch(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_gpu_graph_matvec_q6_needs_q8k_scratch(
+    assert(!bn_backend_quant_gpu_graph_matvec_down_kquant_needs_dot_scratch(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
+    assert(bn_backend_quant_gpu_graph_matvec_asymmetric_kquant_needs_dot_scratch(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
+    assert(!bn_backend_quant_gpu_graph_matvec_asymmetric_kquant_needs_dot_scratch(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_deinterleaved_kquant_pair_matvec(
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q5_K));

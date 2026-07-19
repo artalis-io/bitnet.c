@@ -267,24 +267,24 @@ static inline int bn_backend_quant_moe_down_is_q4k_or_q6k(int down_type) {
            bn_backend_quant_moe_down_is_q6k(down_type);
 }
 
-static inline int bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(
+static inline int bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
     int type) {
     return bn_backend_quant_is_q4k(type) ||
            bn_backend_quant_is_q5k(type) ||
            bn_backend_quant_is_q8_0(type);
 }
 
-static inline int bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch(
+static inline int bn_backend_quant_gpu_graph_matvec_needs_prepared_input_scratch(
     int type) {
-    return bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch(type);
+    return bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(type);
 }
 
-static inline int bn_backend_quant_gpu_graph_matvec_q6_needs_q8k_scratch(
+static inline int bn_backend_quant_gpu_graph_matvec_down_kquant_needs_dot_scratch(
     int type) {
     return bn_backend_quant_moe_down_is_q6k(type);
 }
 
-static inline int bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch(
+static inline int bn_backend_quant_gpu_graph_matvec_asymmetric_kquant_needs_dot_scratch(
     int type) {
     return bn_backend_quant_is_q4k(type);
 }

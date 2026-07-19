@@ -1082,6 +1082,11 @@ if grep -n 'bn_backend_quant_q4k_q8k_matmul_candidate\|bn_backend_quant_q4k_q8_1
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_gpu_graph_gateup_needs_q8_1_scratch\|bn_backend_quant_gpu_graph_matvec_needs_q8_1_scratch\|bn_backend_quant_gpu_graph_matvec_q6_needs_q8k_scratch\|bn_backend_quant_gpu_graph_matvec_q4_needs_q8k_scratch' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "backend quant GPU graph scratch helpers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_cuda_matvec_supported\|bn_quant_policy_cuda_matvec_type_disabled\|bn_quant_format_cuda_cublas_aux_cache_supported\|bn_quant_format_cuda_q8_quant_matmul_on_f16_disable\|bn_quant_format_cuda_force_q[46]k_quant_matmul_candidate\|bn_quant_format_cuda_\(logits_q6_f32_cache_supported\|moe_all_f16_cache_supported\|moe_down_q6_f32_cache_supported\|moe_down_cublas_cache_supported\|moe_down_cublas_cache_elem_bytes\|moe_down_q4_f32_cache_supported\|moe_quant_only_after_cache\|lazy_moe_aux_cache_candidate\|moe_prefers_quant_only\|aux_cache_supported\|aux_cache_can_use_f16\|aux_cache_uses_f32\|aux_cache_prefers_large_budget\)' include/quant.h src/quant test/test_quant.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "quant format helpers must expose GPU matvec capability without CUDA env policy"
     fail=1
