@@ -327,11 +327,11 @@ static int cuda_debug_cublas_cache(void) {
 }
 
 static int cuda_use_matmul_batch(void) {
-    return bn_gpu_policy_cuda_matmul_batch_enabled();
+    return bn_gpu_policy_matmul_batch_enabled();
 }
 
 static int cuda_use_matvec_batch(void) {
-    return bn_gpu_policy_cuda_matvec_batch_enabled();
+    return bn_gpu_policy_matvec_batch_enabled();
 }
 
 static int cuda_use_moe_cublas_gateup_f16_out(void) {

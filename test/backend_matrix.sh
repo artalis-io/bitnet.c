@@ -559,6 +559,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_MATMUL_BATCH")\|getenv("BN_CUDA_DISABLE_MATV
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_matmul_batch_enabled\|bn_gpu_policy_cuda_matvec_batch_enabled' include/gpu_policy.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU batch execution policy must use neutral behavior helper names"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_ENABLE_DENSE_FFN")\|getenv("BN_CUDA_DISABLE_DENSE_FFN_BATCH")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA dense FFN env policy"
     fail=1

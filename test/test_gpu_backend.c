@@ -988,12 +988,12 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_MATMUL_BATCH");
     unsetenv("BN_CUDA_DISABLE_MATVEC_BATCH");
-    assert(bn_gpu_policy_cuda_matmul_batch_enabled());
-    assert(bn_gpu_policy_cuda_matvec_batch_enabled());
+    assert(bn_gpu_policy_matmul_batch_enabled());
+    assert(bn_gpu_policy_matvec_batch_enabled());
     setenv("BN_CUDA_DISABLE_MATMUL_BATCH", "1", 1);
     setenv("BN_CUDA_DISABLE_MATVEC_BATCH", "1", 1);
-    assert(!bn_gpu_policy_cuda_matmul_batch_enabled());
-    assert(!bn_gpu_policy_cuda_matvec_batch_enabled());
+    assert(!bn_gpu_policy_matmul_batch_enabled());
+    assert(!bn_gpu_policy_matvec_batch_enabled());
     unsetenv("BN_CUDA_DISABLE_MATMUL_BATCH");
     unsetenv("BN_CUDA_DISABLE_MATVEC_BATCH");
 

@@ -69,8 +69,8 @@ int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
 int bn_gpu_policy_matvec_disabled(void);
 int bn_gpu_policy_matvec_type_disabled(int tensor_type);
 int bn_gpu_policy_matvec_type_supported(int tensor_type);
-int bn_gpu_policy_cuda_matmul_batch_enabled(void);
-int bn_gpu_policy_cuda_matvec_batch_enabled(void);
+int bn_gpu_policy_matmul_batch_enabled(void);
+int bn_gpu_policy_matvec_batch_enabled(void);
 int bn_gpu_policy_small_kquant_native_enabled(int force_float_kquant);
 int bn_gpu_policy_small_kquant_native_disabled(void);
 size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit);

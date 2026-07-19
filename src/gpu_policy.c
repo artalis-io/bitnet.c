@@ -393,11 +393,11 @@ int bn_gpu_policy_matvec_type_supported(int tensor_type) {
            !bn_gpu_policy_matvec_type_disabled(tensor_type);
 }
 
-int bn_gpu_policy_cuda_matmul_batch_enabled(void) {
+int bn_gpu_policy_matmul_batch_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MATMUL_BATCH") == NULL;
 }
 
-int bn_gpu_policy_cuda_matvec_batch_enabled(void) {
+int bn_gpu_policy_matvec_batch_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MATVEC_BATCH") == NULL;
 }
 
