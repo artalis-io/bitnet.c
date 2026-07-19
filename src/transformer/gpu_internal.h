@@ -507,7 +507,7 @@ int bn_transformer_gpu_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type);
-int bn_transformer_gpu_all2_moe_logits_refine_default(
+int bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
@@ -686,7 +686,7 @@ bn_transformer_gpu_moe_direct_route_policy(
     void *moe_gate_all);
 BnTransformerGPUMoEAll2ResourcePolicy
 bn_transformer_gpu_moe_all2_resource_policy(const BnConfig *c);
-int bn_transformer_gpu_all2_moe_direct_route_enabled(
+int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);

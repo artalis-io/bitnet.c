@@ -2293,21 +2293,21 @@ static void test_gpu_policy_helpers(void) {
     logits_refine_layer.moe.expert_map.up_cols = c.dim;
     logits_refine_layer.moe.expert_map.down_rows = c.dim;
     logits_refine_layer.moe.expert_map.down_cols = c.moe_intermediate_size;
-    assert(!bn_transformer_gpu_all2_moe_logits_refine_default(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
         &gpu, &c, &logits_refine_weights));
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
-    assert(bn_transformer_gpu_all2_moe_logits_refine_default(
+    assert(bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
         &gpu, &c, &logits_refine_weights));
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE", "1", 1);
-    assert(!bn_transformer_gpu_all2_moe_logits_refine_default(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
         &gpu, &c, &logits_refine_weights));
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE");
     setenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN", "1", 1);
-    assert(bn_transformer_gpu_all2_moe_logits_refine_default(
+    assert(bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
         &gpu, &c, &logits_refine_weights));
     setenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE", "1", 1);
-    assert(!bn_transformer_gpu_all2_moe_logits_refine_default(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
         &gpu, &c, &logits_refine_weights));
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");
@@ -2610,7 +2610,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2");
     setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
-    assert(bn_transformer_gpu_all2_moe_direct_route_enabled(
+    assert(bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
         &c, (void *)1, NULL));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     BnTransformerGPUMoEDirectRoutePolicy direct_route =
@@ -2628,16 +2628,16 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_all_active_two_kquant_moe_router(
         &c, (void *)2, (void *)1, 1, 0) == (void *)1);
     c.n_experts_active = 1;
-    assert(!bn_transformer_gpu_all2_moe_direct_route_enabled(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
         &c, (void *)1, NULL));
     assert(bn_transformer_gpu_all_active_two_kquant_moe_router(
         &c, (void *)2, (void *)1, 1, 0) == (void *)2);
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4095;
-    assert(!bn_transformer_gpu_all2_moe_direct_route_enabled(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
         &c, (void *)1, NULL));
     c.moe_intermediate_size = 4096;
-    assert(!bn_transformer_gpu_all2_moe_direct_route_enabled(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
         &c, (void *)1, (void *)3));
     BnTransformerGPUMoEAll2ResourcePolicy all2_resources =
         bn_transformer_gpu_moe_all2_resource_policy(&c);

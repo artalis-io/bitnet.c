@@ -1802,12 +1802,12 @@ if awk '/^int bn_transformer_gpu_native_quant_logits_refine_enabled/{flag=1} /^i
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_small_backend\|small_backend_.*logits_refine\|\.small_backend_\|bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine\|bn_transformer_gpu_q[68]_logits_refine\|\.q[68]_\(default\|enabled\|captures_xb\|refine_top\)\|gpu_refine_q6k_logits_top\|gpu_refine_q8_logits_top' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_small_backend\|small_backend_.*logits_refine\|\.small_backend_\|bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine\|bn_transformer_gpu_all2_moe_logits_refine_default\|bn_transformer_gpu_q[68]_logits_refine\|\.q[68]_\(default\|enabled\|captures_xb\|refine_top\)\|gpu_refine_q6k_logits_top\|gpu_refine_q8_logits_top' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU logits refine policy must expose behavior-named helpers, not quant-format helper names"
     fail=1
 fi
 
-if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_all2_q4q6_moe\|bn_transformer_gpu_all2_q4_moe\|bn_gpu_policy_backend_all2_q4q6_moe_enabled\|\.all2_q4q6_moe\|use_q4_q8' include/gpu_policy.h include/transformer_plan_internal.h src/gpu_policy.c src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_all2_q4q6_moe\|bn_transformer_gpu_all2_q4_moe\|bn_transformer_gpu_all2_moe_direct_route_enabled\|bn_gpu_policy_backend_all2_q4q6_moe_enabled\|\.all2_q4q6_moe\|use_q4_q8' include/gpu_policy.h include/transformer_plan_internal.h src/gpu_policy.c src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Transformer GPU small-dense and all-active-two MoE policy must expose behavior-named helpers"
     fail=1
 fi

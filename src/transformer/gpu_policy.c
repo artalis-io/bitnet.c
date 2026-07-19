@@ -963,7 +963,7 @@ int bn_transformer_gpu_native_quant_logits_refine_enabled(
            !bn_gpu_policy_native_quant_logits_refine_disabled();
 }
 
-int bn_transformer_gpu_all2_moe_logits_refine_default(
+int bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
@@ -1027,7 +1027,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     int small_dense_exact_default) {
     BnTransformerGPULogitsRefinePolicy p = {0};
     p.kquant_default =
-        bn_transformer_gpu_all2_moe_logits_refine_default(
+        bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
             gpu, c, w);
     p.kquant_enabled = bn_transformer_gpu_kquant_logits_refine_enabled(
         gpu, p.kquant_default);
@@ -1605,7 +1605,7 @@ bn_transformer_gpu_moe_direct_route_policy(
     policy.router_diff = router_diff;
     policy.enabled =
         bn_gpu_policy_backend_all2_moe_direct_route_supported(gpu) &&
-        bn_transformer_gpu_all2_moe_direct_route_enabled(
+        bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
             c, router_diff, moe_gate_all);
     return policy;
 }
@@ -1618,7 +1618,7 @@ bn_transformer_gpu_moe_all2_resource_policy(const BnConfig *c) {
     return policy;
 }
 
-int bn_transformer_gpu_all2_moe_direct_route_enabled(
+int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all) {
