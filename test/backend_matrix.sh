@@ -550,6 +550,11 @@ if grep -n 'BN_CUDA_[^"]*\(QWEN\|GEMMA\)' \
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled/{flag=1} flag{print}' src/gpu_policy.c | grep -n 'BN_CUDA_[^"]*\(QWEN\|GEMMA\)' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c public helpers must keep model-family CUDA env aliases behind private compatibility helpers"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM")\|getenv("BN_CUDA_DEBUG_PREFILL_GEMM")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for prefill GEMM env policy"
     fail=1
