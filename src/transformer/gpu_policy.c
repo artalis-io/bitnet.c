@@ -1903,7 +1903,8 @@ int bn_transformer_gpu_validate_forward(
         return 0;
     }
 
-    int backend_large_native = transformer_gpu_backend_is_cuda(gpu);
+    int backend_large_native =
+        bn_gpu_policy_backend_large_graph_native_enabled(gpu);
     if (!bn_gpu_policy_force_graph_enabled() && !backend_large_native &&
         bn_model_arch_uses_large_gpu_graph_fallback_shape(c))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
@@ -1911,7 +1912,7 @@ int bn_transformer_gpu_validate_forward(
         !bn_transformer_gpu_can_layerwise_rope(gpu))
         GPU_POLICY_REJECT("layerwise rope unsupported by gpu backend");
 
-    if (transformer_gpu_backend_is_cuda(gpu) &&
+    if (bn_gpu_policy_backend_small_dense_native_enabled(gpu) &&
         bn_model_arch_uses_small_dense_shape(c)) {
         if (bn_gpu_policy_small_kquant_native_disabled()) {
             if (!small_dense_backend_q8_native_by_default(c, w))

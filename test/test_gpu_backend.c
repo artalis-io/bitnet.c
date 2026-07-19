@@ -2684,9 +2684,13 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_flash_max_kv_or_default(0, 0) == 0);
     assert(bn_gpu_policy_backend_flash_default_enabled(&gpu));
     assert(bn_gpu_policy_backend_flash_max_kv_or_default(&gpu, 0) == 2048);
+    assert(bn_gpu_policy_backend_large_graph_native_enabled(&gpu));
+    assert(bn_gpu_policy_backend_small_dense_native_enabled(&gpu));
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_gpu_policy_backend_flash_default_enabled(&gpu));
     assert(bn_gpu_policy_backend_flash_max_kv_or_default(&gpu, 0) == 0);
+    assert(!bn_gpu_policy_backend_large_graph_native_enabled(&gpu));
+    assert(!bn_gpu_policy_backend_small_dense_native_enabled(&gpu));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(!bn_gpu_policy_cpu_logits_enabled());
     assert(!bn_gpu_policy_compare_logits_enabled());

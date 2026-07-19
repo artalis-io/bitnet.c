@@ -594,6 +594,10 @@ int bn_gpu_policy_flash_min_kv_or_default(int default_min_kv);
 int bn_gpu_policy_backend_flash_max_kv_or_default(const BnGPUBackend *gpu,
                                                   int default_max_kv);
 int bn_gpu_policy_backend_flash_default_enabled(const BnGPUBackend *gpu);
+int bn_gpu_policy_backend_large_graph_native_enabled(
+    const BnGPUBackend *gpu);
+int bn_gpu_policy_backend_small_dense_native_enabled(
+    const BnGPUBackend *gpu);
 int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
                                           int default_max_kv);
 int bn_gpu_policy_argmax_debug_enabled(void);

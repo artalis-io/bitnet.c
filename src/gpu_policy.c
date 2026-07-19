@@ -2297,6 +2297,16 @@ int bn_gpu_policy_backend_flash_default_enabled(const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
+int bn_gpu_policy_backend_large_graph_native_enabled(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_small_dense_native_enabled(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }
