@@ -3295,17 +3295,17 @@ static void test_gpu_policy_helpers(void) {
         &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16) == 128 * sizeof(uint16_t));
     assert(bn_gpu_policy_moe_down_aux_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16) == 128 * sizeof(uint16_t));
-    assert(bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 16) == 0);
-    assert(bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 32) == 256 * sizeof(uint16_t));
     assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 32) == 256 * sizeof(uint16_t));
-    assert(bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q4_K, 8, 16) == 0);
-    assert(bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q4_K, 8, 32) == 256 * sizeof(uint16_t));
-    assert(bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_I2_S, 8, 32) == 0);
     assert(bn_gpu_policy_cuda_cublas_aux_cache_supported(
         BN_GGUF_TENSOR_Q4_K, 32));
@@ -3343,18 +3343,18 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache());
     assert(!bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16));
-    assert(!bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(!bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 16));
     unsetenv("BN_CUDA_DISABLE_CUBLAS_MATMUL");
     unsetenv("BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE");
     assert(bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         &gpu, BN_GGUF_TENSOR_Q6_K, 8, 16) == 128 * sizeof(float));
-    assert(bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 32) == 256 * sizeof(float));
     assert(bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 8, 32) == 256 * sizeof(float));
     setenv("BN_CUDA_CUBLAS_CACHE_MAX_MB", "1", 1);
-    assert(!bn_gpu_policy_cuda_aux_cache_bytes(
+    assert(!bn_gpu_policy_aux_cache_bytes(
         BN_GGUF_TENSOR_Q6_K, 2048, 1024));
     unsetenv("BN_CUDA_CUBLAS_CACHE_MAX_MB");
     setenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE", "1", 1);

@@ -482,9 +482,6 @@ size_t bn_gpu_policy_moe_down_aux_cache_bytes(const BnGPUBackend *gpu,
                                               int tensor_type,
                                               int rows,
                                               int cols);
-size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
-                                          int rows,
-                                          int cols);
 size_t bn_gpu_policy_aux_cache_bytes(int tensor_type,
                                      int rows,
                                      int cols);

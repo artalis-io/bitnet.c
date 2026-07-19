@@ -2018,9 +2018,9 @@ size_t bn_gpu_policy_moe_down_aux_cache_bytes(const BnGPUBackend *gpu,
                                                           rows, cols);
 }
 
-size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
-                                          int rows,
-                                          int cols) {
+static size_t gpu_policy_aux_cache_bytes(int tensor_type,
+                                         int rows,
+                                         int cols) {
     if (rows <= 0 || cols <= 0 || (cols & 31) != 0 ||
         !bn_gpu_policy_cuda_cublas_matmul_enabled() ||
         !bn_backend_quant_aux_cache_supported(tensor_type))
@@ -2049,7 +2049,7 @@ size_t bn_gpu_policy_cuda_aux_cache_bytes(int tensor_type,
 size_t bn_gpu_policy_aux_cache_bytes(int tensor_type,
                                      int rows,
                                      int cols) {
-    return bn_gpu_policy_cuda_aux_cache_bytes(tensor_type, rows, cols);
+    return gpu_policy_aux_cache_bytes(tensor_type, rows, cols);
 }
 
 int bn_gpu_policy_cuda_cublas_aux_cache_supported(int tensor_type,
