@@ -1971,6 +1971,7 @@ do
 done
 
 for file in \
+    src/gpu_policy.c \
     src/model_gpu.c \
     src/gpu_moe_bridge.c \
     src/main.c

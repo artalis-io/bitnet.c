@@ -709,6 +709,10 @@ static inline int bn_backend_quant_cuda_cublas_aux_cache_supported(int type) {
     return bn_quant_format_eager_aux_cache_supported(type);
 }
 
+static inline int bn_backend_quant_eager_aux_cache_supported(int type) {
+    return bn_quant_format_eager_aux_cache_supported(type);
+}
+
 static inline int bn_backend_quant_metal_q4_q8_matvec_supported(int type) {
     return bn_quant_format_metal_q4_q8_matvec_supported(type);
 }
@@ -721,7 +725,16 @@ static inline int bn_backend_quant_cuda_matvec_supported(int type) {
     return bn_quant_format_gpu_matvec_supported(type);
 }
 
+static inline int bn_backend_quant_gpu_matvec_supported(int type) {
+    return bn_quant_format_gpu_matvec_supported(type);
+}
+
 static inline int bn_backend_quant_cuda_q8_quant_matmul_on_f16_disable(
+    int type) {
+    return bn_quant_format_avoids_quant_matmul_on_f16_input(type);
+}
+
+static inline int bn_backend_quant_avoids_quant_matmul_on_f16_input(
     int type) {
     return bn_quant_format_avoids_quant_matmul_on_f16_input(type);
 }
@@ -732,7 +745,19 @@ static inline int bn_backend_quant_cuda_force_q4k_quant_matmul_candidate(
            bn_quant_format_force_quant_matmul_candidate(type);
 }
 
+static inline int bn_backend_quant_force_q4k_quant_matmul_candidate(
+    int type) {
+    return bn_backend_quant_is_q4k(type) &&
+           bn_quant_format_force_quant_matmul_candidate(type);
+}
+
 static inline int bn_backend_quant_cuda_force_q6k_quant_matmul_candidate(
+    int type) {
+    return bn_backend_quant_moe_down_is_q6k(type) &&
+           bn_quant_format_force_quant_matmul_candidate(type);
+}
+
+static inline int bn_backend_quant_force_q6k_quant_matmul_candidate(
     int type) {
     return bn_backend_quant_moe_down_is_q6k(type) &&
            bn_quant_format_force_quant_matmul_candidate(type);
