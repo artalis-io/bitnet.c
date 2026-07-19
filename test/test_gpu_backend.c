@@ -416,7 +416,7 @@ static void test_gpu_policy_helpers(void) {
     dense_model.config = layers;
     assert(!bn_model_uses_moe(&dense_model));
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&layers));
-    assert(!bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&layers));
+    assert(!bn_gpu_policy_moe_f16_aux_cache_auto_enabled(&layers));
 
     BnConfig moe = {0};
     moe.dim = 2048;
@@ -430,17 +430,17 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_model_uses_moe(&moe_model));
     assert(!bn_gpu_policy_uses_hybrid_moe(&moe));
     assert(bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
-    assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
+    assert(bn_gpu_policy_moe_f16_aux_cache_auto_enabled(&moe));
     moe.full_attn_interval = 4;
     assert(bn_gpu_policy_uses_hybrid_moe(&moe));
     moe.full_attn_interval = 0;
     moe.dim = 2049;
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
-    assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
+    assert(bn_gpu_policy_moe_f16_aux_cache_auto_enabled(&moe));
     moe.n_experts = 4;
     moe.n_experts_active = 2;
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&moe));
-    assert(bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(&moe));
+    assert(bn_gpu_policy_moe_f16_aux_cache_auto_enabled(&moe));
 
     uint32_t dense_kv_heads[2] = {8, 4};
     uint8_t dense_sliding[2] = {1, 0};
@@ -488,12 +488,9 @@ static void test_gpu_policy_helpers(void) {
         0, 0, 1, &moe_gf, 4096));
 
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
-    assert(bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));
     assert(bn_gpu_policy_moe_resident_routed_ffn_enabled(1));
-    assert(!bn_gpu_policy_cuda_moe_routed_ffn_enabled(0));
     assert(!bn_gpu_policy_moe_resident_routed_ffn_enabled(0));
     setenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_routed_ffn_enabled(1));
     assert(!bn_gpu_policy_moe_resident_routed_ffn_enabled(1));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
     assert(bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
@@ -505,26 +502,16 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE");
     unsetenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE");
-    assert(!bn_gpu_policy_cuda_moe_all_f16_cache_forced());
     assert(!bn_gpu_policy_moe_all_f16_cache_forced());
-    assert(!bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
-        &gpu, BN_GGUF_TENSOR_Q8_0, 0));
     assert(!bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
         &gpu, BN_GGUF_TENSOR_Q8_0, 0));
-    assert(bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
-        &gpu, BN_GGUF_TENSOR_Q8_0, 1));
     assert(bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
         &gpu, BN_GGUF_TENSOR_Q8_0, 1));
     setenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE", "1", 1);
-    assert(bn_gpu_policy_cuda_moe_all_f16_cache_forced());
     assert(bn_gpu_policy_moe_all_f16_cache_forced());
-    assert(bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
-        &gpu, BN_GGUF_TENSOR_Q4_0, 0));
     assert(bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
         &gpu, BN_GGUF_TENSOR_Q4_0, 0));
     setenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
-        &gpu, BN_GGUF_TENSOR_Q8_0, 1));
     assert(!bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
         &gpu, BN_GGUF_TENSOR_Q8_0, 1));
     unsetenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE");
@@ -532,40 +519,28 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE");
     unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE");
-    assert(!bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(1));
     assert(!bn_gpu_policy_moe_gateup_f16_cache_enabled(1));
     setenv("BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE", "1", 1);
-    assert(bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(1));
     assert(bn_gpu_policy_moe_gateup_f16_cache_enabled(1));
     setenv("BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(1));
     assert(!bn_gpu_policy_moe_gateup_f16_cache_enabled(1));
     unsetenv("BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE");
     unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE");
 
     unsetenv("BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE");
-    assert(!bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(1));
     assert(!bn_gpu_policy_partial_moe_f16_cache_enabled(1));
     setenv("BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE", "1", 1);
-    assert(bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(1));
     assert(bn_gpu_policy_partial_moe_f16_cache_enabled(1));
-    assert(!bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(0));
     assert(!bn_gpu_policy_partial_moe_f16_cache_enabled(0));
     unsetenv("BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE");
 
     unsetenv("BN_CUDA_DEBUG_MOE_FIT");
     unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
-    assert(!bn_gpu_policy_cuda_moe_fit_debug_enabled());
     assert(!bn_gpu_policy_moe_residency_fit_debug_enabled());
-    assert(!bn_gpu_policy_cuda_keep_individual_f16_cache_enabled());
-    assert(bn_gpu_policy_cuda_individual_upload_quant_only_enabled(&gpu));
     assert(bn_gpu_policy_individual_upload_quant_only_enabled(&gpu));
     setenv("BN_CUDA_DEBUG_MOE_FIT", "1", 1);
     setenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE", "1", 1);
-    assert(bn_gpu_policy_cuda_moe_fit_debug_enabled());
     assert(bn_gpu_policy_moe_residency_fit_debug_enabled());
-    assert(bn_gpu_policy_cuda_keep_individual_f16_cache_enabled());
-    assert(!bn_gpu_policy_cuda_individual_upload_quant_only_enabled(&gpu));
     assert(!bn_gpu_policy_individual_upload_quant_only_enabled(&gpu));
     unsetenv("BN_CUDA_DEBUG_MOE_FIT");
     unsetenv("BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE");
@@ -575,10 +550,8 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
     assert(!bn_gpu_policy_moe_lazy_aux_cache_enabled());
-    assert(!bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
     setenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE", "1", 1);
     assert(bn_gpu_policy_moe_lazy_aux_cache_enabled());
-    assert(bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
 
     unsetenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM");

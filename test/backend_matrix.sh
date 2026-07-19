@@ -1336,6 +1336,11 @@ if grep -n 'bn_gpu_policy_cuda_moe_all_f16_cache\|bn_gpu_policy_cuda_moe_gateup_
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_\(f16_aux_cache_auto_enabled\|resident_routed_ffn_quant_eligible\|all_f16_cache_forced\|all_f16_cache_enabled_for_type\|gateup_f16_cache_enabled\|partial_moe_f16_cache_enabled\|fit_debug_enabled\|lazy_aux_cache_enabled\)\|bn_gpu_policy_cuda_\(keep_individual_f16_cache_enabled\|individual_upload_quant_only_enabled\)' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU MoE residency policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use model_arch helpers for MoE shape policy"
     fail=1

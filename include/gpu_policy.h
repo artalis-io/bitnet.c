@@ -10,7 +10,6 @@
 extern "C" {
 #endif
 
-int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible);
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible);
 int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu);
 BnBackendPlacement bn_gpu_policy_backend_placement(const BnGPUBackend *gpu);
@@ -21,37 +20,20 @@ int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c);
 int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c);
 int bn_gpu_policy_uses_moe(const BnConfig *c);
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c);
-int bn_gpu_policy_cuda_moe_f16_aux_cache_auto_enabled(const BnConfig *c);
 int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c);
-int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
-    int gate_type,
-    int up_type,
-    int down_type);
 int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
     int down_type);
-int bn_gpu_policy_cuda_moe_all_f16_cache_forced(void);
 int bn_gpu_policy_moe_all_f16_cache_forced(void);
-int bn_gpu_policy_cuda_moe_all_f16_cache_enabled_for_type(
-    const BnGPUBackend *gpu,
-    int tensor_type,
-    int q8_f16_cache);
 int bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
     const BnGPUBackend *gpu,
     int tensor_type,
     int q8_f16_cache);
-int bn_gpu_policy_cuda_moe_gateup_f16_cache_enabled(int eligible);
 int bn_gpu_policy_moe_gateup_f16_cache_enabled(int eligible);
-int bn_gpu_policy_cuda_partial_moe_f16_cache_enabled(int eligible);
 int bn_gpu_policy_partial_moe_f16_cache_enabled(int eligible);
-int bn_gpu_policy_cuda_moe_fit_debug_enabled(void);
 int bn_gpu_policy_moe_residency_fit_debug_enabled(void);
-int bn_gpu_policy_cuda_keep_individual_f16_cache_enabled(void);
 int bn_gpu_policy_moe_lazy_aux_cache_enabled(void);
-int bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled(void);
-int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
-    const BnGPUBackend *gpu);
 int bn_gpu_policy_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
