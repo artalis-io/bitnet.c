@@ -22,8 +22,8 @@
 #define BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION            (1u << 14)
 #define BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT            (1u << 15)
 #define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH          (1u << 16)
-#define BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8            (1u << 17)
-#define BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE        (1u << 18)
+#define BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE           (1u << 17)
+#define BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE    (1u << 18)
 #define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION           (1u << 19)
 #define BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION        (1u << 20)
 #define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
@@ -161,12 +161,12 @@ int bn_model_arch_loads_extra_ffn_post_norms(const BnConfig *c);
 int bn_model_arch_loads_moe_aux_weights(const BnConfig *c);
 int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c);
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model);
-int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c);
-int bn_model_arch_small_dense_exact_q4_q8_to_layer(const BnConfig *c);
-int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c);
+int bn_model_arch_allows_small_dense_exact_native(const BnConfig *c);
+int bn_model_arch_small_dense_exact_native_to_layer(const BnConfig *c);
+int bn_model_arch_allows_small_dense_native_logit_refine(const BnConfig *c);
 int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c);
 int bn_model_arch_uses_small_dense_shape(const BnConfig *c);
-int bn_model_arch_uses_small_dense_q8_native_shape(const BnConfig *c);
+int bn_model_arch_uses_small_dense_native_quant_shape(const BnConfig *c);
 int bn_model_arch_dense_batch_prefill_shape_allowed(
     const BnConfig *c,
     int supports_large_dense_batch_prefill);

@@ -760,8 +760,8 @@ static void test_gpu_policy_helpers(void) {
         memset(&gpu, 0, sizeof(gpu));
     }
 
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
     assert(!bn_transformer_prefill_small_dense_chain_applicable(
         &gpu, &c));
@@ -1329,8 +1329,8 @@ static void test_gpu_policy_helpers(void) {
 
     memset(&c, 0, sizeof(c));
     c.dim = 2048;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     gpu.kind = BN_GPU_BACKEND_CUDA;
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
@@ -1743,7 +1743,7 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &manual_small_dense_exact_policy, 0, 0, -1);
     assert(!small_dense_exact_use.use_attention);
     manual_small_dense_exact_policy.ffn_only = 0;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE;
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
     small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
@@ -2162,7 +2162,7 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts_active = 0;
     c.moe_intermediate_size = 0;
     c.dim = 2048;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE;
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
@@ -2186,7 +2186,7 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
     assert(small_dense_exact_decode.small_dense_exact_default);
     c.n_layers = 61;
-    assert(bn_model_arch_small_dense_exact_q4_q8_to_layer(&c) == 27);
+    assert(bn_model_arch_small_dense_exact_native_to_layer(&c) == 27);
     small_dense_exact_decode =
         bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
     assert(small_dense_exact_decode.small_dense_exact_default);
@@ -2201,7 +2201,7 @@ static void test_gpu_policy_helpers(void) {
                &c, 1, 9) == 9);
     small_dense_exact_layer.to_layer = -1;
     c.n_layers = 33;
-    assert(bn_model_arch_small_dense_exact_q4_q8_to_layer(&c) == -1);
+    assert(bn_model_arch_small_dense_exact_native_to_layer(&c) == -1);
     small_dense_exact_decode =
         bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
     assert(small_dense_exact_decode.small_dense_exact_to_layer == -1);
@@ -2251,7 +2251,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_small_dense_prefill_decode_fallback_requested(
         &gpu, &c));
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL");
-    c.policy_flags |= BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     assert(!bn_transformer_gpu_native_quant_logits_refine_enabled(
         &gpu, &c, BN_GGUF_TENSOR_Q8_0));
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
@@ -2708,8 +2708,8 @@ static void test_logits_policy_helpers(void) {
         NULL, &c, &q8));
     gpu.kind = BN_GPU_BACKEND_METAL;
     c.dim = 2048;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_logits_native_quant_refine_enabled(
         &gpu, &c, &q8));
@@ -2723,8 +2723,8 @@ static void test_logits_policy_helpers(void) {
     c.policy_flags = 0;
     assert(!bn_transformer_logits_native_quant_refine_enabled(
         &gpu, &c, &q8));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_logits_native_quant_refine_enabled(
         &gpu, &c, &q8));
@@ -2971,8 +2971,8 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
                      BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
                      BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
     assert(bn_model_arch_cpu_force_float_kquant(&c));
@@ -3003,13 +3003,13 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     assert(bn_model_arch_uses_small_dense_shape(&c));
-    assert(!bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_allows_small_dense_prefill_decode_fallback(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
-    assert(bn_model_arch_allows_small_dense_exact_q4_q8(&c));
-    assert(bn_model_arch_allows_small_dense_q8_logit_refine(&c));
+    assert(bn_model_arch_allows_small_dense_exact_native(&c));
+    assert(bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 7);
     assert(bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
@@ -3022,10 +3022,10 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
     assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(!bn_model_arch_uses_small_dense_shape(&c));
-    assert(!bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(!bn_model_arch_allows_small_dense_prefill_decode_fallback(&c));
-    assert(!bn_model_arch_allows_small_dense_exact_q4_q8(&c));
-    assert(!bn_model_arch_allows_small_dense_q8_logit_refine(&c));
+    assert(!bn_model_arch_allows_small_dense_exact_native(&c));
+    assert(!bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 0);
     c.ssm_inner_size = 128;
     c.dim = 4095;
@@ -3033,7 +3033,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
-    assert(!bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     c.dim = 4096;
     assert(bn_model_arch_uses_large_dense_shape(&c));
     assert(bn_model_arch_uses_large_dense_hybrid_ssm(&c));
@@ -3042,7 +3042,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_small_dense_shape(&c));
-    assert(!bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(bn_model_arch_uses_moe(&c));
     assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(!bn_model_arch_uses_non_hybrid_moe(&c));
@@ -3084,8 +3084,8 @@ static void test_model_arch_registry(void) {
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
                      BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
     assert(!bn_model_arch_cpu_force_float_kquant(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
@@ -3093,7 +3093,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
     assert(bn_model_arch_uses_small_dense_shape(&c));
-    assert(!bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 2);
@@ -3104,10 +3104,10 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_dense_logits_argmax_shape_allowed(&c, 262144));
     assert(!bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(&c, 1536));
     c.dim = 1025;
-    assert(bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(bn_model_arch_uses_small_dense_native_quant_shape(&c));
     c.dim = 2561;
     assert(!bn_model_arch_uses_small_dense_shape(&c));
-    assert(!bn_model_arch_uses_small_dense_q8_native_shape(&c));
+    assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(!bn_model_arch_small_dense_prefill_min_tokens(&c));
     assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));

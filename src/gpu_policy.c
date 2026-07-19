@@ -2264,7 +2264,7 @@ int bn_gpu_policy_backend_cpu_attention_fallback_supported(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
-int bn_gpu_policy_backend_small_dense_exact_q4_q8_supported(
+int bn_gpu_policy_backend_small_dense_exact_native_supported(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
@@ -2439,7 +2439,7 @@ int bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled(void) {
         "BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
 }
 
-int bn_gpu_policy_small_dense_exact_q4_q8_disabled(void) {
+int bn_gpu_policy_small_dense_exact_native_disabled(void) {
     return gpu_policy_compat_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8",
                                   "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
 }

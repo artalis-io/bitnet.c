@@ -531,7 +531,7 @@ int bn_gpu_policy_backend_all2_q4q6_moe_enabled(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_cpu_attention_fallback_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_small_dense_exact_q4_q8_supported(
+int bn_gpu_policy_backend_small_dense_exact_native_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_prefill_decode_fallback_supported(
     const BnGPUBackend *gpu);
@@ -588,7 +588,7 @@ int bn_gpu_policy_moe_routed_ffn_batch_enabled(void);
 int bn_gpu_policy_moe_routed_ffn_batch_allowed(int large_moe);
 int bn_gpu_policy_moe_cpu_actual_override_enabled(void);
 int bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled(void);
-int bn_gpu_policy_small_dense_exact_q4_q8_disabled(void);
+int bn_gpu_policy_small_dense_exact_native_disabled(void);
 int bn_gpu_policy_small_dense_exact_ffn_down_enabled(void);
 int bn_gpu_policy_small_dense_prefill_disabled(void);
 int bn_gpu_policy_native_quant_logits_refine_requested(void);

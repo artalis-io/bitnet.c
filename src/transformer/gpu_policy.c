@@ -439,7 +439,7 @@ int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
 int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    return bn_model_arch_allows_small_dense_exact_q4_q8(c) &&
+    return bn_model_arch_allows_small_dense_exact_native(c) &&
            small_dense_backend_q8_native_by_default(c, w) &&
            !bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled();
 }
@@ -458,9 +458,9 @@ int bn_transformer_gpu_small_dense_exact_default(
     const BnConfig *c,
     int small_dense_exact_from_layer) {
     return small_dense_exact_from_layer < 0 &&
-           bn_gpu_policy_backend_small_dense_exact_q4_q8_supported(gpu) &&
-           bn_model_arch_allows_small_dense_exact_q4_q8(c) &&
-           !bn_gpu_policy_small_dense_exact_q4_q8_disabled();
+           bn_gpu_policy_backend_small_dense_exact_native_supported(gpu) &&
+           bn_model_arch_allows_small_dense_exact_native(c) &&
+           !bn_gpu_policy_small_dense_exact_native_disabled();
 }
 
 int bn_transformer_gpu_small_dense_exact_to_layer(
@@ -469,14 +469,14 @@ int bn_transformer_gpu_small_dense_exact_to_layer(
     int small_dense_exact_to_layer) {
     if (!small_dense_exact_default || small_dense_exact_to_layer >= 0)
         return small_dense_exact_to_layer;
-    return bn_model_arch_small_dense_exact_q4_q8_to_layer(c);
+    return bn_model_arch_small_dense_exact_native_to_layer(c);
 }
 
 int bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_gpu_policy_backend_small_dense_exact_q4_q8_supported(gpu) &&
-           bn_model_arch_allows_small_dense_exact_q4_q8(c) &&
+    return bn_gpu_policy_backend_small_dense_exact_native_supported(gpu) &&
+           bn_model_arch_allows_small_dense_exact_native(c) &&
            bn_gpu_policy_small_dense_exact_ffn_down_enabled();
 }
 
@@ -557,7 +557,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     if (bn_gpu_policy_small_kquant_native_enabled(
             bn_model_arch_cpu_force_float_kquant(c)))
         return 1;
-    if (!bn_model_arch_uses_small_dense_q8_native_shape(c))
+    if (!bn_model_arch_uses_small_dense_native_quant_shape(c))
         return 1;
 
     return small_dense_model_quant_supported(&m->weights, c, 1);
@@ -953,7 +953,7 @@ int bn_transformer_gpu_native_quant_logits_refine_enabled(
     return bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
                gpu) &&
            bn_backend_quant_supports_native_quant_logits_refine(tensor_type) &&
-           bn_model_arch_allows_small_dense_q8_logit_refine(c) &&
+           bn_model_arch_allows_small_dense_native_logit_refine(c) &&
            bn_gpu_policy_native_quant_logits_refine_requested() &&
            !bn_gpu_policy_native_quant_logits_refine_disabled();
 }

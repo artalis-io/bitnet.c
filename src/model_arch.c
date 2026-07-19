@@ -443,7 +443,7 @@ int bn_model_arch_uses_small_dense_shape(const BnConfig *c) {
            c->dim <= 2560;
 }
 
-int bn_model_arch_uses_small_dense_q8_native_shape(const BnConfig *c) {
+int bn_model_arch_uses_small_dense_native_quant_shape(const BnConfig *c) {
     return bn_model_arch_uses_small_dense_shape(c) &&
            c->dim > 1024;
 }
@@ -468,24 +468,24 @@ int bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
            logits_cols == 1536;
 }
 
-int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8) != 0) &&
+int bn_model_arch_allows_small_dense_exact_native(const BnConfig *c) {
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE) != 0) &&
            bn_model_arch_uses_small_dense_shape(c);
 }
 
-int bn_model_arch_small_dense_exact_q4_q8_to_layer(const BnConfig *c) {
+int bn_model_arch_small_dense_exact_native_to_layer(const BnConfig *c) {
     if (!c || c->n_layers <= 33)
         return -1;
     return c->n_layers - 33 - 1;
 }
 
-int bn_model_arch_allows_small_dense_q8_logit_refine(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE) != 0) &&
-           bn_model_arch_allows_small_dense_exact_q4_q8(c);
+int bn_model_arch_allows_small_dense_native_logit_refine(const BnConfig *c) {
+    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE) != 0) &&
+           bn_model_arch_allows_small_dense_exact_native(c);
 }
 
 int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c) {
-    if (!bn_model_arch_allows_small_dense_q8_logit_refine(c))
+    if (!bn_model_arch_allows_small_dense_native_logit_refine(c))
         return 0;
     return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) ? 7 : 2;
 }
@@ -731,8 +731,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             0,
@@ -749,8 +749,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION |
             BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS,
             0,
@@ -768,8 +768,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU |
             BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
@@ -789,8 +789,8 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
-            BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+            BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION,
             0,
             bn_model_arch_match_qwen,
