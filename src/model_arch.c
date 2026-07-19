@@ -265,17 +265,25 @@ int bn_model_arch_gguf_u32(BnGGUFFile *f, const char *suffix) {
     return (int)bn_gguf_get_u32(f, key);
 }
 
-int bn_model_arch_gguf_u32_or_i32_array(BnGGUFFile *f,
-                                        const char *suffix,
-                                        int idx) {
-    if (!f || !suffix) return 0;
+static int bn_model_arch_gguf_key(BnGGUFFile *f,
+                                  const char *suffix,
+                                  char *key,
+                                  size_t key_size) {
+    if (!f || !suffix || !key || key_size == 0) return -1;
     const char *arch = bn_gguf_get_str(f, "general.architecture");
     const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
     const char *prefix = ops && ops->prefix
         ? ops->prefix(arch)
         : bn_model_arch_prefix(arch);
+    int n = snprintf(key, key_size, "%s.%s", prefix, suffix);
+    return (n < 0 || (size_t)n >= key_size) ? -1 : 0;
+}
+
+int bn_model_arch_gguf_u32_or_i32_array(BnGGUFFile *f,
+                                        const char *suffix,
+                                        int idx) {
     char key[128];
-    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
+    if (bn_model_arch_gguf_key(f, suffix, key, sizeof(key)) != 0) return 0;
     int ki = bn_gguf_find_key(f, key);
     if (ki < 0) return 0;
     BnGGUFKeyValue *kv = &f->kvs[ki];
@@ -300,15 +308,53 @@ int bn_model_arch_gguf_u32_or_i32_array(BnGGUFFile *f,
 }
 
 float bn_model_arch_gguf_f32(BnGGUFFile *f, const char *suffix) {
-    if (!f || !suffix) return 0.0f;
-    const char *arch = bn_gguf_get_str(f, "general.architecture");
-    const BnModelArchOps *ops = bn_model_arch_ops_for(arch);
-    const char *prefix = ops && ops->prefix
-        ? ops->prefix(arch)
-        : bn_model_arch_prefix(arch);
     char key[128];
-    snprintf(key, sizeof(key), "%s.%s", prefix, suffix);
+    if (bn_model_arch_gguf_key(f, suffix, key, sizeof(key)) != 0) return 0.0f;
     return bn_gguf_get_f32(f, key);
+}
+
+uint64_t bn_model_arch_gguf_arr_n(BnGGUFFile *f, const char *suffix) {
+    char key[128];
+    if (bn_model_arch_gguf_key(f, suffix, key, sizeof(key)) != 0) return 0;
+    return bn_gguf_get_arr_n(f, key);
+}
+
+const void *bn_model_arch_gguf_arr_data(BnGGUFFile *f, const char *suffix) {
+    char key[128];
+    if (bn_model_arch_gguf_key(f, suffix, key, sizeof(key)) != 0)
+        return NULL;
+    return bn_gguf_get_arr_data(f, key);
+}
+
+int bn_model_arch_gguf_bool_array(BnGGUFFile *f,
+                                  const char *suffix,
+                                  int idx) {
+    char key[128];
+    if (bn_model_arch_gguf_key(f, suffix, key, sizeof(key)) != 0 ||
+        idx < 0)
+        return 0;
+    int ki = bn_gguf_find_key(f, key);
+    if (ki < 0) return 0;
+    BnGGUFKeyValue *kv = &f->kvs[ki];
+    if (kv->type == BN_GGUF_TYPE_BOOL) return kv->value.b ? 1 : 0;
+    if (kv->type != BN_GGUF_TYPE_ARRAY) return 0;
+    BnGGUFArray *a = &kv->value.arr;
+    if ((uint64_t)idx >= a->n || !a->data) return 0;
+    if (a->elem_type == BN_GGUF_TYPE_BOOL)
+        return ((const uint8_t *)a->data)[idx] ? 1 : 0;
+    if (a->elem_type == BN_GGUF_TYPE_INT32) {
+        int32_t v;
+        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v),
+               sizeof(v));
+        return v != 0;
+    }
+    if (a->elem_type == BN_GGUF_TYPE_UINT32) {
+        uint32_t v;
+        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v),
+               sizeof(v));
+        return v != 0;
+    }
+    return 0;
 }
 
 int bn_model_arch_gguf_uses_moe(BnGGUFFile *f) {

@@ -147,6 +147,11 @@ int bn_model_arch_gguf_u32_or_i32_array(BnGGUFFile *f,
                                          const char *suffix,
                                          int idx);
 float bn_model_arch_gguf_f32(BnGGUFFile *f, const char *suffix);
+uint64_t bn_model_arch_gguf_arr_n(BnGGUFFile *f, const char *suffix);
+const void *bn_model_arch_gguf_arr_data(BnGGUFFile *f, const char *suffix);
+int bn_model_arch_gguf_bool_array(BnGGUFFile *f,
+                                  const char *suffix,
+                                  int idx);
 int bn_model_arch_gguf_uses_moe(BnGGUFFile *f);
 int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c);
 int bn_model_arch_uses_hybrid_moe(const BnConfig *c);

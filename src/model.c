@@ -227,29 +227,6 @@ static int tensor_dim0(BnGGUFFile *f, const char *name) {
     return (int)f->tensors[ti].dims[0];
 }
 
-static int gguf_get_bool_array(BnGGUFFile *f, const char *key, int idx) {
-    int ki = bn_gguf_find_key(f, key);
-    if (ki < 0 || idx < 0) return 0;
-    BnGGUFKeyValue *kv = &f->kvs[ki];
-    if (kv->type == BN_GGUF_TYPE_BOOL) return kv->value.b ? 1 : 0;
-    if (kv->type != BN_GGUF_TYPE_ARRAY) return 0;
-    BnGGUFArray *a = &kv->value.arr;
-    if ((uint64_t)idx >= a->n || !a->data) return 0;
-    if (a->elem_type == BN_GGUF_TYPE_BOOL)
-        return ((const uint8_t *)a->data)[idx] ? 1 : 0;
-    if (a->elem_type == BN_GGUF_TYPE_INT32) {
-        int32_t v;
-        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
-        return v != 0;
-    }
-    if (a->elem_type == BN_GGUF_TYPE_UINT32) {
-        uint32_t v;
-        memcpy(&v, (const uint8_t *)a->data + (size_t)idx * sizeof(v), sizeof(v));
-        return v != 0;
-    }
-    return 0;
-}
-
 // --- Model loading ---
 
 int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits) {
@@ -272,9 +249,6 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     char prefix[64];
     snprintf(prefix, sizeof(prefix), "%s", arch_ops->prefix(arch));
     bn_model_arch_apply_config(c, arch_ops);
-
-    // Build key names with architecture prefix
-    char key[128];
 
     c->dim = bn_model_arch_gguf_u32(f, "embedding_length");
 
@@ -357,11 +331,12 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // MROPE: dimension_sections[0] = text-only RoPE pairs (sections 1,2 are vision)
     // For text-only inference, only apply RoPE to the first section's dimensions.
-    snprintf(key, sizeof(key), "%s.rope.dimension_sections", prefix);
     {
-        uint64_t nsect = bn_gguf_get_arr_n(f, key);
+        const char *suffix = "rope.dimension_sections";
+        uint64_t nsect = bn_model_arch_gguf_arr_n(f, suffix);
         if (nsect > 0) {
-            const int32_t *sections = (const int32_t *)bn_gguf_get_arr_data(f, key);
+            const int32_t *sections =
+                (const int32_t *)bn_model_arch_gguf_arr_data(f, suffix);
             c->rope_text_dims =
                 bn_model_arch_rope_text_dims(c->rope_dim_count, sections, nsect);
             if (bn_model_arch_uses_full_rope_text_dims(arch))
@@ -389,12 +364,12 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         c->kv_unique_layer_count = c->n_layers - shared_kv_layers;
         if (c->kv_unique_layer_count <= 0 || c->kv_unique_layer_count > c->n_layers)
             c->kv_unique_layer_count = c->n_layers;
-        snprintf(key, sizeof(key), "%s.attention.sliding_window_pattern", prefix);
         int max_swa = c->n_layers < (int)(sizeof(c->sliding_window_pattern) / sizeof(c->sliding_window_pattern[0]))
                     ? c->n_layers
                     : (int)(sizeof(c->sliding_window_pattern) / sizeof(c->sliding_window_pattern[0]));
         for (int i = 0; i < max_swa; i++)
-            c->sliding_window_pattern[i] = gguf_get_bool_array(f, key, i);
+            c->sliding_window_pattern[i] = bn_model_arch_gguf_bool_array(
+                f, "attention.sliding_window_pattern", i);
         c->per_layer_input_dim =
             bn_model_arch_gguf_u32(f, "embedding_length_per_layer_input");
         c->final_logit_softcap =

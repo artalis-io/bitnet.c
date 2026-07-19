@@ -1472,6 +1472,11 @@ if grep -n 'gguf_get_u32_or_i32_array' src/model.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'snprintf(key, sizeof(key), "%s\\.' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must not build arch-prefixed GGUF metadata keys directly"
+    fail=1
+fi
+
 if grep -n 'if (c->full_attn_interval > 0)' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model_arch helpers for hybrid layout predicates"
     fail=1
