@@ -1541,10 +1541,10 @@ static void test_q6k_prepared_matmul_correctness(void) {
     float *raw = (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     float *prepared_out =
         (float *)calloc((size_t)n_tokens * rows, sizeof(float));
-    float *preq_prepared =
+    float *prepared_input_out =
         (float *)calloc((size_t)n_tokens * rows, sizeof(float));
     assert(q6 && X && x_q && x_d && x_bsums &&
-           raw && prepared_out && preq_prepared);
+           raw && prepared_out && prepared_input_out);
 
     fill_q6k_blocks(q6, rows, n_bpr, 41);
     for (int t = 0; t < n_tokens; t++) {
@@ -1576,7 +1576,7 @@ static void test_q6k_prepared_matmul_correctness(void) {
     bn_quant_matmul_prepared(prepared_out, &W6, &prepared, X, n_tokens,
                              x_q, NULL);
 
-    float *outs[1] = { preq_prepared };
+    float *outs[1] = { prepared_input_out };
     const BnQWeight *weights[1] = { &W6 };
     const BnPreparedWeight *prepared_weights[1] = { &prepared };
     bn_quant_matmul_prepared_kquant_input_multi(
@@ -1585,7 +1585,7 @@ static void test_q6k_prepared_matmul_correctness(void) {
 
     for (int i = 0; i < rows * n_tokens; i++) {
         assert(fabsf(prepared_out[i] - raw[i]) < 1e-4f);
-        assert(fabsf(preq_prepared[i] - raw[i]) < 1e-4f);
+        assert(fabsf(prepared_input_out[i] - raw[i]) < 1e-4f);
     }
 
     free(q6);
@@ -1595,7 +1595,7 @@ static void test_q6k_prepared_matmul_correctness(void) {
     free(x_bsums);
     free(raw);
     free(prepared_out);
-    free(preq_prepared);
+    free(prepared_input_out);
     sh_arena_free(arena);
     printf("PASSED\n");
 #else

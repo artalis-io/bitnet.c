@@ -1159,19 +1159,19 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled());
     assert(!bn_gpu_policy_cuda_q8_0_quant_matmul_enabled());
     assert(bn_gpu_policy_cuda_f16_q8_0_matmul_enabled());
-    assert(!bn_gpu_policy_cuda_q8_0_preq_split_enabled());
-    assert(!bn_gpu_policy_cuda_q8_preq_all_enabled());
-    assert(!bn_gpu_policy_cuda_q8_preq_logits_disabled());
-    assert(bn_gpu_policy_cuda_q8_preq_logits_default_enabled(0));
+    assert(!bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled());
+    assert(!bn_gpu_policy_cuda_q8_prepared_input_all_enabled());
+    assert(!bn_gpu_policy_cuda_q8_prepared_input_logits_disabled());
+    assert(bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(0));
     assert(bn_gpu_policy_prepared_kquant_input_cache_enabled());
     setenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL", "1", 1);
     setenv("BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT", "1", 1);
     setenv("BN_CUDA_ENABLE_Q8_PREQ", "1", 1);
     setenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS", "1", 1);
     assert(bn_gpu_policy_cuda_q8_0_quant_matmul_enabled());
-    assert(bn_gpu_policy_cuda_q8_0_preq_split_enabled());
-    assert(bn_gpu_policy_cuda_q8_preq_all_enabled());
-    assert(bn_gpu_policy_cuda_q8_preq_logits_default_enabled(0));
+    assert(bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled());
+    assert(bn_gpu_policy_cuda_q8_prepared_input_all_enabled());
+    assert(bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(0));
     setenv("BN_CUDA_DISABLE_Q8_0_QUANT_MATMUL", "1", 1);
     setenv("BN_CUDA_DISABLE_F16_Q8_0_MATMUL", "1", 1);
     setenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT", "1", 1);
@@ -1180,10 +1180,10 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q8K_INPUT_CACHE", "1", 1);
     assert(!bn_gpu_policy_cuda_q8_0_quant_matmul_enabled());
     assert(!bn_gpu_policy_cuda_f16_q8_0_matmul_enabled());
-    assert(!bn_gpu_policy_cuda_q8_0_preq_split_enabled());
-    assert(!bn_gpu_policy_cuda_q8_preq_all_enabled());
-    assert(bn_gpu_policy_cuda_q8_preq_logits_disabled());
-    assert(!bn_gpu_policy_cuda_q8_preq_logits_default_enabled(1));
+    assert(!bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled());
+    assert(!bn_gpu_policy_cuda_q8_prepared_input_all_enabled());
+    assert(bn_gpu_policy_cuda_q8_prepared_input_logits_disabled());
+    assert(!bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(1));
     assert(!bn_gpu_policy_prepared_kquant_input_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL");
     unsetenv("BN_CUDA_DISABLE_Q8_0_QUANT_MATMUL");
@@ -1758,14 +1758,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(1, 8193));
     assert(!bn_gpu_policy_cuda_q8_warp_disabled());
     assert(bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled());
-    assert(bn_gpu_policy_cuda_q8_0_ssm_preq_enabled());
-    assert(!bn_gpu_policy_cuda_q8_mixed_preq_enabled(
+    assert(bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled());
+    assert(!bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(
         BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_K, 2048));
-    assert(bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(2048, 1));
-    assert(!bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(2049, 1));
-    assert(!bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(2048, 0));
-    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(2048, 1, 0));
-    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(2048, 1, 1));
+    assert(bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(2048, 1));
+    assert(!bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(2049, 1));
+    assert(!bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(2048, 0));
+    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(2048, 1, 0));
+    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(2048, 1, 1));
     assert(!bn_gpu_policy_cuda_moe_router_fused_topk_enabled(256, 0));
     assert(!bn_gpu_policy_cuda_moe_router_warp_disabled(0));
     assert(bn_gpu_policy_cuda_moe_router_warp_disabled(1));
@@ -1854,17 +1854,17 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(1, 8192));
     assert(bn_gpu_policy_cuda_q8_warp_disabled());
     assert(!bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled());
-    assert(!bn_gpu_policy_cuda_q8_0_ssm_preq_enabled());
-    assert(bn_gpu_policy_cuda_q8_mixed_preq_enabled(
+    assert(!bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled());
+    assert(bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(
         BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_K, 2048));
-    assert(!bn_gpu_policy_cuda_q8_mixed_preq_enabled(
+    assert(!bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(
         BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_K, 2049));
-    assert(!bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(2048, 1));
-    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(2048, 1, 0));
+    assert(!bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(2048, 1));
+    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(2048, 1, 0));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT");
     unsetenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2");
-    assert(bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(2048, 1, 0));
-    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(2048, 1, 1));
+    assert(bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(2048, 1, 0));
+    assert(!bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(2048, 1, 1));
     assert(!bn_gpu_policy_cuda_moe_router_fused_topk_enabled(256, 0));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_FUSED_TOPK");
     assert(bn_gpu_policy_cuda_moe_router_fused_topk_enabled(256, 0));
@@ -2657,7 +2657,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled());
     assert(!bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled());
     assert(!bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled());
-    assert(!bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled());
     assert(!bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_enabled());
     assert(!bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_disabled());
     assert(!bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled());
@@ -2733,7 +2733,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled());
@@ -2840,7 +2840,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled());
@@ -3908,9 +3908,9 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_q5k_q8_1_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_q8_0_preq_matvec_candidate(
+    assert(bn_backend_quant_q8_0_prepared_input_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_q8_0_preq_matvec_candidate(
+    assert(!bn_backend_quant_q8_0_prepared_input_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_q8_0_warp_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));

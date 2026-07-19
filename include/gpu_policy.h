@@ -81,11 +81,11 @@ int bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(
 int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_q8_0_quant_matmul_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_matmul_enabled(void);
-int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void);
-int bn_gpu_policy_cuda_q8_preq_all_enabled(void);
-int bn_gpu_policy_cuda_q8_preq_logits_disabled(void);
-int bn_gpu_policy_cuda_q8_preq_logits_default_enabled(
-    int preq_logits_disabled);
+int bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled(void);
+int bn_gpu_policy_cuda_q8_prepared_input_all_enabled(void);
+int bn_gpu_policy_cuda_q8_prepared_input_logits_disabled(void);
+int bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(
+    int prepared_input_logits_disabled);
 int bn_gpu_policy_prepared_kquant_input_cache_enabled(void);
 int bn_gpu_policy_cuda_force_quant_matmul_for_type(
     int tensor_type,
@@ -176,11 +176,12 @@ int bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled(int n_tokens,
 int bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(int dim);
 int bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(int dim,
                                                     int n_experts);
-int bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(int dim,
-                                                      int all_active_two_kquant);
-int bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(int dim,
-                                                       int all_active_two_kquant,
-                                                       int exact_silu);
+int bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(
+    int dim,
+    int all_active_two_kquant);
+int bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(int dim,
+                                                             int all_active_two_kquant,
+                                                             int exact_silu);
 int bn_gpu_policy_cuda_moe_router_fused_topk_enabled(int n_experts,
                                                      int route_block);
 int bn_gpu_policy_cuda_moe_router_warp_disabled(int route_block);
@@ -202,7 +203,7 @@ int bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled(
     int dim);
 int bn_gpu_policy_cuda_moe_internal_profile_enabled(int profile);
 int bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(
-    int prequantized_q8k,
+    int prepared_q8k_input,
     int all_active_two_fast_enabled);
 int bn_gpu_policy_cuda_moe_q4k_gateup_4row_disabled(void);
 int bn_gpu_policy_decode_logits_cache_enabled(int gpu_logits_need_cpu);
@@ -254,10 +255,10 @@ int bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(int enable_q4k_4warp,
                                                 int cols);
 int bn_gpu_policy_cuda_q8_warp_disabled(void);
 int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void);
-int bn_gpu_policy_cuda_q8_0_ssm_preq_enabled(void);
-int bn_gpu_policy_cuda_q8_mixed_preq_enabled(int type_a,
-                                             int type_b,
-                                             int cols);
+int bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled(void);
+int bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(int type_a,
+                                                       int type_b,
+                                                       int cols);
 int bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_q8_0_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void);
@@ -600,7 +601,7 @@ int bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled(void);
-int bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled(void);
 int bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_enabled(void);
 int bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled(void);

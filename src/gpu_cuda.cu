@@ -10990,8 +10990,8 @@ static int cuda_use_f16_q8_0_matmul(void) {
     return bn_gpu_policy_cuda_f16_q8_0_matmul_enabled();
 }
 
-static int cuda_use_q8_0_preq_split(void) {
-    return bn_gpu_policy_cuda_q8_0_preq_split_enabled();
+static int cuda_use_q8_0_prepared_input_split(void) {
+    return bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled();
 }
 
 static int cuda_ensure_q8_k(BnCudaCtx *ctx, int cols, int n_tokens) {
@@ -18383,8 +18383,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int disable_q8_gateup_warp_flag = 0;
     static int enable_bias_rope_flash_fuse_flag = 0;
     static int enable_graph_exec_flag = 0;
-    static int enable_q8_preq_all_flag = 0;
-    static int disable_q8_preq_logits_flag = 0;
+    static int enable_q8_prepared_input_all_flag = 0;
+    static int disable_q8_prepared_input_logits_flag = 0;
     if (!flags_init) {
         fuse_bias_enabled_flag = bn_gpu_policy_cuda_fuse_bias_enabled();
         fuse_rope_flash_enabled_flag =
@@ -18413,10 +18413,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled();
         enable_graph_exec_flag =
             bn_gpu_policy_cuda_graph_exec_requested();
-        enable_q8_preq_all_flag =
-            bn_gpu_policy_cuda_q8_preq_all_enabled();
-        disable_q8_preq_logits_flag =
-            bn_gpu_policy_cuda_q8_preq_logits_disabled();
+        enable_q8_prepared_input_all_flag =
+            bn_gpu_policy_cuda_q8_prepared_input_all_enabled();
+        disable_q8_prepared_input_logits_flag =
+            bn_gpu_policy_cuda_q8_prepared_input_logits_disabled();
         flags_init = 1;
     }
     const int fuse_bias_enabled = fuse_bias_enabled_flag;
@@ -18437,8 +18437,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int disable_q8_gateup_warp = disable_q8_gateup_warp_flag;
     const int enable_bias_rope_flash_fuse =
         enable_bias_rope_flash_fuse_flag;
-    const int enable_q8_preq_all = enable_q8_preq_all_flag;
-    const int disable_q8_preq_logits = disable_q8_preq_logits_flag;
+    const int enable_q8_prepared_input_all = enable_q8_prepared_input_all_flag;
+    const int disable_q8_prepared_input_logits =
+        disable_q8_prepared_input_logits_flag;
     int q8k_input_cache_valid = 0;
     int q8k_input_cache_buf = -1;
     int q8k_input_cache_cols = 0;
@@ -18493,9 +18494,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             moe_graph, default_moe_graph) &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
-    int q8_preq_logits_default =
-        bn_gpu_policy_cuda_q8_preq_logits_default_enabled(
-            disable_q8_preq_logits);
+    int q8_prepared_input_logits_default =
+        bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(
+            disable_q8_prepared_input_logits);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
@@ -19360,11 +19361,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ5K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if ((enable_q8_preq_all ||
+            } else if ((enable_q8_prepared_input_all ||
                         (q8_small_ssm_matvec &&
-                         bn_gpu_policy_cuda_q8_0_ssm_preq_enabled()) ||
-                        (is_logits_op && q8_preq_logits_default)) &&
-                       bn_backend_quant_q8_0_preq_matvec_candidate(
+                         bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled()) ||
+                        (is_logits_op && q8_prepared_input_logits_default)) &&
+                       bn_backend_quant_q8_0_prepared_input_matvec_candidate(
                            op->type) &&
                        (op->cols & 31) == 0) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
@@ -19502,7 +19503,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         ? (total_rows - split0 + 1) / 2
                         : total_rows - split0;
                     const BnCudaBlockQ8_1 *xq_mixed = NULL;
-                    if (bn_gpu_policy_cuda_q8_mixed_preq_enabled(
+                    if (bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(
                             op->type, ops[i + 5].type, cols)) {
                         if (cuda_ensure_q8_1(ctx, cols) != 0)
                             BN_CUDA_EXEC_FAIL("qkv mixed q8 scratch alloc failed");
@@ -19830,7 +19831,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int q8_threads = 256;
                 int warps = q8_threads / 32;
                 int blocks = (total_rows + warps - 1) / warps;
-                if (cuda_use_q8_0_preq_split()) {
+                if (cuda_use_q8_0_prepared_input_split()) {
                     if (cuda_ensure_q8_1(ctx, cols) != 0)
                         BN_CUDA_EXEC_FAIL("q8 split q8 scratch alloc failed");
                     BnCudaBlockQ8_1 *xq =
@@ -20041,19 +20042,19 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     next->type, (int)next->p[1], (int)next->p[2],
                     (int)next->p[3], dim, (int)next->p[0]);
             int moe_all_active_two_route_q8k_default_enabled =
-                bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(
+                bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(
                     dim, next_moe_all_active_two_kquant);
             if (route_diff2) {
                 int next_exact_silu =
                     next_moe_all_active_two_kquant &&
                     (next->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
-                int route_prequant_q8_1 =
-                    bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(
+                int route_prepared_input_q8_1 =
+                    bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(
                         dim, next_moe_all_active_two_kquant, next_exact_silu);
-                int route_prequant_q8k =
-                    !route_prequant_q8_1 &&
+                int route_prepared_input_q8k =
+                    !route_prepared_input_q8_1 &&
                     moe_all_active_two_route_q8k_default_enabled;
-                if (route_prequant_q8_1) {
+                if (route_prepared_input_q8_1) {
                     if (cuda_ensure_q8_1(ctx, dim) != 0)
                         BN_CUDA_EXEC_FAIL("moe route q8_1 prequant scratch alloc failed");
                     BnCudaBlockQ8_1 *xq = (BnCudaBlockQ8_1 *)ctx->d_q8_1;
@@ -20062,7 +20063,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim / 32 + 1, 32, 0, route, xq,
                         (const float *)w->data, in, dim,
                         expert_weights_scale);
-                } else if (route_prequant_q8k) {
+                } else if (route_prepared_input_q8k) {
                     if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
                         BN_CUDA_EXEC_FAIL("moe route q8k prequant scratch alloc failed");
                     BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -20264,13 +20265,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         }
                     }
                     const BnGPUOp *prev = (i > 0) ? &ops[i - 1] : NULL;
-                    int moe_all_active_two_route_q8_1_prequant_enabled =
-                        bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(
+                    int moe_all_active_two_route_q8_1_prepared_input_enabled =
+                        bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(
                             dim, moe_all_active_two_kquant, exact_silu);
                     int moe_all_active_two_route_q8k_default_enabled =
-                        bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(
+                        bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(
                             dim, moe_all_active_two_kquant);
-                    int moe_all_active_two_x_q8k_prequantized =
+                    int moe_all_active_two_x_q8k_prepared =
                         moe_all_active_two_kquant &&
                         prev &&
                         prev->op_code == BN_GPU_CODE_MOE_ROUTE_TOPK &&
@@ -20280,16 +20281,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                          (((BnCudaBuffer *)prev->W_buf)->rows >= 2 &&
                           (dim % 16) == 0 &&
                           !bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled())) &&
-                        !moe_all_active_two_route_q8_1_prequant_enabled &&
+                        !moe_all_active_two_route_q8_1_prepared_input_enabled &&
                         moe_all_active_two_route_q8k_default_enabled;
-                    int moe_all_active_two_x_q8_1_prequantized =
+                    int moe_all_active_two_x_q8_1_prepared =
                         moe_all_active_two_kquant &&
                         prev &&
                         prev->op_code == BN_GPU_CODE_MOE_ROUTE_TOPK &&
                         prev->cols == dim &&
                         prev->W_buf &&
                         ((BnCudaBuffer *)prev->W_buf)->rows == 1 &&
-                        moe_all_active_two_route_q8_1_prequant_enabled;
+                        moe_all_active_two_route_q8_1_prepared_input_enabled;
                     int use_moe_all_active_two_q8k_default =
                         moe_all_active_two_kquant &&
                         !bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled();
@@ -20315,14 +20316,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (use_q4k_q8k_dot) {
                         if (cuda_ensure_q8_k(ctx, dim, 1) != 0) return -1;
                         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                        if (!moe_all_active_two_x_q8k_prequantized) {
+                        if (!moe_all_active_two_x_q8k_prepared) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                                 dim3(dim / BN_QK_K, 1, 1), BN_QK_K, 0,
                                 xq, in, dim, 1);
                             BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, dim, 1);
                         }
                         if (bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(
-                                moe_all_active_two_x_q8k_prequantized,
+                                moe_all_active_two_x_q8k_prepared,
                                 moe_all_active_two_fast_enabled)) {
                             int gateup4_tasks = (gateup_tasks + 3) / 4;
                             int gateup4_blocks =
@@ -20355,7 +20356,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         if (cuda_ensure_q8_1(ctx, dim) != 0) return -1;
                         BnCudaBlockQ8_1 *xq =
                             (BnCudaBlockQ8_1 *)ctx->d_q8_1;
-                        if (!moe_all_active_two_x_q8_1_prequantized) {
+                        if (!moe_all_active_two_x_q8_1_prepared) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 quantize_q8_1_kernel, (dim + 31) / 32, 32,
                                 0, xq, in, dim);

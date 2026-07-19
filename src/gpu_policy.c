@@ -594,23 +594,23 @@ int bn_gpu_policy_cuda_f16_q8_0_matmul_enabled(void) {
     return getenv("BN_CUDA_DISABLE_F16_Q8_0_MATMUL") == NULL;
 }
 
-int bn_gpu_policy_cuda_q8_0_preq_split_enabled(void) {
+int bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT") != NULL &&
            getenv("BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT") == NULL;
 }
 
-int bn_gpu_policy_cuda_q8_preq_all_enabled(void) {
+int bn_gpu_policy_cuda_q8_prepared_input_all_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q8_PREQ") != NULL &&
            getenv("BN_CUDA_DISABLE_Q8_PREQ") == NULL;
 }
 
-int bn_gpu_policy_cuda_q8_preq_logits_disabled(void) {
+int bn_gpu_policy_cuda_q8_prepared_input_logits_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") != NULL;
 }
 
-int bn_gpu_policy_cuda_q8_preq_logits_default_enabled(
-    int preq_logits_disabled) {
-    return !preq_logits_disabled &&
+int bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(
+    int prepared_input_logits_disabled) {
+    return !prepared_input_logits_disabled &&
            (getenv("BN_CUDA_ENABLE_Q8_PREQ_LOGITS") != NULL ||
             getenv("BN_CUDA_DISABLE_Q8_PREQ_LOGITS") == NULL);
 }
@@ -898,8 +898,9 @@ int bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(int dim,
            getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
 }
 
-int bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(int dim,
-                                                      int all_active_two_kquant) {
+int bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled(
+    int dim,
+    int all_active_two_kquant) {
     return (dim % BN_QK_K) == 0 &&
            all_active_two_kquant &&
            !bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled() &&
@@ -907,13 +908,14 @@ int bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(int dim,
            getenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT") == NULL;
 }
 
-int bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(int dim,
-                                                       int all_active_two_kquant,
-                                                       int exact_silu) {
+int bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled(
+    int dim,
+    int all_active_two_kquant,
+    int exact_silu) {
     return (dim % 32) == 0 &&
            all_active_two_kquant &&
            !exact_silu &&
-           (bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled() ||
+           (bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled() ||
             getenv("BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT") != NULL) &&
            getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT") == NULL &&
            getenv("BN_CUDA_ENABLE_MOE_Q4K_Q8K_DOT_ALL2") == NULL &&
@@ -997,9 +999,9 @@ int bn_gpu_policy_cuda_moe_internal_profile_enabled(int profile) {
 }
 
 int bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled(
-    int prequantized_q8k,
+    int prepared_q8k_input,
     int all_active_two_fast_enabled) {
-    return prequantized_q8k &&
+    return prepared_q8k_input &&
            all_active_two_fast_enabled &&
            getenv("BN_CUDA_DISABLE_MOE_Q4K_ALL2_FIXED") == NULL &&
            getenv("BN_CUDA_DISABLE_MOE_Q4K_GATEUP_4ROW") == NULL;
@@ -1242,13 +1244,13 @@ int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") == NULL;
 }
 
-int bn_gpu_policy_cuda_q8_0_ssm_preq_enabled(void) {
+int bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ") == NULL;
 }
 
-int bn_gpu_policy_cuda_q8_mixed_preq_enabled(int type_a,
-                                             int type_b,
-                                             int cols) {
+int bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(int type_a,
+                                                       int type_b,
+                                                       int cols) {
     return getenv("BN_CUDA_ENABLE_Q8_MIXED_PREQ") != NULL &&
            (bn_backend_quant_is_q8_0(type_a) ||
             bn_backend_quant_is_q8_0(type_b)) &&
@@ -2576,7 +2578,7 @@ int bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled(void) {
                                   "BN_CUDA_DISABLE_QWEN2MOE_ROUTE_Q8K_DEFAULT");
 }
 
-int bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled(void) {
+int bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled(void) {
     return gpu_policy_compat_env_enabled("BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT",
                                   "BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT");
 }

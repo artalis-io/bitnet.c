@@ -1239,6 +1239,23 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL")\|getenv("BN_CUDA_DISABLE_
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q8_0_preq_split_enabled\|bn_gpu_policy_cuda_q8_preq_all_enabled\|bn_gpu_policy_cuda_q8_preq_logits_disabled\|bn_gpu_policy_cuda_q8_preq_logits_default_enabled\|bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled\|bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled\|bn_gpu_policy_cuda_q8_0_ssm_preq_enabled\|bn_gpu_policy_cuda_q8_mixed_preq_enabled\|bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU policy prepared-input helpers must use behavior names, not preq/prequant helper names"
+    fail=1
+fi
+
+if grep -n 'bn_backend_quant_q8_0_preq_matvec_candidate' \
+    include/backend_quant.h \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Backend quant prepared-input helpers must use behavior names, not preq helper names"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL")\|getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for forced quant matmul env vars"
     fail=1

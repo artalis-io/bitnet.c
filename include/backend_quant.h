@@ -357,7 +357,7 @@ static inline int bn_backend_quant_q5k_q8_1_matvec_candidate(int type) {
     return bn_backend_quant_is_q5k(type);
 }
 
-static inline int bn_backend_quant_q8_0_preq_matvec_candidate(int type) {
+static inline int bn_backend_quant_q8_0_prepared_input_matvec_candidate(int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
