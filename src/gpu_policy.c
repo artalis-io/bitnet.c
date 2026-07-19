@@ -52,6 +52,70 @@ static float gpu_policy_compat_env_float_or_default(const char *name,
     return (float)atof(env);
 }
 
+typedef struct {
+    int flash_default;
+    int default_flash_max_kv;
+    int large_graph_native;
+    int small_dense_native;
+    int all_active_two_kquant_moe;
+    int cpu_attention_fallback;
+    int small_dense_exact_native;
+    int prefill_decode_fallback;
+    int prefill_chain;
+    int matvec_fallback;
+    int dense_batch_prefill_shape;
+    int lazy_moe_aux_cache;
+    int native_quant_logits_refine_default;
+    int all_active_two_kquant_moe_logits_refine_default;
+    int decode_graph_cache;
+    int moe_exact_attention;
+    int ssm_graph;
+    int large_hybrid_argmax;
+    int all_active_two_moe_direct_route;
+    int resident_moe_ffn;
+    int moe_gateup_split;
+} BnGPUPolicyBackendCaps;
+
+static const BnGPUPolicyBackendCaps GPU_POLICY_BACKEND_CAPS_NONE = {0};
+
+static const BnGPUPolicyBackendCaps GPU_POLICY_BACKEND_CAPS_CUDA = {
+    .flash_default = 1,
+    .default_flash_max_kv = 2048,
+    .large_graph_native = 1,
+    .small_dense_native = 1,
+    .all_active_two_kquant_moe = 1,
+    .cpu_attention_fallback = 1,
+    .small_dense_exact_native = 1,
+    .prefill_decode_fallback = 1,
+    .prefill_chain = 1,
+    .matvec_fallback = 1,
+    .dense_batch_prefill_shape = 1,
+    .lazy_moe_aux_cache = 1,
+    .native_quant_logits_refine_default = 1,
+    .all_active_two_kquant_moe_logits_refine_default = 1,
+    .decode_graph_cache = 1,
+    .moe_exact_attention = 1,
+    .ssm_graph = 1,
+    .large_hybrid_argmax = 1,
+    .all_active_two_moe_direct_route = 1,
+    .resident_moe_ffn = 1,
+    .moe_gateup_split = 1,
+};
+
+static const BnGPUPolicyBackendCaps *
+gpu_policy_backend_caps(const BnGPUBackend *gpu) {
+    if (!gpu)
+        return &GPU_POLICY_BACKEND_CAPS_NONE;
+    switch (gpu->kind) {
+        case BN_GPU_BACKEND_CUDA:
+            return &GPU_POLICY_BACKEND_CAPS_CUDA;
+        case BN_GPU_BACKEND_METAL:
+        case BN_GPU_BACKEND_WEBGPU:
+        default:
+            return &GPU_POLICY_BACKEND_CAPS_NONE;
+    }
+}
+
 static int gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN") == NULL;
 }
@@ -2244,106 +2308,111 @@ int bn_gpu_policy_flash_max_kv_or_default(int cuda_backend,
 
 int bn_gpu_policy_backend_flash_max_kv_or_default(const BnGPUBackend *gpu,
                                                   int default_max_kv) {
-    return bn_gpu_policy_flash_max_kv_or_default(
-        bn_gpu_policy_backend_is_cuda(gpu), default_max_kv);
+    const BnGPUPolicyBackendCaps *caps = gpu_policy_backend_caps(gpu);
+    const char *env = getenv("BN_GPU_FLASH_MAX_KV");
+    if (env)
+        return atoi(env);
+    return caps->default_flash_max_kv ? caps->default_flash_max_kv
+                                      : default_max_kv;
 }
 
 int bn_gpu_policy_backend_flash_default_enabled(const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->flash_default;
 }
 
 int bn_gpu_policy_backend_large_graph_native_enabled(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->large_graph_native;
 }
 
 int bn_gpu_policy_backend_small_dense_native_enabled(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->small_dense_native;
 }
 
 int bn_gpu_policy_backend_all_active_two_kquant_moe_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->all_active_two_kquant_moe;
 }
 
 int bn_gpu_policy_backend_cpu_attention_fallback_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->cpu_attention_fallback;
 }
 
 int bn_gpu_policy_backend_small_dense_exact_native_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->small_dense_exact_native;
 }
 
 int bn_gpu_policy_backend_prefill_decode_fallback_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->prefill_decode_fallback;
 }
 
 int bn_gpu_policy_backend_prefill_chain_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->prefill_chain;
 }
 
 int bn_gpu_policy_backend_matvec_fallback_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->matvec_fallback;
 }
 
 int bn_gpu_policy_backend_dense_batch_prefill_shape_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->dense_batch_prefill_shape;
 }
 
 int bn_gpu_policy_backend_lazy_moe_aux_cache_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->lazy_moe_aux_cache;
 }
 
 int bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->native_quant_logits_refine_default;
 }
 
 int bn_gpu_policy_backend_all_active_two_kquant_moe_logits_refine_default_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(
+        gpu)->all_active_two_kquant_moe_logits_refine_default;
 }
 
 int bn_gpu_policy_backend_decode_graph_cache_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->decode_graph_cache;
 }
 
 int bn_gpu_policy_backend_moe_exact_attention_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->moe_exact_attention;
 }
 
 int bn_gpu_policy_backend_ssm_graph_supported(const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->ssm_graph;
 }
 
 int bn_gpu_policy_backend_large_hybrid_argmax_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->large_hybrid_argmax;
 }
 
 int bn_gpu_policy_backend_all_active_two_moe_direct_route_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->all_active_two_moe_direct_route;
 }
 
 int bn_gpu_policy_backend_resident_moe_ffn_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->resident_moe_ffn;
 }
 
 int bn_gpu_policy_backend_moe_gateup_split_supported(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
+    return gpu_policy_backend_caps(gpu)->moe_gateup_split;
 }
 
 int bn_gpu_policy_argmax_debug_enabled(void) {

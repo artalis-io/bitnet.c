@@ -2593,6 +2593,15 @@ static void test_gpu_policy_helpers(void) {
         &gpu));
     assert(!bn_gpu_policy_backend_resident_moe_ffn_supported(&gpu));
     assert(!bn_gpu_policy_backend_moe_gateup_split_supported(&gpu));
+    gpu.kind = BN_GPU_BACKEND_UNKNOWN;
+    assert(!bn_gpu_policy_backend_flash_default_enabled(&gpu));
+    assert(bn_gpu_policy_backend_flash_max_kv_or_default(&gpu, 7) == 7);
+    assert(!bn_gpu_policy_backend_prefill_chain_supported(&gpu));
+    assert(!bn_gpu_policy_backend_resident_moe_ffn_supported(&gpu));
+    assert(!bn_gpu_policy_backend_flash_default_enabled(NULL));
+    assert(bn_gpu_policy_backend_flash_max_kv_or_default(NULL, 11) == 11);
+    assert(!bn_gpu_policy_backend_prefill_chain_supported(NULL));
+    assert(!bn_gpu_policy_backend_resident_moe_ffn_supported(NULL));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(!bn_gpu_policy_cpu_logits_enabled());
     assert(!bn_gpu_policy_compare_logits_enabled());

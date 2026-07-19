@@ -1793,6 +1793,12 @@ if grep -n 'bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_q4_prepared_
     fail=1
 fi
 
+if sed -n '/^int bn_gpu_policy_backend_flash_default_enabled/,/^int bn_gpu_policy_argmax_debug_enabled/p' \
+    src/gpu_policy.c | grep -n 'bn_gpu_policy_backend_is_cuda' >/dev/null 2>&1; then
+    echo "GPU backend capability helpers must use the backend capability table, not repeated CUDA predicates"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_specialized_q6_q8k_path_enabled' include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Specialized native-quant decode policy must use behavior names, not Q6/Q8K helper names"
     fail=1
