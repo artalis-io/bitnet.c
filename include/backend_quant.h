@@ -278,6 +278,38 @@ static inline int bn_backend_quant_cuda_logits_q6_matvec_candidate(int type) {
     return bn_backend_quant_moe_down_is_q6k(type);
 }
 
+static inline int bn_backend_quant_cuda_q5_0_matvec_candidate(int type) {
+    return type == BN_GGUF_TENSOR_Q5_0;
+}
+
+static inline int bn_backend_quant_cuda_q6k_q8k_matvec_candidate(int type) {
+    return bn_backend_quant_moe_down_is_q6k(type);
+}
+
+static inline int bn_backend_quant_cuda_q6k_warp_matvec_candidate(int type) {
+    return bn_backend_quant_moe_down_is_q6k(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_q8k_matvec_candidate(int type) {
+    return bn_backend_quant_is_q4k(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_q8_1_matvec_candidate(int type) {
+    return bn_backend_quant_is_q4k(type);
+}
+
+static inline int bn_backend_quant_cuda_q5k_q8_1_matvec_candidate(int type) {
+    return bn_backend_quant_is_q5k(type);
+}
+
+static inline int bn_backend_quant_cuda_q8_0_preq_matvec_candidate(int type) {
+    return bn_backend_quant_is_q8_0(type);
+}
+
+static inline int bn_backend_quant_cuda_q8_0_warp_matvec_candidate(int type) {
+    return bn_backend_quant_is_q8_0(type);
+}
+
 static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
                                                        int k,
                                                        int down_type,

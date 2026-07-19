@@ -19007,14 +19007,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     break;
                 }
             }
-            if (op->type == BN_GGUF_TENSOR_Q5_0 &&
+            if (bn_backend_quant_cuda_q5_0_matvec_candidate(op->type) &&
                 (op->cols & 31) == 0 && enable_q5_matvec4) {
                 BN_CUDA_LAUNCH(ctx, q5_0_matvec4_kernel,
                     (op->rows + 3) / 4, threads,
                     (size_t)threads * sizeof(float) * 4,
                     out, (const BnBlockQ5_0 *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (op->type == BN_GGUF_TENSOR_Q5_0 &&
+            } else if (bn_backend_quant_cuda_q5_0_matvec_candidate(op->type) &&
                        (op->cols & 31) == 0 && enable_q5_warp) {
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
@@ -19023,7 +19023,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     q5_threads, 0,
                     out, (const BnBlockQ5_0 *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (op->type == BN_GGUF_TENSOR_Q6_K &&
+            } else if (bn_backend_quant_cuda_q6k_q8k_matvec_candidate(
+                           op->type) &&
                        (op->cols % BN_QK_K) == 0 &&
                        (force_q6k_dot ||
                         (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
@@ -19164,7 +19165,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ6K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q6_K &&
+            } else if (bn_backend_quant_cuda_q6k_warp_matvec_candidate(
+                           op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_q6k_warp) {
                 int q6_threads = 256;
                 int warps = q6_threads / 32;
@@ -19174,7 +19176,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     q6_threads, 0,
                     out, (const BnBlockQ6K *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+            } else if (bn_backend_quant_cuda_q4k_q8k_matvec_candidate(
+                           op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_q4k_dot &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                         bn_gpu_policy_cuda_q4k_q8k_dot_forced()) &&
@@ -19210,7 +19213,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+            } else if (bn_backend_quant_cuda_q4k_q8_1_matvec_candidate(
+                           op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_q4k_dot) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("q4k q8_1 scratch alloc failed");
@@ -19266,7 +19270,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q5_K &&
+            } else if (bn_backend_quant_cuda_q5k_q8_1_matvec_candidate(
+                           op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_q5k_dot) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("q5k q8_1 scratch alloc failed");
@@ -19292,7 +19297,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (q8_small_ssm_matvec &&
                          bn_gpu_policy_cuda_q8_0_ssm_preq_enabled()) ||
                         (is_logits_op && q8_preq_logits_default)) &&
-                       op->type == BN_GGUF_TENSOR_Q8_0 &&
+                       bn_backend_quant_cuda_q8_0_preq_matvec_candidate(
+                           op->type) &&
                        (op->cols & 31) == 0) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("q8 preq scratch alloc failed");
@@ -19307,7 +19313,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     blocks, q8_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, xq, bias, op->rows,
                     op->cols, out_offset);
-            } else if (!disable_q8_warp && op->type == BN_GGUF_TENSOR_Q8_0 &&
+            } else if (!disable_q8_warp &&
+                       bn_backend_quant_cuda_q8_0_warp_matvec_candidate(
+                           op->type) &&
                        (op->cols & 31) == 0 && !bias) {
                 int q8_threads = 256;
                 int warps = q8_threads / 32;
