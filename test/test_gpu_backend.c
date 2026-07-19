@@ -1600,9 +1600,9 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_DECODE_CACHE", "1", 1);
     assert(bn_gpu_policy_decode_cache_disabled());
     unsetenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE");
-    assert(!bn_gpu_policy_q4_q8_decode_cache_disabled());
+    assert(!bn_gpu_policy_native_quant_decode_cache_disabled());
     setenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE", "1", 1);
-    assert(bn_gpu_policy_q4_q8_decode_cache_disabled());
+    assert(bn_gpu_policy_native_quant_decode_cache_disabled());
     unsetenv("BN_CUDA_DISABLE_LOGITS_ARGMAX");
     assert(!bn_gpu_policy_logits_argmax_disabled());
     setenv("BN_CUDA_DISABLE_LOGITS_ARGMAX", "1", 1);
@@ -2529,9 +2529,9 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_large_hybrid_prefill_disabled());
     assert(bn_gpu_policy_large_hybrid_argmax_enabled());
     assert(bn_gpu_policy_fused_gateup_enabled());
-    assert(bn_gpu_policy_q4_q8_fused_gateup_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled());
     assert(bn_gpu_policy_gateup_split_enabled());
-    assert(bn_gpu_policy_q4_q8_ffn_down_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_enabled());
     assert(bn_gpu_policy_qkv_split_enabled());
     assert(!bn_gpu_policy_qkv_split_debug_enabled());
     assert(bn_gpu_policy_ssm_qkvz_split_enabled());
@@ -2992,9 +2992,9 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_GPU_MOE_ROUTE_PROFILE", "1", 1);
     setenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY", "5", 1);
     assert(!bn_gpu_policy_fused_gateup_enabled());
-    assert(!bn_gpu_policy_q4_q8_fused_gateup_enabled());
+    assert(!bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled());
     assert(!bn_gpu_policy_gateup_split_enabled());
-    assert(!bn_gpu_policy_q4_q8_ffn_down_enabled());
+    assert(!bn_gpu_policy_small_dense_exact_native_ffn_down_enabled());
     assert(!bn_gpu_policy_qkv_split_enabled());
     assert(bn_gpu_policy_qkv_split_debug_enabled());
     assert(!bn_gpu_policy_ssm_qkvz_split_enabled());
@@ -3341,12 +3341,14 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_Q4_PREPARED");
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");
     assert(!bn_gpu_policy_metal_q4_q8_enabled());
-    assert(!bn_gpu_policy_q4_q8_attn_only_enabled());
-    assert(!bn_gpu_policy_q4_q8_ffn_only_enabled());
-    assert(bn_gpu_policy_q4_q8_from_layer_or_default(40) == -1);
-    assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == -1);
+    assert(!bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
+    assert(!bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+           -1);
+    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+           -1);
     assert(!bn_gpu_policy_metal_q4_prepared_enabled());
-    assert(!bn_gpu_policy_q4_q8_prepared_layer_default_enabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled());
     assert(!bn_gpu_policy_metal_q4_prepared_upload_enabled());
     assert(bn_gpu_policy_webgpu_repacked_buffer_supported(
         BN_GGUF_TENSOR_Q4_0));
@@ -3397,24 +3399,30 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 0));
     assert(getenv("BN_GPU_Q4_Q8_FROM_LAYER") != NULL);
-    assert(bn_gpu_policy_q4_q8_from_layer_or_default(40) == 0);
-    assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == 6);
-    assert(!bn_gpu_policy_q4_q8_attn_only_enabled());
-    assert(bn_gpu_policy_q4_q8_ffn_only_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+           0);
+    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+           6);
+    assert(!bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "10", 1);
     setenv("BN_GPU_Q4_Q8_TO_LAYER", "20", 1);
     setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
     setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
-    assert(bn_gpu_policy_q4_q8_from_layer_or_default(40) == 10);
-    assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == 20);
-    assert(bn_gpu_policy_q4_q8_attn_only_enabled());
-    assert(bn_gpu_policy_q4_q8_ffn_only_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+           10);
+    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+           20);
+    assert(bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
     unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
     setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", "4", 1);
-    assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == 35);
+    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+           35);
     setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", "100", 1);
-    assert(bn_gpu_policy_q4_q8_to_layer_or_default(40, 0) == -1);
+    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+           -1);
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
@@ -3424,7 +3432,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_Q4_PREPARED");
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
     assert(bn_gpu_policy_metal_q4_prepared_enabled());
-    assert(bn_gpu_policy_q4_q8_prepared_layer_default_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled());
     assert(bn_gpu_policy_metal_q4_prepared_upload_enabled());
     assert(bn_gpu_policy_metal_prepared_stacked_upload_blocked(
         BN_GGUF_TENSOR_Q4_0));

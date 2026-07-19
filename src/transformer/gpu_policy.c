@@ -164,7 +164,8 @@ int bn_transformer_gpu_fused_gateup_silu_policy_allows(
 }
 
 int bn_transformer_gpu_small_dense_exact_fused_gateup_enabled(int use_small_dense_exact) {
-    return use_small_dense_exact && bn_gpu_policy_q4_q8_fused_gateup_enabled();
+    return use_small_dense_exact &&
+           bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled();
 }
 
 int bn_transformer_gpu_gateup_split_enabled(void) {
@@ -173,7 +174,7 @@ int bn_transformer_gpu_gateup_split_enabled(void) {
 
 int bn_transformer_gpu_small_dense_exact_down_enabled(int use_small_dense_exact_down) {
     return use_small_dense_exact_down &&
-           bn_gpu_policy_q4_q8_ffn_down_enabled();
+           bn_gpu_policy_small_dense_exact_native_ffn_down_enabled();
 }
 
 int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_exact) {
@@ -1191,7 +1192,7 @@ int bn_transformer_gpu_decode_cacheable(
         compare_qkv_layer >= 0 || compare_ffn_down_layer >= 0 ||
         compare_ffn_state_layer >= 0)
         return 0;
-    if (bn_gpu_policy_q4_q8_decode_cache_disabled() ||
+    if (bn_gpu_policy_native_quant_decode_cache_disabled() ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_transformer_gpu_compare_logits_enabled() ||
         bn_gpu_policy_specialized_q6_q8k_path_enabled())
@@ -1344,12 +1345,16 @@ BnTransformerGPUSmallDenseExactLayerPolicy
 bn_transformer_gpu_small_dense_exact_layer_policy(const BnConfig *c) {
     int n_layers = c ? c->n_layers : 0;
     BnTransformerGPUSmallDenseExactLayerPolicy policy = {
-        .from_layer = bn_gpu_policy_q4_q8_from_layer_or_default(n_layers),
-        .to_layer = bn_gpu_policy_q4_q8_to_layer_or_default(
+        .from_layer =
+            bn_gpu_policy_small_dense_exact_native_from_layer_or_default(
+                n_layers),
+        .to_layer = bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
             n_layers,
-            bn_gpu_policy_q4_q8_prepared_layer_default_enabled()),
-        .attn_only = bn_gpu_policy_q4_q8_attn_only_enabled(),
-        .ffn_only = bn_gpu_policy_q4_q8_ffn_only_enabled(),
+            bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled()),
+        .attn_only =
+            bn_gpu_policy_small_dense_exact_native_attn_only_enabled(),
+        .ffn_only =
+            bn_gpu_policy_small_dense_exact_native_ffn_only_enabled(),
     };
     return policy;
 }
