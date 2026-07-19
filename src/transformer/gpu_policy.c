@@ -1109,14 +1109,16 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         return 0;
 
     if (!bn_model_arch_uses_moe(c)) {
-        return logits->rows > 262144 ||
+        return bn_model_arch_dense_logits_argmax_shape_allowed(
+                   c, logits->rows) ||
                bn_gpu_policy_dense_logits_argmax_enabled();
     }
     if (bn_model_arch_uses_all_active_two_expert_moe(c, c->dim))
         return 1;
     if (bn_gpu_policy_moe_logits_mmvq_argmax_enabled())
         return 1;
-    return logits->cols == 1536 &&
+    return bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(
+               c, logits->cols) &&
            !bn_gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
 

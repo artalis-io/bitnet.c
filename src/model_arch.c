@@ -456,6 +456,18 @@ int bn_model_arch_dense_batch_prefill_shape_allowed(
     return c->dim <= (supports_large_dense_batch_prefill ? 8192 : 2560);
 }
 
+int bn_model_arch_dense_logits_argmax_shape_allowed(const BnConfig *c,
+                                                    int logits_rows) {
+    return bn_model_arch_uses_dense_attention_only(c) &&
+           logits_rows > 262144;
+}
+
+int bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
+                                                       int logits_cols) {
+    return bn_model_arch_uses_moe(c) &&
+           logits_cols == 1536;
+}
+
 int bn_model_arch_allows_small_dense_exact_q4_q8(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8) != 0) &&
            bn_model_arch_uses_small_dense_shape(c);

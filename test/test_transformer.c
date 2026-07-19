@@ -2433,6 +2433,16 @@ static void test_gpu_policy_helpers(void) {
     c.moe_intermediate_size = 4096;
     assert(!bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 1, 0));
+    c.n_experts_active = 1;
+    c.moe_intermediate_size = 4095;
+    logits.cols = 1536;
+    assert(bn_transformer_gpu_matvec_argmax_enabled(
+        &gpu, &c, &logits, 1, 0, 0));
+    logits.cols = 2048;
+    assert(!bn_transformer_gpu_matvec_argmax_enabled(
+        &gpu, &c, &logits, 1, 0, 0));
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
     setenv("BN_GPU_CPU_LOGITS", "1", 1);
     assert(!bn_transformer_gpu_matvec_argmax_enabled(
         &gpu, &c, &logits, 1, 0, 0));
@@ -3017,6 +3027,9 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_hybrid_moe(&c));
     assert(bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_uses_dense_attention_only(&c));
+    assert(!bn_model_arch_dense_logits_argmax_shape_allowed(&c, 300000));
+    assert(bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(&c, 1536));
+    assert(!bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(&c, 2048));
 
     memset(&c, 0, sizeof(c));
     c.n_experts = 2;
@@ -3065,6 +3078,9 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
+    assert(bn_model_arch_dense_logits_argmax_shape_allowed(&c, 300000));
+    assert(!bn_model_arch_dense_logits_argmax_shape_allowed(&c, 262144));
+    assert(!bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(&c, 1536));
     c.dim = 1025;
     assert(bn_model_arch_uses_small_dense_q8_native_shape(&c));
     c.dim = 2561;
