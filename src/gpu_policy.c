@@ -253,7 +253,13 @@ int bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
 int bn_gpu_policy_cuda_moe_quant_only_after_cache(int tensor_type,
                                                   int q8_f16_cache) {
     return bn_backend_quant_moe_quant_only_after_cache(tensor_type,
-                                                            q8_f16_cache);
+                                                       q8_f16_cache);
+}
+
+int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
+                                         int tensor_type) {
+    return bn_gpu_policy_backend_is_cuda(gpu) &&
+           bn_backend_quant_moe_prefers_quant_only(tensor_type);
 }
 
 int bn_gpu_policy_cuda_moe_prefers_quant_only(int tensor_type) {

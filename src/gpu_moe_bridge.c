@@ -33,7 +33,7 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     }
-    if (bn_gpu_policy_cuda_moe_prefers_quant_only(type) &&
+    if (bn_gpu_policy_moe_prefers_quant_only(gpu, type) &&
         gpu->buffer_create_quant_only)
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);

@@ -847,6 +847,12 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_gpu_policy_cuda_moe_prefers_quant_only(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_gpu_policy_moe_prefers_quant_only(
+        &gpu, BN_GGUF_TENSOR_Q8_0));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_gpu_policy_moe_prefers_quant_only(
+        &gpu, BN_GGUF_TENSOR_Q8_0));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
 
     unsetenv("BN_CUDA_LAYOUT_RESERVE_MB");
     unsetenv("BN_CUDA_MOE_FULL_RESERVE_MB");
