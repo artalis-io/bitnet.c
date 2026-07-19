@@ -401,7 +401,7 @@ int bn_gpu_policy_cuda_matvec_batch_enabled(void) {
     return getenv("BN_CUDA_DISABLE_MATVEC_BATCH") == NULL;
 }
 
-int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant) {
+static int small_kquant_native_enabled(int force_float_kquant) {
     if (getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE"))
         return 1;
     return getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") == NULL &&
@@ -409,16 +409,15 @@ int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant) {
 }
 
 int bn_gpu_policy_small_kquant_native_enabled(int force_float_kquant) {
-    return bn_gpu_policy_cuda_small_kquant_native_enabled(
-        force_float_kquant);
+    return small_kquant_native_enabled(force_float_kquant);
 }
 
-int bn_gpu_policy_cuda_small_kquant_native_disabled(void) {
+static int small_kquant_native_disabled(void) {
     return getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") != NULL;
 }
 
 int bn_gpu_policy_small_kquant_native_disabled(void) {
-    return bn_gpu_policy_cuda_small_kquant_native_disabled();
+    return small_kquant_native_disabled();
 }
 
 size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit) {

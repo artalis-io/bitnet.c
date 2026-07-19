@@ -1002,20 +1002,13 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_small_kquant_native_enabled(0));
     assert(!bn_gpu_policy_small_kquant_native_enabled(1));
     assert(!bn_gpu_policy_small_kquant_native_disabled());
-    assert(bn_gpu_policy_cuda_small_kquant_native_enabled(0));
-    assert(!bn_gpu_policy_cuda_small_kquant_native_enabled(1));
-    assert(!bn_gpu_policy_cuda_small_kquant_native_disabled());
     setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
     assert(bn_gpu_policy_small_kquant_native_enabled(1));
-    assert(bn_gpu_policy_cuda_small_kquant_native_enabled(1));
     setenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE", "1", 1);
     assert(bn_gpu_policy_small_kquant_native_enabled(1));
     assert(bn_gpu_policy_small_kquant_native_disabled());
-    assert(bn_gpu_policy_cuda_small_kquant_native_enabled(1));
-    assert(bn_gpu_policy_cuda_small_kquant_native_disabled());
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
     assert(!bn_gpu_policy_small_kquant_native_enabled(0));
-    assert(!bn_gpu_policy_cuda_small_kquant_native_enabled(0));
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 
     unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
