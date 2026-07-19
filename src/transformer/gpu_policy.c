@@ -617,13 +617,13 @@ int bn_transformer_gpu_batch_prefill_enabled(
             gpu, c))
         return 0;
     if (bn_model_arch_uses_hybrid_ssm(c)) {
-        return transformer_gpu_backend_is_cuda(gpu) &&
+        return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
                gpu->prefill_ssm_layer &&
                bn_gpu_policy_prefill_hybrid_chain_enabled() &&
                !bn_transformer_gpu_prefill_ssm_layer_disabled();
     }
     if (bn_model_arch_uses_moe(c))
-        return transformer_gpu_backend_is_cuda(gpu) &&
+        return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
                bn_gpu_policy_moe_prefill_enabled();
     return bn_transformer_gpu_dense_batch_prefill_shape_allowed(gpu, c);
 }
@@ -631,7 +631,7 @@ int bn_transformer_gpu_batch_prefill_enabled(
 int bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    if (!c || !transformer_gpu_backend_is_cuda(gpu) ||
+    if (!c || !bn_gpu_policy_backend_cpu_attention_fallback_supported(gpu) ||
         !bn_model_arch_uses_large_dense_hybrid_ssm(c))
         return 0;
     if (bn_gpu_policy_large_hybrid_cpu_attention_safe_enabled())
@@ -644,7 +644,7 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
 int bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
            bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
            !bn_gpu_policy_large_hybrid_prefill_chain_enabled();
 }
@@ -655,7 +655,7 @@ int bn_transformer_gpu_prefill_direct_kv_allowed(
     const BnGPUBackend *gpu,
     int pos0,
     int n_tokens) {
-    if (!c || !transformer_gpu_backend_is_cuda(gpu))
+    if (!c || !bn_gpu_policy_backend_prefill_chain_supported(gpu))
         return 0;
     if (bn_gpu_policy_prefill_direct_kv_disabled())
         return 0;
@@ -682,12 +682,12 @@ int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     const BnGPUBackend *gpu) {
     if (bn_gpu_policy_prefill_attention_min_tokens_configured())
         return bn_transformer_gpu_prefill_attention_min_tokens();
-    if (transformer_gpu_backend_is_cuda(gpu) && c) {
+    if (bn_gpu_policy_backend_prefill_chain_supported(gpu) && c) {
         int arch_min = bn_model_arch_small_dense_prefill_min_tokens(c);
         if (arch_min > 0)
             return arch_min;
     }
-    if (transformer_gpu_backend_is_cuda(gpu) && c)
+    if (bn_gpu_policy_backend_prefill_chain_supported(gpu) && c)
         return 16;
     return bn_transformer_gpu_prefill_attention_min_tokens();
 }
@@ -696,7 +696,7 @@ int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int n_tokens) {
-    return !transformer_gpu_backend_is_cuda(gpu) ||
+    return !bn_gpu_policy_backend_prefill_chain_supported(gpu) ||
            n_tokens >=
                bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu);
 }
@@ -706,7 +706,7 @@ int bn_transformer_gpu_prefill_moe_chain_min_tokens(
     const BnGPUBackend *gpu) {
     if (bn_gpu_policy_moe_prefill_min_tokens_configured())
         return bn_gpu_policy_moe_prefill_min_tokens_or_default(1);
-    if (transformer_gpu_backend_is_cuda(gpu) && c)
+    if (bn_gpu_policy_backend_prefill_chain_supported(gpu) && c)
         return bn_gpu_policy_moe_prefill_min_tokens_or_default(16);
     return bn_gpu_policy_moe_prefill_min_tokens_or_default(
         bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu));
@@ -718,7 +718,7 @@ int bn_transformer_gpu_prefill_moe_ffn_batch_available(
     const BnMoEExpertMap *map,
     int dim,
     int allow_q4_down) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
            gpu->moe_route_routed_ffn_batch_norm_resid &&
            bn_transformer_gpu_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all2_q4_moe_requires_opt_in(
@@ -757,7 +757,7 @@ int bn_transformer_gpu_prefill_ssm_moe_chain_available(
     int dim,
     int allow_q4_down,
     int n_tokens) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
            gpu->prefill_ssm_layer &&
            !bn_transformer_gpu_prefill_ssm_layer_disabled() &&
            n_tokens >=
@@ -775,7 +775,7 @@ int bn_transformer_gpu_prefill_ssm_dense_chain_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int n_tokens) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
            gpu->prefill_ssm_layer &&
            !bn_transformer_gpu_prefill_ssm_layer_disabled() &&
            n_tokens >=
@@ -824,7 +824,7 @@ int bn_transformer_gpu_moe_prefill_min_tokens(void) {
 
 int bn_transformer_gpu_moe_prefill_backend_available(
     const BnGPUBackend *gpu) {
-    return transformer_gpu_backend_is_cuda(gpu);
+    return bn_gpu_policy_backend_prefill_chain_supported(gpu);
 }
 
 int bn_transformer_gpu_moe_prefill_tokens_allowed(
