@@ -14644,7 +14644,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
             return -1;
         if (shared_gate_weight &&
             (!shared_gate_weight->data ||
-             shared_gate_weight->type != BN_GGUF_TENSOR_F32 ||
+             !bn_backend_quant_already_f32(shared_gate_weight->type) ||
              shared_gate_weight->rows * shared_gate_weight->cols < dim))
             return -1;
     }
@@ -14899,7 +14899,7 @@ static int cuda_moe_route_batch(void *vctx, int *indices, float *weights,
         return -1;
     if (!ctx || !indices || !weights || !router || !router->data || !X ||
         n_tokens <= 0 || dim <= 0 || n_experts <= 0 || k <= 0 ||
-        k > BN_MAX_MOE_K || router->type != BN_GGUF_TENSOR_F32 ||
+        k > BN_MAX_MOE_K || !bn_backend_quant_already_f32(router->type) ||
         router->rows < n_experts || router->cols < dim)
         return -1;
 
@@ -15344,7 +15344,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         !router->data || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
         n_experts <= 0 || k <= 0 || k > BN_MAX_MOE_K || act_type != 0 ||
-        router->type != BN_GGUF_TENSOR_F32 ||
+        !bn_backend_quant_already_f32(router->type) ||
         router->rows < n_experts || router->cols < dim ||
         (!routed_q4 && !routed_q8) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
@@ -15373,7 +15373,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             return -1;
         if (shared_gate_weight &&
             (!shared_gate_weight->data ||
-             shared_gate_weight->type != BN_GGUF_TENSOR_F32 ||
+             !bn_backend_quant_already_f32(shared_gate_weight->type) ||
              shared_gate_weight->rows * shared_gate_weight->cols < dim))
             return -1;
     }

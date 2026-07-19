@@ -144,6 +144,13 @@ if sed -n '/^static BnCudaBuffer \*cuda_buffer_create_impl/,/^static void \*cuda
     fail=1
 fi
 
+if sed -n '/^static int cuda_moe_ffn_batch/,/^static int cuda_moe_route_batch/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1 ||
+   sed -n '/^static int cuda_moe_route_batch/,/^static int cuda_moe_route_routed_ffn_batch/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1 ||
+   sed -n '/^static int cuda_moe_route_routed_ffn_batch_impl/,/size_t full_values/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for CUDA MoE dense-F32 host validation"
+    fail=1
+fi
+
 if sed -n '/bn_backend_quant_cuda_q5_0_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA matvec dispatch quant predicates"
     fail=1
