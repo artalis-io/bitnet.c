@@ -1299,6 +1299,15 @@ if grep -n 'bn_gpu_policy_cuda_q8_0_preq_split_enabled\|bn_gpu_policy_cuda_q8_pr
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled\|bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled\|bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled\|bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled\|bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled\|cuda_moe_route_q8k_prepared_input\|cuda_moe_route_q8_1_prepared_input\|all_active_two_route_q8_1_prepared_input\|all_active_two_kquant_route_q8k_default' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "MoE route prepared-input policy helpers must use behavior names, not exact quant-prep names"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_q8_0_preq_matvec_candidate' \
     include/backend_quant.h \
     src/gpu_cuda.cu \
