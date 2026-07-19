@@ -94,6 +94,25 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
     unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
 
+    assert(bn_quant_format_is_q4k(BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_quant_format_is_q4k(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_is_q5k(BN_GGUF_TENSOR_Q5_K));
+    assert(!bn_quant_format_is_q5k(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_is_q6k(BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_quant_format_is_q6k(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_is_q8_0(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_is_q8_0(BN_GGUF_TENSOR_Q8_K));
+    assert(bn_quant_format_is_q5_0(BN_GGUF_TENSOR_Q5_0));
+    assert(!bn_quant_format_is_q5_0(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(
+        BN_GGUF_TENSOR_Q3_K));
+    assert(bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(
+        BN_GGUF_TENSOR_IQ3_XXS));
+    assert(bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(
+        BN_GGUF_TENSOR_IQ4_XS));
+    assert(!bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(
+        BN_GGUF_TENSOR_Q4_K));
+
     assert(bn_quant_format_cuda_matvec_supported(BN_GGUF_TENSOR_F32));
     assert(bn_quant_format_cuda_matvec_supported(BN_GGUF_TENSOR_F16));
     assert(bn_quant_format_cuda_matvec_supported(BN_GGUF_TENSOR_BF16));

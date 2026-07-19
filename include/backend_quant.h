@@ -46,15 +46,15 @@ static inline int bn_backend_quant_cuda_small_dense_q8_supported(int type) {
 }
 
 static inline int bn_backend_quant_is_q4k(int type) {
-    return type == BN_GGUF_TENSOR_Q4_K;
+    return bn_quant_format_is_q4k(type);
 }
 
 static inline int bn_backend_quant_is_q5k(int type) {
-    return type == BN_GGUF_TENSOR_Q5_K;
+    return bn_quant_format_is_q5k(type);
 }
 
 static inline int bn_backend_quant_is_q8_0(int type) {
-    return type == BN_GGUF_TENSOR_Q8_0;
+    return bn_quant_format_is_q8_0(type);
 }
 
 static inline int bn_backend_quant_is_kquant_float_fallback_candidate(int type) {
@@ -198,11 +198,11 @@ static inline int bn_backend_quant_moe_routed_op_is_q8(int type) {
 }
 
 static inline int bn_backend_quant_moe_down_is_q6k(int down_type) {
-    return down_type == BN_GGUF_TENSOR_Q6_K;
+    return bn_quant_format_is_q6k(down_type);
 }
 
 static inline int bn_backend_quant_moe_down_is_q4k(int down_type) {
-    return down_type == BN_GGUF_TENSOR_Q4_K;
+    return bn_quant_format_is_q4k(down_type);
 }
 
 static inline int bn_backend_quant_moe_down_is_q4k_or_q6k(int down_type) {
@@ -261,9 +261,7 @@ static inline int bn_backend_quant_cuda_f16_q8_matvec_candidate(int type) {
 
 static inline int bn_backend_quant_cuda_f16_float_cache_matvec_candidate(
     int type) {
-    return type == BN_GGUF_TENSOR_Q3_K ||
-           type == BN_GGUF_TENSOR_IQ3_XXS ||
-           type == BN_GGUF_TENSOR_IQ4_XS;
+    return bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(type);
 }
 
 static inline int bn_backend_quant_cuda_f16_q5k_matvec_candidate(int type) {
@@ -279,7 +277,7 @@ static inline int bn_backend_quant_cuda_logits_q6_matvec_candidate(int type) {
 }
 
 static inline int bn_backend_quant_cuda_q5_0_matvec_candidate(int type) {
-    return type == BN_GGUF_TENSOR_Q5_0;
+    return bn_quant_format_is_q5_0(type);
 }
 
 static inline int bn_backend_quant_cuda_q6k_q8k_matvec_candidate(int type) {
@@ -331,7 +329,7 @@ static inline int bn_backend_quant_cuda_q8_0_matmul_candidate(int type) {
 }
 
 static inline int bn_backend_quant_cuda_q5_0_matmul_candidate(int type) {
-    return type == BN_GGUF_TENSOR_Q5_0;
+    return bn_quant_format_is_q5_0(type);
 }
 
 static inline int bn_backend_quant_cuda_q5_0_fused_gateup_candidate(

@@ -805,6 +805,11 @@ if ! grep -n 'BN_AVX512_Q5K_VNNI\|BN_AVX2_KQUANT_FLOAT\|BN_CPU_REFERENCE_DOT\|BN
     fail=1
 fi
 
+if grep -n '== BN_GGUF_TENSOR_\|!= BN_GGUF_TENSOR_' include/backend_quant.h >/dev/null 2>&1; then
+    echo "backend quant wrappers must use quant-format helpers, not raw tensor identity checks"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_Q4_Q8_DISABLE_GATEUP' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for Q4/Q8 fused gate-up compatibility env vars"
     fail=1

@@ -71,6 +71,32 @@ int bn_quant_policy_q8_0_matmul_batch_enabled(void) {
     return getenv("BN_DISABLE_Q8_0_MATMUL_BATCH") == NULL;
 }
 
+int bn_quant_format_is_q4k(int type) {
+    return type == BN_GGUF_TENSOR_Q4_K;
+}
+
+int bn_quant_format_is_q5k(int type) {
+    return type == BN_GGUF_TENSOR_Q5_K;
+}
+
+int bn_quant_format_is_q6k(int type) {
+    return type == BN_GGUF_TENSOR_Q6_K;
+}
+
+int bn_quant_format_is_q8_0(int type) {
+    return type == BN_GGUF_TENSOR_Q8_0;
+}
+
+int bn_quant_format_is_q5_0(int type) {
+    return type == BN_GGUF_TENSOR_Q5_0;
+}
+
+int bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(int type) {
+    return type == BN_GGUF_TENSOR_Q3_K ||
+           type == BN_GGUF_TENSOR_IQ3_XXS ||
+           type == BN_GGUF_TENSOR_IQ4_XS;
+}
+
 int bn_quant_format_cuda_cublas_aux_cache_supported(int type) {
     switch (type) {
         case BN_GGUF_TENSOR_BF16:
