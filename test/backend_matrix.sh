@@ -1581,6 +1581,11 @@ if grep -n 'bn_gpu_policy_cuda_moe_down_cublas_cache_bytes\|bn_gpu_policy_cuda_m
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_duplicate_moe_cache_enabled' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Duplicate MoE cache policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'snprintf([^,]*, *sizeof([^)]*), *"%zu", *reserve_mb)' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must format GPU MoE reserve policy from reserve bytes, not stale reserve_mb locals"
     fail=1

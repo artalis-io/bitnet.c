@@ -1978,13 +1978,9 @@ int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
         bn_model_arch_gguf_u32(gf, "context_length"), cap_seq_len);
 }
 
-int bn_gpu_policy_cuda_duplicate_moe_cache_enabled(void) {
+int bn_gpu_policy_duplicate_moe_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_DUPLICATE_MOE_CACHE") != NULL &&
            getenv("BN_CUDA_DISABLE_DUPLICATE_MOE_CACHE") == NULL;
-}
-
-int bn_gpu_policy_duplicate_moe_cache_enabled(void) {
-    return bn_gpu_policy_cuda_duplicate_moe_cache_enabled();
 }
 
 int bn_gpu_policy_webgpu_repacked_buffer_supported(int tensor_type) {
