@@ -45,6 +45,12 @@ int bn_moe_policy_supports_resident_routed_ffn_layout(
            em->down_cols == c->moe_intermediate_size;
 }
 
+int bn_moe_policy_supports_gateup_split_layout(const BnMoEExpertMap *em) {
+    return em &&
+           em->gate_rows == em->up_rows &&
+           em->gate_cols == em->up_cols;
+}
+
 int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type) {

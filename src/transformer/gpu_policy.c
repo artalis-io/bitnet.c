@@ -225,8 +225,7 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
            bn_transformer_gpu_stacked_pair_same_format(map->up_type,
                                                        map->gate_type) &&
-           map->gate_rows == map->up_rows &&
-           map->gate_cols == map->up_cols;
+           bn_moe_policy_supports_gateup_split_layout(map);
 }
 
 int bn_transformer_gpu_matvec_split_op_code(int tensor_type) {

@@ -68,6 +68,7 @@ int bn_moe_policy_uses_expert_weights(const BnConfig *c);
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em);
+int bn_moe_policy_supports_gateup_split_layout(const BnMoEExpertMap *em);
 int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type);
