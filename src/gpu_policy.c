@@ -74,6 +74,12 @@ typedef struct {
     int all_active_two_moe_direct_route;
     int resident_moe_ffn;
     int moe_gateup_split;
+    int individual_upload_quant_only;
+    int logits_q6_f32_cache;
+    int logits_f16_cache;
+    int moe_prefers_quant_only;
+    int fused_gateup_requires_backend_opt_in;
+    int moe_down_cublas_cache;
     int suppress_implicit_kquant_logits_refine;
     int suppress_implicit_native_quant_logits_refine;
 } BnGPUPolicyBackendCaps;
@@ -102,6 +108,12 @@ static const BnGPUPolicyBackendCaps GPU_POLICY_BACKEND_CAPS_CUDA = {
     .all_active_two_moe_direct_route = 1,
     .resident_moe_ffn = 1,
     .moe_gateup_split = 1,
+    .individual_upload_quant_only = 1,
+    .logits_q6_f32_cache = 1,
+    .logits_f16_cache = 1,
+    .moe_prefers_quant_only = 1,
+    .fused_gateup_requires_backend_opt_in = 1,
+    .moe_down_cublas_cache = 1,
     .suppress_implicit_kquant_logits_refine = 1,
     .suppress_implicit_native_quant_logits_refine = 1,
 };
@@ -126,10 +138,6 @@ static int gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
 
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible) {
     return gpu_policy_cuda_moe_routed_ffn_enabled(eligible);
-}
-
-int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu) {
-    return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
 }
 
 BnBackendPlacement bn_gpu_policy_backend_placement(const BnGPUBackend *gpu) {
@@ -269,7 +277,8 @@ int bn_gpu_policy_moe_lazy_aux_cache_enabled(void) {
 
 static int gpu_policy_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu) &&
+    return gpu_policy_backend_caps(gpu)->individual_upload_quant_only &&
+           gpu &&
            gpu->buffer_create_quant_only &&
            !gpu_policy_keep_individual_f16_cache_enabled();
 }
@@ -282,7 +291,8 @@ int bn_gpu_policy_individual_upload_quant_only_enabled(
 static int gpu_policy_logits_q6_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    return bn_gpu_policy_backend_is_cuda(gpu) &&
+    return gpu_policy_backend_caps(gpu)->logits_q6_f32_cache &&
+           gpu &&
            gpu->buffer_create_q6_f32_cache &&
            bn_backend_quant_logits_q6_f32_cache_supported(tensor_type) &&
            getenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE") != NULL &&
@@ -295,7 +305,8 @@ int bn_gpu_policy_logits_q6_f32_cache_enabled(const BnGPUBackend *gpu,
 }
 
 static int gpu_policy_logits_f16_cache_enabled(const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu) &&
+    return gpu_policy_backend_caps(gpu)->logits_f16_cache &&
+           gpu &&
            gpu->buffer_create_f16_cache &&
            getenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE") != NULL;
 }
@@ -432,7 +443,7 @@ int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,
 
 int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
                                          int tensor_type) {
-    return bn_gpu_policy_backend_is_cuda(gpu) &&
+    return gpu_policy_backend_caps(gpu)->moe_prefers_quant_only &&
            bn_backend_quant_moe_prefers_quant_only(tensor_type);
 }
 
@@ -1531,7 +1542,7 @@ int bn_gpu_policy_fused_gateup_silu_allowed(const BnGPUBackend *gpu,
                                             int tensor_type) {
     if (!bn_gpu_policy_fused_gateup_enabled())
         return 0;
-    if (bn_gpu_policy_backend_is_cuda(gpu) &&
+    if (gpu_policy_backend_caps(gpu)->fused_gateup_requires_backend_opt_in &&
         bn_backend_quant_gpu_fused_gateup_requires_backend_opt_in(tensor_type) &&
         !bn_gpu_policy_backend_opt_in_fused_gateup_enabled())
         return 0;
@@ -1958,7 +1969,7 @@ size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     int tensor_type,
     int rows,
     int cols) {
-    if (!bn_gpu_policy_backend_is_cuda(gpu) ||
+    if (!gpu_policy_backend_caps(gpu)->moe_down_cublas_cache ||
         rows <= 0 || cols <= 0 ||
         !bn_backend_quant_moe_down_cublas_cache_supported(tensor_type) ||
         !bn_gpu_policy_cuda_cublas_matmul_enabled())

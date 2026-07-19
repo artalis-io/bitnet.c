@@ -1788,6 +1788,11 @@ if grep -n 'transformer_gpu_backend_is_cuda\|bn_gpu_policy_backend_is_cuda(gpu)'
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_backend_is_cuda' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU policy public API/tests must not expose raw CUDA backend predicates"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_BACKEND_CUDA\|BN_GPU_BACKEND_METAL\|BN_GPU_BACKEND_WEBGPU\|BN_GPU_BACKEND_UNKNOWN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use GPU policy helpers for backend placement mapping"
     fail=1
@@ -1801,6 +1806,11 @@ fi
 if sed -n '/^int bn_gpu_policy_backend_flash_default_enabled/,/^int bn_gpu_policy_argmax_debug_enabled/p' \
     src/gpu_policy.c | grep -n 'bn_gpu_policy_backend_is_cuda' >/dev/null 2>&1; then
     echo "GPU backend capability helpers must use the backend capability table, not repeated CUDA predicates"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_backend_is_cuda' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU policy must use named backend capabilities instead of raw CUDA predicates"
     fail=1
 fi
 

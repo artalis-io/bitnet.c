@@ -11,7 +11,6 @@ extern "C" {
 #endif
 
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible);
-int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu);
 BnBackendPlacement bn_gpu_policy_backend_placement(const BnGPUBackend *gpu);
 int bn_gpu_policy_float_buffer_type(void);
 int bn_gpu_policy_attention_layer_count(const BnConfig *c);
