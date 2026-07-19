@@ -130,7 +130,7 @@ int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
                                                         int up_type,
                                                         int cols) {
     return cols % 256 == 0 &&
-           bn_backend_quant_moe_gateup_q4(gate_type, up_type);
+           bn_backend_quant_moe_routed_kquant_gateup(gate_type, up_type);
 }
 
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu) {

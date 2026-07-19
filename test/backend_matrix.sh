@@ -398,8 +398,9 @@ if awk '
     fail=1
 fi
 
-if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format\|bn_quant_format_supports_moe_q4_gateup\|bn_backend_quant_moe_gateup_q4' src/transformer/gpu_emit.c >/dev/null 2>&1; then
-    echo "src/transformer/gpu_emit.c must use GPU policy helpers for stacked pair and shared gate-up quant-format policy"
+if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format\|bn_quant_format_supports_moe_q4_gateup' src/transformer/gpu_emit.c >/dev/null 2>&1 ||
+   grep -n 'bn_backend_quant_moe_gateup_q4' src/transformer/gpu_emit.c src/transformer/gpu_policy.c include/backend_quant.h >/dev/null 2>&1; then
+    echo "transformer GPU code must use GPU policy helpers for stacked pair and shared gate-up quant-format policy"
     fail=1
 fi
 

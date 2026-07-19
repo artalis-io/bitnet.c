@@ -159,8 +159,8 @@ static inline int bn_backend_quant_moe_routed_q4(int gate_type,
                                               1);
 }
 
-static inline int bn_backend_quant_moe_gateup_q4(int gate_type,
-                                                 int up_type) {
+static inline int bn_backend_quant_moe_routed_kquant_gateup(int gate_type,
+                                                            int up_type) {
     return bn_quant_format_supports_moe_q4_gateup(gate_type, up_type);
 }
 
