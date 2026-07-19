@@ -440,7 +440,7 @@ int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
            bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default(c, w);
 }
 
-int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_safe_default(
+int bn_transformer_gpu_small_dense_native_quant_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_model_arch_allows_small_dense_exact_native(c) &&
@@ -448,12 +448,12 @@ int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_safe_default(
            !bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled();
 }
 
-int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
+int bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
     return bn_gpu_policy_backend_cpu_attention_fallback_supported(gpu) &&
-           bn_transformer_gpu_small_dense_byte_quant_cpu_attn_safe_default(
+           bn_transformer_gpu_small_dense_native_quant_cpu_attn_safe_default(
                c, w);
 }
 
@@ -647,7 +647,7 @@ int bn_transformer_gpu_prefill_direct_kv_allowed(
     if ((bn_gpu_policy_cpu_decode_fallback_requested() ||
          bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
              gpu, c, w) ||
-         bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
+         bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
              gpu, c, w) ||
          bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
              gpu, c)) &&
@@ -1323,7 +1323,7 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
     int default_cpu_attention =
         bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
             gpu, c, w) ||
-        bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
+        bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
             gpu, c, w) ||
         bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled(
             gpu, c, w);
