@@ -341,13 +341,6 @@ int bn_transformer_gpu_small_dense_exact_q4_q8_to_layer(
 int bn_transformer_gpu_small_dense_exact_q4_q8_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
-int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_default(
-    const BnConfig *c,
-    const BnWeights *w);
-int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnWeights *w);
 int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w);
@@ -371,15 +364,9 @@ int bn_transformer_gpu_dense_ffn_batch_tokens_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int n_tokens);
-int bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
-    const BnGPUBackend *gpu,
-    const BnConfig *c);
 int bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
-int bn_transformer_gpu_cuda_matvec_fallback_kept(
-    const BnModel *m,
-    const BnGPUBackend *gpu);
 int bn_transformer_gpu_backend_matvec_fallback_kept(
     const BnModel *m,
     const BnGPUBackend *gpu);
@@ -400,9 +387,6 @@ int bn_transformer_gpu_batch_prefill_enabled(
 int bn_transformer_gpu_dense_batch_prefill_shape_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c);
-int bn_transformer_gpu_cuda_large_hybrid_cpu_attn_fallback_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c);
 int bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
@@ -411,18 +395,9 @@ int bn_transformer_gpu_large_hybrid_argmax_blocked(
     const BnConfig *c,
     const BnWeights *w,
     int want_argmax);
-int bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
-    const BnGPUBackend *gpu,
-    const BnConfig *c);
 int bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c);
-int bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-    const BnConfig *c,
-    const BnWeights *w,
-    const BnGPUBackend *gpu,
-    int pos0,
-    int n_tokens);
 int bn_transformer_gpu_prefill_direct_kv_allowed(
     const BnConfig *c,
     const BnWeights *w,

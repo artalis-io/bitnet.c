@@ -1040,21 +1040,18 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
     assert(bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     BnTransformerGPUMatvecFallbackPolicy matvec_fallback =
         bn_transformer_gpu_matvec_fallback_policy(&model, &gpu);
     assert(matvec_fallback.keep_backend_matvec);
     assert(!matvec_fallback.disable_backend_matvec);
     model.weights.emb_type = BN_GGUF_TENSOR_Q4_K;
     assert(!bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     matvec_fallback =
         bn_transformer_gpu_matvec_fallback_policy(&model, &gpu);
     assert(!matvec_fallback.keep_backend_matvec);
     assert(matvec_fallback.disable_backend_matvec);
     setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
     assert(bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     matvec_fallback =
         bn_transformer_gpu_matvec_fallback_policy(&model, &gpu);
     assert(matvec_fallback.keep_backend_matvec);
@@ -1064,21 +1061,16 @@ static void test_gpu_policy_helpers(void) {
     layer.attn.wq.data = (void *)1;
     layer.attn.wq.type = BN_GGUF_TENSOR_Q4_K;
     assert(!bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     layer.attn.wq.type = BN_GGUF_TENSOR_Q8_0;
     assert(bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     model.config.n_experts = 1;
     assert(!bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     model.config.n_experts = 0;
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     gpu.execute = NULL;
     assert(!bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
-    assert(!bn_transformer_gpu_cuda_matvec_fallback_kept(&model, &gpu));
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 
     unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
@@ -1531,8 +1523,6 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN");
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN");
     assert(bn_transformer_prefill_hybrid_chain_applicable(&gpu, &c));
-    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
-        &gpu, &c));
     assert(!bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
         &gpu, &c));
     assert(bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
@@ -1545,18 +1535,12 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_prefill_hybrid_chain_applicable(&gpu, &c));
     c.ssm_inner_size = 128;
     c.dim = 4096;
-    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_decode_fallback_default(
-        &gpu, &c));
     assert(bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
-        &gpu, &c));
-    assert(bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
         &gpu, &c));
     assert(bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
         &gpu, &c));
     assert(!bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
     setenv("BN_CUDA_ENABLE_LARGE_HYBRID_PREFILL_CHAIN", "1", 1);
-    assert(!bn_transformer_gpu_cuda_large_hybrid_prefill_chain_disabled_default(
-        &gpu, &c));
     assert(!bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
         &gpu, &c));
     assert(bn_transformer_prefill_hybrid_chain_enabled(&gpu, &c));
@@ -2419,15 +2403,11 @@ static void test_gpu_policy_helpers(void) {
     c.ssm_inner_size = 128;
     setenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE", "1", 1);
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
-        &gpu, &c, &hybrid_w));
     assert(!bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled(
         &gpu, &c, &hybrid_w));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
         &c, &hybrid_w));
-    assert(bn_transformer_gpu_cuda_large_hybrid_cpu_attn_safe_fallback_enabled(
-        &gpu, &c, &hybrid_w));
     assert(bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled(
         &gpu, &c, &hybrid_w));
     BnTransformerGPUDecodeEntryPolicy decode_entry =
@@ -2465,21 +2445,15 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_CPU_FALLBACK_LAYER");
     assert(bn_transformer_gpu_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
-    assert(bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-        &c, &dense_w, &gpu, 0, 16));
     assert(bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     setenv("BN_GPU_CPU_FALLBACK_LAYER", "0", 1);
     assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
-    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-        &c, &dense_w, &gpu, 0, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     setenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK", "1", 1);
     assert(bn_transformer_gpu_prefill_direct_kv_allowed(
-        &c, &dense_w, &gpu, 0, 16));
-    assert(bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     assert(bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
@@ -2488,21 +2462,15 @@ static void test_gpu_policy_helpers(void) {
     c.kv_f16 = 1;
     assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
-    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-        &c, &dense_w, &gpu, 0, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     c.kv_f16 = 0;
     assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 24, 16));
-    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
-        &c, &dense_w, &gpu, 24, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 24, 16));
     setenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV", "1", 1);
     assert(!bn_transformer_gpu_prefill_direct_kv_allowed(
-        &c, &dense_w, &gpu, 0, 16));
-    assert(!bn_transformer_gpu_cuda_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
     assert(!bn_transformer_prefill_direct_kv_allowed(
         &c, &dense_w, &gpu, 0, 16));
