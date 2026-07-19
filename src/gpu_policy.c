@@ -1331,6 +1331,10 @@ int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER") != NULL;
 }
 
+int bn_gpu_policy_prefill_ssm_layer_disabled(void) {
+    return bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
+}
+
 int bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH") == NULL;
 }
@@ -1398,8 +1402,16 @@ int bn_gpu_policy_cuda_shared_q4_q8_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT") == NULL;
 }
 
+int bn_gpu_policy_shared_q4_q8_dot_enabled(void) {
+    return bn_gpu_policy_cuda_shared_q4_q8_dot_enabled();
+}
+
 int bn_gpu_policy_cuda_shared_expert_gate_enabled(void) {
     return getenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE") == NULL;
+}
+
+int bn_gpu_policy_shared_expert_gate_enabled(void) {
+    return bn_gpu_policy_cuda_shared_expert_gate_enabled();
 }
 
 static int env_positive_int_or_default(const char *name, int default_tokens) {

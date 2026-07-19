@@ -349,6 +349,7 @@ int bn_gpu_policy_cuda_prefill_dense_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_dense_debug_enabled(void);
 int bn_gpu_policy_cuda_prefill_dense_profile_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void);
+int bn_gpu_policy_prefill_ssm_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_profile_enabled(void);
@@ -364,7 +365,9 @@ int bn_gpu_policy_cuda_q5k_fused_gateup_enabled(void);
 int bn_gpu_policy_fused_gateup_silu_allowed(const BnGPUBackend *gpu,
                                             int tensor_type);
 int bn_gpu_policy_cuda_shared_q4_q8_dot_enabled(void);
+int bn_gpu_policy_shared_q4_q8_dot_enabled(void);
 int bn_gpu_policy_cuda_shared_expert_gate_enabled(void);
+int bn_gpu_policy_shared_expert_gate_enabled(void);
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_configured(void);
 int bn_gpu_policy_cuda_prefill_attention_min_tokens_or_default(
     int default_tokens);

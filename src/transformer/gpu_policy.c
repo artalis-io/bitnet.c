@@ -152,7 +152,7 @@ BnBackendPlacement bn_transformer_gpu_backend_placement(
 }
 
 int bn_transformer_gpu_prefill_ssm_layer_disabled(void) {
-    return bn_gpu_policy_cuda_prefill_ssm_layer_disabled();
+    return bn_gpu_policy_prefill_ssm_layer_disabled();
 }
 
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
@@ -200,12 +200,12 @@ int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
 
 int bn_transformer_gpu_shared_q4_q8_dot_enabled(int eligible) {
     return eligible &&
-           bn_gpu_policy_cuda_shared_q4_q8_dot_enabled();
+           bn_gpu_policy_shared_q4_q8_dot_enabled();
 }
 
 int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
     return eligible &&
-           bn_gpu_policy_cuda_shared_expert_gate_enabled();
+           bn_gpu_policy_shared_expert_gate_enabled();
 }
 
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {

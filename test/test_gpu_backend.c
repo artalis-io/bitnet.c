@@ -2197,6 +2197,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_prefill_dense_debug_enabled());
     assert(!bn_gpu_policy_cuda_prefill_dense_profile_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_layer_disabled());
+    assert(!bn_gpu_policy_prefill_ssm_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled());
     assert(!bn_gpu_policy_cuda_prefill_ssm_profile_enabled());
@@ -2218,7 +2219,9 @@ static void test_gpu_policy_helpers(void) {
         &gpu, BN_GGUF_TENSOR_Q5_K));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_gpu_policy_cuda_shared_q4_q8_dot_enabled());
+    assert(bn_gpu_policy_shared_q4_q8_dot_enabled());
     assert(bn_gpu_policy_cuda_shared_expert_gate_enabled());
+    assert(bn_gpu_policy_shared_expert_gate_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER", "1", 1);
     setenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER", "1", 1);
@@ -2244,6 +2247,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_prefill_dense_debug_enabled());
     assert(bn_gpu_policy_cuda_prefill_dense_profile_enabled());
     assert(bn_gpu_policy_cuda_prefill_ssm_layer_disabled());
+    assert(bn_gpu_policy_prefill_ssm_layer_disabled());
     assert(!bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled());
     assert(bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled());
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH", "1", 1);
@@ -2266,7 +2270,9 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_fused_gateup_silu_allowed(
         &gpu, BN_GGUF_TENSOR_Q5_K));
     assert(!bn_gpu_policy_cuda_shared_q4_q8_dot_enabled());
+    assert(!bn_gpu_policy_shared_q4_q8_dot_enabled());
     assert(!bn_gpu_policy_cuda_shared_expert_gate_enabled());
+    assert(!bn_gpu_policy_shared_expert_gate_enabled());
     unsetenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER");
     unsetenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER");
