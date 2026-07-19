@@ -1191,6 +1191,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA' src/model_gpu.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_layout_reserve_bytes\|optional CUDA layout\|estimate_cuda_base_model_bytes\|full CUDA MoE residency' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use behavior-named GPU policy helpers for optional layout and residency diagnostics"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled\|bn_gpu_policy_cuda_logits_f16_cache_enabled' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use behavior-named GPU policy helpers for logits upload cache policy"
     fail=1

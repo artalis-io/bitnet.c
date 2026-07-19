@@ -923,6 +923,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_MOE_FULL_RESERVE_MB");
     assert(bn_gpu_policy_cuda_layout_reserve_bytes() ==
            512u * 1024u * 1024u);
+    assert(bn_gpu_policy_layout_reserve_bytes() ==
+           512u * 1024u * 1024u);
     assert(bn_gpu_policy_cuda_moe_full_reserve_bytes() ==
            512u * 1024u * 1024u);
     assert(bn_gpu_policy_moe_full_reserve_bytes() ==
@@ -931,12 +933,16 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_MOE_FULL_RESERVE_MB", "9", 1);
     assert(bn_gpu_policy_cuda_layout_reserve_bytes() ==
            7u * 1024u * 1024u);
+    assert(bn_gpu_policy_layout_reserve_bytes() ==
+           7u * 1024u * 1024u);
     assert(bn_gpu_policy_cuda_moe_full_reserve_bytes() ==
            9u * 1024u * 1024u);
     assert(bn_gpu_policy_moe_full_reserve_bytes() ==
            9u * 1024u * 1024u);
     setenv("BN_CUDA_LAYOUT_RESERVE_MB", "bad", 1);
     assert(bn_gpu_policy_cuda_layout_reserve_bytes() ==
+           512u * 1024u * 1024u);
+    assert(bn_gpu_policy_layout_reserve_bytes() ==
            512u * 1024u * 1024u);
     setenv("BN_CUDA_MOE_FULL_RESERVE_MB",
            "18446744073709551615", 1);

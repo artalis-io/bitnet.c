@@ -232,14 +232,14 @@ static int optional_layout_fits_memory(BnGPUBackend *gpu, size_t bytes,
     size_t total_bytes = 0;
     if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
         return 1;
-    size_t reserve = bn_gpu_policy_cuda_layout_reserve_bytes();
+    size_t reserve = bn_gpu_policy_layout_reserve_bytes();
     if (free_bytes > bytes && free_bytes - bytes >= reserve)
         return 1;
 
     static int skipped_logs = 0;
     if (skipped_logs < 8) {
         fprintf(stderr,
-                "[bn:gpu] skipping optional CUDA layout %s layer=%d: "
+                "[bn:gpu] skipping optional GPU layout %s layer=%d: "
                 "need=%.1f MiB free=%.1f MiB total=%.1f MiB "
                 "reserve=%.1f MiB\n",
                 name ? name : "unknown", layer, bytes / 1048576.0,
@@ -369,8 +369,8 @@ static int add_f32_bytes(size_t *total, const float *data, int n_elems) {
     return add_size_checked(total, bytes);
 }
 
-static size_t estimate_cuda_base_model_bytes(const BnConfig *c,
-                                             const BnWeights *w) {
+static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
+                                            const BnWeights *w) {
     if (!c || !w)
         return 0;
     size_t total = 0;
@@ -577,7 +577,7 @@ static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
         return 0;
     if (need == SIZE_MAX)
         return 0;
-    size_t base = estimate_cuda_base_model_bytes(c, w);
+    size_t base = estimate_gpu_base_model_bytes(c, w);
     if (base == SIZE_MAX)
         return 0;
     size_t projected = 0;
@@ -613,7 +613,7 @@ static int resident_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
     size_t need = estimate_resident_moe_gateup_f16_all_bytes(c, w, gpu);
     if (need == 0 || need == SIZE_MAX)
         return 0;
-    size_t base = estimate_cuda_base_model_bytes(c, w);
+    size_t base = estimate_gpu_base_model_bytes(c, w);
     if (base == SIZE_MAX)
         return 0;
     size_t projected = 0;
@@ -644,7 +644,7 @@ static int resident_moe_f16_cache_layers_that_fit(BnGPUBackend *gpu,
     if (!gpu || !gpu->memory_info || !c || !w)
         return 0;
     size_t quant_need = estimate_resident_moe_all_bytes(c, w, gpu, 0);
-    size_t base = estimate_cuda_base_model_bytes(c, w);
+    size_t base = estimate_gpu_base_model_bytes(c, w);
     if (quant_need == 0 || quant_need == SIZE_MAX || base == SIZE_MAX)
         return 0;
     size_t free_bytes = 0;
@@ -859,7 +859,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             moe_down_all_gpu = NULL;
             if (upload_layer_gateup_f16_cache) {
                 fprintf(stderr,
-                        "[bn:gpu] full CUDA MoE residency aux-cache upload "
+                        "[bn:gpu] full resident GPU MoE aux-cache upload "
                         "failed at layer=%d; retrying quant-only resident "
                         "experts for this and later layers\n", l);
                 upload_moe_all_q8_f16_cache = 0;
@@ -883,7 +883,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 if (moe_down_all_gpu)
                     gpu->buffer_destroy(gpu->ctx, moe_down_all_gpu);
                 fprintf(stderr,
-                        "[bn:gpu] failed full CUDA MoE residency upload at "
+                        "[bn:gpu] failed full resident GPU MoE upload at "
                         "layer=%d; aborting upload instead of mixing "
                         "resident and fallback MoE paths\n", l);
                 bn_model_release_gpu(model);

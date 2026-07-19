@@ -113,6 +113,7 @@ int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant);
 int bn_gpu_policy_cuda_small_kquant_native_disabled(void);
 size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit);
 size_t bn_gpu_policy_cuda_layout_reserve_bytes(void);
+size_t bn_gpu_policy_layout_reserve_bytes(void);
 size_t bn_gpu_policy_cuda_moe_full_reserve_bytes(void);
 size_t bn_gpu_policy_moe_full_reserve_bytes(void);
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void);
