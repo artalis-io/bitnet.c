@@ -1701,14 +1701,6 @@ int bn_transformer_gpu_all2_moe_direct_route_enabled(
            bn_gpu_policy_cuda_moe_router_gpu_enabled();
 }
 
-int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
-    const BnConfig *c,
-    void *router_diff,
-    void *moe_gate_all) {
-    return bn_transformer_gpu_all2_moe_direct_route_enabled(
-        c, router_diff, moe_gate_all);
-}
-
 int bn_transformer_gpu_all2_q4q6_moe_route_layer_selected(
     int layer,
     int route_from_layer,
@@ -1720,26 +1712,11 @@ int bn_transformer_gpu_all2_q4q6_moe_route_layer_selected(
             (route_to_layer < 0 || layer <= route_to_layer));
 }
 
-int bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
-    int layer,
-    int route_from_layer,
-    int route_to_layer) {
-    return bn_transformer_gpu_all2_q4q6_moe_route_layer_selected(
-        layer, route_from_layer, route_to_layer);
-}
-
 void bn_transformer_gpu_all2_q4q6_moe_route_layer_range(
     int *route_from_layer,
     int *route_to_layer) {
     bn_gpu_policy_all2_q4q6_moe_route_layer_range(route_from_layer,
                                                   route_to_layer);
-}
-
-void bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
-    int *route_from_layer,
-    int *route_to_layer) {
-    bn_transformer_gpu_all2_q4q6_moe_route_layer_range(
-        route_from_layer, route_to_layer);
 }
 
 int bn_transformer_gpu_all2_q4q6_moe_exact_gpu_route_enabled(
@@ -1749,13 +1726,6 @@ int bn_transformer_gpu_all2_q4q6_moe_exact_gpu_route_enabled(
            route_layer_selected &&
            bn_gpu_policy_all2_q4q6_moe_fast_ffn_enabled() &&
            !bn_gpu_policy_all2_q4q6_moe_exact_gpu_route_disabled();
-}
-
-int bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
-    int all2_q4q6_moe,
-    int route_layer_selected) {
-    return bn_transformer_gpu_all2_q4q6_moe_exact_gpu_route_enabled(
-        all2_q4q6_moe, route_layer_selected);
 }
 
 void *bn_transformer_gpu_all2_q4q6_moe_router(
@@ -1771,16 +1741,6 @@ void *bn_transformer_gpu_all2_q4q6_moe_router(
         !exact_gpu_route)
         return router_diff;
     return moe_router;
-}
-
-void *bn_transformer_gpu_cuda_all2_q4q6_moe_router(
-    const BnConfig *c,
-    void *moe_router,
-    void *router_diff,
-    int route_layer_selected,
-    int exact_gpu_route) {
-    return bn_transformer_gpu_all2_q4q6_moe_router(
-        c, moe_router, router_diff, route_layer_selected, exact_gpu_route);
 }
 
 int bn_transformer_gpu_all2_q4_moe_requires_opt_in(

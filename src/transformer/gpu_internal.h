@@ -709,40 +709,20 @@ bn_transformer_gpu_moe_direct_route_policy(
     void *moe_gate_all);
 BnTransformerGPUMoEAll2ResourcePolicy
 bn_transformer_gpu_moe_all2_resource_policy(const BnConfig *c);
-int bn_transformer_gpu_cuda_all2_moe_direct_route_enabled(
-    const BnConfig *c,
-    void *router_diff,
-    void *moe_gate_all);
 int bn_transformer_gpu_all2_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);
-int bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_selected(
-    int layer,
-    int route_from_layer,
-    int route_to_layer);
 int bn_transformer_gpu_all2_q4q6_moe_route_layer_selected(
     int layer,
     int route_from_layer,
     int route_to_layer);
-void bn_transformer_gpu_cuda_all2_q4q6_moe_route_layer_range(
-    int *route_from_layer,
-    int *route_to_layer);
 void bn_transformer_gpu_all2_q4q6_moe_route_layer_range(
     int *route_from_layer,
     int *route_to_layer);
-int bn_transformer_gpu_cuda_all2_q4q6_moe_exact_gpu_route_enabled(
-    int all2_q4q6_moe,
-    int route_layer_selected);
 int bn_transformer_gpu_all2_q4q6_moe_exact_gpu_route_enabled(
     int all2_q4q6_moe,
     int route_layer_selected);
-void *bn_transformer_gpu_cuda_all2_q4q6_moe_router(
-    const BnConfig *c,
-    void *moe_router,
-    void *router_diff,
-    int route_layer_selected,
-    int exact_gpu_route);
 void *bn_transformer_gpu_all2_q4q6_moe_router(
     const BnConfig *c,
     void *moe_router,
