@@ -1486,6 +1486,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK")\|getenv("BN_CUDA_DISABLE_Q
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_enabled\|bn_gpu_policy_cuda_moe_router_gpu_enabled\|bn_gpu_policy_cuda_moe_router_diff2_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed\|bn_gpu_policy_cuda_moe_ffn_disabled\|bn_gpu_policy_cuda_moe_cpu_actual_override_enabled\|bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled\|bn_gpu_policy_cuda_moe_gateup_split_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use neutral helpers for MoE route policy"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_SHARED_Q4K_Q8K_DOT\|BN_CUDA_DISABLE_SHARED_EXPERT_GATE' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for shared MoE compatibility env vars"
     fail=1

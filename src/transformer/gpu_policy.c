@@ -1509,7 +1509,7 @@ int bn_transformer_gpu_moe_route_topk_enabled(
     int eligible = moe_router &&
                    (!all2_q4q6_moe ||
                     all2_q4q6_moe_gpu_route_layer_selected);
-    return bn_gpu_policy_cuda_moe_router_topk_enabled(eligible);
+    return bn_gpu_policy_moe_router_topk_enabled(eligible);
 }
 
 int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
@@ -1520,7 +1520,7 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     if (all2_q4q6_moe && !gpu_route_topk &&
         !bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled())
         return 1;
-    return bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled(
+    return bn_gpu_policy_q8_moe_cpu_route_resident_enabled(
         !gpu_route_topk && moe_routed_q8 &&
         bn_model_arch_uses_more_than_two_expert_moe(c));
 }
@@ -1538,7 +1538,7 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
         !moe_gate_all || !moe_up_all || !moe_down_all ||
         (!bn_transformer_gpu_moe_routed_q4(map) &&
          !bn_transformer_gpu_moe_routed_q8(map)) ||
-        !bn_gpu_policy_cuda_moe_routed_ffn_enabled(1))
+        !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
     return map->gate_rows == moe_hidden &&
            map->up_rows == moe_hidden &&
@@ -1628,7 +1628,7 @@ int bn_transformer_gpu_all2_moe_direct_route_enabled(
            bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0) &&
            c->moe_norm_topk_prob &&
            !moe_gate_all &&
-           bn_gpu_policy_cuda_moe_router_gpu_enabled();
+           bn_gpu_policy_moe_router_gpu_enabled();
 }
 
 int bn_transformer_gpu_all2_q4q6_moe_route_layer_selected(
@@ -1667,7 +1667,7 @@ void *bn_transformer_gpu_all2_q4q6_moe_router(
     if (router_diff &&
         bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0) &&
         route_layer_selected &&
-        bn_gpu_policy_cuda_moe_router_diff2_enabled() &&
+        bn_gpu_policy_moe_router_diff2_enabled() &&
         !exact_gpu_route)
         return router_diff;
     return moe_router;
@@ -1708,17 +1708,17 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
 
 int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
     const BnConfig *c) {
-    return bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed(
+    return bn_gpu_policy_moe_routed_ffn_batch_allowed(
         bn_model_arch_uses_more_than_two_expert_moe(c));
 }
 
 int bn_transformer_gpu_moe_ffn_disabled(void) {
-    return bn_gpu_policy_cuda_moe_ffn_disabled();
+    return bn_gpu_policy_moe_ffn_disabled();
 }
 
 int bn_transformer_gpu_moe_cpu_actual_override_enabled(int safe_default) {
     return safe_default ||
-           bn_gpu_policy_cuda_moe_cpu_actual_override_enabled();
+           bn_gpu_policy_moe_cpu_actual_override_enabled();
 }
 
 BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
@@ -1810,7 +1810,7 @@ int bn_transformer_gpu_moe_compare_norm_enabled(void) {
 }
 
 int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible) {
-    return bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled(eligible);
+    return bn_gpu_policy_moe_shared_cpu_fallback_enabled(eligible);
 }
 
 BnTransformerGPUMoESharedCPUFallbackPolicy
@@ -1829,7 +1829,7 @@ int bn_transformer_gpu_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split) {
     return transformer_gpu_backend_is_cuda(gpu) && can_split &&
-           bn_gpu_policy_cuda_moe_gateup_split_enabled(can_split);
+           bn_gpu_policy_moe_gateup_split_enabled(can_split);
 }
 
 int bn_transformer_gpu_moe_route_profile_enabled(void) {
