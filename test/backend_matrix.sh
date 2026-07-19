@@ -2228,6 +2228,11 @@ if awk '/^int bn_transformer_gpu_backend_matvec_fallback_kept/{flag=1} /^BnTrans
     fail=1
 fi
 
+if grep -n 'small_dense_tensor_quant_supported\|small_dense_weight_quant_supported\|small_dense_model_quant_supported' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend quant model helpers for dense quant capability aggregation"
+    fail=1
+fi
+
 for file in \
     src/transformer/cpu_backend.c \
     src/transformer/prefill_backend.c \

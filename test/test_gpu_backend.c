@@ -4092,6 +4092,31 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_F32, &lazy_aux_iq3, 0, lazy_aux_tmp) == -1);
     assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_small_dense_supported(BN_GGUF_TENSOR_Q8_K));
+    int dense_dummy = 1;
+    BnConfig dense_c = {0};
+    BnLayerWeights dense_layers[1] = {0};
+    BnWeights dense_w = {0};
+    dense_c.n_layers = 1;
+    dense_w.layers = dense_layers;
+    dense_w.emb_type = BN_GGUF_TENSOR_Q4_0;
+    dense_layers[0].attn.wq.data = &dense_dummy;
+    dense_layers[0].attn.wq.type = BN_GGUF_TENSOR_Q4_0;
+    assert(bn_backend_quant_dense_graph_model_supported(
+        &dense_w, &dense_c, 0));
+    assert(!bn_backend_quant_dense_graph_model_supported(
+        &dense_w, &dense_c, 1));
+    dense_w.emb_type = BN_GGUF_TENSOR_Q8_0;
+    dense_layers[0].attn.wq.type = BN_GGUF_TENSOR_Q8_0;
+    assert(bn_backend_quant_dense_graph_model_supported(
+        &dense_w, &dense_c, 1));
+    dense_w.output_weight.data = &dense_dummy;
+    dense_w.output_weight.type = BN_GGUF_TENSOR_Q4_0;
+    assert(!bn_backend_quant_dense_graph_model_supported(
+        &dense_w, &dense_c, 1));
+    assert(bn_backend_quant_dense_graph_model_supported(
+        &dense_w, &dense_c, 0));
+    assert(!bn_backend_quant_dense_graph_model_supported(NULL, &dense_c, 0));
+    assert(!bn_backend_quant_dense_graph_model_supported(&dense_w, NULL, 0));
     assert(!bn_quant_format_can_gpu_native(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_quant_format_can_gpu_repack(BN_GGUF_TENSOR_Q5_K));
     assert(!bn_quant_format_can_cpu_repack(BN_GGUF_TENSOR_Q5_K));

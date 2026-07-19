@@ -367,54 +367,12 @@ static int all_active_two_kquant_moe_requires_opt_in(const BnConfig *c,
            bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled();
 }
 
-static int small_dense_tensor_quant_supported(int tensor_type,
-                                              int native_quant_only) {
-    return native_quant_only
-        ? bn_backend_quant_small_dense_native_quant_supported(tensor_type)
-        : bn_backend_quant_small_dense_supported(tensor_type);
-}
-
-static int small_dense_weight_quant_supported(const BnQWeight *w,
-                                              int native_quant_only) {
-    return !w || !w->data ||
-           small_dense_tensor_quant_supported(w->type, native_quant_only);
-}
-
-static int small_dense_model_quant_supported(const BnWeights *w,
-                                             const BnConfig *c,
-                                             int native_quant_only) {
-    if (!w || !c)
-        return 0;
-    if (w->output_weight.data) {
-        if (!small_dense_weight_quant_supported(&w->output_weight,
-                                                native_quant_only))
-            return 0;
-    } else if (!small_dense_tensor_quant_supported(w->emb_type,
-                                                   native_quant_only)) {
-        return 0;
-    }
-    for (int l = 0; l < c->n_layers; l++) {
-        const BnLayerWeights *lw = &w->layers[l];
-        const BnQWeight *weights[] = {
-            &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, &lw->attn.wo,
-            &lw->ffn.ffn_gate, &lw->ffn.ffn_up, &lw->ffn.ffn_down,
-        };
-        int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
-        for (int i = 0; i < n_weights; i++) {
-            if (!small_dense_weight_quant_supported(weights[i],
-                                                    native_quant_only))
-                return 0;
-        }
-    }
-    return 1;
-}
-
 static int small_dense_backend_native_by_default(
     const BnConfig *c,
     const BnWeights *w) {
     if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
         return 0;
-    return small_dense_model_quant_supported(w, c, 0);
+    return bn_backend_quant_dense_graph_model_supported(w, c, 0);
 }
 
 static int small_dense_backend_native_quant_by_default(
@@ -422,7 +380,7 @@ static int small_dense_backend_native_quant_by_default(
     const BnWeights *w) {
     if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
         return 0;
-    return small_dense_model_quant_supported(w, c, 1);
+    return bn_backend_quant_dense_graph_model_supported(w, c, 1);
 }
 
 int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default(
@@ -565,7 +523,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     if (!bn_model_arch_uses_small_dense_native_quant_shape(c))
         return 1;
 
-    return small_dense_model_quant_supported(&m->weights, c, 1);
+    return bn_backend_quant_dense_graph_model_supported(&m->weights, c, 1);
 }
 
 BnTransformerGPUMatvecFallbackPolicy
