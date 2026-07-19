@@ -9,6 +9,15 @@ static int cpu_env_enabled(const char *name, const char *compat_name) {
            (compat_name != NULL && getenv(compat_name) != NULL);
 }
 
+static int cpu_reference_dot_env_enabled(void) {
+    return cpu_env_enabled("BN_CPU_REFERENCE_DOT", "BN_CPU_LLAMA_DOT");
+}
+
+static int cpu_reference_q4_dot_env_enabled(void) {
+    return cpu_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
+                           "BN_CPU_LLAMA_Q4_DOT");
+}
+
 int bn_transformer_cpu_prepared_qweights_enabled(void) {
     return getenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS") == NULL;
 }
@@ -29,10 +38,8 @@ int bn_transformer_cpu_debug_dump_heads_enabled(void) {
 }
 
 int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void) {
-    return !cpu_env_enabled("BN_CPU_REFERENCE_DOT",
-                            "BN_CPU_LLAMA_DOT") &&
-           !cpu_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
-                            "BN_CPU_LLAMA_Q4_DOT");
+    return !cpu_reference_dot_env_enabled() &&
+           !cpu_reference_q4_dot_env_enabled();
 }
 
 int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type) {
