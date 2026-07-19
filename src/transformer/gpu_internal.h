@@ -783,12 +783,8 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     int cpu_fallback_ffn_from_layer);
 int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
     const BnConfig *c);
-int bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(
-    const BnConfig *c);
 int bn_transformer_gpu_moe_ffn_disabled(void);
-int bn_transformer_gpu_cuda_moe_ffn_disabled(void);
 int bn_transformer_gpu_moe_cpu_actual_override_enabled(int safe_default);
-int bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(int safe_default);
 BnTransformerGPUMoEDebugPolicy bn_transformer_gpu_moe_debug_policy(
     int cpu_actual_safe_default,
     int compare_layer_selected);
@@ -808,14 +804,10 @@ int bn_transformer_gpu_moe_compare_shared_mid_enabled(void);
 int bn_transformer_gpu_moe_compare_shared_down_enabled(void);
 int bn_transformer_gpu_moe_compare_norm_enabled(void);
 int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible);
-int bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(int eligible);
 BnTransformerGPUMoESharedCPUFallbackPolicy
 bn_transformer_gpu_moe_shared_cpu_fallback_policy(
     const BnConfig *c,
     const BnLayerWeights *lw);
-int bn_transformer_gpu_cuda_moe_gateup_split_enabled(
-    const BnGPUBackend *gpu,
-    int can_split);
 int bn_transformer_gpu_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split);

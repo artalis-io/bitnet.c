@@ -810,20 +810,15 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
     assert(!bn_transformer_gpu_moe_ffn_disabled());
-    assert(!bn_transformer_gpu_cuda_moe_ffn_disabled());
     setenv("BN_CUDA_DISABLE_MOE_FFN", "1", 1);
     assert(bn_transformer_gpu_moe_ffn_disabled());
-    assert(bn_transformer_gpu_cuda_moe_ffn_disabled());
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
 
     unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
     assert(!bn_transformer_gpu_moe_cpu_actual_override_enabled(0));
     assert(bn_transformer_gpu_moe_cpu_actual_override_enabled(1));
-    assert(!bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(0));
-    assert(bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(1));
     setenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL", "1", 1);
     assert(bn_transformer_gpu_moe_cpu_actual_override_enabled(0));
-    assert(bn_transformer_gpu_cuda_moe_cpu_actual_override_enabled(0));
     unsetenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL");
 
     unsetenv("BN_GPU_COMPARE_MOE_LAYER");
@@ -995,8 +990,6 @@ static void test_gpu_policy_helpers(void) {
     assert(!shared_fallback.enabled);
     assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(0));
     assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(1));
-    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
-    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
     setenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK", "1", 1);
     shared_fallback = bn_transformer_gpu_moe_shared_cpu_fallback_policy(
         &c, &shared_layer);
@@ -1008,14 +1001,11 @@ static void test_gpu_policy_helpers(void) {
     c.has_shared_expert = 1;
     assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(0));
     assert(bn_transformer_gpu_moe_shared_cpu_fallback_enabled(1));
-    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(0));
-    assert(bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
     setenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK", "1", 1);
     shared_fallback = bn_transformer_gpu_moe_shared_cpu_fallback_policy(
         &c, &shared_layer);
     assert(!shared_fallback.enabled);
     assert(!bn_transformer_gpu_moe_shared_cpu_fallback_enabled(1));
-    assert(!bn_transformer_gpu_cuda_moe_shared_cpu_fallback_enabled(1));
     unsetenv("BN_CUDA_ENABLE_MOE_SHARED_CPU_FALLBACK");
     unsetenv("BN_CUDA_DISABLE_MOE_SHARED_CPU_FALLBACK");
     c.has_shared_expert = 0;
@@ -1134,17 +1124,13 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 1));
-    assert(bn_transformer_gpu_cuda_moe_gateup_split_enabled(&gpu, 1));
     setenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT", "1", 1);
     assert(!bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 1));
-    assert(!bn_transformer_gpu_cuda_moe_gateup_split_enabled(&gpu, 1));
     unsetenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT");
     gpu.kind = BN_GPU_BACKEND_WEBGPU;
     assert(!bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 1));
-    assert(!bn_transformer_gpu_cuda_moe_gateup_split_enabled(&gpu, 1));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(!bn_transformer_gpu_moe_gateup_split_enabled(&gpu, 0));
-    assert(!bn_transformer_gpu_cuda_moe_gateup_split_enabled(&gpu, 0));
 
     BnQWeight gate_w;
     BnQWeight up_w;
@@ -2033,7 +2019,6 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_MOE_PREFILL_MIN_TOKENS");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&c));
-    assert(bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     assert(!bn_transformer_gpu_moe_prefill_route_batch_available(
@@ -2138,7 +2123,6 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     c.n_experts = 3;
     assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&c));
-    assert(!bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(bn_transformer_gpu_moe_prefill_route_batch_available(
         &gpu, &c, 1));
     assert(!bn_transformer_gpu_moe_prefill_route_batch_available(
@@ -2147,14 +2131,12 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c));
     setenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE", "1", 1);
     assert(bn_transformer_gpu_moe_routed_ffn_batch_allowed(&c));
-    assert(bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     assert(bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     setenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH", "1", 1);
     assert(!bn_transformer_gpu_moe_routed_ffn_batch_allowed(&c));
-    assert(!bn_transformer_gpu_cuda_moe_routed_ffn_batch_allowed(&c));
     assert(!bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
         &gpu, &c));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTE_ROUTED_FFN_BATCH");
