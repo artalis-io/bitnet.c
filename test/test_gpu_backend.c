@@ -736,6 +736,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC");
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_gpu_policy_logits_q6_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q6_K));
     assert(!bn_gpu_policy_cuda_cublas_logits_enabled());
     assert(!bn_gpu_policy_cuda_f32_logits_matvec_enabled());
     assert(!bn_gpu_policy_cuda_f16_logits_matvec_enabled());
@@ -745,11 +747,17 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_F16_LOGITS_MATVEC", "1", 1);
     assert(bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q6_K));
+    assert(bn_gpu_policy_logits_q6_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q6_K));
     assert(bn_gpu_policy_cuda_cublas_logits_enabled());
     assert(bn_gpu_policy_cuda_f32_logits_matvec_enabled());
     assert(bn_gpu_policy_cuda_f16_logits_matvec_enabled());
     assert(!bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q4_K));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_gpu_policy_logits_q6_f32_cache_enabled(
+        &gpu, BN_GGUF_TENSOR_Q6_K));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
     setenv("BN_CUDA_DISABLE_F32_LOGITS_MATVEC", "1", 1);
     assert(!bn_gpu_policy_cuda_f32_logits_matvec_enabled());
     setenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE", "1", 1);
@@ -802,8 +810,13 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE");
     assert(!bn_gpu_policy_cuda_logits_f16_cache_enabled(&gpu));
+    assert(!bn_gpu_policy_logits_f16_cache_enabled(&gpu));
     setenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE", "1", 1);
     assert(bn_gpu_policy_cuda_logits_f16_cache_enabled(&gpu));
+    assert(bn_gpu_policy_logits_f16_cache_enabled(&gpu));
+    gpu.kind = BN_GPU_BACKEND_METAL;
+    assert(!bn_gpu_policy_logits_f16_cache_enabled(&gpu));
+    gpu.kind = BN_GPU_BACKEND_CUDA;
     unsetenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE");
 
     unsetenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");

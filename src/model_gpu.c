@@ -30,11 +30,11 @@ static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     if (!w->data) return NULL;
     size_t sz = bn_qweight_data_size(w);
     if (sz == 0) return NULL;
-    if (bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(gpu, w->type)) {
+    if (bn_gpu_policy_logits_q6_f32_cache_enabled(gpu, w->type)) {
         return gpu->buffer_create_q6_f32_cache(
             gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
     }
-    if (bn_gpu_policy_cuda_logits_f16_cache_enabled(gpu)) {
+    if (bn_gpu_policy_logits_f16_cache_enabled(gpu)) {
         return gpu->buffer_create_f16_cache(
             gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
     }
