@@ -2404,7 +2404,7 @@ int bn_gpu_policy_moe_router_topk_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTER_TOPK") == NULL;
 }
 
-int bn_gpu_policy_q8_moe_cpu_route_resident_enabled(int eligible) {
+int bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(int eligible) {
     return eligible &&
            getenv("BN_CUDA_DISABLE_Q8_MOE_CPU_ROUTE_RESIDENT") == NULL;
 }

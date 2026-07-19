@@ -1510,7 +1510,7 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     if (all_active_two_kquant_moe && !gpu_route_topk &&
         !bn_gpu_policy_all2_q4q6_moe_cpu_route_resident_disabled())
         return 1;
-    return bn_gpu_policy_q8_moe_cpu_route_resident_enabled(
+    return bn_gpu_policy_byte_quant_moe_cpu_route_resident_enabled(
         !gpu_route_topk && moe_routed_byte_quant &&
         bn_model_arch_uses_more_than_two_expert_moe(c));
 }
