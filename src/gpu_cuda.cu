@@ -18899,7 +18899,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     op->rows, op->cols,
                     (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) != 0);
             int q8_small_ssm_matvec =
-                op->type == BN_GGUF_TENSOR_Q8_0 &&
+                bn_backend_quant_cuda_q8_small_ssm_matvec_candidate(
+                    op->type) &&
                 op->rows <= 256 && op->cols >= 4096 &&
                 (op->buf_out == BN_GPU_VALUE_SSM_V ||
                  op->buf_out == BN_GPU_VALUE_SSM_ALPHA ||
@@ -18907,15 +18908,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled();
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                ((op->type == BN_GGUF_TENSOR_Q8_0 &&
+                ((bn_backend_quant_cuda_f16_q8_matvec_candidate(op->type) &&
                   ((q8_small_ssm_matvec &&
                     bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled()) ||
                    (op->cols <= 2048 &&
                     bn_gpu_policy_cuda_f16_q8_0_matvec_enabled()))) ||
-                 op->type == BN_GGUF_TENSOR_Q3_K ||
-                 op->type == BN_GGUF_TENSOR_IQ3_XXS ||
-                 op->type == BN_GGUF_TENSOR_IQ4_XS ||
-                 (op->type == BN_GGUF_TENSOR_Q5_K &&
+                 bn_backend_quant_cuda_f16_float_cache_matvec_candidate(
+                     op->type) ||
+                 (bn_backend_quant_cuda_f16_q5k_matvec_candidate(op->type) &&
                   bn_gpu_policy_cuda_f16_q5k_matvec_enabled()))) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
@@ -18928,7 +18928,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                op->type == BN_GGUF_TENSOR_Q6_K && use_f16_q6k_matvec) {
+                bn_backend_quant_cuda_f16_q6k_matvec_candidate(op->type) &&
+                use_f16_q6k_matvec) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -18949,7 +18950,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f32_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                op->type == BN_GGUF_TENSOR_Q6_K && op->rows >= 65536 &&
+                bn_backend_quant_cuda_logits_q6_matvec_candidate(op->type) &&
+                op->rows >= 65536 &&
                 bn_gpu_policy_cuda_f32_logits_matvec_enabled()) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
@@ -18961,7 +18963,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                op->type == BN_GGUF_TENSOR_Q6_K && op->rows >= 65536 &&
+                bn_backend_quant_cuda_logits_q6_matvec_candidate(op->type) &&
+                op->rows >= 65536 &&
                 bn_gpu_policy_cuda_f16_logits_matvec_enabled()) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
