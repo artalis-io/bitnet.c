@@ -546,7 +546,7 @@ int bn_gpu_policy_backend_lazy_moe_aux_cache_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
+int bn_gpu_policy_backend_all_active_two_kquant_moe_logits_refine_default_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_decode_graph_cache_supported(
     const BnGPUBackend *gpu);
@@ -555,7 +555,7 @@ int bn_gpu_policy_backend_moe_exact_attention_supported(
 int bn_gpu_policy_backend_ssm_graph_supported(const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_large_hybrid_argmax_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_all2_moe_direct_route_supported(
+int bn_gpu_policy_backend_all_active_two_moe_direct_route_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_resident_moe_ffn_supported(
     const BnGPUBackend *gpu);
@@ -622,7 +622,7 @@ int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_default_disabled(void);
 int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_disabled(void);
 float bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(float default_eps);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled(void);
-int bn_gpu_policy_all2_kquant_moe_logits_refine_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled(void);

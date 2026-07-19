@@ -2557,13 +2557,14 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
         &gpu));
     assert(
-        bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
+        bn_gpu_policy_backend_all_active_two_kquant_moe_logits_refine_default_supported(
             &gpu));
     assert(bn_gpu_policy_backend_decode_graph_cache_supported(&gpu));
     assert(bn_gpu_policy_backend_moe_exact_attention_supported(&gpu));
     assert(bn_gpu_policy_backend_ssm_graph_supported(&gpu));
     assert(bn_gpu_policy_backend_large_hybrid_argmax_supported(&gpu));
-    assert(bn_gpu_policy_backend_all2_moe_direct_route_supported(&gpu));
+    assert(bn_gpu_policy_backend_all_active_two_moe_direct_route_supported(
+        &gpu));
     assert(bn_gpu_policy_backend_resident_moe_ffn_supported(&gpu));
     assert(bn_gpu_policy_backend_moe_gateup_split_supported(&gpu));
     gpu.kind = BN_GPU_BACKEND_METAL;
@@ -2582,13 +2583,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
         &gpu));
     assert(
-        !bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
+        !bn_gpu_policy_backend_all_active_two_kquant_moe_logits_refine_default_supported(
             &gpu));
     assert(!bn_gpu_policy_backend_decode_graph_cache_supported(&gpu));
     assert(!bn_gpu_policy_backend_moe_exact_attention_supported(&gpu));
     assert(!bn_gpu_policy_backend_ssm_graph_supported(&gpu));
     assert(!bn_gpu_policy_backend_large_hybrid_argmax_supported(&gpu));
-    assert(!bn_gpu_policy_backend_all2_moe_direct_route_supported(&gpu));
+    assert(!bn_gpu_policy_backend_all_active_two_moe_direct_route_supported(
+        &gpu));
     assert(!bn_gpu_policy_backend_resident_moe_ffn_supported(&gpu));
     assert(!bn_gpu_policy_backend_moe_gateup_split_supported(&gpu));
     gpu.kind = BN_GPU_BACKEND_CUDA;
@@ -2676,7 +2678,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) ==
            0.25f);
     assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
-    assert(!bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled());
     assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled());
     assert(!bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled());
     assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled());
@@ -2756,7 +2758,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) <
            0.126f);
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled());
@@ -2863,7 +2865,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(0.25f) <
            0.063f);
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_all2_kquant_moe_logits_refine_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled());

@@ -2300,7 +2300,7 @@ int bn_gpu_policy_backend_native_quant_logits_refine_default_supported(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
-int bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported(
+int bn_gpu_policy_backend_all_active_two_kquant_moe_logits_refine_default_supported(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
@@ -2324,7 +2324,7 @@ int bn_gpu_policy_backend_large_hybrid_argmax_supported(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
-int bn_gpu_policy_backend_all2_moe_direct_route_supported(
+int bn_gpu_policy_backend_all_active_two_moe_direct_route_supported(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
@@ -2616,7 +2616,7 @@ int bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled(void) {
         "BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
 }
 
-int bn_gpu_policy_all2_kquant_moe_logits_refine_disabled(void) {
+int bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_Q6_LOGITS_REFINE",
         "BN_CUDA_DISABLE_QWEN2MOE_Q6_LOGITS_REFINE");
