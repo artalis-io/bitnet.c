@@ -182,6 +182,10 @@ int bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE") != NULL;
 }
 
+int bn_gpu_policy_moe_lazy_aux_cache_enabled(void) {
+    return bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled();
+}
+
 int bn_gpu_policy_cuda_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu) &&

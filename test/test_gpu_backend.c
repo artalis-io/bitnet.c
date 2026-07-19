@@ -568,8 +568,10 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
 
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
+    assert(!bn_gpu_policy_moe_lazy_aux_cache_enabled());
     assert(!bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
     setenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE", "1", 1);
+    assert(bn_gpu_policy_moe_lazy_aux_cache_enabled());
     assert(bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled());
     unsetenv("BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE");
 

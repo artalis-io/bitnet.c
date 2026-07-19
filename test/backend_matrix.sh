@@ -1171,6 +1171,11 @@ if grep -n 'getenv("BN_GPU_CPU_LOGITS")\|getenv("BN_GPU_COMPARE_LOGITS")\|getenv
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use neutral helpers for MoE lazy aux cache policy"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DEBUG_ARGMAX' src/generate.c >/dev/null 2>&1; then
     echo "src/generate.c must use GPU policy helpers for argmax debug env vars"
     fail=1

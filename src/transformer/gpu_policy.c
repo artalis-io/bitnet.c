@@ -947,7 +947,7 @@ int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
 }
 
 int bn_transformer_gpu_moe_lazy_aux_cache_enabled(void) {
-    return bn_gpu_policy_cuda_moe_lazy_aux_cache_enabled();
+    return bn_gpu_policy_moe_lazy_aux_cache_enabled();
 }
 
 int bn_transformer_gpu_moe_quant_only_without_aux_cache(
