@@ -106,6 +106,9 @@ typedef struct {
     int has_ssm;
 } BnTransformerGPUForwardPolicy;
 
+int bn_transformer_gpu_activation_uses_silu_path(int activation);
+BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind(int activation);
+
 typedef struct {
     int block_argmax;
 } BnTransformerGPUDecodeEntryPolicy;

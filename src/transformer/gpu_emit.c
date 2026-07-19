@@ -1028,7 +1028,9 @@ void bn_transformer_gpu_emit_context_dense_ffn(
 
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
         uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
-            lw->ffn.ffn_gate.type, bn_model_arch_activation_uses_silu_path(ffn_plan->activation));
+            lw->ffn.ffn_gate.type,
+            bn_transformer_gpu_activation_uses_silu_path(
+                ffn_plan->activation));
         int prefer_gateup_split =
             bn_transformer_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
             bn_transformer_uses_hybrid_moe(c);
@@ -1085,9 +1087,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 bn_transformer_gpu_matvec_q8k_dot_flags(
                     lw->ffn.ffn_up.type, use_q4_q8));
             BnGPUIRActivationKind act_kind =
-                bn_model_arch_activation_is_relu2(ffn_plan->activation)
-                ? BN_GPU_IR_ACTIVATION_RELU2
-                : BN_GPU_IR_ACTIVATION_SILU;
+                bn_transformer_gpu_ffn_activation_kind(
+                    ffn_plan->activation);
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, hidden_dim, 0,
                 act_kind, act_kind == BN_GPU_IR_ACTIVATION_SILU
@@ -1101,9 +1102,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             bn_transformer_gpu_matvec_q8k_dot_flags(lw->ffn.ffn_up.type,
                                                      use_q4_q8));
         BnGPUIRActivationKind act_kind =
-            bn_model_arch_activation_is_relu2(ffn_plan->activation)
-            ? BN_GPU_IR_ACTIVATION_RELU2
-            : BN_GPU_IR_ACTIVATION_SILU;
+            bn_transformer_gpu_ffn_activation_kind(ffn_plan->activation);
         uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
             lw->ffn.ffn_up.type, act_kind == BN_GPU_IR_ACTIVATION_SILU);
         emit_context_activation_flags(

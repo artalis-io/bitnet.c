@@ -77,6 +77,16 @@ int bn_transformer_gpu_can_fused_gateup_silu_pair(const BnGPUBackend *gpu,
            bn_transformer_gpu_can_fused_gateup_silu(gpu, gate_type, act_type);
 }
 
+int bn_transformer_gpu_activation_uses_silu_path(int activation) {
+    return bn_model_arch_activation_uses_silu_path(activation);
+}
+
+BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind(int activation) {
+    return bn_model_arch_activation_is_relu2(activation)
+        ? BN_GPU_IR_ACTIVATION_RELU2
+        : BN_GPU_IR_ACTIVATION_SILU;
+}
+
 int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
                                                    int tensor_type,
                                                    int act_type) {

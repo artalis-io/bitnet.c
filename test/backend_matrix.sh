@@ -459,6 +459,11 @@ if grep -n 'gpu_quant_lowering_internal\|bn_gpu_quant_split_op_code' src/transfo
     fail=1
 fi
 
+if grep -n 'bn_model_arch_activation_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use GPU policy helpers for activation classification"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q4K_MATVEC_SPLIT\|BN_GPU_CODE_Q8_MATVEC_SPLIT\|BN_GPU_CODE_Q5K_MATVEC_SPLIT\|BN_GPU_CODE_UNKNOWN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must classify split op codes through GPU quant lowering helpers"
     fail=1

@@ -2744,6 +2744,16 @@ static void test_gpu_op_kind_mapping(void) {
     assert(bn_transformer_gpu_matvec_split_op_code(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CODE_Q4K_MATVEC_SPLIT);
     assert(bn_transformer_gpu_matvec_split_op_code(BN_GGUF_TENSOR_I2_S) == 0);
+    assert(bn_transformer_gpu_activation_uses_silu_path(
+        BN_MODEL_ACTIVATION_SILU));
+    assert(!bn_transformer_gpu_activation_uses_silu_path(
+        BN_MODEL_ACTIVATION_RELU2));
+    assert(bn_transformer_gpu_ffn_activation_kind(
+               BN_MODEL_ACTIVATION_SILU) == BN_GPU_IR_ACTIVATION_SILU);
+    assert(bn_transformer_gpu_ffn_activation_kind(
+               BN_MODEL_ACTIVATION_RELU2) == BN_GPU_IR_ACTIVATION_RELU2);
+    assert(bn_transformer_gpu_ffn_activation_kind(
+               BN_MODEL_ACTIVATION_GELU) == BN_GPU_IR_ACTIVATION_SILU);
 
     BnGPUOp op;
     memset(&op, 0, sizeof(op));
