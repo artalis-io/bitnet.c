@@ -1,7 +1,6 @@
 #include "transformer_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer/gpu_internal.h"
-#include "model_arch.h"
 #include "quant.h"
 #include "turboquant.h"
 #include "moe.h"
@@ -26,7 +25,7 @@ static int prepare_arch_per_layer_input(BnModel *m, BnSession *sess,
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
-    int per_dim = bn_model_arch_per_layer_embedding_dim(c);
+    int per_dim = bn_transformer_per_layer_embedding_dim(c);
     if (per_dim <= 0)
         return 0;
     int total = per_dim * c->n_layers;
@@ -152,9 +151,9 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
         float theta = use_swa_rope ? c->rope_theta_swa : c->rope_theta;
         for (int i = 0; i < half_rope; i++) {
             float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
-            if (bn_model_arch_uses_per_layer_embedding(c) &&
+            if (bn_transformer_uses_per_layer_embedding(c) &&
                 !use_swa_rope && m->weights.rope_freqs) {
-                if (bn_model_arch_divides_rope_freqs(c, l))
+                if (bn_transformer_divides_rope_freqs(c, l))
                     freq /= m->weights.rope_freqs[i];
                 else
                     freq *= m->weights.rope_freqs[i];

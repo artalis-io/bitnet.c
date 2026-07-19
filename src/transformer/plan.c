@@ -376,6 +376,17 @@ int bn_transformer_per_layer_embedding_dim(
     return bn_model_arch_per_layer_embedding_dim(c);
 }
 
+int bn_transformer_uses_per_layer_embedding(
+    const BnConfig *c) {
+    return bn_model_arch_uses_per_layer_embedding(c);
+}
+
+int bn_transformer_divides_rope_freqs(
+    const BnConfig *c,
+    int layer) {
+    return bn_model_arch_divides_rope_freqs(c, layer);
+}
+
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c) {
     return bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);

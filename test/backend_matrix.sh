@@ -1777,6 +1777,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_small_de
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/transformer.c >/dev/null 2>&1; then
+    echo "src/transformer.c must use transformer planning helpers for model-family policy"
+    fail=1
+fi
+
 for file in \
     src/transformer/cpu.c \
     src/transformer/prefill.c
