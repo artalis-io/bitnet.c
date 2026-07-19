@@ -470,12 +470,15 @@ typedef struct {
 void bn_quant_matvec_batch(const BnMatvecTask *tasks, int n_tasks,
                            const float *x, int8_t *x_q_buf, BnThreadPool *pool);
 
-// Batch matvec with pre-quantized Q8_K input (skips redundant quantization).
-// Used after fused rmsnorm+q8k to avoid re-quantizing the same activation.
-void bn_quant_matvec_batch_preq8k(const BnMatvecTask *tasks, int n_tasks,
-                                    const int8_t *x_q, const float *x_d,
-                                    const int16_t *x_bsums, const float *x_float,
-                                    BnThreadPool *pool);
+// Batch matvec with prepared K-quant input (skips redundant quantization).
+void bn_quant_matvec_batch_prepared_kquant_input(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const int8_t *x_q,
+    const float *x_d,
+    const int16_t *x_bsums,
+    const float *x_float,
+    BnThreadPool *pool);
 
 // Multi-input matvec: K independent (W, x) pairs dispatched in a single cycle.
 // Each task has its own weight matrix and input vector.
@@ -519,22 +522,32 @@ void bn_quant_matmul_prepared_multi(float **out, const BnQWeight **W,
                                     const float *X, int n_tokens,
                                     int8_t *x_q_buf, BnThreadPool *pool);
 
-// Matmul with pre-quantized Q8_K input (avoids redundant re-quantization).
+// Matmul with prepared K-quant input (avoids redundant re-quantization).
 // x_q/x_d/x_bsums must be [n_tokens * cols] / [n_tokens * n_bpr] / [n_tokens * n_bpr * 16].
 // x_float is the original float input for fallback (non-k-quant types).
-void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
-                              const int8_t *x_q, const float *x_d,
-                              const int16_t *x_bsums, const float *x_float,
-                              BnThreadPool *pool);
+void bn_quant_matmul_prepared_kquant_input(float *out,
+                                           const BnQWeight *W,
+                                           int n_tokens,
+                                           const int8_t *x_q,
+                                           const float *x_d,
+                                           const int16_t *x_bsums,
+                                           const float *x_float,
+                                           BnThreadPool *pool);
 
 // Dispatch up to n matmuls in a single threadpool cycle.
 // All weight matrices must share the same pre-quantized input.
 // out/W arrays must have n entries. Falls back to sequential if types differ.
-void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W,
-                                  const BnPreparedWeight **prepared, int n,
-                                  int n_tokens, const int8_t *x_q,
-                                  const float *x_d, const int16_t *x_bsums,
-                                  const float *x_float, BnThreadPool *pool);
+void bn_quant_matmul_prepared_kquant_input_multi(
+    float **out,
+    const BnQWeight **W,
+    const BnPreparedWeight **prepared,
+    int n,
+    int n_tokens,
+    const int8_t *x_q,
+    const float *x_d,
+    const int16_t *x_bsums,
+    const float *x_float,
+    BnThreadPool *pool);
 
 // Get platform-optimal kernel for float-x quant types (K-quants, BF16, IQ*, Q4_1, Q8_K).
 // Returns NULL if the type requires int8 quantized x (I2_S, Q4_0, Q8_0, TQ1, TQ2).

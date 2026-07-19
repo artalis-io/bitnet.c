@@ -631,16 +631,21 @@ fallback_loop:
                                  X, n_tokens, x_q_buf, pool);
 }
 
-void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
-                            const int8_t *x_q, const float *x_d,
-                            const int16_t *x_bsums, const float *x_float,
-                            BnThreadPool *pool) {
+void bn_quant_matmul_prepared_kquant_input(float *out,
+                                           const BnQWeight *W,
+                                           int n_tokens,
+                                           const int8_t *x_q,
+                                           const float *x_d,
+                                           const int16_t *x_bsums,
+                                           const float *x_float,
+                                           BnThreadPool *pool) {
     int rows = W->rows;
     int cols = W->cols;
 
     if (n_tokens <= 1) {
         BnMatvecTask task = { out, W, NULL, 0 };
-        bn_quant_matvec_batch_preq8k(&task, 1, x_q, x_d, x_bsums, x_float, pool);
+        bn_quant_matvec_batch_prepared_kquant_input(
+            &task, 1, x_q, x_d, x_bsums, x_float, pool);
         return;
     }
 
@@ -680,25 +685,31 @@ void bn_quant_matmul_preq8k(float *out, const BnQWeight *W, int n_tokens,
 
 #define BN_MAX_MULTI_MATMUL 4
 
-void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W,
-                                  const BnPreparedWeight **prepared, int n,
-                                  int n_tokens, const int8_t *x_q,
-                                  const float *x_d, const int16_t *x_bsums,
-                                  const float *x_float, BnThreadPool *pool) {
+void bn_quant_matmul_prepared_kquant_input_multi(
+    float **out,
+    const BnQWeight **W,
+    const BnPreparedWeight **prepared,
+    int n,
+    int n_tokens,
+    const int8_t *x_q,
+    const float *x_d,
+    const int16_t *x_bsums,
+    const float *x_float,
+    BnThreadPool *pool) {
 #ifndef __AVX2__
     (void)prepared;
 #endif
     if (n <= 0 || n > BN_MAX_MULTI_MATMUL) {
         for (int i = 0; i < n; i++)
-            bn_quant_matmul_preq8k(out[i], W[i], n_tokens, x_q, x_d, x_bsums,
-                                   x_float, pool);
+            bn_quant_matmul_prepared_kquant_input(
+                out[i], W[i], n_tokens, x_q, x_d, x_bsums, x_float, pool);
         return;
     }
 
     if (n_tokens <= 1) {
         for (int i = 0; i < n; i++)
-            bn_quant_matmul_preq8k(out[i], W[i], n_tokens, x_q, x_d, x_bsums,
-                                   x_float, pool);
+            bn_quant_matmul_prepared_kquant_input(
+                out[i], W[i], n_tokens, x_q, x_d, x_bsums, x_float, pool);
         return;
     }
 
@@ -773,6 +784,6 @@ void bn_quant_matmul_preq8k_multi(float **out, const BnQWeight **W,
 #endif
 
     for (int i = 0; i < n; i++)
-        bn_quant_matmul_preq8k(out[i], W[i], n_tokens, x_q, x_d, x_bsums,
-                               x_float, pool);
+        bn_quant_matmul_prepared_kquant_input(
+            out[i], W[i], n_tokens, x_q, x_d, x_bsums, x_float, pool);
 }

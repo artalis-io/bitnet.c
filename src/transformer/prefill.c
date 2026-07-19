@@ -1129,14 +1129,16 @@ static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
     if (n > 4) {
-        bn_quant_matmul_preq8k_multi(out, W, NULL, n, n_tokens, x_q, x_d,
-                                     x_bsums, x_float, bn_model_pool(m));
+        bn_quant_matmul_prepared_kquant_input_multi(
+            out, W, NULL, n, n_tokens, x_q, x_d, x_bsums, x_float,
+            bn_model_pool(m));
         return;
     }
     for (int i = 0; i < n; i++)
         prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
-    bn_quant_matmul_preq8k_multi(out, W, prepared, n, n_tokens, x_q, x_d,
-                                 x_bsums, x_float, bn_model_pool(m));
+    bn_quant_matmul_prepared_kquant_input_multi(
+        out, W, prepared, n, n_tokens, x_q, x_d, x_bsums, x_float,
+        bn_model_pool(m));
 }
 
 typedef struct {
@@ -1237,7 +1239,7 @@ static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
                 tasks[i].W->type))
             return 0;
     }
-    bn_quant_matvec_batch_preq8k(
+    bn_quant_matvec_batch_prepared_kquant_input(
         tasks, n, b->xq + (size_t)token_index * dim,
         b->xd + (size_t)token_index * b->n_bpr,
         b->xbs + (size_t)token_index * b->n_bpr * 16,

@@ -101,12 +101,12 @@ static void cpu_quant_matvec_batch_prepared_kquant(const BnModel *m,
     BnMatvecTask *prepared_tasks =
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
     if (!prepared_tasks) {
-        bn_quant_matvec_batch_preq8k(tasks, n_tasks, x_q, x_d, x_bsums,
-                                     x_float, bn_model_pool(m));
+        bn_quant_matvec_batch_prepared_kquant_input(
+            tasks, n_tasks, x_q, x_d, x_bsums, x_float, bn_model_pool(m));
         return;
     }
-    bn_quant_matvec_batch_preq8k(prepared_tasks, n_tasks, x_q, x_d, x_bsums,
-                                 x_float, bn_model_pool(m));
+    bn_quant_matvec_batch_prepared_kquant_input(
+        prepared_tasks, n_tasks, x_q, x_d, x_bsums, x_float, bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
 

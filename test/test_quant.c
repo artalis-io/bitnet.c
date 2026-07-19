@@ -1412,8 +1412,8 @@ static void fill_q6k_blocks(BnBlockQ6K *q6, int rows, int n_bpr, int seed) {
     }
 }
 
-static void test_kquant_preq8k_matmul_correctness(void) {
-    printf("test_kquant_preq8k_matmul_correctness... ");
+static void test_kquant_prepared_kquant_input_matmul_correctness(void) {
+    printf("test_kquant_prepared_kquant_input_matmul_correctness... ");
 
     int rows = 7, cols = 512, n_tokens = 5;
     int n_bpr = cols / BN_QK_K;
@@ -1467,13 +1467,15 @@ static void test_kquant_preq8k_matmul_correctness(void) {
                               x_q + (size_t)t * cols, NULL);
     }
 
-    bn_quant_matmul_preq8k(out4, &W4a, n_tokens, x_q, x_d, x_bsums, X, NULL);
-    bn_quant_matmul_preq8k(out6, &W6, n_tokens, x_q, x_d, x_bsums, X, NULL);
+    bn_quant_matmul_prepared_kquant_input(
+        out4, &W4a, n_tokens, x_q, x_d, x_bsums, X, NULL);
+    bn_quant_matmul_prepared_kquant_input(
+        out6, &W6, n_tokens, x_q, x_d, x_bsums, X, NULL);
 
     float *multi_out[3] = { out4, out4b, out6 };
     const BnQWeight *multi_w[3] = { &W4a, &W4b, &W6 };
-    bn_quant_matmul_preq8k_multi(multi_out, multi_w, NULL, 3, n_tokens,
-                                 x_q, x_d, x_bsums, X, NULL);
+    bn_quant_matmul_prepared_kquant_input_multi(
+        multi_out, multi_w, NULL, 3, n_tokens, x_q, x_d, x_bsums, X, NULL);
 
 #if defined(__AVX2__) || (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__))
     BnPreparedWeight prepared4a = { 0 };
@@ -1494,8 +1496,9 @@ static void test_kquant_preq8k_matmul_correctness(void) {
     float *prepared_out[2] = { out4_prepared, out4b_prepared };
     const BnQWeight *prepared_w[2] = { &W4a, &W4b };
     const BnPreparedWeight *prepared[2] = { &prepared4a, &prepared4b };
-    bn_quant_matmul_preq8k_multi(prepared_out, prepared_w, prepared, 2,
-                                 n_tokens, x_q, x_d, x_bsums, X, NULL);
+    bn_quant_matmul_prepared_kquant_input_multi(
+        prepared_out, prepared_w, prepared, 2, n_tokens, x_q, x_d, x_bsums,
+        X, NULL);
 #endif
 
     for (int i = 0; i < rows * n_tokens; i++) {
@@ -1576,8 +1579,9 @@ static void test_q6k_prepared_matmul_correctness(void) {
     float *outs[1] = { preq_prepared };
     const BnQWeight *weights[1] = { &W6 };
     const BnPreparedWeight *prepared_weights[1] = { &prepared };
-    bn_quant_matmul_preq8k_multi(outs, weights, prepared_weights, 1,
-                                 n_tokens, x_q, x_d, x_bsums, X, NULL);
+    bn_quant_matmul_prepared_kquant_input_multi(
+        outs, weights, prepared_weights, 1, n_tokens, x_q, x_d, x_bsums,
+        X, NULL);
 
     for (int i = 0; i < rows * n_tokens; i++) {
         assert(fabsf(prepared_out[i] - raw[i]) < 1e-4f);
@@ -1704,7 +1708,7 @@ int main(void) {
     test_bf16_matvec_multi_correctness();
     test_mixed_kquant_matvec_batch_correctness();
     test_mixed_kquant_matvec_multi_correctness();
-    test_kquant_preq8k_matmul_correctness();
+    test_kquant_prepared_kquant_input_matmul_correctness();
     test_q6k_prepared_matmul_correctness();
     test_activation_quant_rounding();
     test_mxfp4_matvec_correctness();

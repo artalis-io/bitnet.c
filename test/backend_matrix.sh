@@ -919,6 +919,17 @@ if grep -n 'BN_QUANT_CAP_CPU_PREQ8K\|BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREQ8K\|
     fail=1
 fi
 
+if grep -n 'bn_quant_matvec_batch_preq8k\|bn_quant_matmul_preq8k' \
+    include/quant.h \
+    src/quant/batch_preq8k.c \
+    src/quant/matmul.c \
+    src/transformer/cpu.c \
+    src/transformer/prefill.c \
+    test/test_quant.c >/dev/null 2>&1; then
+    echo "Prepared K-quant public quant APIs must not use preq8k implementation names"
+    fail=1
+fi
+
 if grep -n 'BnPrefillPreQ8KBuffers\|prefill_quant_matmul_preq8k_multi\|prefill_preq8k_arena_bytes\|prefill_alloc_preq8k_buffers\|prefill_prepare_preq8k\|prefill_try_preq8k' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution prepared K-quant helpers must use behavior names, not preq8k helper names"
     fail=1

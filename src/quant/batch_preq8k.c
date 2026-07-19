@@ -17,12 +17,16 @@
 
 #define BN_MAX_BATCH 24
 
-// Batch matvec with pre-quantized Q8_K input. Dispatches 4-row kernels
+// Batch matvec with prepared K-quant input. Dispatches 4-row kernels
 // directly without re-quantizing. Falls back to float path for non-k-quant types.
-void bn_quant_matvec_batch_preq8k(const BnMatvecTask *tasks, int n_tasks,
-                                  const int8_t *x_q, const float *x_d,
-                                  const int16_t *x_bsums, const float *x_float,
-                                  BnThreadPool *pool) {
+void bn_quant_matvec_batch_prepared_kquant_input(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const int8_t *x_q,
+    const float *x_d,
+    const int16_t *x_bsums,
+    const float *x_float,
+    BnThreadPool *pool) {
     if (n_tasks <= 0) return;
 
 #if (defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__)) || defined(__AVX2__)
