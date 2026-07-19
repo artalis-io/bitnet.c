@@ -36,12 +36,8 @@ int bn_gpu_policy_moe_residency_fit_debug_enabled(void);
 int bn_gpu_policy_moe_lazy_aux_cache_enabled(void);
 int bn_gpu_policy_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
-    const BnGPUBackend *gpu,
-    int tensor_type);
 int bn_gpu_policy_logits_q6_f32_cache_enabled(const BnGPUBackend *gpu,
                                               int tensor_type);
-int bn_gpu_policy_cuda_logits_f16_cache_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_logits_f16_cache_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_cublas_logits_enabled(void);
 int bn_gpu_policy_cuda_f32_logits_matvec_enabled(void);

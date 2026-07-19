@@ -211,7 +211,7 @@ int bn_gpu_policy_individual_upload_quant_only_enabled(
     return gpu_policy_individual_upload_quant_only_enabled(gpu);
 }
 
-int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
+static int gpu_policy_logits_q6_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
     return bn_gpu_policy_backend_is_cuda(gpu) &&
@@ -223,17 +223,17 @@ int bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(
 
 int bn_gpu_policy_logits_q6_f32_cache_enabled(const BnGPUBackend *gpu,
                                               int tensor_type) {
-    return bn_gpu_policy_cuda_q6k_logits_f32_cache_enabled(gpu, tensor_type);
+    return gpu_policy_logits_q6_f32_cache_enabled(gpu, tensor_type);
 }
 
-int bn_gpu_policy_cuda_logits_f16_cache_enabled(const BnGPUBackend *gpu) {
+static int gpu_policy_logits_f16_cache_enabled(const BnGPUBackend *gpu) {
     return bn_gpu_policy_backend_is_cuda(gpu) &&
            gpu->buffer_create_f16_cache &&
            getenv("BN_CUDA_ENABLE_LOGITS_F16_CACHE") != NULL;
 }
 
 int bn_gpu_policy_logits_f16_cache_enabled(const BnGPUBackend *gpu) {
-    return bn_gpu_policy_cuda_logits_f16_cache_enabled(gpu);
+    return gpu_policy_logits_f16_cache_enabled(gpu);
 }
 
 int bn_gpu_policy_cuda_cublas_logits_enabled(void) {
