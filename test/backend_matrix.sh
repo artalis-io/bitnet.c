@@ -1501,6 +1501,11 @@ if grep -n 'bn_transformer_gpu_cuda_moe_\(prefill_enabled\|prefill_min_tokens\|c
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_route_batch_enabled' include/gpu_policy.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU MoE route batch policy must use neutral behavior helper names"
+    fail=1
+fi
+
 if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arch.h src/model_arch.c >/dev/null 2>&1; then
     echo "model_arch must expose backend-neutral policy names, not CUDA-named aliases"
     fail=1

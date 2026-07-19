@@ -351,7 +351,7 @@ static int cuda_profile_moe_ffn_batch(void) {
 }
 
 static int cuda_use_moe_route_batch(void) {
-    return bn_gpu_policy_cuda_moe_route_batch_enabled();
+    return bn_gpu_policy_moe_route_batch_enabled();
 }
 
 static int cuda_use_moe_routed_ffn_batch(void) {

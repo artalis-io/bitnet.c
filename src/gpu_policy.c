@@ -1765,12 +1765,8 @@ int bn_gpu_policy_moe_prefill_shared_fuse_enabled(void) {
     return bn_gpu_policy_cuda_moe_prefill_shared_fuse_enabled();
 }
 
-int bn_gpu_policy_cuda_moe_route_batch_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH") == NULL;
-}
-
 int bn_gpu_policy_moe_route_batch_enabled(void) {
-    return bn_gpu_policy_cuda_moe_route_batch_enabled();
+    return getenv("BN_CUDA_DISABLE_MOE_ROUTE_BATCH") == NULL;
 }
 
 int bn_gpu_policy_cuda_moe_route_batch_debug_enabled(void) {
