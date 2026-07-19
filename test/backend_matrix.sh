@@ -1341,6 +1341,11 @@ if grep -n 'bn_gpu_policy_cuda_moe_all_f16_cache\|bn_gpu_policy_cuda_moe_gateup_
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_bytes\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer\|bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled\|bn_gpu_policy_cuda_moe_quant_only_after_cache' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "MoE down-cache policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_moe_\(f16_aux_cache_auto_enabled\|resident_routed_ffn_quant_eligible\|all_f16_cache_forced\|all_f16_cache_enabled_for_type\|gateup_f16_cache_enabled\|partial_moe_f16_cache_enabled\|fit_debug_enabled\|lazy_aux_cache_enabled\)\|bn_gpu_policy_cuda_\(keep_individual_f16_cache_enabled\|individual_upload_quant_only_enabled\)' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "GPU MoE residency policy must expose/test behavior-named helpers, not CUDA implementation aliases"
     fail=1

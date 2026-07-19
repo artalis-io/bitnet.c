@@ -265,7 +265,7 @@ int bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(int cols) {
            bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced();
 }
 
-int bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred(
+static int gpu_policy_moe_down_q6_f32_cache_preferred(
     const BnGPUBackend *gpu,
     int tensor_type,
     int cols,
@@ -281,17 +281,17 @@ int bn_gpu_policy_moe_down_q6_f32_cache_preferred(
     int tensor_type,
     int cols,
     int force_f16_cache) {
-    return bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred(
+    return gpu_policy_moe_down_q6_f32_cache_preferred(
         gpu, tensor_type, cols, force_f16_cache);
 }
 
-size_t bn_gpu_policy_cuda_moe_down_q6_f32_cache_bytes(
+static size_t gpu_policy_moe_down_q6_f32_cache_bytes(
     const BnGPUBackend *gpu,
     int tensor_type,
     int rows,
     int cols,
     int n_experts) {
-    if (!bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred(
+    if (!gpu_policy_moe_down_q6_f32_cache_preferred(
             gpu, tensor_type, cols, 0) ||
         rows <= 0 || cols <= 0 || n_experts <= 0)
         return 0;
@@ -321,11 +321,11 @@ size_t bn_gpu_policy_moe_down_q6_f32_cache_bytes(
     int rows,
     int cols,
     int n_experts) {
-    return bn_gpu_policy_cuda_moe_down_q6_f32_cache_bytes(
+    return gpu_policy_moe_down_q6_f32_cache_bytes(
         gpu, tensor_type, rows, cols, n_experts);
 }
 
-int bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer(
+static int gpu_policy_moe_down_q6_f32_cache_requires_full_buffer(
     int tensor_type) {
     return bn_backend_quant_moe_down_q6_f32_cache_supported(tensor_type) &&
            bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced();
@@ -333,11 +333,10 @@ int bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer(
 
 int bn_gpu_policy_moe_down_q6_f32_cache_requires_full_buffer(
     int tensor_type) {
-    return bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer(
-        tensor_type);
+    return gpu_policy_moe_down_q6_f32_cache_requires_full_buffer(tensor_type);
 }
 
-int bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
+static int gpu_policy_moe_down_q4_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
     return gpu && gpu->buffer_create_q6_f32_cache &&
@@ -349,19 +348,18 @@ int bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(
 int bn_gpu_policy_moe_down_q4_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    return bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled(gpu, tensor_type);
+    return gpu_policy_moe_down_q4_f32_cache_enabled(gpu, tensor_type);
 }
 
-int bn_gpu_policy_cuda_moe_quant_only_after_cache(int tensor_type,
-                                                  int q8_f16_cache) {
+static int gpu_policy_moe_quant_only_after_cache(int tensor_type,
+                                                 int q8_f16_cache) {
     return bn_backend_quant_moe_quant_only_after_cache(tensor_type,
                                                        q8_f16_cache);
 }
 
 int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,
                                              int q8_f16_cache) {
-    return bn_gpu_policy_cuda_moe_quant_only_after_cache(tensor_type,
-                                                         q8_f16_cache);
+    return gpu_policy_moe_quant_only_after_cache(tensor_type, q8_f16_cache);
 }
 
 int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
