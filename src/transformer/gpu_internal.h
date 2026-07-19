@@ -12,6 +12,8 @@
 
 #define BN_TRANSFORMER_GPU_MAX_VLA_ELEMS 8192
 
+int bn_transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu);
+
 typedef struct {
     void *lowered_ops;
     int n;

@@ -1685,6 +1685,11 @@ do
     fi
 done
 
+if grep -n 'bn_transformer_gpu_backend_is_cuda' include/transformer_plan_internal.h >/dev/null 2>&1; then
+    echo "shared transformer plan API must not expose CUDA backend predicates"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/cpu.c \
