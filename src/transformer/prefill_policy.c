@@ -615,29 +615,29 @@ bn_transformer_prefill_ffn_batch_call_policy(
     return policy;
 }
 
-int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
+int bn_transformer_prefill_can_prepared_kquant_type(const BnPrefillCPUOps *ops,
                                            int tensor_type) {
     return ops && ops->supports_preq8k &&
            bn_backend_quant_can_preq8k(tensor_type);
 }
 
-int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,
+int bn_transformer_prefill_can_prepared_kquant_pair(const BnPrefillCPUOps *ops,
                                            int left_type,
                                            int right_type) {
-    return bn_transformer_prefill_can_preq8k_type(ops, left_type) &&
+    return bn_transformer_prefill_can_prepared_kquant_type(ops, left_type) &&
            bn_backend_quant_can_preq8k(right_type);
 }
 
-int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
+int bn_transformer_prefill_can_prepared_kquant_triple(const BnPrefillCPUOps *ops,
                                              int first_type,
                                              int second_type,
                                              int third_type) {
-    return bn_transformer_prefill_can_preq8k_pair(ops, first_type,
+    return bn_transformer_prefill_can_prepared_kquant_pair(ops, first_type,
                                                   second_type) &&
            bn_backend_quant_can_preq8k(third_type);
 }
 
-int bn_transformer_prefill_route_preq8k_type_enabled(
+int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
     int force_float_kquant,
@@ -647,22 +647,22 @@ int bn_transformer_prefill_route_preq8k_type_enabled(
            !force_float_kquant &&
            dim > 0 &&
            dim % BN_QK_K == 0 &&
-           bn_transformer_prefill_can_preq8k_type(ops, tensor_type);
+           bn_transformer_prefill_can_prepared_kquant_type(ops, tensor_type);
 }
 
-int bn_transformer_prefill_route_preq8k_pair_enabled(
+int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
     int force_float_kquant,
     int dim,
     int left_type,
     int right_type) {
-    return bn_transformer_prefill_route_preq8k_type_enabled(
+    return bn_transformer_prefill_route_prepared_kquant_type_enabled(
                ops, gpu, force_float_kquant, dim, left_type) &&
            bn_backend_quant_can_preq8k(right_type);
 }
 
-int bn_transformer_prefill_route_preq8k_triple_enabled(
+int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
     int force_float_kquant,
@@ -670,7 +670,7 @@ int bn_transformer_prefill_route_preq8k_triple_enabled(
     int first_type,
     int second_type,
     int third_type) {
-    return bn_transformer_prefill_route_preq8k_pair_enabled(
+    return bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                ops, gpu, force_float_kquant, dim, first_type, second_type) &&
            bn_backend_quant_can_preq8k(third_type);
 }

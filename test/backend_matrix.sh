@@ -845,6 +845,15 @@ if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/transfo
     fail=1
 fi
 
+if grep -n 'bn_transformer_prefill_can_preq8k\|bn_transformer_prefill_route_preq8k\|used_preq8k\|ssm_preq8k' \
+    include/transformer_prefill_internal.h \
+    src/transformer/prefill_policy.c \
+    src/transformer/prefill.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer prefill prepared K-quant route policy must use behavior names, not preq8k helper names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_cpu_kernels.c >/dev/null 2>&1; then
     echo "MoE CPU kernels must use MoE policy helpers for preq8k quant capability"
     fail=1

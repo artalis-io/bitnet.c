@@ -409,29 +409,29 @@ bn_transformer_prefill_ffn_batch_call_policy(
     int add_residual,
     int ffn_batch_norm_hook_available,
     int ffn_batch_norm_resid_hook_available);
-int bn_transformer_prefill_can_preq8k_type(const BnPrefillCPUOps *ops,
+int bn_transformer_prefill_can_prepared_kquant_type(const BnPrefillCPUOps *ops,
                                            int tensor_type);
-int bn_transformer_prefill_can_preq8k_pair(const BnPrefillCPUOps *ops,
+int bn_transformer_prefill_can_prepared_kquant_pair(const BnPrefillCPUOps *ops,
                                            int left_type,
                                            int right_type);
-int bn_transformer_prefill_can_preq8k_triple(const BnPrefillCPUOps *ops,
+int bn_transformer_prefill_can_prepared_kquant_triple(const BnPrefillCPUOps *ops,
                                              int first_type,
                                              int second_type,
                                              int third_type);
-int bn_transformer_prefill_route_preq8k_type_enabled(
+int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
     int force_float_kquant,
     int dim,
     int tensor_type);
-int bn_transformer_prefill_route_preq8k_pair_enabled(
+int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
     int force_float_kquant,
     int dim,
     int left_type,
     int right_type);
-int bn_transformer_prefill_route_preq8k_triple_enabled(
+int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
     int force_float_kquant,

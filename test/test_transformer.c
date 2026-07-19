@@ -4583,48 +4583,48 @@ static void test_block_planning(void) {
     ffn_call = bn_transformer_prefill_ffn_batch_call_policy(0, 1, 1, 1);
     assert(ffn_call.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_PLAIN);
 
-    assert(!bn_transformer_prefill_can_preq8k_type(
+    assert(!bn_transformer_prefill_can_prepared_kquant_type(
         NULL, BN_GGUF_TENSOR_Q4_K));
     int prefill_supports_prepared_kquant =
         bn_transformer_prefill_cpu_ops()->supports_preq8k;
-    assert(bn_transformer_prefill_can_preq8k_type(
+    assert(bn_transformer_prefill_can_prepared_kquant_type(
                bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K) ==
            prefill_supports_prepared_kquant);
-    assert(bn_transformer_prefill_can_preq8k_pair(
+    assert(bn_transformer_prefill_can_prepared_kquant_pair(
                bn_transformer_prefill_cpu_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
            prefill_supports_prepared_kquant);
-    assert(bn_transformer_prefill_can_preq8k_triple(
+    assert(bn_transformer_prefill_can_prepared_kquant_triple(
                bn_transformer_prefill_cpu_ops(),
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
                BN_GGUF_TENSOR_Q6_K) == prefill_supports_prepared_kquant);
-    assert(!bn_transformer_prefill_can_preq8k_pair(
+    assert(!bn_transformer_prefill_can_prepared_kquant_pair(
         bn_transformer_prefill_cpu_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q8_0));
-    assert(bn_transformer_prefill_route_preq8k_type_enabled(
+    assert(bn_transformer_prefill_route_prepared_kquant_type_enabled(
                bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K) == prefill_supports_prepared_kquant);
-    assert(!bn_transformer_prefill_route_preq8k_type_enabled(
+    assert(!bn_transformer_prefill_route_prepared_kquant_type_enabled(
         bn_transformer_prefill_cpu_ops(), &route_gpu, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_transformer_prefill_route_preq8k_type_enabled(
+    assert(!bn_transformer_prefill_route_prepared_kquant_type_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 1, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_transformer_prefill_route_preq8k_type_enabled(
+    assert(!bn_transformer_prefill_route_prepared_kquant_type_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K - 1,
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_transformer_prefill_route_preq8k_pair_enabled(
+    assert(bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K) ==
            prefill_supports_prepared_kquant);
-    assert(!bn_transformer_prefill_route_preq8k_pair_enabled(
+    assert(!bn_transformer_prefill_route_prepared_kquant_pair_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q8_0));
-    assert(bn_transformer_prefill_route_preq8k_triple_enabled(
+    assert(bn_transformer_prefill_route_prepared_kquant_triple_enabled(
                bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K,
                BN_GGUF_TENSOR_Q6_K) == prefill_supports_prepared_kquant);
-    assert(!bn_transformer_prefill_route_preq8k_triple_enabled(
+    assert(!bn_transformer_prefill_route_prepared_kquant_triple_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
     assert(bn_transformer_prefill_stacked_pair_same_format(
