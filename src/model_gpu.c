@@ -190,18 +190,18 @@ static void *upload_moe_all_proj(BnModel *model,
                          type, rows * n_experts, cols);
 }
 
-static int can_use_cuda_moe_routed_ffn(const BnConfig *c,
-                                       const BnLayerWeights *lw) {
+static int can_use_resident_moe_routed_ffn(const BnConfig *c,
+                                           const BnLayerWeights *lw) {
     if (!c || !lw || !lw->moe.router_weight)
         return 0;
     const BnMoEExpertMap *em = &lw->moe.expert_map;
-    return bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
+    return bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
                em->gate_type, em->up_type, em->down_type) &&
            bn_moe_policy_supports_resident_routed_ffn_layout(c, em);
 }
 
-static int can_use_cuda_moe_routed_ffn_model(const BnConfig *c,
-                                             const BnWeights *w) {
+static int can_use_resident_moe_routed_ffn_model(const BnConfig *c,
+                                                 const BnWeights *w) {
     if (!c || !w)
         return 0;
     int moe_layers = 0;
@@ -210,7 +210,7 @@ static int can_use_cuda_moe_routed_ffn_model(const BnConfig *c,
         if (!lw->moe.router_weight)
             continue;
         moe_layers++;
-        if (!can_use_cuda_moe_routed_ffn(c, lw))
+        if (!can_use_resident_moe_routed_ffn(c, lw))
             return 0;
     }
     return moe_layers > 0;
@@ -688,8 +688,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
     BnWeights *w = &model->weights;
     BnConfig *c = &model->config;
     int n_layers = c->n_layers;
-    int upload_moe_all_model = bn_gpu_policy_cuda_moe_routed_ffn_enabled(
-        can_use_cuda_moe_routed_ffn_model(c, w));
+    int upload_moe_all_model = bn_gpu_policy_moe_resident_routed_ffn_enabled(
+        can_use_resident_moe_routed_ffn_model(c, w));
     int upload_moe_all_q8_f16_cache = 0;
     int upload_moe_all_gateup_f16_cache = 0;
     int upload_moe_all_f16_cache_layers = 0;
@@ -822,7 +822,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 c->n_experts, c->dim)
             : NULL;
         int upload_moe_all = upload_moe_all_model &&
-                             can_use_cuda_moe_routed_ffn(c, lw);
+                             can_use_resident_moe_routed_ffn(c, lw);
         int upload_layer_f16_cache =
             upload_moe_all_q8_f16_cache ||
             (upload_moe_all_f16_cache_layers > 0 &&

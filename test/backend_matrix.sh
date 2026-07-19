@@ -1201,6 +1201,11 @@ if grep -n 'bn_gpu_policy_cuda_individual_upload_quant_only_enabled' src/model_g
     fail=1
 fi
 
+if grep -n 'can_use_cuda_moe_routed_ffn\|bn_gpu_policy_cuda_moe_routed_ffn_enabled\|bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use behavior-named GPU policy helpers for resident routed-FFN upload policy"
+    fail=1
+fi
+
 if grep -n 'n_experts == 2 && c->n_experts_active == 2\|c->n_experts > 2' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use model_arch helpers for MoE shape policy"
     fail=1

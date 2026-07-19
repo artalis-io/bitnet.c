@@ -55,6 +55,10 @@ int bn_gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
     return eligible && getenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN") == NULL;
 }
 
+int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible) {
+    return bn_gpu_policy_cuda_moe_routed_ffn_enabled(eligible);
+}
+
 int bn_gpu_policy_backend_is_cuda(const BnGPUBackend *gpu) {
     return gpu && gpu->kind == BN_GPU_BACKEND_CUDA;
 }
@@ -99,6 +103,14 @@ int bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
     return bn_backend_quant_moe_route_q4_down(gate_type, up_type, down_type,
                                               1) ||
            bn_backend_quant_moe_route_q8(gate_type, up_type, down_type);
+}
+
+int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
+    int gate_type,
+    int up_type,
+    int down_type) {
+    return bn_gpu_policy_cuda_moe_resident_routed_ffn_quant_eligible(
+        gate_type, up_type, down_type);
 }
 
 int bn_gpu_policy_cuda_moe_all_f16_cache_forced(void) {
