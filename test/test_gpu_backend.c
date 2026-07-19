@@ -3976,13 +3976,13 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_q5k_q8_1_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_q8_0_prepared_input_matvec_candidate(
+    assert(bn_backend_quant_native_quant_prepared_input_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_q8_0_prepared_input_matvec_candidate(
+    assert(!bn_backend_quant_native_quant_prepared_input_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_q8_0_warp_matvec_candidate(
+    assert(bn_backend_quant_native_quant_warp_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_q8_0_warp_matvec_candidate(
+    assert(!bn_backend_quant_native_quant_warp_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_q4k_q8k_matmul_candidate(
         BN_GGUF_TENSOR_Q4_K));
@@ -4048,9 +4048,9 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_q5k_split_q8_1_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_q8_0_split_candidate(
+    assert(bn_backend_quant_native_quant_split_candidate(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_q8_0_split_candidate(
+    assert(!bn_backend_quant_native_quant_split_candidate(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_split_value_4warp_dot_candidate(
         BN_GGUF_TENSOR_Q4_K));

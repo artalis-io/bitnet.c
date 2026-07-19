@@ -362,11 +362,11 @@ static inline int bn_backend_quant_q5k_q8_1_matvec_candidate(int type) {
     return bn_backend_quant_is_q5k(type);
 }
 
-static inline int bn_backend_quant_q8_0_prepared_input_matvec_candidate(int type) {
+static inline int bn_backend_quant_native_quant_prepared_input_matvec_candidate(int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
-static inline int bn_backend_quant_q8_0_warp_matvec_candidate(int type) {
+static inline int bn_backend_quant_native_quant_warp_matvec_candidate(int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
@@ -420,7 +420,7 @@ static inline int bn_backend_quant_q5k_fused_gateup_q8_1_candidate(
 }
 
 static inline int bn_backend_quant_matvec_allows_fused_bias(int type) {
-    return !bn_backend_quant_q8_0_warp_matvec_candidate(type);
+    return !bn_backend_quant_native_quant_warp_matvec_candidate(type);
 }
 
 static inline int bn_backend_quant_split_allows_fused_bias(int type) {
@@ -439,8 +439,8 @@ static inline int bn_backend_quant_q5k_split_q8_1_candidate(int type) {
     return bn_backend_quant_q5k_q8_1_matvec_candidate(type);
 }
 
-static inline int bn_backend_quant_q8_0_split_candidate(int type) {
-    return bn_backend_quant_q8_0_warp_matvec_candidate(type);
+static inline int bn_backend_quant_native_quant_split_candidate(int type) {
+    return bn_backend_quant_native_quant_warp_matvec_candidate(type);
 }
 
 static inline int bn_backend_quant_split_value_4warp_dot_candidate(

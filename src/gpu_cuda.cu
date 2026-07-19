@@ -13166,7 +13166,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         q6k_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ6K *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_q8_0_warp_matvec_candidate(type) &&
+    } else if (bn_backend_quant_native_quant_warp_matvec_candidate(type) &&
                rows >= 16384 &&
                (cols & 31) == 0) {
         int warps = threads / 32;
@@ -19371,7 +19371,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (small_state_native_matvec &&
                          bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled()) ||
                         (is_logits_op && q8_prepared_input_logits_default)) &&
-                       bn_backend_quant_q8_0_prepared_input_matvec_candidate(
+                       bn_backend_quant_native_quant_prepared_input_matvec_candidate(
                            op->type) &&
                        (op->cols & 31) == 0) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
@@ -19388,7 +19388,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     out, (const BnBlockQ8_0 *)w->data, xq, bias, op->rows,
                     op->cols, out_offset);
             } else if (!disable_q8_warp &&
-                       bn_backend_quant_q8_0_warp_matvec_candidate(
+                       bn_backend_quant_native_quant_warp_matvec_candidate(
                            op->type) &&
                        (op->cols & 31) == 0 && !bias) {
                 int q8_threads = 256;
@@ -19832,7 +19832,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
                 }
-            } else if (bn_backend_quant_q8_0_split_candidate(op->type) &&
+            } else if (bn_backend_quant_native_quant_split_candidate(op->type) &&
                        (cols & 31) == 0 && split1 != 1) {
                 int q8_threads = 256;
                 int warps = q8_threads / 32;
