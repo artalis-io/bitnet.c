@@ -899,36 +899,73 @@ int bn_gpu_policy_cuda_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
            !gpu_logits_need_cpu;
 }
 
+int bn_gpu_policy_decode_logits_cache_enabled(int gpu_logits_need_cpu) {
+    return bn_gpu_policy_cuda_decode_logits_cache_enabled(
+        gpu_logits_need_cpu);
+}
+
 int bn_gpu_policy_cuda_moe_decode_cache_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE") != NULL;
+}
+
+int bn_gpu_policy_moe_decode_cache_enabled(void) {
+    return bn_gpu_policy_cuda_moe_decode_cache_enabled();
 }
 
 int bn_gpu_policy_cuda_moe_decode_cache_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE") != NULL;
 }
 
+int bn_gpu_policy_moe_decode_cache_disabled(void) {
+    return bn_gpu_policy_cuda_moe_decode_cache_disabled();
+}
+
 int bn_gpu_policy_cuda_decode_cache_disabled(void) {
     return getenv("BN_CUDA_DISABLE_DECODE_CACHE") != NULL;
+}
+
+int bn_gpu_policy_decode_cache_disabled(void) {
+    return bn_gpu_policy_cuda_decode_cache_disabled();
 }
 
 int bn_gpu_policy_cuda_q4_q8_decode_cache_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL;
 }
 
+int bn_gpu_policy_q4_q8_decode_cache_disabled(void) {
+    return bn_gpu_policy_cuda_q4_q8_decode_cache_disabled();
+}
+
 int bn_gpu_policy_cuda_logits_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_LOGITS_ARGMAX") != NULL;
+}
+
+int bn_gpu_policy_logits_argmax_disabled(void) {
+    return bn_gpu_policy_cuda_logits_argmax_disabled();
 }
 
 int bn_gpu_policy_cuda_dense_logits_argmax_enabled(void) {
     return getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_dense_logits_argmax_enabled(void) {
+    return bn_gpu_policy_cuda_dense_logits_argmax_enabled();
+}
+
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
+int bn_gpu_policy_moe_logits_mmvq_argmax_enabled(void) {
+    return bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled();
+}
+
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
+}
+
+int bn_gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
+    return bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled();
 }
 
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(int rows,

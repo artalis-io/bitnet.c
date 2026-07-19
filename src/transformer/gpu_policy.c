@@ -1100,27 +1100,27 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     if (!gpu || !c || !logits || !want_argmax || need_logits ||
         !gpu->matvec_argmax_activation ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
-        bn_gpu_policy_cuda_logits_argmax_disabled() ||
+        bn_gpu_policy_logits_argmax_disabled() ||
         !bn_backend_quant_supports_q6k_logits_refine(logits->type))
         return 0;
 
     if (!bn_model_arch_uses_moe(c)) {
         return logits->rows > 262144 ||
-               bn_gpu_policy_cuda_dense_logits_argmax_enabled();
+               bn_gpu_policy_dense_logits_argmax_enabled();
     }
     if (bn_model_arch_uses_all_active_two_expert_moe(c, c->dim))
         return 1;
-    if (bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled())
+    if (bn_gpu_policy_moe_logits_mmvq_argmax_enabled())
         return 1;
     return logits->cols == 1536 &&
-           !bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled();
+           !bn_gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
 
 int bn_transformer_gpu_moe_decode_cacheable(
     const BnConfig *c,
     const BnWeights *w,
     const BnBackendModel *backend) {
-    if (bn_gpu_policy_cuda_moe_decode_cache_disabled() ||
+    if (bn_gpu_policy_moe_decode_cache_disabled() ||
         !c || !w || !backend || !bn_model_arch_uses_moe(c))
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
@@ -1176,15 +1176,15 @@ int bn_transformer_gpu_decode_cacheable(
     int compare_ffn_down_layer,
     int compare_ffn_state_layer) {
     if ((!emit_logits || want_argmax ||
-         bn_gpu_policy_cuda_decode_logits_cache_enabled(
+         bn_gpu_policy_decode_logits_cache_enabled(
              gpu_logits_need_cpu)) == 0)
         return 0;
     if (!transformer_gpu_backend_is_cuda(gpu))
         return 0;
     if (has_moe && !cacheable_resident_moe &&
-        !bn_gpu_policy_cuda_moe_decode_cache_enabled())
+        !bn_gpu_policy_moe_decode_cache_enabled())
         return 0;
-    if (bn_gpu_policy_cuda_decode_cache_disabled())
+    if (bn_gpu_policy_decode_cache_disabled())
         return 0;
     if (q6_logits_refine_captures_xb && !(want_argmax && !need_logits))
         return 0;
@@ -1199,7 +1199,7 @@ int bn_transformer_gpu_decode_cacheable(
         compare_qkv_layer >= 0 || compare_ffn_down_layer >= 0 ||
         compare_ffn_state_layer >= 0)
         return 0;
-    if (bn_gpu_policy_cuda_q4_q8_decode_cache_disabled() ||
+    if (bn_gpu_policy_q4_q8_decode_cache_disabled() ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_transformer_gpu_compare_logits_enabled() ||
         bn_gpu_policy_metal_q6_q8k_enabled())
