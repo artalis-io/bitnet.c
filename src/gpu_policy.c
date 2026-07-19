@@ -385,8 +385,17 @@ int bn_gpu_policy_cuda_small_kquant_native_enabled(int force_float_kquant) {
            !force_float_kquant;
 }
 
+int bn_gpu_policy_small_kquant_native_enabled(int force_float_kquant) {
+    return bn_gpu_policy_cuda_small_kquant_native_enabled(
+        force_float_kquant);
+}
+
 int bn_gpu_policy_cuda_small_kquant_native_disabled(void) {
     return getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") != NULL;
+}
+
+int bn_gpu_policy_small_kquant_native_disabled(void) {
+    return bn_gpu_policy_cuda_small_kquant_native_disabled();
 }
 
 size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit) {
@@ -1878,6 +1887,10 @@ int bn_gpu_policy_cpu_ffn_down_from_layer_or_default(int default_layer) {
 
 int bn_gpu_policy_cuda_ssm_graph_disabled(void) {
     return getenv("BN_CUDA_DISABLE_SSM_GRAPH") != NULL;
+}
+
+int bn_gpu_policy_ssm_graph_disabled(void) {
+    return bn_gpu_policy_cuda_ssm_graph_disabled();
 }
 
 int bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(void) {

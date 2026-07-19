@@ -550,7 +550,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     const BnConfig *c = &m->config;
     if (!bn_model_arch_uses_dense_attention_only(c))
         return 0;
-    if (bn_gpu_policy_cuda_small_kquant_native_enabled(
+    if (bn_gpu_policy_small_kquant_native_enabled(
             bn_model_arch_cpu_force_float_kquant(c)))
         return 1;
     if (!bn_model_arch_uses_small_dense_q8_native_shape(c))
@@ -1266,7 +1266,7 @@ int bn_transformer_gpu_moe_exact_attention_enabled(
 int bn_transformer_gpu_ssm_cpu_fallback_required(
     const BnGPUBackend *gpu) {
     return !transformer_gpu_backend_is_cuda(gpu) ||
-           bn_gpu_policy_cuda_ssm_graph_disabled();
+           bn_gpu_policy_ssm_graph_disabled();
 }
 
 int bn_transformer_gpu_large_hybrid_argmax_blocked(
@@ -1903,8 +1903,8 @@ int bn_transformer_gpu_validate_forward(
         return 0;
     }
 
-    int cuda_large_native = transformer_gpu_backend_is_cuda(gpu);
-    if (!bn_gpu_policy_force_graph_enabled() && !cuda_large_native &&
+    int backend_large_native = transformer_gpu_backend_is_cuda(gpu);
+    if (!bn_gpu_policy_force_graph_enabled() && !backend_large_native &&
         bn_model_arch_uses_large_gpu_graph_fallback_shape(c))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
     if (bn_transformer_gpu_requires_layerwise_rope(c, w) &&
@@ -1913,11 +1913,11 @@ int bn_transformer_gpu_validate_forward(
 
     if (transformer_gpu_backend_is_cuda(gpu) &&
         bn_model_arch_uses_small_dense_shape(c)) {
-        if (bn_gpu_policy_cuda_small_kquant_native_disabled()) {
+        if (bn_gpu_policy_small_kquant_native_disabled()) {
             if (!small_dense_backend_q8_native_by_default(c, w))
-                GPU_POLICY_REJECT("small dense cuda graph disabled");
+                GPU_POLICY_REJECT("small dense gpu graph disabled");
         } else if (!small_dense_backend_native_by_default(c, w)) {
-            GPU_POLICY_REJECT("small dense cuda graph unsupported");
+            GPU_POLICY_REJECT("small dense gpu graph unsupported");
         }
     }
 

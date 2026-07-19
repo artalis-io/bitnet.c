@@ -1034,15 +1034,22 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
+    assert(bn_gpu_policy_small_kquant_native_enabled(0));
+    assert(!bn_gpu_policy_small_kquant_native_enabled(1));
+    assert(!bn_gpu_policy_small_kquant_native_disabled());
     assert(bn_gpu_policy_cuda_small_kquant_native_enabled(0));
     assert(!bn_gpu_policy_cuda_small_kquant_native_enabled(1));
     assert(!bn_gpu_policy_cuda_small_kquant_native_disabled());
     setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    assert(bn_gpu_policy_small_kquant_native_enabled(1));
     assert(bn_gpu_policy_cuda_small_kquant_native_enabled(1));
     setenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    assert(bn_gpu_policy_small_kquant_native_enabled(1));
+    assert(bn_gpu_policy_small_kquant_native_disabled());
     assert(bn_gpu_policy_cuda_small_kquant_native_enabled(1));
     assert(bn_gpu_policy_cuda_small_kquant_native_disabled());
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
+    assert(!bn_gpu_policy_small_kquant_native_enabled(0));
     assert(!bn_gpu_policy_cuda_small_kquant_native_enabled(0));
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 
@@ -1113,8 +1120,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_CPU_FFN_DOWN_FROM_LAYER");
 
     unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
+    assert(!bn_gpu_policy_ssm_graph_disabled());
     assert(!bn_gpu_policy_cuda_ssm_graph_disabled());
     setenv("BN_CUDA_DISABLE_SSM_GRAPH", "1", 1);
+    assert(bn_gpu_policy_ssm_graph_disabled());
     assert(bn_gpu_policy_cuda_ssm_graph_disabled());
     unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
 

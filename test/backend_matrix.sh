@@ -1126,6 +1126,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE")\|getenv("BN_CUDA_DISABL
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_small_kquant_native_enabled\|bn_gpu_policy_cuda_small_kquant_native_disabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use neutral helpers for small K-quant native policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_GPU_DISABLE_PREFILL_MATMUL")\|getenv("BN_GPU_PREFILL_MATMUL")\|getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV")\|getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for prefill matmul/direct-KV env vars"
     fail=1
@@ -1143,6 +1148,11 @@ fi
 
 if grep -n 'getenv("BN_CUDA_DISABLE_SSM_GRAPH")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for CUDA SSM graph env vars"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_cuda_ssm_graph_disabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use neutral helpers for SSM graph policy"
     fail=1
 fi
 
