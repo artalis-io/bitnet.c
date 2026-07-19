@@ -812,6 +812,15 @@ if grep -n 'bn_quant_format_supports_cpu_fused_q4_gateup_silu\|bn_backend_quant_
     fail=1
 fi
 
+if grep -n 'bn_transformer_cpu_.*fused_q4_gateup_silu' \
+    src/transformer/cpu.c \
+    src/transformer/cpu_policy.c \
+    include/transformer_cpu_backend_internal.h \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer CPU fused gate-up policy must use behavior names, not Q4 helper names"
+    fail=1
+fi
+
 if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/transformer/cpu.c >/dev/null 2>&1; then
     echo "CPU execution code must use CPU backend policy helpers for GPU-resident quant matvec dispatch"
     fail=1

@@ -990,7 +990,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_gate);
             const BnPreparedWeight *up_prepared =
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
-            if (bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+            if (bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
                     gpu, ffn_plan, dim,
                     lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) &&
                 bn_quant_q4_gate_up_silu(s->hb, &lw->ffn.ffn_gate, gate_prepared,

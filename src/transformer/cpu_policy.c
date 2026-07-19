@@ -28,15 +28,15 @@ int bn_transformer_cpu_debug_dump_heads_enabled(void) {
     return enabled && enabled[0];
 }
 
-int bn_transformer_cpu_fused_q4_gateup_silu_allowed(void) {
+int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void) {
     return !cpu_env_enabled("BN_CPU_REFERENCE_DOT",
                             "BN_CPU_LLAMA_DOT") &&
            !cpu_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
                             "BN_CPU_LLAMA_Q4_DOT");
 }
 
-int bn_transformer_cpu_can_fused_q4_gateup_silu(int gate_type, int up_type) {
-    return bn_transformer_cpu_fused_q4_gateup_silu_allowed() &&
+int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type) {
+    return bn_transformer_cpu_fused_kquant_gateup_silu_allowed() &&
            bn_backend_quant_cpu_fused_q4_gateup_silu(gate_type, up_type);
 }
 
@@ -80,7 +80,7 @@ int bn_transformer_cpu_route_preq8k_triple_enabled(
                                                 third_type);
 }
 
-int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan,
     int dim,
@@ -91,7 +91,7 @@ int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
            !ffn_plan->scalar_exact_activation &&
            bn_model_arch_activation_uses_silu_path(ffn_plan->activation) &&
            dim % 32 == 0 &&
-           bn_transformer_cpu_can_fused_q4_gateup_silu(gate_type, up_type);
+           bn_transformer_cpu_can_fused_kquant_gateup_silu(gate_type, up_type);
 }
 
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(

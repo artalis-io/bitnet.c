@@ -47,8 +47,8 @@ int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
 int bn_transformer_cpu_debug_dump_pos_selected(int pos);
 int bn_transformer_cpu_debug_dump_heads_enabled(void);
-int bn_transformer_cpu_fused_q4_gateup_silu_allowed(void);
-int bn_transformer_cpu_can_fused_q4_gateup_silu(int gate_type, int up_type);
+int bn_transformer_cpu_fused_kquant_gateup_silu_allowed(void);
+int bn_transformer_cpu_can_fused_kquant_gateup_silu(int gate_type, int up_type);
 int bn_transformer_cpu_can_preq8k_pair(const BnCPUBackendOps *ops,
                                        int left_type,
                                        int right_type);
@@ -69,7 +69,7 @@ int bn_transformer_cpu_route_preq8k_triple_enabled(
     int first_type,
     int second_type,
     int third_type);
-int bn_transformer_cpu_route_fused_q4_gateup_silu_enabled(
+int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan,
     int dim,
