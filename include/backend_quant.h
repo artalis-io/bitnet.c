@@ -441,7 +441,7 @@ static inline int bn_backend_quant_cuda_q6_logits_argmax_candidate(int type) {
     return bn_backend_quant_moe_down_is_q6k(type);
 }
 
-static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
+static inline int bn_backend_quant_moe_all_active_two_kquant_shape(int n_experts,
                                                        int k,
                                                        int down_type,
                                                        int hidden_dim,
@@ -451,18 +451,18 @@ static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
            hidden_dim >= 4096 && dim <= 2048;
 }
 
-static inline int bn_backend_quant_moe_all2_q4q6_routed_op(int op_type,
+static inline int bn_backend_quant_moe_all_active_two_kquant_routed_op(int op_type,
                                                            int n_experts,
                                                            int k,
                                                            int down_type,
                                                            int hidden_dim,
                                                            int dim) {
     return bn_backend_quant_is_q4k(op_type) &&
-           bn_backend_quant_moe_all2_q4q6_shape(n_experts, k, down_type,
+           bn_backend_quant_moe_all_active_two_kquant_shape(n_experts, k, down_type,
                                                 hidden_dim, dim);
 }
 
-static inline int bn_backend_quant_moe_all2_q4_or_q6_shape(int n_experts,
+static inline int bn_backend_quant_moe_all_active_two_q4_or_q6_shape(int n_experts,
                                                            int k,
                                                            int down_type,
                                                            int hidden_dim,

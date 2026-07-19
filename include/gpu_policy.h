@@ -137,21 +137,21 @@ int bn_gpu_policy_cuda_q6k_moe_pair_down_enabled(
 int bn_gpu_policy_cuda_q6k_moe_prefer_f32_down(
     int has_f32_data,
     int hidden_dim,
-    int all2_q4q6,
+    int all_active_two_kquant,
     int all2_f32_down);
 int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_enabled(int n_experts,
                                                       int k);
 int bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_4row_enabled(void);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(int all2_q4q6);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(int all2_q4q6);
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_accum_enabled(int all_active_two_kquant);
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_pair4_sum_enabled(int all_active_two_kquant);
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_4row_sum_enabled(
-    int all2_q4q6,
+    int all_active_two_kquant,
     int k,
     int hidden_dim);
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_8row_sum_enabled(
     int k8_4row_sum,
     int hidden_dim);
-int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_fixed_enabled(int all2_q4q6);
+int bn_gpu_policy_cuda_q6k_moe_down_q8k_all2_fixed_enabled(int all_active_two_kquant);
 int bn_gpu_policy_cuda_q6k_moe_down_resid_rmsnorm_fuse_enabled(void);
 int bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_exact_2048_768_enabled(
     int dim,
@@ -175,9 +175,9 @@ int bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled(int dim);
 int bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled(int dim,
                                                     int n_experts);
 int bn_gpu_policy_cuda_moe_route_q8k_prequant_enabled(int dim,
-                                                      int all2_q4q6);
+                                                      int all_active_two_kquant);
 int bn_gpu_policy_cuda_moe_route_q8_1_prequant_enabled(int dim,
-                                                       int all2_q4q6,
+                                                       int all_active_two_kquant,
                                                        int exact_silu);
 int bn_gpu_policy_cuda_moe_router_fused_topk_enabled(int n_experts,
                                                      int route_block);
@@ -190,10 +190,10 @@ int bn_gpu_policy_cuda_q8_moe_q8x_enabled(void);
 int bn_gpu_policy_cuda_q8_moe_gateup_2row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_q8_moe_down_4row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_q8_moe_down_2row_enabled(int hidden_dim);
-int bn_gpu_policy_cuda_moe_all2_fast_enabled(int all2_q4_or_q6);
+int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(int all_active_two_q4_or_q6);
 int bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled(int use_all2_q8k_default,
                                                int fast_q8k_gateup,
-                                               int all2_q4q6,
+                                               int all_active_two_kquant,
                                                int hidden_dim,
                                                int dim);
 int bn_gpu_policy_cuda_moe_internal_profile_enabled(int profile);
@@ -595,32 +595,32 @@ int bn_gpu_policy_small_dense_prefill_disabled(void);
 int bn_gpu_policy_native_quant_logits_refine_requested(void);
 int bn_gpu_policy_native_quant_logits_refine_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled(void);
-int bn_gpu_policy_all2_q4q6_moe_fast_graph_disabled(void);
-int bn_gpu_policy_all2_q4q6_moe_cublas_decode_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_fast_graph_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_cublas_decode_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_decode_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled(void);
-int bn_gpu_policy_all2_q4q6_moe_all2_fast_enabled(void);
-int bn_gpu_policy_all2_q4q6_moe_q8k_default_disabled(void);
-int bn_gpu_policy_all2_q4q6_route_q8k_default_disabled(void);
-int bn_gpu_policy_all2_q4q6_route_q8_1_prequant_enabled(void);
-int bn_gpu_policy_all2_q4q6_fast_q8k_gateup_enabled(void);
-int bn_gpu_policy_all2_q4q6_fast_q8k_gateup_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_pair_down_enabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_pair_down_f32_layers_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_pair_down_f32_layer_selected(int layer);
-int bn_gpu_policy_all2_q4q6_q6k_ordered_down_enabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_ordered_down_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_f32_down_default_enabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_f32_down_default_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_f32_all2_down_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_f32_cache_enabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_float_4row_down_default_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_float_4row_down_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_layer_selected(
+int bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_route_q8_1_prequant_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_fast_q8k_gateup_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_pair_down_f32_layers_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_pair_down_f32_layer_selected(int layer);
+int bn_gpu_policy_all_active_two_kquant_q6k_ordered_down_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_ordered_down_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_down_default_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_down_default_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_all_active_down_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_cache_enabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_float_4row_down_default_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_float_4row_down_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_exact_4row_down_layer_selected(
     int layer);
-int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_default_disabled(void);
-int bn_gpu_policy_all2_q4q6_q6k_f32_exact_4row_down_disabled(void);
-float bn_gpu_policy_all2_q4q6_down_skip_eps_or_default(float default_eps);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_exact_4row_down_default_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_q6k_f32_exact_4row_down_disabled(void);
+float bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(float default_eps);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled(void);

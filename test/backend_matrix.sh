@@ -105,8 +105,8 @@ if grep -n 'int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K\|int routed_q8 = ga
     fail=1
 fi
 
-if sed -n '/^static int cuda_ops_have_q8_moe_routed_ffn/,/^static int cuda_ops_have_moe_all2_q4q6_routed_ffn/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
-   sed -n '/^static int cuda_ops_have_moe_all2_q4q6_routed_ffn/,/^static int cuda_ops_have_logits/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q4_K\|(int)op->p\[3\] == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1 ||
+if sed -n '/^static int cuda_ops_have_q8_moe_routed_ffn/,/^static int cuda_ops_have_moe_all_active_two_kquant_routed_ffn/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
+   sed -n '/^static int cuda_ops_have_moe_all_active_two_kquant_routed_ffn/,/^static int cuda_ops_have_logits/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q4_K\|(int)op->p\[3\] == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1 ||
    sed -n '/^static int cuda_ops_have_moe_cublas_decode/,/^static int cuda_ops_moe_max_experts/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q4_K\|(int)op->p\[3\] == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for routed MoE graph quant predicates"
     fail=1
@@ -207,7 +207,7 @@ if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/case BN_GPU_CODE_MOE_ROUTED_FFN:/
     fail=1
 fi
 
-if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/int next_moe_all2_q4q6 =/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1; then
+if sed -n '/case BN_GPU_CODE_MOE_ROUTE_TOPK:/,/int next_moe_all_active_two_kquant =/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_F32' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA route-topk dense-F32 policy"
     fail=1
 fi
@@ -1817,8 +1817,13 @@ if grep -n 'BnTransformerGPUMoEAll2ResourcePolicy\|bn_transformer_gpu_moe_all2_r
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_all2_q4q6_moe_\(fast_ffn_enabled\|cpu_attention_safe_disabled\|cpu_moe_safe_disabled\|exact_attention_disabled\|cpu_route_resident_disabled\|exact_gpu_route_requested\|exact_gpu_route_disabled\|route_selection_enabled\|route_layer_range\)' include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "All-active-two K-quant MoE policy must expose behavior-named helpers"
+if grep -n 'bn_gpu_policy_all2_q4q6_' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "All-active-two K-quant MoE policy must use behavior names, not all2_q4q6 shorthand"
+    fail=1
+fi
+
+if grep -n 'bn_backend_quant_moe_all2_q4q6\|bn_backend_quant_moe_all2_q4_or_q6' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Backend quant all-active-two MoE predicates must use behavior names, not all2 shorthand"
     fail=1
 fi
 
