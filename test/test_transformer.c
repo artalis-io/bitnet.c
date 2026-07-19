@@ -2095,15 +2095,11 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_ROUTED_FFN_BATCH_LARGE");
     c.n_experts = 2;
     assert(bn_transformer_gpu_prefill_ssm_layer_backend_available(&gpu));
-    assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
-        &gpu, &c, &map, c.dim, 0));
     assert(!bn_transformer_gpu_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     assert(!bn_transformer_prefill_moe_layer_backend_available(
         &gpu, &c, &map, c.dim, 0));
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
-    assert(bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
-        &gpu, &c, &map, c.dim, 0));
     assert(bn_transformer_gpu_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     assert(bn_transformer_prefill_moe_layer_backend_available(
@@ -2112,23 +2108,15 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &map, c.dim, 0, 15));
     assert(bn_transformer_gpu_prefill_moe_layer_chain_available(
         &gpu, &c, &map, c.dim, 0, 16));
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
-        &gpu, &c, &map, c.dim, 0, 15));
     assert(!bn_transformer_gpu_prefill_ssm_moe_chain_available(
         &gpu, &c, &map, c.dim, 0, 15));
-    assert(bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
-        &gpu, &c, &map, c.dim, 0, 16));
     assert(bn_transformer_gpu_prefill_ssm_moe_chain_available(
         &gpu, &c, &map, c.dim, 0, 16));
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
-        &gpu, &c, &map, c.dim, 0, 16));
     assert(!bn_transformer_gpu_prefill_ssm_moe_chain_available(
         &gpu, &c, &map, c.dim, 0, 16));
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
-        &gpu, &c, &map, c.dim, 0));
     assert(!bn_transformer_gpu_prefill_moe_ffn_batch_available(
         &gpu, &c, &map, c.dim, 0));
     assert(bn_transformer_prefill_moe_layer_backend_available(
@@ -2524,17 +2512,11 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_PREFILL_ATTN_MIN_TOKENS");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-        &gpu, &c, 16));
     assert(!bn_transformer_gpu_prefill_ssm_dense_chain_available(
         &gpu, &c, 16));
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-        &gpu, &c, 15));
     assert(!bn_transformer_gpu_prefill_ssm_dense_chain_available(
         &gpu, &c, 15));
-    assert(bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-        &gpu, &c, 16));
     assert(bn_transformer_gpu_prefill_ssm_dense_chain_available(
         &gpu, &c, 16));
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
@@ -2542,8 +2524,6 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, 16));
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     gpu.prefill_ssm_layer = NULL;
-    assert(!bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-        &gpu, &c, 16));
     assert(!bn_transformer_gpu_prefill_ssm_dense_chain_available(
         &gpu, &c, 16));
     gpu.prefill_ssm_layer = mock_prefill_ssm_layer;

@@ -392,12 +392,6 @@ int bn_transformer_gpu_prefill_dense_chain_min_tokens(
 int bn_transformer_gpu_prefill_moe_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
-int bn_transformer_gpu_cuda_prefill_moe_ffn_batch_available(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnMoEExpertMap *map,
-    int dim,
-    int allow_q4_down);
 int bn_transformer_gpu_prefill_moe_ffn_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -424,19 +418,8 @@ int bn_transformer_gpu_prefill_ssm_moe_chain_available(
     int dim,
     int allow_q4_down,
     int n_tokens);
-int bn_transformer_gpu_cuda_prefill_ssm_moe_chain_available(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnMoEExpertMap *map,
-    int dim,
-    int allow_q4_down,
-    int n_tokens);
 int bn_transformer_gpu_prefill_ssm_layer_backend_available(
     const BnGPUBackend *gpu);
-int bn_transformer_gpu_cuda_prefill_ssm_dense_chain_available(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    int n_tokens);
 int bn_transformer_gpu_prefill_ssm_dense_chain_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,

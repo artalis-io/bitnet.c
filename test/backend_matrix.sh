@@ -1266,7 +1266,7 @@ if grep -n 'bn_transformer_gpu_cuda_small_dense_.*\|bn_transformer_gpu_cuda_smal
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_cuda_prefill_\(dense_chain_enabled\|hybrid_chain_enabled\|attention_enabled\|ssm_run_chain_enabled\|ssm_ffn_fuse_allowed\|moe_chain_debug_enabled\|hybrid_chain_debug_enabled\|ssm_layer_disabled\|attention_min_tokens\|dense_chain_min_tokens\|moe_chain_min_tokens\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_cuda_prefill_\(dense_chain_enabled\|hybrid_chain_enabled\|attention_enabled\|ssm_run_chain_enabled\|ssm_ffn_fuse_allowed\|moe_chain_debug_enabled\|hybrid_chain_debug_enabled\|ssm_layer_disabled\|attention_min_tokens\|dense_chain_min_tokens\|moe_chain_min_tokens\|moe_ffn_batch_available\|ssm_moe_chain_available\|ssm_dense_chain_available\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "prefill transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1
 fi
