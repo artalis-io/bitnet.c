@@ -578,33 +578,7 @@ int bn_transformer_gpu_moe_decode_cacheable(
     const BnConfig *c,
     const BnWeights *w,
     const BnBackendModel *backend);
-int bn_transformer_gpu_cuda_moe_decode_cacheable(
-    const BnConfig *c,
-    const BnWeights *w,
-    const BnBackendModel *backend);
 int bn_transformer_gpu_decode_cacheable(
-    const BnGPUBackend *gpu,
-    int emit_logits,
-    int want_argmax,
-    int gpu_logits_need_cpu,
-    int has_moe,
-    int cacheable_resident_moe,
-    int q6_logits_refine_captures_xb,
-    int q8_logits_refine_captures_xb,
-    int need_logits,
-    int cpu_fallback_layer,
-    int cpu_fallback_from_layer,
-    int cpu_fallback_attn_layer,
-    int cpu_fallback_attn_from_layer,
-    int cpu_fallback_ffn_layer,
-    int cpu_fallback_ffn_from_layer,
-    int cpu_fallback_ffn_down_from_layer,
-    int compare_attention_layer,
-    int compare_gqa_layer,
-    int compare_qkv_layer,
-    int compare_ffn_down_layer,
-    int compare_ffn_state_layer);
-int bn_transformer_gpu_cuda_decode_cacheable(
     const BnGPUBackend *gpu,
     int emit_logits,
     int want_argmax,
@@ -654,11 +628,6 @@ int bn_transformer_gpu_moe_exact_attention_enabled(
     const BnConfig *c);
 int bn_transformer_gpu_ssm_cpu_fallback_required(
     const BnGPUBackend *gpu);
-int bn_transformer_gpu_cuda_large_hybrid_argmax_blocked(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnWeights *w,
-    int want_argmax);
 BnTransformerGPUDecodeEntryPolicy
 bn_transformer_gpu_decode_entry_policy(
     const BnGPUBackend *gpu,

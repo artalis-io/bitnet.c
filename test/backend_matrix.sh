@@ -1281,6 +1281,11 @@ if grep -n 'bn_transformer_gpu_cuda_large_hybrid_\(cpu_attn_safe_default\|cpu_at
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_cuda_\(moe_decode_cacheable\|decode_cacheable\|large_hybrid_argmax_blocked\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+    echo "decode cache transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_cuda_moe_\(prefill_enabled\|prefill_min_tokens\|cache_prefill_enabled\|prefill_shared_fuse_enabled\|route_batch_debug_enabled\|lazy_aux_cache_enabled\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "MoE prefill transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1
