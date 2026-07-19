@@ -18130,7 +18130,7 @@ static int cuda_ops_have_q8_moe_routed_ffn(const BnGPUOp *ops, int n_ops) {
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
         if (op->op_code == BN_GPU_CODE_MOE_ROUTED_FFN &&
-            op->type == BN_GGUF_TENSOR_Q8_0)
+            bn_backend_quant_moe_routed_op_is_q8(op->type))
             return 1;
     }
     return 0;
@@ -18142,12 +18142,9 @@ static int cuda_ops_have_moe_all2_q4q6_routed_ffn(
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
         if (op->op_code == BN_GPU_CODE_MOE_ROUTED_FFN &&
-            op->type == BN_GGUF_TENSOR_Q4_K &&
-            op->cols > 0 && op->cols <= 2048 &&
-            (int)op->p[0] >= 4096 &&
-            (int)op->p[1] == 2 &&
-            (int)op->p[2] == 2 &&
-            (int)op->p[3] == BN_GGUF_TENSOR_Q6_K)
+            bn_backend_quant_moe_all2_q4q6_routed_op(
+                op->type, (int)op->p[1], (int)op->p[2], (int)op->p[3],
+                (int)op->p[0], op->cols))
             return 1;
     }
     return 0;
@@ -18173,12 +18170,9 @@ static int cuda_ops_have_moe_cublas_decode(const BnGPUOp *ops, int n_ops) {
     for (int i = 0; i < n_ops; i++) {
         const BnGPUOp *op = &ops[i];
         if (op->op_code == BN_GPU_CODE_MOE_ROUTED_FFN &&
-            op->type == BN_GGUF_TENSOR_Q4_K &&
-            (int)op->p[1] == 2 &&
-            (int)op->p[2] == 2 &&
-            (int)op->p[3] == BN_GGUF_TENSOR_Q6_K &&
-            op->cols > 0 &&
-            (int)op->p[0] >= 4096)
+            bn_backend_quant_moe_all2_q4q6_routed_op(
+                op->type, (int)op->p[1], (int)op->p[2], (int)op->p[3],
+                (int)op->p[0], op->cols))
             return 1;
     }
     return 0;
@@ -18501,11 +18495,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int down_type = (int)rop->p[3];
                 if (hidden > 0 && k > 0) {
                     int mid_elems = hidden * k;
-                    if (rop->type == BN_GGUF_TENSOR_Q8_0) {
+                    if (bn_backend_quant_moe_routed_op_is_q8(rop->type)) {
                         int elems = mid_elems > rop->cols ? mid_elems : rop->cols;
                         if (elems > reserve_q8_1_cols)
                             reserve_q8_1_cols = elems;
-                    } else if (rop->type == BN_GGUF_TENSOR_Q4_K) {
+                    } else if (bn_backend_quant_is_q4k(rop->type)) {
                         if (rop->cols > reserve_q8_1_cols)
                             reserve_q8_1_cols = rop->cols;
                         if (bn_backend_quant_moe_down_is_q4k_or_q6k(

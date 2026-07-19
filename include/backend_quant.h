@@ -189,6 +189,10 @@ static inline int bn_backend_quant_moe_routed_q8(int gate_type,
     return bn_backend_quant_moe_route_q8(gate_type, up_type, down_type);
 }
 
+static inline int bn_backend_quant_moe_routed_op_is_q8(int type) {
+    return bn_backend_quant_is_q8_0(type);
+}
+
 static inline int bn_backend_quant_moe_down_is_q6k(int down_type) {
     return down_type == BN_GGUF_TENSOR_Q6_K;
 }
@@ -210,6 +214,17 @@ static inline int bn_backend_quant_moe_all2_q4q6_shape(int n_experts,
     return n_experts == 2 && k == 2 &&
            bn_backend_quant_moe_down_is_q6k(down_type) &&
            hidden_dim >= 4096 && dim <= 2048;
+}
+
+static inline int bn_backend_quant_moe_all2_q4q6_routed_op(int op_type,
+                                                           int n_experts,
+                                                           int k,
+                                                           int down_type,
+                                                           int hidden_dim,
+                                                           int dim) {
+    return bn_backend_quant_is_q4k(op_type) &&
+           bn_backend_quant_moe_all2_q4q6_shape(n_experts, k, down_type,
+                                                hidden_dim, dim);
 }
 
 static inline int bn_backend_quant_moe_all2_q4_or_q6_shape(int n_experts,
