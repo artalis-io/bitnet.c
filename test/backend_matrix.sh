@@ -219,8 +219,9 @@ if grep -n 'activation == [012]\|act_type == [012]\|activation != [12]\|act_type
     src/transformer/gpu_policy.c \
     src/transformer/gpu_emit.c \
     src/transformer/gpu_fallback.c \
-    src/transformer/prefill_backend.c >/dev/null 2>&1; then
-    echo "Transformer activation policy must use model_arch activation helpers"
+    src/transformer/prefill_backend.c \
+    src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "Transformer/CUDA activation policy must use named activation helpers"
     fail=1
 fi
 

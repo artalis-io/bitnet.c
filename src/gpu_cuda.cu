@@ -87,6 +87,10 @@ typedef struct {
     size_t act_sizes[BN_GPU_VALUE_COUNT];
 } BnCudaCtx;
 
+static __host__ __device__ int cuda_activation_is_silu(int act_type) {
+    return act_type == BN_MODEL_ACTIVATION_SILU;
+}
+
 #define BN_CUDA_ARGMAX_PENALTY_SORT_MAX 256
 
 static int cuda_prepare_penalty_tokens(const int *src, int n, int *dst,
@@ -10507,7 +10511,7 @@ static __global__ void ffn_activation_kernel(float *out,
     if (i >= hidden_dim) return;
     float gate = gate_up[i];
     float up = gate_up[(size_t)hidden_dim + i];
-    if (act_type == 0) {
+    if (cuda_activation_is_silu(act_type)) {
         float silu = gate / (1.0f + __expf(-gate));
         out[i] = silu * up;
     } else {
@@ -10528,7 +10532,7 @@ static __global__ void ffn_activation_batch_kernel(float *out,
     size_t base = (size_t)token * hidden_dim + h;
     float gate = gate_up[base];
     float up = gate_up[(size_t)n_tokens * hidden_dim + base];
-    if (act_type == 0) {
+    if (cuda_activation_is_silu(act_type)) {
         float silu = gate / (1.0f + __expf(-gate));
         out[base] = silu * up;
     } else {
@@ -10547,7 +10551,7 @@ static __global__ void ffn_activation_batch_to_f16_kernel(
     size_t base = (size_t)token * hidden_dim + h;
     float gate = gate_up[base];
     float up = gate_up[(size_t)n_tokens * hidden_dim + base];
-    float v = act_type == 0
+    float v = cuda_activation_is_silu(act_type)
         ? (gate / (1.0f + __expf(-gate))) * up
         : gate * up;
     out[base] = __float2half_rn(v);
@@ -10564,7 +10568,7 @@ static __global__ void ffn_activation_batch_stacked_kernel(
     size_t src = (size_t)token * (size_t)hidden_dim * 2u + (size_t)h;
     float gate = gate_up[src];
     float up = gate_up[src + (size_t)hidden_dim];
-    if (act_type == 0) {
+    if (cuda_activation_is_silu(act_type)) {
         float silu = gate / (1.0f + __expf(-gate));
         out[(size_t)token * hidden_dim + h] = silu * up;
     } else {
@@ -10583,7 +10587,7 @@ static __global__ void ffn_activation_batch_stacked_to_f16_kernel(
     size_t src = (size_t)token * (size_t)hidden_dim * 2u + (size_t)h;
     float gate = gate_up[src];
     float up = gate_up[src + (size_t)hidden_dim];
-    float v = act_type == 0
+    float v = cuda_activation_is_silu(act_type)
         ? (gate / (1.0f + __expf(-gate))) * up
         : gate * up;
     out[(size_t)token * hidden_dim + h] = __float2half_rn(v);
@@ -10600,7 +10604,7 @@ static __global__ void ffn_activation_batch_stacked_f16_to_f16_kernel(
     size_t src = (size_t)token * (size_t)hidden_dim * 2u + (size_t)h;
     float gate = __half2float(gate_up[src]);
     float up = __half2float(gate_up[src + (size_t)hidden_dim]);
-    float v = act_type == 0
+    float v = cuda_activation_is_silu(act_type)
         ? (gate / (1.0f + __expf(-gate))) * up
         : gate * up;
     out[(size_t)token * hidden_dim + h] = __float2half_rn(v);
@@ -10691,7 +10695,9 @@ static __global__ void moe_gateup_grouped_to_f16_kernel(
                  (size_t)j * (size_t)hidden + (size_t)h;
     float gv = gate[off];
     float uv = up[off];
-    float v = act_type == 0 ? (gv / (1.0f + __expf(-gv))) * uv : gv * uv;
+    float v = cuda_activation_is_silu(act_type)
+        ? (gv / (1.0f + __expf(-gv))) * uv
+        : gv * uv;
     mid[off] = __float2half_rn(v);
 }
 
@@ -10714,7 +10720,9 @@ static __global__ void moe_gateup_grouped_to_route_float_kernel(
     float gv = gate[off];
     float uv = up[off];
     mid[(size_t)route_pos * (size_t)hidden + (size_t)h] =
-        act_type == 0 ? (gv / (1.0f + __expf(-gv))) * uv : gv * uv;
+        cuda_activation_is_silu(act_type)
+            ? (gv / (1.0f + __expf(-gv))) * uv
+            : gv * uv;
     (void)k;
 }
 
@@ -10734,7 +10742,9 @@ static __global__ void moe_gateup_grouped_f16_to_f16_kernel(
                  (size_t)j * (size_t)hidden + (size_t)h;
     float gv = __half2float(gate[off]);
     float uv = __half2float(up[off]);
-    float v = act_type == 0 ? (gv / (1.0f + __expf(-gv))) * uv : gv * uv;
+    float v = cuda_activation_is_silu(act_type)
+        ? (gv / (1.0f + __expf(-gv))) * uv
+        : gv * uv;
     mid[off] = __float2half_rn(v);
 }
 
@@ -10757,7 +10767,9 @@ static __global__ void moe_all2_gateup_f16_to_f16_kernel(
     if (idx >= total) return;
     float gv = __half2float(gate[idx]);
     float uv = __half2float(up[idx]);
-    float v = act_type == 0 ? (gv / (1.0f + __expf(-gv))) * uv : gv * uv;
+    float v = cuda_activation_is_silu(act_type)
+        ? (gv / (1.0f + __expf(-gv))) * uv
+        : gv * uv;
     mid[idx] = __float2half_rn(v);
 }
 
@@ -17236,7 +17248,7 @@ static int cuda_prefill_ssm_layer(
     int stacked_ffn_gateup = ffn_gate && ffn_gate->data && ffn_up == NULL;
     int fuse_ffn = ffn_gate && ffn_gate->data && ffn_down && ffn_down->data &&
                    ffn_norm && ffn_norm->data && hidden_dim > 0 &&
-                   act_type == 0;
+                   cuda_activation_is_silu(act_type);
     if (did_ffn)
         *did_ffn = 0;
     if (bn_gpu_policy_cuda_prefill_ssm_layer_disabled())
