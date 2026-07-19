@@ -261,7 +261,7 @@ static inline int bn_backend_quant_cuda_f16_q8_matvec_candidate(int type) {
 
 static inline int bn_backend_quant_cuda_f16_float_cache_matvec_candidate(
     int type) {
-    return bn_quant_format_is_cuda_f16_float_cache_matvec_candidate(type);
+    return bn_quant_format_is_f16_float_cache_matvec_candidate(type);
 }
 
 static inline int bn_backend_quant_cuda_f16_q5k_matvec_candidate(int type) {

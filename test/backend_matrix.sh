@@ -1381,6 +1381,11 @@ if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arc
     fail=1
 fi
 
+if grep -n 'bn_quant_format_is_cuda_f16_float_cache_matvec_candidate' include/quant.h src/quant test/test_quant.c >/dev/null 2>&1; then
+    echo "quant format helpers must name F16 float-cache matvec capability without CUDA"
+    fail=1
+fi
+
 if awk '
     /int bn_transformer_gpu_batch_prefill_enabled\(/ { in_func = 1 }
     in_func && /return c->dim <= (8192|2560)/ { found = 1 }
