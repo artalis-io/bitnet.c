@@ -506,7 +506,8 @@ static int gpu_policy_moe_resident_routed_ffn_quant_eligible(
     int down_type) {
     return bn_backend_quant_moe_route_q4_down(gate_type, up_type, down_type,
                                               1) ||
-           bn_backend_quant_moe_route_q8(gate_type, up_type, down_type);
+           bn_backend_quant_moe_route_native_quant(gate_type, up_type,
+                                                   down_type);
 }
 
 int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
@@ -772,7 +773,7 @@ int bn_gpu_policy_matvec_type_disabled(int tensor_type) {
         return getenv("BN_CUDA_DISABLE_Q4_K") != NULL;
     if (bn_backend_quant_is_q5k(tensor_type))
         return getenv("BN_CUDA_DISABLE_Q5_K") != NULL;
-    if (bn_backend_quant_moe_down_is_q6k(tensor_type))
+    if (bn_backend_quant_moe_down_uses_down_kquant(tensor_type))
         return getenv("BN_CUDA_DISABLE_Q6_K") != NULL;
     if (bn_backend_quant_is_q8k(tensor_type))
         return getenv("BN_CUDA_DISABLE_Q8_K") != NULL;

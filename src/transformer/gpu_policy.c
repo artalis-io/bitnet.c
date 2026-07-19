@@ -1454,9 +1454,9 @@ int bn_transformer_gpu_moe_routed_kquant_down_allowed(
 
 int bn_transformer_gpu_moe_routed_native_quant(const BnMoEExpertMap *map) {
     return map &&
-           bn_backend_quant_moe_route_q8(map->gate_type,
-                                         map->up_type,
-                                         map->down_type);
+           bn_backend_quant_moe_route_native_quant(map->gate_type,
+                                                   map->up_type,
+                                                   map->down_type);
 }
 
 int bn_transformer_gpu_moe_route_topk_enabled(

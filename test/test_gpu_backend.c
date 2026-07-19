@@ -3874,24 +3874,28 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
                                                   BN_GGUF_TENSOR_Q8_0,
                                                   BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_moe_routed_q8(BN_GGUF_TENSOR_Q8_0,
+    assert(bn_backend_quant_moe_routed_native_quant(BN_GGUF_TENSOR_Q8_0,
                                           BN_GGUF_TENSOR_Q8_0,
                                           BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_moe_routed_q8(BN_GGUF_TENSOR_Q8_0,
+    assert(!bn_backend_quant_moe_routed_native_quant(BN_GGUF_TENSOR_Q8_0,
                                            BN_GGUF_TENSOR_Q8_0,
                                            BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_moe_routed_op_is_q8(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_moe_routed_op_is_q8(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_moe_routed_op_uses_native_quant(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_moe_routed_op_uses_native_quant(
+        BN_GGUF_TENSOR_Q4_K));
     assert(!bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
     assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_moe_down_is_q6k(BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_moe_down_is_q6k(BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_moe_down_is_q4k(BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_moe_down_is_q4k(BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_moe_down_is_q4k_or_q6k(BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_moe_down_is_q4k_or_q6k(BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_moe_down_is_q4k_or_q6k(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_moe_down_uses_down_kquant(BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_moe_down_uses_down_kquant(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_moe_down_uses_asymmetric_kquant(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_moe_down_uses_asymmetric_kquant(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_moe_down_uses_graph_kquant(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_moe_down_uses_graph_kquant(BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_moe_down_uses_graph_kquant(BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
