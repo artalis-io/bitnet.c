@@ -1196,8 +1196,8 @@ if grep -n 'bn_gpu_policy_cuda_logits_argmax_disabled\|bn_gpu_policy_cuda_dense_
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_cuda_logits_argmax_disabled' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "Logits argmax disable policy must expose/test behavior-named helpers, not CUDA implementation aliases"
+if grep -n 'bn_gpu_policy_cuda_logits_argmax_disabled\|bn_gpu_policy_cuda_dense_logits_argmax_enabled\|bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled\|bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Logits argmax policy must expose/test behavior-named helpers, not CUDA implementation aliases"
     fail=1
 fi
 

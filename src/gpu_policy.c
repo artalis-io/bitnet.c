@@ -979,36 +979,36 @@ int bn_gpu_policy_logits_argmax_disabled(void) {
     return gpu_policy_logits_argmax_disabled();
 }
 
-int bn_gpu_policy_cuda_dense_logits_argmax_enabled(void) {
+static int gpu_policy_dense_logits_argmax_enabled(void) {
     return getenv("BN_CUDA_ENABLE_DENSE_LOGITS_ARGMAX") != NULL;
 }
 
 int bn_gpu_policy_dense_logits_argmax_enabled(void) {
-    return bn_gpu_policy_cuda_dense_logits_argmax_enabled();
+    return gpu_policy_dense_logits_argmax_enabled();
 }
 
-int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled(void) {
+static int gpu_policy_moe_logits_mmvq_argmax_enabled(void) {
     return getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
 int bn_gpu_policy_moe_logits_mmvq_argmax_enabled(void) {
-    return bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled();
+    return gpu_policy_moe_logits_mmvq_argmax_enabled();
 }
 
-int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled(void) {
+static int gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
 int bn_gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
-    return bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled();
+    return gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
 
 int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled(int rows,
                                                            int cols) {
-    return !bn_gpu_policy_cuda_moe_logits_mmvq_argmax_disabled() &&
+    return !gpu_policy_moe_logits_mmvq_argmax_disabled() &&
            rows >= 50000 &&
            (cols == 1536 ||
-            bn_gpu_policy_cuda_moe_logits_mmvq_argmax_enabled());
+            gpu_policy_moe_logits_mmvq_argmax_enabled());
 }
 
 int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_enabled(int use_mmvq,
