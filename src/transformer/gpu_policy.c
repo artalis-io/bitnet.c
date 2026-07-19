@@ -17,10 +17,6 @@ int bn_transformer_gpu_graph_op_capacity(const BnConfig *c) {
     return 80 * c->n_layers + 5 * BN_MAX_MOE_K + 100;
 }
 
-static int transformer_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
-    return bn_gpu_policy_backend_is_cuda(gpu);
-}
-
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
     return gpu && ((gpu->caps & cap) != 0);
 }
@@ -1182,7 +1178,7 @@ int bn_transformer_gpu_decode_cacheable(
          bn_gpu_policy_decode_logits_cache_enabled(
              gpu_logits_need_cpu)) == 0)
         return 0;
-    if (!transformer_gpu_backend_is_cuda(gpu))
+    if (!bn_gpu_policy_backend_decode_graph_cache_supported(gpu))
         return 0;
     if (has_moe && !cacheable_resident_moe &&
         !bn_gpu_policy_moe_decode_cache_enabled())
@@ -1261,14 +1257,14 @@ int bn_transformer_gpu_all2_q4q6_moe_cpu_moe_safe_default(
 int bn_transformer_gpu_moe_exact_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return transformer_gpu_backend_is_cuda(gpu) &&
+    return bn_gpu_policy_backend_moe_exact_attention_supported(gpu) &&
            bn_model_arch_moe_prefers_exact_gpu_attention(c) &&
            !bn_gpu_policy_all2_q4q6_moe_exact_attention_disabled();
 }
 
 int bn_transformer_gpu_ssm_cpu_fallback_required(
     const BnGPUBackend *gpu) {
-    return !transformer_gpu_backend_is_cuda(gpu) ||
+    return !bn_gpu_policy_backend_ssm_graph_supported(gpu) ||
            bn_gpu_policy_ssm_graph_disabled();
 }
 
@@ -1278,7 +1274,7 @@ int bn_transformer_gpu_large_hybrid_argmax_blocked(
     const BnWeights *w,
     int want_argmax) {
     return want_argmax &&
-           transformer_gpu_backend_is_cuda(gpu) &&
+           bn_gpu_policy_backend_large_hybrid_argmax_supported(gpu) &&
            bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(c, w) &&
            !bn_gpu_policy_large_hybrid_argmax_enabled();
 }
@@ -1609,7 +1605,7 @@ bn_transformer_gpu_moe_direct_route_policy(
     BnTransformerGPUMoEDirectRoutePolicy policy = {0};
     policy.router_diff = router_diff;
     policy.enabled =
-        transformer_gpu_backend_is_cuda(gpu) &&
+        bn_gpu_policy_backend_all2_moe_direct_route_supported(gpu) &&
         bn_transformer_gpu_all2_moe_direct_route_enabled(
             c, router_diff, moe_gate_all);
     return policy;
@@ -1698,7 +1694,7 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     int layer,
     int cpu_fallback_ffn_layer,
     int cpu_fallback_ffn_from_layer) {
-    if (!transformer_gpu_backend_is_cuda(gpu))
+    if (!bn_gpu_policy_backend_resident_moe_ffn_supported(gpu))
         return 1;
     if (bn_transformer_gpu_moe_ffn_disabled())
         return 1;
@@ -1831,7 +1827,8 @@ bn_transformer_gpu_moe_shared_cpu_fallback_policy(
 int bn_transformer_gpu_moe_gateup_split_enabled(
     const BnGPUBackend *gpu,
     int can_split) {
-    return transformer_gpu_backend_is_cuda(gpu) && can_split &&
+    return bn_gpu_policy_backend_moe_gateup_split_supported(gpu) &&
+           can_split &&
            bn_gpu_policy_moe_gateup_split_enabled(can_split);
 }
 
@@ -1958,11 +1955,11 @@ int bn_transformer_gpu_validate_forward(
     }
 
     if (out->has_moe &&
-        (!transformer_gpu_backend_is_cuda(gpu) ||
+        (!bn_gpu_policy_backend_resident_moe_ffn_supported(gpu) ||
          bn_transformer_gpu_moe_ffn_disabled()))
         GPU_POLICY_REJECT("moe gpu-resident forward unsupported");
     if (out->has_moe &&
-        transformer_gpu_backend_is_cuda(gpu) &&
+        bn_gpu_policy_backend_all2_q4q6_moe_enabled(gpu) &&
         all2_q4q6_moe_requires_opt_in(c, w))
         GPU_POLICY_REJECT("all2 q4/q6 moe gpu-resident forward requires opt-in");
     if (out->has_ssm && (!gpu->read_activation || !gpu->write_activation))

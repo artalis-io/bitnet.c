@@ -2357,6 +2357,40 @@ int bn_gpu_policy_backend_all2_q4q6_moe_q6_logits_refine_default_supported(
     return bn_gpu_policy_backend_is_cuda(gpu);
 }
 
+int bn_gpu_policy_backend_decode_graph_cache_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_moe_exact_attention_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_ssm_graph_supported(const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_large_hybrid_argmax_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_all2_moe_direct_route_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_resident_moe_ffn_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
+int bn_gpu_policy_backend_moe_gateup_split_supported(
+    const BnGPUBackend *gpu) {
+    return bn_gpu_policy_backend_is_cuda(gpu);
+}
+
 int bn_gpu_policy_argmax_debug_enabled(void) {
     return getenv("BN_GPU_DEBUG_ARGMAX") != NULL;
 }
