@@ -5,7 +5,6 @@
 #include "model_config.h"
 #include "quant.h"
 #include "threadpool.h"
-#include "transformer_simd_internal.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

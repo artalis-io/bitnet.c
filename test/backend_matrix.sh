@@ -1686,6 +1686,17 @@ if grep -n '__ARM_NEON\|arm_neon.h\|vdupq_n_f32\|vmaxq_f32\|vst1q_f32' include/t
 fi
 
 for file in \
+    include/transformer_gqa_internal.h \
+    include/transformer_logits_internal.h \
+    include/transformer_ssm_internal.h
+do
+    if grep -n 'transformer_simd_internal.h\|simd_helpers.h\|arm_neon.h\|immintrin.h\|wasm_simd128.h' "$file" >/dev/null 2>&1; then
+        echo "$file must keep SIMD helper policy in ISA-specific transformer sources"
+        fail=1
+    fi
+done
+
+for file in \
     src/model_gpu.c \
     src/gpu_moe_bridge.c \
     src/main.c

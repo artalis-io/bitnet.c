@@ -1,7 +1,6 @@
 #ifndef BN_TRANSFORMER_SSM_INTERNAL_H
 #define BN_TRANSFORMER_SSM_INTERNAL_H
 
-#include "transformer_simd_internal.h"
 #include <math.h>
 #include <stddef.h>
 

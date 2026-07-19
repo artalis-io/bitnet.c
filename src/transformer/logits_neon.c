@@ -1,4 +1,5 @@
 #include "transformer_logits_internal.h"
+#include "transformer_simd_internal.h"
 
 #ifdef __ARM_NEON
 

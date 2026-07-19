@@ -3,7 +3,6 @@
 
 #include "model.h"
 #include "transformer_math_internal.h"
-#include "transformer_simd_internal.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

@@ -1,4 +1,5 @@
 #include "transformer_gqa_internal.h"
+#include "transformer_simd_internal.h"
 
 #ifdef __wasm_simd128__
 

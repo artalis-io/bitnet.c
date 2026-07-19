@@ -1,6 +1,7 @@
 #include "transformer_kv_internal.h"
 #include "transformer_cpu_features_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_simd_internal.h"
 #include "quant.h"
 
 #if !BN_TRANSFORMER_CPU_HAS_NEON && !BN_TRANSFORMER_CPU_HAS_AVX2

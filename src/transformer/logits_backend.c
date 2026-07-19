@@ -1,6 +1,7 @@
 #include "transformer_logits_internal.h"
 #include "transformer_cpu_features_internal.h"
 #include "transformer_rmsnorm_internal.h"
+#include "transformer_simd_internal.h"
 
 #if BN_TRANSFORMER_CPU_HAS_NEON_FP16_ARITH
 static void logits_prepare_f16_x_neon(uint16_t *dst,
