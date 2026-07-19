@@ -19548,7 +19548,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     break;
                 }
             }
-            bias0_idx = (fuse_bias_enabled && op->type != BN_GGUF_TENSOR_Q8_0)
+            bias0_idx = (fuse_bias_enabled &&
+                         bn_backend_quant_cuda_split_allows_fused_bias(
+                             op->type))
                 ? cuda_find_fusable_bias(ops, n_ops, i, op->buf_out, split0)
                 : -1;
             if (bias0_idx >= 0) {
@@ -19557,7 +19559,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     bias0 = (const float *)bw->data;
                 }
             }
-            if (op->type == BN_GGUF_TENSOR_Q4_K &&
+            if (bn_backend_quant_cuda_q4k_split_q8k_candidate(op->type) &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_q4k_dot &&
                 (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) &&
                 bn_gpu_policy_cuda_q4k_q8k_dot_enabled()) {
@@ -19583,7 +19585,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
                     bias0, total_rows, cols, split0, split1,
                     (size_t)op->p[6], (size_t)op->p[7]);
-            } else if (op->type == BN_GGUF_TENSOR_Q4_K &&
+            } else if (bn_backend_quant_cuda_q4k_split_q8_1_candidate(
+                           op->type) &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_q4k_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0)
                     BN_CUDA_EXEC_FAIL("q4k split q8 scratch alloc failed");
@@ -19702,8 +19705,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             scan->buf_in == op->buf_in &&
                             scan->cols == cols &&
                             scan->rows == value_rows &&
-                            (scan->type == BN_GGUF_TENSOR_Q4_K ||
-                             scan->type == BN_GGUF_TENSOR_Q6_K) &&
+                            bn_backend_quant_cuda_split_value_fuse_candidate(
+                                scan->type) &&
                             scan->W_buf &&
                             cuda_act(ctx, scan->buf_out)) {
                             v_idx = si;
@@ -19742,7 +19745,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         }
                         if (vw && vw->data && vw->cols == cols &&
                             vw->rows >= vop->rows) {
-                            if (vop->type == BN_GGUF_TENSOR_Q4_K) {
+                            if (bn_backend_quant_cuda_q4k_split_value_fuse_candidate(
+                                    vop->type)) {
                                 BN_CUDA_LAUNCH(ctx,
                                     q4k_dot_matvec_4warp_kernel, vop->rows,
                                     128, 0, vout,
@@ -19763,7 +19767,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         }
                     }
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q5_K &&
+            } else if (bn_backend_quant_cuda_q5k_split_q8_1_candidate(
+                           op->type) &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_q5k_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0)
                     BN_CUDA_EXEC_FAIL("q5k split q8 scratch alloc failed");
@@ -19788,7 +19793,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
                 }
-            } else if (op->type == BN_GGUF_TENSOR_Q8_0 &&
+            } else if (bn_backend_quant_cuda_q8_0_split_candidate(op->type) &&
                        (cols & 31) == 0 && split1 != 1) {
                 int q8_threads = 256;
                 int warps = q8_threads / 32;

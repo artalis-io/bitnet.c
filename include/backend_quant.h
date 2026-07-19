@@ -359,6 +359,41 @@ static inline int bn_backend_quant_cuda_q5k_fused_gateup_q8_1_candidate(
     return bn_backend_quant_cuda_q5k_q8_1_matvec_candidate(type);
 }
 
+static inline int bn_backend_quant_cuda_split_allows_fused_bias(int type) {
+    return !bn_backend_quant_cuda_q8_0_warp_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_split_q8k_candidate(int type) {
+    return bn_backend_quant_cuda_q4k_q8k_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_split_q8_1_candidate(int type) {
+    return bn_backend_quant_cuda_q4k_q8_1_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q5k_split_q8_1_candidate(int type) {
+    return bn_backend_quant_cuda_q5k_q8_1_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q8_0_split_candidate(int type) {
+    return bn_backend_quant_cuda_q8_0_warp_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q4k_split_value_fuse_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q4k_q8_1_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_q6k_split_value_fuse_candidate(
+    int type) {
+    return bn_backend_quant_cuda_q6k_warp_matvec_candidate(type);
+}
+
+static inline int bn_backend_quant_cuda_split_value_fuse_candidate(int type) {
+    return bn_backend_quant_cuda_q4k_split_value_fuse_candidate(type) ||
+           bn_backend_quant_cuda_q6k_split_value_fuse_candidate(type);
+}
+
 static inline int bn_backend_quant_cuda_q5_0_pair_matmul(
     int first_type, int second_type) {
     return bn_backend_quant_cuda_q5_0_matmul_candidate(first_type) &&
