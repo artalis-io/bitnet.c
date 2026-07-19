@@ -1807,6 +1807,11 @@ if grep -n 'BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8\|BN_MODEL_ARCH_POLICY_S
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_small_dense_q8_supported\|bn_backend_quant_cuda_small_dense_q8_supported\|bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled' include/backend_quant.h include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Small-dense native-quant policy must use behavior names, not Q8 internal helper names"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_shared_q4_q8\|shared_q4_q8_eligible\|use_shared_q4_q8' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU shared MoE dot policy must expose behavior-named helpers"
     fail=1

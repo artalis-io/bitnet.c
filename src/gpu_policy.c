@@ -2433,7 +2433,7 @@ int bn_gpu_policy_moe_cpu_actual_override_enabled(void) {
     return getenv("BN_CUDA_OVERRIDE_MOE_WITH_CPU_ACTUAL") != NULL;
 }
 
-int bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled(void) {
+int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE",
         "BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");

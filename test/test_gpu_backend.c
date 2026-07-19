@@ -2606,7 +2606,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_moe_routed_ffn_batch_allowed(0));
     assert(!bn_gpu_policy_moe_routed_ffn_batch_allowed(1));
     assert(!bn_gpu_policy_moe_cpu_actual_override_enabled());
-    assert(!bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
     assert(!bn_gpu_policy_small_dense_exact_native_disabled());
     assert(!bn_gpu_policy_small_dense_exact_ffn_down_enabled());
     assert(!bn_gpu_policy_small_dense_prefill_disabled());
@@ -2618,7 +2618,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_PREFILL", "1", 1);
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
-    assert(bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled());
+    assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
     assert(bn_gpu_policy_small_dense_exact_native_disabled());
     assert(bn_gpu_policy_small_dense_exact_ffn_down_enabled());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
@@ -2636,7 +2636,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_PREFILL", "1", 1);
     setenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE", "1", 1);
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE", "1", 1);
-    assert(bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled());
+    assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
     assert(bn_gpu_policy_small_dense_exact_native_disabled());
     assert(bn_gpu_policy_small_dense_exact_ffn_down_enabled());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
@@ -3681,9 +3681,9 @@ static void test_quant_registry(void) {
            BN_GPU_CAP_Q5K_MATVEC_SPLIT);
     assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q8_0) ==
            BN_GPU_CAP_Q8_FUSED_GATEUP_SILU);
-    assert(bn_backend_quant_small_dense_q8_supported(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_small_dense_q8_supported(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_backend_quant_cuda_small_dense_q8_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_small_dense_native_quant_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_small_dense_native_quant_supported(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_backend_quant_cuda_small_dense_native_quant_supported(BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_supports_native_quant_logits_refine(
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_supports_native_quant_logits_refine(

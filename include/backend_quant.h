@@ -33,7 +33,7 @@ static inline int bn_backend_quant_small_dense_supported(int type) {
     return bn_quant_format_supports_gpu_small_dense(type);
 }
 
-static inline int bn_backend_quant_small_dense_q8_supported(int type) {
+static inline int bn_backend_quant_small_dense_native_quant_supported(int type) {
     return bn_quant_format_supports_gpu_small_dense_q8(type);
 }
 
@@ -41,8 +41,9 @@ static inline int bn_backend_quant_cuda_small_dense_supported(int type) {
     return bn_backend_quant_small_dense_supported(type);
 }
 
-static inline int bn_backend_quant_cuda_small_dense_q8_supported(int type) {
-    return bn_backend_quant_small_dense_q8_supported(type);
+static inline int bn_backend_quant_cuda_small_dense_native_quant_supported(
+    int type) {
+    return bn_backend_quant_small_dense_native_quant_supported(type);
 }
 
 static inline int bn_backend_quant_is_q4k(int type) {

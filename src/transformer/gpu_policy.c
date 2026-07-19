@@ -366,27 +366,30 @@ static int all_active_two_kquant_moe_requires_opt_in(const BnConfig *c,
            bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled();
 }
 
-static int small_dense_tensor_quant_supported(int tensor_type, int q8_only) {
-    return q8_only
-        ? bn_backend_quant_small_dense_q8_supported(tensor_type)
+static int small_dense_tensor_quant_supported(int tensor_type,
+                                              int native_quant_only) {
+    return native_quant_only
+        ? bn_backend_quant_small_dense_native_quant_supported(tensor_type)
         : bn_backend_quant_small_dense_supported(tensor_type);
 }
 
 static int small_dense_weight_quant_supported(const BnQWeight *w,
-                                              int q8_only) {
+                                              int native_quant_only) {
     return !w || !w->data ||
-           small_dense_tensor_quant_supported(w->type, q8_only);
+           small_dense_tensor_quant_supported(w->type, native_quant_only);
 }
 
 static int small_dense_model_quant_supported(const BnWeights *w,
                                              const BnConfig *c,
-                                             int q8_only) {
+                                             int native_quant_only) {
     if (!w || !c)
         return 0;
     if (w->output_weight.data) {
-        if (!small_dense_weight_quant_supported(&w->output_weight, q8_only))
+        if (!small_dense_weight_quant_supported(&w->output_weight,
+                                                native_quant_only))
             return 0;
-    } else if (!small_dense_tensor_quant_supported(w->emb_type, q8_only)) {
+    } else if (!small_dense_tensor_quant_supported(w->emb_type,
+                                                   native_quant_only)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -397,7 +400,8 @@ static int small_dense_model_quant_supported(const BnWeights *w,
         };
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
-            if (!small_dense_weight_quant_supported(weights[i], q8_only))
+            if (!small_dense_weight_quant_supported(weights[i],
+                                                    native_quant_only))
                 return 0;
         }
     }
@@ -412,7 +416,7 @@ static int small_dense_backend_native_by_default(
     return small_dense_model_quant_supported(w, c, 0);
 }
 
-static int small_dense_backend_q8_native_by_default(
+static int small_dense_backend_native_quant_by_default(
     const BnConfig *c,
     const BnWeights *w) {
     if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
@@ -440,8 +444,8 @@ int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
     return bn_model_arch_allows_small_dense_exact_native(c) &&
-           small_dense_backend_q8_native_by_default(c, w) &&
-           !bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled();
+           small_dense_backend_native_quant_by_default(c, w) &&
+           !bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled();
 }
 
 int bn_transformer_gpu_small_dense_byte_quant_cpu_attn_fallback_enabled(
@@ -1906,7 +1910,7 @@ int bn_transformer_gpu_validate_forward(
     if (bn_gpu_policy_backend_small_dense_native_enabled(gpu) &&
         bn_model_arch_uses_small_dense_shape(c)) {
         if (bn_gpu_policy_small_kquant_native_disabled()) {
-            if (!small_dense_backend_q8_native_by_default(c, w))
+            if (!small_dense_backend_native_quant_by_default(c, w))
                 GPU_POLICY_REJECT("small dense gpu graph disabled");
         } else if (!small_dense_backend_native_by_default(c, w)) {
             GPU_POLICY_REJECT("small dense gpu graph unsupported");

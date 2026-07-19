@@ -587,7 +587,7 @@ int bn_gpu_policy_moe_router_diff2_enabled(void);
 int bn_gpu_policy_moe_routed_ffn_batch_enabled(void);
 int bn_gpu_policy_moe_routed_ffn_batch_allowed(int large_moe);
 int bn_gpu_policy_moe_cpu_actual_override_enabled(void);
-int bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled(void);
+int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled(void);
 int bn_gpu_policy_small_dense_exact_native_disabled(void);
 int bn_gpu_policy_small_dense_exact_ffn_down_enabled(void);
 int bn_gpu_policy_small_dense_prefill_disabled(void);
