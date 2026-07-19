@@ -33,11 +33,12 @@ static void logits_rmsnorm_model(const BnModel *m, float *out,
     logits_backend_ops()->rmsnorm(out, x, w, size, eps);
 }
 
-static int logits_refine_q8_top(float *logits, int n_logits,
-                                const BnQWeight *W, const float *x,
-                                int8_t *x_q, int top_n) {
+static int logits_refine_backend_top(float *logits, int n_logits,
+                                     const BnQWeight *W, const float *x,
+                                     int8_t *x_q, int top_n) {
     if (!logits || !x || !x_q ||
-        !bn_transformer_logits_q8_refine_supported(logits_backend_ops(), W))
+        !bn_transformer_logits_backend_refine_supported(
+            logits_backend_ops(), W))
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
@@ -111,9 +112,10 @@ static int logits_top_ids(const float *logits, int n_logits,
     return n_top;
 }
 
-static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
-                                       const BnQWeight *W) {
-    if (!m || !s || !bn_transformer_logits_q6_refine_supported(W))
+static void logits_refine_tied_kquant_top(BnModel *m, BnRunState *s,
+                                          const BnQWeight *W) {
+    if (!m || !s ||
+        !bn_transformer_logits_tied_kquant_refine_supported(W))
         return;
 
     int refine_top = bn_transformer_logits_cpu_tied_kquant_refine_top();
@@ -130,9 +132,10 @@ static void logits_refine_tied_q6k_top(BnModel *m, BnRunState *s,
     }
 }
 
-static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
-                                       const BnQWeight *W) {
-    if (!m || !s || !bn_transformer_logits_q6_refine_supported(W))
+static void logits_hybrid_tied_kquant_top(BnModel *m, BnRunState *s,
+                                          const BnQWeight *W) {
+    if (!m || !s ||
+        !bn_transformer_logits_tied_kquant_refine_supported(W))
         return;
 
     int top_n = bn_transformer_logits_cpu_tied_kquant_hybrid_top();
@@ -173,16 +176,16 @@ static void logits_hybrid_tied_q6k_top(BnModel *m, BnRunState *s,
         s->logits[ids[i]] = native_vals[i];
 }
 
-static void logits_refine_small_backend_q8(const BnModel *m,
-                                           BnRunState *s,
-                                           const BnQWeight *W) {
-    if (!m || !bn_transformer_logits_small_backend_q8_refine_enabled(
+static void logits_refine_small_backend(const BnModel *m,
+                                        BnRunState *s,
+                                        const BnQWeight *W) {
+    if (!m || !bn_transformer_logits_small_backend_refine_enabled(
                   bn_model_gpu(m), &m->config, W))
         return;
-    int refine_top = bn_transformer_logits_small_backend_q8_refine_top();
+    int refine_top = bn_transformer_logits_small_backend_refine_top();
     if (refine_top > 0)
-        logits_refine_q8_top(s->logits, m->config.vocab_size, W, s->x,
-                             s->x_q, refine_top);
+        logits_refine_backend_top(s->logits, m->config.vocab_size, W, s->x,
+                                  s->x_q, refine_top);
 }
 
 static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
@@ -277,7 +280,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     }
     case BN_LOGITS_UNTIED_QUANT:
         logits_quant_matvec_gpu(m, s->logits, &w->output_weight, s->x, s->x_q);
-        logits_refine_small_backend_q8(m, s, &w->output_weight);
+        logits_refine_small_backend(m, s, &w->output_weight);
         break;
     case BN_LOGITS_TIED_QUANT: {
         const BnQWeight *tied = &w->tied_embedding_weight;
@@ -294,10 +297,10 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
                 bn_transformer_backend_handle_or(bn_model_backend(m), -1,
                                                  BN_BACKEND_HANDLE_TIED_EMBEDDING),
                 s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
-            logits_hybrid_tied_q6k_top(m, s, tied);
-            logits_refine_tied_q6k_top(m, s, tied);
+            logits_hybrid_tied_kquant_top(m, s, tied);
+            logits_refine_tied_kquant_top(m, s, tied);
         }
-        logits_refine_small_backend_q8(m, s, tied);
+        logits_refine_small_backend(m, s, tied);
         break;
     }
     case BN_LOGITS_TIED_F16:

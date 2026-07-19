@@ -2695,38 +2695,38 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_tied_f32_weight_type() == BN_GGUF_TENSOR_F32);
 
     unsetenv("BN_GPU_Q8_REFINE_TOP");
-    assert(bn_transformer_logits_small_backend_q8_refine_top() == 16);
+    assert(bn_transformer_logits_small_backend_refine_top() == 16);
     setenv("BN_GPU_Q8_REFINE_TOP", "6", 1);
-    assert(bn_transformer_logits_small_backend_q8_refine_top() == 6);
+    assert(bn_transformer_logits_small_backend_refine_top() == 6);
     unsetenv("BN_GPU_Q8_REFINE_TOP");
 
     BnGPUBackend gpu = {0};
     BnConfig c = {0};
     BnQWeight q8 = {0};
     q8.type = BN_GGUF_TENSOR_Q8_0;
-    assert(!bn_transformer_logits_small_backend_q8_refine_enabled(
+    assert(!bn_transformer_logits_small_backend_refine_enabled(
         NULL, &c, &q8));
     gpu.kind = BN_GPU_BACKEND_METAL;
     c.dim = 2048;
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE;
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
-    assert(!bn_transformer_logits_small_backend_q8_refine_enabled(
+    assert(!bn_transformer_logits_small_backend_refine_enabled(
         &gpu, &c, &q8));
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    assert(bn_transformer_logits_small_backend_q8_refine_enabled(
+    assert(bn_transformer_logits_small_backend_refine_enabled(
         &gpu, &c, &q8));
     q8.type = BN_GGUF_TENSOR_Q4_0;
-    assert(!bn_transformer_logits_small_backend_q8_refine_enabled(
+    assert(!bn_transformer_logits_small_backend_refine_enabled(
         &gpu, &c, &q8));
     q8.type = BN_GGUF_TENSOR_Q8_0;
     c.policy_flags = 0;
-    assert(!bn_transformer_logits_small_backend_q8_refine_enabled(
+    assert(!bn_transformer_logits_small_backend_refine_enabled(
         &gpu, &c, &q8));
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8 |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE;
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
-    assert(!bn_transformer_logits_small_backend_q8_refine_enabled(
+    assert(!bn_transformer_logits_small_backend_refine_enabled(
         &gpu, &c, &q8));
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE");

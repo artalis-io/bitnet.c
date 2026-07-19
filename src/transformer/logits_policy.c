@@ -16,18 +16,18 @@ int bn_transformer_logits_cpu_native_tied_quant_enabled(void) {
     return getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL;
 }
 
-int bn_transformer_logits_q8_refine_supported(
+int bn_transformer_logits_backend_refine_supported(
     const BnLogitsBackendOps *ops, const BnQWeight *W) {
     return ops && ops->supports_q8_refine && W && W->data &&
            bn_backend_quant_supports_q8_logits_refine(W->type);
 }
 
-int bn_transformer_logits_q6_refine_supported(const BnQWeight *W) {
+int bn_transformer_logits_tied_kquant_refine_supported(const BnQWeight *W) {
     return W && W->data &&
            bn_backend_quant_supports_q6k_logits_refine(W->type);
 }
 
-int bn_transformer_logits_small_backend_q8_refine_enabled(
+int bn_transformer_logits_small_backend_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W) {
@@ -36,7 +36,7 @@ int bn_transformer_logits_small_backend_q8_refine_enabled(
                gpu, c, W->type);
 }
 
-int bn_transformer_logits_small_backend_q8_refine_top(void) {
+int bn_transformer_logits_small_backend_refine_top(void) {
     return bn_transformer_gpu_q8_logits_refine_top(1);
 }
 
