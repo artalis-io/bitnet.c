@@ -854,6 +854,11 @@ if grep -n 'bn_transformer_prefill_can_preq8k\|bn_transformer_prefill_route_preq
     fail=1
 fi
 
+if grep -n 'BnPrefillPreQ8KBuffers\|prefill_quant_matmul_preq8k_multi\|prefill_preq8k_arena_bytes\|prefill_alloc_preq8k_buffers\|prefill_prepare_preq8k\|prefill_try_preq8k' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill execution prepared K-quant helpers must use behavior names, not preq8k helper names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_can_preq8k\|bn_backend_quant_can_preq8k' src/moe_cpu_kernels.c >/dev/null 2>&1; then
     echo "MoE CPU kernels must use MoE policy helpers for preq8k quant capability"
     fail=1

@@ -1117,15 +1117,15 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
            down_buf && ffn_norm_buf;
 }
 
-static void prefill_quant_matmul_preq8k_multi(const BnModel *m,
-                                              float **out,
-                                              const BnQWeight **W,
-                                              int n,
-                                              int n_tokens,
-                                              const int8_t *x_q,
-                                              const float *x_d,
-                                              const int16_t *x_bsums,
-                                              const float *x_float) {
+static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,
+                                                       float **out,
+                                                       const BnQWeight **W,
+                                                       int n,
+                                                       int n_tokens,
+                                                       const int8_t *x_q,
+                                                       const float *x_d,
+                                                       const int16_t *x_bsums,
+                                                       const float *x_float) {
     const BnBackendModel *backend = bn_model_backend(m);
     const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
     if (n > 4) {
@@ -1144,13 +1144,13 @@ typedef struct {
     float *xd;
     int16_t *xbs;
     int n_bpr;
-} BnPrefillPreQ8KBuffers;
+} BnPrefillPreparedKQuantBuffers;
 
 static const BnPrefillCPUOps *prefill_cpu_ops(void) {
     return bn_transformer_prefill_cpu_ops();
 }
 
-static size_t prefill_preq8k_arena_bytes(int dim, int n_tokens) {
+static size_t prefill_prepared_kquant_arena_bytes(int dim, int n_tokens) {
     if (!prefill_cpu_ops()->supports_preq8k)
         return 0;
     if (dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
@@ -1161,10 +1161,11 @@ static size_t prefill_preq8k_arena_bytes(int dim, int n_tokens) {
            (size_t)n_tokens * (size_t)n_bpr * 16 * sizeof(int16_t);
 }
 
-static BnPrefillPreQ8KBuffers prefill_alloc_preq8k_buffers(SHArena *arena,
-                                                           int dim,
-                                                           int n_tokens) {
-    BnPrefillPreQ8KBuffers b = { NULL, NULL, NULL, 0 };
+static BnPrefillPreparedKQuantBuffers
+prefill_alloc_prepared_kquant_buffers(SHArena *arena,
+                                      int dim,
+                                      int n_tokens) {
+    BnPrefillPreparedKQuantBuffers b = { NULL, NULL, NULL, 0 };
     if (!prefill_cpu_ops()->supports_preq8k)
         return b;
     if (!arena || dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
@@ -1184,10 +1185,10 @@ static BnPrefillPreQ8KBuffers prefill_alloc_preq8k_buffers(SHArena *arena,
     return b;
 }
 
-static int prefill_prepare_preq8k(BnPrefillPreQ8KBuffers *b,
-                                  const float *x,
-                                  int dim,
-                                  int n_tokens) {
+static int prefill_prepare_prepared_kquant(BnPrefillPreparedKQuantBuffers *b,
+                                           const float *x,
+                                           int dim,
+                                           int n_tokens) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
     if (!b || !b->xq || !b->xd || !b->xbs || !x || dim <= 0 ||
         n_tokens <= 0 || b->n_bpr <= 0 || !ops->prepare_preq8k)
@@ -1196,14 +1197,14 @@ static int prefill_prepare_preq8k(BnPrefillPreQ8KBuffers *b,
                                x, dim, n_tokens);
 }
 
-static int prefill_try_preq8k_multi(const BnModel *m,
-                                    BnPrefillPreQ8KBuffers *b,
-                                    float **out,
-                                    const BnQWeight **W,
-                                    int n,
-                                    const float *X,
-                                    int dim,
-                                    int n_tokens) {
+static int prefill_try_prepared_kquant_multi(const BnModel *m,
+                                             BnPrefillPreparedKQuantBuffers *b,
+                                             float **out,
+                                             const BnQWeight **W,
+                                             int n,
+                                             const float *X,
+                                             int dim,
+                                             int n_tokens) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
     if (!m || !b || !b->xq || !out || !W || !X || n <= 0 || n > 4)
         return 0;
@@ -1213,20 +1214,20 @@ static int prefill_try_preq8k_multi(const BnModel *m,
                 W[i]->type))
             return 0;
     }
-    if (!prefill_prepare_preq8k(b, X, dim, n_tokens))
+    if (!prefill_prepare_prepared_kquant(b, X, dim, n_tokens))
         return 0;
-    prefill_quant_matmul_preq8k_multi(m, out, W, n, n_tokens,
-                                      b->xq, b->xd, b->xbs, X);
+    prefill_quant_matmul_prepared_kquant_multi(m, out, W, n, n_tokens,
+                                               b->xq, b->xd, b->xbs, X);
     return 1;
 }
 
-static int prefill_try_preq8k_matvec_batch(const BnModel *m,
-                                           BnPrefillPreQ8KBuffers *b,
-                                           BnMatvecTask *tasks,
-                                           int n,
-                                           const float *x,
-                                           int dim,
-                                           int token_index) {
+static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
+                                                    BnPrefillPreparedKQuantBuffers *b,
+                                                    BnMatvecTask *tasks,
+                                                    int n,
+                                                    const float *x,
+                                                    int dim,
+                                                    int token_index) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
     if (!m || !b || !b->xq || !tasks || !x || n <= 0 || token_index < 0)
         return 0;
@@ -1453,7 +1454,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                       + batch_floats * sizeof(float)
                       + nt * half_rope * 2 * sizeof(float)
                       + 512;
-    arena_size += prefill_preq8k_arena_bytes(dim, n_tokens);
+    arena_size += prefill_prepared_kquant_arena_bytes(dim, n_tokens);
 
     SHArena *pf_arena = sh_arena_create(arena_size);
     if (!pf_arena) return NULL;
@@ -1468,8 +1469,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     float *batch_buf = (float *)sh_arena_alloc(pf_arena, batch_floats * sizeof(float));
     if (!batch_buf) { sh_arena_free(pf_arena); return NULL; }
 
-    BnPrefillPreQ8KBuffers preq8k =
-        prefill_alloc_preq8k_buffers(pf_arena, dim, n_tokens);
+    BnPrefillPreparedKQuantBuffers prepared_kquant =
+        prefill_alloc_prepared_kquant_buffers(pf_arena, dim, n_tokens);
 
     float *Xb = batch_buf;
     float *Q_buf = Xb + nt * dim;
@@ -1943,10 +1944,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_force_float_kquant(m), dim,
                         lw->attn.wq.type, lw->attn.wk.type,
                         lw->attn.wv.type) &&
-                    prefill_try_preq8k_multi(m, &preq8k, qkv_out, qkv_w,
-                                             3, Xb, dim, n_tokens);
+                    prefill_try_prepared_kquant_multi(
+                        m, &prepared_kquant, qkv_out, qkv_w, 3, Xb, dim,
+                        n_tokens);
                 if (used_prepared_kquant) {
-                    /* handled by preq8k helper */
+                    /* handled by prepared K-quant helper */
                 } else if (prefill_qkv_stacked_batch_gpu(
                         m, lw, Q_buf, K_new, V_new, Xb, n_tokens,
                         q_buf_stride, dim, l) == 0) {
@@ -2333,8 +2335,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_cpu_ops(), bn_model_gpu(m),
                         prefill_force_float_kquant(m), dim,
                         lw->ssm.wqkv.type, lw->ssm.wz.type) &&
-                    prefill_try_preq8k_multi(m, &preq8k, qz_out, qz_w,
-                                             2, Xb, dim, n_tokens);
+                    prefill_try_prepared_kquant_multi(
+                        m, &prepared_kquant, qz_out, qz_w, 2, Xb, dim,
+                        n_tokens);
             }
             if (!ssm_prepared_kquant) {
                 prefill_quant_matmul_gpu(m, QKV_all, &lw->ssm.wqkv, Xb,
@@ -2380,8 +2383,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_cpu_ops(), bn_model_gpu(m),
                         prefill_force_float_kquant(m), dim,
                         lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type) ||
-                    !prefill_try_preq8k_matvec_batch(m, &preq8k, ab, 2,
-                                                     xb_t, dim, t)) {
+                    !prefill_try_prepared_kquant_matvec_batch(
+                        m, &prepared_kquant, ab, 2, xb_t, dim, t)) {
                     bn_quant_matvec_batch(ab, 2, xb_t, s->x_q,
                                           bn_model_pool(m));
                 }
@@ -2487,7 +2490,7 @@ prefill_ssm_done:
                             prefill_cpu_ops(), bn_model_gpu(m),
                             prefill_force_float_kquant(m), dim,
                             lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) ||
-                        !prefill_try_preq8k_multi(m, &preq8k, gu_out, gu_w,
+                        !prefill_try_prepared_kquant_multi(m, &prepared_kquant, gu_out, gu_w,
                                                   2, Xb, dim, n_tokens))
                         prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,
                                                    n_tokens, s->x_q);
