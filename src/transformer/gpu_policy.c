@@ -340,13 +340,6 @@ int bn_transformer_gpu_all2_q4q6_moe_layer(
     return bn_transformer_gpu_moe_routed_q4_down(&lw->moe.expert_map, 0);
 }
 
-int bn_transformer_gpu_cuda_all2_q4q6_moe_layer(
-    const BnConfig *c,
-    const BnLayerWeights *lw,
-    int dim) {
-    return bn_transformer_gpu_all2_q4q6_moe_layer(c, lw, dim);
-}
-
 int bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -354,15 +347,6 @@ int bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
     int dim) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_transformer_gpu_all2_q4q6_moe_layer(c, lw, dim);
-}
-
-int bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnLayerWeights *lw,
-    int dim) {
-    return bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
-        gpu, c, lw, dim);
 }
 
 int bn_transformer_gpu_all2_q4q6_moe_model(const BnConfig *c,
@@ -377,11 +361,6 @@ int bn_transformer_gpu_all2_q4q6_moe_model(const BnConfig *c,
             return 1;
     }
     return 0;
-}
-
-int bn_transformer_gpu_cuda_all2_q4q6_moe_model(const BnConfig *c,
-                                                const BnWeights *w) {
-    return bn_transformer_gpu_all2_q4q6_moe_model(c, w);
 }
 
 static int all2_q4q6_moe_requires_opt_in(const BnConfig *c,
@@ -453,26 +432,12 @@ int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
            !bn_gpu_policy_all2_q4q6_moe_cpu_attention_safe_disabled();
 }
 
-int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-    const BnConfig *c,
-    const BnWeights *w) {
-    return bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(c, w);
-}
-
 int bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
     return bn_transformer_gpu_backend_is_cuda(gpu) &&
            bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(c, w);
-}
-
-int bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
-    const BnGPUBackend *gpu,
-    const BnConfig *c,
-    const BnWeights *w) {
-    return bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(gpu, c,
-                                                                      w);
 }
 
 int bn_transformer_gpu_small_dense_q8_cpu_attn_safe_default(

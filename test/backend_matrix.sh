@@ -1286,7 +1286,7 @@ if grep -n 'bn_transformer_gpu_cuda_\(moe_decode_cacheable\|decode_cacheable\|la
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_cuda_\(all2_q4q6_moe_q6_logits_refine_default\|all2_q4q6_moe_cpu_moe_safe_default\|moe_exact_attention_enabled\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_cuda_\(all2_q4q6_moe_q6_logits_refine_default\|all2_q4q6_moe_cpu_moe_safe_default\|all2_q4q6_moe_model\|all2_q4q6_moe_layer\|all2_q4q6_moe_layer_enabled\|all2_q4q6_moe_cpu_attn_safe_default\|all2_q4q6_moe_cpu_attn_fallback_enabled\|moe_exact_attention_enabled\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "MoE refine/exact-attention transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1
 fi

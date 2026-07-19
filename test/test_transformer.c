@@ -1822,12 +1822,8 @@ static void test_gpu_policy_helpers(void) {
     c.dim = 2048;
     c.moe_norm_topk_prob = 1;
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
-        &gpu, &c, &moe_w));
     assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
-    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
-        &gpu, &c, &moe_layers[0], c.dim));
     assert(!bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
         &gpu, &c, &moe_layers[0], c.dim));
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
@@ -1836,12 +1832,8 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_all2_q4q6_moe_model(&c, &moe_w));
     assert(bn_transformer_gpu_all2_q4q6_moe_layer(
         &c, &moe_layers[0], c.dim));
-    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-        &c, &moe_w));
     assert(bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
         &c, &moe_w));
-    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
-        &gpu, &c, &moe_w));
     assert(bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
     BnTransformerGPUCPUFallbackPolicy fallback =
@@ -1855,8 +1847,6 @@ static void test_gpu_policy_helpers(void) {
         fallback, &gpu, &c, &moe_w);
     assert(fallback.attn_layer == 3);
     assert(fallback.attn_from_layer == -1);
-    assert(bn_transformer_gpu_cuda_all2_q4q6_moe_layer_enabled(
-        &gpu, &c, &moe_layers[0], c.dim));
     assert(bn_transformer_gpu_all2_q4q6_moe_layer_enabled(
         &gpu, &c, &moe_layers[0], c.dim));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
@@ -1927,22 +1917,14 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE", "1", 1);
-    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-        &c, &moe_w));
     assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
         &c, &moe_w));
-    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
-        &gpu, &c, &moe_w));
     assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_CPU_ATTN_SAFE");
     setenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE", "1", 1);
-    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_safe_default(
-        &c, &moe_w));
     assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_attn_safe_default(
         &c, &moe_w));
-    assert(!bn_transformer_gpu_cuda_all2_q4q6_moe_cpu_attn_fallback_enabled(
-        &gpu, &c, &moe_w));
     assert(!bn_transformer_gpu_all2_q4q6_moe_cpu_attn_fallback_enabled(
         &gpu, &c, &moe_w));
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_ATTN_SAFE");
