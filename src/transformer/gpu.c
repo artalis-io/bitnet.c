@@ -625,7 +625,7 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
     return n_top;
 }
 
-static int gpu_refine_small_backend_logits_top(float *logits, int n_logits,
+static int gpu_refine_native_quant_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
                                     int8_t *x_q, int top_n) {
     if (!logits || !W || !W->data || !x || !x_q)
@@ -1936,8 +1936,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                    !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&
-            logits_refine.small_backend_captures_xb) {
-            int refine_top = logits_refine.small_backend_refine_top;
+            logits_refine.native_quant_captures_xb) {
+            int refine_top = logits_refine.native_quant_refine_top;
             if (refine_top > 0 &&
                 gpu->read_activation &&
                 gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
@@ -1946,7 +1946,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                      0) == 0 &&
                 bn_transformer_gpu_read_xb(gpu, s->xb,
                                            (size_t)dim * sizeof(float)) == 0) {
-                gpu_refine_small_backend_logits_top(s->logits, c->vocab_size,
+                gpu_refine_native_quant_logits_top(s->logits, c->vocab_size,
                                          logit_res->cpu_weight, s->xb,
                                          s->x_q, refine_top);
                 int best = 0;
@@ -2040,12 +2040,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                       s->x_q, refine_top);
         }
     }
-    if (logits_refine.small_backend_captures_xb) {
-        int refine_top = logits_refine.small_backend_refine_top;
+    if (logits_refine.native_quant_captures_xb) {
+        int refine_top = logits_refine.native_quant_refine_top;
         if (refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {
-            gpu_refine_small_backend_logits_top(s->logits, c->vocab_size,
+            gpu_refine_native_quant_logits_top(s->logits, c->vocab_size,
                                      logit_res->cpu_weight, s->xb,
                                      s->x_q, refine_top);
         }

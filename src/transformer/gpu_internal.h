@@ -206,10 +206,10 @@ typedef struct {
     int kquant_enabled;
     int kquant_captures_xb;
     int kquant_refine_top;
-    int small_backend_default;
-    int small_backend_enabled;
-    int small_backend_captures_xb;
-    int small_backend_refine_top;
+    int native_quant_default;
+    int native_quant_enabled;
+    int native_quant_captures_xb;
+    int native_quant_refine_top;
 } BnTransformerGPULogitsRefinePolicy;
 
 typedef struct {
@@ -503,7 +503,7 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     int tensor_type,
     int allow_aux_cache);
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void);
-int bn_transformer_gpu_small_backend_logits_refine_enabled(
+int bn_transformer_gpu_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type);
@@ -519,20 +519,20 @@ int bn_transformer_gpu_kquant_logits_refine_captures_xb(
     int refine_kquant_logits,
     int kquant_refine_default);
 int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default);
-int bn_transformer_gpu_small_backend_logits_refine_active(
+int bn_transformer_gpu_native_quant_logits_refine_active(
     const BnGPUBackend *gpu,
-    int small_backend_refine_default);
-int bn_transformer_gpu_small_backend_logits_refine_captures_xb(
+    int native_quant_refine_default);
+int bn_transformer_gpu_native_quant_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
-    int refine_small_backend_logits);
-int bn_transformer_gpu_small_backend_logits_refine_top(
-    int small_backend_refine_default);
+    int refine_native_quant_logits);
+int bn_transformer_gpu_native_quant_logits_refine_top(
+    int native_quant_refine_default);
 BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
-    int small_dense_small_dense_exact_default);
+    int small_dense_exact_default);
 BnTransformerGPUGenerateArgmaxPolicy
 bn_transformer_gpu_generate_argmax_policy(
     const BnGPUBackend *gpu,
@@ -558,7 +558,7 @@ int bn_transformer_gpu_decode_cacheable(
     int has_moe,
     int cacheable_resident_moe,
     int kquant_logits_refine_captures_xb,
-    int small_backend_logits_refine_captures_xb,
+    int native_quant_logits_refine_captures_xb,
     int need_logits,
     int cpu_fallback_layer,
     int cpu_fallback_from_layer,
@@ -625,7 +625,7 @@ bn_transformer_gpu_small_dense_exact_layer_use_policy(
     const BnConfig *c,
     const BnTransformerGPUSmallDenseExactLayerPolicy *policy,
     int layer,
-    int small_dense_small_dense_exact_default,
+    int small_dense_exact_default,
     int small_dense_exact_to_layer);
 BnTransformerGPUCachedDecodePolicy
 bn_transformer_gpu_cached_decode_policy(

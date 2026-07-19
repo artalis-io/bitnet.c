@@ -27,17 +27,17 @@ int bn_transformer_logits_tied_kquant_refine_supported(const BnQWeight *W) {
            bn_backend_quant_supports_q6k_logits_refine(W->type);
 }
 
-int bn_transformer_logits_small_backend_refine_enabled(
+int bn_transformer_logits_native_quant_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnQWeight *W) {
     return W &&
-           bn_transformer_gpu_small_backend_logits_refine_enabled(
+           bn_transformer_gpu_native_quant_logits_refine_enabled(
                gpu, c, W->type);
 }
 
-int bn_transformer_logits_small_backend_refine_top(void) {
-    return bn_transformer_gpu_small_backend_logits_refine_top(1);
+int bn_transformer_logits_native_quant_refine_top(void) {
+    return bn_transformer_gpu_native_quant_logits_refine_top(1);
 }
 
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type) {

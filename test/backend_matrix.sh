@@ -314,7 +314,7 @@ if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_suppo
     fail=1
 fi
 
-if grep -n 'bn_transformer_logits_q[68]_refine_supported\|bn_transformer_logits_small_backend_q8_refine\|logits_refine_q8\|logits_refine_tied_q6k\|logits_hybrid_tied_q6k\|logits_refine_small_backend_q8' src/transformer/logits.c src/transformer/logits_policy.c include/transformer_logits_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_logits_q[68]_refine_supported\|bn_transformer_logits_small_backend\|logits_refine_q8\|logits_refine_tied_q6k\|logits_hybrid_tied_q6k\|logits_refine_small_backend' src/transformer/logits.c src/transformer/logits_policy.c include/transformer_logits_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer logits refine policy must expose behavior-named helpers, not quant-format helper names"
     fail=1
 fi
@@ -1775,12 +1775,12 @@ if awk '/^int bn_transformer_gpu_moe_quant_only_without_aux_cache/{flag=1} /^int
     fail=1
 fi
 
-if awk '/^int bn_transformer_gpu_small_backend_logits_refine_enabled/{flag=1} /^int bn_transformer_gpu_kquant_logits_refine_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
+if awk '/^int bn_transformer_gpu_native_quant_logits_refine_enabled/{flag=1} /^int bn_transformer_gpu_kquant_logits_refine_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'transformer_gpu_backend_is_cuda(gpu)' >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-aware helpers for logits refine defaults"
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_small_backend_q8_logits_refine\|bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine\|bn_transformer_gpu_q[68]_logits_refine\|\.q[68]_\(default\|enabled\|captures_xb\|refine_top\)\|gpu_refine_q6k_logits_top\|gpu_refine_q8_logits_top' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_small_backend\|small_backend_.*logits_refine\|\.small_backend_\|bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine\|bn_transformer_gpu_q[68]_logits_refine\|\.q[68]_\(default\|enabled\|captures_xb\|refine_top\)\|gpu_refine_q6k_logits_top\|gpu_refine_q8_logits_top' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU logits refine policy must expose behavior-named helpers, not quant-format helper names"
     fail=1
 fi

@@ -946,7 +946,7 @@ int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
     return bn_gpu_policy_large_hybrid_prefill_disabled();
 }
 
-int bn_transformer_gpu_small_backend_logits_refine_enabled(
+int bn_transformer_gpu_native_quant_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type) {
@@ -992,26 +992,26 @@ int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default) {
         kquant_refine_default ? 64 : 8);
 }
 
-int bn_transformer_gpu_small_backend_logits_refine_active(
+int bn_transformer_gpu_native_quant_logits_refine_active(
     const BnGPUBackend *gpu,
-    int small_backend_refine_default) {
+    int native_quant_refine_default) {
     return bn_gpu_policy_backend_q8_logits_refine_enabled(
-        gpu, small_backend_refine_default);
+        gpu, native_quant_refine_default);
 }
 
-int bn_transformer_gpu_small_backend_logits_refine_captures_xb(
+int bn_transformer_gpu_native_quant_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
-    int refine_small_backend_logits) {
-    return refine_small_backend_logits &&
+    int refine_native_quant_logits) {
+    return refine_native_quant_logits &&
            logits &&
            bn_backend_quant_supports_q8_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
-int bn_transformer_gpu_small_backend_logits_refine_top(
-    int small_backend_refine_default) {
+int bn_transformer_gpu_native_quant_logits_refine_top(
+    int native_quant_refine_default) {
     return bn_gpu_policy_q8_logits_refine_top_or_default(
-        small_backend_refine_default ? 16 : 8);
+        native_quant_refine_default ? 16 : 8);
 }
 
 BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
@@ -1019,7 +1019,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnConfig *c,
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
-    int small_dense_small_dense_exact_default) {
+    int small_dense_exact_default) {
     BnTransformerGPULogitsRefinePolicy p = {0};
     p.kquant_default =
         bn_transformer_gpu_all2_moe_logits_refine_default(
@@ -1032,19 +1032,19 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
         bn_transformer_gpu_kquant_logits_refine_top(p.kquant_default);
 
     int tensor_type = logits ? logits->type : -1;
-    p.small_backend_default =
-        small_dense_small_dense_exact_default &&
-        bn_transformer_gpu_small_backend_logits_refine_enabled(
+    p.native_quant_default =
+        small_dense_exact_default &&
+        bn_transformer_gpu_native_quant_logits_refine_enabled(
             gpu, c, tensor_type);
-    p.small_backend_enabled =
-        bn_transformer_gpu_small_backend_logits_refine_active(
-            gpu, p.small_backend_default);
-    p.small_backend_captures_xb =
-        bn_transformer_gpu_small_backend_logits_refine_captures_xb(
-            logits, p.small_backend_enabled);
-    p.small_backend_refine_top =
-        bn_transformer_gpu_small_backend_logits_refine_top(
-            p.small_backend_default);
+    p.native_quant_enabled =
+        bn_transformer_gpu_native_quant_logits_refine_active(
+            gpu, p.native_quant_default);
+    p.native_quant_captures_xb =
+        bn_transformer_gpu_native_quant_logits_refine_captures_xb(
+            logits, p.native_quant_enabled);
+    p.native_quant_refine_top =
+        bn_transformer_gpu_native_quant_logits_refine_top(
+            p.native_quant_default);
     return p;
 }
 
@@ -1148,7 +1148,7 @@ int bn_transformer_gpu_decode_cacheable(
     int has_moe,
     int cacheable_resident_moe,
     int kquant_logits_refine_captures_xb,
-    int small_backend_logits_refine_captures_xb,
+    int native_quant_logits_refine_captures_xb,
     int need_logits,
     int cpu_fallback_layer,
     int cpu_fallback_from_layer,
@@ -1175,7 +1175,7 @@ int bn_transformer_gpu_decode_cacheable(
         return 0;
     if (kquant_logits_refine_captures_xb && !(want_argmax && !need_logits))
         return 0;
-    if (small_backend_logits_refine_captures_xb &&
+    if (native_quant_logits_refine_captures_xb &&
         !(want_argmax && !need_logits))
         return 0;
     if (cpu_fallback_layer >= 0 || cpu_fallback_from_layer >= 0 ||
@@ -1218,7 +1218,7 @@ bn_transformer_gpu_decode_cacheability_policy(
             gpu, emit_logits, want_argmax, gpu_logits_need_cpu, has_moe,
             policy.resident_moe,
             logits_refine ? logits_refine->kquant_captures_xb : 0,
-            logits_refine ? logits_refine->small_backend_captures_xb : 0,
+            logits_refine ? logits_refine->native_quant_captures_xb : 0,
             need_logits,
             cpu_fallback ? cpu_fallback->layer : -1,
             cpu_fallback ? cpu_fallback->from_layer : -1,
@@ -1373,7 +1373,7 @@ bn_transformer_gpu_small_dense_exact_layer_use_policy(
     const BnConfig *c,
     const BnTransformerGPUSmallDenseExactLayerPolicy *policy,
     int layer,
-    int small_dense_small_dense_exact_default,
+    int small_dense_exact_default,
     int small_dense_exact_to_layer) {
     BnTransformerGPUSmallDenseExactLayerUsePolicy use = {0};
     if (!policy)
@@ -1383,7 +1383,7 @@ bn_transformer_gpu_small_dense_exact_layer_use_policy(
                     layer >= policy->from_layer &&
                     (policy->to_layer < 0 || layer <= policy->to_layer);
     use.small_dense_exact_path =
-        small_dense_small_dense_exact_default &&
+        small_dense_exact_default &&
         (small_dense_exact_to_layer < 0 ||
          layer <= small_dense_exact_to_layer);
     if (use.small_dense_exact_path)

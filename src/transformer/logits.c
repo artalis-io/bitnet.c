@@ -176,13 +176,13 @@ static void logits_hybrid_tied_kquant_top(BnModel *m, BnRunState *s,
         s->logits[ids[i]] = native_vals[i];
 }
 
-static void logits_refine_small_backend(const BnModel *m,
+static void logits_refine_native_quant(const BnModel *m,
                                         BnRunState *s,
                                         const BnQWeight *W) {
-    if (!m || !bn_transformer_logits_small_backend_refine_enabled(
+    if (!m || !bn_transformer_logits_native_quant_refine_enabled(
                   bn_model_gpu(m), &m->config, W))
         return;
-    int refine_top = bn_transformer_logits_small_backend_refine_top();
+    int refine_top = bn_transformer_logits_native_quant_refine_top();
     if (refine_top > 0)
         logits_refine_backend_top(s->logits, m->config.vocab_size, W, s->x,
                                   s->x_q, refine_top);
@@ -280,7 +280,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     }
     case BN_LOGITS_UNTIED_QUANT:
         logits_quant_matvec_gpu(m, s->logits, &w->output_weight, s->x, s->x_q);
-        logits_refine_small_backend(m, s, &w->output_weight);
+        logits_refine_native_quant(m, s, &w->output_weight);
         break;
     case BN_LOGITS_TIED_QUANT: {
         const BnQWeight *tied = &w->tied_embedding_weight;
@@ -300,7 +300,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             logits_hybrid_tied_kquant_top(m, s, tied);
             logits_refine_tied_kquant_top(m, s, tied);
         }
-        logits_refine_small_backend(m, s, tied);
+        logits_refine_native_quant(m, s, tied);
         break;
     }
     case BN_LOGITS_TIED_F16:
