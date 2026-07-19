@@ -19,12 +19,12 @@ int bn_transformer_logits_cpu_native_tied_quant_enabled(void) {
 int bn_transformer_logits_backend_refine_supported(
     const BnLogitsBackendOps *ops, const BnQWeight *W) {
     return ops && ops->supports_native_quant_refine && W && W->data &&
-           bn_backend_quant_supports_q8_logits_refine(W->type);
+           bn_backend_quant_supports_native_quant_logits_refine(W->type);
 }
 
 int bn_transformer_logits_tied_kquant_refine_supported(const BnQWeight *W) {
     return W && W->data &&
-           bn_backend_quant_supports_q6k_logits_refine(W->type);
+           bn_backend_quant_supports_kquant_logits_refine(W->type);
 }
 
 int bn_transformer_logits_native_quant_refine_enabled(

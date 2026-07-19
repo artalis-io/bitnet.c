@@ -81,7 +81,7 @@ static inline int bn_backend_quant_can_preq8k(int type) {
     return bn_quant_format_can_preq8k(type);
 }
 
-static inline int bn_backend_quant_supports_q8_logits_refine(int type) {
+static inline int bn_backend_quant_supports_native_quant_logits_refine(int type) {
     return bn_quant_format_supports_q8_logits_refine(type);
 }
 
@@ -471,7 +471,7 @@ static inline int bn_backend_quant_moe_all2_q4_or_q6_shape(int n_experts,
            hidden_dim >= 4096 && dim <= 2048;
 }
 
-static inline int bn_backend_quant_supports_q6k_logits_refine(int type) {
+static inline int bn_backend_quant_supports_kquant_logits_refine(int type) {
     return bn_quant_format_supports_q6_logits_refine(type);
 }
 

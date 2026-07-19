@@ -3684,8 +3684,10 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_small_dense_q8_supported(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_small_dense_q8_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_cuda_small_dense_q8_supported(BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_supports_q8_logits_refine(BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_supports_native_quant_logits_refine(
+        BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_supports_native_quant_logits_refine(
+        BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_supports_gpu_small_dense_q8(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_supports_q8_logits_refine(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_uses_f16_logits_path(BN_GGUF_TENSOR_F16));
@@ -4028,8 +4030,10 @@ static void test_quant_registry(void) {
                                                      BN_GGUF_TENSOR_Q4_K,
                                                      4095, 2048));
     assert(bn_backend_quant_is_kquant_float_fallback_candidate(BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_supports_q6k_logits_refine(BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_supports_q6k_logits_refine(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_supports_kquant_logits_refine(
+        BN_GGUF_TENSOR_Q6_K));
+    assert(!bn_backend_quant_supports_kquant_logits_refine(
+        BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_supports_q6_logits_refine(BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_logits_q6_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));

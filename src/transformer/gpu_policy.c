@@ -952,7 +952,7 @@ int bn_transformer_gpu_native_quant_logits_refine_enabled(
     int tensor_type) {
     return bn_gpu_policy_backend_small_dense_q8_logits_refine_default_supported(
                gpu) &&
-           bn_backend_quant_supports_q8_logits_refine(tensor_type) &&
+           bn_backend_quant_supports_native_quant_logits_refine(tensor_type) &&
            bn_model_arch_allows_small_dense_q8_logit_refine(c) &&
            bn_gpu_policy_small_dense_q8_logits_refine_enabled() &&
            !bn_gpu_policy_small_dense_q8_logits_refine_disabled();
@@ -983,7 +983,7 @@ int bn_transformer_gpu_kquant_logits_refine_captures_xb(
     return refine_kquant_logits &&
            kquant_refine_default &&
            logits &&
-           bn_backend_quant_supports_q6k_logits_refine(logits->type) &&
+           bn_backend_quant_supports_kquant_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
@@ -1004,7 +1004,7 @@ int bn_transformer_gpu_native_quant_logits_refine_captures_xb(
     int refine_native_quant_logits) {
     return refine_native_quant_logits &&
            logits &&
-           bn_backend_quant_supports_q8_logits_refine(logits->type) &&
+           bn_backend_quant_supports_native_quant_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
@@ -1091,7 +1091,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         !gpu->matvec_argmax_activation ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_gpu_policy_logits_argmax_disabled() ||
-        !bn_backend_quant_supports_q6k_logits_refine(logits->type))
+        !bn_backend_quant_supports_kquant_logits_refine(logits->type))
         return 0;
 
     if (!bn_model_arch_uses_moe(c)) {
