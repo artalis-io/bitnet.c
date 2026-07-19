@@ -1,4 +1,5 @@
 #include "quant_ctx.h"
+#include "quant_dispatch_internal.h"
 #include "quant_kernels_neon.h"
 #include "quant_kernels_wasm.h"
 #include "threadpool.h"

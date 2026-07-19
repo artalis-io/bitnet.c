@@ -22,13 +22,16 @@ emcc \
     "$PROJECT_DIR/src/quant/fp16.c" \
     "$PROJECT_DIR/src/quant/dequant.c" \
     "$PROJECT_DIR/src/quant/registry.c" \
+    "$PROJECT_DIR/src/quant/prepared.c" \
     "$PROJECT_DIR/src/quant/kernel_select.c" \
+    "$PROJECT_DIR/src/quant/policy.c" \
     "$PROJECT_DIR/src/quant/dispatch.c" \
     "$PROJECT_DIR/src/quant/matvec_batch.c" \
     "$PROJECT_DIR/src/quant/matmul.c" \
     "$PROJECT_DIR/src/quant/fused_gateup.c" \
     "$PROJECT_DIR/src/quant/batch_prepared_kquant_input.c" \
     "$PROJECT_DIR/src/quant/matvec_multi.c" \
+    "$PROJECT_DIR/src/quant/mxfp4_scalar.c" \
     "$PROJECT_DIR/src/quant/x_quant_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_wasm.c" \
     "$PROJECT_DIR/src/quant/i2s_scalar.c" \
@@ -77,6 +80,7 @@ emcc \
     "$PROJECT_DIR/src/turboquant.c" \
     "$PROJECT_DIR/src/model.c" \
     "$PROJECT_DIR/src/model_arch.c" \
+    "$PROJECT_DIR/src/model_policy.c" \
     "$PROJECT_DIR/src/model_session.c" \
     "$PROJECT_DIR/src/model_gpu.c" \
     "$PROJECT_DIR/src/model_embed.c" \
@@ -84,9 +88,12 @@ emcc \
     "$PROJECT_DIR/src/backend_model.c" \
     "$PROJECT_DIR/src/backend_session.c" \
     "$PROJECT_DIR/src/backend_quant.c" \
+    "$PROJECT_DIR/src/gpu_policy.c" \
     "$PROJECT_DIR/src/moe.c" \
     "$PROJECT_DIR/src/moe_cache.c" \
     "$PROJECT_DIR/src/moe_io.c" \
+    "$PROJECT_DIR/src/moe_policy.c" \
+    "$PROJECT_DIR/src/moe_cpu_kernels.c" \
     "$PROJECT_DIR/src/moe_route.c" \
     "$PROJECT_DIR/src/moe_math.c" \
     "$PROJECT_DIR/src/moe_execute.c" \
@@ -96,22 +103,31 @@ emcc \
     "$PROJECT_DIR/src/gpu_moe_bridge.c" \
     "$PROJECT_DIR/src/transformer.c" \
     "$PROJECT_DIR/src/transformer/cpu.c" \
+    "$PROJECT_DIR/src/transformer/cpu_policy.c" \
+    "$PROJECT_DIR/src/transformer/cpu_backend.c" \
     "$PROJECT_DIR/src/transformer/gpu_fallback.c" \
     "$PROJECT_DIR/src/transformer/gpu_policy.c" \
     "$PROJECT_DIR/src/transformer/gpu_resources.c" \
     "$PROJECT_DIR/src/transformer/gpu.c" \
     "$PROJECT_DIR/src/transformer/gpu_emit.c" \
     "$PROJECT_DIR/src/transformer/kv.c" \
+    "$PROJECT_DIR/src/transformer/kv_backend.c" \
     "$PROJECT_DIR/src/transformer/logits.c" \
+    "$PROJECT_DIR/src/transformer/logits_policy.c" \
+    "$PROJECT_DIR/src/transformer/logits_backend.c" \
     "$PROJECT_DIR/src/transformer/math_scalar.c" \
     "$PROJECT_DIR/src/transformer/math_backend.c" \
     "$PROJECT_DIR/src/transformer/plan.c" \
     "$PROJECT_DIR/src/transformer/prefill.c" \
+    "$PROJECT_DIR/src/transformer/prefill_policy.c" \
+    "$PROJECT_DIR/src/transformer/prefill_backend.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_wasm.c" \
     "$PROJECT_DIR/src/transformer/rmsnorm_scalar.c" \
+    "$PROJECT_DIR/src/transformer/rmsnorm_backend.c" \
     "$PROJECT_DIR/src/transformer/gqa_wasm.c" \
     "$PROJECT_DIR/src/transformer/gqa_scalar.c" \
     "$PROJECT_DIR/src/transformer/gqa_tq_scalar.c" \
+    "$PROJECT_DIR/src/transformer/batched_attn_scalar.c" \
     "$PROJECT_DIR/src/transformer/logits_wasm.c" \
     "$PROJECT_DIR/src/transformer/logits_scalar.c" \
     "$PROJECT_DIR/src/transformer/ssm_wasm.c" \
