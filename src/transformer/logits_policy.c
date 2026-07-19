@@ -32,12 +32,12 @@ int bn_transformer_logits_small_backend_refine_enabled(
     const BnConfig *c,
     const BnQWeight *W) {
     return W &&
-           bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+           bn_transformer_gpu_small_backend_logits_refine_enabled(
                gpu, c, W->type);
 }
 
 int bn_transformer_logits_small_backend_refine_top(void) {
-    return bn_transformer_gpu_q8_logits_refine_top(1);
+    return bn_transformer_gpu_small_backend_logits_refine_top(1);
 }
 
 int bn_transformer_logits_untied_uses_f16_path(int tensor_type) {

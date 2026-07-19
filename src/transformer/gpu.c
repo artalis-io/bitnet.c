@@ -577,7 +577,7 @@ static int gpu_resolve_moe_all2_resources(BnGPUMoEResources *out,
     return 0;
 }
 
-static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
+static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
                                      int8_t *x_q_buf, int top_n) {
     if (!logits || !W || !W->data || !x || !x_q_buf)
@@ -625,7 +625,7 @@ static int gpu_refine_q6k_logits_top(float *logits, int n_logits,
     return n_top;
 }
 
-static int gpu_refine_q8_logits_top(float *logits, int n_logits,
+static int gpu_refine_small_backend_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
                                     int8_t *x_q, int top_n) {
     if (!logits || !W || !W->data || !x || !x_q)
@@ -1885,7 +1885,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     }
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
-    int q6_logits_refine_has_xb_snapshot = 0;
+    int kquant_logits_refine_has_xb_snapshot = 0;
     if (emit_logits && !use_matvec_argmax) {
         if (bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu)) {
             if (argmax_token)
@@ -1897,13 +1897,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu logits cpu fallback failed");
             return s->logits;
         }
-        if (need_logits && !argmax_token && logits_refine.q6_captures_xb) {
+        if (need_logits && !argmax_token && logits_refine.kquant_captures_xb) {
             if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                 bn_transformer_gpu_read_xb(gpu, s->xb,
                                            (size_t)dim * sizeof(float)) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu logits pre-refine snapshot failed");
-            q6_logits_refine_has_xb_snapshot = 1;
+            kquant_logits_refine_has_xb_snapshot = 1;
         }
         if (bn_transformer_gpu_emit_context_logits(
                 &emit, logit_res->gpu_buf, logit_res->type,
@@ -1936,8 +1936,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                                    !use_matvec_argmax);
     if (argmax_token) {
         if (!use_matvec_argmax &&
-            logits_refine.q8_captures_xb) {
-            int refine_top = logits_refine.q8_refine_top;
+            logits_refine.small_backend_captures_xb) {
+            int refine_top = logits_refine.small_backend_refine_top;
             if (refine_top > 0 &&
                 gpu->read_activation &&
                 gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
@@ -1946,7 +1946,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                      0) == 0 &&
                 bn_transformer_gpu_read_xb(gpu, s->xb,
                                            (size_t)dim * sizeof(float)) == 0) {
-                gpu_refine_q8_logits_top(s->logits, c->vocab_size,
+                gpu_refine_small_backend_logits_top(s->logits, c->vocab_size,
                                          logit_res->cpu_weight, s->xb,
                                          s->x_q, refine_top);
                 int best = 0;
@@ -2027,25 +2027,25 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         bn_transformer_gpu_emit_context_free(&emit);
         return s->x;
     }
-    if (logits_refine.q6_captures_xb) {
-        int refine_top = logits_refine.q6_refine_top;
-        int has_xb = q6_logits_refine_has_xb_snapshot;
+    if (logits_refine.kquant_captures_xb) {
+        int refine_top = logits_refine.kquant_refine_top;
+        int has_xb = kquant_logits_refine_has_xb_snapshot;
         if (!has_xb && refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0)
             has_xb = 1;
         if (refine_top > 0 && has_xb) {
-            gpu_refine_q6k_logits_top(s->logits, c->vocab_size,
+            gpu_refine_kquant_logits_top(s->logits, c->vocab_size,
                                       logit_res->cpu_weight, s->xb,
                                       s->x_q, refine_top);
         }
     }
-    if (logits_refine.q8_captures_xb) {
-        int refine_top = logits_refine.q8_refine_top;
+    if (logits_refine.small_backend_captures_xb) {
+        int refine_top = logits_refine.small_backend_refine_top;
         if (refine_top > 0 &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {
-            gpu_refine_q8_logits_top(s->logits, c->vocab_size,
+            gpu_refine_small_backend_logits_top(s->logits, c->vocab_size,
                                      logit_res->cpu_weight, s->xb,
                                      s->x_q, refine_top);
         }

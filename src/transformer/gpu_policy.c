@@ -944,7 +944,7 @@ int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {
     return bn_gpu_policy_large_hybrid_prefill_disabled();
 }
 
-int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+int bn_transformer_gpu_small_backend_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type) {
@@ -956,7 +956,7 @@ int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
            !bn_gpu_policy_small_dense_q8_logits_refine_disabled();
 }
 
-int bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+int bn_transformer_gpu_all2_moe_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w) {
@@ -967,48 +967,49 @@ int bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
            !bn_gpu_policy_all2_q4q6_moe_q6_logits_refine_disabled();
 }
 
-int bn_transformer_gpu_q6_logits_refine_enabled(
+int bn_transformer_gpu_kquant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int q6_refine_default) {
+    int kquant_refine_default) {
     return bn_gpu_policy_backend_q6_logits_refine_enabled(
-        gpu, q6_refine_default);
+        gpu, kquant_refine_default);
 }
 
-int bn_transformer_gpu_q6_logits_refine_captures_xb(
+int bn_transformer_gpu_kquant_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
-    int refine_q6_logits,
-    int q6_refine_default) {
-    return refine_q6_logits &&
-           q6_refine_default &&
+    int refine_kquant_logits,
+    int kquant_refine_default) {
+    return refine_kquant_logits &&
+           kquant_refine_default &&
            logits &&
            bn_backend_quant_supports_q6k_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
-int bn_transformer_gpu_q6_logits_refine_top(int q6_refine_default) {
+int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default) {
     return bn_gpu_policy_q6_logits_refine_top_or_default(
-        q6_refine_default ? 64 : 8);
+        kquant_refine_default ? 64 : 8);
 }
 
-int bn_transformer_gpu_q8_logits_refine_enabled(
+int bn_transformer_gpu_small_backend_logits_refine_active(
     const BnGPUBackend *gpu,
-    int q8_refine_default) {
+    int small_backend_refine_default) {
     return bn_gpu_policy_backend_q8_logits_refine_enabled(
-        gpu, q8_refine_default);
+        gpu, small_backend_refine_default);
 }
 
-int bn_transformer_gpu_q8_logits_refine_captures_xb(
+int bn_transformer_gpu_small_backend_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
-    int refine_q8_logits) {
-    return refine_q8_logits &&
+    int refine_small_backend_logits) {
+    return refine_small_backend_logits &&
            logits &&
            bn_backend_quant_supports_q8_logits_refine(logits->type) &&
            logits->cpu_weight != NULL;
 }
 
-int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default) {
+int bn_transformer_gpu_small_backend_logits_refine_top(
+    int small_backend_refine_default) {
     return bn_gpu_policy_q8_logits_refine_top_or_default(
-        q8_refine_default ? 16 : 8);
+        small_backend_refine_default ? 16 : 8);
 }
 
 BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
@@ -1018,25 +1019,30 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnTransformerGPULogitResources *logits,
     int small_dense_exact_q4_q8_default) {
     BnTransformerGPULogitsRefinePolicy p = {0};
-    p.q6_default =
-        bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+    p.kquant_default =
+        bn_transformer_gpu_all2_moe_logits_refine_default(
             gpu, c, w);
-    p.q6_enabled = bn_transformer_gpu_q6_logits_refine_enabled(
-        gpu, p.q6_default);
-    p.q6_captures_xb = bn_transformer_gpu_q6_logits_refine_captures_xb(
-        logits, p.q6_enabled, p.q6_default);
-    p.q6_refine_top = bn_transformer_gpu_q6_logits_refine_top(p.q6_default);
+    p.kquant_enabled = bn_transformer_gpu_kquant_logits_refine_enabled(
+        gpu, p.kquant_default);
+    p.kquant_captures_xb = bn_transformer_gpu_kquant_logits_refine_captures_xb(
+        logits, p.kquant_enabled, p.kquant_default);
+    p.kquant_refine_top =
+        bn_transformer_gpu_kquant_logits_refine_top(p.kquant_default);
 
     int tensor_type = logits ? logits->type : -1;
-    p.q8_default =
+    p.small_backend_default =
         small_dense_exact_q4_q8_default &&
-        bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+        bn_transformer_gpu_small_backend_logits_refine_enabled(
             gpu, c, tensor_type);
-    p.q8_enabled = bn_transformer_gpu_q8_logits_refine_enabled(
-        gpu, p.q8_default);
-    p.q8_captures_xb = bn_transformer_gpu_q8_logits_refine_captures_xb(
-        logits, p.q8_enabled);
-    p.q8_refine_top = bn_transformer_gpu_q8_logits_refine_top(p.q8_default);
+    p.small_backend_enabled =
+        bn_transformer_gpu_small_backend_logits_refine_active(
+            gpu, p.small_backend_default);
+    p.small_backend_captures_xb =
+        bn_transformer_gpu_small_backend_logits_refine_captures_xb(
+            logits, p.small_backend_enabled);
+    p.small_backend_refine_top =
+        bn_transformer_gpu_small_backend_logits_refine_top(
+            p.small_backend_default);
     return p;
 }
 
@@ -1139,8 +1145,8 @@ int bn_transformer_gpu_decode_cacheable(
     int gpu_logits_need_cpu,
     int has_moe,
     int cacheable_resident_moe,
-    int q6_logits_refine_captures_xb,
-    int q8_logits_refine_captures_xb,
+    int kquant_logits_refine_captures_xb,
+    int small_backend_logits_refine_captures_xb,
     int need_logits,
     int cpu_fallback_layer,
     int cpu_fallback_from_layer,
@@ -1165,9 +1171,10 @@ int bn_transformer_gpu_decode_cacheable(
         return 0;
     if (bn_gpu_policy_decode_cache_disabled())
         return 0;
-    if (q6_logits_refine_captures_xb && !(want_argmax && !need_logits))
+    if (kquant_logits_refine_captures_xb && !(want_argmax && !need_logits))
         return 0;
-    if (q8_logits_refine_captures_xb && !(want_argmax && !need_logits))
+    if (small_backend_logits_refine_captures_xb &&
+        !(want_argmax && !need_logits))
         return 0;
     if (cpu_fallback_layer >= 0 || cpu_fallback_from_layer >= 0 ||
         cpu_fallback_attn_layer >= 0 || cpu_fallback_attn_from_layer >= 0 ||
@@ -1208,8 +1215,8 @@ bn_transformer_gpu_decode_cacheability_policy(
         bn_transformer_gpu_decode_cacheable(
             gpu, emit_logits, want_argmax, gpu_logits_need_cpu, has_moe,
             policy.resident_moe,
-            logits_refine ? logits_refine->q6_captures_xb : 0,
-            logits_refine ? logits_refine->q8_captures_xb : 0,
+            logits_refine ? logits_refine->kquant_captures_xb : 0,
+            logits_refine ? logits_refine->small_backend_captures_xb : 0,
             need_logits,
             cpu_fallback ? cpu_fallback->layer : -1,
             cpu_fallback ? cpu_fallback->from_layer : -1,

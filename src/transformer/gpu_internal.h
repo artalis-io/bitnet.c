@@ -202,14 +202,14 @@ typedef struct {
 } BnTransformerGPUMoEAll2ResourcePolicy;
 
 typedef struct {
-    int q6_default;
-    int q6_enabled;
-    int q6_captures_xb;
-    int q6_refine_top;
-    int q8_default;
-    int q8_enabled;
-    int q8_captures_xb;
-    int q8_refine_top;
+    int kquant_default;
+    int kquant_enabled;
+    int kquant_captures_xb;
+    int kquant_refine_top;
+    int small_backend_default;
+    int small_backend_enabled;
+    int small_backend_captures_xb;
+    int small_backend_refine_top;
 } BnTransformerGPULogitsRefinePolicy;
 
 typedef struct {
@@ -495,29 +495,30 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     int tensor_type,
     int allow_aux_cache);
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void);
-int bn_transformer_gpu_small_backend_q8_logits_refine_enabled(
+int bn_transformer_gpu_small_backend_logits_refine_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int tensor_type);
-int bn_transformer_gpu_all2_q4q6_moe_q6_logits_refine_default(
+int bn_transformer_gpu_all2_moe_logits_refine_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_q6_logits_refine_enabled(
+int bn_transformer_gpu_kquant_logits_refine_enabled(
     const BnGPUBackend *gpu,
-    int q6_refine_default);
-int bn_transformer_gpu_q6_logits_refine_captures_xb(
+    int kquant_refine_default);
+int bn_transformer_gpu_kquant_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
-    int refine_q6_logits,
-    int q6_refine_default);
-int bn_transformer_gpu_q6_logits_refine_top(int q6_refine_default);
-int bn_transformer_gpu_q8_logits_refine_enabled(
+    int refine_kquant_logits,
+    int kquant_refine_default);
+int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default);
+int bn_transformer_gpu_small_backend_logits_refine_active(
     const BnGPUBackend *gpu,
-    int q8_refine_default);
-int bn_transformer_gpu_q8_logits_refine_captures_xb(
+    int small_backend_refine_default);
+int bn_transformer_gpu_small_backend_logits_refine_captures_xb(
     const BnTransformerGPULogitResources *logits,
-    int refine_q8_logits);
-int bn_transformer_gpu_q8_logits_refine_top(int q8_refine_default);
+    int refine_small_backend_logits);
+int bn_transformer_gpu_small_backend_logits_refine_top(
+    int small_backend_refine_default);
 BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -548,8 +549,8 @@ int bn_transformer_gpu_decode_cacheable(
     int gpu_logits_need_cpu,
     int has_moe,
     int cacheable_resident_moe,
-    int q6_logits_refine_captures_xb,
-    int q8_logits_refine_captures_xb,
+    int kquant_logits_refine_captures_xb,
+    int small_backend_logits_refine_captures_xb,
     int need_logits,
     int cpu_fallback_layer,
     int cpu_fallback_from_layer,
