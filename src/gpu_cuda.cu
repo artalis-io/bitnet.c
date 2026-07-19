@@ -11598,8 +11598,7 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     if (!buf || !host_data || !buf->data || buf->rows <= 0 ||
         buf->cols <= 0 || (buf->cols % BN_QK_K) != 0)
         return 0;
-    if (buf->type != BN_GGUF_TENSOR_IQ3_XXS &&
-        buf->type != BN_GGUF_TENSOR_IQ4_XS)
+    if (!bn_backend_quant_cuda_lazy_moe_aux_cache_candidate(buf->type))
         return 0;
     if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
         return 0;
