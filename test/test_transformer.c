@@ -2551,6 +2551,14 @@ static void test_gpu_policy_helpers(void) {
     gpu.write_activation = mock_gpu_write_activation;
     assert(bn_transformer_gpu_write_activation_buf(
         &gpu, BN_GPU_VALUE_X, NULL, sizeof(write_tmp)) != 0);
+    assert(bn_transformer_gpu_write_activation_buf_offset(
+        NULL, BN_GPU_VALUE_X, write_tmp, sizeof(write_tmp), 0) != 0);
+    assert(bn_transformer_gpu_write_activation_buf_offset(
+        &gpu, BN_GPU_VALUE_X, write_tmp, sizeof(write_tmp), 4) == 0);
+    gpu.write_activation = NULL;
+    assert(bn_transformer_gpu_write_activation_buf_offset(
+        &gpu, BN_GPU_VALUE_X, write_tmp, sizeof(write_tmp), 4) != 0);
+    gpu.write_activation = mock_gpu_write_activation;
 
     c.n_experts = 0;
     unsetenv("BN_GPU_CPU_LOGITS");

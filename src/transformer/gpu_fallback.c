@@ -244,12 +244,12 @@ int bn_transformer_gpu_fallback_cpu_attention(
     size_t kv_row_bytes = (size_t)c->kv_dim * sizeof(float);
     size_t kv_row_off = (loff + (size_t)cache_pos * (size_t)c->kv_dim) *
                         sizeof(float);
-    if (!gpu->write_activation ||
-        gpu->write_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE,
-                              key_cache_row, kv_row_bytes, kv_row_off) != 0 ||
-        gpu->write_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE,
-                              value_cache_row, kv_row_bytes,
-                              kv_row_off) != 0)
+    if (bn_transformer_gpu_write_activation_buf_offset(
+            gpu, BN_GPU_VALUE_KEY_CACHE, key_cache_row, kv_row_bytes,
+            kv_row_off) != 0 ||
+        bn_transformer_gpu_write_activation_buf_offset(
+            gpu, BN_GPU_VALUE_VALUE_CACHE, value_cache_row, kv_row_bytes,
+            kv_row_off) != 0)
         return -1;
 
     if (bn_transformer_gpu_write_x(gpu, s->x,
@@ -446,8 +446,7 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
                                         int pos,
                                         const float *x,
                                         int cols) {
-    if (!gpu || !gpu->read_activation || !x || cols <= 0 ||
-        (cols % 32) != 0 ||
+    if (!gpu || !x || cols <= 0 || (cols % 32) != 0 ||
         !bn_transformer_cpu_has_native_q8x_quant())
         return;
     int n_blocks = cols / 32;
@@ -465,10 +464,11 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
         free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
         return;
     }
-    if (gpu->read_activation(gpu->ctx, BN_GPU_DEBUG_BUF_Q8_ACT, gpu_q,
-                             (size_t)cols, 0) != 0 ||
-        gpu->read_activation(gpu->ctx, BN_GPU_DEBUG_BUF_Q8_SCALE, gpu_scales,
-                             (size_t)n_blocks * sizeof(float), 0) != 0) {
+    if (bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_DEBUG_BUF_Q8_ACT, gpu_q, (size_t)cols) != 0 ||
+        bn_transformer_gpu_read_activation_buf(
+            gpu, BN_GPU_DEBUG_BUF_Q8_SCALE, gpu_scales,
+            (size_t)n_blocks * sizeof(float)) != 0) {
         free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
         return;
     }

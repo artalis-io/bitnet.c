@@ -643,6 +643,11 @@ if grep -n 'gpu->write_activation' src/transformer/gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'gpu->read_activation\|gpu->write_activation' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_fallback.c must use GPU read/write helpers instead of raw backend hooks"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1

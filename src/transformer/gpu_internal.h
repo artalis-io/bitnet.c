@@ -1057,6 +1057,11 @@ int bn_transformer_gpu_write_activation_buf(const BnGPUBackend *gpu,
                                             int buf_idx,
                                             const void *data,
                                             size_t size_bytes);
+int bn_transformer_gpu_write_activation_buf_offset(const BnGPUBackend *gpu,
+                                                   int buf_idx,
+                                                   const void *data,
+                                                   size_t size_bytes,
+                                                   size_t offset_bytes);
 int bn_transformer_gpu_read_x(const BnGPUBackend *gpu,
                               float *x,
                               size_t size_bytes);
@@ -1068,11 +1073,11 @@ int bn_transformer_gpu_read_xb2(const BnGPUBackend *gpu,
                                 size_t size_bytes);
 int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
                                            int buf_idx,
-                                           float *out,
+                                           void *out,
                                            size_t size_bytes);
 int bn_transformer_gpu_read_activation_buf_offset(const BnGPUBackend *gpu,
                                                   int buf_idx,
-                                                  float *out,
+                                                  void *out,
                                                   size_t size_bytes,
                                                   size_t offset_bytes);
 int bn_transformer_gpu_debug_compare_attention(
