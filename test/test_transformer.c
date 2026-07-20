@@ -595,7 +595,7 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_0));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_transformer_gpu_can_native_qkv(BN_GGUF_TENSOR_Q4_0,
+    assert(!bn_transformer_gpu_can_native_quant_qkv(BN_GGUF_TENSOR_Q4_0,
                                               BN_GGUF_TENSOR_Q4_0,
                                               BN_GGUF_TENSOR_TQ1_0));
 
@@ -615,7 +615,7 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q5_K));
     assert(bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_gpu_can_matvec_split(&gpu, BN_GGUF_TENSOR_F16));
-    assert(bn_transformer_gpu_can_native_qkv(BN_GGUF_TENSOR_Q4_0,
+    assert(bn_transformer_gpu_can_native_quant_qkv(BN_GGUF_TENSOR_Q4_0,
                                              BN_GGUF_TENSOR_Q4_0,
                                              BN_GGUF_TENSOR_Q4_0));
     assert(bn_transformer_gpu_can_use_stacked_qk(BN_GGUF_TENSOR_Q4_K,

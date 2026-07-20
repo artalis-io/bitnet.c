@@ -23,7 +23,7 @@ int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap) {
     return gpu && ((gpu->caps & cap) != 0);
 }
 
-int bn_transformer_gpu_can_native_qkv(int q_type, int k_type, int v_type) {
+int bn_transformer_gpu_can_native_quant_qkv(int q_type, int k_type, int v_type) {
     return bn_backend_quant_can_gpu_native(q_type) &&
            bn_backend_quant_can_gpu_native(k_type) &&
            bn_backend_quant_can_gpu_native(v_type);

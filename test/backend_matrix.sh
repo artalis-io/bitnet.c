@@ -2657,6 +2657,11 @@ if grep -n 'bn_transformer_gpu_shared_q4_q8\|bn_gpu_policy_shared_q4_q8_dot_enab
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_can_native_qkv' include/transformer_plan_internal.h src/transformer/plan.c src/transformer/gpu_policy.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer QKV capability helpers must name native-quant behavior explicitly"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_exact_q6k_flags' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU matvec flag policy must use behavior-named K-quant helpers"
     fail=1

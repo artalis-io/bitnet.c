@@ -146,7 +146,7 @@ typedef struct {
 } BnLogitsPlan;
 
 int bn_transformer_gpu_has_cap(const BnGPUBackend *gpu, uint32_t cap);
-int bn_transformer_gpu_can_native_qkv(int q_type, int k_type, int v_type);
+int bn_transformer_gpu_can_native_quant_qkv(int q_type, int k_type, int v_type);
 int bn_transformer_gpu_can_use_stacked_qk(int q_type, int k_type);
 int bn_transformer_gpu_can_use_stacked_qk_weights(const BnQWeight *q,
                                                   const BnQWeight *k,

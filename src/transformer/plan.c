@@ -132,7 +132,7 @@ int bn_transformer_attention_uses_packed_qkv(
     return qkv_stacked &&
            shape && !shape->q_gated &&
            lw &&
-           bn_transformer_gpu_can_native_qkv(
+           bn_transformer_gpu_can_native_quant_qkv(
                lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type) &&
            q_bias && k_bias && v_bias;
 }
