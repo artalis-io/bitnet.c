@@ -1,5 +1,4 @@
 #include "model_internal.h"
-#include "model_arch.h"
 #include "sh_log.h"
 #include <math.h>
 #include <string.h>
@@ -21,7 +20,7 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
         return;
     }
 
-    if (bn_model_arch_uses_per_layer_embedding(&m->config)) {
+    if (bn_model_config_uses_per_layer_embedding(&m->config)) {
         float scale = sqrtf((float)dim);
         for (int i = 0; i < dim; i++)
             out[i] *= scale;

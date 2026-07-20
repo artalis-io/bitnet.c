@@ -3171,6 +3171,14 @@ if grep -n 'full_attn_interval\|n_attn_layers = (c->full_attn_interval > 0)\|n_s
     fail=1
 fi
 
+for file in src/model_session.c src/model_embed.c
+do
+    if grep -n '#include "model_arch.h"\|bn_model_arch_' "$file" >/dev/null 2>&1; then
+        echo "$file must use model-policy helpers instead of reaching into model_arch"
+        fail=1
+    fi
+done
+
 if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_dense_graph_q8\|bn_model_arch_cpu_force_float_kquant' src/transformer.c >/dev/null 2>&1; then
     echo "src/transformer.c must use GPU policy helpers for CUDA matvec fallback policy"
     fail=1
