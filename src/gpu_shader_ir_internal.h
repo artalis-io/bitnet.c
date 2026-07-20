@@ -101,11 +101,11 @@ typedef struct BnGPUOp {
     uint32_t p[BN_GPU_OP_PARAMS]; // shader-specific parameters (32 bytes)
 } BnGPUOp;
 
-#define BN_GPU_OP_FLAG_MATVEC_Q8K 1u
+#define BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT 1u
 #define BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK 1u
 #define BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM 2u
 #define BN_GPU_OP_FLAG_EXACT_SILU 4u
-#define BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K 8u
+#define BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT 8u
 
 static inline int bn_gpu_op_code_is_matvec(int code) {
     return code == BN_GPU_CODE_MATVEC;

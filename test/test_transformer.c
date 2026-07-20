@@ -668,17 +668,20 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_can_gateup_split_activation(
         &gpu, BN_GGUF_TENSOR_F16, 0));
     assert(bn_transformer_gpu_matvec_kquant_dot_flags(
-               BN_GGUF_TENSOR_Q4_K, 1) == BN_GPU_OP_FLAG_MATVEC_Q8K);
+               BN_GGUF_TENSOR_Q4_K, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
     assert(bn_transformer_gpu_matvec_kquant_dot_flags(
                BN_GGUF_TENSOR_Q4_K, 0) == 0);
     assert(bn_transformer_gpu_matvec_kquant_dot_flags(
                BN_GGUF_TENSOR_Q8_0, 1) == 0);
     assert(bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
-               BN_GGUF_TENSOR_Q4_K) == BN_GPU_OP_FLAG_MATVEC_Q8K);
+               BN_GGUF_TENSOR_Q4_K) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
     assert(bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
                BN_GGUF_TENSOR_F32) == 0);
     assert(bn_transformer_gpu_matvec_exact_kquant_flags(
-               BN_GGUF_TENSOR_Q6_K, 1) == BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K);
+               BN_GGUF_TENSOR_Q6_K, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT);
     assert(bn_transformer_gpu_matvec_exact_kquant_flags(
                BN_GGUF_TENSOR_Q6_K, 0) == 0);
     assert(bn_transformer_gpu_matvec_exact_kquant_flags(

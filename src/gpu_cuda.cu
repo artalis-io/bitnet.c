@@ -18298,7 +18298,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 rop->op_code == BN_GPU_CODE_Q8_MATVEC_SPLIT) {
                 int cols = (int)rop->p[1];
                 if (rop->op_code == BN_GPU_CODE_Q4K_MATVEC_SPLIT &&
-                    (rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K)) {
+                    (rop->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT)) {
                     if (cols > reserve_q8_k_cols) reserve_q8_k_cols = cols;
                 } else {
                     if (cols > reserve_q8_1_cols) reserve_q8_1_cols = cols;
@@ -18314,14 +18314,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         rop->type) &&
                     (rop->cols % BN_QK_K) == 0 &&
                     (force_down_kquant_dot ||
-                     (rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
+                     (rop->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
                      (enable_down_kquant_dot && rop->cols >= 2048))) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
                 } else if (bn_backend_quant_gpu_graph_matvec_asymmetric_kquant_needs_dot_scratch(
                                rop->type) &&
                            (rop->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
-                           ((rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
+                           ((rop->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
                             bn_gpu_policy_kquant_dot_forced()) &&
                            bn_gpu_policy_kquant_dot_enabled()) {
                     if (rop->cols > reserve_q8_k_cols)
@@ -18742,7 +18742,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int use_f16_down_kquant_matvec =
                 bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(
                     op->rows, op->cols,
-                    (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) != 0);
+                    (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT) != 0);
             int small_state_native_matvec =
                 bn_backend_quant_native_quant_small_state_matvec_candidate(
                     op->type) &&
@@ -18878,14 +18878,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 &&
                        (force_down_kquant_dot ||
-                        (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
+                        (op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
                         (enable_down_kquant_dot && op->cols >= 2048))) {
                 int use_down_kquant_prepared_dot =
                     bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(is_logits_op);
                 int use_down_kquant_mmvq =
                     bn_gpu_policy_cuda_down_kquant_mmvq_enabled(
                         op->rows, op->cols, is_logits_op,
-                        (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K) != 0) &&
+                        (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT) != 0) &&
                     bias == NULL && bias_idx < 0;
                 if (use_down_kquant_mmvq) {
                     if (cuda_ensure_q8_1(ctx, op->cols) != 0)
@@ -19032,7 +19032,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
-                       ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
+                       ((op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
                         bn_gpu_policy_kquant_dot_forced()) &&
                        bn_gpu_policy_kquant_dot_enabled()) {
                 int reuse_prepared_kquant_input =
@@ -19381,7 +19381,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (bn_backend_quant_asymmetric_kquant_dot_split_candidate(op->type) &&
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_symmetric_kquant_dot &&
-                (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) &&
+                (op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) &&
                 bn_gpu_policy_kquant_dot_enabled()) {
                 int reuse_prepared_kquant_input =
                     BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
@@ -19692,13 +19692,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                        (cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                        bn_gpu_policy_kquant_dot_enabled() &&
                        bn_gpu_policy_kquant_gateup_prepared_path_enabled(
-                           (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) != 0)) {
-                const BnGPUOp *prev_q8k = (i > 0) ? &ops[i - 1] : NULL;
+                           (op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) != 0)) {
+                const BnGPUOp *prev_prepared_kquant =
+                    (i > 0) ? &ops[i - 1] : NULL;
                 int prev_routed_same_input =
-                    prev_q8k &&
-                    prev_q8k->op_code == BN_GPU_CODE_MOE_ROUTED_FFN &&
-                    prev_q8k->buf_in == op->buf_in &&
-                    prev_q8k->cols == cols;
+                    prev_prepared_kquant &&
+                    prev_prepared_kquant->op_code ==
+                        BN_GPU_CODE_MOE_ROUTED_FFN &&
+                    prev_prepared_kquant->buf_in == op->buf_in &&
+                    prev_prepared_kquant->cols == cols;
                 int reuse_prepared_kquant_input =
                     BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
                         op->buf_in, cols, 1) &&

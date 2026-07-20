@@ -2945,6 +2945,11 @@ if grep -n 'BN_GPU_OP_FLAG_MATVEC_Q8K' src/transformer/gpu.c >/dev/null 2>&1; th
     fail=1
 fi
 
+if grep -n 'BN_GPU_OP_FLAG_MATVEC_Q8K\|BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K' src/gpu_shader_ir_internal.h src/gpu_cuda.cu src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "GPU IR matvec flags must use behavior-named K-quant names"
+    fail=1
+fi
+
 if ! grep -n 'bn_transformer_gpu_moe_route_raw_compare_matvec_flags' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "MoE raw compare matvec flag policy must live in transformer GPU policy"
     fail=1
