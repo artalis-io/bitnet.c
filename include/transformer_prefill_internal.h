@@ -379,6 +379,10 @@ bn_transformer_prefill_raw_attention_policy(
     int has_attn_post_norm);
 int bn_transformer_prefill_attention_min_tokens(void);
 int bn_transformer_prefill_attention_enabled(void);
+int bn_transformer_prefill_raw_attention_gpu_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
+    const BnGPUBackend *gpu);
 BnTransformerPrefillRawAttentionCallPolicy
 bn_transformer_prefill_raw_attention_call_policy(
     BnTransformerPrefillRawAttentionPolicy policy);

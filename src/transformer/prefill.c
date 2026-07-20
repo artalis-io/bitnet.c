@@ -1835,8 +1835,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             BnTransformerPrefillRawAttentionPolicy raw_attn_policy =
                 bn_transformer_prefill_raw_attention_policy(
                     gpu != NULL,
-                    gpu && gpu->prefill_qkv_attention_wo,
-                    gpu && gpu->prefill_qkv_attention_wo_norm_resid,
+                    bn_transformer_prefill_raw_attention_gpu_available(gpu),
+                    bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
+                        gpu),
                     attn_norm_buf != NULL,
                     bn_model_tq_state(m) != NULL,
                     q_gated,

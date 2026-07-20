@@ -101,6 +101,43 @@ static int mock_dense_ffn_batch(
     return 0;
 }
 
+static int mock_prefill_qkv_attention_wo(
+    void *ctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
+    void *q_norm_buf, void *k_norm_buf, const float *X, float *K_out,
+    float *V_out, int n_tokens, int dim, int n_heads, int n_kv_heads,
+    int head_size, int kv_mul, int kv_dim, int qk_rows, int qk_type,
+    int wv_rows, int wv_type, int wo_rows, int wo_cols, int wo_type,
+    int qk_norm_per_head, float norm_eps, int pos0, int rope_dims,
+    float attention_scale) {
+    (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
+    (void)q_norm_buf; (void)k_norm_buf; (void)X; (void)K_out;
+    (void)V_out; (void)n_tokens; (void)dim; (void)n_heads;
+    (void)n_kv_heads; (void)head_size; (void)kv_mul; (void)kv_dim;
+    (void)qk_rows; (void)qk_type; (void)wv_rows; (void)wv_type;
+    (void)wo_rows; (void)wo_cols; (void)wo_type; (void)qk_norm_per_head;
+    (void)norm_eps; (void)pos0; (void)rope_dims; (void)attention_scale;
+    return 0;
+}
+
+static int mock_prefill_qkv_attention_wo_norm_resid(
+    void *ctx, float *out, void *qk_buf, void *wv_buf, void *wo_buf,
+    void *attn_norm_buf, void *q_norm_buf, void *k_norm_buf,
+    const float *X, float *K_out, float *V_out, int n_tokens, int dim,
+    int n_heads, int n_kv_heads, int head_size, int kv_mul, int kv_dim,
+    int qk_rows, int qk_type, int wv_rows, int wv_type, int wo_rows,
+    int wo_cols, int wo_type, int qk_norm_per_head, float norm_eps,
+    int pos0, int rope_dims, float attention_scale) {
+    (void)ctx; (void)out; (void)qk_buf; (void)wv_buf; (void)wo_buf;
+    (void)attn_norm_buf; (void)q_norm_buf; (void)k_norm_buf;
+    (void)X; (void)K_out; (void)V_out; (void)n_tokens; (void)dim;
+    (void)n_heads; (void)n_kv_heads; (void)head_size; (void)kv_mul;
+    (void)kv_dim; (void)qk_rows; (void)qk_type; (void)wv_rows;
+    (void)wv_type; (void)wo_rows; (void)wo_cols; (void)wo_type;
+    (void)qk_norm_per_head; (void)norm_eps; (void)pos0;
+    (void)rope_dims; (void)attention_scale;
+    return 0;
+}
+
 static int mock_dense_ffn(
     void *ctx, float *out, void *gate_buf, void *up_buf, void *down_buf,
     const float *x, int dim, int hidden_dim, int gate_type, int up_type,
@@ -4493,6 +4530,23 @@ static void test_block_planning(void) {
         bn_transformer_prefill_raw_attention_call_policy(raw_attention);
     assert(raw_attention_call.preferred_kind ==
            BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID);
+
+    BnGPUBackend raw_attention_gpu = {0};
+    assert(!bn_transformer_prefill_raw_attention_gpu_available(NULL));
+    assert(!bn_transformer_prefill_raw_attention_gpu_available(
+        &raw_attention_gpu));
+    assert(!bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
+        &raw_attention_gpu));
+    raw_attention_gpu.prefill_qkv_attention_wo =
+        mock_prefill_qkv_attention_wo;
+    assert(bn_transformer_prefill_raw_attention_gpu_available(
+        &raw_attention_gpu));
+    assert(!bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
+        &raw_attention_gpu));
+    raw_attention_gpu.prefill_qkv_attention_wo_norm_resid =
+        mock_prefill_qkv_attention_wo_norm_resid;
+    assert(bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
+        &raw_attention_gpu));
 
     BnTransformerPrefillAttentionBatchPolicy attention_batch =
         bn_transformer_prefill_attention_batch_policy(

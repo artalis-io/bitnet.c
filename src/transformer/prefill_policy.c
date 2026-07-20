@@ -277,6 +277,16 @@ int bn_transformer_prefill_attention_enabled(void) {
     return bn_transformer_gpu_prefill_attention_enabled();
 }
 
+int bn_transformer_prefill_raw_attention_gpu_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_qkv_attention_wo;
+}
+
+int bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_qkv_attention_wo_norm_resid;
+}
+
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,
