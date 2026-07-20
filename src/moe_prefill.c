@@ -155,8 +155,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             }
             if (router && gate_all && up_all && down_all && norm) {
                 t0 = bn_moe_time_ms();
-                if (gpu->moe_route_routed_ffn_batch_norm_resid(
-                        gpu->ctx, act, router, gate_all, up_all, down_all,
+                if (bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
+                        gpu, act, router, gate_all, up_all, down_all,
                         shared_gate, shared_up, shared_down,
                         shared_gate_weight, norm, act, n_tokens, dim,
                         moe_hidden, n_experts, K,
@@ -196,8 +196,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             float *moe_out = (float *)bn_malloc(&a, sz_mout);
             if (moe_out && router && gate_all && up_all && down_all) {
                 t0 = bn_moe_time_ms();
-                if (gpu->moe_route_routed_ffn_batch(
-                        gpu->ctx, moe_out, router, gate_all, up_all, down_all,
+                if (bn_transformer_gpu_moe_prefill_routed_ffn_batch_backend_run(
+                        gpu, moe_out, router, gate_all, up_all, down_all,
                         Xb, n_tokens, dim, moe_hidden, n_experts, K,
                         map->gate_type, map->up_type, map->down_type,
                         c->act_type, c->moe_norm_topk_prob,
@@ -220,8 +220,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                                 gpu) &&
                             sg && su && sd) {
                             double ts = bn_moe_time_ms();
-                            if (gpu->dense_ffn_batch(
-                                    gpu->ctx, sh_d, sg, su, sd, Xb,
+                            if (bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
+                                    gpu, sh_d, sg, su, sd, Xb,
                                     n_tokens, dim, shared_hidden,
                                     lw->shared.shared_gate.type,
                                     lw->shared.shared_up.type,
@@ -303,11 +303,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         void *router_gpu = bn_backend_model_handle(
             route_backend, l, BN_BACKEND_HANDLE_MOE_ROUTER);
         int route_rc = router_gpu
-            ? route_gpu->moe_route_batch(route_gpu->ctx, all_indices,
-                                         all_weights, router_gpu, Xb,
-                                         n_tokens, dim, n_experts, K,
-                                         c->moe_norm_topk_prob,
-                                         c->moe_expert_weights_scale)
+            ? bn_transformer_gpu_moe_prefill_route_batch_backend_run(
+                  route_gpu, all_indices, all_weights, router_gpu, Xb,
+                  n_tokens, dim, n_experts, K, c->moe_norm_topk_prob,
+                  c->moe_expert_weights_scale)
             : -1;
         if (route_rc == 0)
             used_gpu_route = 1;
@@ -586,8 +585,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     m, sess, lw, l, e, &temps, &expert_gpu) == 0 &&
                 expert_gpu.gate && expert_gpu.down &&
                 (expert_gpu.up || expert_gpu.use_gateup_split) &&
-                gpu->dense_ffn_batch(
-                    gpu->ctx, down_buf, expert_gpu.gate,
+                bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
+                    gpu, down_buf, expert_gpu.gate,
                     expert_gpu.use_gateup_split ? NULL : expert_gpu.up,
                     expert_gpu.down, gather_buf, T, dim, moe_hidden,
                     map->gate_type, map->up_type, map->down_type,
@@ -722,8 +721,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     (up_gpu || bn_backend_model_handle(
                         backend, l,
                         BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED)) &&
-                    gpu->dense_ffn_batch(
-                        gpu->ctx, sh_d, gate_gpu, up_gpu, down_gpu, Xb,
+                    bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
+                        gpu, sh_d, gate_gpu, up_gpu, down_gpu, Xb,
                         n_tokens, dim, shared_hidden,
                         lw->shared.shared_gate.type,
                         lw->shared.shared_up.type,

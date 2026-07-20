@@ -2431,8 +2431,8 @@ if grep -n 'bn_quant_' src/moe_prefill.c >/dev/null 2>&1; then
     fail=1
 fi
 
-if grep -n 'gpu->dense_ffn_batch &&' src/moe_prefill.c >/dev/null 2>&1; then
-    echo "src/moe_prefill.c must use GPU policy helpers for shared dense FFN availability"
+if grep -n 'gpu->dense_ffn_batch\|gpu->moe_route_batch\|gpu->moe_route_routed_ffn_batch' src/moe_prefill.c >/dev/null 2>&1; then
+    echo "src/moe_prefill.c must use GPU policy helpers for MoE prefill backend calls"
     fail=1
 fi
 

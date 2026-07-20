@@ -1449,6 +1449,25 @@ int bn_transformer_gpu_moe_prefill_route_batch_available(
            gpu->moe_route_batch;
 }
 
+int bn_transformer_gpu_moe_prefill_route_batch_backend_run(
+    BnGPUBackend *gpu,
+    int *indices,
+    float *weights,
+    void *router_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int n_experts,
+    int k,
+    int norm_topk_prob,
+    float expert_weights_scale) {
+    if (!gpu || !gpu->moe_route_batch)
+        return -1;
+    return gpu->moe_route_batch(gpu->ctx, indices, weights, router_buf, X,
+                                n_tokens, dim, n_experts, k,
+                                norm_topk_prob, expert_weights_scale);
+}
+
 int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
@@ -1470,6 +1489,33 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
            bn_transformer_gpu_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
+}
+
+int bn_transformer_gpu_moe_prefill_routed_ffn_batch_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *router_buf,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    int norm_topk_prob,
+    float expert_weights_scale) {
+    if (!gpu || !gpu->moe_route_routed_ffn_batch)
+        return -1;
+    return gpu->moe_route_routed_ffn_batch(
+        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+        X, n_tokens, dim, hidden_dim, n_experts, k, gate_type, up_type,
+        down_type, act_type, norm_topk_prob, expert_weights_scale);
 }
 
 int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(

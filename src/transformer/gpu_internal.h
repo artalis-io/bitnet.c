@@ -843,6 +843,18 @@ int bn_transformer_gpu_moe_prefill_route_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int backend_available);
+int bn_transformer_gpu_moe_prefill_route_batch_backend_run(
+    BnGPUBackend *gpu,
+    int *indices,
+    float *weights,
+    void *router_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int n_experts,
+    int k,
+    int norm_topk_prob,
+    float expert_weights_scale);
 int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
     const BnGPUBackend *gpu,
     const BnConfig *c);
@@ -852,6 +864,25 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
     const BnMoEExpertMap *map,
     int dim,
     int allow_kquant_down);
+int bn_transformer_gpu_moe_prefill_routed_ffn_batch_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *router_buf,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    int norm_topk_prob,
+    float expert_weights_scale);
 int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
