@@ -305,8 +305,9 @@ int bn_transformer_gpu_ssm_qkvz_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *qkv,
     int split_op_code);
-int bn_transformer_gpu_can_use_stacked_alpha_beta(const BnQWeight *alpha,
-                                                  const BnQWeight *beta);
+int bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(
+    const BnQWeight *alpha,
+    const BnQWeight *beta);
 int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
                                                          int up_type,
                                                          int cols);

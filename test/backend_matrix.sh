@@ -3057,6 +3057,11 @@ if grep -n 'p->use_qkvz_stack = .*p->placement\|p->use_alpha_beta_stack = .*p->p
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_can_use_stacked_alpha_beta' src/transformer/gpu_internal.h src/transformer/gpu_policy.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer SSM alpha/beta stack helper must name same-quant-format behavior explicitly"
+    fail=1
+fi
+
 if grep -n 'p->use_i8_output = .*emb_out_i8\|p->kind = .*output_weight\.type\|p->weight_type = .*output_weight\.type\|} else if (w->emb_out_i8)\|} else if (bn_transformer_logits_tied_uses_.*w->emb_type)' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer logits planning must use logits policy helpers"
     fail=1

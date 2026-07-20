@@ -380,8 +380,9 @@ int bn_transformer_gpu_ssm_qkvz_split_supported(
            bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
 }
 
-int bn_transformer_gpu_can_use_stacked_alpha_beta(const BnQWeight *alpha,
-                                                  const BnQWeight *beta) {
+int bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(
+    const BnQWeight *alpha,
+    const BnQWeight *beta) {
     return alpha && beta &&
            alpha->rows == beta->rows &&
            alpha->cols == beta->cols &&

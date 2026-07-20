@@ -1403,15 +1403,15 @@ static void test_gpu_policy_helpers(void) {
     beta_w.type = BN_GGUF_TENSOR_Q4_K;
     alpha_w.rows = beta_w.rows = 16;
     alpha_w.cols = beta_w.cols = 64;
-    assert(bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    assert(bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(&alpha_w, &beta_w));
     beta_w.cols = 32;
-    assert(!bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    assert(!bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(&alpha_w, &beta_w));
     beta_w.cols = 64;
     beta_w.rows = 32;
-    assert(!bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    assert(!bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(&alpha_w, &beta_w));
     beta_w.rows = 16;
     beta_w.type = BN_GGUF_TENSOR_Q5_K;
-    assert(!bn_transformer_gpu_can_use_stacked_alpha_beta(&alpha_w, &beta_w));
+    assert(!bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(&alpha_w, &beta_w));
 
     W.type = BN_GGUF_TENSOR_Q4_0;
     W.rows = 32;
