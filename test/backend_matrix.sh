@@ -1343,6 +1343,11 @@ if grep -n 'getenv("BN_CUDA_DISABLE_Q6K_FLOAT_MOE_DOWN")\|getenv("BN_CUDA_DISABL
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q6k_moe_quant_down_preferred\|bn_gpu_policy_cuda_q6k_moe_down_f32_cache_path_enabled\|bn_gpu_policy_cuda_q6k_moe_down_halfwarp_enabled\|bn_gpu_policy_cuda_q6k_moe_down_split4_enabled\|bn_gpu_policy_cuda_q6k_moe_down_scatter_enabled\|bn_gpu_policy_cuda_q6k_moe_down_scatter_16row_enabled\|bn_gpu_policy_cuda_q6k_moe_float_down_enabled\|bn_gpu_policy_cuda_q6k_moe_pair_down_enabled\|bn_gpu_policy_cuda_q6k_moe_prefer_f32_down\|bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_enabled\|bn_gpu_policy_cuda_q6k_moe_down_f32_pair2_4row_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_4row_sum_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_8row_sum_enabled\|bn_gpu_policy_cuda_q6k_moe_down_resid_rmsnorm_fuse_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_k8_exact_2048_768_enabled\|bn_gpu_policy_cuda_q6k_moe_down_q8k_pair_4row_enabled\|bn_gpu_policy_cuda_q6k_moe_down_f32_cache_enabled\|bn_gpu_policy_cuda_q6k_moe_down_f16_cache_enabled' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA MoE down policy helpers must use behavior names, not Q6K facade names"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_PAIR_DOWN")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_PAIR_DOWN")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_DOWN_8ROW")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_DOWN_8ROW")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for Q4K MoE down variant env vars"
     fail=1
@@ -1375,26 +1380,26 @@ for fn in \
     cuda_use_q6k_3warp_exact \
     cuda_use_q6k_2warp_long \
     cuda_disable_q6k_matvec4_shape \
-    cuda_prefer_q6k_moe_quant_down \
-    cuda_use_q6k_moe_down_f32_cache_path \
+    cuda_prefer_moe_down_quant_path \
+    cuda_use_moe_down_f32_cache_path \
     cuda_use_moe_down_4row \
     cuda_use_moe_down_8row \
-    cuda_use_q6k_moe_down_halfwarp \
-    cuda_use_q6k_moe_down_split4 \
-    cuda_use_q6k_moe_down_scatter \
-    cuda_use_q6k_moe_down_scatter_16row \
-    cuda_use_q6k_moe_float_down \
-    cuda_use_q6k_moe_pair_down \
-    cuda_prefer_q6k_moe_f32_down \
-    cuda_use_q6k_moe_down_f32_pair2 \
-    cuda_use_q6k_moe_down_f32_pair2_4row \
-    cuda_use_q6k_moe_down_q8k_k8_4row_sum \
-    cuda_use_q6k_moe_down_q8k_k8_8row_sum \
-    cuda_use_q6k_moe_down_resid_rmsnorm_fuse \
-    cuda_use_q6k_moe_down_q8k_k8_exact_2048_768 \
-    cuda_use_q6k_moe_down_q8k_pair_4row \
-    cuda_use_q6k_moe_down_f32_cache \
-    cuda_use_q6k_moe_down_f16_cache \
+    cuda_use_moe_down_halfwarp \
+    cuda_use_moe_down_split4 \
+    cuda_use_moe_down_scatter \
+    cuda_use_moe_down_scatter_16row \
+    cuda_use_moe_down_float_path \
+    cuda_use_moe_down_pair_path \
+    cuda_prefer_moe_down_f32_cache \
+    cuda_use_moe_down_f32_pair2 \
+    cuda_use_moe_down_f32_pair2_4row \
+    cuda_use_moe_down_prepared_k8_4row_sum \
+    cuda_use_moe_down_prepared_k8_8row_sum \
+    cuda_use_moe_down_resid_rmsnorm_fuse \
+    cuda_use_moe_down_prepared_k8_exact_2048_768 \
+    cuda_use_moe_down_prepared_pair_4row \
+    cuda_use_moe_down_f32_cache \
+    cuda_use_moe_down_f16_cache \
     cuda_use_q4k_moe_down_f32_cache \
     cuda_use_q4k_moe_pair_down \
     cuda_use_q4k_moe_down_8row
@@ -1407,7 +1412,7 @@ do
         in_fn && /^}/ { in_fn=0 }
         END { exit(found && !bad ? 0 : 1) }
     ' src/gpu_cuda.cu; then
-        echo "CUDA Q6K matvec shape selection in $fn must delegate to GPU policy"
+        echo "CUDA policy selection in $fn must delegate to GPU policy"
         fail=1
     fi
 done
