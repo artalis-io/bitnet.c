@@ -54,3 +54,11 @@ int bn_model_quant_convert_dense_to_f32(int type,
 int bn_model_quant_dense_f32_type(void) {
     return bn_backend_quant_dense_f32_type();
 }
+
+int bn_model_quant_dequant_row(int type,
+                               const void *data,
+                               int row,
+                               int n,
+                               float *out) {
+    return bn_quant_dequant_row(type, data, row, n, out);
+}

@@ -42,5 +42,10 @@ int bn_model_quant_convert_dense_to_f32(int type,
                                         float *dst,
                                         int n);
 int bn_model_quant_dense_f32_type(void);
+int bn_model_quant_dequant_row(int type,
+                               const void *data,
+                               int row,
+                               int n,
+                               float *out);
 
 #endif // BN_MODEL_INTERNAL_H
