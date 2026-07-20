@@ -2565,6 +2565,11 @@ if awk '/^static int gpu_policy_cuda_moe_routed_ffn_enabled/{flag=1} /^int bn_gp
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_moe_all_f16_cache_forced/{flag=1} /^static int gpu_policy_moe_quant_only_after_cache/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c public cache/logits policy helpers must compose local env policy helpers"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_enabled\|bn_gpu_policy_cuda_moe_router_gpu_enabled\|bn_gpu_policy_cuda_moe_router_diff2_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed\|bn_gpu_policy_cuda_moe_ffn_disabled\|bn_gpu_policy_cuda_moe_cpu_actual_override_enabled\|bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled\|bn_gpu_policy_cuda_moe_gateup_split_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use neutral helpers for MoE route policy"
     fail=1
