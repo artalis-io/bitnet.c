@@ -4213,13 +4213,13 @@ static void test_quant_registry(void) {
     assert(!bn_backend_quant_supports_kquant_logits_refine(
         BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_supports_q6_logits_refine(BN_GGUF_TENSOR_Q6_K));
-    assert(bn_quant_format_logits_q6_f32_cache_supported(
+    assert(bn_quant_format_logits_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_quant_format_logits_q6_f32_cache_supported(
+    assert(!bn_quant_format_logits_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_moe_down_q6_f32_cache_supported(
+    assert(bn_quant_format_moe_down_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_quant_format_moe_down_q6_f32_cache_supported(
+    assert(!bn_quant_format_moe_down_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_moe_down_cublas_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
@@ -4231,9 +4231,9 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q6_K, 0) == (int)sizeof(float));
     assert(bn_quant_format_moe_down_cublas_cache_elem_bytes(
         BN_GGUF_TENSOR_Q4_K, 0) == 0);
-    assert(bn_quant_format_moe_down_q4_f32_cache_supported(
+    assert(bn_quant_format_moe_down_small_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_quant_format_moe_down_q4_f32_cache_supported(
+    assert(!bn_quant_format_moe_down_small_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_gpu_matvec_kquant_dot_flag(
                BN_GGUF_TENSOR_Q4_K, 1) == BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT);
@@ -4333,17 +4333,17 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q4_K));
     assert(!bn_quant_format_aux_cache_prefers_large_budget(
         BN_GGUF_TENSOR_Q8_0));
-    assert(bn_quant_format_logits_q6_f32_cache_supported(
+    assert(bn_quant_format_logits_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_moe_all_f16_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_moe_down_q6_f32_cache_supported(
+    assert(bn_quant_format_moe_down_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_moe_down_cublas_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_moe_down_cublas_cache_elem_bytes(
         BN_GGUF_TENSOR_Q6_K, 0) == (int)sizeof(float));
-    assert(bn_quant_format_moe_down_q4_f32_cache_supported(
+    assert(bn_quant_format_moe_down_small_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_moe_quant_only_after_cache(
         BN_GGUF_TENSOR_Q4_K, 1));

@@ -512,11 +512,11 @@ if awk '
     /int bn_quant_format_gpu_requires_exact_silu\(/ { in_fn=1 }
     /int bn_quant_format_gpu_prefers_gateup_split\(/ { in_fn=1 }
     /int bn_quant_format_gpu_fused_gateup_requires_backend_opt_in\(/ { in_fn=1 }
-    /int bn_quant_format_logits_q6_f32_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_logits_kquant_f32_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_all_f16_cache_supported\(/ { in_fn=1 }
-    /int bn_quant_format_moe_down_q6_f32_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_down_kquant_f32_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_down_cublas_cache_supported\(/ { in_fn=1 }
-    /int bn_quant_format_moe_down_q4_f32_cache_supported\(/ { in_fn=1 }
+    /int bn_quant_format_moe_down_small_kquant_f32_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_quant_only_after_cache\(/ { in_fn=1 }
     /int bn_quant_format_lazy_moe_aux_cache_candidate\(/ { in_fn=1 }
     /int bn_quant_format_moe_prefers_quant_only\(/ { in_fn=1 }
@@ -1767,6 +1767,17 @@ fi
 
 if awk '/^int bn_gpu_policy_cuda_prefill_moe_layer_disabled/{flag=1} /^static int env_positive_int_or_default/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
     echo "src/gpu_policy.c public prefill/SSM/shared policy helpers must compose local env policy helpers"
+    fail=1
+fi
+
+if grep -n 'bn_quant_format_logits_q6_f32_cache_supported\|bn_quant_format_moe_down_q6_f32_cache_supported\|bn_quant_format_moe_down_q4_f32_cache_supported\|bn_backend_quant_logits_q6_f32_cache_supported\|bn_backend_quant_moe_down_q6_f32_cache_supported\|bn_backend_quant_moe_down_q4_f32_cache_supported' \
+    include/quant.h \
+    include/backend_quant.h \
+    src/quant/registry.c \
+    src/gpu_policy.c \
+    test/test_quant.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Quant cache policy helpers must use behavior names, not Q4/Q6 cache aliases"
     fail=1
 fi
 

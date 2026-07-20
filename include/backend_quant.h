@@ -537,16 +537,17 @@ static inline int bn_backend_quant_supports_kquant_logits_refine(int type) {
 int bn_backend_quant_cpu_tied_kquant_refine_top(void);
 int bn_backend_quant_cpu_tied_kquant_hybrid_top(void);
 
-static inline int bn_backend_quant_logits_q6_f32_cache_supported(int type) {
-    return bn_quant_format_logits_q6_f32_cache_supported(type);
+static inline int bn_backend_quant_logits_kquant_f32_cache_supported(int type) {
+    return bn_quant_format_logits_kquant_f32_cache_supported(type);
 }
 
 static inline int bn_backend_quant_moe_all_f16_cache_supported(int type) {
     return bn_quant_format_moe_all_f16_cache_supported(type);
 }
 
-static inline int bn_backend_quant_moe_down_q6_f32_cache_supported(int type) {
-    return bn_quant_format_moe_down_q6_f32_cache_supported(type);
+static inline int bn_backend_quant_moe_down_kquant_f32_cache_supported(
+    int type) {
+    return bn_quant_format_moe_down_kquant_f32_cache_supported(type);
 }
 
 static inline int bn_backend_quant_moe_down_cublas_cache_supported(int type) {
@@ -559,8 +560,9 @@ static inline int bn_backend_quant_moe_down_cublas_cache_elem_bytes(
         type, down_kquant_f16_cache);
 }
 
-static inline int bn_backend_quant_moe_down_q4_f32_cache_supported(int type) {
-    return bn_quant_format_moe_down_q4_f32_cache_supported(type);
+static inline int bn_backend_quant_moe_down_small_kquant_f32_cache_supported(
+    int type) {
+    return bn_quant_format_moe_down_small_kquant_f32_cache_supported(type);
 }
 
 static inline int bn_backend_quant_moe_quant_only_after_cache(

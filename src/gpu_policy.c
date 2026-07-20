@@ -694,7 +694,7 @@ static int gpu_policy_logits_kquant_f32_cache_enabled(
     return gpu_policy_backend_caps(gpu)->logits_kquant_f32_cache &&
            gpu &&
            gpu->buffer_create_q6_f32_cache &&
-           bn_backend_quant_logits_q6_f32_cache_supported(tensor_type) &&
+           bn_backend_quant_logits_kquant_f32_cache_supported(tensor_type) &&
            gpu_policy_logits_kquant_f32_cache_requested() &&
            !gpu_policy_logits_kquant_f32_cache_disabled();
 }
@@ -750,7 +750,7 @@ static int gpu_policy_moe_down_kquant_f32_cache_preferred(
     int cols,
     int force_f16_cache) {
     return !force_f16_cache &&
-           bn_backend_quant_moe_down_q6_f32_cache_supported(tensor_type) &&
+           bn_backend_quant_moe_down_kquant_f32_cache_supported(tensor_type) &&
            bn_gpu_policy_moe_down_kquant_f32_cache_default_for_cols(
                cols) &&
            bn_gpu_policy_moe_down_kquant_f32_cache_enabled(gpu);
@@ -807,7 +807,7 @@ size_t bn_gpu_policy_moe_down_kquant_f32_cache_bytes(
 
 static int gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(
     int tensor_type) {
-    return bn_backend_quant_moe_down_q6_f32_cache_supported(tensor_type) &&
+    return bn_backend_quant_moe_down_kquant_f32_cache_supported(tensor_type) &&
            bn_gpu_policy_moe_down_kquant_f32_cache_forced();
 }
 
@@ -821,7 +821,8 @@ static int gpu_policy_moe_down_small_kquant_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
     return gpu && gpu->buffer_create_q6_f32_cache &&
-           bn_backend_quant_moe_down_q4_f32_cache_supported(tensor_type) &&
+           bn_backend_quant_moe_down_small_kquant_f32_cache_supported(
+               tensor_type) &&
            gpu_policy_moe_down_small_kquant_f32_cache_requested() &&
            !gpu_policy_moe_down_small_kquant_f32_cache_disabled();
 }
@@ -1440,7 +1441,7 @@ int bn_gpu_policy_cuda_moe_down_quant_path_preferred(
     int n_experts,
     int k) {
     return routed_asymmetric_kquant &&
-           bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
+           bn_backend_quant_moe_down_kquant_f32_cache_supported(down_type) &&
            hidden_dim <= 1024 &&
            bn_gpu_policy_moe_route_expanded_topk(n_experts, k) &&
            !gpu_policy_moe_down_kquant_f32_cache_requested();
@@ -1455,7 +1456,7 @@ int bn_gpu_policy_cuda_moe_down_f32_cache_path_enabled(
     int hidden_dim,
     int n_experts,
     int k) {
-    return bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
+    return bn_backend_quant_moe_down_kquant_f32_cache_supported(down_type) &&
            has_f32_data && !prefer_quant_down &&
            !(routed_asymmetric_kquant &&
              bn_gpu_policy_moe_route_all_active_two_large_hidden(n_experts,
@@ -1480,7 +1481,7 @@ int bn_gpu_policy_cuda_moe_down_halfwarp_enabled(
     int prefer_quant_down,
     int n_experts,
     int k) {
-    return bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
+    return bn_backend_quant_moe_down_kquant_f32_cache_supported(down_type) &&
            bn_gpu_policy_moe_route_expanded_topk(n_experts, k) &&
            (prefer_quant_down ||
             gpu_policy_moe_down_halfwarp_requested()) &&
@@ -1493,7 +1494,7 @@ int bn_gpu_policy_cuda_moe_down_split4_enabled(
     int n_experts,
     int k) {
     return !use_halfwarp &&
-           bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
+           bn_backend_quant_moe_down_kquant_f32_cache_supported(down_type) &&
            bn_gpu_policy_moe_route_expanded_topk(n_experts, k) &&
            gpu_policy_moe_down_split4_requested() &&
            !gpu_policy_moe_down_split4_disabled();
@@ -1504,7 +1505,7 @@ int bn_gpu_policy_cuda_moe_down_scatter_enabled(
     int use_halfwarp,
     int use_split4) {
     return !use_halfwarp && !use_split4 &&
-           bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
+           bn_backend_quant_moe_down_kquant_f32_cache_supported(down_type) &&
            !gpu_policy_moe_down_scatter_disabled();
 }
 
