@@ -40,7 +40,7 @@ int bn_quant_q8_logits_refine_row(const BnQWeight *W,
                                   int row,
                                   float *out) {
     if (!W || !W->data || !x_q || !x_scales || !out ||
-        !bn_quant_format_supports_q8_logits_refine(W->type) ||
+        !bn_quant_format_supports_native_quant_logits_refine(W->type) ||
         row < 0 || row >= W->rows || W->cols <= 0 || (W->cols % 32) != 0)
         return -1;
 

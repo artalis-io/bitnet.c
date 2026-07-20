@@ -131,8 +131,9 @@ static inline int bn_backend_quant_prepared_kquant_block_sums_per_row(
     return blocks_per_row > 0 ? blocks_per_row * 16 : 0;
 }
 
-static inline int bn_backend_quant_supports_native_quant_logits_refine(int type) {
-    return bn_quant_format_supports_q8_logits_refine(type);
+static inline int
+bn_backend_quant_supports_native_quant_logits_refine(int type) {
+    return bn_quant_format_supports_native_quant_logits_refine(type);
 }
 
 static inline int bn_backend_quant_logits_uses_f16_path(int type) {
@@ -542,7 +543,7 @@ static inline int bn_backend_quant_moe_all_active_two_graph_kquant_shape(
 }
 
 static inline int bn_backend_quant_supports_kquant_logits_refine(int type) {
-    return bn_quant_format_supports_q6_logits_refine(type);
+    return bn_quant_format_supports_kquant_logits_refine(type);
 }
 
 int bn_backend_quant_cpu_tied_kquant_refine_top(void);

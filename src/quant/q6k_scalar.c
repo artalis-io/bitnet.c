@@ -110,7 +110,7 @@ int bn_quant_q6_logits_refine_row(const BnQWeight *W,
                                   int row,
                                   float *out) {
     if (!W || !W->data || !x || !out ||
-        !bn_quant_format_supports_q6_logits_refine(W->type) ||
+        !bn_quant_format_supports_kquant_logits_refine(W->type) ||
         row < 0 || row >= W->rows || W->cols <= 0 ||
         (W->cols % BN_QK_K) != 0)
         return -1;
@@ -173,7 +173,7 @@ int bn_quant_q6_logits_refine_q8k_row(const BnQWeight *W,
                                       int row,
                                       float *out) {
     if (!W || !W->data || !x_q || !x_d || !x_bsums || !out ||
-        !bn_quant_format_supports_q6_logits_refine(W->type) ||
+        !bn_quant_format_supports_kquant_logits_refine(W->type) ||
         row < 0 || row >= W->rows || W->cols <= 0 ||
         (W->cols % BN_QK_K) != 0)
         return -1;

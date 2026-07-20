@@ -149,11 +149,11 @@ int bn_quant_format_is_float_kquant_fallback_candidate(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK);
 }
 
-int bn_quant_format_supports_q8_logits_refine(int type) {
+int bn_quant_format_supports_native_quant_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q8_LOGITS_REFINE);
 }
 
-int bn_quant_format_supports_q6_logits_refine(int type) {
+int bn_quant_format_supports_kquant_logits_refine(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_Q6_LOGITS_REFINE);
 }
 
