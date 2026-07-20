@@ -90,6 +90,14 @@ static int mock_matvec_argmax_activation(
     return 0;
 }
 
+static int mock_gpu_matmul(void *ctx, float *out, void *W_buf,
+                           const float *X, int rows, int cols,
+                           int n_tokens, int type) {
+    (void)ctx; (void)out; (void)W_buf; (void)X;
+    (void)rows; (void)cols; (void)n_tokens; (void)type;
+    return 0;
+}
+
 static int mock_dense_ffn_batch(
     void *ctx, float *out, void *gate_buf, void *up_buf, void *down_buf,
     const float *X, int n_tokens, int dim, int hidden_dim, int gate_type,
@@ -4369,6 +4377,23 @@ static void test_block_planning(void) {
         &dense_layer_gpu, 1, 1, 1, 1, 0, 1));
     assert(!bn_transformer_prefill_dense_layer_gpu_available(
         &dense_layer_gpu, 1, 1, 1, 1, 1, 0));
+
+    BnGPUBackend matmul_gpu = {0};
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        NULL, 1, 1, 1, 1));
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 1, 1, 1, 1));
+    matmul_gpu.matmul = mock_gpu_matmul;
+    assert(bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 1, 1, 1, 1));
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 0, 1, 1, 1));
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 1, 0, 1, 1));
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 1, 1, 0, 1));
+    assert(!bn_transformer_prefill_quant_matmul_gpu_available(
+        &matmul_gpu, 1, 1, 1, 0));
 
     BnConfig prefill_dense_c = {0};
     BnGPUBackend prefill_dense_gpu = {0};

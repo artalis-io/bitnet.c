@@ -760,6 +760,16 @@ int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type) {
     return bn_backend_quant_requires_float_kquant_fallback(tensor_type);
 }
 
+int bn_transformer_prefill_quant_matmul_gpu_available(
+    const BnGPUBackend *gpu,
+    int has_output,
+    int has_weight,
+    int has_weight_buffer,
+    int has_input) {
+    return gpu && gpu->matmul && has_output && has_weight &&
+           has_weight_buffer && has_input;
+}
+
 int bn_transformer_prefill_quant_matmul_batch_gpu_available(
     const BnGPUBackend *gpu,
     int n_tasks) {
