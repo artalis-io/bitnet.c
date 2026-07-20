@@ -699,7 +699,7 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
 
     size_t max_storage_binding =
         bn_gpu_policy_max_storage_binding_bytes(
-            gpu->max_storage_binding_size);
+            bn_gpu_backend_max_storage_binding_size(gpu));
 
     return bn_backend_layout_qweight_data_size(logits->cpu_weight) >
            max_storage_binding;
@@ -891,7 +891,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     const BnModel *m,
     const BnGPUBackend *gpu) {
     if (!m || !bn_gpu_policy_backend_matvec_fallback_supported(gpu) ||
-        !gpu->execute)
+        !bn_gpu_backend_can_execute(gpu))
         return 0;
     const BnConfig *c = &m->config;
     if (!bn_transformer_gpu_uses_dense_attention_only(c))
@@ -2618,9 +2618,9 @@ int bn_transformer_gpu_validate_forward(
 
     if (!gpu)
         GPU_POLICY_REJECT("backend missing");
-    if (!gpu->execute)
+    if (!bn_gpu_backend_can_execute(gpu))
         GPU_POLICY_REJECT("backend missing execute");
-    if (!gpu->write_activation)
+    if (!bn_gpu_backend_can_write_activation(gpu))
         GPU_POLICY_REJECT("backend missing write_activation");
 
     if (token < 0 || token >= c->vocab_size)
@@ -2699,7 +2699,9 @@ int bn_transformer_gpu_validate_forward(
         bn_gpu_policy_backend_all_active_two_kquant_moe_supported(gpu) &&
         all_active_two_kquant_moe_requires_opt_in(c, w))
         GPU_POLICY_REJECT("all-active-two K-quant MoE gpu-resident forward requires opt-in");
-    if (out->has_ssm && (!gpu->read_activation || !gpu->write_activation))
+    if (out->has_ssm &&
+        (!bn_gpu_backend_can_read_activation(gpu) ||
+         !bn_gpu_backend_can_write_activation(gpu)))
         GPU_POLICY_REJECT("ssm needs read/write activation");
 
     bn_transformer_gpu_resolve_logit_resources(&out->logits, backend, c, w);

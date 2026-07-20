@@ -547,6 +547,11 @@ static inline int bn_gpu_backend_can_query_memory(
     return gpu && gpu->memory_info;
 }
 
+static inline size_t bn_gpu_backend_max_storage_binding_size(
+    const BnGPUBackend *gpu) {
+    return gpu ? gpu->max_storage_binding_size : 0;
+}
+
 static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
                                          const void *ops,
                                          int n_ops,
