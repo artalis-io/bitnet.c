@@ -2760,7 +2760,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_moe_cpu_actual_override_enabled());
     assert(!bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
     assert(!bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(!bn_gpu_policy_small_dense_exact_ffn_down_enabled());
+    assert(!bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
     assert(!bn_gpu_policy_small_dense_prefill_disabled());
     assert(!bn_gpu_policy_native_quant_logits_refine_requested());
     assert(!bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -2772,7 +2772,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
     assert(bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(bn_gpu_policy_small_dense_exact_ffn_down_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
     assert(bn_gpu_policy_native_quant_logits_refine_requested());
     assert(bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -2790,7 +2790,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE", "1", 1);
     assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
     assert(bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(bn_gpu_policy_small_dense_exact_ffn_down_enabled());
+    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
     assert(bn_gpu_policy_native_quant_logits_refine_requested());
     assert(bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -3151,7 +3151,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_fused_gateup_enabled());
     assert(!bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled());
     assert(!bn_gpu_policy_gateup_split_enabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_ffn_down_enabled());
+    assert(!bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
     assert(!bn_gpu_policy_qkv_split_enabled());
     assert(bn_gpu_policy_qkv_split_debug_enabled());
     assert(!bn_gpu_policy_ssm_qkvz_split_enabled());

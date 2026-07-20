@@ -727,10 +727,10 @@ static void test_gpu_capability_routing(void) {
     unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
 
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
-    assert(!bn_transformer_gpu_small_dense_exact_fused_gateup_enabled(0));
-    assert(bn_transformer_gpu_small_dense_exact_fused_gateup_enabled(1));
+    assert(!bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(0));
+    assert(bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(1));
     setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
-    assert(!bn_transformer_gpu_small_dense_exact_fused_gateup_enabled(1));
+    assert(!bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(1));
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
 
     unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
@@ -740,10 +740,10 @@ static void test_gpu_capability_routing(void) {
     unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
 
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
-    assert(!bn_transformer_gpu_small_dense_exact_down_enabled(0));
-    assert(bn_transformer_gpu_small_dense_exact_down_enabled(1));
+    assert(!bn_transformer_gpu_small_dense_exact_native_down_enabled(0));
+    assert(bn_transformer_gpu_small_dense_exact_native_down_enabled(1));
     setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
-    assert(!bn_transformer_gpu_small_dense_exact_down_enabled(1));
+    assert(!bn_transformer_gpu_small_dense_exact_native_down_enabled(1));
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
 
     unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
@@ -1830,37 +1830,37 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     unsetenv("BN_METAL_Q4_PREPARED");
-    BnTransformerGPUSmallDenseExactLayerPolicy small_dense_exact_policy =
-        bn_transformer_gpu_small_dense_exact_layer_policy(&c);
-    assert(small_dense_exact_policy.from_layer == -1);
-    assert(small_dense_exact_policy.to_layer == -1);
-    assert(!small_dense_exact_policy.attn_only);
-    assert(!small_dense_exact_policy.ffn_only);
+    BnTransformerGPUSmallDenseExactNativeLayerPolicy small_dense_exact_native_policy =
+        bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
+    assert(small_dense_exact_native_policy.from_layer == -1);
+    assert(small_dense_exact_native_policy.to_layer == -1);
+    assert(!small_dense_exact_native_policy.attn_only);
+    assert(!small_dense_exact_native_policy.ffn_only);
     setenv("BN_GPU_Q4_Q8", "1", 1);
-    small_dense_exact_policy = bn_transformer_gpu_small_dense_exact_layer_policy(&c);
-    assert(small_dense_exact_policy.from_layer == 39);
-    assert(small_dense_exact_policy.to_layer == 6);
+    small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
+    assert(small_dense_exact_native_policy.from_layer == 39);
+    assert(small_dense_exact_native_policy.to_layer == 6);
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
-    small_dense_exact_policy = bn_transformer_gpu_small_dense_exact_layer_policy(&c);
-    assert(small_dense_exact_policy.from_layer == 39);
-    assert(small_dense_exact_policy.to_layer == -1);
+    small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
+    assert(small_dense_exact_native_policy.from_layer == 39);
+    assert(small_dense_exact_native_policy.to_layer == -1);
     unsetenv("BN_METAL_Q4_PREPARED");
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "10", 1);
     setenv("BN_GPU_Q4_Q8_TO_LAYER", "20", 1);
     setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
     setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
-    small_dense_exact_policy = bn_transformer_gpu_small_dense_exact_layer_policy(&c);
-    assert(small_dense_exact_policy.from_layer == 10);
-    assert(small_dense_exact_policy.to_layer == 20);
-    assert(small_dense_exact_policy.attn_only);
-    assert(small_dense_exact_policy.ffn_only);
+    small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
+    assert(small_dense_exact_native_policy.from_layer == 10);
+    assert(small_dense_exact_native_policy.to_layer == 20);
+    assert(small_dense_exact_native_policy.attn_only);
+    assert(small_dense_exact_native_policy.ffn_only);
     unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
     setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", "4", 1);
-    small_dense_exact_policy = bn_transformer_gpu_small_dense_exact_layer_policy(&c);
-    assert(small_dense_exact_policy.to_layer == 35);
+    small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
+    assert(small_dense_exact_native_policy.to_layer == 35);
     setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", "100", 1);
-    small_dense_exact_policy = bn_transformer_gpu_small_dense_exact_layer_policy(&c);
-    assert(small_dense_exact_policy.to_layer == -1);
+    small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
+    assert(small_dense_exact_native_policy.to_layer == -1);
     unsetenv("BN_GPU_Q4_Q8");
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
@@ -1868,7 +1868,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     unsetenv("BN_METAL_Q4_PREPARED");
 
-    BnTransformerGPUSmallDenseExactLayerPolicy manual_small_dense_exact_policy = {
+    BnTransformerGPUSmallDenseExactNativeLayerPolicy manual_small_dense_exact_native_policy = {
         .from_layer = 2,
         .to_layer = 4,
         .attn_only = 0,
@@ -1876,64 +1876,64 @@ static void test_gpu_policy_helpers(void) {
     };
     c.policy_flags = 0;
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    BnTransformerGPUSmallDenseExactLayerUsePolicy small_dense_exact_use =
-        bn_transformer_gpu_small_dense_exact_layer_use_policy(
-            &gpu, &c, &manual_small_dense_exact_policy, 1, 0, -1);
-    assert(!small_dense_exact_use.use_layer);
-    assert(!small_dense_exact_use.use_attention);
-    assert(!small_dense_exact_use.use_ffn);
-    assert(!small_dense_exact_use.use_ffn_down);
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 2, 0, -1);
-    assert(small_dense_exact_use.use_layer);
-    assert(small_dense_exact_use.use_attention);
-    assert(small_dense_exact_use.use_ffn);
-    assert(small_dense_exact_use.use_ffn_down);
-    manual_small_dense_exact_policy.attn_only = 1;
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 2, 0, -1);
-    assert(small_dense_exact_use.use_attention);
-    assert(!small_dense_exact_use.use_ffn);
-    assert(!small_dense_exact_use.use_ffn_down);
-    manual_small_dense_exact_policy.attn_only = 0;
-    manual_small_dense_exact_policy.ffn_only = 1;
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 2, 0, -1);
-    assert(!small_dense_exact_use.use_attention);
-    assert(small_dense_exact_use.use_ffn);
-    assert(small_dense_exact_use.use_ffn_down);
-    manual_small_dense_exact_policy.from_layer = -1;
-    manual_small_dense_exact_policy.to_layer = -1;
-    manual_small_dense_exact_policy.ffn_only = 0;
+    BnTransformerGPUSmallDenseExactNativeLayerUsePolicy small_dense_exact_native_use =
+        bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+            &gpu, &c, &manual_small_dense_exact_native_policy, 1, 0, -1);
+    assert(!small_dense_exact_native_use.use_layer);
+    assert(!small_dense_exact_native_use.use_attention);
+    assert(!small_dense_exact_native_use.use_ffn);
+    assert(!small_dense_exact_native_use.use_ffn_down);
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 2, 0, -1);
+    assert(small_dense_exact_native_use.use_layer);
+    assert(small_dense_exact_native_use.use_attention);
+    assert(small_dense_exact_native_use.use_ffn);
+    assert(small_dense_exact_native_use.use_ffn_down);
+    manual_small_dense_exact_native_policy.attn_only = 1;
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 2, 0, -1);
+    assert(small_dense_exact_native_use.use_attention);
+    assert(!small_dense_exact_native_use.use_ffn);
+    assert(!small_dense_exact_native_use.use_ffn_down);
+    manual_small_dense_exact_native_policy.attn_only = 0;
+    manual_small_dense_exact_native_policy.ffn_only = 1;
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 2, 0, -1);
+    assert(!small_dense_exact_native_use.use_attention);
+    assert(small_dense_exact_native_use.use_ffn);
+    assert(small_dense_exact_native_use.use_ffn_down);
+    manual_small_dense_exact_native_policy.from_layer = -1;
+    manual_small_dense_exact_native_policy.to_layer = -1;
+    manual_small_dense_exact_native_policy.ffn_only = 0;
     c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION;
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 0, 0, -1);
-    assert(!small_dense_exact_use.use_layer);
-    assert(small_dense_exact_use.use_attention);
-    assert(!small_dense_exact_use.use_ffn);
-    manual_small_dense_exact_policy.ffn_only = 1;
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 0, 0, -1);
-    assert(!small_dense_exact_use.use_attention);
-    manual_small_dense_exact_policy.ffn_only = 0;
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 0, 0, -1);
+    assert(!small_dense_exact_native_use.use_layer);
+    assert(small_dense_exact_native_use.use_attention);
+    assert(!small_dense_exact_native_use.use_ffn);
+    manual_small_dense_exact_native_policy.ffn_only = 1;
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 0, 0, -1);
+    assert(!small_dense_exact_native_use.use_attention);
+    manual_small_dense_exact_native_policy.ffn_only = 0;
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE;
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 4, 1, 3);
-    assert(!small_dense_exact_use.use_layer);
-    assert(!small_dense_exact_use.small_dense_exact_path);
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 3, 1, 3);
-    assert(small_dense_exact_use.use_layer);
-    assert(small_dense_exact_use.small_dense_exact_path);
-    assert(small_dense_exact_use.use_attention);
-    assert(small_dense_exact_use.use_ffn);
-    assert(!small_dense_exact_use.use_ffn_down);
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 4, 1, 3);
+    assert(!small_dense_exact_native_use.use_layer);
+    assert(!small_dense_exact_native_use.small_dense_exact_native_path);
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 3, 1, 3);
+    assert(small_dense_exact_native_use.use_layer);
+    assert(small_dense_exact_native_use.small_dense_exact_native_path);
+    assert(small_dense_exact_native_use.use_attention);
+    assert(small_dense_exact_native_use.use_ffn);
+    assert(!small_dense_exact_native_use.use_ffn_down);
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN", "1", 1);
-    small_dense_exact_use = bn_transformer_gpu_small_dense_exact_layer_use_policy(
-        &gpu, &c, &manual_small_dense_exact_policy, 3, 1, 3);
-    assert(small_dense_exact_use.use_ffn_down);
+    small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+        &gpu, &c, &manual_small_dense_exact_native_policy, 3, 1, 3);
+    assert(small_dense_exact_native_use.use_ffn_down);
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     c.policy_flags = 0;
 
@@ -2345,9 +2345,9 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
-    assert(!bn_transformer_gpu_small_dense_exact_default(
+    assert(!bn_transformer_gpu_small_dense_exact_native_default(
         &gpu, &c, -1));
-    assert(!bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
+    assert(!bn_transformer_gpu_small_dense_exact_native_ffn_down_enabled(
         &gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     assert(bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
@@ -2357,44 +2357,44 @@ static void test_gpu_policy_helpers(void) {
     fallback = bn_transformer_gpu_decode_cpu_attention_fallback_policy(
         fallback, &gpu, &c, &dense_w);
     assert(fallback.attn_from_layer == 0);
-    assert(bn_transformer_gpu_small_dense_exact_default(
+    assert(bn_transformer_gpu_small_dense_exact_native_default(
         &gpu, &c, -1));
-    BnTransformerGPUSmallDenseExactLayerPolicy small_dense_exact_layer =
+    BnTransformerGPUSmallDenseExactNativeLayerPolicy small_dense_exact_native_layer =
         {.from_layer = -1, .to_layer = -1};
-    BnTransformerGPUSmallDenseExactDecodePolicy small_dense_exact_decode =
-        bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
-    assert(small_dense_exact_decode.small_dense_exact_default);
+    BnTransformerGPUSmallDenseExactNativeDecodePolicy small_dense_exact_native_decode =
+        bn_transformer_gpu_small_dense_exact_native_decode_policy(&gpu, &c, &small_dense_exact_native_layer);
+    assert(small_dense_exact_native_decode.small_dense_exact_native_default);
     c.n_layers = 61;
     assert(bn_model_arch_small_dense_exact_native_to_layer(&c) == 27);
-    small_dense_exact_decode =
-        bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
-    assert(small_dense_exact_decode.small_dense_exact_default);
-    assert(small_dense_exact_decode.small_dense_exact_to_layer == 27);
-    assert(bn_transformer_gpu_small_dense_exact_to_layer(
+    small_dense_exact_native_decode =
+        bn_transformer_gpu_small_dense_exact_native_decode_policy(&gpu, &c, &small_dense_exact_native_layer);
+    assert(small_dense_exact_native_decode.small_dense_exact_native_default);
+    assert(small_dense_exact_native_decode.small_dense_exact_native_to_layer == 27);
+    assert(bn_transformer_gpu_small_dense_exact_native_to_layer(
                &c, 1, -1) == 27);
-    small_dense_exact_layer.to_layer = 9;
-    small_dense_exact_decode =
-        bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
-    assert(small_dense_exact_decode.small_dense_exact_to_layer == 9);
-    assert(bn_transformer_gpu_small_dense_exact_to_layer(
+    small_dense_exact_native_layer.to_layer = 9;
+    small_dense_exact_native_decode =
+        bn_transformer_gpu_small_dense_exact_native_decode_policy(&gpu, &c, &small_dense_exact_native_layer);
+    assert(small_dense_exact_native_decode.small_dense_exact_native_to_layer == 9);
+    assert(bn_transformer_gpu_small_dense_exact_native_to_layer(
                &c, 1, 9) == 9);
-    small_dense_exact_layer.to_layer = -1;
+    small_dense_exact_native_layer.to_layer = -1;
     c.n_layers = 33;
     assert(bn_model_arch_small_dense_exact_native_to_layer(&c) == -1);
-    small_dense_exact_decode =
-        bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
-    assert(small_dense_exact_decode.small_dense_exact_to_layer == -1);
-    assert(bn_transformer_gpu_small_dense_exact_to_layer(
+    small_dense_exact_native_decode =
+        bn_transformer_gpu_small_dense_exact_native_decode_policy(&gpu, &c, &small_dense_exact_native_layer);
+    assert(small_dense_exact_native_decode.small_dense_exact_native_to_layer == -1);
+    assert(bn_transformer_gpu_small_dense_exact_native_to_layer(
                &c, 1, -1) == -1);
     c.n_layers = 0;
-    assert(bn_transformer_gpu_small_dense_exact_to_layer(
+    assert(bn_transformer_gpu_small_dense_exact_native_to_layer(
                &c, 0, -1) == -1);
-    assert(!bn_transformer_gpu_small_dense_exact_default(
+    assert(!bn_transformer_gpu_small_dense_exact_native_default(
         &gpu, &c, 0));
-    small_dense_exact_layer.from_layer = 0;
-    small_dense_exact_decode =
-        bn_transformer_gpu_small_dense_exact_decode_policy(&gpu, &c, &small_dense_exact_layer);
-    assert(!small_dense_exact_decode.small_dense_exact_default);
+    small_dense_exact_native_layer.from_layer = 0;
+    small_dense_exact_native_decode =
+        bn_transformer_gpu_small_dense_exact_native_decode_policy(&gpu, &c, &small_dense_exact_native_layer);
+    assert(!small_dense_exact_native_decode.small_dense_exact_native_default);
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE", "1", 1);
     assert(!bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
@@ -2404,19 +2404,19 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &dense_w));
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8", "1", 1);
-    assert(!bn_transformer_gpu_small_dense_exact_default(
+    assert(!bn_transformer_gpu_small_dense_exact_native_default(
         &gpu, &c, -1));
     unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8");
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8", "1", 1);
-    assert(!bn_transformer_gpu_small_dense_exact_default(
+    assert(!bn_transformer_gpu_small_dense_exact_native_default(
         &gpu, &c, -1));
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN", "1", 1);
-    assert(bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
+    assert(bn_transformer_gpu_small_dense_exact_native_ffn_down_enabled(
         &gpu, &c));
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     setenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN", "1", 1);
-    assert(bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
+    assert(bn_transformer_gpu_small_dense_exact_native_ffn_down_enabled(
         &gpu, &c));
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
     c.policy_flags |= BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK;

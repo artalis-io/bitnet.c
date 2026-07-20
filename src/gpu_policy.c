@@ -145,7 +145,7 @@ static int small_dense_exact_native_disabled(void) {
         "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
 }
 
-static int small_dense_exact_ffn_down_requested(void) {
+static int small_dense_exact_native_ffn_down_requested(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN",
         "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
@@ -3868,8 +3868,8 @@ int bn_gpu_policy_small_dense_exact_native_disabled(void) {
     return small_dense_exact_native_disabled();
 }
 
-int bn_gpu_policy_small_dense_exact_ffn_down_enabled(void) {
-    return small_dense_exact_ffn_down_requested();
+int bn_gpu_policy_small_dense_exact_native_ffn_down_requested(void) {
+    return small_dense_exact_native_ffn_down_requested();
 }
 
 int bn_gpu_policy_small_dense_prefill_disabled(void) {
