@@ -2686,6 +2686,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_dense_gr
     fail=1
 fi
 
+if grep -n 'bn_quant_dequant_row' src/transformer.c >/dev/null 2>&1; then
+    echo "src/transformer.c must use model helpers for model-owned row dequantization"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_gpu_dense_graph_q8' include/quant.h include/backend_quant.h src/quant/registry.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Small-dense native-quant format policy must use behavior names, not Q8 internal helper names"
     fail=1

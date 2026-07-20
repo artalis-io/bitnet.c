@@ -43,9 +43,8 @@ static int prepare_arch_per_layer_input(BnModel *m, BnSession *sess,
         rmsnorm_per_layer_slice(s->per_layer_input + (size_t)l * per_dim,
                                 w->per_layer_proj_norm, per_dim, c->norm_eps);
 
-    if (bn_quant_dequant_row(w->per_layer_token_embd.type,
-                             w->per_layer_token_embd.data,
-                             token, total, s->hb) != 0)
+    if (bn_model_dequant_qweight_row(&w->per_layer_token_embd,
+                                     token, total, s->hb) != 0)
         return -1;
     float tok_scale = sqrtf((float)per_dim);
     float input_scale = 1.0f / sqrtf(2.0f);

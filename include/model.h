@@ -28,6 +28,10 @@ typedef struct BnModel {
 int  bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv_tq_bits);
 void bn_model_free(BnModel *m);
 void bn_model_embed_token(const BnModel *m, float *out, int token);
+int  bn_model_dequant_qweight_row(const BnQWeight *weight,
+                                  int row,
+                                  int n,
+                                  float *out);
 void bn_model_set_file(BnModel *model, BnMappedFile file);
 BnThreadPool *bn_model_pool(const BnModel *model);
 void bn_model_set_thread_pool(BnModel *model, BnThreadPool *pool, int owned);

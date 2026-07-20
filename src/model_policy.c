@@ -62,3 +62,12 @@ int bn_model_quant_dequant_row(int type,
                                float *out) {
     return bn_quant_dequant_row(type, data, row, n, out);
 }
+
+int bn_model_dequant_qweight_row(const BnQWeight *weight,
+                                 int row,
+                                 int n,
+                                 float *out) {
+    if (!weight)
+        return -1;
+    return bn_model_quant_dequant_row(weight->type, weight->data, row, n, out);
+}
