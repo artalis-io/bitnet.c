@@ -445,11 +445,11 @@ static void debug_quant_matvec_prepared(BnModel *m,
         bn_model_pool(m), 0);
 }
 
-static void debug_compare_q8_activation(const BnGPUBackend *gpu,
-                                        int layer,
-                                        int pos,
-                                        const float *x,
-                                        int cols) {
+static void debug_compare_native_quant_activation(const BnGPUBackend *gpu,
+                                                 int layer,
+                                                 int pos,
+                                                 const float *x,
+                                                 int cols) {
     if (!gpu || !x || cols <= 0 || (cols % 32) != 0 ||
         !bn_transformer_cpu_has_native_quant_activation())
         return;
@@ -945,7 +945,7 @@ int bn_transformer_gpu_debug_compare_qkv(
 
     fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, m->config.norm_eps);
     debug_compare_vec("attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
-    debug_compare_q8_activation(gpu, layer, pos, s->xb, dim);
+    debug_compare_native_quant_activation(gpu, layer, pos, s->xb, dim);
     debug_quant_matvec_prepared(m, cpu_q, &lw->attn.wq, s->xb, s->x_q);
     debug_quant_matvec_prepared(m, cpu_k, &lw->attn.wk, s->xb, s->x_q);
     debug_quant_matvec_prepared(m, cpu_v, &lw->attn.wv, s->xb, s->x_q);
