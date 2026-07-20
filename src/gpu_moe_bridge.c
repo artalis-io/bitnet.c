@@ -34,14 +34,14 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
     if (bn_gpu_backend_can_create_quant_only_buffer(gpu) &&
         bn_transformer_gpu_moe_quant_only_without_aux_cache(
             gpu, type, allow_aux_cache)) {
-        return gpu->buffer_create_quant_only(
-            gpu->ctx, data, size, type, rows, cols);
+        return bn_gpu_backend_create_quant_only_buffer(
+            gpu, data, size, type, rows, cols);
     }
     if (bn_gpu_policy_moe_prefers_quant_only(gpu, type) &&
         bn_gpu_backend_can_create_quant_only_buffer(gpu))
-        return gpu->buffer_create_quant_only(
-            gpu->ctx, data, size, type, rows, cols);
-    return gpu->buffer_create(gpu->ctx, data, size, type, rows, cols);
+        return bn_gpu_backend_create_quant_only_buffer(
+            gpu, data, size, type, rows, cols);
+    return bn_gpu_backend_create_buffer(gpu, data, size, type, rows, cols);
 }
 
 static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
@@ -57,8 +57,8 @@ static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
         gate_bytes == 0 || up_bytes == 0)
         return NULL;
     if (bn_gpu_backend_can_create_stacked2_buffer(gpu))
-        return gpu->buffer_create_stacked2(
-            gpu->ctx, gate_data, gate_bytes, up_data, up_bytes, tensor_type,
+        return bn_gpu_backend_create_stacked2_buffer(
+            gpu, gate_data, gate_bytes, up_data, up_bytes, tensor_type,
             rows, cols);
 
     size_t gateup_bytes = gate_bytes + up_bytes;
@@ -67,8 +67,8 @@ static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
         return NULL;
     memcpy(gateup_data, gate_data, gate_bytes);
     memcpy(gateup_data + gate_bytes, up_data, up_bytes);
-    void *out = gpu->buffer_create(gpu->ctx, gateup_data, gateup_bytes,
-                                   tensor_type, rows, cols);
+    void *out = bn_gpu_backend_create_buffer(gpu, gateup_data, gateup_bytes,
+                                             tensor_type, rows, cols);
     free(gateup_data);
     return out;
 }

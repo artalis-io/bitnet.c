@@ -2492,6 +2492,11 @@ if grep -n 'BN_CUDA_ENABLE_MOE_LAZY_AUX_CACHE\|BN_GPU_BACKEND_CUDA\|kind == .*CU
     fail=1
 fi
 
+if grep -n 'gpu->buffer_create' src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "src/gpu_moe_bridge.c must use GPU backend helpers for buffer uploads"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_MOE_ROUTED_FFN\|BN_CUDA_ENABLE_MOE_ALL_F16_CACHE\|BN_CUDA_DISABLE_MOE_ALL_F16_CACHE\|BN_CUDA_ENABLE_MOE_GATEUP_F16_CACHE\|BN_CUDA_DISABLE_MOE_GATEUP_F16_CACHE\|BN_CUDA_ENABLE_PARTIAL_MOE_F16_CACHE\|BN_CUDA_DEBUG_MOE_FIT\|BN_CUDA_KEEP_INDIVIDUAL_F16_CACHE\|BN_CUDA_MOE_FULL_RESERVE_MB' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU policy helpers for CUDA MoE residency env vars"
     fail=1
