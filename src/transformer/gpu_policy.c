@@ -1532,6 +1532,32 @@ int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
                c, map, dim, allow_kquant_down);
 }
 
+int bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    const int *indices,
+    const float *weights,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type) {
+    if (!gpu || !gpu->moe_routed_ffn_batch)
+        return -1;
+    return gpu->moe_routed_ffn_batch(
+        gpu->ctx, out, gate_all_buf, up_all_buf, down_all_buf, indices,
+        weights, X, n_tokens, dim, hidden_dim, n_experts, k, gate_type,
+        up_type, down_type, act_type);
+}
+
 int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -1544,6 +1570,41 @@ int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
            gpu->moe_ffn_batch &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
+}
+
+int bn_transformer_gpu_moe_prefill_split_expert_batch_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    const BnGPUMoEPrefillExpert *experts,
+    int n_experts,
+    const int *expert_offsets,
+    const int *expert_counts,
+    const int *token_ids,
+    const float *weights,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    void *shared_gate_buf,
+    void *shared_up_buf,
+    void *shared_down_buf,
+    void *shared_gate_weight_buf,
+    int shared_hidden_dim,
+    int shared_gate_type,
+    int shared_up_type,
+    int shared_down_type) {
+    if (!gpu || !gpu->moe_ffn_batch)
+        return -1;
+    return gpu->moe_ffn_batch(
+        gpu->ctx, out, experts, n_experts, expert_offsets, expert_counts,
+        token_ids, weights, X, n_tokens, dim, hidden_dim, gate_type, up_type,
+        down_type, act_type, shared_gate_buf, shared_up_buf, shared_down_buf,
+        shared_gate_weight_buf, shared_hidden_dim, shared_gate_type,
+        shared_up_type, shared_down_type);
 }
 
 int bn_transformer_gpu_moe_prefill_single_expert_batch_available(

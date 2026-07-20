@@ -434,11 +434,11 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
         if (gate_all && up_all && down_all) {
             t0 = bn_moe_time_ms();
-            if (gpu_batch->moe_routed_ffn_batch(
-                    gpu_batch->ctx, moe_out, gate_all, up_all, down_all,
-                    all_indices, all_weights, Xb, n_tokens, dim,
-                    moe_hidden, n_experts, K, map->gate_type,
-                    map->up_type, map->down_type, c->act_type) == 0) {
+            if (bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
+                    gpu_batch, moe_out, gate_all, up_all, down_all,
+                    all_indices, all_weights, Xb, n_tokens, dim, moe_hidden,
+                    n_experts, K, map->gate_type, map->up_type,
+                    map->down_type, c->act_type) == 0) {
                 used_gpu_moe_batch = 1;
                 ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
             }
@@ -519,8 +519,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     }
                 }
                 t0 = bn_moe_time_ms();
-                if (gpu_batch->moe_ffn_batch(
-                        gpu_batch->ctx, moe_out, gpu_experts, n_experts,
+                if (bn_transformer_gpu_moe_prefill_split_expert_batch_backend_run(
+                        gpu_batch, moe_out, gpu_experts, n_experts,
                         expert_offsets, expert_counts, group_token_ids,
                         group_weights, Xb, n_tokens, dim, moe_hidden,
                         map->gate_type, map->up_type, map->down_type,
