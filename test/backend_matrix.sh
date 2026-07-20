@@ -1579,12 +1579,12 @@ if grep -n 'gpu && gpu->prefill_attention' src/transformer/prefill.c >/dev/null 
     fail=1
 fi
 
-if grep -n '!gpu || !gpu->prefill_dense_layer\|gpu && gpu->prefill_dense_layer' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'gpu->prefill_dense_layer' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for dense layer availability"
     fail=1
 fi
 
-if grep -n 'gpu && gpu->prefill_moe_layer' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'gpu->prefill_moe_layer' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for MoE layer availability"
     fail=1
 fi

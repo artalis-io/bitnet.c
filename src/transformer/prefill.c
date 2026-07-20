@@ -505,8 +505,8 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         (lw->attn.v_bias && !v_bias_buf))
         return -1;
 
-    return gpu->prefill_dense_layer(
-        gpu->ctx, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
+    return bn_transformer_gpu_prefill_dense_layer_backend_run(
+        gpu, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
         attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf,
         q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
         hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
@@ -607,8 +607,8 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         (lw->attn.v_bias && !v_bias_buf))
         return -1;
 
-    return gpu->prefill_moe_layer(
-        gpu->ctx, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
+    return bn_transformer_gpu_prefill_moe_layer_backend_run(
+        gpu, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
         up_all_buf, down_all_buf, shared_gate_buf, shared_up_buf,
         shared_down_buf, shared_gate_weight_buf, attn_norm_buf, ffn_norm_buf,
         q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf,

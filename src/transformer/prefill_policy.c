@@ -272,8 +272,9 @@ int bn_transformer_prefill_dense_layer_gpu_available(
     int has_gate,
     int has_up,
     int has_down) {
-    return gpu && gpu->prefill_dense_layer && backend_available && has_qkv &&
-           has_wo && has_gate && has_up && has_down;
+    return bn_transformer_gpu_prefill_dense_layer_backend_available(gpu) &&
+           backend_available && has_qkv && has_wo && has_gate && has_up &&
+           has_down;
 }
 
 int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
