@@ -527,9 +527,56 @@ static inline int bn_gpu_backend_can_destroy_buffer(
     return gpu && gpu->buffer_destroy;
 }
 
+static inline int bn_gpu_backend_can_execute(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->execute;
+}
+
+static inline int bn_gpu_backend_can_write_activation(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->write_activation;
+}
+
+static inline int bn_gpu_backend_can_read_activation(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->read_activation;
+}
+
 static inline int bn_gpu_backend_can_query_memory(
     const BnGPUBackend *gpu) {
     return gpu && gpu->memory_info;
+}
+
+static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
+                                         const void *ops,
+                                         int n_ops,
+                                         int readback_buf,
+                                         float *readback,
+                                         int readback_count) {
+    if (!bn_gpu_backend_can_execute(gpu))
+        return -1;
+    return gpu->execute(gpu->ctx, ops, n_ops, readback_buf, readback,
+                        readback_count);
+}
+
+static inline int bn_gpu_backend_write_activation(const BnGPUBackend *gpu,
+                                                  int buf_idx,
+                                                  const void *data,
+                                                  size_t size,
+                                                  size_t offset) {
+    if (!bn_gpu_backend_can_write_activation(gpu))
+        return -1;
+    return gpu->write_activation(gpu->ctx, buf_idx, data, size, offset);
+}
+
+static inline int bn_gpu_backend_read_activation(const BnGPUBackend *gpu,
+                                                 int buf_idx,
+                                                 void *out,
+                                                 size_t size,
+                                                 size_t offset) {
+    if (!bn_gpu_backend_can_read_activation(gpu))
+        return -1;
+    return gpu->read_activation(gpu->ctx, buf_idx, out, size, offset);
 }
 
 static inline int bn_gpu_backend_query_memory(const BnGPUBackend *gpu,

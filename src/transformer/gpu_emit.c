@@ -864,25 +864,26 @@ int bn_transformer_gpu_execute_ops(const BnGPUBackend *gpu,
                                    int readback_buf,
                                    float *readback,
                                    int readback_count) {
-    if (!gpu || !gpu->execute || !ops || n < 0) return -1;
+    if (!bn_gpu_backend_can_execute(gpu) || !ops || n < 0) return -1;
     bn_transformer_gpu_finalize_op_kinds(ops, n);
-    return gpu->execute(gpu->ctx, ops, n, readback_buf, readback,
-                        readback_count);
+    return bn_gpu_backend_execute(gpu, ops, n, readback_buf, readback,
+                                  readback_count);
 }
 
 int bn_transformer_gpu_write_x(const BnGPUBackend *gpu,
                                const float *x,
                                size_t size_bytes) {
-    if (!gpu || !gpu->write_activation || !x) return -1;
-    return gpu->write_activation(gpu->ctx, BN_GPU_VALUE_X, x, size_bytes, 0);
+    if (!bn_gpu_backend_can_write_activation(gpu) || !x) return -1;
+    return bn_gpu_backend_write_activation(gpu, BN_GPU_VALUE_X, x, size_bytes,
+                                           0);
 }
 
 int bn_transformer_gpu_write_activation_buf(const BnGPUBackend *gpu,
                                             int buf_idx,
                                             const void *data,
                                             size_t size_bytes) {
-    if (!gpu || !gpu->write_activation || !data) return -1;
-    return gpu->write_activation(gpu->ctx, buf_idx, data, size_bytes, 0);
+    if (!bn_gpu_backend_can_write_activation(gpu) || !data) return -1;
+    return bn_gpu_backend_write_activation(gpu, buf_idx, data, size_bytes, 0);
 }
 
 int bn_transformer_gpu_write_activation_buf_offset(const BnGPUBackend *gpu,
@@ -890,38 +891,41 @@ int bn_transformer_gpu_write_activation_buf_offset(const BnGPUBackend *gpu,
                                                    const void *data,
                                                    size_t size_bytes,
                                                    size_t offset_bytes) {
-    if (!gpu || !gpu->write_activation || !data) return -1;
-    return gpu->write_activation(gpu->ctx, buf_idx, data, size_bytes,
-                                 offset_bytes);
+    if (!bn_gpu_backend_can_write_activation(gpu) || !data) return -1;
+    return bn_gpu_backend_write_activation(gpu, buf_idx, data, size_bytes,
+                                           offset_bytes);
 }
 
 int bn_transformer_gpu_read_x(const BnGPUBackend *gpu,
                               float *x,
                               size_t size_bytes) {
-    if (!gpu || !gpu->read_activation || !x) return -1;
-    return gpu->read_activation(gpu->ctx, BN_GPU_VALUE_X, x, size_bytes, 0);
+    if (!bn_gpu_backend_can_read_activation(gpu) || !x) return -1;
+    return bn_gpu_backend_read_activation(gpu, BN_GPU_VALUE_X, x, size_bytes,
+                                          0);
 }
 
 int bn_transformer_gpu_read_xb(const BnGPUBackend *gpu,
                                float *xb,
                                size_t size_bytes) {
-    if (!gpu || !gpu->read_activation || !xb) return -1;
-    return gpu->read_activation(gpu->ctx, BN_GPU_VALUE_XB, xb, size_bytes, 0);
+    if (!bn_gpu_backend_can_read_activation(gpu) || !xb) return -1;
+    return bn_gpu_backend_read_activation(gpu, BN_GPU_VALUE_XB, xb, size_bytes,
+                                          0);
 }
 
 int bn_transformer_gpu_read_xb2(const BnGPUBackend *gpu,
                                 float *xb2,
                                 size_t size_bytes) {
-    if (!gpu || !gpu->read_activation || !xb2) return -1;
-    return gpu->read_activation(gpu->ctx, BN_GPU_VALUE_XB2, xb2, size_bytes, 0);
+    if (!bn_gpu_backend_can_read_activation(gpu) || !xb2) return -1;
+    return bn_gpu_backend_read_activation(gpu, BN_GPU_VALUE_XB2, xb2,
+                                          size_bytes, 0);
 }
 
 int bn_transformer_gpu_read_activation_buf(const BnGPUBackend *gpu,
                                            int buf_idx,
                                            void *out,
                                            size_t size_bytes) {
-    if (!gpu || !gpu->read_activation || !out) return -1;
-    return gpu->read_activation(gpu->ctx, buf_idx, out, size_bytes, 0);
+    if (!bn_gpu_backend_can_read_activation(gpu) || !out) return -1;
+    return bn_gpu_backend_read_activation(gpu, buf_idx, out, size_bytes, 0);
 }
 
 int bn_transformer_gpu_read_activation_buf_offset(const BnGPUBackend *gpu,
@@ -929,9 +933,9 @@ int bn_transformer_gpu_read_activation_buf_offset(const BnGPUBackend *gpu,
                                                   void *out,
                                                   size_t size_bytes,
                                                   size_t offset_bytes) {
-    if (!gpu || !gpu->read_activation || !out) return -1;
-    return gpu->read_activation(gpu->ctx, buf_idx, out, size_bytes,
-                                offset_bytes);
+    if (!bn_gpu_backend_can_read_activation(gpu) || !out) return -1;
+    return bn_gpu_backend_read_activation(gpu, buf_idx, out, size_bytes,
+                                          offset_bytes);
 }
 
 static int gpu_upload_kv_segment(BnGPUBackend *gpu, BnRunState *s,
@@ -946,11 +950,11 @@ static int gpu_upload_kv_segment(BnGPUBackend *gpu, BnRunState *s,
     size_t offset = row_base * elem_size;
     const char *key_src = (const char *)s->key_cache + offset;
     const char *val_src = (const char *)s->value_cache + offset;
-    if (gpu->write_activation(gpu->ctx, BN_GPU_VALUE_KEY_CACHE,
-                              key_src, bytes, offset) != 0)
+    if (bn_gpu_backend_write_activation(gpu, BN_GPU_VALUE_KEY_CACHE,
+                                        key_src, bytes, offset) != 0)
         return -1;
-    if (gpu->write_activation(gpu->ctx, BN_GPU_VALUE_VALUE_CACHE,
-                              val_src, bytes, offset) != 0)
+    if (bn_gpu_backend_write_activation(gpu, BN_GPU_VALUE_VALUE_CACHE,
+                                        val_src, bytes, offset) != 0)
         return -1;
     return 0;
 }
@@ -959,7 +963,7 @@ int bn_transformer_gpu_upload_kv_cache(BnModel *m, BnSession *sess,
                                        int pos0, int n_tokens) {
     if (!m || !sess) return -1;
     BnGPUBackend *gpu = bn_model_gpu(m);
-    if (!gpu || !gpu->write_activation) return -1;
+    if (!bn_gpu_backend_can_write_activation(gpu)) return -1;
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     if (!s->key_cache || !s->value_cache) return -1;
@@ -993,7 +997,7 @@ int bn_transformer_gpu_upload_kv_cache(BnModel *m, BnSession *sess,
 int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess) {
     if (!m || !sess) return -1;
     BnGPUBackend *gpu = bn_model_gpu(m);
-    if (!gpu || !gpu->write_activation) return -1;
+    if (!bn_gpu_backend_can_write_activation(gpu)) return -1;
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     if (!bn_transformer_uses_hybrid_ssm(c))
@@ -1013,16 +1017,16 @@ int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess) {
 
     size_t state_values = (size_t)n_ssm * (size_t)num_v_heads *
                           (size_t)head_k_dim * (size_t)head_v_dim;
-    int rc = gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_STATE,
-                                   s->ssm_state,
-                                   state_values * sizeof(float), 0);
+    int rc = bn_gpu_backend_write_activation(
+        gpu, BN_GPU_VALUE_SSM_STATE, s->ssm_state,
+        state_values * sizeof(float), 0);
     if (rc != 0) return -1;
 
     size_t conv_values = (size_t)n_ssm * (size_t)(kern - 1) *
                          (size_t)qkv_dim;
-    return gpu->write_activation(gpu->ctx, BN_GPU_VALUE_SSM_CONV_STATE,
-                                 s->ssm_conv_state,
-                                 conv_values * sizeof(float), 0);
+    return bn_gpu_backend_write_activation(
+        gpu, BN_GPU_VALUE_SSM_CONV_STATE, s->ssm_conv_state,
+        conv_values * sizeof(float), 0);
 }
 
 void bn_transformer_gpu_emit_context_dense_ffn(
