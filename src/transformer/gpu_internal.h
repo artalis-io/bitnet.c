@@ -252,6 +252,10 @@ int bn_transformer_gpu_uses_moe(const BnConfig *c);
 int bn_transformer_gpu_uses_dense_attention_only(const BnConfig *c);
 int bn_transformer_gpu_uses_small_dense_native_quant_shape(
     const BnConfig *c);
+int bn_transformer_gpu_requires_float_kquant(const BnConfig *c);
+int bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
+    const BnConfig *c,
+    int supports_large_dense_batch_prefill);
 int bn_transformer_gpu_dense_logits_argmax_shape_allowed(
     const BnConfig *c,
     int logits_rows);

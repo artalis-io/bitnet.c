@@ -2046,6 +2046,16 @@ if awk '/^int bn_transformer_gpu_backend_matvec_fallback_kept/{flag=1} /^BnTrans
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_backend_matvec_fallback_kept/{flag=1} /^BnTransformerGPUMatvecFallbackPolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_cpu_force_float_kquant' >/dev/null 2>&1; then
+    echo "GPU matvec fallback policy must use GPU K-quant behavior policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_dense_batch_prefill_shape_allowed\(/ {flag=1} /^int bn_transformer_gpu_batch_prefill_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_dense_batch_prefill_shape_allowed' >/dev/null 2>&1; then
+    echo "GPU dense batch prefill policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_gpu_requires_layerwise_rope/{flag=1} /^BnBackendPlacement/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_per_layer_embedding' >/dev/null 2>&1; then
     echo "GPU layerwise RoPE policy must use GPU behavior policy helpers"
     fail=1

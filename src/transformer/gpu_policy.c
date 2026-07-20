@@ -186,6 +186,17 @@ int bn_transformer_gpu_uses_small_dense_native_quant_shape(
     return bn_model_arch_uses_small_dense_native_quant_shape(c);
 }
 
+int bn_transformer_gpu_requires_float_kquant(const BnConfig *c) {
+    return bn_model_arch_cpu_force_float_kquant(c);
+}
+
+int bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
+    const BnConfig *c,
+    int supports_large_dense_batch_prefill) {
+    return bn_model_arch_dense_batch_prefill_shape_allowed(
+        c, supports_large_dense_batch_prefill);
+}
+
 int bn_transformer_gpu_dense_logits_argmax_shape_allowed(
     const BnConfig *c,
     int logits_rows) {
@@ -574,7 +585,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     if (!bn_transformer_gpu_uses_dense_attention_only(c))
         return 0;
     if (bn_gpu_policy_small_kquant_native_enabled(
-            bn_model_arch_cpu_force_float_kquant(c)))
+            bn_transformer_gpu_requires_float_kquant(c)))
         return 1;
     if (!bn_transformer_gpu_uses_small_dense_native_quant_shape(c))
         return 1;
@@ -596,7 +607,7 @@ bn_transformer_gpu_matvec_fallback_policy(
 int bn_transformer_gpu_dense_batch_prefill_shape_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_model_arch_dense_batch_prefill_shape_allowed(
+    return bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
         c, bn_gpu_policy_backend_dense_batch_prefill_shape_supported(gpu));
 }
 

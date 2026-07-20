@@ -838,6 +838,18 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts = 0;
     c.dim = 2048;
     assert(bn_transformer_gpu_uses_small_dense_native_quant_shape(&c));
+    assert(!bn_transformer_gpu_requires_float_kquant(&c));
+    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT;
+    assert(bn_transformer_gpu_requires_float_kquant(&c));
+    c.policy_flags = 0;
+    assert(bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
+        &c, 0));
+    c.dim = 4096;
+    assert(!bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
+        &c, 0));
+    assert(bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
+        &c, 1));
+    c.dim = 2048;
     assert(bn_transformer_gpu_dense_logits_argmax_shape_allowed(&c, 300000));
     c.n_experts = 128;
     assert(bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(&c,
