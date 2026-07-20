@@ -1536,6 +1536,37 @@ if grep -n 'BN_GPU_Q4_Q8_DISABLE_GATEUP' src/transformer/gpu_emit.c >/dev/null 2
     fail=1
 fi
 
+if rg -n 'getenv\(|"BN_(CUDA|GPU|METAL|WEBGPU|WGPU)' \
+    src/transformer.c \
+    src/transformer/cpu.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/logits.c \
+    src/transformer/prefill.c \
+    src/moe.c \
+    src/moe_execute.c \
+    src/moe_prefill.c \
+    src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "Execution files must use policy helpers instead of reading GPU/CPU env policy directly"
+    fail=1
+fi
+
+if rg -n 'BN_GPU_BACKEND_|gpu->kind|kind == BN_GPU_BACKEND_' \
+    src/transformer.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/logits.c \
+    src/transformer/prefill.c \
+    src/moe.c \
+    src/moe_execute.c \
+    src/moe_prefill.c \
+    src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "Execution files must use GPU backend capability helpers instead of backend-kind checks"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CPU_FALLBACK_LAYER\|BN_GPU_CPU_FALLBACK_FROM_LAYER\|BN_GPU_CPU_ATTN_LAYER\|BN_GPU_CPU_ATTN_FROM_LAYER\|BN_GPU_CPU_FFN_LAYER\|BN_GPU_CPU_FFN_FROM_LAYER\|BN_GPU_CPU_FFN_DOWN_FROM_LAYER\|BN_GPU_Q4_Q8_FROM_LAYER\|BN_GPU_Q4_Q8_TO_LAYER\|BN_GPU_Q4_Q8_TAIL_NATIVE\|BN_GPU_Q4_Q8_ATTN_ONLY\|BN_GPU_Q4_Q8_FFN_ONLY\|BN_METAL_Q4_PREPARED' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for CPU fallback and Q4/Q8 layer env vars"
     fail=1
