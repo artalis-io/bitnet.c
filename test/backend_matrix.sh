@@ -1236,8 +1236,13 @@ if grep -n 'return gpu && gpu->kind == BN_GPU_BACKEND_CUDA' src/transformer/gpu_
     fail=1
 fi
 
-if ! grep -n 'bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_repacked_buffer_type\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
+if ! grep -n 'bn_gpu_policy_metal_native_quant_prepared_enabled\|bn_gpu_policy_metal_native_quant_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_repacked_buffer_type\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must own Metal feature-policy env vars"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_apply_q4_q8_prepared_override\|bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|metal_q4_prepared\|q4_prepared' include/gpu_policy.h src/gpu_policy.c src/main.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Metal prepared native-quant policy must use behavior names, not Q4-prepared helper names"
     fail=1
 fi
 
@@ -2041,7 +2046,7 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_GPU_BACKEND_METAL\|BN_GPU_BACKEND_WEBGPU\|BN
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_q4_prepared_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+if grep -n 'bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_native_quant_prepared_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use behavior-named helpers for specialized Q6/Q8 and prepared Q4/Q8 policy"
     fail=1
 fi

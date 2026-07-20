@@ -76,7 +76,7 @@ typedef struct {
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
     int metal_enable_q6_q8k; // hidden diagnostic: use Q6_K x Q8_K Metal path
-    int metal_q4_prepared; // hidden diagnostic: use prepared Q4_0 Metal upload layout
+    int metal_native_quant_prepared; // hidden diagnostic: use prepared native-quant Metal upload layout
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
     int gpu_disable_qkv_split; // hidden diagnostic: disable stacked QKV split
     int gpu_disable_gateup_split; // hidden diagnostic: disable gate/up split
@@ -302,7 +302,7 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--metal-enable-q6-q8k") == 0) {
             args.metal_enable_q6_q8k = 1;
         } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
-            args.metal_q4_prepared = 1;
+            args.metal_native_quant_prepared = 1;
         } else if (strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
             /* Q6_K x Q8_K is now opt-in; keep the old diagnostic flag harmless. */
         } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
@@ -573,8 +573,8 @@ int main(int argc, char **argv) {
         bn_gpu_policy_apply_metal_barrier_disable_override();
     if (args.metal_enable_q6_q8k)
         bn_gpu_policy_apply_specialized_q6_q8k_override();
-    if (args.metal_q4_prepared)
-        bn_gpu_policy_apply_q4_q8_prepared_override();
+    if (args.metal_native_quant_prepared)
+        bn_gpu_policy_apply_native_quant_prepared_override();
     if (args.top_logits > 0) {
         char top_env[16];
         snprintf(top_env, sizeof(top_env), "%d", args.top_logits);

@@ -2422,7 +2422,7 @@ void bn_gpu_policy_apply_specialized_q6_q8k_override(void) {
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
 }
 
-void bn_gpu_policy_apply_q4_q8_prepared_override(void) {
+void bn_gpu_policy_apply_native_quant_prepared_override(void) {
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
 }
 
@@ -2450,17 +2450,17 @@ int bn_gpu_policy_metal_q4_q8_enabled(void) {
     return getenv("BN_GPU_Q4_Q8") != NULL;
 }
 
-int bn_gpu_policy_metal_q4_prepared_enabled(void) {
+int bn_gpu_policy_metal_native_quant_prepared_enabled(void) {
     return getenv("BN_METAL_Q4_PREPARED") != NULL;
 }
 
 int bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled(void) {
-    return bn_gpu_policy_metal_q4_prepared_enabled();
+    return bn_gpu_policy_metal_native_quant_prepared_enabled();
 }
 
-int bn_gpu_policy_metal_q4_prepared_upload_enabled(void) {
+int bn_gpu_policy_metal_native_quant_prepared_upload_enabled(void) {
     const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
-    return bn_gpu_policy_metal_q4_prepared_enabled() &&
+    return bn_gpu_policy_metal_native_quant_prepared_enabled() &&
            getenv("BN_GPU_Q4_Q8") &&
            (!from_layer || atoi(from_layer) <= 0) &&
            !getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
@@ -2479,7 +2479,7 @@ int bn_gpu_policy_metal_repacked_buffer_type(int tensor_type) {
 
 int bn_gpu_policy_metal_prepared_stacked_upload_blocked(int tensor_type) {
     return bn_gpu_policy_metal_repacked_buffer_supported(tensor_type) &&
-           bn_gpu_policy_metal_q4_prepared_upload_enabled();
+           bn_gpu_policy_metal_native_quant_prepared_upload_enabled();
 }
 
 int bn_gpu_policy_metal_shared_weights_enabled(void) {
@@ -2501,27 +2501,27 @@ int bn_gpu_policy_metal_q8_barriers_enabled(void) {
 int bn_gpu_policy_metal_q4_q8_matvec_supported(
     int tensor_type,
     int q4_q8_enabled,
-    int q4_prepared,
+    int native_quant_prepared,
     int has_q8_quant_pipeline,
     int has_q4_q8_pipeline,
-    int has_q4_prepared_q8_pipeline) {
+    int has_prepared_q8_pipeline) {
     if (!q4_q8_enabled ||
         !bn_backend_quant_metal_q4_q8_matvec_supported(tensor_type) ||
         !has_q8_quant_pipeline)
         return 0;
-    return q4_prepared
-        ? has_q4_prepared_q8_pipeline
+    return native_quant_prepared
+        ? has_prepared_q8_pipeline
         : has_q4_q8_pipeline;
 }
 
 int bn_gpu_policy_metal_q4_q8_graph_path_supported(
     int tensor_type,
     int q4_q8_enabled,
-    int q4_prepared,
+    int native_quant_prepared,
     int prepared_path,
     int has_q8_quant_pipeline,
     int has_pipeline) {
-    return q4_prepared == prepared_path &&
+    return native_quant_prepared == prepared_path &&
            q4_q8_enabled &&
            bn_backend_quant_metal_q4_q8_matvec_supported(tensor_type) &&
            has_q8_quant_pipeline &&
