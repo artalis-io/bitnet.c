@@ -1049,6 +1049,12 @@ bn_transformer_gpu_generate_argmax_policy(
     return policy;
 }
 
+int bn_transformer_gpu_argmax_available(
+    const BnGPUBackend *gpu,
+    int want_argmax) {
+    return !want_argmax || (gpu && gpu->argmax_activation);
+}
+
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

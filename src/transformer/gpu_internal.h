@@ -541,6 +541,9 @@ bn_transformer_gpu_generate_argmax_policy(
     int top_logits,
     float temperature,
     float repeat_penalty);
+int bn_transformer_gpu_argmax_available(
+    const BnGPUBackend *gpu,
+    int want_argmax);
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,

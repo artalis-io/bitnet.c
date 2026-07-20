@@ -805,7 +805,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     BnTransformerGPUEmitContext emit;
     bn_transformer_gpu_emit_context_init(&emit, NULL, 0);
     int emit_logits = need_logits || argmax_token != NULL;
-    if (argmax_token && (!gpu || !gpu->argmax_activation))
+    if (!bn_transformer_gpu_argmax_available(gpu, argmax_token != NULL))
         return NULL;
 
     BnTransformerGPUForwardPolicy policy;
@@ -1940,11 +1940,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             logits_refine.native_quant_captures_xb) {
             int refine_top = logits_refine.native_quant_refine_top;
             if (refine_top > 0 &&
-                gpu->read_activation &&
-                gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
-                                     s->logits,
-                                     (size_t)c->vocab_size * sizeof(float),
-                                     0) == 0 &&
+                bn_transformer_gpu_read_activation_buf(
+                    gpu, BN_GPU_VALUE_LOGITS, s->logits,
+                    (size_t)c->vocab_size * sizeof(float)) == 0 &&
                 bn_transformer_gpu_read_xb(gpu, s->xb,
                                            (size_t)dim * sizeof(float)) == 0) {
                 gpu_refine_native_quant_logits_top(s->logits, c->vocab_size,
@@ -1988,14 +1986,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             return bn_transformer_gpu_reject_forward(
                 &emit, "gpu argmax failed");
         if (bn_transformer_gpu_debug_argmax_compare_enabled() &&
-            gpu->read_activation && c->vocab_size > 0) {
+            c->vocab_size > 0) {
             float *dbg_logits =
                 (float *)malloc((size_t)c->vocab_size * sizeof(float));
             if (dbg_logits &&
-                gpu->read_activation(gpu->ctx, BN_GPU_VALUE_LOGITS,
-                                     dbg_logits,
-                                     (size_t)c->vocab_size * sizeof(float),
-                                     0) == 0) {
+                bn_transformer_gpu_read_activation_buf(
+                    gpu, BN_GPU_VALUE_LOGITS, dbg_logits,
+                    (size_t)c->vocab_size * sizeof(float)) == 0) {
                 int cpu_argmax = 0;
                 float cpu_best = -INFINITY;
                 for (int i = 0; i < c->vocab_size; i++) {

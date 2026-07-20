@@ -2532,6 +2532,13 @@ static void test_gpu_policy_helpers(void) {
     generate_argmax =
         bn_transformer_gpu_generate_argmax_policy(&gpu, 0, 0.0f, 0.9f);
     assert(!generate_argmax.enabled);
+    assert(bn_transformer_gpu_argmax_available(&gpu, 0));
+    assert(bn_transformer_gpu_argmax_available(&gpu, 1));
+    assert(bn_transformer_gpu_argmax_available(NULL, 0));
+    gpu.argmax_activation = NULL;
+    assert(!bn_transformer_gpu_argmax_available(&gpu, 1));
+    assert(!bn_transformer_gpu_argmax_available(NULL, 1));
+    gpu.argmax_activation = mock_argmax_activation;
 
     c.n_experts = 0;
     unsetenv("BN_GPU_CPU_LOGITS");
