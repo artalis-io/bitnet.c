@@ -16,7 +16,7 @@ static int gpu_moe_backend_can_upload_expert_buffers(
 static void gpu_moe_destroy_partial(BnGPUBackend *gpu,
                                     void *gate,
                                     void *up,
-    void *down) {
+                                    void *down) {
     bn_gpu_backend_destroy_buffer(gpu, gate);
     bn_gpu_backend_destroy_buffer(gpu, up);
     bn_gpu_backend_destroy_buffer(gpu, down);
@@ -31,14 +31,14 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
                                           int allow_aux_cache) {
     if (!gpu || !data || size == 0)
         return NULL;
-    if (gpu->buffer_create_quant_only &&
+    if (bn_gpu_backend_can_create_quant_only_buffer(gpu) &&
         bn_transformer_gpu_moe_quant_only_without_aux_cache(
             gpu, type, allow_aux_cache)) {
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     }
     if (bn_gpu_policy_moe_prefers_quant_only(gpu, type) &&
-        gpu->buffer_create_quant_only)
+        bn_gpu_backend_can_create_quant_only_buffer(gpu))
         return gpu->buffer_create_quant_only(
             gpu->ctx, data, size, type, rows, cols);
     return gpu->buffer_create(gpu->ctx, data, size, type, rows, cols);
@@ -56,7 +56,7 @@ static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
         !gate_data || !up_data ||
         gate_bytes == 0 || up_bytes == 0)
         return NULL;
-    if (gpu->buffer_create_stacked2)
+    if (bn_gpu_backend_can_create_stacked2_buffer(gpu))
         return gpu->buffer_create_stacked2(
             gpu->ctx, gate_data, gate_bytes, up_data, up_bytes, tensor_type,
             rows, cols);

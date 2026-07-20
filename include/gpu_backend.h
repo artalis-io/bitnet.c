@@ -470,6 +470,41 @@ static inline int bn_gpu_backend_can_create_buffer(
     return gpu && gpu->buffer_create;
 }
 
+static inline int bn_gpu_backend_can_create_quant_only_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_quant_only;
+}
+
+static inline int bn_gpu_backend_can_create_kquant_f32_cache_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_kquant_f32_cache;
+}
+
+static inline int bn_gpu_backend_can_create_f16_cache_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_f16_cache;
+}
+
+static inline int bn_gpu_backend_can_create_biased_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_biased;
+}
+
+static inline int bn_gpu_backend_can_create_stacked2_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_stacked2;
+}
+
+static inline int bn_gpu_backend_can_create_stacked3_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_stacked3;
+}
+
+static inline int bn_gpu_backend_can_create_stacked3_biased_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create_stacked3_biased;
+}
+
 static inline int bn_gpu_backend_can_destroy_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_destroy;

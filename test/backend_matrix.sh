@@ -812,6 +812,17 @@ if grep -n 'buffer_destroy' src/model_gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+for file in \
+    src/backend_layout.c \
+    src/model_gpu.c \
+    src/gpu_moe_bridge.c
+do
+    if grep -n 'if (.*gpu->buffer_create\|if (!.*gpu->buffer_create' "$file" >/dev/null 2>&1; then
+        echo "$file must use GPU backend helpers for optional buffer upload capability checks"
+        fail=1
+    fi
+done
+
 if grep -n 'bn_transformer_gpu_cuda_moe_gateup_split_enabled' src/gpu_moe_bridge.c >/dev/null 2>&1; then
     echo "src/gpu_moe_bridge.c must use behavior-named GPU policy helpers for MoE gate-up split eligibility"
     fail=1

@@ -45,7 +45,7 @@ static void *upload_qweight_mode(BnGPUBackend *gpu, BnQWeight *w,
     if (!w->data) return NULL;
     size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
-    if (quant_only && gpu->buffer_create_quant_only)
+    if (quant_only && bn_gpu_backend_can_create_quant_only_buffer(gpu))
         return gpu->buffer_create_quant_only(gpu->ctx, w->data, sz, w->type,
                                              w->rows, w->cols);
     return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows,
@@ -169,7 +169,7 @@ static void *upload_moe_all_proj(BnModel *model,
         ((!force_full_buffer ||
           bn_gpu_policy_moe_quant_only_after_cache(
               type, native_quant_f16_cache)) &&
-         gpu->buffer_create_quant_only)
+         bn_gpu_backend_can_create_quant_only_buffer(gpu))
             ? gpu->buffer_create_quant_only
             : gpu->buffer_create;
     if (stride != expert_bytes) {
@@ -922,7 +922,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
         void *q_bias_gpu = NULL;
         void *k_bias_gpu = NULL;
         void *v_bias_gpu = NULL;
-        if (gpu->buffer_create_biased) {
+        if (bn_gpu_backend_can_create_biased_buffer(gpu)) {
             struct { BnQWeight *w; float *bias; void **bias_gpu; } qkv_bias[] = {
                 { &lw->attn.wq, lw->attn.q_bias, &q_bias_gpu },
                 { &lw->attn.wk, lw->attn.k_bias, &k_bias_gpu },
