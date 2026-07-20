@@ -73,7 +73,7 @@ typedef struct {
     /* Profiling */
     int gpu_frame;
     int gpu_profile;
-    int q8_quant_dispatches;
+    int native_quant_dispatches;
     int specialized_native_quant_dispatches;
     int q8_matvec_dispatches;
     int q8_split_dispatches;
@@ -997,7 +997,7 @@ static void metal_encode_q8_quant(id<MTLComputeCommandEncoder> enc,
                                   uint32_t cols,
                                   uint32_t n_tokens)
 {
-    ctx->q8_quant_dispatches++;
+    ctx->native_quant_dispatches++;
     uint32_t params[8] = { cols, n_tokens, 0, 0, 0, 0, 0, 0 };
     [enc setComputePipelineState:ctx->q8_quant_pipeline];
     [enc setBuffer:x_buf offset:0 atIndex:0];
@@ -1303,7 +1303,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     memset(shader_gpu_ms, 0, sizeof(shader_gpu_ms));
     memset(shader_wall_ms, 0, sizeof(shader_wall_ms));
     memset(shader_profile_counts, 0, sizeof(shader_profile_counts));
-    ctx->q8_quant_dispatches = 0;
+    ctx->native_quant_dispatches = 0;
     ctx->specialized_native_quant_dispatches = 0;
     ctx->q8_matvec_dispatches = 0;
     ctx->q8_split_dispatches = 0;
@@ -2037,8 +2037,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
 
     /* GPU profiling */
     if (ctx->gpu_profile >= 1 && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
-        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d q8=%d q8m=%d q8s=%d q8g=%d specialized_native_quant=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
-                ctx->gpu_frame, n_ops, ctx->q8_quant_dispatches,
+        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d native_quant=%d q8m=%d q8s=%d q8g=%d specialized_native_quant=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
+                ctx->gpu_frame, n_ops, ctx->native_quant_dispatches,
                 ctx->q8_matvec_dispatches, ctx->q8_split_dispatches,
                 ctx->q8_gateup_dispatches, ctx->specialized_native_quant_dispatches,
                 n_barriers,
