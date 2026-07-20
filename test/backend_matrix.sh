@@ -1569,12 +1569,12 @@ if grep -n '!gpu || !gpu->dense_ffn_batch' src/transformer/prefill.c >/dev/null 
     fail=1
 fi
 
-if grep -n 'gpu && gpu->prefill_qkv_attention_wo' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'gpu->prefill_qkv_attention_wo' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for raw QKV attention availability"
     fail=1
 fi
 
-if grep -n 'gpu && gpu->prefill_attention' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'gpu->prefill_attention' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for batched attention availability"
     fail=1
 fi

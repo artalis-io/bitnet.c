@@ -446,6 +446,153 @@ int bn_transformer_gpu_prefill_dense_ffn_batch_norm_resid_backend_run(
         dim, hidden_dim, gate_type, up_type, down_type, act_type, norm_eps);
 }
 
+int bn_transformer_gpu_prefill_qkv_attention_wo_backend_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_qkv_attention_wo;
+}
+
+int bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_qkv_attention_wo_norm_resid;
+}
+
+int bn_transformer_gpu_prefill_attention_backend_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_attention;
+}
+
+int bn_transformer_gpu_prefill_attention_wo_backend_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_attention_wo;
+}
+
+int bn_transformer_gpu_prefill_qkv_attention_wo_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *qk_buf,
+    void *wv_buf,
+    void *wo_buf,
+    void *q_norm_buf,
+    void *k_norm_buf,
+    const float *X,
+    float *K_out,
+    float *V_out,
+    int n_tokens,
+    int dim,
+    int n_heads,
+    int n_kv_heads,
+    int head_size,
+    int kv_mul,
+    int kv_dim,
+    int qk_rows,
+    int qk_type,
+    int wv_rows,
+    int wv_type,
+    int wo_rows,
+    int wo_cols,
+    int wo_type,
+    int qk_norm_per_head,
+    float norm_eps,
+    int pos0,
+    int rope_dims,
+    float attention_scale) {
+    if (!bn_transformer_gpu_prefill_qkv_attention_wo_backend_available(gpu))
+        return -1;
+    return gpu->prefill_qkv_attention_wo(
+        gpu->ctx, out, qk_buf, wv_buf, wo_buf, q_norm_buf, k_norm_buf, X,
+        K_out, V_out, n_tokens, dim, n_heads, n_kv_heads, head_size, kv_mul,
+        kv_dim, qk_rows, qk_type, wv_rows, wv_type, wo_rows, wo_cols,
+        wo_type, qk_norm_per_head, norm_eps, pos0, rope_dims,
+        attention_scale);
+}
+
+int bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *qk_buf,
+    void *wv_buf,
+    void *wo_buf,
+    void *attn_norm_buf,
+    void *q_norm_buf,
+    void *k_norm_buf,
+    const float *X,
+    float *K_out,
+    float *V_out,
+    int n_tokens,
+    int dim,
+    int n_heads,
+    int n_kv_heads,
+    int head_size,
+    int kv_mul,
+    int kv_dim,
+    int qk_rows,
+    int qk_type,
+    int wv_rows,
+    int wv_type,
+    int wo_rows,
+    int wo_cols,
+    int wo_type,
+    int qk_norm_per_head,
+    float norm_eps,
+    int pos0,
+    int rope_dims,
+    float attention_scale) {
+    if (!bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_available(
+            gpu))
+        return -1;
+    return gpu->prefill_qkv_attention_wo_norm_resid(
+        gpu->ctx, out, qk_buf, wv_buf, wo_buf, attn_norm_buf, q_norm_buf,
+        k_norm_buf, X, K_out, V_out, n_tokens, dim, n_heads, n_kv_heads,
+        head_size, kv_mul, kv_dim, qk_rows, qk_type, wv_rows, wv_type,
+        wo_rows, wo_cols, wo_type, qk_norm_per_head, norm_eps, pos0,
+        rope_dims, attention_scale);
+}
+
+int bn_transformer_gpu_prefill_attention_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    const float *Q,
+    const float *K,
+    const float *V,
+    int n_tokens,
+    int n_heads,
+    int n_kv_heads,
+    int head_size,
+    int kv_mul,
+    int kv_dim,
+    float attention_scale) {
+    if (!bn_transformer_gpu_prefill_attention_backend_available(gpu))
+        return -1;
+    return gpu->prefill_attention(gpu->ctx, out, Q, K, V, n_tokens,
+                                  n_heads, n_kv_heads, head_size, kv_mul,
+                                  kv_dim, attention_scale);
+}
+
+int bn_transformer_gpu_prefill_attention_wo_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *wo_buf,
+    const float *Q,
+    const float *K,
+    const float *V,
+    int n_tokens,
+    int n_heads,
+    int n_kv_heads,
+    int head_size,
+    int kv_mul,
+    int kv_dim,
+    int wo_rows,
+    int wo_cols,
+    int wo_type,
+    float attention_scale) {
+    if (!bn_transformer_gpu_prefill_attention_wo_backend_available(gpu))
+        return -1;
+    return gpu->prefill_attention_wo(gpu->ctx, out, wo_buf, Q, K, V,
+                                     n_tokens, n_heads, n_kv_heads,
+                                     head_size, kv_mul, kv_dim, wo_rows,
+                                     wo_cols, wo_type, attention_scale);
+}
+
 int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,

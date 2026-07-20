@@ -1912,9 +1912,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 if (qk_buf && wv_buf && wo_buf &&
                     raw_attn_call.preferred_kind ==
                         BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID) {
-                    qkv_fused_rc = gpu->prefill_qkv_attention_wo_norm_resid(
-                        gpu->ctx, act, qk_buf, wv_buf, wo_buf,
-                        attn_norm_buf, q_norm_buf, k_norm_buf, act, K_new,
+                    qkv_fused_rc =
+                        bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_run(
+                        gpu, act, qk_buf, wv_buf, wo_buf, attn_norm_buf,
+                        q_norm_buf, k_norm_buf, act, K_new,
                         V_new, n_tokens, dim, c->n_heads,
                         layer_n_kv_heads, layer_head_size, layer_kv_mul,
                         kv_dim, lw->attn.wq.rows + lw->attn.wk.rows,
@@ -1938,8 +1939,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     }
                 }
                 if (qkv_fused_rc != 0 && qk_buf && wv_buf && wo_buf) {
-                    qkv_fused_rc = gpu->prefill_qkv_attention_wo(
-                        gpu->ctx, Xb2, qk_buf, wv_buf, wo_buf,
+                    qkv_fused_rc =
+                        bn_transformer_gpu_prefill_qkv_attention_wo_backend_run(
+                        gpu, Xb2, qk_buf, wv_buf, wo_buf,
                         q_norm_buf, k_norm_buf, Xb, K_new, V_new,
                         n_tokens, dim, c->n_heads, layer_n_kv_heads,
                         layer_head_size, layer_kv_mul, kv_dim,
@@ -2116,8 +2118,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 attn_batch_policy);
                     if (attn_call_policy.preferred_kind ==
                             BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_WO &&
-                        gpu->prefill_attention_wo(
-                            gpu->ctx, Xb2, attn_wo_buf, Q_buf, K_new, V_new,
+                        bn_transformer_gpu_prefill_attention_wo_backend_run(
+                            gpu, Xb2, attn_wo_buf, Q_buf, K_new, V_new,
                             n_tokens, c->n_heads, layer_n_kv_heads,
                             layer_head_size, layer_kv_mul, kv_dim,
                             lw->attn.wo.rows, lw->attn.wo.cols,
@@ -2125,8 +2127,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             prefill_attention_scale(c, layer_head_size)) == 0) {
                         used_gpu_attn = 1;
                         used_fused_attn_wo = 1;
-                    } else if (gpu->prefill_attention(
-                            gpu->ctx, Q_buf, Q_buf, K_new, V_new, n_tokens,
+                    } else if (bn_transformer_gpu_prefill_attention_backend_run(
+                            gpu, Q_buf, Q_buf, K_new, V_new, n_tokens,
                             c->n_heads, layer_n_kv_heads, layer_head_size,
                             layer_kv_mul, kv_dim,
                             prefill_attention_scale(c, layer_head_size)) == 0) {

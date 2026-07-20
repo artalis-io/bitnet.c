@@ -306,12 +306,13 @@ int bn_transformer_prefill_attention_enabled(void) {
 
 int bn_transformer_prefill_raw_attention_gpu_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->prefill_qkv_attention_wo;
+    return bn_transformer_gpu_prefill_qkv_attention_wo_backend_available(gpu);
 }
 
 int bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->prefill_qkv_attention_wo_norm_resid;
+    return bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_available(
+        gpu);
 }
 
 BnTransformerPrefillSSMChainPolicy
@@ -578,12 +579,12 @@ bn_transformer_prefill_raw_attention_call_policy(
 
 int bn_transformer_prefill_attention_gpu_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->prefill_attention;
+    return bn_transformer_gpu_prefill_attention_backend_available(gpu);
 }
 
 int bn_transformer_prefill_attention_wo_gpu_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->prefill_attention_wo;
+    return bn_transformer_gpu_prefill_attention_wo_backend_available(gpu);
 }
 
 BnTransformerPrefillAttentionBatchPolicy
