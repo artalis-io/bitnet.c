@@ -2505,7 +2505,7 @@ int bn_gpu_policy_metal_q8_barriers_enabled(void) {
     return getenv("BN_METAL_Q8_BARRIERS") != NULL;
 }
 
-int bn_gpu_policy_metal_q4_q8_matvec_supported(
+int bn_gpu_policy_metal_exact_native_matvec_supported(
     int tensor_type,
     int exact_native_enabled,
     int native_quant_prepared,
@@ -2521,7 +2521,7 @@ int bn_gpu_policy_metal_q4_q8_matvec_supported(
         : has_exact_native_pipeline;
 }
 
-int bn_gpu_policy_metal_q4_q8_graph_path_supported(
+int bn_gpu_policy_metal_exact_native_graph_path_supported(
     int tensor_type,
     int exact_native_enabled,
     int native_quant_prepared,

@@ -1269,7 +1269,7 @@ if grep -n 'bn_gpu_policy_apply_q4_q8_prepared_override\|bn_gpu_policy_metal_q4_
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_policy_metal_apply_q4_q8_default\|bn_gpu_policy_metal_q4_q8_enabled' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_policy_metal_apply_q4_q8_default\|bn_gpu_policy_metal_q4_q8_enabled\|bn_gpu_policy_metal_q4_q8_matvec_supported\|bn_gpu_policy_metal_q4_q8_graph_path_supported\|metal_q4_q8_graph_path_supported' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Metal small-dense exact-native default policy must use behavior names, not Q4/Q8 default helper names"
     fail=1
 fi
@@ -1301,7 +1301,7 @@ done
 if awk '
     /static int metal_matvec\(/ { in_fn=1 }
     in_fn && /type == BN_GGUF_TENSOR_/ { bad=1 }
-    in_fn && /bn_gpu_policy_metal_q4_q8_matvec_supported/ { saw_q4=1 }
+    in_fn && /bn_gpu_policy_metal_exact_native_matvec_supported/ { saw_q4=1 }
     in_fn && /bn_gpu_policy_metal_specialized_native_quant_matvec_supported/ { saw_q6=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
@@ -1314,7 +1314,7 @@ if awk '
     /static int metal_execute\(/ { in_fn=1 }
     in_fn && /^static / && !/static int metal_execute\(/ { in_fn=0 }
     in_fn && /op->type == BN_GGUF_TENSOR_/ { bad=1 }
-    in_fn && /metal_q4_q8_graph_path_supported/ { saw_q4=1 }
+    in_fn && /metal_exact_native_graph_path_supported/ { saw_q4=1 }
     in_fn && /bn_gpu_policy_metal_specialized_native_quant_matvec_supported/ { saw_q6=1 }
     END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
 ' src/gpu_metal.m >/dev/null 2>&1; then
@@ -1323,12 +1323,12 @@ if awk '
 fi
 
 if awk '
-    /static int metal_q4_q8_graph_path_supported\(/ { in_fn=1 }
-    in_fn && /^static / && !/static int metal_q4_q8_graph_path_supported\(/ { in_fn=0 }
-    in_fn && /bn_gpu_policy_metal_q4_q8_graph_path_supported/ { saw_policy=1 }
+    /static int metal_exact_native_graph_path_supported\(/ { in_fn=1 }
+    in_fn && /^static / && !/static int metal_exact_native_graph_path_supported\(/ { in_fn=0 }
+    in_fn && /bn_gpu_policy_metal_exact_native_graph_path_supported/ { saw_policy=1 }
     END { exit saw_policy ? 1 : 0 }
 ' src/gpu_metal.m >/dev/null 2>&1; then
-    echo "Metal graph Q4/Q8 wrapper must delegate to GPU policy"
+    echo "Metal graph exact-native wrapper must delegate to GPU policy"
     fail=1
 fi
 
