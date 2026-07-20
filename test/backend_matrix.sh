@@ -151,6 +151,15 @@ if grep -n 'bn_gpu_policy_cuda_q6k_4warp_long_enabled\|bn_gpu_policy_cuda_q6k_5w
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q4k_4warp_enabled\|bn_gpu_policy_cuda_q4k_4warp_shape_enabled\|bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled\|bn_gpu_policy_cuda_q4k_qkv_mixed_fuse_enabled\|bn_gpu_policy_cuda_q4k_split_k_rope_cache_fuse_enabled\|bn_gpu_policy_cuda_q4k_split_qk_rope_cache_fuse_enabled\|bn_gpu_policy_cuda_q4k_split_4warp_enabled\|bn_gpu_policy_cuda_q4k_split_5warp_enabled\|bn_gpu_policy_cuda_q4k_split_value_rows\|bn_gpu_policy_cuda_q4k_split_value_fuse_enabled\|bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled\|bn_gpu_policy_cuda_q4k_gateup_5warp_enabled\|bn_gpu_policy_cuda_q4k_gateup_2warp_enabled\|bn_gpu_policy_cuda_q4k_gateup_4warp_enabled\|bn_gpu_policy_cuda_q4k_matmul8_enabled\|bn_gpu_policy_cuda_q4k_sharedx_enabled\|bn_gpu_policy_cuda_q4k_batch_sharedx_enabled\|bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled\|bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled\|enable_q4k_4warp' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA asymmetric K-quant policy helpers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q5_matvec4_enabled\|bn_gpu_policy_cuda_q5_warp_enabled\|bn_gpu_policy_cuda_q5k_4warp_enabled\|bn_gpu_policy_cuda_q5k_split_4warp_enabled\|bn_gpu_policy_cuda_q5k_gateup_2warp_enabled\|bn_gpu_policy_cuda_q5_gateup_warp_disabled\|enable_q5_matvec4\|enable_q5_warp\|disable_q5_gateup_warp' \
     include/gpu_policy.h \
     src/gpu_policy.c \
@@ -226,8 +235,8 @@ if sed -n '/^static int cuda_matvec_argmax_activation(/,/^static int cuda_dense_
     fail=1
 fi
 
-if sed -n '/bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled/,/ffn_act_ready = 1/p' src/gpu_cuda.cu | grep -n 'gate_type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
-   sed -n '/bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled/,/ffn_act_ready = 1/p' src/gpu_cuda.cu | grep -n 'ffn_gate_type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
+if sed -n '/bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled/,/ffn_act_ready = 1/p' src/gpu_cuda.cu | grep -n 'gate_type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
+   sed -n '/bn_gpu_policy_cuda_prefill_ssm_fused_asymmetric_kquant_gateup_batch_enabled/,/ffn_act_ready = 1/p' src/gpu_cuda.cu | grep -n 'ffn_gate_type == BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
    sed -n '/case BN_GPU_CODE_FUSED_GATEUP_SILU:/,/case BN_GPU_CODE_MOE_ROUTE_TOPK:/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA fused gate/up quant predicates"
     fail=1

@@ -12987,8 +12987,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         quantize_q8_1_batch_kernel<<<qgrid, 32, 0>>>(
             xq, d_x, cols, n_tokens);
         if (n_tokens >= 8 &&
-            bn_gpu_policy_cuda_q4k_matmul8_enabled() &&
-            bn_gpu_policy_cuda_q4k_sharedx_enabled()) {
+            bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled() &&
+            bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled()) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 7) / 8, 1);
             size_t shared =
@@ -13000,7 +13000,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         } else if (n_tokens >= 4) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_q4k_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -13262,7 +13262,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         if (n_tokens >= 4) {
             dim3 grid((rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_q4k_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -13468,7 +13468,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
             if (n_tokens >= 4) {
                 dim3 grid((rows + warps - 1) / warps,
                           (n_tokens + 3) / 4, 1);
-                if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
+                if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
                     size_t shared =
                         (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                     q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -14273,7 +14273,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         if (n_tokens >= 4) {
             dim3 grid((hidden_dim * 2 + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -14374,7 +14374,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         if (n_tokens >= 4) {
             dim3 grid((hidden_dim + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -16302,7 +16302,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         if (n_tokens >= 4) {
             dim3 grid((wo_rows + warps - 1) / warps,
                       (n_tokens + 3) / 4, 1);
-            if (bn_gpu_policy_cuda_q4k_batch_sharedx_enabled()) {
+            if (bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled()) {
                 size_t shared =
                     (size_t)x_blocks * 4u * sizeof(BnCudaBlockQ8_1);
                 q4k_dot_matmul4_token_sharedx_kernel<<<grid, threads,
@@ -17104,7 +17104,7 @@ static int cuda_prefill_dense_layer(
     if (stacked_gateup &&
         bn_backend_quant_asymmetric_kquant_prepared_input_fused_gateup_candidate(gate_type) &&
         !gate->f16_data && (dim % BN_QK_K) == 0 &&
-        bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled()) {
+        bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled()) {
         int x_blocks = (dim + 31) / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
             return -1;
@@ -17807,7 +17807,7 @@ static int cuda_prefill_ssm_layer(
             bn_backend_quant_asymmetric_kquant_prepared_input_fused_gateup_candidate(
                 ffn_gate_type) &&
             (dim % BN_QK_K) == 0 &&
-            bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled()) {
+            bn_gpu_policy_cuda_prefill_ssm_fused_asymmetric_kquant_gateup_batch_enabled()) {
             int x_blocks = (dim + 31) / 32;
             if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
                 return -1;
@@ -18376,7 +18376,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int enable_down_kquant_dot_flag = 1;
     static int force_down_kquant_dot_flag = 0;
     static int enable_down_kquant_warp_flag = 0;
-    static int enable_q4k_4warp_flag = 1;
+    static int enable_asymmetric_kquant_4warp_flag = 1;
     static int disable_native_quant_warp_flag = 0;
     static int disable_qkv_mixed_fuse_flag = 0;
     static int qkv_fuse_key_cache_flag = 1;
@@ -18405,7 +18405,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             bn_gpu_policy_cuda_down_kquant_dot_forced();
         enable_down_kquant_warp_flag =
             bn_gpu_policy_cuda_down_kquant_warp_enabled();
-        enable_q4k_4warp_flag = bn_gpu_policy_cuda_q4k_4warp_enabled();
+        enable_asymmetric_kquant_4warp_flag =
+            bn_gpu_policy_cuda_asymmetric_kquant_4warp_enabled();
         disable_native_quant_warp_flag =
             bn_gpu_policy_cuda_native_quant_warp_disabled();
         disable_qkv_mixed_fuse_flag =
@@ -18438,7 +18439,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int enable_down_kquant_dot = enable_down_kquant_dot_flag;
     const int force_down_kquant_dot = force_down_kquant_dot_flag;
     const int enable_down_kquant_warp = enable_down_kquant_warp_flag;
-    const int enable_q4k_4warp = enable_q4k_4warp_flag;
+    const int enable_asymmetric_kquant_4warp =
+        enable_asymmetric_kquant_4warp_flag;
     const int disable_native_quant_warp = disable_native_quant_warp_flag;
     const int disable_qkv_mixed_fuse = disable_qkv_mixed_fuse_flag;
     const int qkv_fuse_key_cache = qkv_fuse_key_cache_flag;
@@ -19082,11 +19084,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                         dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, op->cols, 1);
-                    int q4_threads = 256;
-                    int warps = q4_threads / 32;
+                    int asymmetric_kquant_threads = 256;
+                    int warps = asymmetric_kquant_threads / 32;
                     int blocks = (op->rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH(ctx, q4k_q8k_dot_matvec_pair_kernel,
-                        blocks, q4_threads, 0,
+                        blocks, asymmetric_kquant_threads, 0,
                         out, out1, (const BnBlockQ4K *)w->data,
                         (const BnBlockQ4K *)w1->data, xq, op->rows,
                         op->cols);
@@ -19283,20 +19285,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         xq, in, op->cols, 1);
                 }
                 BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, op->cols, 1);
-                int q4_threads = 256;
-                int warps = q4_threads / 32;
+                int asymmetric_kquant_threads = 256;
+                int warps = asymmetric_kquant_threads / 32;
                 if (bn_gpu_policy_kquant_matvec4_enabled(op->cols)) {
                     int blocks = (op->rows + warps * 4 - 1) / (warps * 4);
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_q8k_dot_matvec4_kernel, blocks,
-                        q4_threads, 0,
+                        asymmetric_kquant_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 } else {
                     int blocks = (op->rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_q8k_dot_matvec_kernel, blocks,
-                        q4_threads, 0,
+                        asymmetric_kquant_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
@@ -19309,11 +19311,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
-                if (enable_q4k_4warp &&
-                    bn_gpu_policy_cuda_q4k_4warp_shape_enabled(op->rows,
+                if (enable_asymmetric_kquant_4warp &&
+                    bn_gpu_policy_cuda_asymmetric_kquant_4warp_shape_enabled(op->rows,
                                                                op->cols)) {
                     int fuse_resid_norm =
-                        bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled() &&
+                        bn_gpu_policy_cuda_asymmetric_kquant_out_residual_rmsnorm_fuse_enabled() &&
                         next && next->op_code == BN_GPU_CODE_RESIDUAL_RMSNORM &&
                         next->buf_in == BN_GPU_VALUE_X &&
                         next->buf_aux == op->buf_out &&
@@ -19348,12 +19350,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             op->rows, op->cols, out_offset);
                     }
                 } else {
-                    int q4_threads = 256;
-                    int warps = q4_threads / 32;
+                    int asymmetric_kquant_threads = 256;
+                    int warps = asymmetric_kquant_threads / 32;
                     int blocks = (op->rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q4k_dot_matvec_kernel, blocks,
-                        q4_threads, 0,
+                        asymmetric_kquant_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
@@ -19469,7 +19471,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (split1 > split0 && (!out2 || split1 > total_rows))
                 BN_CUDA_EXEC_FAIL("matvec split invalid third output");
             int qkv_mixed_type_enabled =
-                bn_gpu_policy_cuda_q4k_qkv_mixed_fuse_enabled(op->type);
+                bn_gpu_policy_cuda_asymmetric_kquant_qkv_mixed_fuse_enabled(op->type);
             if (!disable_qkv_mixed_fuse && qkv_mixed_type_enabled &&
                 next && i + 7 < n_ops &&
                 next->op_code == BN_GPU_CODE_BIAS_ADD &&
@@ -19629,11 +19631,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         xq, in, cols, 1);
                 }
                 BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, cols, 1);
-                int q4_threads = 256;
-                int warps = q4_threads / 32;
+                int asymmetric_kquant_threads = 256;
+                int warps = asymmetric_kquant_threads / 32;
                 int blocks = (total_rows + warps - 1) / warps;
                 BN_CUDA_LAUNCH(ctx, q4k_q8k_dot_matvec_split_kernel,
-                    blocks, q4_threads, 0,
+                    blocks, asymmetric_kquant_threads, 0,
                     out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
                     bias0, total_rows, cols, split0, split1,
                     (size_t)op->p[6], (size_t)op->p[7]);
@@ -19646,12 +19648,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                int q4_threads = 256;
-                int warps = q4_threads / 32;
+                int asymmetric_kquant_threads = 256;
+                int warps = asymmetric_kquant_threads / 32;
                 int fused_k_rope_cache = 0;
                 int fused_q_rope_idx = -1;
                 int k_bias_idx = -1;
-                if (bn_gpu_policy_cuda_q4k_split_k_rope_cache_fuse_enabled() &&
+                if (bn_gpu_policy_cuda_asymmetric_kquant_split_k_rope_cache_fuse_enabled() &&
                     next && i + 4 < n_ops &&
                     split1 <= split0 &&
                     next->op_code == BN_GPU_CODE_BIAS_ADD &&
@@ -19679,7 +19681,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int rope_dims = (int)ops[i + 3].p[3];
                         int q_rope_idx = i + 8;
                         if (q_rope_idx < n_ops &&
-                            bn_gpu_policy_cuda_q4k_split_qk_rope_cache_fuse_enabled() &&
+                            bn_gpu_policy_cuda_asymmetric_kquant_split_qk_rope_cache_fuse_enabled() &&
                             ops[q_rope_idx].op_code == BN_GPU_CODE_ROPE &&
                             ops[q_rope_idx].buf_in == op->buf_out &&
                             (int)ops[q_rope_idx].p[1] == head_size &&
@@ -19695,7 +19697,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             int blocks = (units + warps - 1) / warps;
                             BN_CUDA_LAUNCH(ctx,
                                 q4k_dot_matvec_split_qk_rope_cache_kernel,
-                                blocks, q4_threads, 0,
+                                blocks, asymmetric_kquant_threads, 0,
                                 out0, key_cache,
                                 (const BnBlockQ4K *)w->data, xq, bias0,
                                 (const float *)kbw->data, freq, cols,
@@ -19709,7 +19711,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             int blocks = (units + warps - 1) / warps;
                             BN_CUDA_LAUNCH(ctx,
                                 q4k_dot_matvec_split_k_rope_cache_kernel,
-                                blocks, q4_threads, 0,
+                                blocks, asymmetric_kquant_threads, 0,
                                 out0, key_cache,
                                 (const BnBlockQ4K *)w->data, xq, bias0,
                                 (const float *)kbw->data, freq, total_rows,
@@ -19726,13 +19728,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     skip_ops[i + 4] = 1;
                     if (fused_q_rope_idx >= 0)
                         skip_ops[fused_q_rope_idx] = 1;
-                } else if (bn_gpu_policy_cuda_q4k_split_4warp_enabled(cols)) {
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_4warp_enabled(cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_4warp_kernel,
                         total_rows, 128, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
-                } else if (bn_gpu_policy_cuda_q4k_split_5warp_enabled(cols)) {
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_split_5warp_enabled(cols)) {
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_5warp_kernel,
                         total_rows, 160, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
@@ -19741,14 +19743,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else {
                     int blocks = (total_rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH(ctx, q4k_dot_matvec_split_kernel, blocks,
-                        q4_threads, 0,
+                        asymmetric_kquant_threads, 0,
                         out0, out1, out2, (const BnBlockQ4K *)w->data, xq,
                         bias0, total_rows, cols, split0, split1,
                         (size_t)op->p[6], (size_t)op->p[7]);
                 }
                 int value_rows =
-                    bn_gpu_policy_cuda_q4k_split_value_rows(total_rows, cols);
-                if (bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(
+                    bn_gpu_policy_cuda_asymmetric_kquant_split_value_rows(total_rows, cols);
+                if (bn_gpu_policy_cuda_asymmetric_kquant_split_value_fuse_enabled(
                         value_rows)) {
                     int v_idx = -1;
                     for (int si = i + 1; si < n_ops && si <= i + 6; si++) {
@@ -19944,20 +19946,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         xq, in, cols, 1);
                     BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, cols, 1);
                 }
-                int q4_gateup_threads = 256;
-                int warps = q4_gateup_threads / 32;
-                if (bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(cols)) {
+                int asymmetric_kquant_gateup_threads = 256;
+                int warps = asymmetric_kquant_gateup_threads / 32;
+                if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_qwarp4_enabled(cols)) {
                     int blocks = ((gate_rows + 3) / 4 + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_q8k_dot_fused_gateup_silu_qwarp4_kernel,
-                        blocks, q4_gateup_threads, 0,
+                        blocks, asymmetric_kquant_gateup_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
                 } else {
                     int blocks = (gate_rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_q8k_dot_fused_gateup_silu_kernel,
-                        blocks, q4_gateup_threads, 0,
+                        blocks, asymmetric_kquant_gateup_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
                 }
@@ -19969,34 +19971,34 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                if (bn_gpu_policy_cuda_q4k_gateup_5warp_enabled(
-                        enable_q4k_4warp, cols)) {
+                if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_5warp_enabled(
+                        enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_5warp_kernel,
                         gate_rows, 160, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
-                } else if (bn_gpu_policy_cuda_q4k_gateup_2warp_enabled(
-                               enable_q4k_4warp, cols)) {
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_2warp_enabled(
+                               enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_2warp_kernel,
                         gate_rows, 64, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
-                } else if (bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(
-                               enable_q4k_4warp, cols)) {
+                } else if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_4warp_enabled(
+                               enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_4warp_kernel,
                         gate_rows, 128, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
                 } else {
-                    int q4_gateup_threads = 256;
-                    int warps = q4_gateup_threads / 32;
+                    int asymmetric_kquant_gateup_threads = 256;
+                    int warps = asymmetric_kquant_gateup_threads / 32;
                     int blocks = (gate_rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_kernel,
-                        blocks, q4_gateup_threads, 0,
+                        blocks, asymmetric_kquant_gateup_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
                         up_rows, cols, exact_silu);
                 }

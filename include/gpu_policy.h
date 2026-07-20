@@ -236,24 +236,32 @@ int bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(int cols);
 int bn_gpu_policy_cuda_deinterleaved_kquant_gateup_2warp_enabled(void);
 int bn_gpu_policy_cuda_symmetric_kquant_dot_enabled(void);
 int bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled(void);
-int bn_gpu_policy_cuda_q4k_4warp_enabled(void);
-int bn_gpu_policy_cuda_q4k_4warp_shape_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled(void);
-int bn_gpu_policy_cuda_q4k_qkv_mixed_fuse_enabled(int tensor_type);
-int bn_gpu_policy_cuda_q4k_split_k_rope_cache_fuse_enabled(void);
-int bn_gpu_policy_cuda_q4k_split_qk_rope_cache_fuse_enabled(void);
-int bn_gpu_policy_cuda_q4k_split_4warp_enabled(int cols);
-int bn_gpu_policy_cuda_q4k_split_5warp_enabled(int cols);
-int bn_gpu_policy_cuda_q4k_split_value_rows(int total_rows, int cols);
-int bn_gpu_policy_cuda_q4k_split_value_fuse_enabled(int value_rows);
+int bn_gpu_policy_cuda_asymmetric_kquant_4warp_enabled(void);
+int bn_gpu_policy_cuda_asymmetric_kquant_4warp_shape_enabled(int rows,
+                                                             int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_out_residual_rmsnorm_fuse_enabled(
+    void);
+int bn_gpu_policy_cuda_asymmetric_kquant_qkv_mixed_fuse_enabled(
+    int tensor_type);
+int bn_gpu_policy_cuda_asymmetric_kquant_split_k_rope_cache_fuse_enabled(void);
+int bn_gpu_policy_cuda_asymmetric_kquant_split_qk_rope_cache_fuse_enabled(void);
+int bn_gpu_policy_cuda_asymmetric_kquant_split_4warp_enabled(int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_split_5warp_enabled(int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_split_value_rows(int total_rows,
+                                                         int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_split_value_fuse_enabled(
+    int value_rows);
 int bn_gpu_policy_kquant_gateup_prepared_path_enabled(int q8k_flag);
-int bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled(int cols);
-int bn_gpu_policy_cuda_q4k_gateup_5warp_enabled(int enable_q4k_4warp,
-                                                int cols);
-int bn_gpu_policy_cuda_q4k_gateup_2warp_enabled(int enable_q4k_4warp,
-                                                int cols);
-int bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(int enable_q4k_4warp,
-                                                int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_gateup_qwarp4_enabled(int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_gateup_5warp_enabled(
+    int enable_asymmetric_kquant_4warp,
+    int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_gateup_2warp_enabled(
+    int enable_asymmetric_kquant_4warp,
+    int cols);
+int bn_gpu_policy_cuda_asymmetric_kquant_gateup_4warp_enabled(
+    int enable_asymmetric_kquant_4warp,
+    int cols);
 int bn_gpu_policy_cuda_native_quant_warp_disabled(void);
 int bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled(void);
 int bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled(void);
@@ -267,9 +275,9 @@ int bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled(void);
 int bn_gpu_policy_kquant_dot_enabled(void);
 int bn_gpu_policy_kquant_dot_forced(void);
 int bn_gpu_policy_kquant_matvec4_enabled(int cols);
-int bn_gpu_policy_cuda_q4k_matmul8_enabled(void);
-int bn_gpu_policy_cuda_q4k_sharedx_enabled(void);
-int bn_gpu_policy_cuda_q4k_batch_sharedx_enabled(void);
+int bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(void);
+int bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled(void);
+int bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled(void);
 int bn_gpu_policy_cuda_down_kquant_dot_enabled(void);
 int bn_gpu_policy_cuda_down_kquant_dot_forced(void);
 int bn_gpu_policy_cuda_down_kquant_warp_enabled(void);
@@ -316,8 +324,10 @@ int bn_gpu_policy_cuda_prefill_dense_debug_enabled(void);
 int bn_gpu_policy_cuda_prefill_dense_profile_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void);
 int bn_gpu_policy_prefill_ssm_layer_disabled(void);
-int bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled(void);
-int bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled(void);
+int bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled(
+    void);
+int bn_gpu_policy_cuda_prefill_ssm_fused_asymmetric_kquant_gateup_batch_enabled(
+    void);
 int bn_gpu_policy_cuda_prefill_ssm_profile_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_stacked_enabled(void);
 int bn_gpu_policy_cuda_prefill_ssm_stream_enabled(void);
