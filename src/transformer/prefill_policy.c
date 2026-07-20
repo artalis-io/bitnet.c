@@ -290,7 +290,8 @@ int bn_transformer_prefill_dense_ffn_batch_gpu_available(
     int has_gate,
     int has_up,
     int has_down) {
-    return gpu && gpu->dense_ffn_batch && backend_available && has_gate &&
+    return bn_transformer_gpu_prefill_dense_ffn_batch_backend_available(gpu) &&
+           backend_available && has_gate &&
            has_up && has_down;
 }
 

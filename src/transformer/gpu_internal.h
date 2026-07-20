@@ -285,6 +285,58 @@ int bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(
     const float *X,
     int n_tokens,
     int cols);
+int bn_transformer_gpu_prefill_dense_ffn_batch_backend_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_prefill_dense_ffn_batch_norm_backend_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_prefill_dense_ffn_batch_norm_resid_backend_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type);
+int bn_transformer_gpu_prefill_dense_ffn_batch_norm_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    void *norm_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    float norm_eps);
+int bn_transformer_gpu_prefill_dense_ffn_batch_norm_resid_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    void *norm_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    float norm_eps);
 int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,
