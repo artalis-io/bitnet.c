@@ -3065,6 +3065,21 @@ if ! grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE
     fail=1
 fi
 
+if grep -n '__AVX\|__ARM_NEON\|__wasm_simd128__\|__wasm_relaxed_simd__\|arm_neon.h\|immintrin.h\|float32x\|__m[0-9]\|_mm[0-9]*_\|vld1q\|vst1q\|vdupq\|vcgtq\|vbslq' src/sampler.c >/dev/null 2>&1; then
+    echo "src/sampler.c must use sampler backend helpers for ISA-specific argmax"
+    fail=1
+fi
+
+if ! grep -n '^SAMPLER_SRCS = src/sampler\.c src/sampler_backend\.c$' Makefile >/dev/null 2>&1; then
+    echo "Makefile must define SAMPLER_SRCS for sampler backend composition"
+    fail=1
+fi
+
+if grep -n 'src/tokenizer\.c src/sampler\.c\|src/generate\.c src/sampler\.c' Makefile >/dev/null 2>&1; then
+    echo "Makefile must use SAMPLER_SRCS where sampler sources are composed"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/model.c \

@@ -122,6 +122,7 @@ QUANT_SRCS = $(QUANT_COMMON) $(QUANT_BACKEND)
 MODEL_SRCS = src/model.c src/model_arch.c src/model_policy.c src/model_session.c src/model_gpu.c src/model_embed.c src/backend_layout.c src/backend_model.c src/backend_session.c src/backend_quant.c src/gpu_policy.c
 MOE_SRCS = src/moe.c src/moe_cache.c src/moe_io.c src/moe_policy.c src/moe_cpu_kernels.c src/moe_route.c src/moe_math.c src/moe_execute.c src/moe_prefill.c src/moe_stats.c
 TRANSFORMER_SRCS = src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND)
+SAMPLER_SRCS = src/sampler.c src/sampler_backend.c
 
 # --- WebGPU (optional: BN_ENABLE_WEBGPU=1; BN_ENABLE_GPU=1 is a compatibility alias) ---
 ifdef BN_ENABLE_GPU
@@ -179,7 +180,7 @@ else
 endif
 
 SRCS = src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-       $(TRANSFORMER_SRCS) src/tokenizer.c src/sampler.c \
+       $(TRANSFORMER_SRCS) src/tokenizer.c $(SAMPLER_SRCS) \
        src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/prompt_cache.c src/generate.c $(WEBGPU_SRCS) src/main.c
 CFLAGS += $(WEBGPU_CFLAGS) $(METAL_CFLAGS) $(CUDA_CFLAGS)
 LDFLAGS += $(WGPU_LIB) $(WGPU_FRAMEWORKS) $(METAL_FRAMEWORKS) $(CUDA_LDFLAGS)
@@ -274,7 +275,7 @@ SCALAR_TRANSFORMER_BACKEND = src/transformer/math_scalar.c src/transformer/math_
 
 SCALAR_SRCS = src/platform.c src/gguf.c $(QUANT_COMMON) $(SCALAR_QUANT_BACKEND) \
        src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c \
-       $(SCALAR_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
+       $(SCALAR_TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) \
        src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c \
        src/prompt_cache.c src/generate.c src/main.c
 
@@ -408,7 +409,7 @@ test_threadpool: test/test_threadpool.c src/threadpool.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
 test_safety: test/test_safety.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-             src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+             src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) src/threadpool.c \
              src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
@@ -476,7 +477,7 @@ endif
 test_gemma4_backend_matrix: test_gemma4 test_gemma4_avx2 test_gemma4_webgpu test_gemma4_cuda
 
 test_generate: test/test_generate.c src/generate.c src/bn_alloc.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-               src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+               src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) src/threadpool.c \
                src/sh_arena.c src/sh_log.c src/session.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
@@ -514,7 +515,7 @@ test_cuda_backend:
 endif
 
 test_e2e: test/test_e2e.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-          src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+          src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) src/threadpool.c \
           src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) && ./$@
 
@@ -524,7 +525,7 @@ test_prefill: test/test_prefill.c src/platform.c src/gguf.c $(QUANT_SRCS) src/tu
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test_kv_f16: test/test_kv_f16.c src/platform.c src/gguf.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-             src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c src/threadpool.c \
+             src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) src/threadpool.c \
              src/sh_arena.c src/sh_log.c src/session.c src/bn_alloc.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -610,7 +611,7 @@ AVX2_TRANSFORMER_BACKEND = src/transformer/math_scalar.c src/transformer/math_ba
     src/transformer/ssm_avx2.c src/transformer/ssm_scalar.c
 
 AVX2_SRCS = src/platform.c src/gguf.c $(AVX2_QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-            src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
+            src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) \
             src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/generate.c
 
 AVX2_BIN_SRCS = $(AVX2_SRCS) src/prompt_cache.c src/main.c
@@ -646,7 +647,7 @@ AVX512_CHECK_FLAGS += -D_GNU_SOURCE
 endif
 
 AVX512_SRCS = src/platform.c src/gguf.c $(AVX512_QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
-            src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c src/sampler.c \
+            src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(AVX2_TRANSFORMER_BACKEND) src/tokenizer.c $(SAMPLER_SRCS) \
             src/threadpool.c src/sh_arena.c src/sh_log.c src/bn_alloc.c src/session.c src/generate.c
 
 AVX512_BIN_SRCS = $(AVX512_SRCS) src/prompt_cache.c src/main.c
@@ -746,7 +747,7 @@ test_gpu_validate: $(WEBGPU_VALIDATE_SRCS)
 COHERENCE_SRCS = test/test_coherence.c $(QUANT_SRCS) src/turboquant.c $(MODEL_SRCS) $(MOE_SRCS) \
                  src/gguf.c src/platform.c src/tokenizer.c src/threadpool.c \
                  src/transformer.c src/gpu_moe_cache.c src/gpu_moe_bridge.c $(TRANSFORMER_BACKEND) src/sh_arena.c src/sh_log.c \
-                 src/session.c src/bn_alloc.c src/prompt_cache.c src/generate.c src/sampler.c
+                 src/session.c src/bn_alloc.c src/prompt_cache.c src/generate.c $(SAMPLER_SRCS)
 ifdef BN_ENABLE_WEBGPU
 COHERENCE_SRCS += src/gpu_wgpu.c
 endif
