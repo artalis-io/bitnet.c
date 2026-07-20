@@ -407,6 +407,15 @@ if grep -n 'bn_quant_format_supports_q8_logits_refine\|bn_quant_format_supports_
     fail=1
 fi
 
+if grep -n 'BN_QUANT_CAP_Q8_LOGITS_REFINE\|BN_QUANT_CAP_Q6_LOGITS_REFINE\|BN_QUANT_CAP_LOGITS_Q6_F32_CACHE\|BN_QUANT_CAP_GPU_DENSE_GRAPH_Q6K' \
+    include/quant.h \
+    src/quant/registry.c \
+    test/test_quant.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Quant logits refine capability bits must use behavior names, not quant-format names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q4_gateup\|bn_quant_format_supports_cpu_fused_q4_gateup_silu\|bn_quant_format_supports_moe_q8_route' \
     include/quant.h \
     include/backend_quant.h \
