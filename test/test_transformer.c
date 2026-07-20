@@ -2539,6 +2539,18 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_argmax_available(&gpu, 1));
     assert(!bn_transformer_gpu_argmax_available(NULL, 1));
     gpu.argmax_activation = mock_argmax_activation;
+    float write_tmp[2] = {1.0f, 2.0f};
+    assert(bn_transformer_gpu_write_activation_buf(
+        NULL, BN_GPU_VALUE_X, write_tmp, sizeof(write_tmp)) != 0);
+    gpu.write_activation = mock_gpu_write_activation;
+    assert(bn_transformer_gpu_write_activation_buf(
+        &gpu, BN_GPU_VALUE_X, write_tmp, sizeof(write_tmp)) == 0);
+    gpu.write_activation = NULL;
+    assert(bn_transformer_gpu_write_activation_buf(
+        &gpu, BN_GPU_VALUE_X, write_tmp, sizeof(write_tmp)) != 0);
+    gpu.write_activation = mock_gpu_write_activation;
+    assert(bn_transformer_gpu_write_activation_buf(
+        &gpu, BN_GPU_VALUE_X, NULL, sizeof(write_tmp)) != 0);
 
     c.n_experts = 0;
     unsetenv("BN_GPU_CPU_LOGITS");

@@ -1053,6 +1053,10 @@ int bn_transformer_gpu_execute_ops(const BnGPUBackend *gpu,
 int bn_transformer_gpu_write_x(const BnGPUBackend *gpu,
                                const float *x,
                                size_t size_bytes);
+int bn_transformer_gpu_write_activation_buf(const BnGPUBackend *gpu,
+                                            int buf_idx,
+                                            const void *data,
+                                            size_t size_bytes);
 int bn_transformer_gpu_read_x(const BnGPUBackend *gpu,
                               float *x,
                               size_t size_bytes);

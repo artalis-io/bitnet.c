@@ -1289,10 +1289,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         route_tmp[K + k] =
                             (float)sess->moe_state->expert_indices[k];
                     }
-                    if (!gpu->write_activation ||
-                        gpu->write_activation(
-                            gpu->ctx, BN_GPU_VALUE_MOE_HB2, route_tmp,
-                            (size_t)(2 * K) * sizeof(float), 0) != 0)
+                    if (bn_transformer_gpu_write_activation_buf(
+                            gpu, BN_GPU_VALUE_MOE_HB2, route_tmp,
+                            (size_t)(2 * K) * sizeof(float)) != 0)
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu moe cpu route upload failed");
                 } else if (bn_transformer_gpu_emit_context_moe_route_topk(
@@ -1365,10 +1364,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         bn_transformer_gpu_read_activation_buf(
                             gpu, BN_GPU_VALUE_MOE_HB2, gpu_up,
                             raw_bytes) != 0 ||
-                        !gpu->write_activation ||
-                        gpu->write_activation(
-                            gpu->ctx, BN_GPU_VALUE_MOE_HB2, route_save,
-                            (size_t)(2 * K) * sizeof(float), 0) != 0) {
+                        bn_transformer_gpu_write_activation_buf(
+                            gpu, BN_GPU_VALUE_MOE_HB2, route_save,
+                            (size_t)(2 * K) * sizeof(float)) != 0) {
                         free(cpu_gate);
                         free(cpu_up);
                         free(gpu_gate);
@@ -1498,10 +1496,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     }
                     for (int si = 0; si < dim; si++)
                         shared_gpu_out[si] += shared_cpu_out[si];
-                    if (!gpu->write_activation ||
-                        gpu->write_activation(
-                            gpu->ctx, BN_GPU_VALUE_MOE_OUT,
-                            shared_gpu_out, dim_bytes, 0) != 0) {
+                    if (bn_transformer_gpu_write_activation_buf(
+                            gpu, BN_GPU_VALUE_MOE_OUT,
+                            shared_gpu_out, dim_bytes) != 0) {
                         free(shared_cpu_xb);
                         free(shared_cpu_out);
                         free(shared_gpu_out);

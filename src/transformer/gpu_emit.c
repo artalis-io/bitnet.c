@@ -878,6 +878,14 @@ int bn_transformer_gpu_write_x(const BnGPUBackend *gpu,
     return gpu->write_activation(gpu->ctx, BN_GPU_VALUE_X, x, size_bytes, 0);
 }
 
+int bn_transformer_gpu_write_activation_buf(const BnGPUBackend *gpu,
+                                            int buf_idx,
+                                            const void *data,
+                                            size_t size_bytes) {
+    if (!gpu || !gpu->write_activation || !data) return -1;
+    return gpu->write_activation(gpu->ctx, buf_idx, data, size_bytes, 0);
+}
+
 int bn_transformer_gpu_read_x(const BnGPUBackend *gpu,
                               float *x,
                               size_t size_bytes) {
