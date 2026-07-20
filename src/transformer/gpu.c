@@ -625,7 +625,7 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
 
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_transformer_cpu_refine_q6_logits_prepared_activation_row(
+        if (bn_transformer_cpu_refine_kquant_logits_prepared_activation_row(
                 W, quantized, scales, block_sums, ids[i], &row_sum) == 0)
             logits[ids[i]] = row_sum;
     }

@@ -2551,6 +2551,11 @@ if grep -n 'bn_transformer_cpu_\(quantize_q8_blocks_native\|prepare_q8_logits_re
     fail=1
 fi
 
+if grep -n 'bn_transformer_cpu_\(refine_q6_logits_row\|refine_q6_logits_prepared_activation_row\)' include/transformer_cpu_backend_internal.h src/transformer/gpu.c src/transformer/logits.c >/dev/null 2>&1; then
+    echo "Transformer logits callers must use K-quant refine CPU helpers, not Q6 helper names"
+    fail=1
+fi
+
 if grep -n 'BnTransformerGPUQ4Q8\|bn_transformer_gpu_q4_q8\|bn_transformer_gpu_all2_q4q6_moe\|bn_transformer_gpu_all2_q4_moe\|bn_transformer_gpu_all2_moe_direct_route_enabled\|bn_gpu_policy_backend_all2_q4q6_moe_enabled\|bn_gpu_policy_backend_all2_kquant_moe_logits_refine_default_supported\|bn_gpu_policy_backend_all2_moe_direct_route_supported\|bn_gpu_policy_all2_kquant_moe_logits_refine_disabled\|\.all2_q4q6_moe\|use_q4_q8' include/gpu_policy.h include/transformer_plan_internal.h src/gpu_policy.c src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Transformer GPU small-dense and all-active-two MoE policy must expose behavior-named helpers"
     fail=1

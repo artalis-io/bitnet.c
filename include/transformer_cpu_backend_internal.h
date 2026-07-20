@@ -130,11 +130,11 @@ int bn_transformer_cpu_refine_native_logits_row(const BnQWeight *weight,
                                                 const float *scales,
                                                 int row,
                                                 float *out);
-int bn_transformer_cpu_refine_q6_logits_row(const BnQWeight *weight,
-                                            const float *x,
-                                            int row,
-                                            float *out);
-int bn_transformer_cpu_refine_q6_logits_prepared_activation_row(
+int bn_transformer_cpu_refine_kquant_logits_row(const BnQWeight *weight,
+                                                const float *x,
+                                                int row,
+                                                float *out);
+int bn_transformer_cpu_refine_kquant_logits_prepared_activation_row(
     const BnQWeight *weight,
     const int8_t *quantized,
     const float *scales,

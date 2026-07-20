@@ -122,14 +122,14 @@ int bn_transformer_cpu_refine_native_logits_row(const BnQWeight *weight,
     return bn_quant_q8_logits_refine_row(weight, quantized, scales, row, out);
 }
 
-int bn_transformer_cpu_refine_q6_logits_row(const BnQWeight *weight,
-                                            const float *x,
-                                            int row,
-                                            float *out) {
+int bn_transformer_cpu_refine_kquant_logits_row(const BnQWeight *weight,
+                                                const float *x,
+                                                int row,
+                                                float *out) {
     return bn_quant_q6_logits_refine_row(weight, x, row, out);
 }
 
-int bn_transformer_cpu_refine_q6_logits_prepared_activation_row(
+int bn_transformer_cpu_refine_kquant_logits_prepared_activation_row(
     const BnQWeight *weight,
     const int8_t *quantized,
     const float *scales,

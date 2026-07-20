@@ -128,8 +128,8 @@ static void logits_refine_tied_kquant_top(BnModel *m, BnRunState *s,
                                ids, vals, refine_top);
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_transformer_cpu_refine_q6_logits_row(W, s->x, ids[i],
-                                                    &row_sum) == 0)
+        if (bn_transformer_cpu_refine_kquant_logits_row(W, s->x, ids[i],
+                                                        &row_sum) == 0)
             s->logits[ids[i]] = row_sum;
     }
 }
@@ -153,8 +153,8 @@ static void logits_hybrid_tied_kquant_top(BnModel *m, BnRunState *s,
     int native_best = 0;
     int native_second = 1;
     for (int i = 0; i < n_top; i++) {
-        if (bn_transformer_cpu_refine_q6_logits_row(W, s->x, ids[i],
-                                                    &native_vals[i]) != 0)
+        if (bn_transformer_cpu_refine_kquant_logits_row(W, s->x, ids[i],
+                                                        &native_vals[i]) != 0)
             return;
         if (i == 0) continue;
         if (native_vals[i] > native_vals[native_best]) {
