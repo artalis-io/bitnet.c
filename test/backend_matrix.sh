@@ -1821,6 +1821,11 @@ if grep -n 'gpu->execute\|gpu->read_activation\|gpu->write_activation\|gpu->max_
     fail=1
 fi
 
+if grep -n 'gpu->caps' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU helpers for backend capability bits"
+    fail=1
+fi
+
 if ! grep -n 'bn_gpu_policy_metal_native_quant_prepared_enabled\|bn_gpu_policy_metal_native_quant_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_repacked_buffer_type\|bn_gpu_policy_metal_specialized_native_quant_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must own Metal feature-policy env vars"
     fail=1
