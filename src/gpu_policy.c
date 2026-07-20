@@ -187,6 +187,59 @@ static int small_dense_exact_native_ffn_down_requested(void) {
         "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
 }
 
+static int small_dense_exact_native_enabled(void) {
+    return gpu_policy_compat_env_enabled("BN_GPU_SMALL_DENSE_EXACT_NATIVE",
+                                         "BN_GPU_Q4_Q8");
+}
+
+static int small_dense_exact_native_default_disabled(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT",
+        "BN_METAL_DISABLE_Q4_Q8_DEFAULT");
+}
+
+static int small_dense_exact_native_gateup_disabled(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP",
+        "BN_GPU_Q4_Q8_DISABLE_GATEUP");
+}
+
+static int small_dense_exact_native_ffn_down_disabled(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN",
+        "BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
+}
+
+static int small_dense_exact_native_attn_only(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY",
+        "BN_GPU_Q4_Q8_ATTN_ONLY");
+}
+
+static int small_dense_exact_native_ffn_only(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY",
+        "BN_GPU_Q4_Q8_FFN_ONLY");
+}
+
+static const char *small_dense_exact_native_from_layer_env(void) {
+    return gpu_policy_compat_env_value(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER",
+        "BN_GPU_Q4_Q8_FROM_LAYER");
+}
+
+static const char *small_dense_exact_native_to_layer_env(void) {
+    return gpu_policy_compat_env_value(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER",
+        "BN_GPU_Q4_Q8_TO_LAYER");
+}
+
+static const char *small_dense_exact_native_tail_layer_env(void) {
+    return gpu_policy_compat_env_value(
+        "BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE",
+        "BN_GPU_Q4_Q8_TAIL_NATIVE");
+}
+
 static int small_dense_prefill_disabled(void) {
     return gpu_policy_compat_env_enabled("BN_CUDA_DISABLE_SMALL_DENSE_PREFILL",
                                          "BN_CUDA_DISABLE_SMALL_QWEN_PREFILL");
@@ -3697,7 +3750,7 @@ void bn_gpu_policy_apply_native_quant_prepared_override(void) {
 }
 
 void bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override(void) {
-    setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
+    setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT", "1", 1);
 }
 
 void bn_gpu_policy_apply_metal_private_weights_override(void) {
@@ -3705,19 +3758,19 @@ void bn_gpu_policy_apply_metal_private_weights_override(void) {
 }
 
 void bn_gpu_policy_metal_apply_small_dense_exact_native_default(void) {
-    if (!getenv("BN_GPU_Q4_Q8") &&
-        !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {
-        setenv("BN_GPU_Q4_Q8", "1", 1);
-        if (!getenv("BN_GPU_Q4_Q8_FROM_LAYER"))
-            setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
-        if (!getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
-            !getenv("BN_GPU_Q4_Q8_FFN_ONLY"))
-            setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
+    if (!small_dense_exact_native_enabled() &&
+        !small_dense_exact_native_default_disabled()) {
+        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE", "1", 1);
+        if (!small_dense_exact_native_from_layer_env())
+            setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "0", 1);
+        if (!small_dense_exact_native_attn_only() &&
+            !small_dense_exact_native_ffn_only())
+            setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
     }
 }
 
 int bn_gpu_policy_metal_small_dense_exact_native_enabled(void) {
-    return getenv("BN_GPU_Q4_Q8") != NULL;
+    return small_dense_exact_native_enabled();
 }
 
 int bn_gpu_policy_metal_native_quant_prepared_enabled(void) {
@@ -3729,12 +3782,12 @@ int bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled(void) 
 }
 
 int bn_gpu_policy_metal_native_quant_prepared_upload_enabled(void) {
-    const char *from_layer = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
+    const char *from_layer = small_dense_exact_native_from_layer_env();
     return bn_gpu_policy_metal_native_quant_prepared_enabled() &&
-           getenv("BN_GPU_Q4_Q8") &&
+           small_dense_exact_native_enabled() &&
            (!from_layer || atoi(from_layer) <= 0) &&
-           !getenv("BN_GPU_Q4_Q8_ATTN_ONLY") &&
-           !getenv("BN_GPU_Q4_Q8_FFN_ONLY");
+           !small_dense_exact_native_attn_only() &&
+           !small_dense_exact_native_ffn_only();
 }
 
 int bn_gpu_policy_metal_repacked_buffer_supported(int tensor_type) {
@@ -3834,19 +3887,19 @@ int bn_gpu_policy_fused_gateup_enabled(void) {
 }
 
 int bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled(void) {
-    return getenv("BN_GPU_Q4_Q8_DISABLE_GATEUP") == NULL;
+    return !small_dense_exact_native_gateup_disabled();
 }
 
 int bn_gpu_policy_small_dense_exact_native_attn_only_enabled(void) {
-    return getenv("BN_GPU_Q4_Q8_ATTN_ONLY") != NULL;
+    return small_dense_exact_native_attn_only();
 }
 
 int bn_gpu_policy_small_dense_exact_native_ffn_only_enabled(void) {
-    return getenv("BN_GPU_Q4_Q8_FFN_ONLY") != NULL;
+    return small_dense_exact_native_ffn_only();
 }
 
 int bn_gpu_policy_small_dense_exact_native_from_layer_or_default(int n_layers) {
-    const char *env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
+    const char *env = small_dense_exact_native_from_layer_env();
     if (env)
         return atoi(env);
     return bn_gpu_policy_metal_small_dense_exact_native_enabled() ? n_layers - 1 : -1;
@@ -3855,11 +3908,11 @@ int bn_gpu_policy_small_dense_exact_native_from_layer_or_default(int n_layers) {
 int bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
     int n_layers,
     int native_quant_prepared) {
-    const char *env = getenv("BN_GPU_Q4_Q8_TO_LAYER");
+    const char *env = small_dense_exact_native_to_layer_env();
     if (env)
         return atoi(env);
 
-    env = getenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
+    env = small_dense_exact_native_tail_layer_env();
     if (env) {
         int tail_native = atoi(env);
         if (tail_native > 0) {
@@ -3880,7 +3933,7 @@ int bn_gpu_policy_gateup_split_enabled(void) {
 }
 
 int bn_gpu_policy_small_dense_exact_native_ffn_down_enabled(void) {
-    return getenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN") == NULL;
+    return !small_dense_exact_native_ffn_down_disabled();
 }
 
 int bn_gpu_policy_qkv_split_enabled(void) {

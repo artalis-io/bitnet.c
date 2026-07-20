@@ -3035,8 +3035,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX");
     unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
     unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
     unsetenv("BN_GPU_DEBUG_QKV_SPLIT");
@@ -3897,9 +3899,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_moe_route_profile_enabled());
     assert(bn_gpu_policy_moe_route_profile_every_or_default(28) == 28);
     setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
-    setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP", "1", 1);
     setenv("BN_GPU_DISABLE_GATEUP_SPLIT", "1", 1);
-    setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN", "1", 1);
     setenv("BN_GPU_DISABLE_QKV_SPLIT", "1", 1);
     setenv("BN_GPU_DEBUG_QKV_SPLIT", "1", 1);
     setenv("BN_GPU_DISABLE_SSM_QKVZ_SPLIT", "1", 1);
@@ -4018,8 +4020,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX");
     unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
     unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
     unsetenv("BN_GPU_DEBUG_QKV_SPLIT");
@@ -4084,8 +4088,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_LARGE_HYBRID_PREFILL");
     unsetenv("BN_CUDA_ENABLE_LARGE_HYBRID_ARGMAX");
     unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
     unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_DISABLE_QKV_SPLIT");
     unsetenv("BN_GPU_DEBUG_QKV_SPLIT");
@@ -4295,6 +4301,13 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_metal_barriers_enabled());
     setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
     assert(bn_gpu_policy_metal_barriers_disabled());
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
+    unsetenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT");
     unsetenv("BN_GPU_Q4_Q8");
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
@@ -4362,32 +4375,45 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 0, 0));
     assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 0));
-    assert(getenv("BN_GPU_Q4_Q8_FROM_LAYER") != NULL);
+    assert(getenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER") != NULL);
     assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
            0);
     assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
            6);
     assert(!bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
     assert(bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
-    unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
-    setenv("BN_GPU_Q4_Q8_FROM_LAYER", "10", 1);
-    setenv("BN_GPU_Q4_Q8_TO_LAYER", "20", 1);
-    setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
-    setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "10", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER", "20", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
     assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
            10);
     assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
            20);
     assert(bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
     assert(bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
-    unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
-    setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", "4", 1);
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER");
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", "4", 1);
     assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
            35);
-    setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", "100", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", "100", 1);
     assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
            -1);
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
+    setenv("BN_GPU_Q4_Q8", "1", 1);
+    setenv("BN_GPU_Q4_Q8_FROM_LAYER", "12", 1);
+    setenv("BN_GPU_Q4_Q8_TO_LAYER", "18", 1);
+    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+           12);
+    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+           18);
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
+    unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
@@ -4402,21 +4428,30 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
         BN_GGUF_TENSOR_Q8_0));
-    setenv("BN_GPU_Q4_Q8_FROM_LAYER", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "1", 1);
     assert(!bn_gpu_policy_metal_native_quant_prepared_upload_enabled());
     assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
         BN_GGUF_TENSOR_Q4_0));
-    setenv("BN_GPU_Q4_Q8_FROM_LAYER", "0", 1);
-    setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "0", 1);
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
     assert(!bn_gpu_policy_metal_native_quant_prepared_upload_enabled());
-    unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
-    setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY");
+    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
     assert(!bn_gpu_policy_metal_native_quant_prepared_upload_enabled());
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
     unsetenv("BN_GPU_Q4_Q8");
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
+    setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT", "1", 1);
+    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
+    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
+    unsetenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT");
     setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
     bn_gpu_policy_metal_apply_small_dense_exact_native_default();
     assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
@@ -4478,6 +4513,11 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_FULL_BARRIERS");
     unsetenv("BN_METAL_ENABLE_BARRIERS");
     unsetenv("BN_METAL_DISABLE_BARRIERS");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
+    unsetenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT");
     unsetenv("BN_GPU_Q4_Q8");
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");

@@ -1741,6 +1741,21 @@ if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_pol
     fail=1
 fi
 
+if grep -n 'setenv("BN_GPU_Q4_Q8' src/main.c >/dev/null 2>&1; then
+    echo "CLI small-dense exact-native options must set behavior-named env vars, not Q4/Q8 compatibility aliases"
+    fail=1
+fi
+
+if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN' src/main.c >/dev/null 2>&1; then
+    echo "CLI small-dense exact-native options must expose behavior-named env policy"
+    fail=1
+fi
+
+if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE\|BN_GPU_Q4_Q8\|BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|BN_METAL_DISABLE_Q4_Q8_DEFAULT' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU small-dense exact-native policy must keep canonical env names with Q4/Q8 compatibility aliases"
+    fail=1
+fi
+
 if grep -n -- '->q4_q8_matvec_pipeline\|->q4_q8_split_pipeline\|->q4_q8_gateup_pipeline\|->q4_prepared_q8_matvec_pipeline\|->q4_prepared_q8_split_pipeline\|->q4_prepared_q8_gateup_pipeline\|\.q4_q8_matvec_pipeline\|\.q4_q8_split_pipeline\|\.q4_q8_gateup_pipeline\|\.q4_prepared_q8_matvec_pipeline\|\.q4_prepared_q8_split_pipeline\|\.q4_prepared_q8_gateup_pipeline' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal exact-native pipeline state must use behavior names, not Q4/Q8 field names"
     fail=1
