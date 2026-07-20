@@ -10983,15 +10983,15 @@ static int cuda_ensure_q8_0_f32(BnCudaCtx *ctx, int cols, int n_tokens) {
 }
 
 static int cuda_use_q8_0_quant_matmul(void) {
-    return bn_gpu_policy_cuda_q8_0_quant_matmul_enabled();
+    return bn_gpu_policy_cuda_native_quant_matmul_enabled();
 }
 
 static int cuda_use_f16_q8_0_matmul(void) {
-    return bn_gpu_policy_cuda_f16_q8_0_matmul_enabled();
+    return bn_gpu_policy_cuda_f16_native_quant_matmul_enabled();
 }
 
 static int cuda_use_q8_0_prepared_input_split(void) {
-    return bn_gpu_policy_cuda_q8_0_prepared_input_split_enabled();
+    return bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled();
 }
 
 static int cuda_ensure_q8_k(BnCudaCtx *ctx, int cols, int n_tokens) {
@@ -18416,9 +18416,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_graph_exec_flag =
             bn_gpu_policy_cuda_graph_exec_requested();
         enable_q8_prepared_input_all_flag =
-            bn_gpu_policy_cuda_q8_prepared_input_all_enabled();
+            bn_gpu_policy_cuda_native_quant_prepared_input_all_enabled();
         disable_q8_prepared_input_logits_flag =
-            bn_gpu_policy_cuda_q8_prepared_input_logits_disabled();
+            bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled();
         flags_init = 1;
     }
     const int fuse_bias_enabled = fuse_bias_enabled_flag;
@@ -18497,7 +18497,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
     int q8_prepared_input_logits_default =
-        bn_gpu_policy_cuda_q8_prepared_input_logits_default_enabled(
+        bn_gpu_policy_cuda_native_quant_prepared_input_logits_default_enabled(
             disable_q8_prepared_input_logits);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
