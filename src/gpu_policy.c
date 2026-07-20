@@ -4101,29 +4101,41 @@ static int gpu_policy_debug_argmax_compare_requested(void) {
 }
 
 static int gpu_policy_kquant_logits_refine_requested(void) {
-    return getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_ENABLE_KQUANT_LOGITS_REFINE",
+        "BN_GPU_ENABLE_Q6_LOGITS_REFINE");
 }
 
 static int gpu_policy_kquant_logits_refine_disabled(void) {
-    return getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_DISABLE_KQUANT_LOGITS_REFINE",
+        "BN_GPU_DISABLE_Q6_LOGITS_REFINE");
 }
 
 static int gpu_policy_kquant_logits_refine_top_or_default(int default_top) {
-    const char *env = getenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    const char *env = gpu_policy_compat_env_value(
+        "BN_GPU_KQUANT_LOGITS_REFINE_TOP",
+        "BN_GPU_Q6_Q8K_REFINE_TOP");
     return env ? atoi(env) : default_top;
 }
 
 static int gpu_policy_native_quant_logits_refine_requested(void) {
-    return getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_ENABLE_NATIVE_QUANT_LOGITS_REFINE",
+        "BN_GPU_ENABLE_Q8_LOGITS_REFINE");
 }
 
 static int gpu_policy_native_quant_logits_refine_disabled(void) {
-    return getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_GPU_DISABLE_NATIVE_QUANT_LOGITS_REFINE",
+        "BN_GPU_DISABLE_Q8_LOGITS_REFINE");
 }
 
 static int gpu_policy_native_quant_logits_refine_top_or_default(
     int default_top) {
-    const char *env = getenv("BN_GPU_Q8_REFINE_TOP");
+    const char *env = gpu_policy_compat_env_value(
+        "BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP",
+        "BN_GPU_Q8_REFINE_TOP");
     return env ? atoi(env) : default_top;
 }
 

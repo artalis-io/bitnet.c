@@ -1187,6 +1187,16 @@ if grep -n 'BN_GPU_ENABLE_Q6_LOGITS_REFINE\|BN_GPU_DISABLE_Q6_LOGITS_REFINE\|BN_
     fail=1
 fi
 
+if grep -n 'getenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE")\|getenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE")\|getenv("BN_GPU_Q6_Q8K_REFINE_TOP")\|getenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE")\|getenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE")\|getenv("BN_GPU_Q8_REFINE_TOP")' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU logits-refine policy must read behavior-named env vars before Q6/Q8 compatibility aliases"
+    fail=1
+fi
+
+if ! grep -n 'BN_GPU_ENABLE_KQUANT_LOGITS_REFINE\|BN_GPU_ENABLE_Q6_LOGITS_REFINE\|BN_GPU_ENABLE_NATIVE_QUANT_LOGITS_REFINE\|BN_GPU_ENABLE_Q8_LOGITS_REFINE' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU logits-refine policy must keep behavior-named env vars with Q6/Q8 compatibility aliases"
+    fail=1
+fi
+
 if grep -n 'BnBlockQ8_0\|BnBlockQ6K\|bn_fp16_to_fp32' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use quant logits-refine helpers, not direct quant block layout"
     fail=1
