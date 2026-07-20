@@ -2659,6 +2659,11 @@ if awk '/^int bn_gpu_policy_auto_caps_gguf_sequence/{flag=1} flag{print} flag &&
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c must use model-policy helpers instead of reaching into model_arch"
+    fail=1
+fi
+
 if grep -n 'general\.architecture\|context_length\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch/GPU policy helpers for arch-prefixed GGUF sequence metadata"
     fail=1

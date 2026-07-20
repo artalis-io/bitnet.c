@@ -92,3 +92,36 @@ int bn_model_gguf_uses_moe(BnGGUFFile *file) {
 int bn_model_gguf_context_length(BnGGUFFile *file) {
     return bn_model_arch_gguf_u32(file, "context_length");
 }
+
+int bn_model_config_attention_layer_count(const BnConfig *config) {
+    return bn_model_arch_attention_layer_count(config);
+}
+
+int bn_model_config_ssm_layer_count(const BnConfig *config) {
+    return bn_model_arch_ssm_layer_count(config);
+}
+
+int bn_model_config_uses_hybrid_ssm(const BnConfig *config) {
+    return bn_model_arch_uses_hybrid_ssm(config);
+}
+
+int bn_model_config_uses_hybrid_moe(const BnConfig *config) {
+    return bn_model_arch_uses_hybrid_moe(config);
+}
+
+int bn_model_config_uses_moe(const BnConfig *config) {
+    return bn_model_arch_uses_moe(config);
+}
+
+int bn_model_config_uses_all_active_two_expert_moe(const BnConfig *config,
+                                                   int dim) {
+    return bn_model_arch_uses_all_active_two_expert_moe(config, dim);
+}
+
+int bn_model_config_uses_two_expert_all_active_moe(const BnConfig *config) {
+    return bn_model_arch_uses_two_expert_all_active_moe(config);
+}
+
+int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config) {
+    return bn_model_arch_uses_more_than_two_expert_moe(config);
+}

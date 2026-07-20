@@ -52,5 +52,14 @@ int bn_model_activation_is_gelu(int activation);
 int bn_model_activation_uses_silu_path(int activation);
 int bn_model_gguf_uses_moe(BnGGUFFile *file);
 int bn_model_gguf_context_length(BnGGUFFile *file);
+int bn_model_config_attention_layer_count(const BnConfig *config);
+int bn_model_config_ssm_layer_count(const BnConfig *config);
+int bn_model_config_uses_hybrid_ssm(const BnConfig *config);
+int bn_model_config_uses_hybrid_moe(const BnConfig *config);
+int bn_model_config_uses_moe(const BnConfig *config);
+int bn_model_config_uses_all_active_two_expert_moe(const BnConfig *config,
+                                                   int dim);
+int bn_model_config_uses_two_expert_all_active_moe(const BnConfig *config);
+int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config);
 
 #endif // BN_MODEL_INTERNAL_H

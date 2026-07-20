@@ -1,6 +1,5 @@
 #include "gpu_policy.h"
 #include "backend_quant.h"
-#include "model_arch.h"
 #include "model_internal.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -478,32 +477,33 @@ int bn_gpu_policy_float_buffer_type(void) {
 }
 
 int bn_gpu_policy_attention_layer_count(const BnConfig *c) {
-    return bn_model_arch_attention_layer_count(c);
+    return bn_model_config_attention_layer_count(c);
 }
 
 int bn_gpu_policy_ssm_layer_count(const BnConfig *c) {
-    return bn_model_arch_ssm_layer_count(c);
+    return bn_model_config_ssm_layer_count(c);
 }
 
 int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_ssm(c);
+    return bn_model_config_uses_hybrid_ssm(c);
 }
 
 int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_moe(c);
+    return bn_model_config_uses_hybrid_moe(c);
 }
 
 int bn_gpu_policy_uses_moe(const BnConfig *c) {
-    return bn_model_arch_uses_moe(c);
+    return bn_model_config_uses_moe(c);
 }
 
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c) {
-    return bn_model_arch_uses_all_active_two_expert_moe(c, c ? c->dim : 0);
+    return bn_model_config_uses_all_active_two_expert_moe(c,
+                                                          c ? c->dim : 0);
 }
 
 static int gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c) {
-    return bn_model_arch_uses_more_than_two_expert_moe(c) ||
-           bn_model_arch_uses_two_expert_all_active_moe(c);
+    return bn_model_config_uses_more_than_two_expert_moe(c) ||
+           bn_model_config_uses_two_expert_all_active_moe(c);
 }
 
 int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c) {
