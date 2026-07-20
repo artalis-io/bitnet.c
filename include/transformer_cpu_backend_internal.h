@@ -1,12 +1,16 @@
 #ifndef BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H
 #define BN_TRANSFORMER_CPU_BACKEND_INTERNAL_H
 
-#include "gpu_backend.h"
 #include "model_run_state.h"
 #include "quant.h"
 #include "threadpool.h"
 #include "transformer_plan_internal.h"
 #include <stdint.h>
+
+#ifndef BN_GPU_BACKEND_DECLARED
+#define BN_GPU_BACKEND_DECLARED
+typedef struct BnGPUBackend BnGPUBackend;
+#endif
 
 typedef struct {
     const char *name;

@@ -1,13 +1,17 @@
 #ifndef BN_TRANSFORMER_PREFILL_INTERNAL_H
 #define BN_TRANSFORMER_PREFILL_INTERNAL_H
 
-#include "gpu_backend.h"
 #include "model_config.h"
 #include "model_weights.h"
 #include "moe_types.h"
 #include "quant.h"
 #include "threadpool.h"
 #include <stdint.h>
+
+#ifndef BN_GPU_BACKEND_DECLARED
+#define BN_GPU_BACKEND_DECLARED
+typedef struct BnGPUBackend BnGPUBackend;
+#endif
 
 typedef struct {
     float *hb;

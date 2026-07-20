@@ -661,6 +661,19 @@ if grep -n '#include "gpu_backend.h"' src/transformer/logits.c >/dev/null 2>&1; 
     fail=1
 fi
 
+if grep -n '#include "gpu_backend.h"' \
+    include/transformer_cpu_backend_internal.h \
+    include/transformer_prefill_internal.h \
+    include/transformer_logits_internal.h >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill/logits policy headers must forward-declare GPU backend handles instead of including backend GPU interfaces"
+    fail=1
+fi
+
+if grep -n 'gpu->dense_ffn' src/transformer/cpu.c src/transformer/cpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer CPU execution/policy must use GPU helper functions for dense FFN backend calls"
+    fail=1
+fi
+
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must use MoE policy helpers for float K-quant gate/up task flags"
     fail=1

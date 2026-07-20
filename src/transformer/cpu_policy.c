@@ -121,13 +121,7 @@ int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan) {
-    return gpu &&
-           gpu->dense_ffn &&
-           ffn_plan &&
-           ffn_plan->has_gate &&
-           !ffn_plan->has_sub_norm &&
-           bn_transformer_cpu_activation_uses_silu_path(
-               ffn_plan->activation);
+    return bn_transformer_gpu_dense_ffn_fast_path_available(gpu, ffn_plan);
 }
 
 int bn_transformer_cpu_activation_is_relu2(int activation) {

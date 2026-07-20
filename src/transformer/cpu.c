@@ -975,10 +975,11 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         void *down_buf = bn_backend_model_qweight_buf(backend, &lw->ffn.ffn_down);
         if (gate_buf && up_buf && down_buf) {
             cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.ffn_norm, dim, c->norm_eps);
-            if (gpu->dense_ffn(gpu->ctx, s->xb, gate_buf, up_buf, down_buf,
-                               s->xb, dim, hidden_dim,
-                               lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
-                               lw->ffn.ffn_down.type, ffn_plan->activation) == 0) {
+            if (bn_transformer_gpu_dense_ffn_fast_path_run(
+                    gpu, s->xb, gate_buf, up_buf, down_buf, s->xb,
+                    dim, hidden_dim, lw->ffn.ffn_gate.type,
+                    lw->ffn.ffn_up.type, lw->ffn.ffn_down.type,
+                    ffn_plan->activation) == 0) {
                 if (cpu_ffn_post_norm_applies(c, lw->norm.ffn_post_norm))
                     cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim,
                                 c->norm_eps);

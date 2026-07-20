@@ -1,13 +1,17 @@
 #ifndef BN_TRANSFORMER_LOGITS_INTERNAL_H
 #define BN_TRANSFORMER_LOGITS_INTERNAL_H
 
-#include "gpu_backend.h"
 #include "model_config.h"
 #include "quant.h"
 #include "threadpool.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+#ifndef BN_GPU_BACKEND_DECLARED
+#define BN_GPU_BACKEND_DECLARED
+typedef struct BnGPUBackend BnGPUBackend;
+#endif
 
 typedef struct {
     void (*rmsnorm)(float *out, const float *x, const float *w,

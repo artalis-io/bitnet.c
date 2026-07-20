@@ -197,6 +197,22 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible);
 int bn_transformer_gpu_can_flash_attn(const BnGPUBackend *gpu);
 BnBackendPlacement bn_transformer_gpu_backend_placement(
     const BnGPUBackend *gpu);
+int bn_transformer_gpu_dense_ffn_fast_path_available(
+    const BnGPUBackend *gpu,
+    const BnFFNPlan *ffn_plan);
+int bn_transformer_gpu_dense_ffn_fast_path_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    const float *x,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type);
 
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer);
 int bn_transformer_attn_index(const BnConfig *c, int layer);

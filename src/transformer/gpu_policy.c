@@ -102,6 +102,37 @@ int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
                                                            act_type);
 }
 
+int bn_transformer_gpu_dense_ffn_fast_path_available(
+    const BnGPUBackend *gpu,
+    const BnFFNPlan *ffn_plan) {
+    return gpu &&
+           gpu->dense_ffn &&
+           ffn_plan &&
+           ffn_plan->has_gate &&
+           !ffn_plan->has_sub_norm &&
+           bn_transformer_gpu_activation_uses_silu_path(
+               ffn_plan->activation);
+}
+
+int bn_transformer_gpu_dense_ffn_fast_path_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    const float *x,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type) {
+    if (!gpu || !gpu->dense_ffn) return -1;
+    return gpu->dense_ffn(gpu->ctx, out, gate_buf, up_buf, down_buf, x,
+                          dim, hidden_dim, gate_type, up_type, down_type,
+                          act_type);
+}
+
 uint32_t bn_transformer_gpu_matvec_kquant_dot_flags(int tensor_type,
                                                  int enabled) {
     return bn_backend_quant_gpu_matvec_kquant_dot_flag(tensor_type, enabled);
