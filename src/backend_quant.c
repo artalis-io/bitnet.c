@@ -72,6 +72,22 @@ int bn_backend_quant_refine_kquant_logits_prepared_activation_row(
                                              block_sums, row, out);
 }
 
+int bn_backend_quant_refine_native_quant_logits_row(
+    const BnQWeight *weight,
+    const int8_t *quantized,
+    const float *scales,
+    int row,
+    float *out) {
+    return bn_quant_q8_logits_refine_row(weight, quantized, scales, row, out);
+}
+
+int bn_backend_quant_refine_kquant_logits_row(const BnQWeight *weight,
+                                              const float *x,
+                                              int row,
+                                              float *out) {
+    return bn_quant_q6_logits_refine_row(weight, x, row, out);
+}
+
 void bn_backend_quant_matmul_gpu_buf(float *out, const BnQWeight *W,
                                      void *W_buf, const float *X,
                                      int n_tokens, int8_t *x_q_buf,

@@ -172,6 +172,19 @@ static inline int bn_backend_quant_logits_i8_cache_supported(int type) {
     return bn_quant_format_supports_logits_i8_cache(type);
 }
 
+int bn_backend_quant_refine_native_quant_logits_row(
+    const BnQWeight *weight,
+    const int8_t *quantized,
+    const float *scales,
+    int row,
+    float *out);
+
+int bn_backend_quant_refine_kquant_logits_row(
+    const BnQWeight *weight,
+    const float *x,
+    int row,
+    float *out);
+
 int bn_backend_quant_refine_kquant_logits_prepared_activation_row(
     const BnQWeight *weight,
     const int8_t *quantized,

@@ -508,6 +508,11 @@ if grep -n 'bn_quant_format_supports_q8_logits_refine\|bn_quant_format_supports_
     fail=1
 fi
 
+if grep -n 'bn_quant_q8_logits_refine_row\|bn_quant_q6_logits_refine_row' src/transformer/cpu_backend.c >/dev/null 2>&1; then
+    echo "Transformer CPU backend must use backend_quant behavior helpers for logits refine rows"
+    fail=1
+fi
+
 if grep -n 'BN_QUANT_CAP_Q8_LOGITS_REFINE\|BN_QUANT_CAP_Q6_LOGITS_REFINE\|BN_QUANT_CAP_LOGITS_Q6_F32_CACHE\|BN_QUANT_CAP_GPU_DENSE_GRAPH_Q6K' \
     include/quant.h \
     src/quant/registry.c \
