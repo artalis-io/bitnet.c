@@ -552,6 +552,16 @@ static inline int bn_gpu_backend_can_execute(
     return gpu && gpu->execute;
 }
 
+static inline int bn_gpu_backend_can_init_activations(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->init_activations;
+}
+
+static inline int bn_gpu_backend_can_free_activations(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->free_activations;
+}
+
 static inline int bn_gpu_backend_can_write_activation(
     const BnGPUBackend *gpu) {
     return gpu && gpu->write_activation;
@@ -752,6 +762,18 @@ static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
         return -1;
     return gpu->execute(gpu->ctx, ops, n_ops, readback_buf, readback,
                         readback_count);
+}
+
+static inline int bn_gpu_backend_init_activations(const BnGPUBackend *gpu,
+                                                  const void *config) {
+    if (!bn_gpu_backend_can_init_activations(gpu))
+        return -1;
+    return gpu->init_activations(gpu->ctx, config);
+}
+
+static inline void bn_gpu_backend_free_activations(const BnGPUBackend *gpu) {
+    if (bn_gpu_backend_can_free_activations(gpu))
+        gpu->free_activations(gpu->ctx);
 }
 
 static inline int bn_gpu_backend_write_activation(const BnGPUBackend *gpu,

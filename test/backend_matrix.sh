@@ -2848,6 +2848,11 @@ if grep -n 'gpu->memory_info' src/model_gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'gpu->memory_info\|gpu->init_activations\|gpu->free_activations' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use GPU backend helpers for memory query and activation lifecycle"
+    fail=1
+fi
+
 if grep -n 'gpu->kind' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must use GPU backend helpers for backend identity"
     fail=1

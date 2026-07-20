@@ -3,6 +3,7 @@
 #include "gguf.h"
 #include "model.h"
 #include "moe.h"
+#include "gpu_backend.h"
 #include "gpu_policy.h"
 #include "generate.h"
 #include "transformer.h"
@@ -454,11 +455,9 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
                          (size_t)model->config.n_experts;
     if (args->gpu_cache_mb_set && requested < all_experts)
         return requested;
-    if (!gpu || !gpu->memory_info)
-        return requested;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
-    if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
+    if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return requested;
     size_t reserve = bn_gpu_policy_moe_cache_reserve_bytes();
     if (all_experts > 0 && free_bytes > all_experts + reserve) {
@@ -838,14 +837,13 @@ int main(int argc, char **argv) {
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
                 SH_LOG_INFO("WebGPU weights uploaded", "ms", ms);
                 // Initialize GPU-resident activation buffers for forward pass
-                if (gpu->init_activations) {
-                    if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
-                        SH_LOG_INFO("GPU forward pass ready");
-                        // Initialize GPU slab allocator for MoE weight suballocation
-                        if (bn_gpu_policy_uses_moe(&model.config))
-                            bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
-                        maybe_create_gpu_moe_cache(&model, &args, gpu);
-                    }
+                if (bn_gpu_backend_can_init_activations(gpu) &&
+                    bn_gpu_backend_init_activations(gpu, &model.config) == 0) {
+                    SH_LOG_INFO("GPU forward pass ready");
+                    // Initialize GPU slab allocator for MoE weight suballocation
+                    if (bn_gpu_policy_uses_moe(&model.config))
+                        bn_gpu_wgpu_init_slab(gpu, (size_t)args.gpu_cache_mb);
+                    maybe_create_gpu_moe_cache(&model, &args, gpu);
                 }
             } else {
                 SH_LOG_WARN("WebGPU weight upload failed, falling back to CPU");
@@ -877,17 +875,16 @@ int main(int argc, char **argv) {
                 char ms[16];
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
                 SH_LOG_INFO("Metal weights uploaded", "ms", ms);
-                if (gpu->init_activations) {
-                    if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
-                        SH_LOG_INFO("Metal forward pass ready");
-                        if (args.gpu_cpu_logits)
-                            setenv("BN_GPU_CPU_LOGITS", "1", 1);
-                        if (args.gpu_compare_logits)
-                            setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
-                        if (bn_gpu_policy_uses_moe(&model.config))
-                            bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
-                        maybe_create_gpu_moe_cache(&model, &args, gpu);
-                    }
+                if (bn_gpu_backend_can_init_activations(gpu) &&
+                    bn_gpu_backend_init_activations(gpu, &model.config) == 0) {
+                    SH_LOG_INFO("Metal forward pass ready");
+                    if (args.gpu_cpu_logits)
+                        setenv("BN_GPU_CPU_LOGITS", "1", 1);
+                    if (args.gpu_compare_logits)
+                        setenv("BN_GPU_COMPARE_LOGITS", "1", 1);
+                    if (bn_gpu_policy_uses_moe(&model.config))
+                        bn_gpu_metal_init_slab(gpu, (size_t)args.gpu_cache_mb);
+                    maybe_create_gpu_moe_cache(&model, &args, gpu);
                 }
             } else {
                 SH_LOG_WARN("Metal weight upload failed, falling back to CPU");
@@ -913,15 +910,14 @@ int main(int argc, char **argv) {
                 char ms[16];
                 snprintf(ms, sizeof(ms), "%.0f", bn_platform_time_ms() - gpu_t0);
                 SH_LOG_INFO("CUDA weights uploaded", "ms", ms);
-                if (gpu->init_activations) {
-                    if (gpu->init_activations(gpu->ctx, &model.config) == 0) {
-                        SH_LOG_INFO("CUDA activations initialized");
-                    } else {
-                        SH_LOG_WARN("CUDA activation initialization failed, falling back to CPU");
-                        bn_model_release_gpu(&model);
-                        bn_gpu_cuda_destroy(gpu);
-                        gpu = NULL;
-                    }
+                if (bn_gpu_backend_can_init_activations(gpu) &&
+                    bn_gpu_backend_init_activations(gpu, &model.config) != 0) {
+                    SH_LOG_WARN("CUDA activation initialization failed, falling back to CPU");
+                    bn_model_release_gpu(&model);
+                    bn_gpu_cuda_destroy(gpu);
+                    gpu = NULL;
+                } else if (bn_gpu_backend_can_init_activations(gpu)) {
+                    SH_LOG_INFO("CUDA activations initialized");
                 }
                 if (gpu)
                     maybe_create_gpu_moe_cache(&model, &args, gpu);
