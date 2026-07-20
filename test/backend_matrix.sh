@@ -1175,7 +1175,7 @@ if grep -n 'bn_transformer_gpu_backend_is_cuda(gpu)\|bn_transformer_gpu_all_acti
     fail=1
 fi
 
-if grep -n '!gpu || !gpu->prefill_ssm_layer' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'gpu->prefill_ssm_layer' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for SSM prefill backend availability"
     fail=1
 fi
@@ -1586,6 +1586,11 @@ fi
 
 if grep -n 'gpu->prefill_moe_layer' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for MoE layer availability"
+    fail=1
+fi
+
+if grep -n 'gpu->moe_route_routed_ffn_batch_norm_resid' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Prefill execution code must use GPU policy helpers for MoE FFN backend calls"
     fail=1
 fi
 

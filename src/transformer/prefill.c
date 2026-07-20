@@ -683,8 +683,8 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         shared_down_type = lw->shared.shared_down.type;
     }
 
-    return gpu->moe_route_routed_ffn_batch_norm_resid(
-        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+    return bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
+        gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
         shared_gate_buf, shared_up_buf, shared_down_buf,
         shared_gate_weight_buf, ffn_norm_buf, X, n_tokens, dim,
         c->moe_intermediate_size, c->n_experts, c->n_experts_active,
@@ -1045,8 +1045,8 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         return -1;
     if (did_ffn)
         *did_ffn = 0;
-    return gpu->prefill_ssm_layer(
-        gpu->ctx, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
+    return bn_transformer_gpu_prefill_ssm_layer_backend_run(
+        gpu, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
         qkvz_stacked_buf, ab_stacked_buf, out_buf, attn_norm_buf, conv1d_buf,
         dt_bias_buf, a_log_buf, ssm_norm_buf, gate_buf, up_buf, down_buf,
         ffn_norm_buf, X, n_tokens, dim, qkv_dim, inner_dim,
