@@ -75,9 +75,9 @@ typedef struct {
     int gpu_profile;
     int native_quant_dispatches;
     int specialized_native_quant_dispatches;
-    int q8_matvec_dispatches;
-    int q8_split_dispatches;
-    int q8_gateup_dispatches;
+    int exact_native_matvec_dispatches;
+    int exact_native_split_dispatches;
+    int exact_native_gateup_dispatches;
 
     /* Slab allocator for MoE weight suballocation */
     id<MTLBuffer> slab_buf;
@@ -1305,9 +1305,9 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     memset(shader_profile_counts, 0, sizeof(shader_profile_counts));
     ctx->native_quant_dispatches = 0;
     ctx->specialized_native_quant_dispatches = 0;
-    ctx->q8_matvec_dispatches = 0;
-    ctx->q8_split_dispatches = 0;
-    ctx->q8_gateup_dispatches = 0;
+    ctx->exact_native_matvec_dispatches = 0;
+    ctx->exact_native_split_dispatches = 0;
+    ctx->exact_native_gateup_dispatches = 0;
     int full_barriers = bn_gpu_policy_metal_full_barriers_enabled();
     int disable_barriers = bn_gpu_policy_metal_barriers_disabled();
 
@@ -1502,7 +1502,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
-                    ctx->q8_matvec_dispatches++;
+                    ctx->exact_native_matvec_dispatches++;
                     [enc setComputePipelineState:ctx->prepared_exact_native_matvec_pipeline];
                     current_pso = ctx->prepared_exact_native_matvec_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1527,7 +1527,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
-                    ctx->q8_matvec_dispatches++;
+                    ctx->exact_native_matvec_dispatches++;
                     [enc setComputePipelineState:ctx->exact_native_matvec_pipeline];
                     current_pso = ctx->exact_native_matvec_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1751,7 +1751,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
-                    ctx->q8_split_dispatches++;
+                    ctx->exact_native_split_dispatches++;
                     [enc setComputePipelineState:ctx->prepared_exact_native_split_pipeline];
                     current_pso = ctx->prepared_exact_native_split_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1777,7 +1777,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
-                    ctx->q8_split_dispatches++;
+                    ctx->exact_native_split_dispatches++;
                     [enc setComputePipelineState:ctx->exact_native_split_pipeline];
                     current_pso = ctx->exact_native_split_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1818,7 +1818,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
-                    ctx->q8_gateup_dispatches++;
+                    ctx->exact_native_gateup_dispatches++;
                     [enc setComputePipelineState:ctx->prepared_exact_native_gateup_pipeline];
                     current_pso = ctx->prepared_exact_native_gateup_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1842,7 +1842,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     }
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
-                    ctx->q8_gateup_dispatches++;
+                    ctx->exact_native_gateup_dispatches++;
                     [enc setComputePipelineState:ctx->exact_native_gateup_pipeline];
                     current_pso = ctx->exact_native_gateup_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -2037,10 +2037,12 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
 
     /* GPU profiling */
     if (ctx->gpu_profile >= 1 && (ctx->gpu_frame < 5 || (ctx->gpu_frame % 50 == 0))) {
-        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d native_quant=%d q8m=%d q8s=%d q8g=%d specialized_native_quant=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
+        fprintf(stderr, "[gpu:metal:profile] frame=%d ops=%d native_quant=%d exact_native_matvec=%d exact_native_split=%d exact_native_gateup=%d specialized_native_quant=%d barriers=%d encode=%.1fms gpu=%.1fms readback=%.1fms total=%.1fms\n",
                 ctx->gpu_frame, n_ops, ctx->native_quant_dispatches,
-                ctx->q8_matvec_dispatches, ctx->q8_split_dispatches,
-                ctx->q8_gateup_dispatches, ctx->specialized_native_quant_dispatches,
+                ctx->exact_native_matvec_dispatches,
+                ctx->exact_native_split_dispatches,
+                ctx->exact_native_gateup_dispatches,
+                ctx->specialized_native_quant_dispatches,
                 n_barriers,
                 t_encode - t0, t_gpu - t_encode, t1 - t_gpu, t1 - t0);
     }

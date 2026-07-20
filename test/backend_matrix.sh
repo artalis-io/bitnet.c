@@ -1528,7 +1528,7 @@ if grep -n 'bn_gpu_policy_metal_q8_barriers_enabled\|q8_barriers_enabled' includ
     fail=1
 fi
 
-if grep -n 'q8_quant_dispatches\|ops=%d q8=' src/gpu_metal.m >/dev/null 2>&1; then
+if grep -n 'q8_quant_dispatches\|q8_matvec_dispatches\|q8_split_dispatches\|q8_gateup_dispatches\|ops=%d q8=\|q8m=%d\|q8s=%d\|q8g=%d' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal native-quant profiling counters must use behavior names, not Q8 counter names"
     fail=1
 fi
