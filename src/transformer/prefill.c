@@ -422,10 +422,10 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     int has_packed_qkv =
         bn_transformer_weight_is_packed_qkv(&lw->ssm.wqkv, dim,
                                             q_dim, kv_dim);
-    if (!gpu || !gpu->prefill_dense_layer || !backend ||
-        (!has_split_qkv && !has_packed_qkv) ||
-        !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
-        !lw->ffn.ffn_up.data || !lw->ffn.ffn_down.data)
+    if (!bn_transformer_prefill_dense_layer_gpu_available(
+            gpu, backend != NULL, has_split_qkv || has_packed_qkv,
+            lw->attn.wo.data != NULL, lw->ffn.ffn_gate.data != NULL,
+            lw->ffn.ffn_up.data != NULL, lw->ffn.ffn_down.data != NULL))
         return -1;
 
     void *qk_buf = NULL;
@@ -770,10 +770,19 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     const BnConfig *c = &m->config;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+    int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
+    int has_split_qkv =
+        lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
+    int has_packed_qkv =
+        bn_transformer_weight_is_packed_qkv(&lw->ssm.wqkv, c->dim,
+                                            q_dim, plan->kv_dim);
     BnTransformerPrefillDenseLayerChainPolicy policy =
         bn_transformer_prefill_dense_layer_chain_policy(
             gpu != NULL,
-            gpu && gpu->prefill_dense_layer,
+            bn_transformer_prefill_dense_layer_gpu_available(
+                gpu, backend != NULL, has_split_qkv || has_packed_qkv,
+                lw->attn.wo.data != NULL, lw->ffn.ffn_gate.data != NULL,
+                lw->ffn.ffn_up.data != NULL, lw->ffn.ffn_down.data != NULL),
             bn_model_tq_state(m) != NULL,
             n_tokens,
             bn_transformer_prefill_dense_chain_min_tokens(c, gpu),
@@ -789,17 +798,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
             bn_transformer_attention_uses_post_norm(c),
             lw->norm.attn_post_norm != NULL,
             lw->norm.ffn_post_norm != NULL);
-    if (!policy.enabled || !backend ||
-        !lw->attn.wo.data || !lw->ffn.ffn_gate.data ||
-        !lw->ffn.ffn_down.data)
-        return 0;
-    int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
-    int has_split_qkv =
-        lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
-    int has_packed_qkv =
-        bn_transformer_weight_is_packed_qkv(&lw->ssm.wqkv, c->dim,
-                                            q_dim, plan->kv_dim);
-    if (!has_split_qkv && !has_packed_qkv)
+    if (!policy.enabled)
         return 0;
 
     void *qk_buf = NULL;

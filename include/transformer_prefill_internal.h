@@ -246,6 +246,14 @@ int bn_transformer_prefill_dense_chain_min_tokens(
     const BnConfig *c,
     const BnGPUBackend *gpu);
 int bn_transformer_prefill_dense_chain_enabled(void);
+int bn_transformer_prefill_dense_layer_gpu_available(
+    const BnGPUBackend *gpu,
+    int backend_available,
+    int has_qkv,
+    int has_wo,
+    int has_gate,
+    int has_up,
+    int has_down);
 int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c,
