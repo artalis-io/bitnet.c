@@ -44,8 +44,8 @@ static void cpu_apply_ffn_activation_wasm(BnRunState *s,
                                           int hidden_dim);
 #endif
 
-int bn_transformer_cpu_has_native_q8x_quant(void) {
-    return BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT;
+int bn_transformer_cpu_has_native_quant_activation(void) {
+    return BN_TRANSFORMER_CPU_HAS_NATIVE_QUANT_ACTIVATION;
 }
 
 int bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch(void) {
@@ -57,7 +57,7 @@ void bn_transformer_cpu_prepare_kquant_activation(const float *x,
                                                   float *scales,
                                                   int16_t *block_sums,
                                                   int n) {
-#if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
+#if BN_TRANSFORMER_CPU_HAS_NATIVE_QUANT_ACTIVATION
     bn_quant_x_to_q8k(x, quantized, scales, block_sums, n);
 #else
     bn_quant_x_to_q8k_scalar(x, quantized, scales, block_sums, n);
@@ -69,7 +69,7 @@ int bn_transformer_cpu_quantize_native_logits_refine_activation(
     int8_t *quantized,
     float *scales,
     int n) {
-    if (!bn_transformer_cpu_has_native_q8x_quant())
+    if (!bn_transformer_cpu_has_native_quant_activation())
         return -1;
     bn_quant_x_to_q8_blocks(x, quantized, scales, n);
     return 0;

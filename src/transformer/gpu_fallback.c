@@ -451,7 +451,7 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
                                         const float *x,
                                         int cols) {
     if (!gpu || !x || cols <= 0 || (cols % 32) != 0 ||
-        !bn_transformer_cpu_has_native_q8x_quant())
+        !bn_transformer_cpu_has_native_quant_activation())
         return;
     int n_blocks = cols / 32;
     int8_t *cpu_q = (int8_t *)malloc((size_t)cols);

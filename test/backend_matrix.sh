@@ -2729,7 +2729,12 @@ do
 done
 
 if grep -n 'BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT\|transformer_cpu_features_internal.h' src/transformer/gpu.c src/transformer/gpu_fallback.c >/dev/null 2>&1; then
-    echo "GPU execution/fallback code must use CPU backend helpers for native Q8x ISA policy"
+    echo "GPU execution/fallback code must use CPU backend helpers for native-quant activation ISA policy"
+    fail=1
+fi
+
+if grep -n 'BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT\|bn_transformer_cpu_has_native_q8x_quant\|TEST_EXPECT_NATIVE_Q8X' include/transformer_cpu_features_internal.h include/transformer_cpu_backend_internal.h src/transformer/cpu_backend.c src/transformer/gpu.c src/transformer/gpu_fallback.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Transformer CPU native-quant activation capability must use behavior names, not Q8x helper names"
     fail=1
 fi
 

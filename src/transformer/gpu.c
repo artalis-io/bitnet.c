@@ -637,7 +637,7 @@ static int gpu_refine_native_quant_logits_top(float *logits, int n_logits,
                                     int8_t *quantized, int top_n) {
     if (!logits || !W || !W->data || !x || !quantized)
         return 0;
-    if (!bn_transformer_cpu_has_native_q8x_quant())
+    if (!bn_transformer_cpu_has_native_quant_activation())
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 128) top_n = 128;
