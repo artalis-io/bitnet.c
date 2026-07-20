@@ -1,6 +1,6 @@
 #include "prompt_cache.h"
 #include "model.h"
-#include "model_arch.h"
+#include "model_internal.h"
 #include "session.h"
 #include "turboquant.h"
 #include <string.h>
@@ -44,7 +44,7 @@ static BnAllocator resolve_alloc(BnAllocator *a) {
 }
 
 static int config_n_attn(const BnConfig *c) {
-    return bn_model_arch_attention_layer_count(c);
+    return bn_model_config_attention_layer_count(c);
 }
 
 // Free a single entry's buffers
@@ -115,7 +115,7 @@ void bn_prompt_cache_free(BnPromptCache *cache) {
 }
 
 int bn_prompt_cache_model_supported(const BnConfig *cfg) {
-    return cfg && !bn_model_arch_uses_hybrid_layer_layout(cfg);
+    return cfg && !bn_model_config_uses_hybrid_layer_layout(cfg);
 }
 
 int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,

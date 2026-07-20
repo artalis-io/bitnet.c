@@ -3376,6 +3376,11 @@ if awk '/^int bn_prompt_cache_restore/{flag=1} /^void bn_prompt_cache_clear/{fla
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/prompt_cache.c >/dev/null 2>&1; then
+    echo "src/prompt_cache.c must use model-policy helpers instead of reaching into model_arch"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval\|c->n_layers - n_attn' src/session.c >/dev/null 2>&1; then
     echo "src/session.c must use model_arch helpers for hybrid layer layout policy"
     fail=1
