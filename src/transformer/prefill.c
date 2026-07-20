@@ -327,7 +327,8 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
             .type = lw->attn.wv.type,
         },
     };
-    if (gpu->matmul_batch(gpu->ctx, ops, 2, X, n_tokens, dim) != 0)
+    if (bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(
+            gpu, ops, 2, X, n_tokens, dim) != 0)
         return -1;
 
     for (int t = n_tokens - 1; t >= 0; t--) {

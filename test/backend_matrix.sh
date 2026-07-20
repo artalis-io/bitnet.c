@@ -3064,6 +3064,11 @@ if grep -n 'gpu->matmul(gpu->ctx' src/transformer/prefill.c >/dev/null 2>&1; the
     fail=1
 fi
 
+if grep -n 'gpu->matmul_batch(gpu->ctx' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer prefill execution must use GPU policy helpers for quant matmul-batch backend calls"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_can_use_stacked_qk\|bn_transformer_gpu_can_use_stacked_gateup' include/transformer_plan_internal.h src/transformer/plan.c src/transformer/gpu_policy.c src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer stacked QK/gate-up helpers must name same-quant-format behavior explicitly"
     fail=1

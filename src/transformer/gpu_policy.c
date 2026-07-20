@@ -351,6 +351,18 @@ int bn_transformer_gpu_prefill_quant_matmul_backend_run(
                        tensor_type);
 }
 
+int bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(
+    BnGPUBackend *gpu,
+    const BnGPUMatvecOp *ops,
+    int n_ops,
+    const float *X,
+    int n_tokens,
+    int cols) {
+    if (!bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(gpu))
+        return -1;
+    return gpu->matmul_batch(gpu->ctx, ops, n_ops, X, n_tokens, cols);
+}
+
 int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,
