@@ -61,5 +61,34 @@ int bn_model_config_uses_all_active_two_expert_moe(const BnConfig *config,
                                                    int dim);
 int bn_model_config_uses_two_expert_all_active_moe(const BnConfig *config);
 int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config);
+int bn_model_config_uses_small_dense_shape(const BnConfig *config);
+int bn_model_config_uses_large_dense_shape(const BnConfig *config);
+int bn_model_config_uses_large_gpu_graph_fallback_shape(
+    const BnConfig *config);
+int bn_model_config_uses_per_layer_embedding(const BnConfig *config);
+int bn_model_config_uses_large_dense_hybrid_ssm(const BnConfig *config);
+int bn_model_config_uses_non_hybrid_moe(const BnConfig *config);
+int bn_model_config_uses_dense_attention_only(const BnConfig *config);
+int bn_model_config_uses_small_dense_native_quant_shape(
+    const BnConfig *config);
+int bn_model_config_requires_float_kquant_fallback(const BnConfig *config);
+int bn_model_config_dense_batch_prefill_shape_allowed(
+    const BnConfig *config,
+    int supports_large_dense_batch_prefill);
+int bn_model_config_dense_logits_argmax_shape_allowed(
+    const BnConfig *config,
+    int logits_rows);
+int bn_model_config_moe_logits_mmvq_argmax_shape_allowed(
+    const BnConfig *config,
+    int logits_cols);
+int bn_model_config_allows_small_dense_exact_native(const BnConfig *config);
+int bn_model_config_small_dense_exact_native_to_layer(
+    const BnConfig *config);
+int bn_model_config_allows_small_dense_prefill_decode_fallback(
+    const BnConfig *config);
+int bn_model_config_small_dense_prefill_min_tokens(const BnConfig *config);
+int bn_model_config_allows_small_dense_native_logit_refine(
+    const BnConfig *config);
+int bn_model_config_moe_prefers_exact_gpu_attention(const BnConfig *config);
 
 #endif // BN_MODEL_INTERNAL_H

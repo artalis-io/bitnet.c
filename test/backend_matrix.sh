@@ -2484,6 +2484,11 @@ if grep -n 'bn_model_arch_.*cuda' src/transformer/gpu_policy.c >/dev/null 2>&1; 
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use model-policy helpers instead of reaching into model_arch"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_cuda_small_dense_.*\|bn_transformer_gpu_cuda_small_backend_q8_logits_refine' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "small-dense transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1
