@@ -3469,6 +3469,11 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/moe_policy.c >/dev/null
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/tokenizer.c >/dev/null 2>&1; then
+    echo "src/tokenizer.c must use tokenizer model-policy helpers instead of reaching into model_arch"
+    fail=1
+fi
+
 if grep -n '__AVX\|__ARM_NEON\|__wasm_simd128__\|__wasm_relaxed_simd__\|arm_neon.h\|immintrin.h\|float32x\|__m[0-9]\|_mm[0-9]*_\|vld1q\|vst1q\|vdupq\|vcgtq\|vbslq' src/sampler.c >/dev/null 2>&1; then
     echo "src/sampler.c must use sampler backend helpers for ISA-specific argmax"
     fail=1

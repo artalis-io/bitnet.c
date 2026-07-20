@@ -1,4 +1,5 @@
 #include "model_arch.h"
+#include "model_tokenizer_policy.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -462,6 +463,10 @@ int bn_model_arch_config_uses_full_rope_text_dims(const BnConfig *c) {
 
 int bn_model_arch_tokenizer_uses_metaspace(const char *tokenizer_model) {
     return bn_model_arch_is_gemma4(tokenizer_model);
+}
+
+int bn_model_tokenizer_uses_metaspace(const char *tokenizer_model) {
+    return bn_model_arch_tokenizer_uses_metaspace(tokenizer_model);
 }
 
 int bn_model_arch_uses_small_dense_shape(const BnConfig *c) {
