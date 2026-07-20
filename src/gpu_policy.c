@@ -941,7 +941,8 @@ static int gpu_policy_matvec_disabled(void) {
 }
 
 static int gpu_policy_native_quant_matvec_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8_0") != NULL;
+    return gpu_policy_compat_env_enabled("BN_CUDA_DISABLE_NATIVE_QUANT_MATVEC",
+                                         "BN_CUDA_DISABLE_Q8_0");
 }
 
 static int gpu_policy_legacy_5bit_matvec_disabled(void) {
@@ -966,7 +967,9 @@ static int gpu_policy_down_kquant_matvec_disabled_by_type(void) {
 }
 
 static int gpu_policy_prepared_native_quant_matvec_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8_K") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_PREPARED_NATIVE_QUANT_MATVEC",
+        "BN_CUDA_DISABLE_Q8_K");
 }
 
 static int gpu_policy_matmul_batch_disabled(void) {
@@ -1994,7 +1997,9 @@ int bn_gpu_policy_decode_cache_disabled(void) {
 }
 
 static int gpu_policy_native_quant_decode_cache_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_NATIVE_QUANT_DECODE_CACHE",
+        "BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE");
 }
 
 int bn_gpu_policy_native_quant_decode_cache_disabled(void) {
