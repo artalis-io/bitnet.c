@@ -7,8 +7,8 @@ void bn_transformer_logits_i8_avx2_range(void *ctx, int v_start, int v_end) {
     BnLogitsI8Ctx *lc = (BnLogitsI8Ctx *)ctx;
     const int8_t *emb_i8 = lc->emb_i8;
     const float *emb_scales = lc->emb_scales;
-    const int8_t *x_q = lc->x_q;
-    float x_scale = lc->x_scale;
+    const int8_t *quantized = lc->quantized;
+    float activation_scale = lc->activation_scale;
     int dim = lc->dim;
 
     for (int v = v_start; v < v_end; v++) {
@@ -19,14 +19,14 @@ void bn_transformer_logits_i8_avx2_range(void *ctx, int v_start, int v_end) {
         __m256i acc2 = _mm256_setzero_si256(), acc3 = _mm256_setzero_si256();
         for (int d = 0; d < dim; d += 128) {
             _mm_prefetch((const char *)(row + d + 256), _MM_HINT_T0);
-            acc0 = bn_avx2_dpbusd(acc0, _mm256_loadu_si256((const __m256i *)(row+d)),    _mm256_loadu_si256((const __m256i *)(x_q+d)));
-            acc1 = bn_avx2_dpbusd(acc1, _mm256_loadu_si256((const __m256i *)(row+d+32)), _mm256_loadu_si256((const __m256i *)(x_q+d+32)));
-            acc2 = bn_avx2_dpbusd(acc2, _mm256_loadu_si256((const __m256i *)(row+d+64)), _mm256_loadu_si256((const __m256i *)(x_q+d+64)));
-            acc3 = bn_avx2_dpbusd(acc3, _mm256_loadu_si256((const __m256i *)(row+d+96)), _mm256_loadu_si256((const __m256i *)(x_q+d+96)));
+            acc0 = bn_avx2_dpbusd(acc0, _mm256_loadu_si256((const __m256i *)(row+d)),    _mm256_loadu_si256((const __m256i *)(quantized+d)));
+            acc1 = bn_avx2_dpbusd(acc1, _mm256_loadu_si256((const __m256i *)(row+d+32)), _mm256_loadu_si256((const __m256i *)(quantized+d+32)));
+            acc2 = bn_avx2_dpbusd(acc2, _mm256_loadu_si256((const __m256i *)(row+d+64)), _mm256_loadu_si256((const __m256i *)(quantized+d+64)));
+            acc3 = bn_avx2_dpbusd(acc3, _mm256_loadu_si256((const __m256i *)(row+d+96)), _mm256_loadu_si256((const __m256i *)(quantized+d+96)));
         }
         __m256i sum4 = _mm256_add_epi32(_mm256_add_epi32(acc0, acc1), _mm256_add_epi32(acc2, acc3));
         int32_t total = bn_avx2_hsum_epi32(sum4);
-        lc->logits[v] = (float)total * emb_scales[v] * x_scale;
+        lc->logits[v] = (float)total * emb_scales[v] * activation_scale;
     }
 }
 

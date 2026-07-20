@@ -8,8 +8,8 @@ void bn_transformer_logits_i8_neon_range(void *ctx, int v_start, int v_end) {
     BnLogitsI8Ctx *lc = (BnLogitsI8Ctx *)ctx;
     const int8_t *emb_i8 = lc->emb_i8;
     const float *emb_scales = lc->emb_scales;
-    const int8_t *x_q = lc->x_q;
-    float x_scale = lc->x_scale;
+    const int8_t *quantized = lc->quantized;
+    float activation_scale = lc->activation_scale;
     int dim = lc->dim;
 
     for (int v = v_start; v < v_end; v++) {
@@ -19,14 +19,14 @@ void bn_transformer_logits_i8_neon_range(void *ctx, int v_start, int v_end) {
         int32x4_t acc2 = vdupq_n_s32(0), acc3 = vdupq_n_s32(0);
         for (int d = 0; d < dim; d += 64) {
             __builtin_prefetch(row + d + 128, 0, 0);
-            acc0 = vdotq_s32(acc0, vld1q_s8(row+d),    vld1q_s8(x_q+d));
-            acc1 = vdotq_s32(acc1, vld1q_s8(row+d+16), vld1q_s8(x_q+d+16));
-            acc2 = vdotq_s32(acc2, vld1q_s8(row+d+32), vld1q_s8(x_q+d+32));
-            acc3 = vdotq_s32(acc3, vld1q_s8(row+d+48), vld1q_s8(x_q+d+48));
+            acc0 = vdotq_s32(acc0, vld1q_s8(row+d),    vld1q_s8(quantized+d));
+            acc1 = vdotq_s32(acc1, vld1q_s8(row+d+16), vld1q_s8(quantized+d+16));
+            acc2 = vdotq_s32(acc2, vld1q_s8(row+d+32), vld1q_s8(quantized+d+32));
+            acc3 = vdotq_s32(acc3, vld1q_s8(row+d+48), vld1q_s8(quantized+d+48));
         }
         int32x4_t sum4 = vaddq_s32(vaddq_s32(acc0, acc1), vaddq_s32(acc2, acc3));
         int32_t total = vaddvq_s32(sum4);
-        lc->logits[v] = (float)total * emb_scales[v] * x_scale;
+        lc->logits[v] = (float)total * emb_scales[v] * activation_scale;
     }
 }
 #endif // __ARM_FEATURE_DOTPROD

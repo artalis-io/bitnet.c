@@ -23,8 +23,8 @@ typedef struct {
     float *logits;
     const int8_t *emb_i8;
     const float *emb_scales;
-    const int8_t *x_q;
-    float x_scale;
+    const int8_t *quantized;
+    float activation_scale;
     int dim;
 } BnLogitsI8Ctx;
 
@@ -69,7 +69,7 @@ void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
     const BnPreparedWeight *prepared,
     void *W_buf,
     const float *x,
-    int8_t *x_q_buf,
+    int8_t *quantized_buf,
     BnThreadPool *pool,
     BnGPUBackend *gpu);
 

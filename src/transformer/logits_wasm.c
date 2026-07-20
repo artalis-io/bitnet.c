@@ -65,8 +65,8 @@ void bn_transformer_logits_i8_wasm_range(void *ctx, int v_start, int v_end) {
     BnLogitsI8Ctx *lc = (BnLogitsI8Ctx *)ctx;
     const int8_t *emb_i8 = lc->emb_i8;
     const float *emb_scales = lc->emb_scales;
-    const int8_t *x_q = lc->x_q;
-    float x_scale = lc->x_scale;
+    const int8_t *quantized = lc->quantized;
+    float activation_scale = lc->activation_scale;
     int dim = lc->dim;
     if (dim % 64 != 0) return;  // SIMD alignment guard
 
@@ -75,15 +75,15 @@ void bn_transformer_logits_i8_wasm_range(void *ctx, int v_start, int v_end) {
         v128_t acc0 = wasm_i32x4_splat(0), acc1 = wasm_i32x4_splat(0);
         v128_t acc2 = wasm_i32x4_splat(0), acc3 = wasm_i32x4_splat(0);
         for (int d = 0; d < dim; d += 64) {
-            acc0 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d),    wasm_v128_load(x_q+d),    acc0);
-            acc1 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d+16), wasm_v128_load(x_q+d+16), acc1);
-            acc2 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d+32), wasm_v128_load(x_q+d+32), acc2);
-            acc3 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d+48), wasm_v128_load(x_q+d+48), acc3);
+            acc0 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d),    wasm_v128_load(quantized+d),    acc0);
+            acc1 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d+16), wasm_v128_load(quantized+d+16), acc1);
+            acc2 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d+32), wasm_v128_load(quantized+d+32), acc2);
+            acc3 = wasm_i32x4_relaxed_dot_i8x16_i7x16_add(wasm_v128_load(row+d+48), wasm_v128_load(quantized+d+48), acc3);
         }
         v128_t sum4 = wasm_i32x4_add(wasm_i32x4_add(acc0, acc1), wasm_i32x4_add(acc2, acc3));
         int32_t total = wasm_i32x4_extract_lane(sum4, 0) + wasm_i32x4_extract_lane(sum4, 1) +
                         wasm_i32x4_extract_lane(sum4, 2) + wasm_i32x4_extract_lane(sum4, 3);
-        lc->logits[v] = (float)total * emb_scales[v] * x_scale;
+        lc->logits[v] = (float)total * emb_scales[v] * activation_scale;
     }
 }
 #endif // __wasm_relaxed_simd__

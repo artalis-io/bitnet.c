@@ -4,16 +4,16 @@ void bn_transformer_logits_i8_scalar_range(void *ctx, int v_start, int v_end) {
     BnLogitsI8Ctx *lc = (BnLogitsI8Ctx *)ctx;
     const int8_t *emb_i8 = lc->emb_i8;
     const float *emb_scales = lc->emb_scales;
-    const int8_t *x_q = lc->x_q;
-    float x_scale = lc->x_scale;
+    const int8_t *quantized = lc->quantized;
+    float activation_scale = lc->activation_scale;
     int dim = lc->dim;
 
     for (int v = v_start; v < v_end; v++) {
         const int8_t *row = emb_i8 + (size_t)v * dim;
         int32_t total = 0;
         for (int d = 0; d < dim; d++)
-            total += (int32_t)row[d] * (int32_t)x_q[d];
-        lc->logits[v] = (float)total * emb_scales[v] * x_scale;
+            total += (int32_t)row[d] * (int32_t)quantized[d];
+        lc->logits[v] = (float)total * emb_scales[v] * activation_scale;
     }
 }
 

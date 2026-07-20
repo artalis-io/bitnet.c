@@ -403,6 +403,18 @@ if grep -n 'supports_q8_refine\|bn_transformer_logits_q[68]_refine_supported\|bn
     fail=1
 fi
 
+if grep -n 'lc->x_q\|lc->x_scale\|logits_quant_x_to_i8_scalar\|x_scales\|int8_t \*x_q\|const int8_t \*x_q\|x_q_buf' \
+    include/transformer_logits_internal.h \
+    src/transformer/logits.c \
+    src/transformer/logits_policy.c \
+    src/transformer/logits_scalar.c \
+    src/transformer/logits_neon.c \
+    src/transformer/logits_avx2.c \
+    src/transformer/logits_wasm.c >/dev/null 2>&1; then
+    echo "Transformer logits activation buffers must use behavior names"
+    fail=1
+fi
+
 if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use logits policy helpers for GPU-resident quant matvec dispatch"
     fail=1

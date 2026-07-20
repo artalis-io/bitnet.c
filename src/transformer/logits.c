@@ -35,8 +35,8 @@ static void logits_rmsnorm_model(const BnModel *m, float *out,
 
 static int logits_refine_backend_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
-                                     int8_t *x_q, int top_n) {
-    if (!logits || !x || !x_q ||
+                                     int8_t *quantized, int top_n) {
+    if (!logits || !x || !quantized ||
         !bn_transformer_logits_backend_refine_supported(
             logits_backend_ops(), W))
         return 0;
@@ -70,12 +70,12 @@ static int logits_refine_backend_top(float *logits, int n_logits,
         vals[j] = v;
     }
 
-    float x_scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
-    bn_quant_x_to_q8_blocks(x, x_q, x_scales, W->cols);
+    float scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
+    bn_quant_x_to_q8_blocks(x, quantized, scales, W->cols);
     for (int i = 0; i < n_top; i++) {
         int row = ids[i];
         float row_sum;
-        if (bn_quant_q8_logits_refine_row(W, x_q, x_scales, row,
+        if (bn_quant_q8_logits_refine_row(W, quantized, scales, row,
                                           &row_sum) == 0)
             logits[row] = row_sum;
     }
@@ -188,7 +188,9 @@ static void logits_refine_native_quant(const BnModel *m,
                                   s->x_q, refine_top);
 }
 
-static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
+static float logits_quantize_activation_i8_scalar(const float *x,
+                                                  int8_t *quantized,
+                                                  int n) {
     float amax = 0.0f;
     for (int i = 0; i < n; i++) {
         float ax = x[i] < 0.0f ? -x[i] : x[i];
@@ -200,7 +202,7 @@ static float logits_quant_x_to_i8_scalar(const float *x, int8_t *x_q, int n) {
         int q = (int)(x[i] * inv + (x[i] >= 0.0f ? 0.5f : -0.5f));
         if (q > 127) q = 127;
         if (q < -127) q = -127;
-        x_q[i] = (int8_t)q;
+        quantized[i] = (int8_t)q;
     }
     return scale;
 }
@@ -214,12 +216,12 @@ static void logits_quant_matvec_gpu(const BnModel *m,
                                     float *out,
                                     const BnQWeight *W,
                                     const float *x,
-                                    int8_t *x_q_buf) {
+                                    int8_t *quantized_buf) {
     const BnBackendModel *backend = bn_model_backend(m);
     const BnPreparedWeight *prepared =
         bn_backend_model_prepared_qweight(backend, W);
     bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
-        out, W, prepared, qweight_backend_buf(backend, W), x, x_q_buf,
+        out, W, prepared, qweight_backend_buf(backend, W), x, quantized_buf,
         bn_model_pool(m), bn_model_gpu(m));
 }
 
@@ -227,11 +229,11 @@ static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
     const BnLogitsBackendOps *ops = logits_backend_ops();
     BnWeights *w = &m->weights;
     if (!w->emb_out_i8) return 0;
-    float x_scale = ops->i8_uses_standard_quant
+    float activation_scale = ops->i8_uses_standard_quant
         ? bn_quant_x_to_i8(s->x, s->x_q, dim)
-        : logits_quant_x_to_i8_scalar(s->x, s->x_q, dim);
+        : logits_quantize_activation_i8_scalar(s->x, s->x_q, dim);
     BnLogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
-                           s->x_q, x_scale, dim };
+                           s->x_q, activation_scale, dim };
     BnTPTask logits_task = { ops->i8_logits, &lctx, rows };
     bn_tp_dispatch(bn_model_pool(m), &logits_task, 1);
     return 1;
