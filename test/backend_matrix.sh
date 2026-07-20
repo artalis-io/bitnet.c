@@ -142,6 +142,15 @@ if grep -n 'bn_gpu_policy_cuda_q4k_dot_enabled\|bn_gpu_policy_cuda_q5k_dot_enabl
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q6k_4warp_long_enabled\|bn_gpu_policy_cuda_q6k_5warp_exact_enabled\|bn_gpu_policy_cuda_q6k_3warp_exact_enabled\|bn_gpu_policy_cuda_q6k_2warp_long_enabled\|bn_gpu_policy_cuda_q6k_matvec4_shape_disabled\|cuda_use_q6k_4warp_long\|cuda_use_q6k_5warp_exact\|cuda_use_q6k_3warp_exact\|cuda_use_q6k_2warp_long\|cuda_disable_q6k_matvec4_shape' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA down-K-quant shape policy helpers must use behavior names"
+    fail=1
+fi
+
 if sed -n '/int small_state_native_matvec =/,/bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q3_K\|op->type == BN_GGUF_TENSOR_IQ3_XXS\|op->type == BN_GGUF_TENSOR_IQ4_XS\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA f16/logits matvec quant predicates"
     fail=1
@@ -1407,11 +1416,11 @@ if ! awk '
 fi
 
 for fn in \
-    cuda_use_q6k_4warp_long \
-    cuda_use_q6k_5warp_exact \
-    cuda_use_q6k_3warp_exact \
-    cuda_use_q6k_2warp_long \
-    cuda_disable_q6k_matvec4_shape \
+    cuda_use_down_kquant_4warp_long \
+    cuda_use_down_kquant_5warp_exact \
+    cuda_use_down_kquant_3warp_exact \
+    cuda_use_down_kquant_2warp_long \
+    cuda_disable_down_kquant_matvec4_shape \
     cuda_prefer_moe_down_quant_path \
     cuda_use_moe_down_f32_cache_path \
     cuda_use_moe_down_4row \

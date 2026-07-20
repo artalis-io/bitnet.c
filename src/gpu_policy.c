@@ -948,7 +948,7 @@ int bn_gpu_policy_cuda_force_quant_matmul_for_type(
             getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL") != NULL);
 }
 
-int bn_gpu_policy_cuda_q6k_4warp_long_enabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols) {
     if (getenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG") != NULL)
         return 0;
     if (rows == 1536 && cols == 8960 &&
@@ -960,7 +960,7 @@ int bn_gpu_policy_cuda_q6k_4warp_long_enabled(int rows, int cols) {
            getenv("BN_CUDA_ENABLE_Q6K_4WARP_5120") != NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_5warp_exact_enabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols) {
     if (rows == 1536 && cols == 8960 &&
         getenv("BN_CUDA_DISABLE_Q6K_5WARP_1536_8960") == NULL)
         return 1;
@@ -970,7 +970,7 @@ int bn_gpu_policy_cuda_q6k_5warp_exact_enabled(int rows, int cols) {
     return 0;
 }
 
-int bn_gpu_policy_cuda_q6k_3warp_exact_enabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols) {
     if (rows == 1536 && cols == 8960 &&
         getenv("BN_CUDA_DISABLE_Q6K_3WARP_1536_8960") == NULL)
         return 1;
@@ -980,13 +980,13 @@ int bn_gpu_policy_cuda_q6k_3warp_exact_enabled(int rows, int cols) {
     return 0;
 }
 
-int bn_gpu_policy_cuda_q6k_2warp_long_enabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(int rows, int cols) {
     return rows >= 2560 && cols >= 8192 && cols <= 12288 &&
            getenv("BN_CUDA_ENABLE_Q6K_2WARP_LONG") != NULL &&
            getenv("BN_CUDA_DISABLE_Q6K_2WARP_LONG") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_matvec4_shape_disabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(int rows, int cols) {
     if (rows == 1024 && cols == 2560 &&
         getenv("BN_CUDA_ENABLE_Q6K_MATVEC4_1024_2560") == NULL)
         return 1;

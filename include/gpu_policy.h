@@ -90,11 +90,11 @@ int bn_gpu_policy_prepared_kquant_input_cache_enabled(void);
 int bn_gpu_policy_cuda_force_quant_matmul_for_type(
     int tensor_type,
     int f16_q8_0_matmul_enabled);
-int bn_gpu_policy_cuda_q6k_4warp_long_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_q6k_5warp_exact_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_q6k_3warp_exact_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_q6k_2warp_long_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_q6k_matvec4_shape_disabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(int rows, int cols);
 int bn_gpu_policy_cuda_moe_down_quant_path_preferred(int routed_q4,
                                                     int down_type,
                                                     int hidden_dim,
