@@ -635,11 +635,15 @@ static int gpu_policy_moe_lazy_aux_cache_requested(void) {
 }
 
 static int gpu_policy_logits_kquant_f32_cache_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_LOGITS_KQUANT_F32_CACHE",
+        "BN_CUDA_ENABLE_Q6K_LOGITS_F32_CACHE");
 }
 
 static int gpu_policy_logits_kquant_f32_cache_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_LOGITS_KQUANT_F32_CACHE",
+        "BN_CUDA_DISABLE_Q6K_LOGITS_F32_CACHE");
 }
 
 static int gpu_policy_logits_f16_cache_requested(void) {
@@ -663,19 +667,27 @@ static int gpu_policy_cuda_f16_logits_matvec_requested(void) {
 }
 
 static int gpu_policy_moe_down_kquant_f32_cache_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_MOE_DOWN_KQUANT_F32_CACHE",
+        "BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE");
 }
 
 static int gpu_policy_moe_down_kquant_f32_cache_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_MOE_DOWN_KQUANT_F32_CACHE",
+        "BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
 }
 
 static int gpu_policy_moe_down_small_kquant_f32_cache_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_MOE_DOWN_SMALL_KQUANT_F32_CACHE",
+        "BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
 }
 
 static int gpu_policy_moe_down_small_kquant_f32_cache_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_MOE_DOWN_SMALL_KQUANT_F32_CACHE",
+        "BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");
 }
 
 static int gpu_policy_moe_all_f16_cache_forced(void) {
@@ -3321,8 +3333,10 @@ int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
 }
 
 int bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL &&
-           getenv("BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE") == NULL;
+    return !gpu_policy_moe_down_kquant_f32_cache_disabled() &&
+           !gpu_policy_compat_env_enabled(
+               "BN_CUDA_DISABLE_MOE_F16_KQUANT_F32_DOWN_CACHE",
+               "BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE");
 }
 
 size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
