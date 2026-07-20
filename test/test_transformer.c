@@ -3226,6 +3226,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
+    assert(bn_model_arch_rmsnorm_requires_reference_scalar_order(&c));
     assert(bn_model_arch_uses_small_dense_shape(&c));
     assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));

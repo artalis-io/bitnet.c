@@ -220,9 +220,7 @@ int bn_transformer_cpu_prefill_decode_for_parity_enabled(
 
 int bn_transformer_rmsnorm_requires_reference_scalar_order(
     const BnConfig *c) {
-    return c &&
-           bn_model_arch_rmsnorm_mode(c) ==
-               BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER;
+    return bn_model_arch_rmsnorm_requires_reference_scalar_order(c);
 }
 
 float bn_transformer_attention_scale(

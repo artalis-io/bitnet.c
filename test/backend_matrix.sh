@@ -2696,6 +2696,11 @@ if grep -n 'full_attn_interval' src/transformer/plan.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use behavior-named model_arch helpers for RMSNorm order policy"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval' src/prompt_cache.c >/dev/null 2>&1; then
     echo "src/prompt_cache.c must use model_arch helpers for hybrid layer layout policy"
     fail=1
