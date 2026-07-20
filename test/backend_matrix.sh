@@ -1690,6 +1690,11 @@ if awk '/^int bn_gpu_policy_cuda_moe_down_quant_path_preferred/{flag=1} /^int bn
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled/{flag=1} /^static int gpu_policy_decode_logits_cache_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c public MoE gate-up/router policy helpers must compose local env policy helpers"
+    fail=1
+fi
+
 if awk '/^int bn_gpu_policy_cuda_moe_down_quant_path_preferred/{flag=1} /^int bn_gpu_policy_cuda_moe_down_4row_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'n_experts > 2\|n_experts == 2 && k == 2' >/dev/null 2>&1; then
     echo "CUDA MoE down policy must use route-shape behavior helpers"
     fail=1
