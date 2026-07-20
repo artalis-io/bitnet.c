@@ -18857,7 +18857,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 cuda_find_fusable_bias(ops, n_ops, i + 2,
                                        ops[i + 2].buf_out,
                                        ops[i + 2].rows) < 0 &&
-                bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled()) {
+                bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled()) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)ops[i + 2].W_buf;
                 float *out1 = cuda_act(ctx, ops[i + 2].buf_out);
                 if (w1 && w1->data && out1) {
@@ -18896,7 +18896,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 op->cols % BN_QK_K == 0 &&
                 op->rows > 0 && next->rows > 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled(op->cols)) {
+                bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(op->cols)) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {
@@ -19061,7 +19061,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bias == NULL && bias_idx < 0 &&
                 (op->cols % BN_QK_K) == 0 &&
                 enable_q4k_dot &&
-                bn_gpu_policy_cuda_q4k_pair_matvec_enabled()) {
+                bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled()) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
                 if (w1 && w1->data && out1) {

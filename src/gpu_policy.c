@@ -1445,7 +1445,7 @@ int bn_gpu_policy_cuda_q5_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
 }
 
-int bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled(void) {
+int bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC") != NULL;
 }
 
@@ -1588,7 +1588,7 @@ int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void) {
     return getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC") != NULL;
 }
 
-int bn_gpu_policy_cuda_q4k_pair_matvec_enabled(void) {
+int bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC") == NULL;
 }
 
@@ -1629,7 +1629,7 @@ int bn_gpu_policy_cuda_q6k_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_q4k_pair_matvec_enabled(int cols) {
+int bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(int cols) {
     return (cols < 5120 ||
             getenv("BN_CUDA_ENABLE_Q6K_Q4K_PAIR_MATVEC") != NULL) &&
            getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") == NULL;
