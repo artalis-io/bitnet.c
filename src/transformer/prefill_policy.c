@@ -2,6 +2,7 @@
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_arch.h"
+#include "../moe_internal.h"
 
 #include <stdlib.h>
 
@@ -31,7 +32,7 @@ bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy = {0};
     policy.enabled =
         c &&
-        bn_model_arch_uses_all_active_two_expert_moe(c, c->dim) &&
+        bn_moe_policy_uses_all_active_two_expert_route(c, c->dim) &&
         c->has_shared_expert &&
         !gpu_available;
     return policy;
