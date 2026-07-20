@@ -78,7 +78,7 @@ size_t bn_gpu_policy_moe_full_reserve_bytes(void);
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void);
 int bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(
     int default_index);
-int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void);
+int bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled(void);
 int bn_gpu_policy_cuda_native_quant_matmul_enabled(void);
 int bn_gpu_policy_cuda_f16_native_quant_matmul_enabled(void);
 int bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled(void);
@@ -282,22 +282,22 @@ int bn_gpu_policy_cuda_down_kquant_dot_enabled(void);
 int bn_gpu_policy_cuda_down_kquant_dot_forced(void);
 int bn_gpu_policy_cuda_down_kquant_warp_enabled(void);
 int bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(int cols);
-int bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(int is_logits_op);
-int bn_gpu_policy_cuda_q6k_mmvq_enabled(int rows,
-                                        int cols,
-                                        int is_logits_op,
-                                        int exact_q6k);
-int bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled(int rows,
-                                                     int cols,
-                                                     int is_logits_op);
-int bn_gpu_policy_cuda_q6k_down_residual_rmsnorm_fuse_enabled(void);
-int bn_gpu_policy_cuda_f16_q6k_matvec_enabled(int rows,
-                                              int cols,
-                                              int exact_q6k);
-int bn_gpu_policy_cuda_q6k_matmul8_enabled(void);
-int bn_gpu_policy_cuda_q6k_matmul4_enabled(void);
-int bn_gpu_policy_cuda_q6k_matvec4_enabled(void);
-int bn_gpu_policy_cuda_q6k_batch_warp_enabled(void);
+int bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(int is_logits_op);
+int bn_gpu_policy_cuda_down_kquant_mmvq_enabled(int rows,
+                                                int cols,
+                                                int is_logits_op,
+                                                int exact_down_kquant);
+int bn_gpu_policy_cuda_down_kquant_mmvq_2warp_logits_enabled(int rows,
+                                                             int cols,
+                                                             int is_logits_op);
+int bn_gpu_policy_cuda_down_kquant_residual_rmsnorm_fuse_enabled(void);
+int bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(int rows,
+                                                      int cols,
+                                                      int exact_down_kquant);
+int bn_gpu_policy_cuda_down_kquant_matmul8_enabled(void);
+int bn_gpu_policy_cuda_down_kquant_matmul4_enabled(void);
+int bn_gpu_policy_cuda_down_kquant_matvec4_enabled(void);
+int bn_gpu_policy_cuda_down_kquant_batch_warp_enabled(void);
 int bn_gpu_policy_cuda_fuse_bias_enabled(void);
 int bn_gpu_policy_cuda_rope_flash_fuse_enabled(void);
 int bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled(void);
@@ -450,7 +450,7 @@ int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
                                                int force_q6_f32,
                                                int force_f16);
-int bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache(void);
+int bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache(void);
 size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
     const BnGPUBackend *gpu,
     int tensor_type,

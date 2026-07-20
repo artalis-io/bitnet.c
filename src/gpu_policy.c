@@ -895,7 +895,7 @@ int bn_gpu_policy_cuda_cublas_gemm_algo_index_or_default(
     return default_index;
 }
 
-int bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") == NULL &&
            !bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced();
 }
@@ -1643,17 +1643,17 @@ int bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(int cols) {
            getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(int is_logits_op) {
+int bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(int is_logits_op) {
     return getenv("BN_CUDA_ENABLE_Q6K_Q8_1_DOT") != NULL &&
            getenv("BN_CUDA_DISABLE_Q6K_Q8_1_DOT") == NULL &&
            (is_logits_op || getenv("BN_CUDA_ENABLE_Q6K_Q8_1_ALL") != NULL);
 }
 
-int bn_gpu_policy_cuda_q6k_mmvq_enabled(int rows,
-                                        int cols,
-                                        int is_logits_op,
-                                        int exact_q6k) {
-    return !exact_q6k &&
+int bn_gpu_policy_cuda_down_kquant_mmvq_enabled(int rows,
+                                                int cols,
+                                                int is_logits_op,
+                                                int exact_down_kquant) {
+    return !exact_down_kquant &&
            getenv("BN_CUDA_DISABLE_Q6K_MMVQ") == NULL &&
            ((cols >= 4096 && rows >= 5120) ||
             (cols >= 2048 && rows >= 50000) ||
@@ -1667,9 +1667,9 @@ int bn_gpu_policy_cuda_q6k_mmvq_enabled(int rows,
              getenv("BN_CUDA_DISABLE_Q6K_MMVQ_LOGITS_1536") == NULL));
 }
 
-int bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled(int rows,
-                                                     int cols,
-                                                     int is_logits_op) {
+int bn_gpu_policy_cuda_down_kquant_mmvq_2warp_logits_enabled(int rows,
+                                                             int cols,
+                                                             int is_logits_op) {
     return is_logits_op && cols <= 2560 && rows >= 50000 &&
            ((cols == 1536 &&
              getenv("BN_CUDA_DISABLE_Q6K_MMVQ_LOGITS_1536") == NULL) ||
@@ -1679,32 +1679,32 @@ int bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled(int rows,
            getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_1536") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_down_residual_rmsnorm_fuse_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_residual_rmsnorm_fuse_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_DOWN_RESID_RMSNORM_FUSE") != NULL;
 }
 
-int bn_gpu_policy_cuda_f16_q6k_matvec_enabled(int rows,
-                                              int cols,
-                                              int exact_q6k) {
-    return !exact_q6k &&
+int bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(int rows,
+                                                      int cols,
+                                                      int exact_down_kquant) {
+    return !exact_down_kquant &&
            (getenv("BN_CUDA_ENABLE_F16_Q6K_MATVEC") != NULL ||
             (getenv("BN_CUDA_DISABLE_F16_Q6K_MATVEC") == NULL &&
              rows <= 2048 && cols >= 8192));
 }
 
-int bn_gpu_policy_cuda_q6k_matmul8_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_matmul8_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_MATMUL8") != NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_matmul4_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_matmul4_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_MATMUL4") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_matvec4_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_matvec4_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_MATVEC4") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_batch_warp_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_batch_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_BATCH_WARP") != NULL;
 }
 
@@ -2287,7 +2287,7 @@ int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
         : 128;
 }
 
-int bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache(void) {
+int bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL &&
            getenv("BN_CUDA_DISABLE_MOE_F16_Q6K_F32_DOWN_CACHE") == NULL;
 }
@@ -2303,10 +2303,11 @@ size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(
         !bn_gpu_policy_cuda_cublas_matmul_enabled())
         return 0;
     size_t elems = (size_t)rows * (size_t)cols;
-    int q6_as_f16 = bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
+    int down_kquant_as_f16 =
+        bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled();
     size_t elem_size =
         (size_t)bn_backend_quant_moe_down_cublas_cache_elem_bytes(
-            tensor_type, q6_as_f16);
+            tensor_type, down_kquant_as_f16);
     if (elem_size != 0 && elems > SIZE_MAX / elem_size)
         return 0;
     return elems * elem_size;
@@ -2327,14 +2328,14 @@ static size_t gpu_policy_aux_cache_bytes(int tensor_type,
         !bn_gpu_policy_cuda_cublas_matmul_enabled() ||
         !bn_backend_quant_aux_cache_supported(tensor_type))
         return 0;
-    int q6_as_f16 =
+    int down_kquant_as_f16 =
         bn_backend_quant_aux_cache_can_use_f16(tensor_type) &&
-        bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled();
+        bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled();
     if ((size_t)rows > SIZE_MAX / (size_t)cols)
         return SIZE_MAX;
     size_t elems = (size_t)rows * (size_t)cols;
     size_t elem_size =
-        bn_backend_quant_aux_cache_uses_f32(tensor_type, q6_as_f16)
+        bn_backend_quant_aux_cache_uses_f32(tensor_type, down_kquant_as_f16)
             ? sizeof(float)
             : sizeof(uint16_t);
     if (elem_size != 0 && elems > SIZE_MAX / elem_size)

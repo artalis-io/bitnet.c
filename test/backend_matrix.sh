@@ -151,6 +151,15 @@ if grep -n 'bn_gpu_policy_cuda_q6k_4warp_long_enabled\|bn_gpu_policy_cuda_q6k_5w
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled\|bn_gpu_policy_cuda_q6k_q8_1_dot_enabled\|bn_gpu_policy_cuda_q6k_mmvq_enabled\|bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled\|bn_gpu_policy_cuda_q6k_down_residual_rmsnorm_fuse_enabled\|bn_gpu_policy_cuda_f16_q6k_matvec_enabled\|bn_gpu_policy_cuda_q6k_matmul8_enabled\|bn_gpu_policy_cuda_q6k_matmul4_enabled\|bn_gpu_policy_cuda_q6k_matvec4_enabled\|bn_gpu_policy_cuda_q6k_batch_warp_enabled\|bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache\|use_f16_q6k_matvec\|use_q6k_q8_1\|use_q6k_mmvq' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA down-K-quant execution policy helpers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q4k_4warp_enabled\|bn_gpu_policy_cuda_q4k_4warp_shape_enabled\|bn_gpu_policy_cuda_q4k_out_residual_rmsnorm_fuse_enabled\|bn_gpu_policy_cuda_q4k_qkv_mixed_fuse_enabled\|bn_gpu_policy_cuda_q4k_split_k_rope_cache_fuse_enabled\|bn_gpu_policy_cuda_q4k_split_qk_rope_cache_fuse_enabled\|bn_gpu_policy_cuda_q4k_split_4warp_enabled\|bn_gpu_policy_cuda_q4k_split_5warp_enabled\|bn_gpu_policy_cuda_q4k_split_value_rows\|bn_gpu_policy_cuda_q4k_split_value_fuse_enabled\|bn_gpu_policy_cuda_q4k_gateup_qwarp4_enabled\|bn_gpu_policy_cuda_q4k_gateup_5warp_enabled\|bn_gpu_policy_cuda_q4k_gateup_2warp_enabled\|bn_gpu_policy_cuda_q4k_gateup_4warp_enabled\|bn_gpu_policy_cuda_q4k_matmul8_enabled\|bn_gpu_policy_cuda_q4k_sharedx_enabled\|bn_gpu_policy_cuda_q4k_batch_sharedx_enabled\|bn_gpu_policy_cuda_prefill_fused_q4k_gateup_batch_enabled\|bn_gpu_policy_cuda_prefill_ssm_fused_q4k_gateup_batch_enabled\|enable_q4k_4warp' \
     include/gpu_policy.h \
     src/gpu_policy.c \
