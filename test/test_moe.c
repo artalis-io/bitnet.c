@@ -256,7 +256,7 @@ static void test_qwen2moe_arch_config(void) {
     assert(bn_moe_gateup_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(bn_model_arch_moe_prefers_exact_gpu_attention(&c));
-    assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
+    assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
 
     BnConfig dense = {0};
     assert(bn_moe_gateup_task_flags(&dense) == 0);

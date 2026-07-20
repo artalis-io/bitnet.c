@@ -18,7 +18,9 @@
 #define BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM                (1u << 8)
 #define BN_MODEL_ARCH_POLICY_FFN_POST_NORM                      (1u << 9)
 #define BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE                 (1u << 10)
-#define BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY          (1u << 11)
+#define BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY              (1u << 11)
+#define BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY \
+    BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK (1u << 12)
 #define BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP            (1u << 13)
 #define BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION            (1u << 14)
@@ -133,6 +135,7 @@ int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer);
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c);
 int bn_model_arch_allows_small_dense_prefill_decode_fallback(
     const BnConfig *c);
+int bn_model_arch_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c);
 int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c);

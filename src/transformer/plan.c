@@ -214,7 +214,7 @@ int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,
     int gpu_attached) {
     return !gpu_attached &&
-           bn_model_arch_cpu_prefill_uses_decode_for_parity(c);
+           bn_model_arch_prefill_uses_decode_for_parity(c);
 }
 
 int bn_transformer_rmsnorm_requires_reference_scalar_order(

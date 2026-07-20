@@ -3135,6 +3135,7 @@ static void test_model_arch_registry(void) {
     c.per_layer_input_dim = 128;
     assert(bn_model_arch_loads_per_layer_input_weights(&c));
     assert(bn_model_arch_divides_rope_freqs(&c, 0));
+    assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_exact_scalar_activation(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
@@ -3185,7 +3186,7 @@ static void test_model_arch_registry(void) {
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
-                     BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
+                     BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
@@ -3224,7 +3225,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_allows_small_dense_prefill_decode_fallback(&c));
-    assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
+    assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_allows_small_dense_exact_native(&c));
     assert(bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 7);
@@ -3961,7 +3962,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
     assert(!bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
     c.policy_flags = 0;
