@@ -4358,11 +4358,11 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_aux_cache_uses_f32(BN_GGUF_TENSOR_Q6_K, 0));
     assert(bn_quant_format_aux_cache_prefers_large_budget(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_aux_cache_force_q4_f32(
+    assert(bn_backend_quant_aux_cache_force_asymmetric_kquant_f32(
         BN_GGUF_TENSOR_Q4_K, 1));
-    assert(!bn_backend_quant_aux_cache_force_q4_f32(
+    assert(!bn_backend_quant_aux_cache_force_asymmetric_kquant_f32(
         BN_GGUF_TENSOR_Q6_K, 1));
-    assert(!bn_backend_quant_aux_cache_force_q4_f32(
+    assert(!bn_backend_quant_aux_cache_force_asymmetric_kquant_f32(
         BN_GGUF_TENSOR_Q4_K, 0));
     assert(bn_backend_quant_aux_cache_down_kquant_can_use_f16(
         BN_GGUF_TENSOR_Q6_K, 1, 1));

@@ -11198,8 +11198,9 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
 
     int force_down_kquant_f32 = aux_cache_mode == 2;
     int force_f16 = aux_cache_mode == 3;
-    int force_q4_f32 = bn_backend_quant_aux_cache_force_q4_f32(
-        buf->type, aux_cache_mode == 2);
+    int force_asymmetric_kquant_f32 =
+        bn_backend_quant_aux_cache_force_asymmetric_kquant_f32(
+            buf->type, aux_cache_mode == 2);
     int down_kquant_as_f16 = bn_backend_quant_aux_cache_down_kquant_can_use_f16(
                         buf->type, force_f16, force_down_kquant_f32) &&
                     bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled();
@@ -11208,7 +11209,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache();
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     int f32_cache = bn_backend_quant_aux_cache_f32_storage(
-        buf->type, force_q4_f32, down_kquant_as_f16);
+        buf->type, force_asymmetric_kquant_f32, down_kquant_as_f16);
     size_t bytes = n * (f32_cache
                         ? sizeof(float)
                         : sizeof(__half));
@@ -11243,7 +11244,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     int blocks = (int)((n + (size_t)threads - 1u) / (size_t)threads);
     BnBackendQuantAuxCacheDequant dequant_route =
         bn_backend_quant_aux_cache_dequant_route(buf->type,
-                                                 force_q4_f32,
+                                                 force_asymmetric_kquant_f32,
                                                  down_kquant_as_f16);
     switch (dequant_route) {
     case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DENSE_BFLOAT_TO_F16:

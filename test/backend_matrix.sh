@@ -2918,8 +2918,8 @@ if grep -n 'bn_backend_quant_cuda_lazy_moe_aux_cache_candidate\|bn_backend_quant
     fail=1
 fi
 
-if grep -n 'bn_backend_quant_aux_cache_q6_can_use_f16\|bn_backend_quant_aux_cache_add_q6_f32\|force_q6_f32' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "Backend quant aux-cache helpers must use down K-quant behavior names, not Q6 names"
+if grep -n 'bn_backend_quant_aux_cache_q6_can_use_f16\|bn_backend_quant_aux_cache_add_q6_f32\|force_q6_f32\|bn_backend_quant_aux_cache_force_q4_f32\|force_q4_f32' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Backend quant aux-cache helpers must use behavior names, not raw Q4/Q6 names"
     fail=1
 fi
 
