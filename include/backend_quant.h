@@ -272,6 +272,11 @@ static inline int bn_backend_quant_moe_routed_op_uses_native_quant(int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
+static inline int
+bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(int type) {
+    return bn_backend_quant_is_q4k(type);
+}
+
 static inline int bn_backend_quant_moe_down_uses_down_kquant(int down_type) {
     return bn_quant_format_is_q6k(down_type);
 }

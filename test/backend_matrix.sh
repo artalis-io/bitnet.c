@@ -128,6 +128,11 @@ if sed -n '/int reserve_q8_1_cols = 0;/,/cuda_ensure_q8_1/p' src/gpu_cuda.cu | g
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_is_q4k' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use routed/backend quant behavior helpers, not exact Q4K predicates"
+    fail=1
+fi
+
 if sed -n '/bn_backend_quant_deinterleaved_kquant_pair_matvec/,/bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q5_K' >/dev/null 2>&1 ||
    sed -n '/bn_backend_quant_asymmetric_kquant_pair_matvec/,/bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q6_K\|BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
    sed -n '/bn_backend_quant_symmetric_kquant_pair_matvec/,/bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1; then

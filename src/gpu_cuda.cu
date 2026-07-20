@@ -18342,7 +18342,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int elems = mid_elems > rop->cols ? mid_elems : rop->cols;
                         if (elems > reserve_q8_1_cols)
                             reserve_q8_1_cols = elems;
-                    } else if (bn_backend_quant_is_q4k(rop->type)) {
+                    } else if (bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(
+                                   rop->type)) {
                         if (rop->cols > reserve_q8_1_cols)
                             reserve_q8_1_cols = rop->cols;
                         if (bn_backend_quant_moe_down_uses_graph_kquant(

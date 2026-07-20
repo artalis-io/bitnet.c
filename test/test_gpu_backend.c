@@ -3974,6 +3974,10 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_moe_routed_op_uses_native_quant(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(
+        BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(
+        BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_quant_format_gpu_allows_gateup_split_activation(BN_GGUF_TENSOR_Q4_K, 0));
     assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q6_K));
