@@ -35,28 +35,28 @@ int bn_gpu_policy_moe_residency_fit_debug_enabled(void);
 int bn_gpu_policy_moe_lazy_aux_cache_enabled(void);
 int bn_gpu_policy_individual_upload_quant_only_enabled(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_logits_q6_f32_cache_enabled(const BnGPUBackend *gpu,
-                                              int tensor_type);
+int bn_gpu_policy_logits_kquant_f32_cache_enabled(const BnGPUBackend *gpu,
+                                                  int tensor_type);
 int bn_gpu_policy_logits_f16_cache_enabled(const BnGPUBackend *gpu);
 int bn_gpu_policy_cuda_cublas_logits_enabled(void);
 int bn_gpu_policy_cuda_f32_logits_matvec_enabled(void);
 int bn_gpu_policy_cuda_f16_logits_matvec_enabled(void);
-int bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled(
+int bn_gpu_policy_cuda_moe_down_kquant_f32_cache_enabled(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced(void);
-int bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols(int cols);
-int bn_gpu_policy_moe_down_q6_f32_cache_preferred(
+int bn_gpu_policy_cuda_moe_down_kquant_f32_cache_forced(void);
+int bn_gpu_policy_cuda_moe_down_kquant_f32_cache_default_for_cols(int cols);
+int bn_gpu_policy_moe_down_kquant_f32_cache_preferred(
     const BnGPUBackend *gpu,
     int tensor_type,
     int cols,
     int force_f16_cache);
-size_t bn_gpu_policy_moe_down_q6_f32_cache_bytes(
+size_t bn_gpu_policy_moe_down_kquant_f32_cache_bytes(
     const BnGPUBackend *gpu,
     int tensor_type,
     int rows,
     int cols,
     int n_experts);
-int bn_gpu_policy_moe_down_q6_f32_cache_requires_full_buffer(
+int bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(
     int tensor_type);
 int bn_gpu_policy_moe_down_q4_f32_cache_enabled(
     const BnGPUBackend *gpu,
@@ -448,7 +448,7 @@ int bn_gpu_policy_cuda_decode_graph_default_enabled(int moe_graph,
 int bn_gpu_policy_cuda_cublas_cache_max_mb(int default_mb,
                                            int large_budget);
 int bn_gpu_policy_cuda_cublas_aux_cache_max_mb(int tensor_type,
-                                               int force_q6_f32,
+                                               int force_down_kquant_f32,
                                                int force_f16);
 int bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache(void);
 size_t bn_gpu_policy_cuda_moe_down_cublas_cache_bytes(

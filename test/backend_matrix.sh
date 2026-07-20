@@ -1711,7 +1711,7 @@ if grep -n 'bn_gpu_policy_cuda_moe_all_f16_cache\|bn_gpu_policy_cuda_moe_gateup_
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_cuda_moe_down_q6_f32_cache_preferred\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_bytes\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_requires_full_buffer\|bn_gpu_policy_cuda_moe_down_q4_f32_cache_enabled\|bn_gpu_policy_cuda_moe_quant_only_after_cache\|bn_gpu_policy_cuda_aux_cache_bytes' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_gpu_policy_logits_q6_f32_cache_enabled\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_enabled\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_forced\|bn_gpu_policy_cuda_moe_down_q6_f32_cache_default_for_cols\|bn_gpu_policy_moe_down_q6_f32_cache_preferred\|bn_gpu_policy_moe_down_q6_f32_cache_bytes\|bn_gpu_policy_moe_down_q6_f32_cache_requires_full_buffer\|gpu_policy_logits_q6_f32_cache_enabled\|gpu_policy_moe_down_q6_f32_cache_preferred\|gpu_policy_moe_down_q6_f32_cache_bytes\|gpu_policy_moe_down_q6_f32_cache_requires_full_buffer\|moe_down_q6_f32_cache_bytes\|prefer_q6_f32_cache\|\<logits_q6_f32_cache\>' include/gpu_policy.h src/gpu_policy.c src/model_gpu.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "MoE down-cache policy must expose/test behavior-named helpers, not CUDA implementation aliases"
     fail=1
 fi
