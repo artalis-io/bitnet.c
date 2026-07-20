@@ -113,11 +113,36 @@ int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
                                                  int8_t *quantized,
                                                  float *scales,
                                                  int n);
+float bn_transformer_cpu_quantize_i8_activation(const float *x,
+                                                int8_t *quantized,
+                                                int n,
+                                                int use_standard_quant);
+void bn_transformer_cpu_prepare_q8_logits_refine_activation(const float *x,
+                                                            int8_t *quantized,
+                                                            float *scales,
+                                                            int n);
+int bn_transformer_cpu_refine_q8_logits_row(const BnQWeight *weight,
+                                            const int8_t *quantized,
+                                            const float *scales,
+                                            int row,
+                                            float *out);
+int bn_transformer_cpu_refine_q6_logits_row(const BnQWeight *weight,
+                                            const float *x,
+                                            int row,
+                                            float *out);
 void bn_transformer_cpu_quant_matvec(float *out,
                                      const BnQWeight *weight,
                                      const float *x,
                                      int8_t *quantized_buf,
                                      BnThreadPool *pool);
+void bn_transformer_cpu_quant_matvec_prepared_flags(
+    float *out,
+    const BnQWeight *weight,
+    const BnPreparedWeight *prepared,
+    const float *x,
+    int8_t *quantized_buf,
+    BnThreadPool *pool,
+    uint32_t flags);
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,

@@ -74,12 +74,77 @@ int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
     return 0;
 }
 
+static float cpu_quantize_i8_activation_scalar(const float *x,
+                                               int8_t *quantized,
+                                               int n) {
+    float amax = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float ax = x[i] < 0.0f ? -x[i] : x[i];
+        if (ax > amax)
+            amax = ax;
+    }
+    float scale = amax / 127.0f;
+    float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
+    for (int i = 0; i < n; i++) {
+        int q = (int)(x[i] * inv + (x[i] >= 0.0f ? 0.5f : -0.5f));
+        if (q > 127)
+            q = 127;
+        if (q < -127)
+            q = -127;
+        quantized[i] = (int8_t)q;
+    }
+    return scale;
+}
+
+float bn_transformer_cpu_quantize_i8_activation(const float *x,
+                                                int8_t *quantized,
+                                                int n,
+                                                int use_standard_quant) {
+    if (use_standard_quant)
+        return bn_quant_x_to_i8(x, quantized, n);
+    return cpu_quantize_i8_activation_scalar(x, quantized, n);
+}
+
+void bn_transformer_cpu_prepare_q8_logits_refine_activation(const float *x,
+                                                            int8_t *quantized,
+                                                            float *scales,
+                                                            int n) {
+    bn_quant_x_to_q8_blocks(x, quantized, scales, n);
+}
+
+int bn_transformer_cpu_refine_q8_logits_row(const BnQWeight *weight,
+                                            const int8_t *quantized,
+                                            const float *scales,
+                                            int row,
+                                            float *out) {
+    return bn_quant_q8_logits_refine_row(weight, quantized, scales, row, out);
+}
+
+int bn_transformer_cpu_refine_q6_logits_row(const BnQWeight *weight,
+                                            const float *x,
+                                            int row,
+                                            float *out) {
+    return bn_quant_q6_logits_refine_row(weight, x, row, out);
+}
+
 void bn_transformer_cpu_quant_matvec(float *out,
                                      const BnQWeight *weight,
                                      const float *x,
                                      int8_t *quantized_buf,
                                      BnThreadPool *pool) {
     bn_quant_matvec(out, weight, x, quantized_buf, pool);
+}
+
+void bn_transformer_cpu_quant_matvec_prepared_flags(
+    float *out,
+    const BnQWeight *weight,
+    const BnPreparedWeight *prepared,
+    const float *x,
+    int8_t *quantized_buf,
+    BnThreadPool *pool,
+    uint32_t flags) {
+    bn_quant_matvec_prepared_flags(out, weight, prepared, x, quantized_buf,
+                                   pool, flags);
 }
 
 #if BN_TRANSFORMER_CPU_HAS_NEON

@@ -1,5 +1,6 @@
 #include "transformer_logits_internal.h"
 #include "transformer_plan_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "backend_model.h"
 #include "model.h"
@@ -8,7 +9,6 @@
 #include "transformer_backend_internal.h"
 #include "gpu_internal.h"
 #include "gpu_backend.h"
-#include "quant.h"
 #include <math.h>
 
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
@@ -71,12 +71,13 @@ static int logits_refine_backend_top(float *logits, int n_logits,
     }
 
     float scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
-    bn_quant_x_to_q8_blocks(x, quantized, scales, W->cols);
+    bn_transformer_cpu_prepare_q8_logits_refine_activation(x, quantized,
+                                                           scales, W->cols);
     for (int i = 0; i < n_top; i++) {
         int row = ids[i];
         float row_sum;
-        if (bn_quant_q8_logits_refine_row(W, quantized, scales, row,
-                                          &row_sum) == 0)
+        if (bn_transformer_cpu_refine_q8_logits_row(W, quantized, scales,
+                                                    row, &row_sum) == 0)
             logits[row] = row_sum;
     }
     return n_top;
@@ -127,7 +128,8 @@ static void logits_refine_tied_kquant_top(BnModel *m, BnRunState *s,
                                ids, vals, refine_top);
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_quant_q6_logits_refine_row(W, s->x, ids[i], &row_sum) == 0)
+        if (bn_transformer_cpu_refine_q6_logits_row(W, s->x, ids[i],
+                                                    &row_sum) == 0)
             s->logits[ids[i]] = row_sum;
     }
 }
@@ -151,8 +153,8 @@ static void logits_hybrid_tied_kquant_top(BnModel *m, BnRunState *s,
     int native_best = 0;
     int native_second = 1;
     for (int i = 0; i < n_top; i++) {
-        if (bn_quant_q6_logits_refine_row(W, s->x, ids[i],
-                                          &native_vals[i]) != 0)
+        if (bn_transformer_cpu_refine_q6_logits_row(W, s->x, ids[i],
+                                                    &native_vals[i]) != 0)
             return;
         if (i == 0) continue;
         if (native_vals[i] > native_vals[native_best]) {
@@ -188,25 +190,6 @@ static void logits_refine_native_quant(const BnModel *m,
                                   s->x_q, refine_top);
 }
 
-static float logits_quantize_activation_i8_scalar(const float *x,
-                                                  int8_t *quantized,
-                                                  int n) {
-    float amax = 0.0f;
-    for (int i = 0; i < n; i++) {
-        float ax = x[i] < 0.0f ? -x[i] : x[i];
-        if (ax > amax) amax = ax;
-    }
-    float scale = amax / 127.0f;
-    float inv = scale > 0.0f ? 1.0f / scale : 0.0f;
-    for (int i = 0; i < n; i++) {
-        int q = (int)(x[i] * inv + (x[i] >= 0.0f ? 0.5f : -0.5f));
-        if (q > 127) q = 127;
-        if (q < -127) q = -127;
-        quantized[i] = (int8_t)q;
-    }
-    return scale;
-}
-
 static inline void *qweight_backend_buf(const BnBackendModel *backend,
                                         const BnQWeight *w) {
     return bn_backend_model_qweight_buf(backend, w);
@@ -229,9 +212,9 @@ static int logits_i8_dispatch(BnModel *m, BnRunState *s, int rows, int dim) {
     const BnLogitsBackendOps *ops = logits_backend_ops();
     BnWeights *w = &m->weights;
     if (!w->emb_out_i8) return 0;
-    float activation_scale = ops->i8_uses_standard_quant
-        ? bn_quant_x_to_i8(s->x, s->x_q, dim)
-        : logits_quantize_activation_i8_scalar(s->x, s->x_q, dim);
+    float activation_scale =
+        bn_transformer_cpu_quantize_i8_activation(
+            s->x, s->x_q, dim, ops->i8_uses_standard_quant);
     BnLogitsI8Ctx lctx = { s->logits, w->emb_out_i8, w->emb_out_scales,
                            s->x_q, activation_scale, dim };
     BnTPTask logits_task = { ops->i8_logits, &lctx, rows };
@@ -290,7 +273,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         const BnPreparedWeight *prepared =
             bn_backend_model_prepared_qweight(backend, tied);
         if (bn_transformer_logits_cpu_native_tied_quant_enabled()) {
-            bn_quant_matvec_prepared_flags(
+            bn_transformer_cpu_quant_matvec_prepared_flags(
                 s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
                 bn_transformer_logits_native_quant_task_flags(1));
         } else {
