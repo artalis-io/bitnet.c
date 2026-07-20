@@ -153,6 +153,31 @@ int bn_transformer_gpu_uses_large_graph_fallback_shape(const BnConfig *c) {
     return bn_model_arch_uses_large_gpu_graph_fallback_shape(c);
 }
 
+int bn_transformer_gpu_uses_hybrid_ssm(const BnConfig *c) {
+    return bn_model_arch_uses_hybrid_ssm(c);
+}
+
+int bn_transformer_gpu_uses_large_dense_hybrid_ssm(const BnConfig *c) {
+    return bn_model_arch_uses_large_dense_hybrid_ssm(c);
+}
+
+int bn_transformer_gpu_uses_non_hybrid_moe(const BnConfig *c) {
+    return bn_model_arch_uses_non_hybrid_moe(c);
+}
+
+int bn_transformer_gpu_uses_moe(const BnConfig *c) {
+    return bn_model_arch_uses_moe(c);
+}
+
+int bn_transformer_gpu_uses_dense_attention_only(const BnConfig *c) {
+    return bn_model_arch_uses_dense_attention_only(c);
+}
+
+int bn_transformer_gpu_uses_small_dense_native_quant_shape(
+    const BnConfig *c) {
+    return bn_model_arch_uses_small_dense_native_quant_shape(c);
+}
+
 int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
                                                const BnWeights *w) {
     return c && w &&
@@ -500,14 +525,14 @@ int bn_transformer_gpu_small_dense_prefill_chain_applicable(
 int bn_transformer_gpu_hybrid_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_ssm(c) &&
+    return bn_transformer_gpu_uses_hybrid_ssm(c) &&
            bn_gpu_policy_backend_prefill_chain_supported(gpu);
 }
 
 int bn_transformer_gpu_moe_prefill_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_model_arch_uses_non_hybrid_moe(c) &&
+    return bn_transformer_gpu_uses_non_hybrid_moe(c) &&
            bn_gpu_policy_backend_prefill_chain_supported(gpu);
 }
 
@@ -515,7 +540,7 @@ int bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
     return bn_gpu_policy_backend_prefill_decode_fallback_supported(gpu) &&
-           bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
+           bn_transformer_gpu_uses_large_dense_hybrid_ssm(c) &&
            !bn_gpu_policy_large_hybrid_prefill_enabled();
 }
 
@@ -526,12 +551,12 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
         !gpu->execute)
         return 0;
     const BnConfig *c = &m->config;
-    if (!bn_model_arch_uses_dense_attention_only(c))
+    if (!bn_transformer_gpu_uses_dense_attention_only(c))
         return 0;
     if (bn_gpu_policy_small_kquant_native_enabled(
             bn_model_arch_cpu_force_float_kquant(c)))
         return 1;
-    if (!bn_model_arch_uses_small_dense_native_quant_shape(c))
+    if (!bn_transformer_gpu_uses_small_dense_native_quant_shape(c))
         return 1;
 
     return bn_backend_quant_dense_graph_model_supported(&m->weights, c, 1);
@@ -571,13 +596,13 @@ int bn_transformer_gpu_batch_prefill_enabled(
         bn_transformer_gpu_large_hybrid_prefill_decode_fallback_default(
             gpu, c))
         return 0;
-    if (bn_model_arch_uses_hybrid_ssm(c)) {
+    if (bn_transformer_gpu_uses_hybrid_ssm(c)) {
         return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
                gpu->prefill_ssm_layer &&
                bn_gpu_policy_prefill_hybrid_chain_enabled() &&
                !bn_transformer_gpu_prefill_ssm_layer_disabled();
     }
-    if (bn_model_arch_uses_moe(c))
+    if (bn_transformer_gpu_uses_moe(c))
         return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
                bn_gpu_policy_moe_prefill_enabled();
     return bn_transformer_gpu_dense_batch_prefill_shape_allowed(gpu, c);
@@ -587,7 +612,7 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
     if (!c || !bn_gpu_policy_backend_cpu_attention_fallback_supported(gpu) ||
-        !bn_model_arch_uses_large_dense_hybrid_ssm(c))
+        !bn_transformer_gpu_uses_large_dense_hybrid_ssm(c))
         return 0;
     if (bn_gpu_policy_large_hybrid_cpu_attention_safe_enabled())
         return 1;
@@ -600,7 +625,7 @@ int bn_transformer_gpu_large_hybrid_prefill_chain_disabled_default(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
     return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
-           bn_model_arch_uses_large_dense_hybrid_ssm(c) &&
+           bn_transformer_gpu_uses_large_dense_hybrid_ssm(c) &&
            !bn_gpu_policy_large_hybrid_prefill_chain_enabled();
 }
 

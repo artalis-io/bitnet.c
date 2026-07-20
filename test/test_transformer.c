@@ -811,11 +811,27 @@ static void test_gpu_policy_helpers(void) {
            80 * c.n_layers);
     assert(bn_transformer_gpu_uses_small_dense_shape(&c));
     assert(!bn_transformer_gpu_uses_large_graph_fallback_shape(&c));
+    assert(bn_transformer_gpu_uses_dense_attention_only(&c));
+    assert(!bn_transformer_gpu_uses_hybrid_ssm(&c));
+    assert(!bn_transformer_gpu_uses_moe(&c));
     c.dim = 4096;
     c.full_attn_interval = 4;
     assert(!bn_transformer_gpu_uses_small_dense_shape(&c));
     assert(bn_transformer_gpu_uses_large_graph_fallback_shape(&c));
+    assert(!bn_transformer_gpu_uses_dense_attention_only(&c));
+    c.ssm_inner_size = 64;
+    assert(bn_transformer_gpu_uses_hybrid_ssm(&c));
+    assert(bn_transformer_gpu_uses_large_dense_hybrid_ssm(&c));
+    c.n_experts = 2;
+    assert(bn_transformer_gpu_uses_moe(&c));
+    assert(!bn_transformer_gpu_uses_non_hybrid_moe(&c));
     c.full_attn_interval = 0;
+    assert(bn_transformer_gpu_uses_non_hybrid_moe(&c));
+    assert(!bn_transformer_gpu_uses_large_dense_hybrid_ssm(&c));
+    c.ssm_inner_size = 0;
+    c.n_experts = 0;
+    c.dim = 2048;
+    assert(bn_transformer_gpu_uses_small_dense_native_quant_shape(&c));
     c.dim = 0;
 
     BnGPUBackend gpu;

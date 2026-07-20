@@ -2036,6 +2036,16 @@ if awk '/^int bn_transformer_gpu_validate_forward/{flag=1} /^int bn_transformer_
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_hybrid_prefill_chain_applicable/{flag=1} /^int bn_transformer_gpu_prefill_direct_kv_allowed/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_hybrid_ssm\|bn_model_arch_uses_non_hybrid_moe\|bn_model_arch_uses_moe\|bn_model_arch_uses_large_dense_hybrid_ssm' >/dev/null 2>&1; then
+    echo "GPU prefill chain policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_backend_matvec_fallback_kept/{flag=1} /^BnTransformerGPUMatvecFallbackPolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_dense_attention_only\|bn_model_arch_uses_small_dense_native_quant_shape' >/dev/null 2>&1; then
+    echo "GPU matvec fallback policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
 if grep -n 'bn_model_arch_.*cuda' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose behavior-named model_arch helpers, not CUDA-named compatibility aliases"
     fail=1
