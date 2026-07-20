@@ -513,6 +513,12 @@ int bn_transformer_prefill_quant_matmul_batch_gpu_available(
     int has_weights,
     int has_weight_buffers,
     int has_input);
+int bn_transformer_prefill_quant_matmul_gpu_buffer_run(float *out,
+                                                       const BnQWeight *W,
+                                                       void *W_buf,
+                                                       const float *X,
+                                                       int n_tokens,
+                                                       BnGPUBackend *gpu);
 void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,
                                                     const BnQWeight *W,
                                                     void *W_buf,

@@ -193,8 +193,8 @@ static int prefill_quant_matmul_gpu_buf(const BnModel *m,
     if (!bn_transformer_prefill_quant_matmul_gpu_available(
             gpu, out != NULL, W != NULL, buf != NULL, X != NULL))
         return -1;
-    return gpu->matmul(gpu->ctx, out, buf, X, W->rows, W->cols,
-                       n_tokens, W->type);
+    return bn_transformer_prefill_quant_matmul_gpu_buffer_run(
+        out, W, buf, X, n_tokens, gpu);
 }
 
 static void prefill_quant_matmul_multi(const BnModel *m,
@@ -270,8 +270,9 @@ static int prefill_qk_stacked_gpu(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
     if (!qk_buf) return -1;
     int rows = lw->attn.wq.rows + lw->attn.wk.rows;
-    if (gpu->matmul(gpu->ctx, q_tmp, qk_buf, X, rows, dim, n_tokens,
-                    lw->attn.wq.type) != 0)
+    if (bn_transformer_gpu_prefill_quant_matmul_backend_run(
+            gpu, q_tmp, qk_buf, X, rows, dim, n_tokens,
+            lw->attn.wq.type) != 0)
         return -1;
     for (int t = n_tokens - 1; t >= 0; t--) {
         float *src = q_tmp + (size_t)t * rows;

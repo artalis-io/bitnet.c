@@ -326,6 +326,31 @@ uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_moe_gateup_task_flags(c);
 }
 
+int bn_transformer_gpu_prefill_quant_matmul_backend_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matmul;
+}
+
+int bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matmul_batch;
+}
+
+int bn_transformer_gpu_prefill_quant_matmul_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *buf,
+    const float *X,
+    int rows,
+    int cols,
+    int n_tokens,
+    int tensor_type) {
+    if (!bn_transformer_gpu_prefill_quant_matmul_backend_available(gpu))
+        return -1;
+    return gpu->matmul(gpu->ctx, out, buf, X, rows, cols, n_tokens,
+                       tensor_type);
+}
+
 int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,

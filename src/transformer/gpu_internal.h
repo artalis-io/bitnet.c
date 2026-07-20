@@ -265,6 +265,19 @@ int bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(
 int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
                                                const BnWeights *w);
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c);
+int bn_transformer_gpu_prefill_quant_matmul_backend_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_gpu_prefill_quant_matmul_backend_run(
+    BnGPUBackend *gpu,
+    float *out,
+    void *buf,
+    const float *X,
+    int rows,
+    int cols,
+    int n_tokens,
+    int tensor_type);
 int bn_transformer_gpu_moe_gateup_split_supported(
     const BnGPUBackend *gpu,
     const BnMoEExpertMap *map,

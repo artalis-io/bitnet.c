@@ -792,7 +792,8 @@ int bn_transformer_prefill_quant_matmul_gpu_available(
     int has_weight,
     int has_weight_buffer,
     int has_input) {
-    return gpu && gpu->matmul && has_output && has_weight &&
+    return bn_transformer_gpu_prefill_quant_matmul_backend_available(gpu) &&
+           has_output && has_weight &&
            has_weight_buffer && has_input;
 }
 
@@ -803,8 +804,22 @@ int bn_transformer_prefill_quant_matmul_batch_gpu_available(
     int has_weights,
     int has_weight_buffers,
     int has_input) {
-    return gpu && gpu->matmul_batch && n_tasks > 1 && n_tasks <= 16 &&
+    return bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(gpu) &&
+           n_tasks > 1 && n_tasks <= 16 &&
            has_outputs && has_weights && has_weight_buffers && has_input;
+}
+
+int bn_transformer_prefill_quant_matmul_gpu_buffer_run(float *out,
+                                                       const BnQWeight *W,
+                                                       void *W_buf,
+                                                       const float *X,
+                                                       int n_tokens,
+                                                       BnGPUBackend *gpu) {
+    if (!bn_transformer_prefill_quant_matmul_gpu_available(
+            gpu, out != NULL, W != NULL, W_buf != NULL, X != NULL))
+        return -1;
+    return bn_transformer_gpu_prefill_quant_matmul_backend_run(
+        gpu, out, W_buf, X, W->rows, W->cols, n_tokens, W->type);
 }
 
 void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,
