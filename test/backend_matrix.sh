@@ -1269,7 +1269,7 @@ if grep -n 'bn_gpu_policy_apply_q4_q8_prepared_override\|bn_gpu_policy_metal_q4_
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_policy_metal_apply_q4_q8_default\|bn_gpu_policy_metal_q4_q8_enabled\|bn_gpu_policy_metal_q4_q8_matvec_supported\|bn_gpu_policy_metal_q4_q8_graph_path_supported\|metal_q4_q8_graph_path_supported' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_policy_metal_apply_q4_q8_default\|bn_gpu_policy_metal_q4_q8_enabled\|bn_gpu_policy_metal_q4_q8_matvec_supported\|bn_gpu_policy_metal_q4_q8_graph_path_supported\|metal_q4_q8_graph_path_supported\|\bq4_q8_enabled\b' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Metal small-dense exact-native default policy must use behavior names, not Q4/Q8 default helper names"
     fail=1
 fi

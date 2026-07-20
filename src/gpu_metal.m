@@ -48,7 +48,7 @@ typedef struct {
     id<MTLComputePipelineState> q4_q8_gateup_pipeline;
     id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
     id<MTLComputePipelineState> q6_q8k_matvec_pipeline;
-    int q4_q8_enabled;
+    int exact_native_enabled;
     int q8_barriers_enabled;
     int cpu_order_rmsnorm_enabled;
 
@@ -1044,7 +1044,7 @@ static int metal_exact_native_graph_path_supported(BnMetalCtx *ctx,
                                             id<MTLComputePipelineState> pipeline)
 {
     return bn_gpu_policy_metal_exact_native_graph_path_supported(
-        tensor_type, ctx->q4_q8_enabled, native_quant_prepared, prepared_path,
+        tensor_type, ctx->exact_native_enabled, native_quant_prepared, prepared_path,
         ctx->q8_quant_pipeline != nil, pipeline != nil);
 }
 
@@ -1060,11 +1060,11 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t out_size = (size_t)rows * sizeof(float);
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
     int use_prepared_exact_native = bn_gpu_policy_metal_exact_native_matvec_supported(
-        type, ctx->q4_q8_enabled, wbuf->native_quant_prepared,
+        type, ctx->exact_native_enabled, wbuf->native_quant_prepared,
         ctx->q8_quant_pipeline != nil, 0,
         ctx->q4_prepared_q8_matvec_pipeline != nil);
     int use_exact_native = bn_gpu_policy_metal_exact_native_matvec_supported(
-        type, ctx->q4_q8_enabled, wbuf->native_quant_prepared,
+        type, ctx->exact_native_enabled, wbuf->native_quant_prepared,
         ctx->q8_quant_pipeline != nil, ctx->q4_q8_matvec_pipeline != nil, 0);
     int use_specialized_native_quant =
         bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
@@ -2164,7 +2164,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 compiled, n_supported_types);
 
         bn_gpu_policy_metal_apply_small_dense_exact_native_default();
-        ctx->q4_q8_enabled = bn_gpu_policy_metal_small_dense_exact_native_enabled();
+        ctx->exact_native_enabled = bn_gpu_policy_metal_small_dense_exact_native_enabled();
         ctx->q8_barriers_enabled = bn_gpu_policy_metal_q8_barriers_enabled();
         ctx->cpu_order_rmsnorm_enabled =
             bn_gpu_policy_metal_cpu_order_rmsnorm_enabled();
@@ -2181,7 +2181,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 return NULL;
             }
         }
-        if (ctx->q4_q8_enabled) {
+        if (ctx->exact_native_enabled) {
             ctx->q8_quant_pipeline = compile_shader(ctx, dir,
                 "q8_quantize.metal", "q8_quantize");
             ctx->q4_q8_matvec_pipeline = compile_shader(ctx, dir,
