@@ -1756,6 +1756,11 @@ if grep -n 'setenv("BN_GPU_Q4_Q8' src/main.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'setenv("BN_GPU_Q4_Q8\|setenv("BN_METAL_Q4_PREPARED"\|setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT"' test/test_coherence.c >/dev/null 2>&1; then
+    echo "Coherence harness backend toggles must set behavior-named env vars, not Q4/Q8 compatibility aliases"
+    fail=1
+fi
+
 if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN' src/main.c >/dev/null 2>&1; then
     echo "CLI small-dense exact-native options must expose behavior-named env policy"
     fail=1
