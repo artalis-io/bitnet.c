@@ -580,6 +580,31 @@ static inline void *bn_gpu_backend_create_quant_only_buffer(BnGPUBackend *gpu,
                                          cols);
 }
 
+static inline void *bn_gpu_backend_create_kquant_f32_cache_buffer(
+    BnGPUBackend *gpu,
+    const void *data,
+    size_t size,
+    int type,
+    int rows,
+    int cols) {
+    if (!bn_gpu_backend_can_create_kquant_f32_cache_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_kquant_f32_cache(gpu->ctx, data, size, type,
+                                               rows, cols);
+}
+
+static inline void *bn_gpu_backend_create_f16_cache_buffer(BnGPUBackend *gpu,
+                                                          const void *data,
+                                                          size_t size,
+                                                          int type,
+                                                          int rows,
+                                                          int cols) {
+    if (!bn_gpu_backend_can_create_f16_cache_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_f16_cache(gpu->ctx, data, size, type, rows,
+                                        cols);
+}
+
 static inline void *bn_gpu_backend_create_stacked2_buffer(
     BnGPUBackend *gpu,
     const void *first_data,

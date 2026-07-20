@@ -16,6 +16,13 @@ static int checked_mul_size(size_t a, size_t b, size_t *out) {
     return 0;
 }
 
+typedef enum {
+    BN_MODEL_GPU_UPLOAD_STANDARD = 0,
+    BN_MODEL_GPU_UPLOAD_QUANT_ONLY,
+    BN_MODEL_GPU_UPLOAD_KQUANT_F32_CACHE,
+    BN_MODEL_GPU_UPLOAD_F16_CACHE,
+} BnModelGPUUploadMode;
+
 BnGPUBackend *bn_model_gpu(const BnModel *model) {
     return model ? bn_backend_model_gpu(bn_model_backend(model)) : NULL;
 }
@@ -25,19 +32,46 @@ void bn_model_set_gpu_disabled(BnModel *model, int disabled) {
     bn_backend_model_set_gpu_disabled(bn_model_backend(model), disabled);
 }
 
+static void *upload_gpu_buffer_mode(BnGPUBackend *gpu,
+                                    const void *data,
+                                    size_t size,
+                                    int type,
+                                    int rows,
+                                    int cols,
+                                    BnModelGPUUploadMode mode) {
+    switch (mode) {
+        case BN_MODEL_GPU_UPLOAD_QUANT_ONLY:
+            return bn_gpu_backend_create_quant_only_buffer(
+                gpu, data, size, type, rows, cols);
+        case BN_MODEL_GPU_UPLOAD_KQUANT_F32_CACHE:
+            return bn_gpu_backend_create_kquant_f32_cache_buffer(
+                gpu, data, size, type, rows, cols);
+        case BN_MODEL_GPU_UPLOAD_F16_CACHE:
+            return bn_gpu_backend_create_f16_cache_buffer(
+                gpu, data, size, type, rows, cols);
+        case BN_MODEL_GPU_UPLOAD_STANDARD:
+        default:
+            return bn_gpu_backend_create_buffer(gpu, data, size, type,
+                                                rows, cols);
+    }
+}
+
 static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     if (!w->data) return NULL;
     size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
     if (bn_gpu_policy_logits_kquant_f32_cache_enabled(gpu, w->type)) {
-        return gpu->buffer_create_kquant_f32_cache(
-            gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
+        return upload_gpu_buffer_mode(gpu, w->data, sz, w->type, w->rows,
+                                      w->cols,
+                                      BN_MODEL_GPU_UPLOAD_KQUANT_F32_CACHE);
     }
     if (bn_gpu_policy_logits_f16_cache_enabled(gpu)) {
-        return gpu->buffer_create_f16_cache(
-            gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
+        return upload_gpu_buffer_mode(gpu, w->data, sz, w->type, w->rows,
+                                      w->cols,
+                                      BN_MODEL_GPU_UPLOAD_F16_CACHE);
     }
-    return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
+    return upload_gpu_buffer_mode(gpu, w->data, sz, w->type, w->rows,
+                                  w->cols, BN_MODEL_GPU_UPLOAD_STANDARD);
 }
 
 static void *upload_qweight_mode(BnGPUBackend *gpu, BnQWeight *w,
@@ -46,10 +80,11 @@ static void *upload_qweight_mode(BnGPUBackend *gpu, BnQWeight *w,
     size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
     if (quant_only && bn_gpu_backend_can_create_quant_only_buffer(gpu))
-        return gpu->buffer_create_quant_only(gpu->ctx, w->data, sz, w->type,
-                                             w->rows, w->cols);
-    return gpu->buffer_create(gpu->ctx, w->data, sz, w->type, w->rows,
-                              w->cols);
+        return upload_gpu_buffer_mode(gpu, w->data, sz, w->type, w->rows,
+                                      w->cols,
+                                      BN_MODEL_GPU_UPLOAD_QUANT_ONLY);
+    return upload_gpu_buffer_mode(gpu, w->data, sz, w->type, w->rows,
+                                  w->cols, BN_MODEL_GPU_UPLOAD_STANDARD);
 }
 
 static int upload_qweight_owned_mode(BnModel *model, BnBackendModel *backend,
@@ -74,8 +109,9 @@ static int register_gpu_handle(BnModel *model, int layer,
 
 static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
     if (!data || n_elems <= 0) return NULL;
-    return gpu->buffer_create(gpu->ctx, data, (size_t)n_elems * sizeof(float),
-                              -1, n_elems, 1);
+    return upload_gpu_buffer_mode(gpu, data, (size_t)n_elems * sizeof(float),
+                                  -1, n_elems, 1,
+                                  BN_MODEL_GPU_UPLOAD_STANDARD);
 }
 
 static void *upload_moe_router_diff2(BnGPUBackend *gpu,
@@ -88,10 +124,10 @@ static void *upload_moe_router_diff2(BnGPUBackend *gpu,
     const float *r1 = router_weight + dim;
     for (int i = 0; i < dim; i++)
         diff[i] = r0[i] - r1[i];
-    void *handle = gpu->buffer_create(gpu->ctx, diff,
-                                      (size_t)dim * sizeof(float),
-                                      bn_gpu_policy_float_buffer_type(),
-                                      1, dim);
+    void *handle = upload_gpu_buffer_mode(
+        gpu, diff, (size_t)dim * sizeof(float),
+        bn_gpu_policy_float_buffer_type(), 1, dim,
+        BN_MODEL_GPU_UPLOAD_STANDARD);
     free(diff);
     return handle;
 }
@@ -161,17 +197,17 @@ static void *upload_moe_all_proj(BnModel *model,
         prefer_small_expert_f32_cache ||
         (proj == 2 &&
          bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(type));
-    void *(*create_buffer)(void *, const void *, size_t, int, int, int) =
+    BnModelGPUUploadMode upload_mode =
         force_f16_cache
-            ? gpu->buffer_create_f16_cache :
+            ? BN_MODEL_GPU_UPLOAD_F16_CACHE :
         (prefer_down_kquant_f32_cache || prefer_small_expert_f32_cache)
-            ? gpu->buffer_create_kquant_f32_cache :
+            ? BN_MODEL_GPU_UPLOAD_KQUANT_F32_CACHE :
         ((!force_full_buffer ||
           bn_gpu_policy_moe_quant_only_after_cache(
               type, native_quant_f16_cache)) &&
          bn_gpu_backend_can_create_quant_only_buffer(gpu))
-            ? gpu->buffer_create_quant_only
-            : gpu->buffer_create;
+            ? BN_MODEL_GPU_UPLOAD_QUANT_ONLY
+            : BN_MODEL_GPU_UPLOAD_STANDARD;
     if (stride != expert_bytes) {
         uint8_t *packed = (uint8_t *)malloc(total_bytes);
         if (!packed)
@@ -181,13 +217,15 @@ static void *upload_moe_all_proj(BnModel *model,
                    base + offset + (size_t)e * stride,
                    expert_bytes);
         }
-        void *handle = create_buffer(gpu->ctx, packed, total_bytes,
-                                     type, rows * n_experts, cols);
+        void *handle = upload_gpu_buffer_mode(
+            gpu, packed, total_bytes, type, rows * n_experts, cols,
+            upload_mode);
         free(packed);
         return handle;
     }
-    return create_buffer(gpu->ctx, base + offset, total_bytes,
-                         type, rows * n_experts, cols);
+    return upload_gpu_buffer_mode(gpu, base + offset, total_bytes,
+                                  type, rows * n_experts, cols,
+                                  upload_mode);
 }
 
 static int can_use_resident_moe_routed_ffn(const BnConfig *c,
@@ -818,11 +856,11 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 ? upload_moe_router_diff2(gpu, lw->moe.router_weight, c->dim)
                 : NULL;
         void *moe_router_gpu = lw->moe.router_weight
-            ? gpu->buffer_create(
-                gpu->ctx, lw->moe.router_weight,
+            ? upload_gpu_buffer_mode(
+                gpu, lw->moe.router_weight,
                 (size_t)c->n_experts * (size_t)c->dim * sizeof(float),
                 bn_gpu_policy_float_buffer_type(),
-                c->n_experts, c->dim)
+                c->n_experts, c->dim, BN_MODEL_GPU_UPLOAD_STANDARD)
             : NULL;
         int upload_moe_all = upload_moe_all_model &&
                              can_use_resident_moe_routed_ffn(c, lw);
@@ -886,10 +924,11 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
             }
         }
         void *shared_expert_gate_gpu = lw->shared.shared_expert_gate
-            ? gpu->buffer_create(
-                gpu->ctx, lw->shared.shared_expert_gate,
+            ? upload_gpu_buffer_mode(
+                gpu, lw->shared.shared_expert_gate,
                 (size_t)c->dim * sizeof(float),
-                bn_gpu_policy_float_buffer_type(), 1, c->dim)
+                bn_gpu_policy_float_buffer_type(), 1, c->dim,
+                BN_MODEL_GPU_UPLOAD_STANDARD)
             : NULL;
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_NORM,
                                 attn_norm_gpu) != 0 ||
