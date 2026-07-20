@@ -3,6 +3,7 @@
 #include "../gpu_shader_ir_internal.h"
 #include "../gpu_quant_lowering_internal.h"
 #include "../moe_internal.h"
+#include "backend_layout.h"
 #include "backend_quant.h"
 #include "model_arch.h"
 #include <stdio.h>
@@ -390,7 +391,8 @@ int bn_transformer_gpu_logits_needs_cpu_fallback(
         bn_gpu_policy_max_storage_binding_bytes(
             gpu->max_storage_binding_size);
 
-    return bn_qweight_data_size(logits->cpu_weight) > max_storage_binding;
+    return bn_backend_layout_qweight_data_size(logits->cpu_weight) >
+           max_storage_binding;
 }
 
 int bn_transformer_gpu_all_active_two_kquant_moe_layer(

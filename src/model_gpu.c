@@ -4,7 +4,6 @@
 #include "gpu_backend.h"
 #include "gpu_policy.h"
 #include "moe_internal.h"
-#include "quant.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
@@ -28,7 +27,7 @@ void bn_model_set_gpu_disabled(BnModel *model, int disabled) {
 
 static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     if (!w->data) return NULL;
-    size_t sz = bn_qweight_data_size(w);
+    size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
     if (bn_gpu_policy_logits_kquant_f32_cache_enabled(gpu, w->type)) {
         return gpu->buffer_create_q6_f32_cache(
@@ -44,7 +43,7 @@ static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
 static void *upload_qweight_mode(BnGPUBackend *gpu, BnQWeight *w,
                                  int quant_only) {
     if (!w->data) return NULL;
-    size_t sz = bn_qweight_data_size(w);
+    size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
     if (quant_only && gpu->buffer_create_quant_only)
         return gpu->buffer_create_quant_only(gpu->ctx, w->data, sz, w->type,
@@ -254,8 +253,8 @@ static int optional_layout_fits_memory(BnGPUBackend *gpu, size_t bytes,
 static size_t qweight_pair_bytes(const BnQWeight *a, const BnQWeight *b) {
     if (!a || !b)
         return 0;
-    size_t a_sz = bn_qweight_data_size(a);
-    size_t b_sz = bn_qweight_data_size(b);
+    size_t a_sz = bn_backend_layout_qweight_data_size(a);
+    size_t b_sz = bn_backend_layout_qweight_data_size(b);
     if (a_sz > SIZE_MAX - b_sz)
         return SIZE_MAX;
     return a_sz + b_sz;
@@ -276,7 +275,7 @@ static int qweight_triple_stackable(const BnQWeight *a,
 static size_t qweight_triple_bytes(const BnQWeight *a, const BnQWeight *b,
                                    const BnQWeight *c) {
     size_t ab = qweight_pair_bytes(a, b);
-    size_t c_sz = c ? bn_qweight_data_size(c) : 0;
+    size_t c_sz = c ? bn_backend_layout_qweight_data_size(c) : 0;
     if (ab > SIZE_MAX - c_sz)
         return SIZE_MAX;
     return ab + c_sz;
@@ -307,7 +306,7 @@ static size_t moe_down_kquant_f32_cache_bytes(const BnGPUBackend *gpu,
 }
 
 static int add_qweight_bytes(size_t *total, const BnQWeight *w) {
-    return add_size_checked(total, bn_qweight_data_size(w));
+    return add_size_checked(total, bn_backend_layout_qweight_data_size(w));
 }
 
 static size_t qweight_default_aux_cache_bytes(const BnQWeight *w) {

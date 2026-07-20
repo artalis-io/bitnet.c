@@ -114,6 +114,10 @@ const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason) {
     }
 }
 
+size_t bn_backend_layout_qweight_data_size(const BnQWeight *w) {
+    return bn_qweight_data_size(w);
+}
+
 BnBackendLayoutReason bn_backend_layout_stackable_reason(const BnQWeight *a,
                                                          const BnQWeight *b) {
     if (!a || !b || !a->data || !b->data) return BN_BACKEND_LAYOUT_MISSING_WEIGHT;

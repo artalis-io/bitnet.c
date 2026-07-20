@@ -2231,6 +2231,11 @@ if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_
     fail=1
 fi
 
+if grep -n '#include "quant.h"\|bn_qweight_data_size' src/model_gpu.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "model GPU upload and transformer GPU policy must use backend layout qweight sizing helpers"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supported\|bn_quant_format_uses_embedded_scale\|bn_quant_format_has_embedded_tensor_scale\|bn_quant_embedded_tensor_scale_offset\|bn_quant_format_is_f32\|bn_quant_format_can_convert_dense_to_f32\|bn_quant_format_convert_dense_to_f32\|bn_quant_format_dense_f32_type' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model policy helpers for load-time quant-format policy"
     fail=1

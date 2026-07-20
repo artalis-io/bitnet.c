@@ -33,6 +33,8 @@ typedef struct {
 
 const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason);
 
+size_t bn_backend_layout_qweight_data_size(const BnQWeight *w);
+
 BnBackendLayoutReason bn_backend_layout_stackable_reason(const BnQWeight *a,
                                                          const BnQWeight *b);
 
