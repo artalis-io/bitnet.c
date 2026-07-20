@@ -327,7 +327,7 @@ static void test_qwen36_dense(void) {
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
     assert(bn_model_backend(&model) != NULL);
     assert(bn_model_gpu(&model) == NULL);
-    assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&model.config));
+    assert(bn_model_arch_uses_reference_hybrid_ssm(&model.config));
     assert(!bn_model_arch_requires_large_gpu_graph_fallback(&model.config));
     assert(model.config.n_experts == 0);
     assert(model.config.full_attn_interval == 4);
@@ -370,7 +370,7 @@ static void test_qwen36_moe(void) {
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
     assert(bn_model_backend(&model) != NULL);
     assert(bn_model_gpu(&model) == NULL);
-    assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&model.config));
+    assert(bn_model_arch_uses_reference_hybrid_ssm(&model.config));
     assert(!bn_model_arch_requires_large_gpu_graph_fallback(&model.config));
     bn_model_set_moe_mmap_base(&model, gf->raw);
     assert(model.config.n_experts == 4);
@@ -404,7 +404,7 @@ static void test_qwen36_explicit_dense(void) {
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
-    assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&model.config));
+    assert(bn_model_arch_uses_reference_hybrid_ssm(&model.config));
     assert(model.config.n_experts == 0);
     assert(model.weights.layers[0].block_kind == BN_LAYER_BLOCK_SSM);
     assert(model.weights.layers[3].block_kind == BN_LAYER_BLOCK_ATTENTION);
@@ -434,7 +434,7 @@ static void test_qwen36_explicit_moe(void) {
 
     BnModel model;
     assert(bn_model_load(&model, gf, 8, 0, 0) == 0);
-    assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&model.config));
+    assert(bn_model_arch_uses_reference_hybrid_ssm(&model.config));
     bn_model_set_moe_mmap_base(&model, gf->raw);
     assert(model.config.n_experts == 4);
     assert(model.weights.layers[0].ffn_kind == BN_LAYER_FFN_MOE);

@@ -331,6 +331,14 @@ if rg -n 'bn_model_arch_cpu_prefill_uses_decode_for_parity' \
     fail=1
 fi
 
+if rg -n 'bn_model_arch_uses_scalar_hybrid_ssm_cpu' \
+    src/transformer \
+    src/transformer.c \
+    src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer/GPU policy must use backend-neutral hybrid SSM model_arch helpers"
+    fail=1
+fi
+
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use CPU policy helpers for float K-quant task flags"
     fail=1

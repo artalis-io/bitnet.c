@@ -7,7 +7,9 @@
 
 #define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE               (1u << 0)
 #define BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK           (1u << 1)
-#define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU              (1u << 2)
+#define BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM               (1u << 2)
+#define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU \
+    BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM
 #define BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK     (1u << 3)
 #define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT \
     BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK
@@ -124,6 +126,7 @@ int bn_model_arch_uses_per_layer_embedding(const BnConfig *c);
 int bn_model_arch_uses_attention_post_norm(const BnConfig *c);
 int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
+int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c);
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);

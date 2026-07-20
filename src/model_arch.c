@@ -183,9 +183,14 @@ int bn_model_arch_uses_layer_output_scale(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE) != 0);
 }
 
-int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU) != 0) &&
+int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM) != 0) &&
            c->full_attn_interval > 0;
+}
+
+int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
+    return bn_model_arch_uses_reference_hybrid_ssm(c);
 }
 
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c) {
@@ -743,7 +748,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen3",
-            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
@@ -762,7 +767,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen35",
-            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
@@ -780,7 +785,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen2",
-            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
@@ -802,7 +807,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         },
         {
             "qwen",
-            BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+            BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |

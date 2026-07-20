@@ -3170,7 +3170,7 @@ static void test_model_arch_registry(void) {
     const BnModelArchOps *qwen = bn_model_arch_ops_for("qwen35");
     assert(qwen);
     assert(strcmp(qwen->name, "qwen35") == 0);
-    assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU);
+    assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM);
     assert(qwen->policy_flags & BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS);
     assert(strcmp(qwen->prefix("qwen35"), "qwen35") == 0);
     assert(qwen->activation("qwen35") == 0);
@@ -3185,7 +3185,7 @@ static void test_model_arch_registry(void) {
 
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
-                     BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
+                     BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
                      BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
@@ -3203,7 +3203,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_attention_post_norm(&c));
     assert(!bn_model_arch_uses_ffn_post_norm(&c));
     assert(!bn_model_arch_uses_layer_output_scale(&c));
-    assert(!bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
+    assert(!bn_model_arch_uses_reference_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_hybrid_layer_layout(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_large_dense_hybrid_ssm(&c));
@@ -3233,6 +3233,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
 
     c.full_attn_interval = 4;
+    assert(bn_model_arch_uses_reference_hybrid_ssm(&c));
     assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(bn_model_arch_uses_hybrid_layer_layout(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
@@ -4222,7 +4223,7 @@ static void test_block_planning(void) {
            cpu_ops->ssm_delta);
     assert(bn_transformer_cpu_ssm_gate_op(&c, cpu_ops) ==
            cpu_ops->ssm_gate);
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM;
     c.full_attn_interval = 4;
     assert(bn_transformer_cpu_ssm_conv_silu_op(&c, cpu_ops) ==
            bn_transformer_ssm_conv_silu_scalar_range);
@@ -4955,7 +4956,7 @@ static void test_block_planning(void) {
            prefill_ops->ssm_delta);
     assert(bn_transformer_prefill_ssm_gate_op(&c, prefill_ops) ==
            prefill_ops->ssm_gate);
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM;
     c.full_attn_interval = 4;
     assert(bn_transformer_prefill_ssm_conv_silu_op(&c, prefill_ops) ==
            bn_transformer_ssm_conv_silu_scalar_range);
@@ -5000,7 +5001,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_uses_layer_output_scale(&c));
     assert(bn_transformer_per_layer_embedding_dim(&c) == 128);
     assert(!bn_transformer_prefill_uses_exact_activation(&c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM;
     c.per_layer_input_dim = 0;
     c.full_attn_interval = 4;
     assert(bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));

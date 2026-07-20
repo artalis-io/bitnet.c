@@ -386,7 +386,7 @@ int bn_transformer_divides_rope_freqs(
 
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c) {
-    return bn_model_arch_uses_scalar_hybrid_ssm_cpu(c);
+    return bn_model_arch_uses_reference_hybrid_ssm(c);
 }
 
 int bn_transformer_prefill_uses_exact_activation(
