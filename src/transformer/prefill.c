@@ -219,7 +219,8 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        quantized_buf, bn_model_pool(m));
         return;
     }
-    if (n > 1 && n <= 16 && bn_model_gpu(m)->matmul_batch) {
+    if (bn_transformer_prefill_quant_matmul_batch_gpu_available(
+            bn_model_gpu(m), n)) {
         const BnBackendModel *backend = bn_model_backend(m);
         BnMatvecTask tasks[16];
         const void *bufs[16];

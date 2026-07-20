@@ -1180,6 +1180,11 @@ if grep -n '#include "backend_quant.h"\|bn_backend_quant_matmul.*gpu_buf' src/tr
     fail=1
 fi
 
+if grep -n 'bn_model_gpu(m)->matmul_batch' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill execution code must use prefill policy helpers for GPU-resident batched matmul availability"
+    fail=1
+fi
+
 if ! grep -n 'BN_CPU_DISABLE_PREPARED_QWEIGHTS\|BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_REFERENCE_DOT\|BN_CPU_REFERENCE_Q4_DOT\|BN_CPU_LLAMA_DOT\|BN_CPU_LLAMA_Q4_DOT' src/transformer/cpu_policy.c >/dev/null 2>&1; then
     echo "CPU env compatibility policy must live in src/transformer/cpu_policy.c"
     fail=1
