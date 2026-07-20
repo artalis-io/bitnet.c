@@ -2037,35 +2037,51 @@ static int gpu_policy_optimistic_argmax_penalty_requested(void) {
 }
 
 static int gpu_policy_legacy_block_matvec4_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q5_MATVEC4") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_LEGACY_BLOCK_MATVEC4",
+        "BN_CUDA_ENABLE_Q5_MATVEC4");
 }
 
 static int gpu_policy_legacy_block_warp_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_LEGACY_BLOCK_WARP",
+        "BN_CUDA_ENABLE_Q5_WARP");
 }
 
 static int gpu_policy_deinterleaved_kquant_pair_matvec_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_DEINTERLEAVED_KQUANT_PAIR_MATVEC",
+        "BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC");
 }
 
 static int gpu_policy_deinterleaved_kquant_4warp_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q5K_4WARP") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DEINTERLEAVED_KQUANT_4WARP",
+        "BN_CUDA_DISABLE_Q5K_4WARP");
 }
 
 static int gpu_policy_deinterleaved_kquant_split_4warp_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q5K_SPLIT_4WARP") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_DEINTERLEAVED_KQUANT_SPLIT_4WARP",
+        "BN_CUDA_ENABLE_Q5K_SPLIT_4WARP");
 }
 
 static int gpu_policy_deinterleaved_kquant_gateup_2warp_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q5K_GATEUP_2WARP") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DEINTERLEAVED_KQUANT_GATEUP_2WARP",
+        "BN_CUDA_DISABLE_Q5K_GATEUP_2WARP");
 }
 
 static int gpu_policy_symmetric_kquant_dot_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4K_DOT") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_SYMMETRIC_KQUANT_DOT",
+        "BN_CUDA_DISABLE_Q4K_DOT");
 }
 
 static int gpu_policy_deinterleaved_kquant_dot_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q5K_DOT") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DEINTERLEAVED_KQUANT_DOT",
+        "BN_CUDA_DISABLE_Q5K_DOT");
 }
 
 static int gpu_policy_asymmetric_kquant_4warp_disabled(void) {
