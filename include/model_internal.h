@@ -30,6 +30,11 @@ size_t bn_model_quant_embedded_tensor_scale_offset(int type,
                                                    int cols);
 int bn_model_quant_tied_logits_uses_quant_path(int type);
 int bn_model_quant_logits_i8_cache_supported(int type);
+void bn_model_quant_prepare_logits_i8_cache(const uint16_t *src,
+                                            int8_t *dst,
+                                            float *scales,
+                                            int rows,
+                                            int dim);
 int bn_model_quant_is_dense_f32(int type);
 int bn_model_quant_can_convert_dense_to_f32(int type);
 int bn_model_quant_convert_dense_to_f32(int type,

@@ -3,7 +3,6 @@
 #include "backend_model.h"
 #include "model_arch.h"
 #include "moe.h"
-#include "quant.h"
 #include "sh_arena.h"
 #include "sh_log.h"
 #include "turboquant.h"
@@ -982,9 +981,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                          w->output_weight.type))
                         ? (const uint16_t *)w->output_weight.data
                         : (const uint16_t *)w->token_embedding;
-                bn_quant_f16_rows_to_i8_dispatch(src, w->emb_out_i8,
-                                                 w->emb_out_scales,
-                                                 i8_emb_rows, c->dim);
+                bn_model_quant_prepare_logits_i8_cache(src, w->emb_out_i8,
+                                                       w->emb_out_scales,
+                                                       i8_emb_rows, c->dim);
                 char i8_mb[16]; snprintf(i8_mb, sizeof(i8_mb), "%.0f", (double)emb_i8_bytes / (1024*1024));
                 SH_LOG_INFO("INT8 output embeddings ready", "MB", i8_mb);
             } else {

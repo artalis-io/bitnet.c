@@ -28,6 +28,14 @@ int bn_model_quant_logits_i8_cache_supported(int type) {
     return bn_backend_quant_logits_i8_cache_supported(type);
 }
 
+void bn_model_quant_prepare_logits_i8_cache(const uint16_t *src,
+                                            int8_t *dst,
+                                            float *scales,
+                                            int rows,
+                                            int dim) {
+    bn_quant_f16_rows_to_i8_dispatch(src, dst, scales, rows, dim);
+}
+
 int bn_model_quant_is_dense_f32(int type) {
     return bn_backend_quant_already_f32(type);
 }
