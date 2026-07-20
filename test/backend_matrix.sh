@@ -365,6 +365,34 @@ do
     fi
 done
 
+if rg -n 'BN_GGUF_TENSOR_|bn_quant_format_|bn_backend_quant_is_' \
+    src/transformer \
+    src/transformer.c \
+    src/moe.c \
+    src/moe_execute.c \
+    src/moe_prefill.c \
+    src/moe_route.c \
+    src/moe_math.c \
+    src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "Transformer and MoE execution must compose behavior policy helpers, not raw quant predicates"
+    fail=1
+fi
+
+if rg -n 'BN_TRANSFORMER_CPU_HAS_|BN_CPU_BACKEND_|__AVX|__ARM_NEON|__wasm' \
+    src/transformer.c \
+    src/transformer/cpu.c \
+    src/transformer/gpu.c \
+    src/transformer/logits.c \
+    src/transformer/prefill.c \
+    src/moe.c \
+    src/moe_execute.c \
+    src/moe_prefill.c \
+    src/moe_route.c \
+    src/moe_math.c >/dev/null 2>&1; then
+    echo "Transformer and MoE execution must keep CPU ISA policy in backend/kernel helpers"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_moe_route_q4_down\|bn_backend_quant_moe_routed_q4' \
     include/backend_quant.h \
     src/gpu_policy.c \
