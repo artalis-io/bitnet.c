@@ -156,19 +156,22 @@ static int all_active_two_route_block_prepared_input_requested(void) {
 }
 
 static int small_dense_native_quant_cpu_attention_safe_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_SMALL_DENSE_NATIVE_QUANT_CPU_ATTN_SAFE",
         "BN_CUDA_DISABLE_SMALL_DENSE_Q8_CPU_ATTN_SAFE",
         "BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
 }
 
 static int small_dense_exact_native_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_SMALL_DENSE_EXACT_NATIVE",
         "BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8",
         "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
 }
 
 static int small_dense_exact_native_ffn_down_requested(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_SMALL_DENSE_EXACT_NATIVE_FFN_DOWN",
         "BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN",
         "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
 }
@@ -179,13 +182,15 @@ static int small_dense_prefill_disabled(void) {
 }
 
 static int native_quant_logits_refine_requested(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_SMALL_DENSE_NATIVE_QUANT_LOGITS_REFINE",
         "BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
         "BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
 }
 
 static int native_quant_logits_refine_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_SMALL_DENSE_NATIVE_QUANT_LOGITS_REFINE",
         "BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE",
         "BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE");
 }
