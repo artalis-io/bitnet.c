@@ -6,22 +6,38 @@ static int quant_env_enabled(const char *name, const char *compat_name) {
            (compat_name != NULL && getenv(compat_name) != NULL);
 }
 
+static int quant_env_enabled3(const char *name,
+                              const char *compat_name,
+                              const char *compat_name2) {
+    return quant_env_enabled(name, compat_name) ||
+           (compat_name2 != NULL && getenv(compat_name2) != NULL);
+}
+
+static const char *quant_env_value(const char *name,
+                                   const char *compat_name) {
+    const char *v = getenv(name);
+    return v ? v : (compat_name ? getenv(compat_name) : NULL);
+}
+
 static int reference_dot_env_enabled(void) {
     return quant_env_enabled("BN_CPU_REFERENCE_DOT", "BN_CPU_LLAMA_DOT");
 }
 
 static int reference_q4_dot_env_enabled(void) {
-    return quant_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
-                             "BN_CPU_LLAMA_Q4_DOT");
+    return quant_env_enabled3("BN_CPU_REFERENCE_BLOCK_QUANT_DOT",
+                              "BN_CPU_REFERENCE_Q4_DOT",
+                              "BN_CPU_LLAMA_Q4_DOT");
 }
 
 static int reference_q6_dot_env_enabled(void) {
-    return quant_env_enabled("BN_CPU_REFERENCE_Q6_DOT",
-                             "BN_CPU_LLAMA_Q6_DOT");
+    return quant_env_enabled3("BN_CPU_REFERENCE_KQUANT_DOT",
+                              "BN_CPU_REFERENCE_Q6_DOT",
+                              "BN_CPU_LLAMA_Q6_DOT");
 }
 
 int bn_quant_policy_avx512_q5k_vnni_enabled(int rows) {
-    const char *v = getenv("BN_AVX512_Q5K_VNNI");
+    const char *v = quant_env_value("BN_AVX512_KQUANT_VNNI",
+                                    "BN_AVX512_Q5K_VNNI");
     if (v)
         return v[0] != '\0' && v[0] != '0';
     return rows >= 4096;
@@ -71,11 +87,13 @@ int bn_quant_policy_batch_reference_q4_dot_enabled(
 }
 
 int bn_quant_policy_wasm_q4_canonical4_enabled(void) {
-    return getenv("BN_WASM_Q4_CANONICAL4") != NULL;
+    return quant_env_enabled("BN_WASM_BLOCK_QUANT_CANONICAL4",
+                             "BN_WASM_Q4_CANONICAL4");
 }
 
 int bn_quant_policy_q8_0_matmul_batch_enabled(void) {
-    return getenv("BN_DISABLE_Q8_0_MATMUL_BATCH") == NULL;
+    return !quant_env_enabled("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH",
+                              "BN_DISABLE_Q8_0_MATMUL_BATCH");
 }
 
 int bn_quant_format_is_q4k(int type) {

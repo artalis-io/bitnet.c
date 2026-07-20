@@ -20,11 +20,15 @@ static uint16_t test_fp32_to_bf16(float f) {
 static void test_quant_policy_helpers(void) {
     printf("test_quant_policy_helpers... ");
 
+    unsetenv("BN_AVX512_KQUANT_VNNI");
     unsetenv("BN_AVX512_Q5K_VNNI");
     assert(!bn_quant_policy_avx512_q5k_vnni_enabled(1024));
     assert(bn_quant_policy_avx512_q5k_vnni_enabled(4096));
-    setenv("BN_AVX512_Q5K_VNNI", "0", 1);
+    setenv("BN_AVX512_KQUANT_VNNI", "0", 1);
     assert(!bn_quant_policy_avx512_q5k_vnni_enabled(4096));
+    setenv("BN_AVX512_KQUANT_VNNI", "1", 1);
+    assert(bn_quant_policy_avx512_q5k_vnni_enabled(1024));
+    unsetenv("BN_AVX512_KQUANT_VNNI");
     setenv("BN_AVX512_Q5K_VNNI", "1", 1);
     assert(bn_quant_policy_avx512_q5k_vnni_enabled(1024));
     unsetenv("BN_AVX512_Q5K_VNNI");
@@ -46,7 +50,9 @@ static void test_quant_policy_helpers(void) {
     unsetenv("BN_CPU_LLAMA_Q4_DOT");
     unsetenv("BN_CPU_LLAMA_Q6_DOT");
     unsetenv("BN_CPU_REFERENCE_DOT");
+    unsetenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT");
     unsetenv("BN_CPU_REFERENCE_Q4_DOT");
+    unsetenv("BN_CPU_REFERENCE_KQUANT_DOT");
     unsetenv("BN_CPU_REFERENCE_Q6_DOT");
     assert(!bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q4_dot_enabled(
@@ -54,10 +60,18 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_policy_reference_q4_dot_enabled(
         BN_MATVEC_TASK_REFERENCE_DOT | BN_MATVEC_TASK_NATIVE_QUANT));
     assert(!bn_quant_policy_reference_q6_dot_enabled(0));
+    setenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT", "1", 1);
+    assert(bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    unsetenv("BN_CPU_REFERENCE_BLOCK_QUANT_DOT");
     setenv("BN_CPU_REFERENCE_Q4_DOT", "1", 1);
     assert(bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q6_dot_enabled(0));
     unsetenv("BN_CPU_REFERENCE_Q4_DOT");
+    setenv("BN_CPU_REFERENCE_KQUANT_DOT", "1", 1);
+    assert(!bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    unsetenv("BN_CPU_REFERENCE_KQUANT_DOT");
     setenv("BN_CPU_REFERENCE_Q6_DOT", "1", 1);
     assert(!bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q6_dot_enabled(0));
@@ -83,14 +97,22 @@ static void test_quant_policy_helpers(void) {
     tasks[0].flags = 0;
     tasks[1].flags = 0;
 
+    unsetenv("BN_WASM_BLOCK_QUANT_CANONICAL4");
     unsetenv("BN_WASM_Q4_CANONICAL4");
     assert(!bn_quant_policy_wasm_q4_canonical4_enabled());
+    setenv("BN_WASM_BLOCK_QUANT_CANONICAL4", "1", 1);
+    assert(bn_quant_policy_wasm_q4_canonical4_enabled());
+    unsetenv("BN_WASM_BLOCK_QUANT_CANONICAL4");
     setenv("BN_WASM_Q4_CANONICAL4", "1", 1);
     assert(bn_quant_policy_wasm_q4_canonical4_enabled());
     unsetenv("BN_WASM_Q4_CANONICAL4");
 
+    unsetenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH");
     unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");
     assert(bn_quant_policy_q8_0_matmul_batch_enabled());
+    setenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH", "1", 1);
+    assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
+    unsetenv("BN_DISABLE_NATIVE_QUANT_MATMUL_BATCH");
     setenv("BN_DISABLE_Q8_0_MATMUL_BATCH", "1", 1);
     assert(!bn_quant_policy_q8_0_matmul_batch_enabled());
     unsetenv("BN_DISABLE_Q8_0_MATMUL_BATCH");

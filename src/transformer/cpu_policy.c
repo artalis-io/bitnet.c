@@ -9,13 +9,21 @@ static int cpu_env_enabled(const char *name, const char *compat_name) {
            (compat_name != NULL && getenv(compat_name) != NULL);
 }
 
+static int cpu_env_enabled3(const char *name,
+                            const char *compat_name,
+                            const char *compat_name2) {
+    return cpu_env_enabled(name, compat_name) ||
+           (compat_name2 != NULL && getenv(compat_name2) != NULL);
+}
+
 static int cpu_reference_dot_env_enabled(void) {
     return cpu_env_enabled("BN_CPU_REFERENCE_DOT", "BN_CPU_LLAMA_DOT");
 }
 
 static int cpu_reference_kquant_dot_env_enabled(void) {
-    return cpu_env_enabled("BN_CPU_REFERENCE_Q4_DOT",
-                           "BN_CPU_LLAMA_Q4_DOT");
+    return cpu_env_enabled3("BN_CPU_REFERENCE_BLOCK_QUANT_DOT",
+                            "BN_CPU_REFERENCE_Q4_DOT",
+                            "BN_CPU_LLAMA_Q4_DOT");
 }
 
 int bn_transformer_cpu_prepared_qweights_enabled(void) {
