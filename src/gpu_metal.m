@@ -2160,8 +2160,8 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
                 compiled, n_supported_types);
 
-        bn_gpu_policy_metal_apply_q4_q8_default();
-        ctx->q4_q8_enabled = bn_gpu_policy_metal_q4_q8_enabled();
+        bn_gpu_policy_metal_apply_small_dense_exact_native_default();
+        ctx->q4_q8_enabled = bn_gpu_policy_metal_small_dense_exact_native_enabled();
         ctx->q8_barriers_enabled = bn_gpu_policy_metal_q8_barriers_enabled();
         ctx->cpu_order_rmsnorm_enabled =
             bn_gpu_policy_metal_cpu_order_rmsnorm_enabled();

@@ -2426,7 +2426,7 @@ void bn_gpu_policy_apply_native_quant_prepared_override(void) {
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
 }
 
-void bn_gpu_policy_apply_metal_q4_q8_default_disable_override(void) {
+void bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override(void) {
     setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
 }
 
@@ -2434,7 +2434,7 @@ void bn_gpu_policy_apply_metal_private_weights_override(void) {
     setenv("BN_METAL_PRIVATE_WEIGHTS", "1", 1);
 }
 
-void bn_gpu_policy_metal_apply_q4_q8_default(void) {
+void bn_gpu_policy_metal_apply_small_dense_exact_native_default(void) {
     if (!getenv("BN_GPU_Q4_Q8") &&
         !getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")) {
         setenv("BN_GPU_Q4_Q8", "1", 1);
@@ -2446,7 +2446,7 @@ void bn_gpu_policy_metal_apply_q4_q8_default(void) {
     }
 }
 
-int bn_gpu_policy_metal_q4_q8_enabled(void) {
+int bn_gpu_policy_metal_small_dense_exact_native_enabled(void) {
     return getenv("BN_GPU_Q4_Q8") != NULL;
 }
 
@@ -2579,7 +2579,7 @@ int bn_gpu_policy_small_dense_exact_native_from_layer_or_default(int n_layers) {
     const char *env = getenv("BN_GPU_Q4_Q8_FROM_LAYER");
     if (env)
         return atoi(env);
-    return bn_gpu_policy_metal_q4_q8_enabled() ? n_layers - 1 : -1;
+    return bn_gpu_policy_metal_small_dense_exact_native_enabled() ? n_layers - 1 : -1;
 }
 
 int bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
@@ -2599,7 +2599,7 @@ int bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
         return -1;
     }
 
-    if (bn_gpu_policy_metal_q4_q8_enabled() && !native_quant_prepared &&
+    if (bn_gpu_policy_metal_small_dense_exact_native_enabled() && !native_quant_prepared &&
         n_layers > 33)
         return n_layers - 33 - 1;
     return -1;

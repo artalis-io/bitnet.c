@@ -591,7 +591,7 @@ int main(int argc, char **argv) {
     if (args.gpu_split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
     if (args.metal_disable_small_dense_exact_native)
-        bn_gpu_policy_apply_metal_q4_q8_default_disable_override();
+        bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override();
     if (args.metal_private_weights)
         bn_gpu_policy_apply_metal_private_weights_override();
     if (args.small_dense_exact_native_to_layer >= 0) {

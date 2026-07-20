@@ -3404,7 +3404,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
     unsetenv("BN_METAL_Q4_PREPARED");
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");
-    assert(!bn_gpu_policy_metal_q4_q8_enabled());
+    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
     assert(!bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
     assert(!bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
     assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
@@ -3434,8 +3434,8 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 0, 0, 1, 1, 0));
-    bn_gpu_policy_metal_apply_q4_q8_default();
-    assert(bn_gpu_policy_metal_q4_q8_enabled());
+    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
+    assert(bn_gpu_policy_metal_small_dense_exact_native_enabled());
     assert(bn_gpu_policy_metal_q4_q8_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 1, 0));
     assert(bn_gpu_policy_metal_q4_q8_matvec_supported(
@@ -3518,12 +3518,12 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
-    bn_gpu_policy_metal_apply_q4_q8_default();
-    assert(!bn_gpu_policy_metal_q4_q8_enabled());
+    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
+    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
-    bn_gpu_policy_apply_metal_q4_q8_default_disable_override();
-    bn_gpu_policy_metal_apply_q4_q8_default();
-    assert(!bn_gpu_policy_metal_q4_q8_enabled());
+    bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override();
+    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
+    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
     bn_gpu_policy_apply_metal_private_weights_override();
     assert(getenv("BN_METAL_PRIVATE_WEIGHTS") != NULL);
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");
