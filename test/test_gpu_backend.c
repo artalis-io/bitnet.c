@@ -4074,6 +4074,10 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_native_quant_prepared_input_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_prepared_native_quant_matvec_candidate(
+        BN_GGUF_TENSOR_Q8_K));
+    assert(!bn_backend_quant_prepared_native_quant_matvec_candidate(
+        BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_native_quant_warp_matvec_candidate(
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_native_quant_warp_matvec_candidate(

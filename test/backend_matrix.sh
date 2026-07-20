@@ -2638,6 +2638,11 @@ if grep -n 'bn_gpu_policy_backend_is_cuda' src/gpu_policy.c >/dev/null 2>&1; the
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_is_q8_0\|bn_backend_quant_is_q5_0\|bn_backend_quant_is_q4k\|bn_backend_quant_is_q5k\|bn_backend_quant_is_q8k' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU policy must compose behavior-named backend quant helpers, not exact tensor-format predicates"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_specialized_q6_q8k_path_enabled' include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Specialized native-quant decode policy must use behavior names, not Q6/Q8K helper names"
     fail=1

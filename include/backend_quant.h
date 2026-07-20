@@ -389,6 +389,11 @@ static inline int bn_backend_quant_native_quant_warp_matvec_candidate(int type) 
     return bn_backend_quant_is_q8_0(type);
 }
 
+static inline int
+bn_backend_quant_prepared_native_quant_matvec_candidate(int type) {
+    return bn_backend_quant_is_q8k(type);
+}
+
 static inline int bn_backend_quant_asymmetric_kquant_dot_matmul_candidate(int type) {
     return bn_backend_quant_is_q4k(type);
 }

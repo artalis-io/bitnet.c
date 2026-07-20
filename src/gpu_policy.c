@@ -905,17 +905,18 @@ int bn_gpu_policy_matvec_disabled(void) {
 }
 
 static int gpu_policy_matvec_type_disabled(int tensor_type) {
-    if (bn_backend_quant_is_q8_0(tensor_type))
+    if (bn_backend_quant_native_quant_small_state_matvec_candidate(tensor_type))
         return gpu_policy_native_quant_matvec_disabled();
-    if (bn_backend_quant_is_q5_0(tensor_type))
+    if (bn_backend_quant_legacy_block_matvec_candidate(tensor_type))
         return gpu_policy_legacy_5bit_matvec_disabled();
-    if (bn_backend_quant_is_q4k(tensor_type))
+    if (bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(tensor_type))
         return gpu_policy_asymmetric_kquant_matvec_disabled();
-    if (bn_backend_quant_is_q5k(tensor_type))
+    if (bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
+            tensor_type))
         return gpu_policy_deinterleaved_kquant_matvec_disabled();
     if (bn_backend_quant_moe_down_uses_down_kquant(tensor_type))
         return gpu_policy_down_kquant_matvec_disabled_by_type();
-    if (bn_backend_quant_is_q8k(tensor_type))
+    if (bn_backend_quant_prepared_native_quant_matvec_candidate(tensor_type))
         return gpu_policy_prepared_native_quant_matvec_disabled();
     return 0;
 }
@@ -2371,7 +2372,8 @@ int bn_gpu_policy_cuda_asymmetric_kquant_out_residual_rmsnorm_fuse_enabled(
 
 int bn_gpu_policy_cuda_asymmetric_kquant_qkv_mixed_fuse_enabled(
     int tensor_type) {
-    return !bn_backend_quant_is_q4k(tensor_type) ||
+    return !bn_backend_quant_asymmetric_kquant_prepared_input_split_candidate(
+               tensor_type) ||
            gpu_policy_asymmetric_kquant_qkv_mixed_fuse_requested();
 }
 
@@ -2459,8 +2461,10 @@ int bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(int type_a,
                                                                 int type_b,
                                                                 int cols) {
     return cuda_native_quant_mixed_prepared_input_requested() &&
-           (bn_backend_quant_is_q8_0(type_a) ||
-            bn_backend_quant_is_q8_0(type_b)) &&
+           (bn_backend_quant_native_quant_prepared_input_matvec_candidate(
+                type_a) ||
+            bn_backend_quant_native_quant_prepared_input_matvec_candidate(
+                type_b)) &&
            (cols & 31) == 0;
 }
 
