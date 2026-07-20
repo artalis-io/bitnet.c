@@ -742,6 +742,11 @@ if grep -n 'BN_CUDA_Q8K_INPUT_CACHE\|q8k_input_cache\|enable_q8k_input_cache\|re
     fail=1
 fi
 
+if grep -n '\bq8k_flag\b' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "K-quant gate-up prepared path flags must use behavior names, not Q8K flag names"
+    fail=1
+fi
+
 if ! grep -n 'bn_gpu_policy_prepared_kquant_input_cache_enabled' src/gpu_cuda.cu >/dev/null 2>&1 ||
    ! grep -n 'bn_gpu_policy_kquant_dot_enabled' src/gpu_cuda.cu >/dev/null 2>&1 ||
    ! grep -n 'bn_gpu_policy_kquant_gateup_prepared_path_enabled' src/gpu_cuda.cu >/dev/null 2>&1; then

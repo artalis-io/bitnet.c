@@ -252,7 +252,8 @@ int bn_gpu_policy_cuda_asymmetric_kquant_split_value_rows(int total_rows,
                                                          int cols);
 int bn_gpu_policy_cuda_asymmetric_kquant_split_value_fuse_enabled(
     int value_rows);
-int bn_gpu_policy_kquant_gateup_prepared_path_enabled(int q8k_flag);
+int bn_gpu_policy_kquant_gateup_prepared_path_enabled(
+    int uses_prepared_kquant_input);
 int bn_gpu_policy_cuda_asymmetric_kquant_gateup_qwarp4_enabled(int cols);
 int bn_gpu_policy_cuda_asymmetric_kquant_gateup_5warp_enabled(
     int enable_asymmetric_kquant_4warp,

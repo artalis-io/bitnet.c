@@ -1539,8 +1539,10 @@ int bn_gpu_policy_cuda_asymmetric_kquant_split_value_fuse_enabled(
            getenv("BN_CUDA_DISABLE_Q4K_SPLIT_VALUE_FUSE") == NULL;
 }
 
-int bn_gpu_policy_kquant_gateup_prepared_path_enabled(int q8k_flag) {
-    return q8k_flag || getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST") != NULL;
+int bn_gpu_policy_kquant_gateup_prepared_path_enabled(
+    int uses_prepared_kquant_input) {
+    return uses_prepared_kquant_input ||
+           getenv("BN_CUDA_DISABLE_Q4K_GATEUP_Q8_1_FAST") != NULL;
 }
 
 int bn_gpu_policy_cuda_asymmetric_kquant_gateup_qwarp4_enabled(int cols) {
