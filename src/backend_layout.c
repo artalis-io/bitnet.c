@@ -91,9 +91,9 @@ static void *upload_stacked_quant_layout(BnGPUBackend *gpu,
     if (!gpu || !data || size == 0)
         return NULL;
     if (bn_gpu_backend_can_create_quant_only_buffer(gpu))
-        return gpu->buffer_create_quant_only(gpu->ctx, data, size,
-                                             type, rows, cols);
-    return gpu->buffer_create(gpu->ctx, data, size, type, rows, cols);
+        return bn_gpu_backend_create_quant_only_buffer(gpu, data, size,
+                                                       type, rows, cols);
+    return bn_gpu_backend_create_buffer(gpu, data, size, type, rows, cols);
 }
 
 const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason) {
@@ -205,9 +205,9 @@ void *bn_backend_layout_upload_stacked2(BnGPUBackend *gpu,
     size_t b_sz = bn_qweight_data_size(b);
 
     if (bn_gpu_backend_can_create_stacked2_buffer(gpu)) {
-        return gpu->buffer_create_stacked2(gpu->ctx, a->data, a_sz,
-                                           b->data, b_sz, a->type,
-                                           a->rows + b->rows, a->cols);
+        return bn_gpu_backend_create_stacked2_buffer(
+            gpu, a->data, a_sz, b->data, b_sz, a->type,
+            a->rows + b->rows, a->cols);
     }
 
     size_t combined_sz = a_sz + b_sz;
@@ -230,9 +230,9 @@ void *bn_backend_layout_upload_biased_qweight(BnGPUBackend *gpu,
     if (bn_backend_layout_biased_qweight_reason(gpu, w, bias) != BN_BACKEND_LAYOUT_OK)
         return NULL;
     size_t sz = bn_qweight_data_size(w);
-    return gpu->buffer_create_biased(gpu->ctx, w->data, sz,
-                                     w->type, w->rows, w->cols,
-                                     bias, (size_t)w->rows * sizeof(float));
+    return bn_gpu_backend_create_biased_buffer(
+        gpu, w->data, sz, w->type, w->rows, w->cols, bias,
+        (size_t)w->rows * sizeof(float));
 }
 
 void *bn_backend_layout_upload_stacked3_qkv(BnGPUBackend *gpu,
@@ -277,25 +277,22 @@ void *bn_backend_layout_upload_stacked3_qkv(BnGPUBackend *gpu,
             memcpy(cbias + q->rows, k_bias, (size_t)k->rows * sizeof(float));
             memcpy(cbias + q->rows + k->rows, v_bias, (size_t)v->rows * sizeof(float));
             if (bn_gpu_backend_can_create_stacked3_biased_buffer(gpu)) {
-                buf = gpu->buffer_create_stacked3_biased(
-                    gpu->ctx, q->data, q_sz, k->data, k_sz, v->data, v_sz,
+                buf = bn_gpu_backend_create_stacked3_biased_buffer(
+                    gpu, q->data, q_sz, k->data, k_sz, v->data, v_sz,
                     q->type, total_rows, q->cols, cbias,
                     (size_t)total_rows * sizeof(float));
             } else {
-                buf = gpu->buffer_create_biased(gpu->ctx, combined,
-                                                combined_sz, q->type,
-                                                total_rows, q->cols, cbias,
-                                                (size_t)total_rows * sizeof(float));
+                buf = bn_gpu_backend_create_biased_buffer(
+                    gpu, combined, combined_sz, q->type, total_rows, q->cols,
+                    cbias, (size_t)total_rows * sizeof(float));
             }
             free(cbias);
         }
     } else if (no_bias) {
         if (bn_gpu_backend_can_create_stacked3_buffer(gpu)) {
-            buf = gpu->buffer_create_stacked3(gpu->ctx,
-                                              q->data, q_sz,
-                                              k->data, k_sz,
-                                              v->data, v_sz,
-                                              q->type, total_rows, q->cols);
+            buf = bn_gpu_backend_create_stacked3_buffer(
+                gpu, q->data, q_sz, k->data, k_sz, v->data, v_sz,
+                q->type, total_rows, q->cols);
         } else {
             buf = upload_stacked_quant_layout(gpu, combined, combined_sz,
                                               q->type, total_rows, q->cols);

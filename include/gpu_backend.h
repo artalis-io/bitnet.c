@@ -596,6 +596,58 @@ static inline void *bn_gpu_backend_create_stacked2_buffer(
                                        cols);
 }
 
+static inline void *bn_gpu_backend_create_biased_buffer(BnGPUBackend *gpu,
+                                                       const void *data,
+                                                       size_t size,
+                                                       int type,
+                                                       int rows,
+                                                       int cols,
+                                                       const float *bias,
+                                                       size_t bias_size) {
+    if (!bn_gpu_backend_can_create_biased_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_biased(gpu->ctx, data, size, type, rows, cols,
+                                     bias, bias_size);
+}
+
+static inline void *bn_gpu_backend_create_stacked3_buffer(
+    BnGPUBackend *gpu,
+    const void *first_data,
+    size_t first_size,
+    const void *second_data,
+    size_t second_size,
+    const void *third_data,
+    size_t third_size,
+    int type,
+    int rows,
+    int cols) {
+    if (!bn_gpu_backend_can_create_stacked3_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_stacked3(gpu->ctx, first_data, first_size,
+                                       second_data, second_size, third_data,
+                                       third_size, type, rows, cols);
+}
+
+static inline void *bn_gpu_backend_create_stacked3_biased_buffer(
+    BnGPUBackend *gpu,
+    const void *first_data,
+    size_t first_size,
+    const void *second_data,
+    size_t second_size,
+    const void *third_data,
+    size_t third_size,
+    int type,
+    int rows,
+    int cols,
+    const float *bias,
+    size_t bias_size) {
+    if (!bn_gpu_backend_can_create_stacked3_biased_buffer(gpu))
+        return NULL;
+    return gpu->buffer_create_stacked3_biased(
+        gpu->ctx, first_data, first_size, second_data, second_size,
+        third_data, third_size, type, rows, cols, bias, bias_size);
+}
+
 static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
                                          const void *ops,
                                          int n_ops,
