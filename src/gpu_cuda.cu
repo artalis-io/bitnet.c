@@ -91,6 +91,14 @@ static __host__ __device__ int cuda_activation_is_silu(int act_type) {
     return act_type == BN_MODEL_ACTIVATION_SILU;
 }
 
+static __device__ int cuda_backend_uses_prepared_native_quant_input(
+    int tensor_type,
+    const BnCudaBlockQ8_1 *prepared_input,
+    int cols) {
+    return tensor_type == BN_GGUF_TENSOR_Q8_0 &&
+           prepared_input && (cols & 31) == 0;
+}
+
 #define BN_CUDA_ARGMAX_PENALTY_SORT_MAX 256
 
 static int cuda_prepare_penalty_tokens(const int *src, int n, int *dst,
@@ -4391,7 +4399,7 @@ static __global__ void qkv_mixed_matvec_kernel(
     }
 
     int dot_row = out_kind == 2 ? local : row;
-    float sum = (type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
+    float sum = (cuda_backend_uses_prepared_native_quant_input(type, xq, cols))
         ? cuda_dot_row_q8_0_prepared_input(wdata, xq, dot_row, cols)
         : cuda_dot_row(wdata, x, dot_row, cols, type);
     if (out_kind == 1 && k_rotate) {
@@ -4401,7 +4409,7 @@ static __global__ void qkv_mixed_matvec_kernel(
             : k_dim - half_rope;
         int pair_row = q_rows + k_head * head_size + pair_dim;
         pair_sum =
-            (qk_type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
+            (cuda_backend_uses_prepared_native_quant_input(qk_type, xq, cols))
             ? cuda_dot_row_q8_0_prepared_input(qk_wdata, xq, pair_row, cols)
             : cuda_dot_row(qk_wdata, x, pair_row, cols, qk_type);
     }
@@ -4509,7 +4517,7 @@ static __global__ void qkv_mixed_matvec_runtime_kernel(
     }
 
     int dot_row = out_kind == 2 ? local : row;
-    float sum = (type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
+    float sum = (cuda_backend_uses_prepared_native_quant_input(type, xq, cols))
         ? cuda_dot_row_q8_0_prepared_input(wdata, xq, dot_row, cols)
         : cuda_dot_row(wdata, x, dot_row, cols, type);
     if (out_kind == 1 && k_rotate) {
@@ -4519,7 +4527,7 @@ static __global__ void qkv_mixed_matvec_runtime_kernel(
             : k_dim - half_rope;
         int pair_row = q_rows + k_head * head_size + pair_dim;
         pair_sum =
-            (qk_type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
+            (cuda_backend_uses_prepared_native_quant_input(qk_type, xq, cols))
             ? cuda_dot_row_q8_0_prepared_input(qk_wdata, xq, pair_row, cols)
             : cuda_dot_row(qk_wdata, x, pair_row, cols, qk_type);
     }
@@ -4617,7 +4625,7 @@ static __global__ void kv_mixed_matvec_kernel(
     }
 
     int dot_row = out_kind == 1 ? q_offset + local : local;
-    float sum = (type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
+    float sum = (cuda_backend_uses_prepared_native_quant_input(type, xq, cols))
         ? cuda_dot_row_q8_0_prepared_input(wdata, xq, dot_row, cols)
         : cuda_dot_row(wdata, x, dot_row, cols, type);
     if (out_kind == 1 && k_rotate) {
@@ -4627,7 +4635,7 @@ static __global__ void kv_mixed_matvec_kernel(
             : k_dim - half_rope;
         int pair_row = q_offset + k_head * head_size + pair_dim;
         pair_sum =
-            (qk_type == BN_GGUF_TENSOR_Q8_0 && xq && (cols & 31) == 0)
+            (cuda_backend_uses_prepared_native_quant_input(qk_type, xq, cols))
             ? cuda_dot_row_q8_0_prepared_input(qk_wdata, xq, pair_row, cols)
             : cuda_dot_row(qk_wdata, x, pair_row, cols, qk_type);
     }
