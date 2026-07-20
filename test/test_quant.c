@@ -168,13 +168,13 @@ static void test_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_force_quant_matmul_candidate(
         BN_GGUF_TENSOR_Q5_K));
-    assert(bn_quant_format_metal_q4_q8_matvec_supported(
+    assert(bn_quant_format_supports_exact_native_quant_matvec(
         BN_GGUF_TENSOR_Q4_0));
-    assert(!bn_quant_format_metal_q4_q8_matvec_supported(
+    assert(!bn_quant_format_supports_exact_native_quant_matvec(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_quant_format_metal_q6_q8k_matvec_supported(
+    assert(bn_quant_format_supports_specialized_native_quant_matvec(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_quant_format_metal_q6_q8k_matvec_supported(
+    assert(!bn_quant_format_supports_specialized_native_quant_matvec(
         BN_GGUF_TENSOR_Q4_0));
 
     assert(strcmp(bn_quant_format_gpu_shader_name(BN_GGUF_TENSOR_Q4_0),

@@ -675,12 +675,12 @@ static inline int bn_backend_quant_eager_aux_cache_supported(int type) {
     return bn_quant_format_eager_aux_cache_supported(type);
 }
 
-static inline int bn_backend_quant_metal_q4_q8_matvec_supported(int type) {
-    return bn_quant_format_metal_q4_q8_matvec_supported(type);
+static inline int bn_backend_quant_supports_exact_native_quant_matvec(int type) {
+    return bn_quant_format_supports_exact_native_quant_matvec(type);
 }
 
-static inline int bn_backend_quant_metal_q6_q8k_matvec_supported(int type) {
-    return bn_quant_format_metal_q6_q8k_matvec_supported(type);
+static inline int bn_backend_quant_supports_specialized_native_quant_matvec(int type) {
+    return bn_quant_format_supports_specialized_native_quant_matvec(type);
 }
 
 static inline int bn_backend_quant_gpu_matvec_supported(int type) {

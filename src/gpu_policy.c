@@ -3451,7 +3451,7 @@ int bn_gpu_policy_metal_exact_native_matvec_supported(
     int has_exact_native_pipeline,
     int has_prepared_native_quant_pipeline) {
     if (!exact_native_enabled ||
-        !bn_backend_quant_metal_q4_q8_matvec_supported(tensor_type) ||
+        !bn_backend_quant_supports_exact_native_quant_matvec(tensor_type) ||
         !has_native_quant_pipeline)
         return 0;
     return native_quant_prepared
@@ -3468,7 +3468,7 @@ int bn_gpu_policy_metal_exact_native_graph_path_supported(
     int has_pipeline) {
     return native_quant_prepared == prepared_path &&
            exact_native_enabled &&
-           bn_backend_quant_metal_q4_q8_matvec_supported(tensor_type) &&
+           bn_backend_quant_supports_exact_native_quant_matvec(tensor_type) &&
            has_native_quant_pipeline &&
            has_pipeline;
 }
@@ -3479,7 +3479,7 @@ int bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
     int has_prepared_activation_pipeline,
     int has_specialized_native_pipeline) {
     return bn_gpu_policy_metal_specialized_native_quant_enabled() &&
-           bn_backend_quant_metal_q6_q8k_matvec_supported(tensor_type) &&
+           bn_backend_quant_supports_specialized_native_quant_matvec(tensor_type) &&
            has_prepared_activation_pipeline &&
            has_specialized_native_pipeline &&
            cols > 0 &&

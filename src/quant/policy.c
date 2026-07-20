@@ -131,11 +131,11 @@ int bn_quant_format_eager_aux_cache_supported(int type) {
     }
 }
 
-int bn_quant_format_metal_q4_q8_matvec_supported(int type) {
+int bn_quant_format_supports_exact_native_quant_matvec(int type) {
     return type == BN_GGUF_TENSOR_Q4_0;
 }
 
-int bn_quant_format_metal_q6_q8k_matvec_supported(int type) {
+int bn_quant_format_supports_specialized_native_quant_matvec(int type) {
     return type == BN_GGUF_TENSOR_Q6_K;
 }
 
