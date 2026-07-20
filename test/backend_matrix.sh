@@ -2791,6 +2791,16 @@ if grep -n 'full_attn_interval' src/prompt_cache.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if awk '/^int bn_prompt_cache_store/{flag=1} /^int bn_prompt_cache_restore/{flag=0} flag{print}' src/prompt_cache.c | grep -n 'bn_model_arch_uses_hybrid_layer_layout' >/dev/null 2>&1; then
+    echo "prompt cache store must use prompt-cache model support policy"
+    fail=1
+fi
+
+if awk '/^int bn_prompt_cache_restore/{flag=1} /^void bn_prompt_cache_clear/{flag=0} flag{print}' src/prompt_cache.c | grep -n 'bn_model_arch_uses_hybrid_layer_layout' >/dev/null 2>&1; then
+    echo "prompt cache restore must use prompt-cache model support policy"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval\|c->n_layers - n_attn' src/session.c >/dev/null 2>&1; then
     echo "src/session.c must use model_arch helpers for hybrid layer layout policy"
     fail=1

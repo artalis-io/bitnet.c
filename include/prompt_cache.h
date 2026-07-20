@@ -2,6 +2,7 @@
 #define BN_PROMPT_CACHE_H
 
 #include "bn_alloc.h"
+#include "model_config.h"
 #include <stdint.h>
 
 typedef struct BnModel BnModel;
@@ -45,6 +46,9 @@ BnPromptCache *bn_prompt_cache_create(size_t max_bytes, BnAllocator *alloc);
 
 // Free the prompt cache and all entries.
 void bn_prompt_cache_free(BnPromptCache *cache);
+
+// Return whether this model config can be snapshotted by the prompt cache.
+int bn_prompt_cache_model_supported(const BnConfig *cfg);
 
 // Store the current session's KV prefix into the cache.
 // tokens/n_tokens: the token sequence that produced this KV state.

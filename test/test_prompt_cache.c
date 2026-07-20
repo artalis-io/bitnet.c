@@ -72,6 +72,22 @@ static void test_create_free(void) {
 }
 
 // ===================================================================
+// Test: model support policy
+// ===================================================================
+static void test_model_supported_policy(void) {
+    printf("test_model_supported_policy... ");
+
+    BnConfig c;
+    init_test_config(&c);
+    assert(bn_prompt_cache_model_supported(&c));
+    c.full_attn_interval = 4;
+    assert(!bn_prompt_cache_model_supported(&c));
+    assert(!bn_prompt_cache_model_supported(NULL));
+
+    printf("PASSED\n");
+}
+
+// ===================================================================
 // Test: store and restore roundtrip
 // ===================================================================
 static void test_store_restore(void) {
@@ -521,6 +537,7 @@ static void test_tq_roundtrip(void) {
 }
 
 int main(void) {
+    test_model_supported_policy();
     test_create_free();
     test_store_restore();
     test_prefix_match();

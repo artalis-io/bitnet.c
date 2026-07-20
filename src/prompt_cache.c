@@ -114,6 +114,10 @@ void bn_prompt_cache_free(BnPromptCache *cache) {
     bn_free(&a, cache, sizeof(BnPromptCache));
 }
 
+int bn_prompt_cache_model_supported(const BnConfig *cfg) {
+    return cfg && !bn_model_arch_uses_hybrid_layer_layout(cfg);
+}
+
 int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
                           const BnSession *session,
                           const int *tokens, int n_tokens) {
@@ -121,7 +125,7 @@ int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
     const BnConfig *cfg = &model->config;
 
     // Reject hybrid models (SSM state can't be cheaply snapshotted)
-    if (bn_model_arch_uses_hybrid_layer_layout(cfg)) return -1;
+    if (!bn_prompt_cache_model_supported(cfg)) return -1;
 
     // Validate: n_tokens must not exceed session pos or seq_len
     if (n_tokens > session->pos || n_tokens > cfg->seq_len) return -2;
@@ -237,7 +241,7 @@ int bn_prompt_cache_restore(BnPromptCache *cache, const BnModel *model,
     const BnConfig *cfg = &model->config;
 
     // Reject hybrid models
-    if (bn_model_arch_uses_hybrid_layer_layout(cfg)) return 0;
+    if (!bn_prompt_cache_model_supported(cfg)) return 0;
 
     int n_attn = config_n_attn(cfg);
     int kv_dim = cfg->kv_dim;
