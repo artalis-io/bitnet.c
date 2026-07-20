@@ -190,7 +190,7 @@ int bn_gpu_policy_cuda_moe_router_warp_disabled(int route_block);
 int bn_gpu_policy_cuda_moe_router_4warp_enabled(int dim);
 int bn_gpu_policy_cuda_moe_router_2warp_enabled(int dim);
 int bn_gpu_policy_cuda_moe_router_warp_topk_enabled(int n_experts);
-int bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(int routed_q8);
+int bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(int routed_native_quant);
 int bn_gpu_policy_cuda_moe_block_prepared_decode_enabled(void);
 int bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_moe_down_block_4row_enabled(int hidden_dim);
@@ -372,7 +372,7 @@ int bn_gpu_policy_cuda_dense_ffn_enabled(void);
 int bn_gpu_policy_cuda_dense_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(void);
-int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_q8,
+int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_native_quant,
                                                   int routed_asymmetric_kquant,
                                                   int gate_f16,
                                                   int up_f16,
@@ -381,7 +381,7 @@ int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_q8,
                                                   int k,
                                                   int route_items);
 int bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(int use_grouped,
-                                                      int routed_q8,
+                                                      int routed_native_quant,
                                                       int routed_asymmetric_kquant,
                                                       int gate_f16,
                                                       int up_f16,
@@ -392,7 +392,7 @@ int bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
     int n_experts,
     int k);
 int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_asymmetric_kquant,
-                                                int routed_q8,
+                                                int routed_native_quant,
                                                 int n_tokens,
                                                 int use_all_active_two_fixed,
                                                 int use_grouped,

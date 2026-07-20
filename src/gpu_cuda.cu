@@ -14992,13 +14992,13 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     int routed_asymmetric_kquant =
         bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
                                                       down_type);
-    int routed_q8 =
+    int routed_native_quant =
         bn_backend_quant_moe_routed_native_quant(gate_type, up_type, down_type);
     if (!ctx || !out || !gate || !up || !down || !indices || !weights ||
         !X || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
         n_experts <= 0 || k <= 0 || !cuda_activation_is_silu(act_type) ||
-        (!routed_asymmetric_kquant && !routed_q8) ||
+        (!routed_asymmetric_kquant && !routed_native_quant) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
         return -1;
     if (gate->type != gate_type || up->type != up_type ||
@@ -15090,7 +15090,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(n_tokens, dim, 1);
 
     int use_moe_block_prepared_batch =
-        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_q8);
+        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_native_quant);
     int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(
         routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
     if (use_moe_block_prepared_batch) {
@@ -15115,7 +15115,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                 (const BnBlockQ8_0 *)up->data, xq, d_indices,
                 hidden_dim, dim, n_experts, k, n_tokens);
         }
-    } else if (routed_q8) {
+    } else if (routed_native_quant) {
         moe_q8_0_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
             d_mid, (const BnBlockQ8_0 *)gate->data,
             (const BnBlockQ8_0 *)up->data, d_full_x, d_indices,
@@ -15219,7 +15219,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
                 d_indices, d_weights, dim, hidden_dim, n_experts, k,
                 n_tokens);
         }
-    } else if (routed_q8) {
+    } else if (routed_native_quant) {
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -15359,7 +15359,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int routed_asymmetric_kquant =
         bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
                                                       down_type);
-    int routed_q8 =
+    int routed_native_quant =
         bn_backend_quant_moe_routed_native_quant(gate_type, up_type, down_type);
     if (!ctx || !router || !gate || !up || !down || (!X && !ctx->d_out) ||
         !router->data || !gate->data || !up->data || !down->data ||
@@ -15368,7 +15368,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         !cuda_activation_is_silu(act_type) ||
         !bn_backend_quant_already_f32(router->type) ||
         router->rows < n_experts || router->cols < dim ||
-        (!routed_asymmetric_kquant && !routed_q8) ||
+        (!routed_asymmetric_kquant && !routed_native_quant) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
         return -1;
     if (add_norm_resid && (!norm || !norm->data ||
@@ -15428,12 +15428,13 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_grouped =
         bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
-            routed_q8, routed_asymmetric_kquant, gate->f16_data != NULL,
+            routed_native_quant, routed_asymmetric_kquant,
+            gate->f16_data != NULL,
             up->f16_data != NULL, down->f16_data != NULL,
             n_experts, k, n_tokens * k);
     int use_cublas_gateup_only =
         bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
-            use_cublas_grouped, routed_q8, routed_asymmetric_kquant,
+            use_cublas_grouped, routed_native_quant, routed_asymmetric_kquant,
             gate->f16_data != NULL, up->f16_data != NULL,
             down->f16_data != NULL, n_tokens);
     int use_cublas_all_active_two_fixed =
@@ -15447,7 +15448,8 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     int use_sorted_slots =
         bn_gpu_policy_cuda_moe_sorted_slots_enabled(
-            routed_asymmetric_kquant, routed_q8, n_tokens, use_cublas_all_active_two_fixed,
+            routed_asymmetric_kquant, routed_native_quant, n_tokens,
+            use_cublas_all_active_two_fixed,
             use_cublas_grouped, use_cublas_gateup_only);
     size_t sorted_route_aux_bytes = use_sorted_slots
         ? (route_items * sizeof(int) + (size_t)n_experts * 4u * sizeof(int))
@@ -15462,7 +15464,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
     int init_out_with_residual =
         add_norm_resid &&
-        ((routed_q8 && hidden_dim <= 1024) ||
+        ((routed_native_quant && hidden_dim <= 1024) ||
          (bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
           cuda_use_moe_down_4row(hidden_dim) &&
           cuda_use_moe_down_8row(hidden_dim) &&
@@ -15695,7 +15697,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int use_moe_gateup_prepared_dot =
         bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled(n_tokens, dim, 0);
     int use_moe_block_prepared_batch =
-        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_q8);
+        bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_native_quant);
 
     if (use_cublas_all_active_two_decode) {
         moe_pack_all2_route_kernel<<<1, 1>>>(d_decode_route, d_indices,
@@ -15799,7 +15801,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
                 (const BnBlockQ8_0 *)up->data, xq, d_indices,
                 hidden_dim, dim, n_experts, k, n_tokens);
         }
-    } else if (routed_q8) {
+    } else if (routed_native_quant) {
         if (profile_prefill_moe)
             profile_path_counts[BN_CUDA_MOE_PROFILE_PATH_Q8_NATIVE]++;
         moe_q8_0_gateup_routed_mid_batch_kernel<<<gateup_blocks, threads, 0>>>(
@@ -15923,7 +15925,7 @@ moe_route_routed_down:
                 d_indices, d_weights, dim, hidden_dim, n_experts, k,
                 n_tokens);
         }
-    } else if (routed_q8) {
+    } else if (routed_native_quant) {
         moe_q8_0_down_routed_accum_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
@@ -20205,14 +20207,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_backend_quant_moe_routed_asymmetric_kquant(op->type,
                                                               up->type,
                                                               down_type);
-            int routed_q8 =
+            int routed_native_quant =
                 gate && up && down && gate->type == op->type &&
                 down->type == down_type &&
                 bn_backend_quant_moe_routed_native_quant(op->type, up->type,
                                                down_type);
             if (!gate || !gate->data || !up || !up->data ||
                 !down || !down->data || !in || !route || !mid || !out ||
-                (!routed_asymmetric_kquant && !routed_q8) ||
+                (!routed_asymmetric_kquant && !routed_native_quant) ||
                 dim <= 0 || hidden <= 0 || n_experts <= 0 || k <= 0 ||
                 (dim % 32) != 0 || (hidden % 32) != 0 ||
                 gate->rows < hidden * n_experts || gate->cols < dim ||
@@ -20230,7 +20232,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int gateup_tasks = hidden * k;
                 int gateup_blocks = (gateup_tasks + warps - 1) / warps;
                 int down_blocks = (dim + warps - 1) / warps;
-                if (routed_q8) {
+                if (routed_native_quant) {
                     if (bn_gpu_policy_cuda_moe_block_prepared_decode_enabled()) {
                         int q8_scratch_elems =
                             dim > hidden * k ? dim : hidden * k;

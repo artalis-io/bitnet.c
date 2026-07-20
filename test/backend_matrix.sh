@@ -564,6 +564,15 @@ if grep -n 'bn_transformer_gpu_moe_routed_q[48]\|bn_transformer_gpu_moe_routed_b
     fail=1
 fi
 
+if grep -n '\brouted_q[48]\b\|moe_routed_q8\|routed_byte_quant' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA/GPU MoE route policy must use behavior names, not routed Q4/Q8 helper names"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_small_dense_q8_cpu_attn\|bn_transformer_gpu_small_dense_byte_quant_cpu_attn' \
     src/transformer/gpu_policy.c \
     src/transformer/gpu_internal.h \
