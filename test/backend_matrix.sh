@@ -1751,6 +1751,21 @@ if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER\|BN_GPU_SMALL_DENSE_EXACT
     fail=1
 fi
 
+if awk '/^static void usage/{flag=1} /^static int parse_int/{flag=0} flag{print}' src/main.c | grep -n -- '--q4-q8\|--metal-q4-prepared\|--metal-disable-q4-q8' >/dev/null 2>&1; then
+    echo "CLI help must document behavior-named small-dense exact-native flags, not Q4/Q8 compatibility spellings"
+    fail=1
+fi
+
+if ! grep -n -- '--small-dense-exact-native-tail\|--metal-native-quant-prepared' src/main.c >/dev/null 2>&1; then
+    echo "CLI help/parser must expose behavior-named small-dense exact-native flags"
+    fail=1
+fi
+
+if grep -n 'BITNET_ARGS+=(--q4-q8\|cmd.append("--q4-q8\|cmd += \["--q4-q8\|BITNET_ARGS+=(--metal-disable-q4-q8\|cmd.append("--metal-q4-prepared\|cmd.append("--metal-disable-q4-q8' test/compare_llama.sh test/compare_llama_topk.py >/dev/null 2>&1; then
+    echo "llama parity helpers must forward behavior-named small-dense exact-native flags"
+    fail=1
+fi
+
 if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE\|BN_GPU_Q4_Q8\|BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|BN_METAL_DISABLE_Q4_Q8_DEFAULT' src/gpu_policy.c >/dev/null 2>&1; then
     echo "GPU small-dense exact-native policy must keep canonical env names with Q4/Q8 compatibility aliases"
     fail=1

@@ -132,13 +132,13 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --cuda          Enable experimental CUDA backend (requires BN_ENABLE_CUDA=1)\n");
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
     fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
-    fprintf(stderr, "  --metal-q4-prepared  Use prepared native-quant Metal upload layout\n");
+    fprintf(stderr, "  --metal-native-quant-prepared  Use prepared native-quant Metal upload layout\n");
     fprintf(stderr, "  --gpu-debug-qkv-split  Print QKV split diagnostic\n");
     fprintf(stderr, "  --gpu-disable-qkv-split  Disable stacked QKV split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-gateup-split  Disable gate/up split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-fused-gateup  Disable fused gate/up diagnostic path\n");
     fprintf(stderr, "  --gpu-split-residual-rmsnorm  Split residual+rmsnorm diagnostic path\n");
-    fprintf(stderr, "  --q4-q8-tail-native <int>  Leave final N layers on backend-native path\n");
+    fprintf(stderr, "  --small-dense-exact-native-tail <int>  Leave final N layers on backend-native path\n");
     fprintf(stderr, "  --shader-dir <path>        WebGPU shader directory (default: shaders/)\n");
     fprintf(stderr, "  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
@@ -302,7 +302,8 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--metal-specialized-native-quant") == 0 ||
                    strcmp(argv[i], "--metal-enable-q6-q8k") == 0) {
             args.metal_specialized_native_quant = 1;
-        } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
+        } else if (strcmp(argv[i], "--metal-native-quant-prepared") == 0 ||
+                   strcmp(argv[i], "--metal-q4-prepared") == 0) {
             args.metal_native_quant_prepared = 1;
         } else if (strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
             /* Specialized native-quant decode is now opt-in; keep the old diagnostic flag harmless. */
@@ -316,21 +317,32 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_disable_fused_gateup = 1;
         } else if (strcmp(argv[i], "--gpu-split-residual-rmsnorm") == 0) {
             args.gpu_split_residual_rmsnorm = 1;
-        } else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
+        } else if (strcmp(argv[i], "--metal-disable-small-dense-exact-native") == 0 ||
+                   strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
             args.metal_disable_small_dense_exact_native = 1;
         } else if (strcmp(argv[i], "--metal-private-weights") == 0) {
             args.metal_private_weights = 1;
-        } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
-            args.small_dense_exact_native_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
-        } else if (strcmp(argv[i], "--q4-q8-tail-native") == 0 && i + 1 < argc) {
-            args.small_dense_exact_native_tail = parse_int(argv[++i], "--q4-q8-tail-native");
-        } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
+        } else if ((strcmp(argv[i], "--small-dense-exact-native-to-layer") == 0 ||
+                    strcmp(argv[i], "--q4-q8-to-layer") == 0) &&
+                   i + 1 < argc) {
+            args.small_dense_exact_native_to_layer =
+                parse_int(argv[++i], "--small-dense-exact-native-to-layer");
+        } else if ((strcmp(argv[i], "--small-dense-exact-native-tail") == 0 ||
+                    strcmp(argv[i], "--q4-q8-tail-native") == 0) &&
+                   i + 1 < argc) {
+            args.small_dense_exact_native_tail =
+                parse_int(argv[++i], "--small-dense-exact-native-tail");
+        } else if (strcmp(argv[i], "--small-dense-exact-native-attn-only") == 0 ||
+                   strcmp(argv[i], "--q4-q8-attn-only") == 0) {
             args.small_dense_exact_native_attn_only = 1;
-        } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
+        } else if (strcmp(argv[i], "--small-dense-exact-native-ffn-only") == 0 ||
+                   strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
             args.small_dense_exact_native_ffn_only = 1;
-        } else if (strcmp(argv[i], "--q4-q8-disable-gateup") == 0) {
+        } else if (strcmp(argv[i], "--small-dense-exact-native-disable-gateup") == 0 ||
+                   strcmp(argv[i], "--q4-q8-disable-gateup") == 0) {
             args.small_dense_exact_native_disable_gateup = 1;
-        } else if (strcmp(argv[i], "--q4-q8-disable-ffn-down") == 0) {
+        } else if (strcmp(argv[i], "--small-dense-exact-native-disable-ffn-down") == 0 ||
+                   strcmp(argv[i], "--q4-q8-disable-ffn-down") == 0) {
             args.small_dense_exact_native_disable_ffn_down = 1;
         } else if (strcmp(argv[i], "--gpu-flash-min-kv") == 0 && i + 1 < argc) {
             args.gpu_flash_min_kv = parse_int(argv[++i], "--gpu-flash-min-kv");

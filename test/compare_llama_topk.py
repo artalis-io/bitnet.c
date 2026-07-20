@@ -52,19 +52,34 @@ def parse_args():
     p.add_argument("--llama-metal", action="store_true")
     p.add_argument("--llama-server-url", default="http://127.0.0.1:8027")
     p.add_argument("--flash", action="store_true")
-    p.add_argument("--q4-q8-tail-native", type=int)
-    p.add_argument("--q4-q8-attn-only", action="store_true")
-    p.add_argument("--q4-q8-ffn-only", action="store_true")
-    p.add_argument("--q4-q8-disable-gateup", action="store_true")
-    p.add_argument("--q4-q8-disable-ffn-down", action="store_true")
+    p.add_argument("--small-dense-exact-native-tail", "--q4-q8-tail-native",
+                   dest="small_dense_exact_native_tail", type=int)
+    p.add_argument("--small-dense-exact-native-attn-only", "--q4-q8-attn-only",
+                   dest="small_dense_exact_native_attn_only",
+                   action="store_true")
+    p.add_argument("--small-dense-exact-native-ffn-only", "--q4-q8-ffn-only",
+                   dest="small_dense_exact_native_ffn_only",
+                   action="store_true")
+    p.add_argument("--small-dense-exact-native-disable-gateup",
+                   "--q4-q8-disable-gateup",
+                   dest="small_dense_exact_native_disable_gateup",
+                   action="store_true")
+    p.add_argument("--small-dense-exact-native-disable-ffn-down",
+                   "--q4-q8-disable-ffn-down",
+                   dest="small_dense_exact_native_disable_ffn_down",
+                   action="store_true")
     p.add_argument("--gpu-flash-min-kv", type=int)
     p.add_argument("--gpu-max-storage-binding-mb", type=int)
     p.add_argument("--metal-disable-barriers", action="store_true")
-    p.add_argument("--metal-disable-q4-q8", action="store_true")
+    p.add_argument("--metal-disable-small-dense-exact-native",
+                   "--metal-disable-q4-q8",
+                   dest="metal_disable_small_dense_exact_native",
+                   action="store_true")
     p.add_argument("--metal-specialized-native-quant", action="store_true")
     p.add_argument("--metal-enable-q6-q8k", action="store_true",
                    dest="metal_specialized_native_quant")
-    p.add_argument("--metal-q4-prepared", action="store_true")
+    p.add_argument("--metal-native-quant-prepared", "--metal-q4-prepared",
+                   dest="metal_native_quant_prepared", action="store_true")
     p.add_argument("--benchmark", action="store_true")
     p.add_argument("--bench-tokens", type=int, default=128)
     p.add_argument("--bench-runs", type=int, default=1)
@@ -109,16 +124,17 @@ def append_bitnet_common_args(cmd, args):
         cmd += ["-t", str(args.threads)]
     if args.flash:
         cmd.append("--flash")
-    if args.q4_q8_tail_native is not None:
-        cmd += ["--q4-q8-tail-native", str(args.q4_q8_tail_native)]
-    if args.q4_q8_attn_only:
-        cmd.append("--q4-q8-attn-only")
-    if args.q4_q8_ffn_only:
-        cmd.append("--q4-q8-ffn-only")
-    if args.q4_q8_disable_gateup:
-        cmd.append("--q4-q8-disable-gateup")
-    if args.q4_q8_disable_ffn_down:
-        cmd.append("--q4-q8-disable-ffn-down")
+    if args.small_dense_exact_native_tail is not None:
+        cmd += ["--small-dense-exact-native-tail",
+                str(args.small_dense_exact_native_tail)]
+    if args.small_dense_exact_native_attn_only:
+        cmd.append("--small-dense-exact-native-attn-only")
+    if args.small_dense_exact_native_ffn_only:
+        cmd.append("--small-dense-exact-native-ffn-only")
+    if args.small_dense_exact_native_disable_gateup:
+        cmd.append("--small-dense-exact-native-disable-gateup")
+    if args.small_dense_exact_native_disable_ffn_down:
+        cmd.append("--small-dense-exact-native-disable-ffn-down")
     if args.gpu_flash_min_kv is not None:
         cmd += ["--gpu-flash-min-kv", str(args.gpu_flash_min_kv)]
     if args.gpu_max_storage_binding_mb is not None:
@@ -126,12 +142,12 @@ def append_bitnet_common_args(cmd, args):
                 str(args.gpu_max_storage_binding_mb)]
     if args.metal_disable_barriers:
         cmd.append("--metal-disable-barriers")
-    if args.metal_disable_q4_q8:
-        cmd.append("--metal-disable-q4-q8")
+    if args.metal_disable_small_dense_exact_native:
+        cmd.append("--metal-disable-small-dense-exact-native")
     if args.metal_specialized_native_quant:
         cmd.append("--metal-specialized-native-quant")
-    if args.metal_q4_prepared:
-        cmd.append("--metal-q4-prepared")
+    if args.metal_native_quant_prepared:
+        cmd.append("--metal-native-quant-prepared")
 
 
 def run_bitnet_topk(args, prompt):
@@ -294,16 +310,17 @@ def run_bitnet_bench(args, prompt):
         cmd.append("--metal")
     if args.flash:
         cmd.append("--flash")
-    if args.q4_q8_tail_native is not None:
-        cmd += ["--q4-q8-tail-native", str(args.q4_q8_tail_native)]
-    if args.q4_q8_attn_only:
-        cmd.append("--q4-q8-attn-only")
-    if args.q4_q8_ffn_only:
-        cmd.append("--q4-q8-ffn-only")
-    if args.q4_q8_disable_gateup:
-        cmd.append("--q4-q8-disable-gateup")
-    if args.q4_q8_disable_ffn_down:
-        cmd.append("--q4-q8-disable-ffn-down")
+    if args.small_dense_exact_native_tail is not None:
+        cmd += ["--small-dense-exact-native-tail",
+                str(args.small_dense_exact_native_tail)]
+    if args.small_dense_exact_native_attn_only:
+        cmd.append("--small-dense-exact-native-attn-only")
+    if args.small_dense_exact_native_ffn_only:
+        cmd.append("--small-dense-exact-native-ffn-only")
+    if args.small_dense_exact_native_disable_gateup:
+        cmd.append("--small-dense-exact-native-disable-gateup")
+    if args.small_dense_exact_native_disable_ffn_down:
+        cmd.append("--small-dense-exact-native-disable-ffn-down")
     if args.gpu_flash_min_kv is not None:
         cmd += ["--gpu-flash-min-kv", str(args.gpu_flash_min_kv)]
     if args.gpu_max_storage_binding_mb is not None:
@@ -311,12 +328,12 @@ def run_bitnet_bench(args, prompt):
                 str(args.gpu_max_storage_binding_mb)]
     if args.metal_disable_barriers:
         cmd.append("--metal-disable-barriers")
-    if args.metal_disable_q4_q8:
-        cmd.append("--metal-disable-q4-q8")
+    if args.metal_disable_small_dense_exact_native:
+        cmd.append("--metal-disable-small-dense-exact-native")
     if args.metal_specialized_native_quant:
         cmd.append("--metal-specialized-native-quant")
-    if args.metal_q4_prepared:
-        cmd.append("--metal-q4-prepared")
+    if args.metal_native_quant_prepared:
+        cmd.append("--metal-native-quant-prepared")
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
     if proc.returncode != 0:
