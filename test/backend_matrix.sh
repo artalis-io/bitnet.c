@@ -3461,6 +3461,20 @@ do
 done
 
 for file in \
+    include/transformer_internal.h \
+    include/transformer_plan_internal.h \
+    include/transformer_prefill_internal.h \
+    include/transformer_logits_internal.h \
+    src/transformer/gpu_internal.h \
+    src/moe_internal.h
+do
+    if grep -n '#include "model_arch.h"\|bn_model_arch_\|Qwen\|qwen\|Gemma\|gemma' "$file" >/dev/null 2>&1; then
+        echo "$file must keep execution-facing policy APIs behavior-named and model_arch-free"
+        fail=1
+    fi
+done
+
+for file in \
     src/moe_route.c \
     src/moe_math.c \
     src/moe_prefill.c \
