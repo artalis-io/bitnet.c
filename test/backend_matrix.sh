@@ -2622,6 +2622,11 @@ if awk '/BN_GPU_OP_FLAG_EXACT_SILU/ && !/_Static_assert/' src/transformer/gpu_em
     fail=1
 fi
 
+if awk '/^bn_transformer_gpu_moe_decode_route_policy/{flag=1} /^BnTransformerGPUMoEDirectRoutePolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM' >/dev/null 2>&1; then
+    echo "Transformer GPU MoE route decode policy must use route normalization flag helpers"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_gpu_matvec_q8k_dot_flag\|bn_backend_quant_gpu_matvec_exact_q6k_flag' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU matvec flag policy must use behavior-named backend K-quant helpers"
     fail=1

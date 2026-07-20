@@ -686,6 +686,7 @@ int bn_transformer_gpu_moe_cpu_route_resident_ffn_enabled(
     int all_active_two_kquant_moe,
     int gpu_route_topk,
     int moe_routed_native_quant);
+uint32_t bn_transformer_gpu_moe_route_normalization_flags(const BnConfig *c);
 int bn_transformer_gpu_moe_routed_ffn_enabled(
     int gpu_route_topk,
     int cpu_route_resident_ffn,

@@ -1602,6 +1602,12 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
     return bn_moe_policy_supports_resident_routed_ffn_layout(&c, map);
 }
 
+uint32_t bn_transformer_gpu_moe_route_normalization_flags(const BnConfig *c) {
+    return c && c->moe_norm_topk_prob
+        ? 0u
+        : BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
+}
+
 BnTransformerGPUMoEDecodeRoutePolicy
 bn_transformer_gpu_moe_decode_route_policy(
     const BnGPUBackend *gpu,
@@ -1631,8 +1637,7 @@ bn_transformer_gpu_moe_decode_route_policy(
     policy.router = bn_transformer_gpu_all_active_two_kquant_moe_router(
         c, moe_router, router_diff, policy.route_layer_selected,
         policy.exact_gpu_route);
-    if (!c || !c->moe_norm_topk_prob)
-        policy.route_flags |= BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
+    policy.route_flags |= bn_transformer_gpu_moe_route_normalization_flags(c);
 
     int routed_native_quant = lw &&
         bn_transformer_gpu_moe_routed_native_quant(&lw->moe.expert_map);

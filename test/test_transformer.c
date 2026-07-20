@@ -2062,11 +2062,17 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_routed_ffn_enabled(
         0, 1, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
     assert(route_policy.route_flags == 0);
+    assert(bn_transformer_gpu_moe_route_normalization_flags(&c) == 0);
     c.moe_norm_topk_prob = 0;
     route_policy = bn_transformer_gpu_moe_decode_route_policy(
         &gpu, &c, &moe_layers[0], &route_layers, 0, c.dim,
         (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
-    assert(route_policy.route_flags == BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM);
+    assert(bn_transformer_gpu_moe_route_normalization_flags(&c) ==
+           BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM);
+    assert(route_policy.route_flags ==
+           bn_transformer_gpu_moe_route_normalization_flags(&c));
+    assert(bn_transformer_gpu_moe_route_normalization_flags(NULL) ==
+           BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM);
     c.moe_norm_topk_prob = 1;
     setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
     route_policy = bn_transformer_gpu_moe_decode_route_policy(
