@@ -364,7 +364,7 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
     void *gate_buf = NULL;
     void *up_buf = NULL;
     if (gateup_buf &&
-        bn_transformer_prefill_stacked_pair_same_format(
+        bn_transformer_prefill_same_quant_format_pair_stackable(
             lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
         gate_buf = gateup_buf;
     } else {
@@ -469,7 +469,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     void *gate_buf = NULL;
     void *up_buf = NULL;
     if (gateup_buf &&
-        bn_transformer_prefill_stacked_pair_same_format(
+        bn_transformer_prefill_same_quant_format_pair_stackable(
             lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
         gate_buf = gateup_buf;
     } else {
@@ -828,13 +828,13 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     void *gateup_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
     void *gate_buf = gateup_buf &&
-                     bn_transformer_prefill_stacked_pair_same_format(
+                     bn_transformer_prefill_same_quant_format_pair_stackable(
                          lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
                          ? gateup_buf
                          : prefill_qweight_backend_buf(backend,
                                                        &lw->ffn.ffn_gate);
     void *up_buf = gateup_buf &&
-                   bn_transformer_prefill_stacked_pair_same_format(
+                   bn_transformer_prefill_same_quant_format_pair_stackable(
                        lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
                        ? NULL
                        : prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
@@ -1014,7 +1014,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         gateup_buf = bn_backend_model_handle(
             backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
         if (gateup_buf &&
-            bn_transformer_prefill_stacked_pair_same_format(
+            bn_transformer_prefill_same_quant_format_pair_stackable(
                 lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
             gate_buf = gateup_buf;
         } else {
@@ -1110,13 +1110,13 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     void *gateup_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
     void *gate_buf = gateup_buf &&
-                     bn_transformer_prefill_stacked_pair_same_format(
+                     bn_transformer_prefill_same_quant_format_pair_stackable(
                          lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
                          ? gateup_buf
                          : prefill_qweight_backend_buf(backend,
                                                        &lw->ffn.ffn_gate);
     void *up_buf = gateup_buf &&
-                   bn_transformer_prefill_stacked_pair_same_format(
+                   bn_transformer_prefill_same_quant_format_pair_stackable(
                        lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
                        ? NULL
                        : prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);

@@ -399,6 +399,18 @@ if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_stacked_pair_same_format\|bn_transformer_prefill_stacked_pair_same_format' \
+    include/transformer_plan_internal.h \
+    include/transformer_prefill_internal.h \
+    src/transformer/gpu_policy.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/prefill_policy.c \
+    src/transformer/prefill.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer and prefill same-format stack helpers must name quant-format behavior explicitly"
+    fail=1
+fi
+
 if grep -n 'map->up_type == map->gate_type\|map->gate_type == map->up_type' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "GPU policy must use stacked gate/up quant compatibility helpers for MoE split policy"
     fail=1

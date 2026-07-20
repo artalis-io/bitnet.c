@@ -478,7 +478,7 @@ bn_tp_fn bn_transformer_prefill_ssm_delta_op(
 bn_tp_fn bn_transformer_prefill_ssm_gate_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops);
-int bn_transformer_prefill_stacked_pair_same_format(int left_type,
+int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                     int right_type);
 int bn_transformer_prefill_activation_is_relu2(int activation);
 int bn_transformer_prefill_activation_is_gelu(int activation);

@@ -695,9 +695,9 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_exact_silu_active_flags(0) == 0);
     assert(bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
-    assert(bn_transformer_gpu_stacked_pair_same_format(
+    assert(bn_transformer_gpu_same_quant_format_pair_stackable(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_transformer_gpu_stacked_pair_same_format(
+    assert(!bn_transformer_gpu_same_quant_format_pair_stackable(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
     assert(bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, 256));
@@ -4937,9 +4937,9 @@ static void test_block_planning(void) {
     assert(!bn_transformer_prefill_route_prepared_kquant_triple_enabled(
         bn_transformer_prefill_cpu_ops(), NULL, 0, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
-    assert(bn_transformer_prefill_stacked_pair_same_format(
+    assert(bn_transformer_prefill_same_quant_format_pair_stackable(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_transformer_prefill_stacked_pair_same_format(
+    assert(!bn_transformer_prefill_same_quant_format_pair_stackable(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
 
     const BnPrefillCPUOps *prefill_ops = bn_transformer_prefill_cpu_ops();

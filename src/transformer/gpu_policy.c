@@ -134,7 +134,7 @@ int bn_transformer_gpu_prefers_gateup_split(int tensor_type) {
     return bn_backend_quant_gpu_prefers_gateup_split(tensor_type);
 }
 
-int bn_transformer_gpu_stacked_pair_same_format(int left_type,
+int bn_transformer_gpu_same_quant_format_pair_stackable(int left_type,
                                                 int right_type) {
     return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
 }
@@ -299,7 +299,7 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     if (!map || !bn_gpu_quant_split_op_is_asymmetric_kquant(split_op_code))
         return 0;
     return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
-           bn_transformer_gpu_stacked_pair_same_format(map->up_type,
+           bn_transformer_gpu_same_quant_format_pair_stackable(map->up_type,
                                                        map->gate_type) &&
            bn_moe_policy_supports_gateup_split_layout(map);
 }
@@ -368,7 +368,7 @@ int bn_transformer_gpu_qk_split_supported(
     return q->rows == q_dim &&
            k->rows == kv_dim &&
            q->cols == k->cols &&
-           bn_transformer_gpu_stacked_pair_same_format(q->type, k->type) &&
+           bn_transformer_gpu_same_quant_format_pair_stackable(q->type, k->type) &&
            bn_transformer_gpu_can_matvec_split(gpu, q->type);
 }
 
@@ -386,7 +386,7 @@ int bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(
     return alpha && beta &&
            alpha->rows == beta->rows &&
            alpha->cols == beta->cols &&
-           bn_transformer_gpu_stacked_pair_same_format(alpha->type,
+           bn_transformer_gpu_same_quant_format_pair_stackable(alpha->type,
                                                        beta->type);
 }
 

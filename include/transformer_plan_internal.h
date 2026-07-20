@@ -175,7 +175,7 @@ uint32_t bn_transformer_gpu_exact_silu_flags(int tensor_type,
                                              int use_silu);
 uint32_t bn_transformer_gpu_exact_silu_active_flags(int exact_silu);
 int bn_transformer_gpu_prefers_gateup_split(int tensor_type);
-int bn_transformer_gpu_stacked_pair_same_format(int left_type,
+int bn_transformer_gpu_same_quant_format_pair_stackable(int left_type,
                                                 int right_type);
 int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
                                                          int up_type,
