@@ -1,4 +1,5 @@
 #include "quant.h"
+#include "backend_quant.h"
 #include "quant_dispatch_internal.h"
 #include "gguf.h"
 #include "sh_arena.h"
@@ -118,6 +119,11 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_format_is_bf16(BN_GGUF_TENSOR_F16));
     assert(bn_quant_format_is_q3k(BN_GGUF_TENSOR_Q3_K));
     assert(!bn_quant_format_is_q3k(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_prepared_kquant_blocks_per_row(BN_QK_K * 2) == 2);
+    assert(bn_backend_quant_prepared_kquant_blocks_per_row(BN_QK_K - 1) == 0);
+    assert(bn_backend_quant_prepared_kquant_blocks_per_row(0) == 0);
+    assert(bn_backend_quant_prepared_kquant_block_sums_per_row(2) == 32);
+    assert(bn_backend_quant_prepared_kquant_block_sums_per_row(0) == 0);
 
     assert(bn_quant_format_gpu_matvec_supported(BN_GGUF_TENSOR_F32));
     assert(bn_quant_format_gpu_matvec_supported(BN_GGUF_TENSOR_F16));

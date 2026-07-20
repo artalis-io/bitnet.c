@@ -122,6 +122,15 @@ static inline int bn_backend_quant_supports_prepared_kquant(int type) {
     return bn_quant_format_supports_prepared_kquant(type);
 }
 
+static inline int bn_backend_quant_prepared_kquant_blocks_per_row(int dim) {
+    return dim > 0 && dim % BN_QK_K == 0 ? dim / BN_QK_K : 0;
+}
+
+static inline int bn_backend_quant_prepared_kquant_block_sums_per_row(
+    int blocks_per_row) {
+    return blocks_per_row > 0 ? blocks_per_row * 16 : 0;
+}
+
 static inline int bn_backend_quant_supports_native_quant_logits_refine(int type) {
     return bn_quant_format_supports_q8_logits_refine(type);
 }

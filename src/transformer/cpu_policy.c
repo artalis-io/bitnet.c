@@ -63,6 +63,14 @@ int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
            bn_backend_quant_supports_prepared_kquant(third_type);
 }
 
+int bn_transformer_cpu_prepared_kquant_blocks_per_row(int dim) {
+    return bn_backend_quant_prepared_kquant_blocks_per_row(dim);
+}
+
+int bn_transformer_cpu_prepared_kquant_block_sums_per_row(int blocks_per_row) {
+    return bn_backend_quant_prepared_kquant_block_sums_per_row(blocks_per_row);
+}
+
 int bn_transformer_cpu_route_prepared_kquant_pair_enabled(
     const BnCPUBackendOps *ops,
     const BnGPUBackend *gpu,
@@ -70,7 +78,7 @@ int bn_transformer_cpu_route_prepared_kquant_pair_enabled(
     int left_type,
     int right_type) {
     return !gpu &&
-           dim % BN_QK_K == 0 &&
+           bn_transformer_cpu_prepared_kquant_blocks_per_row(dim) > 0 &&
            bn_transformer_cpu_can_prepared_kquant_pair(ops, left_type, right_type);
 }
 
@@ -82,7 +90,7 @@ int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
     int second_type,
     int third_type) {
     return !gpu &&
-           dim % BN_QK_K == 0 &&
+           bn_transformer_cpu_prepared_kquant_blocks_per_row(dim) > 0 &&
            bn_transformer_cpu_can_prepared_kquant_triple(ops, first_type, second_type,
                                                 third_type);
 }

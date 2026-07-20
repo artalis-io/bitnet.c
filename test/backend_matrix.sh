@@ -1067,6 +1067,17 @@ if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_
     fail=1
 fi
 
+if grep -n 'BN_QK_K' src/transformer/cpu.c src/transformer/prefill.c src/transformer/cpu_policy.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill prepared K-quant paths must use quant geometry helpers, not raw BN_QK_K checks"
+    fail=1
+fi
+
+if ! grep -n 'bn_backend_quant_prepared_kquant_blocks_per_row' include/backend_quant.h >/dev/null 2>&1 ||
+   ! grep -n 'bn_backend_quant_prepared_kquant_block_sums_per_row' include/backend_quant.h >/dev/null 2>&1; then
+    echo "Prepared K-quant block geometry helpers must live in backend quant policy"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_cpu_can_preq8k\|bn_transformer_cpu_route_preq8k\|attn_preq8k\|ssm_preq8k' \
     include/transformer_cpu_backend_internal.h \
     src/transformer/cpu_policy.c \

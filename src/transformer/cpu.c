@@ -429,10 +429,12 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         int attn_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_triple_enabled(
             cpu_ops, bn_model_gpu(m), dim,
             lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type);
-        int n_sb_attn = dim / BN_QK_K;
+        int n_sb_attn = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
+        int n_attn_bsums =
+            bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb_attn);
         float attn_prepared_kquant_scales[n_sb_attn > 0 ? n_sb_attn : 1];
         int16_t attn_prepared_kquant_block_sums[
-            n_sb_attn > 0 ? n_sb_attn * 16 : 1];
+            n_attn_bsums > 0 ? n_attn_bsums : 1];
         if (attn_prepared_kquant_route) {
             cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, c->norm_eps,
                                  s->xb, s->x_q, attn_prepared_kquant_scales,
@@ -844,10 +846,12 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
 
     int ssm_prepared_kquant = 0;
-    int n_sb_ssm = dim / BN_QK_K;
+    int n_sb_ssm = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
+    int n_ssm_bsums =
+        bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb_ssm);
     float ssm_prepared_kquant_scales[n_sb_ssm > 0 ? n_sb_ssm : 1];
     int16_t ssm_prepared_kquant_block_sums[
-        n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
+        n_ssm_bsums > 0 ? n_ssm_bsums : 1];
     int ssm_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_pair_enabled(
         cpu_ops, bn_model_gpu(m), dim, lw->ssm.wqkv.type, lw->ssm.wz.type);
     if (ssm_prepared_kquant_route) {
@@ -987,9 +991,11 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     if (ffn_plan->has_gate &&
         bn_transformer_cpu_route_prepared_kquant_pair_enabled(
             cpu_ops, gpu, dim, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
-        int n_sb = dim / BN_QK_K;
+        int n_sb = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
+        int n_bsums =
+            bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb);
         float ffn_prepared_kquant_scales[n_sb];
-        int16_t ffn_prepared_kquant_block_sums[n_sb * 16];
+        int16_t ffn_prepared_kquant_block_sums[n_bsums];
         cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
                              s->xb, s->x_q, ffn_prepared_kquant_scales,
                              ffn_prepared_kquant_block_sums);

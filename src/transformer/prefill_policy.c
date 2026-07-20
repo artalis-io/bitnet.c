@@ -684,6 +684,15 @@ int bn_transformer_prefill_can_prepared_kquant_triple(const BnPrefillCPUOps *ops
            bn_backend_quant_supports_prepared_kquant(third_type);
 }
 
+int bn_transformer_prefill_prepared_kquant_blocks_per_row(int dim) {
+    return bn_backend_quant_prepared_kquant_blocks_per_row(dim);
+}
+
+int bn_transformer_prefill_prepared_kquant_block_sums_per_row(
+    int blocks_per_row) {
+    return bn_backend_quant_prepared_kquant_block_sums_per_row(blocks_per_row);
+}
+
 int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
@@ -692,8 +701,7 @@ int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     int tensor_type) {
     return !gpu &&
            !force_float_kquant &&
-           dim > 0 &&
-           dim % BN_QK_K == 0 &&
+           bn_transformer_prefill_prepared_kquant_blocks_per_row(dim) > 0 &&
            bn_transformer_prefill_can_prepared_kquant_type(ops, tensor_type);
 }
 

@@ -58,6 +58,8 @@ int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
+int bn_transformer_cpu_prepared_kquant_blocks_per_row(int dim);
+int bn_transformer_cpu_prepared_kquant_block_sums_per_row(int blocks_per_row);
 int bn_transformer_cpu_route_prepared_kquant_pair_enabled(
     const BnCPUBackendOps *ops,
     const BnGPUBackend *gpu,

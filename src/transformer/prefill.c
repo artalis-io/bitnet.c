@@ -1171,12 +1171,16 @@ static const BnPrefillCPUOps *prefill_cpu_ops(void) {
 static size_t prefill_prepared_kquant_arena_bytes(int dim, int n_tokens) {
     if (!prefill_cpu_ops()->supports_prepared_kquant)
         return 0;
-    if (dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
+    int blocks_per_row =
+        bn_transformer_prefill_prepared_kquant_blocks_per_row(dim);
+    if (n_tokens <= 0 || blocks_per_row <= 0)
         return 0;
-    int blocks_per_row = dim / BN_QK_K;
+    int block_sums_per_row =
+        bn_transformer_prefill_prepared_kquant_block_sums_per_row(
+            blocks_per_row);
     return (size_t)n_tokens * (size_t)dim +
            (size_t)n_tokens * (size_t)blocks_per_row * sizeof(float) +
-           (size_t)n_tokens * (size_t)blocks_per_row * 16 * sizeof(int16_t);
+           (size_t)n_tokens * (size_t)block_sums_per_row * sizeof(int16_t);
 }
 
 static BnPrefillPreparedKQuantBuffers
@@ -1186,16 +1190,21 @@ prefill_alloc_prepared_kquant_buffers(SHArena *arena,
     BnPrefillPreparedKQuantBuffers b = { NULL, NULL, NULL, 0 };
     if (!prefill_cpu_ops()->supports_prepared_kquant)
         return b;
-    if (!arena || dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
+    if (!arena || n_tokens <= 0)
         return b;
-    b.blocks_per_row = dim / BN_QK_K;
+    b.blocks_per_row =
+        bn_transformer_prefill_prepared_kquant_blocks_per_row(dim);
+    if (b.blocks_per_row <= 0)
+        return b;
+    int block_sums_per_row =
+        bn_transformer_prefill_prepared_kquant_block_sums_per_row(
+            b.blocks_per_row);
     b.quantized = (int8_t *)sh_arena_alloc(arena,
                                            (size_t)n_tokens * (size_t)dim);
     b.scales = (float *)sh_arena_alloc(
         arena, (size_t)n_tokens * (size_t)b.blocks_per_row * sizeof(float));
     b.block_sums = (int16_t *)sh_arena_alloc(
-        arena, (size_t)n_tokens * (size_t)b.blocks_per_row * 16 *
-                   sizeof(int16_t));
+        arena, (size_t)n_tokens * (size_t)block_sums_per_row * sizeof(int16_t));
     if (!b.quantized || !b.scales || !b.block_sums) {
         b.quantized = NULL;
         b.scales = NULL;

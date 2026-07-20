@@ -442,6 +442,9 @@ int bn_transformer_prefill_can_prepared_kquant_triple(const BnPrefillCPUOps *ops
                                              int first_type,
                                              int second_type,
                                              int third_type);
+int bn_transformer_prefill_prepared_kquant_blocks_per_row(int dim);
+int bn_transformer_prefill_prepared_kquant_block_sums_per_row(
+    int blocks_per_row);
 int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
