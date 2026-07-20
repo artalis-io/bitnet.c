@@ -1284,6 +1284,11 @@ if grep -n 'bn_gpu_policy_apply_specialized_q6_q8k_override\|bn_gpu_policy_metal
     fail=1
 fi
 
+if grep -n -- '->q8k_quant_pipeline\|->q6_q8k_matvec_pipeline\|->q8k_quant_dispatches\|\.q8k_quant_pipeline\|\.q6_q8k_matvec_pipeline\|\.q8k_quant_dispatches\|metal_encode_q8k_quant' src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal specialized native-quant state must use behavior names, not Q6/Q8K field names"
+    fail=1
+fi
+
 for fn in \
     metal_buffer_create \
     metal_buffer_create_biased \
