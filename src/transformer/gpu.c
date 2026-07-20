@@ -670,13 +670,13 @@ static int gpu_refine_native_quant_logits_top(float *logits, int n_logits,
     }
 
     float scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
-    if (bn_transformer_cpu_quantize_q8_blocks_native(x, quantized, scales,
-                                                     W->cols) != 0)
+    if (bn_transformer_cpu_quantize_native_logits_refine_activation(
+            x, quantized, scales, W->cols) != 0)
         return 0;
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_transformer_cpu_refine_q8_logits_row(W, quantized, scales,
-                                                    ids[i], &row_sum) == 0)
+        if (bn_transformer_cpu_refine_native_logits_row(
+                W, quantized, scales, ids[i], &row_sum) == 0)
             logits[ids[i]] = row_sum;
     }
     return n_top;

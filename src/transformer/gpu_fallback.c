@@ -463,7 +463,7 @@ static void debug_compare_q8_activation(const BnGPUBackend *gpu,
         return;
     }
 
-    if (bn_transformer_cpu_quantize_q8_blocks_native(
+    if (bn_transformer_cpu_quantize_native_logits_refine_activation(
             x, cpu_q, cpu_scales, cols) != 0) {
         free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
         return;

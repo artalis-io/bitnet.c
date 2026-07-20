@@ -64,10 +64,11 @@ void bn_transformer_cpu_prepare_kquant_activation(const float *x,
 #endif
 }
 
-int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
-                                                 int8_t *quantized,
-                                                 float *scales,
-                                                 int n) {
+int bn_transformer_cpu_quantize_native_logits_refine_activation(
+    const float *x,
+    int8_t *quantized,
+    float *scales,
+    int n) {
     if (!bn_transformer_cpu_has_native_q8x_quant())
         return -1;
     bn_quant_x_to_q8_blocks(x, quantized, scales, n);
@@ -105,18 +106,19 @@ float bn_transformer_cpu_quantize_i8_activation(const float *x,
     return cpu_quantize_i8_activation_scalar(x, quantized, n);
 }
 
-void bn_transformer_cpu_prepare_q8_logits_refine_activation(const float *x,
-                                                            int8_t *quantized,
-                                                            float *scales,
-                                                            int n) {
+void bn_transformer_cpu_prepare_native_logits_refine_activation(
+    const float *x,
+    int8_t *quantized,
+    float *scales,
+    int n) {
     bn_quant_x_to_q8_blocks(x, quantized, scales, n);
 }
 
-int bn_transformer_cpu_refine_q8_logits_row(const BnQWeight *weight,
-                                            const int8_t *quantized,
-                                            const float *scales,
-                                            int row,
-                                            float *out) {
+int bn_transformer_cpu_refine_native_logits_row(const BnQWeight *weight,
+                                                const int8_t *quantized,
+                                                const float *scales,
+                                                int row,
+                                                float *out) {
     return bn_quant_q8_logits_refine_row(weight, quantized, scales, row, out);
 }
 

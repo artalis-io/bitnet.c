@@ -71,13 +71,13 @@ static int logits_refine_backend_top(float *logits, int n_logits,
     }
 
     float scales[BN_LOGITS_REFINE_MAX_SCALE_BLOCKS];
-    bn_transformer_cpu_prepare_q8_logits_refine_activation(x, quantized,
-                                                           scales, W->cols);
+    bn_transformer_cpu_prepare_native_logits_refine_activation(
+        x, quantized, scales, W->cols);
     for (int i = 0; i < n_top; i++) {
         int row = ids[i];
         float row_sum;
-        if (bn_transformer_cpu_refine_q8_logits_row(W, quantized, scales,
-                                                    row, &row_sum) == 0)
+        if (bn_transformer_cpu_refine_native_logits_row(
+                W, quantized, scales, row, &row_sum) == 0)
             logits[row] = row_sum;
     }
     return n_top;
