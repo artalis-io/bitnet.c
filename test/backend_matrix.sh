@@ -2964,6 +2964,11 @@ if ! grep -n 'BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_BLOCK_PREPARED_INPUT' t
     fail=1
 fi
 
+if ! grep -n 'BN_CUDA_DISABLE_SMALL_DENSE_PREFILL' test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU policy tests must cover canonical small-dense prefill env policy"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1 ||
    grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks' src/gpu_cuda.cu | grep -v '_kernel' >/dev/null 2>&1; then
     echo "CUDA all-active-two MoE policy and helper names must not use all2 shorthand"
