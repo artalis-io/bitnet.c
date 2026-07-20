@@ -157,10 +157,15 @@ BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c) {
     return BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER;
 }
 
-int bn_model_arch_rmsnorm_requires_reference_scalar_order(
+int bn_model_arch_rmsnorm_uses_reference_order(
     const BnConfig *c) {
     return bn_model_arch_rmsnorm_mode(c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER;
+}
+
+int bn_model_arch_rmsnorm_requires_reference_scalar_order(
+    const BnConfig *c) {
+    return bn_model_arch_rmsnorm_uses_reference_order(c);
 }
 
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c) {

@@ -21,7 +21,7 @@ static const BnLogitsBackendOps *logits_backend_ops(void) {
 static void logits_rmsnorm_model(const BnModel *m, float *out,
                                  const float *x, const float *w,
                                  int size, float eps) {
-    if (m && bn_transformer_rmsnorm_requires_reference_scalar_order(&m->config)) {
+    if (m && bn_transformer_rmsnorm_uses_reference_order(&m->config)) {
         double ss = 0.0;
         for (int i = 0; i < size; i++)
             ss += (double)(x[i] * x[i]);

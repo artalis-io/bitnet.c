@@ -347,6 +347,14 @@ if rg -n 'bn_model_arch_ffn_uses_exact_scalar_activation' \
     fail=1
 fi
 
+if rg -n 'bn_model_arch_rmsnorm_requires_reference_scalar_order' \
+    src/transformer \
+    src/transformer.c \
+    src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer/GPU policy must use backend-neutral RMSNorm order model_arch helpers"
+    fail=1
+fi
+
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use CPU policy helpers for float K-quant task flags"
     fail=1

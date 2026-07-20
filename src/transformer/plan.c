@@ -217,9 +217,14 @@ int bn_transformer_cpu_prefill_decode_for_parity_enabled(
            bn_model_arch_prefill_uses_decode_for_parity(c);
 }
 
+int bn_transformer_rmsnorm_uses_reference_order(
+    const BnConfig *c) {
+    return bn_model_arch_rmsnorm_uses_reference_order(c);
+}
+
 int bn_transformer_rmsnorm_requires_reference_scalar_order(
     const BnConfig *c) {
-    return bn_model_arch_rmsnorm_requires_reference_scalar_order(c);
+    return bn_transformer_rmsnorm_uses_reference_order(c);
 }
 
 float bn_transformer_attention_scale(

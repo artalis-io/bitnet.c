@@ -268,6 +268,8 @@ int bn_transformer_cpu_prefill_force_float_kquant_enabled(
 int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,
     int gpu_attached);
+int bn_transformer_rmsnorm_uses_reference_order(
+    const BnConfig *c);
 int bn_transformer_rmsnorm_requires_reference_scalar_order(
     const BnConfig *c);
 float bn_transformer_attention_scale(

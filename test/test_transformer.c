@@ -3312,6 +3312,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
+    assert(bn_model_arch_rmsnorm_uses_reference_order(&c));
     assert(bn_model_arch_rmsnorm_requires_reference_scalar_order(&c));
     assert(bn_model_arch_uses_small_dense_shape(&c));
     assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
@@ -3951,7 +3952,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_divides_rope_freqs(&c, 5));
     assert(!bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
     assert(bn_transformer_prefill_uses_exact_activation(&c));
-    assert(!bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
+    assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     int force_float_kquant =
         bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
     int backend_supports_float_kquant_prefill =
@@ -3963,13 +3964,14 @@ static void test_block_planning(void) {
     c.policy_flags = 0;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
-    assert(!bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
+    assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 1));
     c.policy_flags = 0;
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER;
+    assert(bn_transformer_rmsnorm_uses_reference_order(&c));
     assert(bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
 
     unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
