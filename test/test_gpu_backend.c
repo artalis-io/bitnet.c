@@ -4360,19 +4360,19 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q6_K, 1));
     assert(!bn_backend_quant_aux_cache_force_q4_f32(
         BN_GGUF_TENSOR_Q4_K, 0));
-    assert(bn_backend_quant_aux_cache_q6_can_use_f16(
+    assert(bn_backend_quant_aux_cache_down_kquant_can_use_f16(
         BN_GGUF_TENSOR_Q6_K, 1, 1));
-    assert(bn_backend_quant_aux_cache_q6_can_use_f16(
+    assert(bn_backend_quant_aux_cache_down_kquant_can_use_f16(
         BN_GGUF_TENSOR_Q6_K, 0, 0));
-    assert(!bn_backend_quant_aux_cache_q6_can_use_f16(
+    assert(!bn_backend_quant_aux_cache_down_kquant_can_use_f16(
         BN_GGUF_TENSOR_Q6_K, 0, 1));
-    assert(!bn_backend_quant_aux_cache_q6_can_use_f16(
+    assert(!bn_backend_quant_aux_cache_down_kquant_can_use_f16(
         BN_GGUF_TENSOR_Q4_K, 1, 1));
-    assert(bn_backend_quant_aux_cache_add_q6_f32(
+    assert(bn_backend_quant_aux_cache_add_down_kquant_f32(
         BN_GGUF_TENSOR_Q6_K, 1));
-    assert(!bn_backend_quant_aux_cache_add_q6_f32(
+    assert(!bn_backend_quant_aux_cache_add_down_kquant_f32(
         BN_GGUF_TENSOR_Q6_K, 0));
-    assert(!bn_backend_quant_aux_cache_add_q6_f32(
+    assert(!bn_backend_quant_aux_cache_add_down_kquant_f32(
         BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_backend_quant_aux_cache_f32_storage(
         BN_GGUF_TENSOR_Q4_K, 1, 0));

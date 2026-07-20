@@ -11196,15 +11196,15 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     if (!bn_gpu_policy_cuda_cublas_aux_cache_supported(buf->type, buf->cols))
         return 0;
 
-    int force_q6_f32 = aux_cache_mode == 2;
+    int force_down_kquant_f32 = aux_cache_mode == 2;
     int force_f16 = aux_cache_mode == 3;
     int force_q4_f32 = bn_backend_quant_aux_cache_force_q4_f32(
         buf->type, aux_cache_mode == 2);
-    int down_kquant_as_f16 = bn_backend_quant_aux_cache_q6_can_use_f16(
-                        buf->type, force_f16, force_q6_f32) &&
+    int down_kquant_as_f16 = bn_backend_quant_aux_cache_down_kquant_can_use_f16(
+                        buf->type, force_f16, force_down_kquant_f32) &&
                     bn_gpu_policy_cuda_down_kquant_cublas_f16_cache_enabled();
     int add_down_kquant_f32_cache =
-        bn_backend_quant_aux_cache_add_q6_f32(buf->type, force_f16) &&
+        bn_backend_quant_aux_cache_add_down_kquant_f32(buf->type, force_f16) &&
         bn_gpu_policy_cuda_down_kquant_f16_cache_adds_f32_down_cache();
     size_t n = (size_t)buf->rows * (size_t)buf->cols;
     int f32_cache = bn_backend_quant_aux_cache_f32_storage(
@@ -11213,7 +11213,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
                         ? sizeof(float)
                         : sizeof(__half));
     int max_mb = bn_gpu_policy_cuda_cublas_aux_cache_max_mb(
-        buf->type, force_q6_f32, force_f16);
+        buf->type, force_down_kquant_f32, force_f16);
     if (max_mb > 0 && bytes > (size_t)max_mb * 1024u * 1024u)
         return 0;
     size_t free_mem = 0;
