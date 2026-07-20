@@ -626,8 +626,7 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     op->buf_aux = route_buf;
     op->rows = hidden;
     op->cols = dim;
-    if (exact_silu)
-        op->flags |= BN_GPU_OP_FLAG_EXACT_SILU;
+    op->flags |= bn_transformer_gpu_exact_silu_active_flags(exact_silu);
     op->p[0] = (uint32_t)hidden;
     op->p[1] = (uint32_t)n_experts;
     op->p[2] = (uint32_t)k;
@@ -1695,7 +1694,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_MOE_HB, em->gate_rows, em->up_rows,
                 em->gate_cols, 0,
-                exact_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u);
+                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         } else if (expert->buffers.use_gateup_split) {
             emit_context_matvec_split(
                 ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
@@ -1720,7 +1719,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2, moe_hidden, 0,
                 BN_GPU_IR_ACTIVATION_SILU,
-                exact_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u);
+                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         }
         bn_transformer_gpu_emit_context_matvec(
             ctx, em->down_type, expert->buffers.down, BN_GPU_VALUE_MOE_HB,
@@ -1775,7 +1774,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
                 lw->shared.shared_gate.rows, lw->shared.shared_up.rows,
                 lw->shared.shared_gate.cols, use_shared_kquant_dot,
-                exact_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u);
+                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    shared->shared_gateup_stacked &&
                    bn_transformer_gpu_can_matvec_split(
@@ -1811,7 +1810,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
                 lw->shared.shared_gate.rows, 0, BN_GPU_IR_ACTIVATION_SILU,
-                exact_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u);
+                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         }
         uint32_t shared_down_flags =
             bn_transformer_gpu_matvec_exact_kquant_flags(

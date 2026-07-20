@@ -690,6 +690,9 @@ static void test_gpu_capability_routing(void) {
                BN_GGUF_TENSOR_Q8_0, 0) == 0);
     assert(bn_transformer_gpu_exact_silu_flags(
                BN_GGUF_TENSOR_Q4_0, 1) == 0);
+    assert(bn_transformer_gpu_exact_silu_active_flags(1) ==
+           BN_GPU_OP_FLAG_EXACT_SILU);
+    assert(bn_transformer_gpu_exact_silu_active_flags(0) == 0);
     assert(bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
     assert(bn_transformer_gpu_stacked_pair_same_format(

@@ -126,6 +126,10 @@ uint32_t bn_transformer_gpu_exact_silu_flags(int tensor_type,
         : 0u;
 }
 
+uint32_t bn_transformer_gpu_exact_silu_active_flags(int exact_silu) {
+    return exact_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u;
+}
+
 int bn_transformer_gpu_prefers_gateup_split(int tensor_type) {
     return bn_backend_quant_gpu_prefers_gateup_split(tensor_type);
 }

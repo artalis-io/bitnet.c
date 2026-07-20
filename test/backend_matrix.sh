@@ -2617,6 +2617,11 @@ if ! grep -n 'bn_transformer_gpu_moe_route_raw_compare_matvec_flags' src/transfo
     fail=1
 fi
 
+if awk '/BN_GPU_OP_FLAG_EXACT_SILU/ && !/_Static_assert/' src/transformer/gpu_emit.c | grep -n . >/dev/null 2>&1; then
+    echo "Transformer GPU emission must use GPU policy helpers for exact-SiLU flags"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_gpu_matvec_q8k_dot_flag\|bn_backend_quant_gpu_matvec_exact_q6k_flag' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU matvec flag policy must use behavior-named backend K-quant helpers"
     fail=1
