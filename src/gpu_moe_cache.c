@@ -89,12 +89,9 @@ static int cache_evict(BnGPUMoECache *c) {
     if (slot < 0) return -1;
 
     BnGPUMoECacheEntry *e = &c->entries[slot];
-    // Destroy GPU handles
-    if (c->gpu && c->gpu->buffer_destroy) {
-        if (e->gate_gpu) c->gpu->buffer_destroy(c->gpu->ctx, e->gate_gpu);
-        if (e->up_gpu) c->gpu->buffer_destroy(c->gpu->ctx, e->up_gpu);
-        if (e->down_gpu) c->gpu->buffer_destroy(c->gpu->ctx, e->down_gpu);
-    }
+    bn_gpu_backend_destroy_buffer(c->gpu, e->gate_gpu);
+    bn_gpu_backend_destroy_buffer(c->gpu, e->up_gpu);
+    bn_gpu_backend_destroy_buffer(c->gpu, e->down_gpu);
 
     // Remove from hash + LRU
     hash_remove(c, e->layer, e->expert_idx);
@@ -199,11 +196,9 @@ void bn_gpu_moe_cache_free(BnGPUMoECache *c) {
     for (int i = 0; i < c->n_slots; i++) {
         BnGPUMoECacheEntry *e = &c->entries[i];
         if (e->layer < 0) continue;
-        if (c->gpu && c->gpu->buffer_destroy) {
-            if (e->gate_gpu) c->gpu->buffer_destroy(c->gpu->ctx, e->gate_gpu);
-            if (e->up_gpu) c->gpu->buffer_destroy(c->gpu->ctx, e->up_gpu);
-            if (e->down_gpu) c->gpu->buffer_destroy(c->gpu->ctx, e->down_gpu);
-        }
+        bn_gpu_backend_destroy_buffer(c->gpu, e->gate_gpu);
+        bn_gpu_backend_destroy_buffer(c->gpu, e->up_gpu);
+        bn_gpu_backend_destroy_buffer(c->gpu, e->down_gpu);
     }
     free(c->entries);
     free(c->hash_table);

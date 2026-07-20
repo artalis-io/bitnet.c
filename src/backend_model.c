@@ -42,7 +42,7 @@ static int backend_destroy_once(BnGPUBackend *gpu, void **seen, int *n_seen,
                                 int cap_seen, void *handle) {
     if (!handle) return 0;
     if (backend_handle_seen(seen, *n_seen, handle)) return 0;
-    gpu->buffer_destroy(gpu->ctx, handle);
+    bn_gpu_backend_destroy_buffer(gpu, handle);
     if (*n_seen < cap_seen)
         seen[(*n_seen)++] = handle;
     return 0;
@@ -51,7 +51,7 @@ static int backend_destroy_once(BnGPUBackend *gpu, void **seen, int *n_seen,
 void bn_backend_model_release_gpu(BnBackendModel *backend) {
     if (!backend) return;
     BnGPUBackend *gpu = backend->gpu;
-    if (gpu && gpu->buffer_destroy) {
+    if (bn_gpu_backend_can_destroy_buffer(gpu)) {
         int cap_seen = backend->n_qweights + backend->n_handles;
         void **seen = NULL;
         if (cap_seen > 0)
@@ -62,14 +62,14 @@ void bn_backend_model_release_gpu(BnBackendModel *backend) {
             if (seen)
                 backend_destroy_once(gpu, seen, &n_seen, cap_seen, handle);
             else if (handle)
-                gpu->buffer_destroy(gpu->ctx, handle);
+                bn_gpu_backend_destroy_buffer(gpu, handle);
         }
         for (int i = 0; i < backend->n_handles; i++) {
             void *handle = backend->handles[i].handle;
             if (seen)
                 backend_destroy_once(gpu, seen, &n_seen, cap_seen, handle);
             else if (handle)
-                gpu->buffer_destroy(gpu->ctx, handle);
+                bn_gpu_backend_destroy_buffer(gpu, handle);
         }
         free(seen);
     }

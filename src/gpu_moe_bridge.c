@@ -10,21 +10,16 @@
 
 static int gpu_moe_backend_can_upload_expert_buffers(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->buffer_create;
-}
-
-static void gpu_moe_destroy_buffer(BnGPUBackend *gpu, void *buffer) {
-    if (gpu && gpu->buffer_destroy && buffer)
-        gpu->buffer_destroy(gpu->ctx, buffer);
+    return bn_gpu_backend_can_create_buffer(gpu);
 }
 
 static void gpu_moe_destroy_partial(BnGPUBackend *gpu,
                                     void *gate,
                                     void *up,
-                                    void *down) {
-    gpu_moe_destroy_buffer(gpu, gate);
-    gpu_moe_destroy_buffer(gpu, up);
-    gpu_moe_destroy_buffer(gpu, down);
+    void *down) {
+    bn_gpu_backend_destroy_buffer(gpu, gate);
+    bn_gpu_backend_destroy_buffer(gpu, up);
+    bn_gpu_backend_destroy_buffer(gpu, down);
 }
 
 static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
@@ -219,7 +214,7 @@ void bn_gpu_moe_bridge_release_temporaries(
     BnGPUBackend *gpu = bn_model_gpu(m);
 
     for (int i = 0; i < temporaries->n_buffers; i++) {
-        gpu_moe_destroy_buffer(gpu, temporaries->buffers[i]);
+        bn_gpu_backend_destroy_buffer(gpu, temporaries->buffers[i]);
         temporaries->buffers[i] = NULL;
     }
     temporaries->n_buffers = 0;

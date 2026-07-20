@@ -465,6 +465,22 @@ struct BnGPUBackend {
     size_t max_storage_binding_size;
 };
 
+static inline int bn_gpu_backend_can_create_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create;
+}
+
+static inline int bn_gpu_backend_can_destroy_buffer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_destroy;
+}
+
+static inline void bn_gpu_backend_destroy_buffer(BnGPUBackend *gpu,
+                                                 void *buffer) {
+    if (bn_gpu_backend_can_destroy_buffer(gpu) && buffer)
+        gpu->buffer_destroy(gpu->ctx, buffer);
+}
+
 // Backend capability bits
 #define BN_GPU_CAP_FLASH_ATTN  (1u << 0)  // fused flash attention shader available
 #define BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT (1u << 1) // native-quant split matvec shader available
