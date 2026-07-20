@@ -1021,6 +1021,11 @@ if grep -n 'bn_transformer_cpu_.*fused_q4_gateup_silu' \
     fail=1
 fi
 
+if awk '/^int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled/{flag=1} /^int bn_transformer_cpu_activation_is_relu2/{flag=0} flag{print}' src/transformer/cpu_policy.c | grep -n 'bn_model_arch_activation_' >/dev/null 2>&1; then
+    echo "CPU fast-path policy must use CPU activation policy helpers"
+    fail=1
+fi
+
 if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/transformer/cpu.c >/dev/null 2>&1; then
     echo "CPU execution code must use CPU backend policy helpers for GPU-resident quant matvec dispatch"
     fail=1

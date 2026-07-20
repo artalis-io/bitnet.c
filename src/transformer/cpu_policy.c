@@ -96,7 +96,8 @@ int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
     return !gpu &&
            ffn_plan &&
            !ffn_plan->scalar_exact_activation &&
-           bn_model_arch_activation_uses_silu_path(ffn_plan->activation) &&
+           bn_transformer_cpu_activation_uses_silu_path(
+               ffn_plan->activation) &&
            dim % 32 == 0 &&
            bn_transformer_cpu_can_fused_kquant_gateup_silu(gate_type, up_type);
 }
@@ -109,7 +110,8 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
            ffn_plan &&
            ffn_plan->has_gate &&
            !ffn_plan->has_sub_norm &&
-           bn_model_arch_activation_uses_silu_path(ffn_plan->activation);
+           bn_transformer_cpu_activation_uses_silu_path(
+               ffn_plan->activation);
 }
 
 int bn_transformer_cpu_activation_is_relu2(int activation) {
