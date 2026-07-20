@@ -82,6 +82,20 @@ int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
     int batch_type);
 int bn_moe_quant_uses_embedded_tensor_scale(int type);
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
+void bn_moe_quant_matvec(float *out,
+                         const BnQWeight *W,
+                         const float *x,
+                         int8_t *quantized_buf,
+                         BnThreadPool *pool);
+void bn_moe_quant_matvec_batch(const BnMatvecTask *tasks,
+                               int n_tasks,
+                               const float *x,
+                               int8_t *quantized_buf,
+                               BnThreadPool *pool);
+void bn_moe_quant_matvec_multi(const BnMatvecMultiTask *tasks,
+                               int n_tasks,
+                               int8_t *quantized_bufs,
+                               BnThreadPool *pool);
 void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,
                                             const void **buffers,
                                             int n_tasks,

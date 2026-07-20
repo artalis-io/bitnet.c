@@ -101,9 +101,10 @@ static void moe_dense_residual_branch(BnModel *m, BnSession *sess,
         { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
         { s->hb2, &lw->ffn.ffn_up,   NULL, 0 },
     };
-    bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
+    bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
     bn_moe_swiglu(s->hb, s->hb, s->hb2, c->hidden_dim, -1);
-    bn_quant_matvec(s->xb2, &lw->ffn.ffn_down, s->hb, s->x_q, bn_model_pool(m));
+    bn_moe_quant_matvec(s->xb2, &lw->ffn.ffn_down, s->hb, s->x_q,
+                        bn_model_pool(m));
     if (lw->norm.ffn_post_norm_1)
         bn_moe_rmsnorm(s->xb2, s->xb2, lw->norm.ffn_post_norm_1, c->dim, c->norm_eps);
     bn_moe_weighted_add(ms->expert_out, s->xb2, 1.0f, c->dim);
@@ -220,7 +221,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     shared_gu_ready = 1;
                 }
             }
-            bn_quant_matvec_batch(gu_tasks, n_gu, s->xb, s->x_q, bn_model_pool(m));
+            bn_moe_quant_matvec_batch(gu_tasks, n_gu, s->xb, s->x_q,
+                                      bn_model_pool(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // Parallel SwiGLU
@@ -274,7 +276,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                         ms->expert_down_batch[k], &wdowns[k], ms->expert_hb_batch[k], NULL
                     };
                 }
-                bn_quant_matvec_multi(down_tasks, n_down, ms->down_x_q_bufs, bn_model_pool(m));
+                bn_moe_quant_matvec_multi(down_tasks, n_down,
+                                          ms->down_x_q_bufs,
+                                          bn_model_pool(m));
             }
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
@@ -381,7 +385,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h], NULL, gateup_flags };
                 gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]  , NULL, gateup_flags };
             }
-            bn_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q, bn_model_pool(m));
+            bn_moe_quant_matvec_batch(gu_tasks, 2 * n_hits, s->xb, s->x_q,
+                                      bn_model_pool(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // Parallel SwiGLU for hits
@@ -406,8 +411,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 const uint8_t *dp = hit_ptrs[h] + bn_moe_cache_gate_bytes(cache) + bn_moe_cache_up_bytes(cache);
                 BnQWeight wdown = bn_moe_make_qweight(dp, map->down_type,
                                                     map->down_rows, map->down_cols);
-                bn_quant_matvec(ms->expert_down_batch[h], &wdown,
-                                ms->expert_hb_batch[h], s->x_q, bn_model_pool(m));
+                bn_moe_quant_matvec(ms->expert_down_batch[h], &wdown,
+                                    ms->expert_hb_batch[h], s->x_q,
+                                    bn_model_pool(m));
             }
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
@@ -507,7 +513,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                      { ms->expert_hb,  &wgate, NULL, gateup_flags },
                      { ms->expert_hb2, &wup  , NULL, gateup_flags },
                 };
-                bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
+                bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q,
+                                          bn_model_pool(m));
             }
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
@@ -536,7 +543,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             {
                 BnQWeight wdown = bn_moe_make_qweight(down_ptr, map->down_type,
                                                     map->down_rows, map->down_cols);
-                bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, bn_model_pool(m));
+                bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
+                                    bn_model_pool(m));
             }
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
@@ -574,7 +582,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                  { ms->expert_hb,  &wgate, NULL, gateup_flags },
                  { ms->expert_hb2, &wup  , NULL, gateup_flags },
             };
-            bn_quant_matvec_batch(gu, 2, s->xb, s->x_q, bn_model_pool(m));
+            bn_moe_quant_matvec_batch(gu, 2, s->xb, s->x_q,
+                                      bn_model_pool(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // SwiGLU activation
@@ -592,7 +601,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             }
             BnQWeight wdown = bn_moe_make_qweight(down_data, lw->moe.expert_map.down_type,
                                                 lw->moe.expert_map.down_rows, lw->moe.expert_map.down_cols);
-            bn_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q, bn_model_pool(m));
+            bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
+                                bn_model_pool(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
 
             // Weighted accumulation
@@ -612,11 +622,13 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                  { s->hb,  &lw->shared.shared_gate, NULL, gateup_flags },
                  { s->hb2, &lw->shared.shared_up  , NULL, gateup_flags },
             };
-            bn_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q, bn_model_pool(m));
+            bn_moe_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q,
+                                      bn_model_pool(m));
         }
         bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden,
                       exec_policy.exact_silu);
-        bn_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q, bn_model_pool(m));
+        bn_moe_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q,
+                            bn_model_pool(m));
 
         // Apply shared expert sigmoid gate if present:
         // gate = sigmoid(dot(input, gate_weight)) — scalar per token

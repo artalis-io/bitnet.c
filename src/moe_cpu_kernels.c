@@ -137,6 +137,29 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
     return can_batch;
 }
 
+void bn_moe_quant_matvec(float *out,
+                         const BnQWeight *W,
+                         const float *x,
+                         int8_t *quantized_buf,
+                         BnThreadPool *pool) {
+    bn_quant_matvec(out, W, x, quantized_buf, pool);
+}
+
+void bn_moe_quant_matvec_batch(const BnMatvecTask *tasks,
+                               int n_tasks,
+                               const float *x,
+                               int8_t *quantized_buf,
+                               BnThreadPool *pool) {
+    bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf, pool);
+}
+
+void bn_moe_quant_matvec_multi(const BnMatvecMultiTask *tasks,
+                               int n_tasks,
+                               int8_t *quantized_bufs,
+                               BnThreadPool *pool) {
+    bn_quant_matvec_multi(tasks, n_tasks, quantized_bufs, pool);
+}
+
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n) {
     int i = 0;
 #if BN_TRANSFORMER_CPU_HAS_AVX2

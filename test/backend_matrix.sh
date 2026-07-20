@@ -1245,6 +1245,11 @@ if grep -n '#include "backend_quant.h"\|bn_backend_quant_matvec.*gpu_buf' src/mo
     fail=1
 fi
 
+if grep -n 'bn_quant_' src/moe_execute.c >/dev/null 2>&1; then
+    echo "src/moe_execute.c must use MoE quant helpers, not quant internals directly"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for stacked pair quant compatibility"
     fail=1
