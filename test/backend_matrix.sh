@@ -1915,6 +1915,11 @@ if grep -n 'bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in\|bn_tra
     fail=1
 fi
 
+if grep -n 'bn_quant_' src/moe_prefill.c >/dev/null 2>&1; then
+    echo "src/moe_prefill.c must use MoE quant helpers, not quant internals directly"
+    fail=1
+fi
+
 if grep -n 'gpu->dense_ffn_batch &&' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use GPU policy helpers for shared dense FFN availability"
     fail=1

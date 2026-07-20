@@ -608,7 +608,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                  { gate_buf, &wgate, NULL, 0 },
                  { up_buf,   &wup  , NULL, 0 },
             };
-            bn_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch, bn_model_pool(m));
+            bn_moe_quant_matvec_batch(gu, 2, gather_buf, x_q_scratch,
+                                      bn_model_pool(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             t0 = bn_moe_time_ms();
@@ -619,8 +620,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             t0 = bn_moe_time_ms();
-            bn_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch,
-                            bn_model_pool(m));
+            bn_moe_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch,
+                                bn_model_pool(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
         } else if (prefill_policy.force_matvec_prefill) {
             for (int i = 0; i < T; i++) {
@@ -632,19 +633,21 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                      { gate_t, &wgate, NULL, 0 },
                      { up_t,   &wup,   NULL, 0 },
                 };
-                bn_quant_matvec_batch(gu, 2, x_t, x_q_scratch,
-                                      bn_model_pool(m));
+                bn_moe_quant_matvec_batch(gu, 2, x_t, x_q_scratch,
+                                          bn_model_pool(m));
                 for (int h = 0; h < moe_hidden; h++) {
                     float g = gate_t[h];
                     gate_t[h] = (g / (1.0f + expf(-g))) * up_t[h];
                 }
-                bn_quant_matvec(down_t, &wdown, gate_t, x_q_scratch,
-                                bn_model_pool(m));
+                bn_moe_quant_matvec(down_t, &wdown, gate_t, x_q_scratch,
+                                    bn_model_pool(m));
             }
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
         } else {
-            bn_quant_matmul(gate_buf, &wgate, gather_buf, T, x_q_scratch, bn_model_pool(m));
-            bn_quant_matmul(up_buf, &wup, gather_buf, T, x_q_scratch, bn_model_pool(m));
+            bn_moe_quant_matmul(gate_buf, &wgate, gather_buf, T,
+                                x_q_scratch, bn_model_pool(m));
+            bn_moe_quant_matmul(up_buf, &wup, gather_buf, T,
+                                x_q_scratch, bn_model_pool(m));
             ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
 
             // SwiGLU activation across T * moe_hidden
@@ -660,7 +663,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
             // Down matmul
             t0 = bn_moe_time_ms();
-            bn_quant_matmul(down_buf, &wdown, gate_buf, T, x_q_scratch, bn_model_pool(m));
+            bn_moe_quant_matmul(down_buf, &wdown, gate_buf, T,
+                                x_q_scratch, bn_model_pool(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
         }
 
@@ -739,18 +743,20 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                          { gate_t, &lw->shared.shared_gate, NULL, 0 },
                          { up_t,   &lw->shared.shared_up,   NULL, 0 },
                     };
-                    bn_quant_matvec_batch(shared_gu, 2, x_t, x_q_scratch,
-                                          bn_model_pool(m));
+                    bn_moe_quant_matvec_batch(shared_gu, 2, x_t,
+                                              x_q_scratch, bn_model_pool(m));
                     for (int h = 0; h < shared_hidden; h++) {
                         float g = gate_t[h];
                         gate_t[h] = (g / (1.0f + expf(-g))) * up_t[h];
                     }
-                    bn_quant_matvec(down_t, &lw->shared.shared_down, gate_t,
-                                    x_q_scratch, bn_model_pool(m));
+                    bn_moe_quant_matvec(down_t, &lw->shared.shared_down,
+                                        gate_t, x_q_scratch, bn_model_pool(m));
                 }
             } else if (!used_gpu_shared) {
-                bn_quant_matmul(sh_g, &lw->shared.shared_gate, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
-                bn_quant_matmul(sh_u, &lw->shared.shared_up, Xb, n_tokens, x_q_scratch, bn_model_pool(m));
+                bn_moe_quant_matmul(sh_g, &lw->shared.shared_gate, Xb,
+                                    n_tokens, x_q_scratch, bn_model_pool(m));
+                bn_moe_quant_matmul(sh_u, &lw->shared.shared_up, Xb,
+                                    n_tokens, x_q_scratch, bn_model_pool(m));
 
                 size_t sh_total = (size_t)n_tokens * shared_hidden;
                 for (size_t i = 0; i < sh_total; i++) {
@@ -758,7 +764,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     sh_g[i] = (g / (1.0f + expf(-g))) * sh_u[i];
                 }
 
-                bn_quant_matmul(sh_d, &lw->shared.shared_down, sh_g, n_tokens, x_q_scratch, bn_model_pool(m));
+                bn_moe_quant_matmul(sh_d, &lw->shared.shared_down, sh_g,
+                                    n_tokens, x_q_scratch, bn_model_pool(m));
             }
 
             // Apply shared expert sigmoid gate if present

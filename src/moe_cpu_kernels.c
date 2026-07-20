@@ -160,6 +160,15 @@ void bn_moe_quant_matvec_multi(const BnMatvecMultiTask *tasks,
     bn_quant_matvec_multi(tasks, n_tasks, quantized_bufs, pool);
 }
 
+void bn_moe_quant_matmul(float *out,
+                         const BnQWeight *W,
+                         const float *x,
+                         int n_tokens,
+                         int8_t *quantized_buf,
+                         BnThreadPool *pool) {
+    bn_quant_matmul(out, W, x, n_tokens, quantized_buf, pool);
+}
+
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n) {
     int i = 0;
 #if BN_TRANSFORMER_CPU_HAS_AVX2

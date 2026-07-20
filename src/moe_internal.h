@@ -96,6 +96,12 @@ void bn_moe_quant_matvec_multi(const BnMatvecMultiTask *tasks,
                                int n_tasks,
                                int8_t *quantized_bufs,
                                BnThreadPool *pool);
+void bn_moe_quant_matmul(float *out,
+                         const BnQWeight *W,
+                         const float *x,
+                         int n_tokens,
+                         int8_t *quantized_buf,
+                         BnThreadPool *pool);
 void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,
                                             const void **buffers,
                                             int n_tasks,
