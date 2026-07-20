@@ -1746,7 +1746,7 @@ if grep -n 'bn_gpu_policy_apply_specialized_q6_q8k_override\|bn_gpu_policy_metal
     fail=1
 fi
 
-if grep -n 'metal_enable_q6_q8k\|--metal-enable-q6-q8k requested\|use Q6_K x Q8_K Metal path' src/main.c src/gpu_metal.m >/dev/null 2>&1; then
+if grep -n 'metal_enable_q6_q8k\|--metal-enable-q6-q8k requested\|use Q6_K x Q8_K Metal path\|Q6_K x Q8_K is now opt-in' src/main.c src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal specialized native-quant CLI internals must use behavior names"
     fail=1
 fi

@@ -305,7 +305,7 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
             args.metal_native_quant_prepared = 1;
         } else if (strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
-            /* Q6_K x Q8_K is now opt-in; keep the old diagnostic flag harmless. */
+            /* Specialized native-quant decode is now opt-in; keep the old diagnostic flag harmless. */
         } else if (strcmp(argv[i], "--gpu-debug-qkv-split") == 0) {
             args.gpu_debug_qkv_split = 1;
         } else if (strcmp(argv[i], "--gpu-disable-qkv-split") == 0) {
