@@ -719,6 +719,11 @@ if grep -n 'bn_gpu_policy_cuda_q8k_input_cache_enabled\|bn_gpu_policy_cuda_q4k_g
     fail=1
 fi
 
+if grep -n 'BN_CUDA_Q8K_INPUT_CACHE\|q8k_input_cache\|enable_q8k_input_cache\|reuse_q8k_input' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "CUDA prepared K-quant input cache locals must use behavior names"
+    fail=1
+fi
+
 if ! grep -n 'bn_gpu_policy_prepared_kquant_input_cache_enabled' src/gpu_cuda.cu >/dev/null 2>&1 ||
    ! grep -n 'bn_gpu_policy_kquant_dot_enabled' src/gpu_cuda.cu >/dev/null 2>&1 ||
    ! grep -n 'bn_gpu_policy_kquant_gateup_prepared_path_enabled' src/gpu_cuda.cu >/dev/null 2>&1; then

@@ -18455,35 +18455,37 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_native_quant_prepared_input_all_flag;
     const int disable_native_quant_prepared_input_logits =
         disable_native_quant_prepared_input_logits_flag;
-    int q8k_input_cache_valid = 0;
-    int q8k_input_cache_buf = -1;
-    int q8k_input_cache_cols = 0;
-    int q8k_input_cache_tokens = 0;
-    int q8k_input_cache_mark_op = -1;
-    const int enable_q8k_input_cache =
+    int prepared_kquant_input_cache_valid = 0;
+    int prepared_kquant_input_cache_buf = -1;
+    int prepared_kquant_input_cache_cols = 0;
+    int prepared_kquant_input_cache_tokens = 0;
+    int prepared_kquant_input_cache_mark_op = -1;
+    const int enable_prepared_kquant_input_cache =
         bn_gpu_policy_prepared_kquant_input_cache_enabled();
-#define BN_CUDA_Q8K_INPUT_CACHE_MARK(buf_, cols_, tokens_) do { \
-        q8k_input_cache_valid = enable_q8k_input_cache; \
-        q8k_input_cache_buf = (buf_); \
-        q8k_input_cache_cols = (cols_); \
-        q8k_input_cache_tokens = (tokens_); \
-        q8k_input_cache_mark_op = i; \
+#define BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(buf_, cols_, tokens_) do { \
+        prepared_kquant_input_cache_valid = enable_prepared_kquant_input_cache; \
+        prepared_kquant_input_cache_buf = (buf_); \
+        prepared_kquant_input_cache_cols = (cols_); \
+        prepared_kquant_input_cache_tokens = (tokens_); \
+        prepared_kquant_input_cache_mark_op = i; \
     } while (0)
-#define BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE() do { \
-        q8k_input_cache_valid = 0; \
-        q8k_input_cache_buf = -1; \
-        q8k_input_cache_cols = 0; \
-        q8k_input_cache_tokens = 0; \
-        q8k_input_cache_mark_op = -1; \
+#define BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE() do { \
+        prepared_kquant_input_cache_valid = 0; \
+        prepared_kquant_input_cache_buf = -1; \
+        prepared_kquant_input_cache_cols = 0; \
+        prepared_kquant_input_cache_tokens = 0; \
+        prepared_kquant_input_cache_mark_op = -1; \
     } while (0)
-#define BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE_BUF(buf_) do { \
-        if (q8k_input_cache_valid && q8k_input_cache_buf == (buf_)) \
-            BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE(); \
+#define BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE_BUF(buf_) do { \
+        if (prepared_kquant_input_cache_valid && \
+            prepared_kquant_input_cache_buf == (buf_)) \
+            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE(); \
     } while (0)
-#define BN_CUDA_Q8K_INPUT_CACHE_MATCH(buf_, cols_, tokens_) \
-    (enable_q8k_input_cache && q8k_input_cache_valid && \
-     q8k_input_cache_buf == (buf_) && q8k_input_cache_cols == (cols_) && \
-     q8k_input_cache_tokens == (tokens_))
+#define BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(buf_, cols_, tokens_) \
+    (enable_prepared_kquant_input_cache && prepared_kquant_input_cache_valid && \
+     prepared_kquant_input_cache_buf == (buf_) && \
+     prepared_kquant_input_cache_cols == (cols_) && \
+     prepared_kquant_input_cache_tokens == (tokens_))
     unsigned char skip_ops[8192];
     if (n_ops > (int)sizeof(skip_ops)) {
         fprintf(stderr, "[bn:gpu:cuda] execute graph too large: %d ops\n",
@@ -19165,11 +19167,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         op->rows, op->cols, out_offset);
                     break;
                 }
-                int reuse_q8k_input =
-                    BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, op->cols, 1) &&
-                    q8k_input_cache_mark_op == i - 1;
+                int reuse_prepared_kquant_input =
+                    BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
+                        op->buf_in, op->cols, 1) &&
+                    prepared_kquant_input_cache_mark_op == i - 1;
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                if (!reuse_q8k_input) {
+                if (!reuse_prepared_kquant_input) {
                     if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                         BN_CUDA_EXEC_FAIL("q6k q8k scratch alloc failed");
                     xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -19178,7 +19181,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, op->cols, 1);
                 }
-                BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, op->cols, 1);
+                BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in,
+                                                         op->cols, 1);
                 int q6_threads = 256;
                 int warps = q6_threads / 32;
                 if (cuda_use_down_kquant_3warp_exact(op->rows, op->cols)) {
@@ -19271,11 +19275,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                         bn_gpu_policy_kquant_dot_forced()) &&
                        bn_gpu_policy_kquant_dot_enabled()) {
-                int reuse_q8k_input =
-                    BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, op->cols, 1) &&
-                    q8k_input_cache_mark_op == i - 1;
+                int reuse_prepared_kquant_input =
+                    BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
+                        op->buf_in, op->cols, 1) &&
+                    prepared_kquant_input_cache_mark_op == i - 1;
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                if (!reuse_q8k_input) {
+                if (!reuse_prepared_kquant_input) {
                     if (cuda_ensure_q8_k(ctx, op->cols, 1) != 0)
                         BN_CUDA_EXEC_FAIL("q4k q8k scratch alloc failed");
                     xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -19284,7 +19289,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim3(op->cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, op->cols, 1);
                 }
-                BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, op->cols, 1);
+                BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in,
+                                                         op->cols, 1);
                 int asymmetric_kquant_threads = 256;
                 int warps = asymmetric_kquant_threads / 32;
                 if (bn_gpu_policy_kquant_matvec4_enabled(op->cols)) {
@@ -19617,11 +19623,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (cols % BN_QK_K) == 0 && split1 != 1 && enable_symmetric_kquant_dot &&
                 (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) &&
                 bn_gpu_policy_kquant_dot_enabled()) {
-                int reuse_q8k_input =
-                    BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, cols, 1) &&
-                    q8k_input_cache_mark_op == i - 1;
+                int reuse_prepared_kquant_input =
+                    BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
+                        op->buf_in, cols, 1) &&
+                    prepared_kquant_input_cache_mark_op == i - 1;
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                if (!reuse_q8k_input) {
+                if (!reuse_prepared_kquant_input) {
                     if (cuda_ensure_q8_k(ctx, cols, 1) != 0)
                         BN_CUDA_EXEC_FAIL("q4k q8k split scratch alloc failed");
                     xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -19630,7 +19637,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim3(cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, cols, 1);
                 }
-                BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, cols, 1);
+                BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in,
+                                                         cols, 1);
                 int asymmetric_kquant_threads = 256;
                 int warps = asymmetric_kquant_threads / 32;
                 int blocks = (total_rows + warps - 1) / warps;
@@ -19931,20 +19939,22 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     prev_q8k->op_code == BN_GPU_CODE_MOE_ROUTED_FFN &&
                     prev_q8k->buf_in == op->buf_in &&
                     prev_q8k->cols == cols;
-                int reuse_q8k_input =
-                    BN_CUDA_Q8K_INPUT_CACHE_MATCH(op->buf_in, cols, 1) &&
+                int reuse_prepared_kquant_input =
+                    BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH(
+                        op->buf_in, cols, 1) &&
                     prev_routed_same_input &&
-                    (q8k_input_cache_mark_op == i - 1 ||
-                     (q8k_input_cache_mark_op == i - 2 && i >= 2 &&
+                    (prepared_kquant_input_cache_mark_op == i - 1 ||
+                     (prepared_kquant_input_cache_mark_op == i - 2 && i >= 2 &&
                       ops[i - 2].op_code == BN_GPU_CODE_MOE_ROUTE_TOPK));
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
-                if (!reuse_q8k_input) {
+                if (!reuse_prepared_kquant_input) {
                     if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
                     xq = (BnBlockQ8K *)ctx->d_q8_k;
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                         dim3(cols / BN_QK_K, 1, 1), BN_QK_K, 0,
                         xq, in, cols, 1);
-                    BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, cols, 1);
+                    BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in,
+                                                             cols, 1);
                 }
                 int asymmetric_kquant_gateup_threads = 256;
                 int warps = asymmetric_kquant_gateup_threads / 32;
@@ -20095,7 +20105,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         dim / BN_QK_K + 1, BN_QK_K, 0, route, xq,
                         (const float *)w->data, in, dim,
                         expert_weights_scale);
-                    BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, dim, 1);
+                    BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in,
+                                                             dim, 1);
                 } else {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         moe_route_diff2_warp_kernel, 1, 32, 0, route,
@@ -20116,7 +20127,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (const float *)w->data, in, dim,
                     expert_weights_scale,
                     (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM) == 0);
-                BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, dim, 1);
+                BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(op->buf_in, dim, 1);
             } else if (bn_gpu_policy_cuda_moe_router_fused_topk_enabled(
                            n_experts,
                            (op->flags & BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK) != 0)) {
@@ -20344,7 +20355,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                                 dim3(dim / BN_QK_K, 1, 1), BN_QK_K, 0,
                                 xq, in, dim, 1);
-                            BN_CUDA_Q8K_INPUT_CACHE_MARK(op->buf_in, dim, 1);
+                            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK(
+                                op->buf_in, dim, 1);
                         }
                         if (bn_gpu_policy_cuda_moe_all_active_two_fixed_prepared_4row_enabled(
                                 moe_all_active_two_x_dot_prepared,
@@ -20533,7 +20545,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 quantize_q8k_batch_kernel,
                                 dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                                 mid_q, mid, hidden, k);
-                            BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE();
+                            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE();
                             if (profile_moe_internal) {
                                 cudaEventRecord(moe_ev_stop, ctx->exec_stream);
                                 cudaEventSynchronize(moe_ev_stop);
@@ -20710,7 +20722,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                                 dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                                 mid_q, mid, hidden, k);
-                            BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE();
+                            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE();
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_routed_q8k_accum_kernel,
                                 down_blocks, route_threads, 0,
@@ -20744,7 +20756,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             quantize_q8k_batch_kernel,
                             dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                             mid_q, mid, hidden, k);
-                        BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE();
+                        BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE();
                         int pair_blocks =
                             ((dim + 7) / 8 + warps - 1) / warps;
                         BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
@@ -20762,7 +20774,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8k_batch_kernel,
                             dim3(hidden / BN_QK_K, k, 1), BN_QK_K, 0,
                             mid_q, mid, hidden, k);
-                        BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE();
+                        BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE();
                         if (cuda_use_moe_down_prepared_8row(hidden)) {
                             int down8_blocks =
                                 (dim + warps * 8 - 1) / (warps * 8);
@@ -20804,7 +20816,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (size_t)norm_threads * sizeof(float),
                 out, in, (const float *)w->data, n,
                 cuda_u32_to_f32(op->p[1]));
-            BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE_BUF(op->buf_out);
+            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE_BUF(op->buf_out);
             break;
         }
         case BN_GPU_CODE_RESIDUAL_RMSNORM: {
@@ -20820,8 +20832,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 norm_threads, (size_t)norm_threads * sizeof(float),
                 in, aux, out, (const float *)w->data, n,
                 cuda_u32_to_f32(op->p[1]));
-            BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE_BUF(op->buf_in);
-            BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE_BUF(op->buf_out);
+            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE_BUF(op->buf_in);
+            BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE_BUF(op->buf_out);
             break;
         }
         case BN_GPU_CODE_PER_HEAD_RMSNORM: {
@@ -21710,10 +21722,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
         }
     }
-#undef BN_CUDA_Q8K_INPUT_CACHE_MATCH
-#undef BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE_BUF
-#undef BN_CUDA_Q8K_INPUT_CACHE_INVALIDATE
-#undef BN_CUDA_Q8K_INPUT_CACHE_MARK
+#undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MATCH
+#undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE_BUF
+#undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_INVALIDATE
+#undef BN_CUDA_PREPARED_KQUANT_INPUT_CACHE_MARK
     return 0;
 }
 
