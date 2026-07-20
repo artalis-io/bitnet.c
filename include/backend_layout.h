@@ -25,10 +25,10 @@ typedef enum {
 } BnBackendLayoutReason;
 
 typedef struct {
-    size_t q4_repack_bytes;
-    size_t q4k_scale_bytes;
-    size_t q6k_weight_bytes;
-    size_t q8_scale_bytes;
+    size_t lowbit_repack_bytes;
+    size_t kquant_scale_table_bytes;
+    size_t expanded_kquant_weight_bytes;
+    size_t f32_scale_table_bytes;
 } BnBackendLayoutPreparedStats;
 
 const char *bn_backend_layout_reason_string(BnBackendLayoutReason reason);

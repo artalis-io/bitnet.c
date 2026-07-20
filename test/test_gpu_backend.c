@@ -4527,10 +4527,10 @@ static void test_backend_layout_prepared_qweights(void) {
 
 #if (defined(__ARM_NEON) && defined(__ARM_FEATURE_DOTPROD)) || defined(__wasm_relaxed_simd__)
     assert(bytes > 0);
-    assert(stats.q4_repack_bytes == bytes);
-    assert(stats.q4k_scale_bytes == 0);
-    assert(stats.q6k_weight_bytes == 0);
-    assert(stats.q8_scale_bytes == 0);
+    assert(stats.lowbit_repack_bytes == bytes);
+    assert(stats.kquant_scale_table_bytes == 0);
+    assert(stats.expanded_kquant_weight_bytes == 0);
+    assert(stats.f32_scale_table_bytes == 0);
 
     SHArena *arena = sh_arena_create(bytes + 4 * SH_ARENA_ALIGN);
     assert(arena != NULL);
@@ -4539,10 +4539,10 @@ static void test_backend_layout_prepared_qweights(void) {
 
     BnBackendLayoutPreparedStats built = {0};
     bn_backend_layout_prepare_qweights(backend, &config, &weights, arena, &built);
-    assert(built.q4_repack_bytes == stats.q4_repack_bytes);
-    assert(built.q4k_scale_bytes == 0);
-    assert(built.q6k_weight_bytes == 0);
-    assert(built.q8_scale_bytes == 0);
+    assert(built.lowbit_repack_bytes == stats.lowbit_repack_bytes);
+    assert(built.kquant_scale_table_bytes == 0);
+    assert(built.expanded_kquant_weight_bytes == 0);
+    assert(built.f32_scale_table_bytes == 0);
     const BnPreparedWeight *prepared =
         bn_backend_model_prepared_qweight(backend, &layer.attn.wq);
     assert(prepared != NULL);
@@ -4558,10 +4558,10 @@ static void test_backend_layout_prepared_qweights(void) {
     sh_arena_free(arena);
 #else
     assert(bytes == 0);
-    assert(stats.q4_repack_bytes == 0);
-    assert(stats.q4k_scale_bytes == 0);
-    assert(stats.q6k_weight_bytes == 0);
-    assert(stats.q8_scale_bytes == 0);
+    assert(stats.lowbit_repack_bytes == 0);
+    assert(stats.kquant_scale_table_bytes == 0);
+    assert(stats.expanded_kquant_weight_bytes == 0);
+    assert(stats.f32_scale_table_bytes == 0);
 #endif
 
     BnBlockQ4K q4k_blocks[1];
@@ -4585,10 +4585,10 @@ static void test_backend_layout_prepared_qweights(void) {
                                                  &q4k_stats);
 #if defined(__AVX2__)
     assert(q4k_bytes > 0);
-    assert(q4k_stats.q4_repack_bytes == 0);
-    assert(q4k_stats.q4k_scale_bytes == q4k_bytes);
-    assert(q4k_stats.q6k_weight_bytes == 0);
-    assert(q4k_stats.q8_scale_bytes == 0);
+    assert(q4k_stats.lowbit_repack_bytes == 0);
+    assert(q4k_stats.kquant_scale_table_bytes == q4k_bytes);
+    assert(q4k_stats.expanded_kquant_weight_bytes == 0);
+    assert(q4k_stats.f32_scale_table_bytes == 0);
 
     SHArena *q4k_arena = sh_arena_create(q4k_bytes + 4 * SH_ARENA_ALIGN);
     assert(q4k_arena != NULL);
@@ -4597,10 +4597,10 @@ static void test_backend_layout_prepared_qweights(void) {
     BnBackendLayoutPreparedStats q4k_built = {0};
     bn_backend_layout_prepare_qweights(q4k_backend, &config, &q4k_weights,
                                        q4k_arena, &q4k_built);
-    assert(q4k_built.q4_repack_bytes == 0);
-    assert(q4k_built.q4k_scale_bytes == q4k_stats.q4k_scale_bytes);
-    assert(q4k_built.q6k_weight_bytes == 0);
-    assert(q4k_built.q8_scale_bytes == 0);
+    assert(q4k_built.lowbit_repack_bytes == 0);
+    assert(q4k_built.kquant_scale_table_bytes == q4k_stats.kquant_scale_table_bytes);
+    assert(q4k_built.expanded_kquant_weight_bytes == 0);
+    assert(q4k_built.f32_scale_table_bytes == 0);
     const BnPreparedWeight *q4k_prepared =
         bn_backend_model_prepared_qweight(q4k_backend, &q4k_layer.attn.wq);
     assert(q4k_prepared != NULL);
@@ -4611,10 +4611,10 @@ static void test_backend_layout_prepared_qweights(void) {
     sh_arena_free(q4k_arena);
 #else
     assert(q4k_bytes == 0);
-    assert(q4k_stats.q4_repack_bytes == 0);
-    assert(q4k_stats.q4k_scale_bytes == 0);
-    assert(q4k_stats.q6k_weight_bytes == 0);
-    assert(q4k_stats.q8_scale_bytes == 0);
+    assert(q4k_stats.lowbit_repack_bytes == 0);
+    assert(q4k_stats.kquant_scale_table_bytes == 0);
+    assert(q4k_stats.expanded_kquant_weight_bytes == 0);
+    assert(q4k_stats.f32_scale_table_bytes == 0);
 #endif
 
     printf("PASSED\n");

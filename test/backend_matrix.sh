@@ -557,6 +557,15 @@ if grep -n 'bn_quant_format_allows_stacked_layout' src/backend_layout.c >/dev/nu
     fail=1
 fi
 
+if grep -n 'q4_repack_bytes\|q4k_scale_bytes\|q6k_weight_bytes\|q8_scale_bytes' \
+    include/backend_layout.h \
+    src/backend_layout.c \
+    src/model.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Backend layout prepared-weight stats must use behavior names, not raw quant-format field names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_supports_q[68]k*_logits_refine' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use logits policy helpers for logits refine capability policy"
     fail=1

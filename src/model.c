@@ -1024,24 +1024,24 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             bn_backend_layout_prepare_qweights(m->backend_state->backend, c, w,
                                                m->runtime->weight_arena,
                                                &built_stats);
-            if (built_stats.q4_repack_bytes > 0) {
+            if (built_stats.lowbit_repack_bytes > 0) {
                 char rp_mb[16]; snprintf(rp_mb, sizeof(rp_mb), "%.0f",
-                                          (double)built_stats.q4_repack_bytes / (1024*1024));
+                                          (double)built_stats.lowbit_repack_bytes / (1024*1024));
                 SH_LOG_INFO("Q4_0 weights repacked", "MB", rp_mb);
             }
-            if (built_stats.q4k_scale_bytes > 0) {
+            if (built_stats.kquant_scale_table_bytes > 0) {
                 char q4k_mb[16]; snprintf(q4k_mb, sizeof(q4k_mb), "%.0f",
-                                           (double)built_stats.q4k_scale_bytes / (1024*1024));
+                                           (double)built_stats.kquant_scale_table_bytes / (1024*1024));
                 SH_LOG_INFO("Q4_K scales prepared", "MB", q4k_mb);
             }
-            if (built_stats.q6k_weight_bytes > 0) {
+            if (built_stats.expanded_kquant_weight_bytes > 0) {
                 char q6k_mb[16]; snprintf(q6k_mb, sizeof(q6k_mb), "%.0f",
-                                           (double)built_stats.q6k_weight_bytes / (1024*1024));
+                                           (double)built_stats.expanded_kquant_weight_bytes / (1024*1024));
                 SH_LOG_INFO("Q6_K weights expanded", "MB", q6k_mb);
             }
-            if (built_stats.q8_scale_bytes > 0) {
+            if (built_stats.f32_scale_table_bytes > 0) {
                 char q8_mb[16]; snprintf(q8_mb, sizeof(q8_mb), "%.0f",
-                                          (double)built_stats.q8_scale_bytes / (1024*1024));
+                                          (double)built_stats.f32_scale_table_bytes / (1024*1024));
                 SH_LOG_INFO("Q8_0 FP32 scales ready", "MB", q8_mb);
             }
         }
