@@ -2570,6 +2570,12 @@ if awk '/^int bn_gpu_policy_moe_all_f16_cache_forced/{flag=1} /^static int gpu_p
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_matmul_batch_enabled/{flag=1} /^size_t bn_gpu_policy_max_storage_binding_bytes/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1 ||
+   awk '/^int bn_gpu_policy_cuda_cublas_matmul_enabled/{flag=1} /^int bn_gpu_policy_moe_route_all_active_two/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c public matmul/K-quant policy helpers must compose local env policy helpers"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_moe_router_topk_enabled\|bn_gpu_policy_cuda_q8_moe_cpu_route_resident_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_enabled\|bn_gpu_policy_cuda_moe_router_gpu_enabled\|bn_gpu_policy_cuda_moe_router_diff2_enabled\|bn_gpu_policy_cuda_moe_routed_ffn_batch_allowed\|bn_gpu_policy_cuda_moe_ffn_disabled\|bn_gpu_policy_cuda_moe_cpu_actual_override_enabled\|bn_gpu_policy_cuda_moe_shared_cpu_fallback_enabled\|bn_gpu_policy_cuda_moe_gateup_split_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use neutral helpers for MoE route policy"
     fail=1
