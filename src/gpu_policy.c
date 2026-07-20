@@ -1806,6 +1806,28 @@ static int gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_ARGMAX") != NULL;
 }
 
+static int gpu_policy_moe_logits_mmvq_1warp8_1536_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536") != NULL;
+}
+
+static int gpu_policy_moe_logits_mmvq_1warp16_1536_requested(void) {
+    return getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536") != NULL;
+}
+
+static int gpu_policy_moe_logits_mmvq_1warp8_1536_unroll_disabled(
+    void) {
+    return getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL") !=
+           NULL;
+}
+
+static int gpu_policy_argmax_fast_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_ARGMAX_FAST") != NULL;
+}
+
+static int gpu_policy_optimistic_argmax_penalty_requested(void) {
+    return getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
+}
+
 int bn_gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
     return gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
@@ -1822,29 +1844,28 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_enabled(int use_mmvq,
                                                            int rows,
                                                            int cols) {
     return use_mmvq && rows == 151936 && cols == 1536 &&
-           getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536") == NULL;
+           !gpu_policy_moe_logits_mmvq_1warp8_1536_disabled();
 }
 
 int bn_gpu_policy_cuda_moe_logits_mmvq_1warp16_1536_enabled(
     int use_1warp8) {
     return use_1warp8 &&
-           getenv("BN_CUDA_ENABLE_MOE_LOGITS_MMVQ_1WARP16_1536") != NULL;
+           gpu_policy_moe_logits_mmvq_1warp16_1536_requested();
 }
 
 int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
     int use_1warp8,
     int use_1warp16) {
     return use_1warp8 && !use_1warp16 &&
-           getenv("BN_CUDA_DISABLE_MOE_LOGITS_MMVQ_1WARP8_1536_UNROLL") ==
-               NULL;
+           !gpu_policy_moe_logits_mmvq_1warp8_1536_unroll_disabled();
 }
 
 int bn_gpu_policy_cuda_argmax_fast_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_ARGMAX_FAST") == NULL;
+    return !gpu_policy_argmax_fast_disabled();
 }
 
 int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
+    return gpu_policy_optimistic_argmax_penalty_requested();
 }
 
 int bn_gpu_policy_cuda_legacy_block_matvec4_enabled(void) {
