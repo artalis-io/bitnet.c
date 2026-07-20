@@ -427,12 +427,12 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             cpu_ops, bn_model_gpu(m), dim,
             lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type);
         int n_sb_attn = dim / BN_QK_K;
-        float attn_q8k_d[n_sb_attn > 0 ? n_sb_attn : 1];
-        int16_t attn_q8k_bsums[n_sb_attn > 0 ? n_sb_attn * 16 : 1];
+        float attn_prepared_kquant_scales[n_sb_attn > 0 ? n_sb_attn : 1];
+        int16_t attn_prepared_kquant_bsums[n_sb_attn > 0 ? n_sb_attn * 16 : 1];
         if (attn_prepared_kquant_route) {
             cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, c->norm_eps,
-                                 s->xb, s->x_q, attn_q8k_d,
-                                 attn_q8k_bsums);
+                                 s->xb, s->x_q, attn_prepared_kquant_scales,
+                                 attn_prepared_kquant_bsums);
             attn_prepared_kquant = 1;
         } else
         {
@@ -458,7 +458,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(
+                        m, qkv, 3, s->x_q, attn_prepared_kquant_scales,
+                        attn_prepared_kquant_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
                 k_tmp = key_cache_row;
@@ -470,7 +472,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(
+                        m, qkv, 3, s->x_q, attn_prepared_kquant_scales,
+                        attn_prepared_kquant_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
             }
@@ -640,7 +644,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(
+                        m, qkv, 3, s->x_q, attn_prepared_kquant_scales,
+                        attn_prepared_kquant_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
@@ -680,7 +686,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { v_tmp, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(
+                        m, qkv, 3, s->x_q, attn_prepared_kquant_scales,
+                        attn_prepared_kquant_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
@@ -714,7 +722,9 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                      { value_cache_row, &lw->attn.wv, NULL, 0 },
                 };
                 if (attn_prepared_kquant)
-                    cpu_quant_matvec_batch_prepared_kquant(m, qkv, 3, s->x_q, attn_q8k_d, attn_q8k_bsums, s->xb);
+                    cpu_quant_matvec_batch_prepared_kquant(
+                        m, qkv, 3, s->x_q, attn_prepared_kquant_scales,
+                        attn_prepared_kquant_bsums, s->xb);
                 else
                     cpu_quant_matvec_batch_prepared(m, qkv, 3, s->xb, s->x_q);
 
@@ -831,13 +841,14 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
 
     int ssm_prepared_kquant = 0;
     int n_sb_ssm = dim / BN_QK_K;
-    float ssm_q8k_d[n_sb_ssm > 0 ? n_sb_ssm : 1];
-    int16_t ssm_q8k_bsums[n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
+    float ssm_prepared_kquant_scales[n_sb_ssm > 0 ? n_sb_ssm : 1];
+    int16_t ssm_prepared_kquant_bsums[n_sb_ssm > 0 ? n_sb_ssm * 16 : 1];
     int ssm_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_pair_enabled(
         cpu_ops, bn_model_gpu(m), dim, lw->ssm.wqkv.type, lw->ssm.wz.type);
     if (ssm_prepared_kquant_route) {
         cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, c->norm_eps,
-                             s->xb, s->x_q, ssm_q8k_d, ssm_q8k_bsums);
+                             s->xb, s->x_q, ssm_prepared_kquant_scales,
+                             ssm_prepared_kquant_bsums);
         ssm_prepared_kquant = 1;
     } else
     {
@@ -852,7 +863,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     };
     if (ssm_prepared_kquant)
         cpu_quant_matvec_batch_prepared_kquant(m, qz_tasks, 2, s->x_q,
-                                               ssm_q8k_d, ssm_q8k_bsums, s->xb);
+                                               ssm_prepared_kquant_scales,
+                                               ssm_prepared_kquant_bsums, s->xb);
     else
         cpu_quant_matvec_batch_prepared(m, qz_tasks, 2, s->xb, s->x_q);
 
@@ -887,7 +899,8 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
         bn_transformer_cpu_can_prepared_kquant_pair(
             cpu_ops, lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type)) {
         cpu_quant_matvec_batch_prepared_kquant(m, ab, 2, s->x_q,
-                                               ssm_q8k_d, ssm_q8k_bsums, s->xb);
+                                               ssm_prepared_kquant_scales,
+                                               ssm_prepared_kquant_bsums, s->xb);
     } else {
         cpu_quant_matvec_batch_prepared(m, ab, 2, s->xb, s->x_q);
     }
@@ -968,16 +981,18 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         bn_transformer_cpu_route_prepared_kquant_pair_enabled(
             cpu_ops, gpu, dim, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
         int n_sb = dim / BN_QK_K;
-        float q8k_d[n_sb];
-        int16_t q8k_bsums[n_sb * 16];
+        float ffn_prepared_kquant_scales[n_sb];
+        int16_t ffn_prepared_kquant_bsums[n_sb * 16];
         cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.ffn_norm, dim, c->norm_eps,
-                             s->xb, s->x_q, q8k_d, q8k_bsums);
+                             s->xb, s->x_q, ffn_prepared_kquant_scales,
+                             ffn_prepared_kquant_bsums);
         BnMatvecTask ffn[2] = {
              { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
             { s->hb2, &lw->ffn.ffn_up, NULL, 0 },
         };
-        cpu_quant_matvec_batch_prepared_kquant(m, ffn, 2, s->x_q, q8k_d,
-                                               q8k_bsums, s->xb);
+        cpu_quant_matvec_batch_prepared_kquant(m, ffn, 2, s->x_q,
+                                               ffn_prepared_kquant_scales,
+                                               ffn_prepared_kquant_bsums, s->xb);
         fused_gate_up = 1;
     }
 

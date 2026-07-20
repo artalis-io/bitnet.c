@@ -992,6 +992,11 @@ if grep -n 'cpu_quant_matvec_batch_preq8k' src/transformer/cpu.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n '\battn_q8k_d\b\|\battn_q8k_bsums\b\|\bssm_q8k_d\b\|\bssm_q8k_bsums\b\|\bq8k_d\b\|\bq8k_bsums\b' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "Transformer CPU prepared K-quant activation buffers must use behavior names, not Q8K local names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for preq8k quant capability"
     fail=1
