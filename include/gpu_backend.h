@@ -510,6 +510,19 @@ static inline int bn_gpu_backend_can_destroy_buffer(
     return gpu && gpu->buffer_destroy;
 }
 
+static inline int bn_gpu_backend_can_query_memory(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->memory_info;
+}
+
+static inline int bn_gpu_backend_query_memory(const BnGPUBackend *gpu,
+                                              size_t *free_bytes,
+                                              size_t *total_bytes) {
+    if (!bn_gpu_backend_can_query_memory(gpu))
+        return -1;
+    return gpu->memory_info(gpu->ctx, free_bytes, total_bytes);
+}
+
 static inline void bn_gpu_backend_destroy_buffer(BnGPUBackend *gpu,
                                                  void *buffer) {
     if (bn_gpu_backend_can_destroy_buffer(gpu) && buffer)

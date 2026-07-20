@@ -2808,6 +2808,16 @@ if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_
     fail=1
 fi
 
+if grep -n 'gpu->memory_info' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use GPU backend helpers for memory-query capability"
+    fail=1
+fi
+
+if grep -n 'gpu->buffer_create_f16_cache\|gpu->buffer_create_kquant_f32_cache\|gpu->buffer_create_quant_only' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c must use GPU backend helpers for optional cache-upload capability"
+    fail=1
+fi
+
 if grep -n '#include "quant.h"\|bn_qweight_data_size' src/model_gpu.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "model GPU upload and transformer GPU policy must use backend layout qweight sizing helpers"
     fail=1

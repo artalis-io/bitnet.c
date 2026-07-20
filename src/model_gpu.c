@@ -226,11 +226,11 @@ static int optional_layout_fits_memory(BnGPUBackend *gpu, size_t bytes,
                                        int layer, const char *name) {
     if (bytes == 0)
         return 0;
-    if (!gpu || !gpu->memory_info)
+    if (!bn_gpu_backend_can_query_memory(gpu))
         return 1;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
-    if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
+    if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 1;
     size_t reserve = bn_gpu_policy_layout_reserve_bytes();
     if (free_bytes > bytes && free_bytes - bytes >= reserve)
@@ -571,7 +571,7 @@ static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
                                         const BnConfig *c,
                                         const BnWeights *w,
                                         int native_quant_f16_cache) {
-    if (!gpu || !gpu->memory_info)
+    if (!bn_gpu_backend_can_query_memory(gpu))
         return 1;
     size_t need = estimate_resident_moe_all_bytes(c, w, gpu,
                                                   native_quant_f16_cache);
@@ -588,7 +588,7 @@ static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
         return 0;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
-    if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
+    if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 1;
     size_t reserve = bn_gpu_policy_moe_full_reserve_bytes();
     if (free_bytes > projected && free_bytes - projected >= reserve)
@@ -610,7 +610,7 @@ static int resident_moe_all_fits_memory(BnGPUBackend *gpu,
 static int resident_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
                                                const BnConfig *c,
                                                const BnWeights *w) {
-    if (!gpu || !gpu->memory_info)
+    if (!bn_gpu_backend_can_query_memory(gpu))
         return 1;
     size_t need = estimate_resident_moe_gateup_f16_all_bytes(c, w, gpu);
     if (need == 0 || need == SIZE_MAX)
@@ -624,7 +624,7 @@ static int resident_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
         return 0;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
-    if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
+    if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 1;
     size_t reserve = bn_gpu_policy_moe_full_reserve_bytes();
     if (free_bytes > projected && free_bytes - projected >= reserve)
@@ -643,7 +643,7 @@ static int resident_moe_gateup_f16_fits_memory(BnGPUBackend *gpu,
 static int resident_moe_f16_cache_layers_that_fit(BnGPUBackend *gpu,
                                                   const BnConfig *c,
                                                   const BnWeights *w) {
-    if (!gpu || !gpu->memory_info || !c || !w)
+    if (!bn_gpu_backend_can_query_memory(gpu) || !c || !w)
         return 0;
     size_t quant_need = estimate_resident_moe_all_bytes(c, w, gpu, 0);
     size_t base = estimate_gpu_base_model_bytes(c, w);
@@ -651,7 +651,7 @@ static int resident_moe_f16_cache_layers_that_fit(BnGPUBackend *gpu,
         return 0;
     size_t free_bytes = 0;
     size_t total_bytes = 0;
-    if (gpu->memory_info(gpu->ctx, &free_bytes, &total_bytes) != 0)
+    if (bn_gpu_backend_query_memory(gpu, &free_bytes, &total_bytes) != 0)
         return 0;
     size_t reserve = bn_gpu_policy_moe_full_reserve_bytes();
     size_t used = 0;
