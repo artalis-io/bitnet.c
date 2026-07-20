@@ -1026,6 +1026,17 @@ if grep -n 'int8_t \*x_q,\|float \*x_scales\|float x_scales\|bn_quant_q8_logits_
     fail=1
 fi
 
+if grep -n 'x_q_buf' \
+    include/transformer_cpu_backend_internal.h \
+    src/transformer/cpu_policy.c \
+    include/transformer_prefill_internal.h \
+    src/transformer/prefill_policy.c \
+    src/moe_internal.h \
+    src/moe_policy.c >/dev/null 2>&1; then
+    echo "GPU-buffer policy wrappers must use behavior names for quantized activation scratch buffers"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for preq8k quant capability"
     fail=1

@@ -82,14 +82,14 @@ void bn_moe_quant_matvec_gateup_gpu_buffers(BnMatvecTask *tasks,
                                             const void **buffers,
                                             int n_tasks,
                                             const float *x,
-                                            int8_t *x_q_buf,
+                                            int8_t *quantized_buf,
                                             BnThreadPool *pool,
                                             BnGPUBackend *gpu);
 void bn_moe_quant_matvec_down_gpu_buffer(float *out,
                                          const BnQWeight *W,
                                          void *W_buf,
                                          const float *x,
-                                         int8_t *x_q_buf,
+                                         int8_t *quantized_buf,
                                          BnThreadPool *pool,
                                          BnGPUBackend *gpu);
 void bn_moe_swiglu_range(void *ctx, int start, int end);

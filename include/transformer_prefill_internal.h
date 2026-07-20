@@ -472,7 +472,7 @@ void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,
                                                     void *W_buf,
                                                     const float *X,
                                                     int n_tokens,
-                                                    int8_t *x_q_buf,
+                                                    int8_t *quantized_buf,
                                                     BnThreadPool *pool,
                                                     BnGPUBackend *gpu);
 void bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
@@ -482,7 +482,7 @@ void bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
     const float *X,
     int n_tokens,
     int cols,
-    int8_t *x_q_buf,
+    int8_t *quantized_buf,
     BnThreadPool *pool,
     BnGPUBackend *gpu);
 

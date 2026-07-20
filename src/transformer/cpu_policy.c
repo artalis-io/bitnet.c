@@ -153,9 +153,9 @@ void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const void **buffers,
     int n_tasks,
     const float *x,
-    int8_t *x_q_buf,
+    int8_t *quantized_buf,
     BnThreadPool *pool,
     BnGPUBackend *gpu) {
-    bn_backend_quant_matvec_batch_gpu_buf(tasks, buffers, n_tasks, x, x_q_buf,
-                                          pool, gpu);
+    bn_backend_quant_matvec_batch_gpu_buf(tasks, buffers, n_tasks, x,
+                                          quantized_buf, pool, gpu);
 }
