@@ -696,13 +696,14 @@ static inline int bn_backend_quant_avoids_quant_matmul_on_f16_input(
     return bn_quant_format_avoids_quant_matmul_on_f16_input(type);
 }
 
-static inline int bn_backend_quant_force_q4k_quant_matmul_candidate(
+static inline int
+bn_backend_quant_force_asymmetric_kquant_quant_matmul_candidate(
     int type) {
     return bn_backend_quant_is_q4k(type) &&
            bn_quant_format_force_quant_matmul_candidate(type);
 }
 
-static inline int bn_backend_quant_force_q6k_quant_matmul_candidate(
+static inline int bn_backend_quant_force_down_kquant_quant_matmul_candidate(
     int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type) &&
            bn_quant_format_force_quant_matmul_candidate(type);
