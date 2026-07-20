@@ -4116,6 +4116,9 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q6_K));
     assert(!bn_backend_quant_kquant_logits_argmax_candidate(
         BN_GGUF_TENSOR_Q4_K));
+    assert(bn_backend_quant_moe_route_all_active_two(2, 2));
+    assert(!bn_backend_quant_moe_route_all_active_two(2, 1));
+    assert(!bn_backend_quant_moe_route_all_active_two(4, 2));
     assert(bn_backend_quant_moe_all_active_two_kquant_shape(2, 2,
                                                 BN_GGUF_TENSOR_Q6_K,
                                                 4096, 2048));

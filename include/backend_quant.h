@@ -492,12 +492,17 @@ static inline int bn_backend_quant_kquant_logits_argmax_candidate(int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type);
 }
 
+static inline int bn_backend_quant_moe_route_all_active_two(int n_experts,
+                                                            int k) {
+    return n_experts == 2 && k == 2;
+}
+
 static inline int bn_backend_quant_moe_all_active_two_kquant_shape(int n_experts,
                                                        int k,
                                                        int down_type,
                                                        int hidden_dim,
                                                        int dim) {
-    return n_experts == 2 && k == 2 &&
+    return bn_backend_quant_moe_route_all_active_two(n_experts, k) &&
            bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
            hidden_dim >= 4096 && dim <= 2048;
 }
@@ -520,7 +525,7 @@ static inline int bn_backend_quant_moe_all_active_two_graph_kquant_shape(
     int down_type,
     int hidden_dim,
     int dim) {
-    return n_experts == 2 && k == 2 &&
+    return bn_backend_quant_moe_route_all_active_two(n_experts, k) &&
            bn_backend_quant_moe_down_uses_graph_kquant(down_type) &&
            hidden_dim >= 4096 && dim <= 2048;
 }
