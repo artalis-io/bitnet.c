@@ -3,6 +3,7 @@
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
+#include "backend_quant.h"
 #include "quant.h"
 #include "simd_helpers.h"
 
@@ -138,10 +139,11 @@ static int prefill_prepare_prepared_kquant_avx2(int8_t *quantized,
         n_tokens <= 0 || blocks_per_row <= 0)
         return 0;
     for (int t = 0; t < n_tokens; t++)
-        bn_quant_x_to_q8k(x + (size_t)t * dim,
-                          quantized + (size_t)t * dim,
-                          scales + (size_t)t * blocks_per_row,
-                          block_sums + (size_t)t * blocks_per_row * 16, dim);
+        bn_backend_quant_prepare_kquant_activation(
+            x + (size_t)t * dim,
+            quantized + (size_t)t * dim,
+            scales + (size_t)t * blocks_per_row,
+            block_sums + (size_t)t * blocks_per_row * 16, dim);
     return 1;
 }
 #endif

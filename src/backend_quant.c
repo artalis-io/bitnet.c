@@ -1,4 +1,6 @@
 #include "backend_quant.h"
+#include "quant_dispatch_internal.h"
+#include <math.h>
 #include <stdlib.h>
 
 static int backend_quant_env_top_n(const char *name, int min_value) {
@@ -17,6 +19,57 @@ int bn_backend_quant_cpu_tied_kquant_refine_top(void) {
 
 int bn_backend_quant_cpu_tied_kquant_hybrid_top(void) {
     return backend_quant_env_top_n("BN_CPU_TIED_Q6K_HYBRID_TOP", 2);
+}
+
+void bn_backend_quant_prepare_kquant_activation(const float *x,
+                                                int8_t *quantized,
+                                                float *scales,
+                                                int16_t *block_sums,
+                                                int n) {
+    bn_quant_x_to_q8k(x, quantized, scales, block_sums, n);
+}
+
+void bn_backend_quant_prepare_kquant_activation_scalar(const float *x,
+                                                       int8_t *quantized,
+                                                       float *scales,
+                                                       int16_t *block_sums,
+                                                       int n) {
+    bn_quant_x_to_q8k_scalar(x, quantized, scales, block_sums, n);
+}
+
+void bn_backend_quant_rmsnorm_prepared_kquant_avx2(
+    const float *x,
+    const float *w,
+    int dim,
+    float eps,
+    float *out,
+    int8_t *quantized,
+    float *scales,
+    int16_t *block_sums) {
+#ifdef __AVX2__
+    bn_quant_rmsnorm_q8k_avx2(x, w, dim, eps, out, quantized, scales,
+                              block_sums);
+#else
+    float ss = 0.0f;
+    for (int i = 0; i < dim; i++)
+        ss += x[i] * x[i];
+    float inv = 1.0f / sqrtf(ss / (float)dim + eps);
+    for (int i = 0; i < dim; i++)
+        out[i] = w[i] * (x[i] * inv);
+    bn_backend_quant_prepare_kquant_activation_scalar(
+        out, quantized, scales, block_sums, dim);
+#endif
+}
+
+int bn_backend_quant_refine_kquant_logits_prepared_activation_row(
+    const BnQWeight *weight,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    int row,
+    float *out) {
+    return bn_quant_q6_logits_refine_q8k_row(weight, quantized, scales,
+                                             block_sums, row, out);
 }
 
 void bn_backend_quant_matmul_gpu_buf(float *out, const BnQWeight *W,

@@ -1316,6 +1316,13 @@ if grep -n 'bn_transformer_cpu_quantize_q8k_activation\|prepared_kquant_bsums\|p
     fail=1
 fi
 
+if grep -n 'bn_quant_x_to_q8k\|bn_quant_q6_logits_refine_q8k_row\|bn_quant_rmsnorm_q8k_avx2' \
+    src/transformer/cpu_backend.c \
+    src/transformer/prefill_backend.c >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill backend code must use backend_quant prepared K-quant wrappers"
+    fail=1
+fi
+
 if grep -n 'int8_t \*x_q,\|float \*x_scales\|float x_scales\|bn_quant_q8_logits_refine_row(W, x_q' \
     include/transformer_cpu_backend_internal.h \
     src/transformer/cpu_backend.c \

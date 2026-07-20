@@ -4,6 +4,7 @@
 #include "transformer_batched_attn_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
+#include "backend_quant.h"
 #include "quant_dispatch_internal.h"
 #include "quant.h"
 #include "simd_helpers.h"
@@ -58,9 +59,11 @@ void bn_transformer_cpu_prepare_kquant_activation(const float *x,
                                                   int16_t *block_sums,
                                                   int n) {
 #if BN_TRANSFORMER_CPU_HAS_NATIVE_QUANT_ACTIVATION
-    bn_quant_x_to_q8k(x, quantized, scales, block_sums, n);
+    bn_backend_quant_prepare_kquant_activation(x, quantized, scales,
+                                               block_sums, n);
 #else
-    bn_quant_x_to_q8k_scalar(x, quantized, scales, block_sums, n);
+    bn_backend_quant_prepare_kquant_activation_scalar(x, quantized, scales,
+                                                      block_sums, n);
 #endif
 }
 
@@ -136,8 +139,8 @@ int bn_transformer_cpu_refine_kquant_logits_prepared_activation_row(
     const int16_t *block_sums,
     int row,
     float *out) {
-    return bn_quant_q6_logits_refine_q8k_row(weight, quantized, scales,
-                                             block_sums, row, out);
+    return bn_backend_quant_refine_kquant_logits_prepared_activation_row(
+        weight, quantized, scales, block_sums, row, out);
 }
 
 void bn_transformer_cpu_quant_matvec(float *out,
@@ -585,7 +588,7 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .apply_rope_heads = cpu_apply_rope_heads_avx2,
     .supports_prepared_kquant = 1,
     .supports_float_kquant_prefill = 1,
-    .rmsnorm_prepared_kquant = bn_quant_rmsnorm_q8k_avx2,
+    .rmsnorm_prepared_kquant = bn_backend_quant_rmsnorm_prepared_kquant_avx2,
 };
 #elif BN_TRANSFORMER_CPU_HAS_AVX2
 static const BnCPUBackendOps BN_CPU_BACKEND = {
@@ -606,7 +609,7 @@ static const BnCPUBackendOps BN_CPU_BACKEND = {
     .apply_rope_heads = cpu_apply_rope_heads_avx2,
     .supports_prepared_kquant = 1,
     .supports_float_kquant_prefill = 1,
-    .rmsnorm_prepared_kquant = bn_quant_rmsnorm_q8k_avx2,
+    .rmsnorm_prepared_kquant = bn_backend_quant_rmsnorm_prepared_kquant_avx2,
 };
 #elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
 static const BnCPUBackendOps BN_CPU_BACKEND = {

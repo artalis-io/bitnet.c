@@ -131,6 +131,30 @@ static inline int bn_backend_quant_prepared_kquant_block_sums_per_row(
     return blocks_per_row > 0 ? blocks_per_row * 16 : 0;
 }
 
+void bn_backend_quant_prepare_kquant_activation(
+    const float *x,
+    int8_t *quantized,
+    float *scales,
+    int16_t *block_sums,
+    int n);
+
+void bn_backend_quant_prepare_kquant_activation_scalar(
+    const float *x,
+    int8_t *quantized,
+    float *scales,
+    int16_t *block_sums,
+    int n);
+
+void bn_backend_quant_rmsnorm_prepared_kquant_avx2(
+    const float *x,
+    const float *w,
+    int dim,
+    float eps,
+    float *out,
+    int8_t *quantized,
+    float *scales,
+    int16_t *block_sums);
+
 static inline int
 bn_backend_quant_supports_native_quant_logits_refine(int type) {
     return bn_quant_format_supports_native_quant_logits_refine(type);
@@ -147,6 +171,14 @@ static inline int bn_backend_quant_tied_logits_uses_quant_path(int type) {
 static inline int bn_backend_quant_logits_i8_cache_supported(int type) {
     return bn_quant_format_supports_logits_i8_cache(type);
 }
+
+int bn_backend_quant_refine_kquant_logits_prepared_activation_row(
+    const BnQWeight *weight,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    int row,
+    float *out);
 
 static inline int bn_backend_quant_tied_logits_uses_f16_path(int type) {
     return bn_quant_format_tied_logits_uses_f16_path(type);
