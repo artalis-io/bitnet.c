@@ -13041,7 +13041,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
         }
     } else if (bn_backend_quant_down_kquant_dot_matmul_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q6k_dot_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -13148,7 +13148,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_down_kquant_dot_matvec_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q6k_dot_forced()) {
+               bn_gpu_policy_cuda_down_kquant_dot_forced()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
         quantize_q8k_batch_kernel<<<dim3(cols / BN_QK_K, 1, 1),
@@ -13160,7 +13160,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_down_kquant_warp_matvec_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q6k_warp_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_warp_enabled()) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q6k_matvec_warp_kernel<<<blocks, threads>>>(
@@ -13303,7 +13303,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
         }
     } else if (bn_backend_quant_down_kquant_dot_matmul_candidate(type) &&
                (cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q6k_dot_forced()) {
+               bn_gpu_policy_cuda_down_kquant_dot_forced()) {
         int x_blocks = cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, cols, n_tokens) != 0) return -1;
         BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
@@ -13517,7 +13517,7 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
             }
         } else if (bn_backend_quant_down_kquant_dot_matmul_candidate(type) &&
                    (x_cols % BN_QK_K) == 0 &&
-                   bn_gpu_policy_cuda_q6k_dot_enabled()) {
+                   bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
             int x_blocks = x_cols / BN_QK_K;
             if (!q8_k_ready) {
                 if (cuda_ensure_q8_k(ctx, x_cols, n_tokens) != 0)
@@ -14505,7 +14505,7 @@ static int cuda_dense_ffn_batch_impl(void *vctx, float *out,
         }
     } else if (bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
                (hidden_dim % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q6k_dot_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
         int x_blocks = hidden_dim / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, hidden_dim, n_tokens) != 0)
             return -1;
@@ -16342,7 +16342,7 @@ static int cuda_prefill_attention_wo(void *vctx, float *out, void *wo_buf,
         }
     } else if (bn_backend_quant_down_kquant_dot_matmul_candidate(wo_type) &&
                (wo_cols % BN_QK_K) == 0 &&
-               bn_gpu_policy_cuda_q6k_dot_enabled()) {
+               bn_gpu_policy_cuda_down_kquant_dot_enabled()) {
         int x_blocks = wo_cols / BN_QK_K;
         if (cuda_ensure_q8_k(ctx, wo_cols, n_tokens) != 0)
             return -1;
@@ -18371,11 +18371,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int fuse_rope_flash_enabled_flag = 1;
     static int enable_q5_matvec4_flag = 0;
     static int enable_q5_warp_flag = 0;
-    static int enable_q4k_dot_flag = 1;
-    static int enable_q5k_dot_flag = 1;
-    static int enable_q6k_dot_flag = 1;
-    static int force_q6k_dot_flag = 0;
-    static int enable_q6k_warp_flag = 0;
+    static int enable_symmetric_kquant_dot_flag = 1;
+    static int enable_deinterleaved_kquant_dot_flag = 1;
+    static int enable_down_kquant_dot_flag = 1;
+    static int force_down_kquant_dot_flag = 0;
+    static int enable_down_kquant_warp_flag = 0;
     static int enable_q4k_4warp_flag = 1;
     static int disable_q8_warp_flag = 0;
     static int disable_qkv_mixed_fuse_flag = 0;
@@ -18394,11 +18394,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_q5_matvec4_flag =
             bn_gpu_policy_cuda_q5_matvec4_enabled();
         enable_q5_warp_flag = bn_gpu_policy_cuda_q5_warp_enabled();
-        enable_q4k_dot_flag = bn_gpu_policy_cuda_q4k_dot_enabled();
-        enable_q5k_dot_flag = bn_gpu_policy_cuda_q5k_dot_enabled();
-        enable_q6k_dot_flag = bn_gpu_policy_cuda_q6k_dot_enabled();
-        force_q6k_dot_flag = bn_gpu_policy_cuda_q6k_dot_forced();
-        enable_q6k_warp_flag = bn_gpu_policy_cuda_q6k_warp_enabled();
+        enable_symmetric_kquant_dot_flag =
+            bn_gpu_policy_cuda_symmetric_kquant_dot_enabled();
+        enable_deinterleaved_kquant_dot_flag =
+            bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled();
+        enable_down_kquant_dot_flag =
+            bn_gpu_policy_cuda_down_kquant_dot_enabled();
+        force_down_kquant_dot_flag =
+            bn_gpu_policy_cuda_down_kquant_dot_forced();
+        enable_down_kquant_warp_flag =
+            bn_gpu_policy_cuda_down_kquant_warp_enabled();
         enable_q4k_4warp_flag = bn_gpu_policy_cuda_q4k_4warp_enabled();
         disable_q8_warp_flag = bn_gpu_policy_cuda_q8_warp_disabled();
         disable_qkv_mixed_fuse_flag =
@@ -18425,11 +18430,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int fuse_rope_flash_enabled = fuse_rope_flash_enabled_flag;
     const int enable_q5_matvec4 = enable_q5_matvec4_flag;
     const int enable_q5_warp = enable_q5_warp_flag;
-    const int enable_q4k_dot = enable_q4k_dot_flag;
-    const int enable_q5k_dot = enable_q5k_dot_flag;
-    const int enable_q6k_dot = enable_q6k_dot_flag;
-    const int force_q6k_dot = force_q6k_dot_flag;
-    const int enable_q6k_warp = enable_q6k_warp_flag;
+    const int enable_symmetric_kquant_dot = enable_symmetric_kquant_dot_flag;
+    const int enable_deinterleaved_kquant_dot = enable_deinterleaved_kquant_dot_flag;
+    const int enable_down_kquant_dot = enable_down_kquant_dot_flag;
+    const int force_down_kquant_dot = force_down_kquant_dot_flag;
+    const int enable_down_kquant_warp = enable_down_kquant_warp_flag;
     const int enable_q4k_4warp = enable_q4k_4warp_flag;
     const int disable_q8_warp = disable_q8_warp_flag;
     const int disable_qkv_mixed_fuse = disable_qkv_mixed_fuse_flag;
@@ -18539,14 +18544,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (bn_backend_quant_gpu_graph_matvec_down_kquant_needs_dot_scratch(
                         rop->type) &&
                     (rop->cols % BN_QK_K) == 0 &&
-                    (force_q6k_dot ||
+                    (force_down_kquant_dot ||
                      (rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                     (enable_q6k_dot && rop->cols >= 2048))) {
+                     (enable_down_kquant_dot && rop->cols >= 2048))) {
                     if (rop->cols > reserve_q8_k_cols)
                         reserve_q8_k_cols = rop->cols;
                 } else if (bn_backend_quant_gpu_graph_matvec_asymmetric_kquant_needs_dot_scratch(
                                rop->type) &&
-                           (rop->cols % BN_QK_K) == 0 && enable_q4k_dot &&
+                           (rop->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                            ((rop->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                             bn_gpu_policy_kquant_dot_forced()) &&
                            bn_gpu_policy_kquant_dot_enabled()) {
@@ -18845,7 +18850,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (!direct_kv_f16 && next && i + 2 < n_ops &&
                 bn_backend_quant_deinterleaved_kquant_pair_matvec(
                     op->type, ops[i + 2].type) &&
-                (op->cols % BN_QK_K) == 0 && enable_q5k_dot &&
+                (op->cols % BN_QK_K) == 0 && enable_deinterleaved_kquant_dot &&
                 out_offset == 0 && bias == NULL && bias_idx < 0 &&
                 fused_copy_idx < 0 &&
                 next->op_code == BN_GPU_CODE_DEINTERLEAVE_Q &&
@@ -19060,7 +19065,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 op->p[6] && next->p[6] &&
                 bias == NULL && bias_idx < 0 &&
                 (op->cols % BN_QK_K) == 0 &&
-                enable_q4k_dot &&
+                enable_symmetric_kquant_dot &&
                 bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled()) {
                 BnCudaBuffer *w1 = (BnCudaBuffer *)next->W_buf;
                 float *out1 = cuda_act(ctx, next->buf_out);
@@ -19102,9 +19107,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (bn_backend_quant_down_kquant_dot_matvec_candidate(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 &&
-                       (force_q6k_dot ||
+                       (force_down_kquant_dot ||
                         (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
-                        (enable_q6k_dot && op->cols >= 2048))) {
+                        (enable_down_kquant_dot && op->cols >= 2048))) {
                 int use_q6k_q8_1 =
                     bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(is_logits_op);
                 int use_q6k_mmvq =
@@ -19243,7 +19248,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (bn_backend_quant_down_kquant_warp_matvec_candidate(
                            op->type) &&
-                       (op->cols % BN_QK_K) == 0 && enable_q6k_warp) {
+                       (op->cols % BN_QK_K) == 0 && enable_down_kquant_warp) {
                 int q6_threads = 256;
                 int warps = q6_threads / 32;
                 int blocks = (op->rows + warps - 1) / warps;
@@ -19254,7 +19259,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     op->rows, op->cols, out_offset);
             } else if (bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(
                            op->type) &&
-                       (op->cols % BN_QK_K) == 0 && enable_q4k_dot &&
+                       (op->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) ||
                         bn_gpu_policy_kquant_dot_forced()) &&
                        bn_gpu_policy_kquant_dot_enabled()) {
@@ -19291,7 +19296,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(
                            op->type) &&
-                       (op->cols % BN_QK_K) == 0 && enable_q4k_dot) {
+                       (op->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("q4k q8_1 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
@@ -19348,7 +19353,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
                            op->type) &&
-                       (op->cols % BN_QK_K) == 0 && enable_q5k_dot) {
+                       (op->cols % BN_QK_K) == 0 && enable_deinterleaved_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
                     BN_CUDA_EXEC_FAIL("q5k q8_1 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
@@ -19601,7 +19606,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             if (bn_backend_quant_asymmetric_kquant_dot_split_candidate(op->type) &&
-                (cols % BN_QK_K) == 0 && split1 != 1 && enable_q4k_dot &&
+                (cols % BN_QK_K) == 0 && split1 != 1 && enable_symmetric_kquant_dot &&
                 (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) &&
                 bn_gpu_policy_kquant_dot_enabled()) {
                 int reuse_q8k_input =
@@ -19628,7 +19633,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (size_t)op->p[6], (size_t)op->p[7]);
             } else if (bn_backend_quant_asymmetric_kquant_prepared_input_split_candidate(
                            op->type) &&
-                (cols % BN_QK_K) == 0 && split1 != 1 && enable_q4k_dot) {
+                (cols % BN_QK_K) == 0 && split1 != 1 && enable_symmetric_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0)
                     BN_CUDA_EXEC_FAIL("q4k split q8 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
@@ -19810,7 +19815,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (bn_backend_quant_deinterleaved_kquant_prepared_input_split_candidate(
                            op->type) &&
-                (cols % BN_QK_K) == 0 && split1 != 1 && enable_q5k_dot) {
+                (cols % BN_QK_K) == 0 && split1 != 1 && enable_deinterleaved_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0)
                     BN_CUDA_EXEC_FAIL("q5k split q8 scratch alloc failed");
                 BnCudaBlockQ8_1 *xq =
@@ -19908,7 +19913,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     up_rows, cols, exact_silu);
             } else if (bn_backend_quant_asymmetric_kquant_dot_fused_gateup_candidate(
                            op->type) &&
-                       (cols % BN_QK_K) == 0 && enable_q4k_dot &&
+                       (cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                        bn_gpu_policy_kquant_dot_enabled() &&
                        bn_gpu_policy_kquant_gateup_prepared_path_enabled(
                            (op->flags & BN_GPU_OP_FLAG_MATVEC_Q8K) != 0)) {
@@ -19952,7 +19957,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (bn_backend_quant_asymmetric_kquant_prepared_input_fused_gateup_candidate(
                            op->type) &&
-                       (cols % BN_QK_K) == 0 && enable_q4k_dot) {
+                       (cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
@@ -19991,7 +19996,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             } else if (bn_backend_quant_deinterleaved_kquant_prepared_input_fused_gateup_candidate(
                            op->type) &&
-                       (cols % BN_QK_K) == 0 && enable_q5k_dot) {
+                       (cols % BN_QK_K) == 0 && enable_deinterleaved_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, cols) != 0) return -1;
                 BnCudaBlockQ8_1 *xq =
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;

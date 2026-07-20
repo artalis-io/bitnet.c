@@ -1462,11 +1462,11 @@ int bn_gpu_policy_cuda_q5k_gateup_2warp_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q5K_GATEUP_2WARP") == NULL;
 }
 
-int bn_gpu_policy_cuda_q4k_dot_enabled(void) {
+int bn_gpu_policy_cuda_symmetric_kquant_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q4K_DOT") == NULL;
 }
 
-int bn_gpu_policy_cuda_q5k_dot_enabled(void) {
+int bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q5K_DOT") == NULL;
 }
 
@@ -1617,15 +1617,15 @@ int bn_gpu_policy_cuda_q4k_batch_sharedx_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH") != NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_dot_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_dot_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q6K_DOT") == NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_dot_forced(void) {
+int bn_gpu_policy_cuda_down_kquant_dot_forced(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_DOT") != NULL;
 }
 
-int bn_gpu_policy_cuda_q6k_warp_enabled(void) {
+int bn_gpu_policy_cuda_down_kquant_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
 }
 

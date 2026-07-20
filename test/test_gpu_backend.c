@@ -1759,8 +1759,8 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC");
     unsetenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC");
     unsetenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC");
-    assert(bn_gpu_policy_cuda_q4k_dot_enabled());
-    assert(bn_gpu_policy_cuda_q5k_dot_enabled());
+    assert(bn_gpu_policy_cuda_symmetric_kquant_dot_enabled());
+    assert(bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled());
     assert(bn_gpu_policy_cuda_q4k_4warp_enabled());
     assert(bn_gpu_policy_cuda_q4k_4warp_shape_enabled(1536, 8960));
     assert(bn_gpu_policy_cuda_q4k_4warp_shape_enabled(2560, 9728));
@@ -1866,8 +1866,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC", "1", 1);
     setenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC", "1", 1);
-    assert(!bn_gpu_policy_cuda_q4k_dot_enabled());
-    assert(!bn_gpu_policy_cuda_q5k_dot_enabled());
+    assert(!bn_gpu_policy_cuda_symmetric_kquant_dot_enabled());
+    assert(!bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled());
     assert(!bn_gpu_policy_cuda_q4k_4warp_enabled());
     assert(!bn_gpu_policy_cuda_q4k_4warp_shape_enabled(1536, 8960));
     assert(!bn_gpu_policy_cuda_q4k_4warp_shape_enabled(2560, 9728));
@@ -2003,9 +2003,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6K_MATMUL4");
     unsetenv("BN_CUDA_DISABLE_Q6K_MATVEC4");
     unsetenv("BN_CUDA_ENABLE_Q6K_BATCH_WARP");
-    assert(bn_gpu_policy_cuda_q6k_dot_enabled());
-    assert(!bn_gpu_policy_cuda_q6k_dot_forced());
-    assert(!bn_gpu_policy_cuda_q6k_warp_enabled());
+    assert(bn_gpu_policy_cuda_down_kquant_dot_enabled());
+    assert(!bn_gpu_policy_cuda_down_kquant_dot_forced());
+    assert(!bn_gpu_policy_cuda_down_kquant_warp_enabled());
     assert(bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(4096));
     assert(!bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(5120));
     assert(!bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(1));
@@ -2043,9 +2043,9 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_Q6K_MATMUL4", "1", 1);
     setenv("BN_CUDA_DISABLE_Q6K_MATVEC4", "1", 1);
     setenv("BN_CUDA_ENABLE_Q6K_BATCH_WARP", "1", 1);
-    assert(!bn_gpu_policy_cuda_q6k_dot_enabled());
-    assert(bn_gpu_policy_cuda_q6k_dot_forced());
-    assert(bn_gpu_policy_cuda_q6k_warp_enabled());
+    assert(!bn_gpu_policy_cuda_down_kquant_dot_enabled());
+    assert(bn_gpu_policy_cuda_down_kquant_dot_forced());
+    assert(bn_gpu_policy_cuda_down_kquant_warp_enabled());
     assert(bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(5120));
     assert(bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(1));
     assert(!bn_gpu_policy_cuda_q6k_q8_1_dot_enabled(0));
