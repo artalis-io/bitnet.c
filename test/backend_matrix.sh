@@ -1740,6 +1740,11 @@ if awk '/^int bn_gpu_policy_cuda_moe_logits_mmvq_argmax_path_enabled/{flag=1} /^
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_cuda_legacy_block_matvec4_enabled/{flag=1} /^int bn_gpu_policy_cuda_native_quant_warp_disabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c public legacy/asymmetric K-quant policy helpers must compose local env policy helpers"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
