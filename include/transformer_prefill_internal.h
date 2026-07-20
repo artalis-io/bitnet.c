@@ -386,6 +386,10 @@ int bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
 BnTransformerPrefillRawAttentionCallPolicy
 bn_transformer_prefill_raw_attention_call_policy(
     BnTransformerPrefillRawAttentionPolicy policy);
+int bn_transformer_prefill_attention_gpu_available(
+    const BnGPUBackend *gpu);
+int bn_transformer_prefill_attention_wo_gpu_available(
+    const BnGPUBackend *gpu);
 BnTransformerPrefillAttentionBatchPolicy
 bn_transformer_prefill_attention_batch_policy(
     int raw_attention_already_used,

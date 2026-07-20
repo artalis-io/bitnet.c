@@ -549,6 +549,16 @@ bn_transformer_prefill_raw_attention_call_policy(
     return call_policy;
 }
 
+int bn_transformer_prefill_attention_gpu_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_attention;
+}
+
+int bn_transformer_prefill_attention_wo_gpu_available(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_attention_wo;
+}
+
 BnTransformerPrefillAttentionBatchPolicy
 bn_transformer_prefill_attention_batch_policy(
     int raw_attention_already_used,

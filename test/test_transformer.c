@@ -138,6 +138,31 @@ static int mock_prefill_qkv_attention_wo_norm_resid(
     return 0;
 }
 
+static int mock_prefill_attention(void *ctx, float *out, const float *Q,
+                                  const float *K, const float *V,
+                                  int n_tokens, int n_heads,
+                                  int n_kv_heads, int head_size,
+                                  int kv_mul, int kv_dim,
+                                  float attention_scale) {
+    (void)ctx; (void)out; (void)Q; (void)K; (void)V;
+    (void)n_tokens; (void)n_heads; (void)n_kv_heads;
+    (void)head_size; (void)kv_mul; (void)kv_dim;
+    (void)attention_scale;
+    return 0;
+}
+
+static int mock_prefill_attention_wo(
+    void *ctx, float *out, void *wo_buf, const float *Q, const float *K,
+    const float *V, int n_tokens, int n_heads, int n_kv_heads,
+    int head_size, int kv_mul, int kv_dim, int wo_rows, int wo_cols,
+    int wo_type, float attention_scale) {
+    (void)ctx; (void)out; (void)wo_buf; (void)Q; (void)K; (void)V;
+    (void)n_tokens; (void)n_heads; (void)n_kv_heads; (void)head_size;
+    (void)kv_mul; (void)kv_dim; (void)wo_rows; (void)wo_cols;
+    (void)wo_type; (void)attention_scale;
+    return 0;
+}
+
 static int mock_dense_ffn(
     void *ctx, float *out, void *gate_buf, void *up_buf, void *down_buf,
     const float *x, int dim, int hidden_dim, int gate_type, int up_type,
@@ -4547,6 +4572,19 @@ static void test_block_planning(void) {
         mock_prefill_qkv_attention_wo_norm_resid;
     assert(bn_transformer_prefill_raw_attention_norm_resid_gpu_available(
         &raw_attention_gpu));
+
+    BnGPUBackend attention_gpu = {0};
+    assert(!bn_transformer_prefill_attention_gpu_available(NULL));
+    assert(!bn_transformer_prefill_attention_gpu_available(&attention_gpu));
+    assert(!bn_transformer_prefill_attention_wo_gpu_available(
+        &attention_gpu));
+    attention_gpu.prefill_attention = mock_prefill_attention;
+    assert(bn_transformer_prefill_attention_gpu_available(&attention_gpu));
+    assert(!bn_transformer_prefill_attention_wo_gpu_available(
+        &attention_gpu));
+    attention_gpu.prefill_attention_wo = mock_prefill_attention_wo;
+    assert(bn_transformer_prefill_attention_wo_gpu_available(
+        &attention_gpu));
 
     BnTransformerPrefillAttentionBatchPolicy attention_batch =
         bn_transformer_prefill_attention_batch_policy(
