@@ -65,12 +65,12 @@ void bn_transformer_cpu_prepare_kquant_activation(const float *x,
 }
 
 int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
-                                                 int8_t *x_q,
-                                                 float *x_scales,
+                                                 int8_t *quantized,
+                                                 float *scales,
                                                  int n) {
     if (!bn_transformer_cpu_has_native_q8x_quant())
         return -1;
-    bn_quant_x_to_q8_blocks(x, x_q, x_scales, n);
+    bn_quant_x_to_q8_blocks(x, quantized, scales, n);
     return 0;
 }
 

@@ -109,8 +109,8 @@ void bn_transformer_cpu_prepare_kquant_activation(const float *x,
                                                   int16_t *block_sums,
                                                   int n);
 int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
-                                                 int8_t *x_q,
-                                                 float *x_scales,
+                                                 int8_t *quantized,
+                                                 float *scales,
                                                  int n);
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,

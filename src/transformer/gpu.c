@@ -628,8 +628,8 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
 
 static int gpu_refine_native_quant_logits_top(float *logits, int n_logits,
                                     const BnQWeight *W, const float *x,
-                                    int8_t *x_q, int top_n) {
-    if (!logits || !W || !W->data || !x || !x_q)
+                                    int8_t *quantized, int top_n) {
+    if (!logits || !W || !W->data || !x || !quantized)
         return 0;
     if (!bn_transformer_cpu_has_native_q8x_quant())
         return 0;
@@ -663,13 +663,13 @@ static int gpu_refine_native_quant_logits_top(float *logits, int n_logits,
         vals[j] = v;
     }
 
-    float x_scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
-    if (bn_transformer_cpu_quantize_q8_blocks_native(x, x_q, x_scales,
+    float scales[BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS];
+    if (bn_transformer_cpu_quantize_q8_blocks_native(x, quantized, scales,
                                                      W->cols) != 0)
         return 0;
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_quant_q8_logits_refine_row(W, x_q, x_scales, ids[i],
+        if (bn_quant_q8_logits_refine_row(W, quantized, scales, ids[i],
                                           &row_sum) == 0)
             logits[ids[i]] = row_sum;
     }
