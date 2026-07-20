@@ -83,6 +83,7 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
 int bn_transformer_cpu_activation_is_relu2(int activation);
 int bn_transformer_cpu_activation_is_gelu(int activation);
 int bn_transformer_cpu_activation_uses_silu_path(int activation);
+uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled);
 BnTransformerCPUPostNormPolicy
 bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
                                               int has_attn_post_norm);

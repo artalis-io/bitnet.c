@@ -284,6 +284,11 @@ if grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' src/transformer/plan.c >
     fail=1
 fi
 
+if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use CPU policy helpers for float K-quant task flags"
+    fail=1
+fi
+
 if sed -n '/^int bn_transformer_cpu_backend_supports_float_kquant_prefill/,/^}/p' \
     src/transformer/cpu_backend.c | grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' >/dev/null 2>&1; then
     echo "CPU float K-quant prefill support must use backend ops capability, not AVX placement checks"

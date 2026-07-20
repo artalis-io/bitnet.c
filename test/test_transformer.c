@@ -3841,6 +3841,9 @@ static void test_block_planning(void) {
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
+    assert(bn_transformer_cpu_float_kquant_task_flags(0) == 0);
+    assert(bn_transformer_cpu_float_kquant_task_flags(1) ==
+           BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(fabsf(bn_transformer_attention_scale(&c, 128) -

@@ -124,6 +124,10 @@ int bn_transformer_cpu_activation_uses_silu_path(int activation) {
     return bn_model_arch_activation_uses_silu_path(activation);
 }
 
+uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {
+    return enabled ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT : 0u;
+}
+
 BnTransformerCPUPostNormPolicy
 bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
                                               int has_attn_post_norm) {

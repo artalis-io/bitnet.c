@@ -200,9 +200,8 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
 
 uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
     const BnConfig *c) {
-    return bn_model_arch_cpu_force_float_kquant(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    return bn_transformer_cpu_float_kquant_task_flags(
+        bn_model_arch_cpu_force_float_kquant(c));
 }
 
 int bn_transformer_cpu_prefill_force_float_kquant_enabled(
