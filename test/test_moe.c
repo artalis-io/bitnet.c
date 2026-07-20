@@ -326,9 +326,26 @@ static void test_moe_prefill_policy(void) {
     assert(!policy.uses_grouped_expert_route);
 
     assert(bn_moe_policy_uses_expert_weights(&c));
+    assert(bn_moe_policy_uses_all_active_two_expert_set(&c));
+    assert(!bn_moe_policy_uses_all_active_two_expert_route(&c, 0));
+    c.moe_intermediate_size = 4096;
+    assert(bn_moe_policy_uses_all_active_two_expert_route(&c, 0));
+    assert(!bn_moe_policy_uses_grouped_expert_route(&c));
     BnConfig dense = {0};
     assert(!bn_moe_policy_uses_expert_weights(&dense));
+    assert(!bn_moe_policy_uses_all_active_two_expert_set(&dense));
+    assert(!bn_moe_policy_uses_all_active_two_expert_route(&dense, 0));
+    assert(!bn_moe_policy_uses_grouped_expert_route(&dense));
     assert(!bn_moe_policy_uses_expert_weights(NULL));
+    assert(!bn_moe_policy_uses_all_active_two_expert_set(NULL));
+    assert(!bn_moe_policy_uses_all_active_two_expert_route(NULL, 0));
+    assert(!bn_moe_policy_uses_grouped_expert_route(NULL));
+
+    c.n_experts = 4;
+    c.n_experts_active = 2;
+    assert(!bn_moe_policy_uses_all_active_two_expert_set(&c));
+    assert(!bn_moe_policy_uses_all_active_two_expert_route(&c, 0));
+    assert(bn_moe_policy_uses_grouped_expert_route(&c));
 
     printf("PASSED\n");
 }

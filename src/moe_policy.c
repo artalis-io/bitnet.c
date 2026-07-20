@@ -33,6 +33,19 @@ int bn_moe_policy_uses_expert_weights(const BnConfig *c) {
     return bn_model_arch_uses_moe(c);
 }
 
+int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c) {
+    return bn_model_arch_uses_two_expert_all_active_moe(c);
+}
+
+int bn_moe_policy_uses_all_active_two_expert_route(const BnConfig *c,
+                                                   int dim) {
+    return bn_model_arch_uses_all_active_two_expert_moe(c, dim);
+}
+
+int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c) {
+    return bn_model_arch_uses_more_than_two_expert_moe(c);
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {

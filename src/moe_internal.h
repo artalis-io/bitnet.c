@@ -65,6 +65,10 @@ uint32_t bn_moe_gateup_task_flags(const BnConfig *c);
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);
 int bn_moe_policy_uses_expert_weights(const BnConfig *c);
+int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c);
+int bn_moe_policy_uses_all_active_two_expert_route(const BnConfig *c,
+                                                   int dim);
+int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c);
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em);
