@@ -111,6 +111,10 @@ uint32_t bn_transformer_gpu_matvec_exact_kquant_flags(int tensor_type,
     return bn_backend_quant_gpu_matvec_exact_kquant_flag(tensor_type, enabled);
 }
 
+uint32_t bn_transformer_gpu_moe_route_raw_compare_matvec_flags(int tensor_type) {
+    return bn_transformer_gpu_matvec_kquant_dot_flags(tensor_type, 1);
+}
+
 int bn_transformer_gpu_float_buffer_type(void) {
     return bn_backend_quant_gpu_float_buffer_type();
 }

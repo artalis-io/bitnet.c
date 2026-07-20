@@ -1343,6 +1343,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     float *gpu_gate = (float *)malloc(raw_bytes);
                     float *gpu_up = (float *)malloc(raw_bytes);
                     float route_save[BN_MAX_MOE_K * 2];
+                    uint32_t gate_raw_compare_flags =
+                        bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
+                            lw->moe.expert_map.gate_type);
+                    uint32_t up_raw_compare_flags =
+                        bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
+                            lw->moe.expert_map.up_type);
                     if (!cpu_gate || !cpu_up || !gpu_gate || !gpu_up ||
                         K > BN_MAX_MOE_K ||
                         bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
@@ -1356,13 +1362,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                             moe_gate_all, BN_GPU_VALUE_XB,
                             BN_GPU_VALUE_MOE_HB,
                             n_experts * moe_hidden, dim, 0,
-                            BN_GPU_OP_FLAG_MATVEC_Q8K) != 0 ||
+                            gate_raw_compare_flags) != 0 ||
                         bn_transformer_gpu_emit_context_matvec_flags(
                             &emit, lw->moe.expert_map.up_type,
                             moe_up_all, BN_GPU_VALUE_XB,
                             BN_GPU_VALUE_MOE_HB2,
                             n_experts * moe_hidden, dim, 0,
-                            BN_GPU_OP_FLAG_MATVEC_Q8K) != 0 ||
+                            up_raw_compare_flags) != 0 ||
                         bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                         bn_transformer_gpu_read_activation_buf(
                             gpu, BN_GPU_VALUE_MOE_HB, gpu_gate,

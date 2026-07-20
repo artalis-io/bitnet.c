@@ -2607,6 +2607,16 @@ if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_e
     fail=1
 fi
 
+if grep -n 'BN_GPU_OP_FLAG_MATVEC_Q8K' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer GPU execution must use GPU policy helpers for K-quant raw compare matvec flags"
+    fail=1
+fi
+
+if ! grep -n 'bn_transformer_gpu_moe_route_raw_compare_matvec_flags' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "MoE raw compare matvec flag policy must live in transformer GPU policy"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_gpu_matvec_q8k_dot_flag\|bn_backend_quant_gpu_matvec_exact_q6k_flag' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU matvec flag policy must use behavior-named backend K-quant helpers"
     fail=1
