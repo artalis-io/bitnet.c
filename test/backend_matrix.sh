@@ -1756,8 +1756,13 @@ if grep -n 'setenv("BN_GPU_Q4_Q8' src/main.c >/dev/null 2>&1; then
     fail=1
 fi
 
-if grep -n 'setenv("BN_GPU_Q4_Q8\|setenv("BN_METAL_Q4_PREPARED"\|setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT"' test/test_coherence.c >/dev/null 2>&1; then
+if grep -n '^[[:space:]]*setenv("BN_GPU_Q4_Q8\|^[[:space:]]*setenv("BN_METAL_Q4_PREPARED"\|^[[:space:]]*setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT"' test/test_coherence.c >/dev/null 2>&1; then
     echo "Coherence harness backend toggles must set behavior-named env vars, not Q4/Q8 compatibility aliases"
+    fail=1
+fi
+
+if grep -n '^[[:space:]]*setenv("BN_GPU_Q6_Q8K_REFINE_TOP"\|^[[:space:]]*setenv("BN_GPU_Q8_REFINE_TOP"\|^[[:space:]]*setenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_METAL_ENABLE_Q6_Q8K"\|^[[:space:]]*setenv("BN_METAL_Q4_PREPARED"' test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer policy tests must use behavior-named logits and Metal env vars; legacy names belong in GPU policy alias tests"
     fail=1
 fi
 

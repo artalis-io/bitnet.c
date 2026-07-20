@@ -1443,11 +1443,12 @@ static void test_gpu_policy_helpers(void) {
     logits.cpu_weight = NULL;
     assert(!bn_transformer_gpu_logits_needs_cpu_fallback(&gpu, &logits));
 
+    unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
     assert(bn_transformer_gpu_native_quant_logits_refine_top(1) == 16);
-    setenv("BN_GPU_Q8_REFINE_TOP", "5", 1);
+    setenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP", "5", 1);
     assert(bn_transformer_gpu_native_quant_logits_refine_top(1) == 5);
-    unsetenv("BN_GPU_Q8_REFINE_TOP");
+    unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
 
     W.type = BN_GGUF_TENSOR_Q6_K;
     W.rows = 1024;
@@ -1457,18 +1458,20 @@ static void test_gpu_policy_helpers(void) {
     logits.cols = W.cols;
     logits.cpu_weight = &W;
     gpu.kind = BN_GPU_BACKEND_CUDA;
+    unsetenv("BN_GPU_ENABLE_KQUANT_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_KQUANT_LOGITS_REFINE");
     unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
     assert(!bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
     assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 1));
-    setenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE", "1", 1);
+    setenv("BN_GPU_ENABLE_KQUANT_LOGITS_REFINE", "1", 1);
     assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
-    unsetenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE");
+    unsetenv("BN_GPU_ENABLE_KQUANT_LOGITS_REFINE");
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
-    setenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE", "1", 1);
+    setenv("BN_GPU_DISABLE_KQUANT_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_gpu_kquant_logits_refine_enabled(&gpu, 0));
-    unsetenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_KQUANT_LOGITS_REFINE");
     assert(bn_transformer_gpu_kquant_logits_refine_captures_xb(
         &logits, 1, 1));
     assert(!bn_transformer_gpu_kquant_logits_refine_captures_xb(
@@ -1478,12 +1481,13 @@ static void test_gpu_policy_helpers(void) {
         &logits, 1, 1));
     logits.cpu_weight = &W;
 
+    unsetenv("BN_GPU_KQUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
     assert(bn_transformer_gpu_kquant_logits_refine_top(1) == 64);
     assert(bn_transformer_gpu_kquant_logits_refine_top(0) == 8);
-    setenv("BN_GPU_Q6_Q8K_REFINE_TOP", "11", 1);
+    setenv("BN_GPU_KQUANT_LOGITS_REFINE_TOP", "11", 1);
     assert(bn_transformer_gpu_kquant_logits_refine_top(1) == 11);
-    unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    unsetenv("BN_GPU_KQUANT_LOGITS_REFINE_TOP");
     assert(bn_transformer_gpu_kquant_logits_refine_blocks_per_row(
                BN_QK_K * 3) == 3);
     assert(bn_transformer_gpu_kquant_logits_refine_blocks_per_row(
@@ -1495,18 +1499,20 @@ static void test_gpu_policy_helpers(void) {
     logits.type = BN_GGUF_TENSOR_Q8_0;
     logits.cpu_weight = &W;
     gpu.kind = BN_GPU_BACKEND_CUDA;
+    unsetenv("BN_GPU_ENABLE_NATIVE_QUANT_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_NATIVE_QUANT_LOGITS_REFINE");
     unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
     unsetenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE");
     assert(!bn_transformer_gpu_native_quant_logits_refine_active(&gpu, 0));
     assert(bn_transformer_gpu_native_quant_logits_refine_active(&gpu, 1));
-    setenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE", "1", 1);
+    setenv("BN_GPU_ENABLE_NATIVE_QUANT_LOGITS_REFINE", "1", 1);
     assert(bn_transformer_gpu_native_quant_logits_refine_active(&gpu, 0));
-    unsetenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE");
+    unsetenv("BN_GPU_ENABLE_NATIVE_QUANT_LOGITS_REFINE");
     gpu.kind = BN_GPU_BACKEND_WEBGPU;
     assert(bn_transformer_gpu_native_quant_logits_refine_active(&gpu, 0));
-    setenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE", "1", 1);
+    setenv("BN_GPU_DISABLE_NATIVE_QUANT_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_gpu_native_quant_logits_refine_active(&gpu, 0));
-    unsetenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE");
+    unsetenv("BN_GPU_DISABLE_NATIVE_QUANT_LOGITS_REFINE");
     assert(bn_transformer_gpu_native_quant_logits_refine_captures_xb(&logits, 1));
     logits.cpu_weight = NULL;
     assert(!bn_transformer_gpu_native_quant_logits_refine_captures_xb(&logits, 1));
@@ -1530,14 +1536,14 @@ static void test_gpu_policy_helpers(void) {
     assert(refine_policy.native_quant_enabled);
     assert(refine_policy.native_quant_captures_xb);
     assert(refine_policy.native_quant_refine_top == 16);
-    setenv("BN_GPU_Q6_Q8K_REFINE_TOP", "13", 1);
-    setenv("BN_GPU_Q8_REFINE_TOP", "7", 1);
+    setenv("BN_GPU_KQUANT_LOGITS_REFINE_TOP", "13", 1);
+    setenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP", "7", 1);
     refine_policy =
         bn_transformer_gpu_logits_refine_policy(&gpu, &c, NULL, &logits, 1);
     assert(refine_policy.kquant_refine_top == 13);
     assert(refine_policy.native_quant_refine_top == 7);
-    unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
-    unsetenv("BN_GPU_Q8_REFINE_TOP");
+    unsetenv("BN_GPU_KQUANT_LOGITS_REFINE_TOP");
+    unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
 
     BnLayerWeights refine_layer;
@@ -1847,6 +1853,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
+    unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     unsetenv("BN_METAL_Q4_PREPARED");
     BnTransformerGPUSmallDenseExactNativeLayerPolicy small_dense_exact_native_policy =
         bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
@@ -1858,11 +1865,11 @@ static void test_gpu_policy_helpers(void) {
     small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
     assert(small_dense_exact_native_policy.from_layer == 39);
     assert(small_dense_exact_native_policy.to_layer == 6);
-    setenv("BN_METAL_Q4_PREPARED", "1", 1);
+    setenv("BN_METAL_NATIVE_QUANT_PREPARED", "1", 1);
     small_dense_exact_native_policy = bn_transformer_gpu_small_dense_exact_native_layer_policy(&c);
     assert(small_dense_exact_native_policy.from_layer == 39);
     assert(small_dense_exact_native_policy.to_layer == -1);
-    unsetenv("BN_METAL_Q4_PREPARED");
+    unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "10", 1);
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER", "20", 1);
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
@@ -1893,6 +1900,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
+    unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     unsetenv("BN_METAL_Q4_PREPARED");
 
     BnTransformerGPUSmallDenseExactNativeLayerPolicy manual_small_dense_exact_native_policy = {
@@ -2717,6 +2725,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE");
     unsetenv("BN_CUDA_DISABLE_DECODE_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE");
+    unsetenv("BN_METAL_ENABLE_SPECIALIZED_NATIVE_QUANT");
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
     BnTransformerGPULogitsRefinePolicy decode_refine = {0};
     BnTransformerGPUCPUFallbackPolicy decode_fallback =
@@ -2738,11 +2747,11 @@ static void test_gpu_policy_helpers(void) {
         &decode_fallback, &decode_compare);
     assert(!decode_cacheability.graph_cacheable);
     decode_fallback.layer = -1;
-    setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
+    setenv("BN_METAL_ENABLE_SPECIALIZED_NATIVE_QUANT", "1", 1);
     assert(!bn_transformer_gpu_decode_cacheable(
         &gpu, 1, 0, 0, 0, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
-    unsetenv("BN_METAL_ENABLE_Q6_Q8K");
+    unsetenv("BN_METAL_ENABLE_SPECIALIZED_NATIVE_QUANT");
     assert(!bn_transformer_gpu_decode_cacheable(
         &gpu, 1, 0, 0, 1, 0, 0, 0, 0,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
@@ -2940,11 +2949,12 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_native_quant_task_flags(1) ==
            BN_MATVEC_TASK_NATIVE_QUANT);
 
+    unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
     assert(bn_transformer_logits_native_quant_refine_top() == 16);
-    setenv("BN_GPU_Q8_REFINE_TOP", "6", 1);
+    setenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP", "6", 1);
     assert(bn_transformer_logits_native_quant_refine_top() == 6);
-    unsetenv("BN_GPU_Q8_REFINE_TOP");
+    unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
 
     BnGPUBackend gpu = {0};
     BnConfig c = {0};
