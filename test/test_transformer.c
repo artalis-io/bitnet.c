@@ -3137,7 +3137,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
-    assert(!bn_model_arch_ffn_uses_exact_scalar_activation(&c));
+    assert(!bn_model_arch_ffn_uses_reference_activation(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(bn_model_arch_moe_uses_dense_residual_branch(&c));
@@ -3191,7 +3191,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
-                     BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
+                     BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(bn_model_arch_requires_float_kquant_fallback(&c));
     assert(bn_model_arch_cpu_force_float_kquant(&c));
     assert(fabsf(bn_model_arch_attention_scale(&c, 128) -
@@ -3230,6 +3230,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 7);
     assert(bn_model_arch_prefill_uses_exact_activation(&c));
+    assert(bn_model_arch_ffn_uses_reference_activation(&c));
     assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
 
     c.full_attn_interval = 4;
@@ -3305,7 +3306,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
-                     BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
+                     BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(!bn_model_arch_requires_float_kquant_fallback(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
@@ -3319,7 +3320,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 2);
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_prefill_uses_exact_activation(&c));
-    assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
+    assert(bn_model_arch_ffn_uses_reference_activation(&c));
     assert(bn_model_arch_dense_logits_argmax_shape_allowed(&c, 300000));
     assert(!bn_model_arch_dense_logits_argmax_shape_allowed(&c, 262144));
     assert(!bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(&c, 1536));
@@ -4237,7 +4238,7 @@ static void test_block_planning(void) {
     c.full_attn_interval = 0;
 
     assert(!bn_transformer_ffn_uses_exact_scalar_activation(&c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(bn_transformer_ffn_uses_exact_scalar_activation(&c));
     c.policy_flags = 0;
 

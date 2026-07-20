@@ -339,6 +339,14 @@ if rg -n 'bn_model_arch_uses_scalar_hybrid_ssm_cpu' \
     fail=1
 fi
 
+if rg -n 'bn_model_arch_ffn_uses_exact_scalar_activation' \
+    src/transformer \
+    src/transformer.c \
+    src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer/GPU policy must use backend-neutral FFN activation model_arch helpers"
+    fail=1
+fi
+
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use CPU policy helpers for float K-quant task flags"
     fail=1

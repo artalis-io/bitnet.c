@@ -396,7 +396,7 @@ int bn_transformer_prefill_uses_exact_activation(
 
 int bn_transformer_ffn_uses_exact_scalar_activation(
     const BnConfig *c) {
-    return bn_model_arch_ffn_uses_exact_scalar_activation(c);
+    return bn_model_arch_ffn_uses_reference_activation(c);
 }
 
 void bn_transformer_plan_attention(BnAttentionPlan *p,
