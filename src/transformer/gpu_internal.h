@@ -461,6 +461,8 @@ int bn_transformer_gpu_moe_prefill_shared_batch_available(
     const BnGPUBackend *gpu,
     int n_tokens,
     int backend_available);
+int bn_transformer_gpu_moe_prefill_shared_dense_ffn_available(
+    const BnGPUBackend *gpu);
 int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,

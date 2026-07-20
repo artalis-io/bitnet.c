@@ -215,7 +215,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                             backend, &lw->shared.shared_up);
                         void *sd = bn_backend_model_qweight_buf(
                             backend, &lw->shared.shared_down);
-                        if (sh_d && gpu->dense_ffn_batch && sg && su && sd) {
+                        if (sh_d &&
+                            bn_transformer_gpu_moe_prefill_shared_dense_ffn_available(
+                                gpu) &&
+                            sg && su && sd) {
                             double ts = bn_moe_time_ms();
                             if (gpu->dense_ffn_batch(
                                     gpu->ctx, sh_d, sg, su, sd, Xb,

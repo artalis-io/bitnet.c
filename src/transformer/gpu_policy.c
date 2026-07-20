@@ -806,6 +806,12 @@ int bn_transformer_gpu_moe_prefill_shared_batch_available(
            bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
 
+int bn_transformer_gpu_moe_prefill_shared_dense_ffn_available(
+    const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
+           gpu->dense_ffn_batch;
+}
+
 int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
     const BnGPUBackend *gpu,
     const BnConfig *c,
