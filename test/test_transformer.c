@@ -846,7 +846,7 @@ static void test_gpu_policy_helpers(void) {
     c.dim = 2048;
     assert(bn_transformer_gpu_uses_small_dense_native_quant_shape(&c));
     assert(!bn_transformer_gpu_requires_float_kquant(&c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK;
     assert(bn_transformer_gpu_requires_float_kquant(&c));
     c.policy_flags = 0;
     assert(bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(
@@ -1182,7 +1182,8 @@ static void test_gpu_policy_helpers(void) {
     memset(&layer, 0, sizeof(layer));
     model.config.dim = 2048;
     model.config.n_layers = 1;
-    model.config.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT;
+    model.config.policy_flags =
+        BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK;
     model.weights.layers = &layer;
     model.weights.emb_type = BN_GGUF_TENSOR_Q8_0;
     gpu.kind = BN_GPU_BACKEND_CUDA;
@@ -3121,7 +3122,7 @@ static void test_model_arch_registry(void) {
     bn_model_arch_apply_config(&c, gemma);
     assert(c.policy_flags == gemma->policy_flags);
     assert(bn_model_arch_requires_large_gpu_graph_fallback(&c));
-    assert(!bn_model_arch_cpu_force_float_kquant(&c));
+    assert(!bn_model_arch_requires_float_kquant_fallback(&c));
     assert(bn_model_arch_attention_scale(&c, 128) == 1.0f);
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER);
@@ -3182,7 +3183,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_tokenizer_uses_metaspace("llama"));
 
     memset(&c, 0, sizeof(c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
                      BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
@@ -3190,6 +3191,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
                      BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
+    assert(bn_model_arch_requires_float_kquant_fallback(&c));
     assert(bn_model_arch_cpu_force_float_kquant(&c));
     assert(fabsf(bn_model_arch_attention_scale(&c, 128) -
                  (1.0f / sqrtf(128.0f))) < 1e-7f);
@@ -3302,7 +3304,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION;
-    assert(!bn_model_arch_cpu_force_float_kquant(&c));
+    assert(!bn_model_arch_requires_float_kquant_fallback(&c));
     assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
     assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
@@ -3917,7 +3919,7 @@ static void test_block_planning(void) {
            cpu_backend == BN_CPU_BACKEND_AVX512 ||
            cpu_backend == BN_CPU_BACKEND_WASM_SIMD);
     memset(&c, 0, sizeof(c));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
     assert(bn_transformer_cpu_float_kquant_task_flags(0) == 0);
     assert(bn_transformer_cpu_float_kquant_task_flags(1) ==

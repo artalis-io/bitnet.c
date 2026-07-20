@@ -136,8 +136,13 @@ int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK) != 0);
 }
 
+int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK) != 0);
+}
+
 int bn_model_arch_cpu_force_float_kquant(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT) != 0);
+    return bn_model_arch_requires_float_kquant_fallback(c);
 }
 
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size) {
@@ -734,7 +739,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
         {
             "qwen3",
             BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU |
-            BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT |
+            BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
             BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |

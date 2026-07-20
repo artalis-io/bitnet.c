@@ -198,7 +198,7 @@ int bn_transformer_gpu_uses_small_dense_native_quant_shape(
 }
 
 int bn_transformer_gpu_requires_float_kquant(const BnConfig *c) {
-    return bn_model_arch_cpu_force_float_kquant(c);
+    return bn_model_arch_requires_float_kquant_fallback(c);
 }
 
 int bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(

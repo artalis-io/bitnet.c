@@ -201,12 +201,12 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
 uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
     const BnConfig *c) {
     return bn_transformer_cpu_float_kquant_task_flags(
-        bn_model_arch_cpu_force_float_kquant(c));
+        bn_model_arch_requires_float_kquant_fallback(c));
 }
 
 int bn_transformer_cpu_prefill_force_float_kquant_enabled(
     const BnConfig *c) {
-    return bn_model_arch_cpu_force_float_kquant(c) &&
+    return bn_model_arch_requires_float_kquant_fallback(c) &&
            bn_transformer_cpu_backend_supports_float_kquant_prefill();
 }
 

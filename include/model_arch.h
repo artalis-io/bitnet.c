@@ -8,7 +8,9 @@
 #define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE               (1u << 0)
 #define BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK           (1u << 1)
 #define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU              (1u << 2)
-#define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT                   (1u << 3)
+#define BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK     (1u << 3)
+#define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT \
+    BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK
 #define BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU                     (1u << 4)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER            (1u << 5)
 #define BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY         (1u << 6)
@@ -110,6 +112,7 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
                                         BnModelTensorRole role);
 void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops);
 int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c);
+int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c);
 int bn_model_arch_cpu_force_float_kquant(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
