@@ -3459,9 +3459,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 256, 1, 0));
     unsetenv("BN_METAL_Q8_BARRIERS");
-    assert(!bn_gpu_policy_metal_q8_barriers_enabled());
+    assert(!bn_gpu_policy_metal_native_quant_barriers_enabled());
     setenv("BN_METAL_Q8_BARRIERS", "1", 1);
-    assert(bn_gpu_policy_metal_q8_barriers_enabled());
+    assert(bn_gpu_policy_metal_native_quant_barriers_enabled());
     unsetenv("BN_METAL_CPU_ORDER_RMSNORM");
     assert(!bn_gpu_policy_metal_cpu_order_rmsnorm_enabled());
     setenv("BN_METAL_CPU_ORDER_RMSNORM", "1", 1);

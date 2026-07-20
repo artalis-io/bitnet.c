@@ -528,7 +528,7 @@ int bn_gpu_policy_metal_prepared_stacked_upload_blocked(int tensor_type);
 int bn_gpu_policy_metal_shared_weights_enabled(void);
 int bn_gpu_policy_metal_specialized_native_quant_enabled(void);
 int bn_gpu_policy_specialized_native_quant_decode_path_enabled(void);
-int bn_gpu_policy_metal_q8_barriers_enabled(void);
+int bn_gpu_policy_metal_native_quant_barriers_enabled(void);
 int bn_gpu_policy_metal_exact_native_matvec_supported(int tensor_type,
                                                int exact_native_enabled,
                                                int native_quant_prepared,

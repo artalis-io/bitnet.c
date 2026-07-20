@@ -49,7 +49,7 @@ typedef struct {
     id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
     id<MTLComputePipelineState> specialized_native_matvec_pipeline;
     int exact_native_enabled;
-    int q8_barriers_enabled;
+    int native_quant_barriers_enabled;
     int cpu_order_rmsnorm_enabled;
 
     /* GPU-resident activation buffers (storageModeShared) */
@@ -1007,7 +1007,7 @@ static void metal_encode_q8_quant(id<MTLComputeCommandEncoder> enc,
     MTLSize tpg = MTLSizeMake(32, 1, 1);
     MTLSize grid = MTLSizeMake((cols + 31) / 32, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    if (ctx->q8_barriers_enabled) {
+    if (ctx->native_quant_barriers_enabled) {
         id<MTLBuffer> bufs[2] = { ctx->q8_buf, ctx->q8_scales_buf };
         [enc memoryBarrierWithResources:bufs count:2];
     }
@@ -1031,7 +1031,7 @@ static void metal_encode_specialized_native_quant(
     MTLSize tpg = MTLSizeMake(256, 1, 1);
     MTLSize grid = MTLSizeMake(cols / 256, n_tokens ? n_tokens : 1, 1);
     [enc dispatchThreadgroups:grid threadsPerThreadgroup:tpg];
-    if (ctx->q8_barriers_enabled) {
+    if (ctx->native_quant_barriers_enabled) {
         [enc memoryBarrierWithResources:&ctx->q8_buf count:1];
         id<MTLBuffer> bufs[2] = { ctx->q8_scales_buf, ctx->q8_bsums_buf };
         [enc memoryBarrierWithResources:bufs count:2];
@@ -2168,7 +2168,8 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
 
         bn_gpu_policy_metal_apply_small_dense_exact_native_default();
         ctx->exact_native_enabled = bn_gpu_policy_metal_small_dense_exact_native_enabled();
-        ctx->q8_barriers_enabled = bn_gpu_policy_metal_q8_barriers_enabled();
+        ctx->native_quant_barriers_enabled =
+            bn_gpu_policy_metal_native_quant_barriers_enabled();
         ctx->cpu_order_rmsnorm_enabled =
             bn_gpu_policy_metal_cpu_order_rmsnorm_enabled();
 

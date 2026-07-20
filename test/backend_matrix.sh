@@ -1523,6 +1523,11 @@ if grep -n 'bn_gpu_policy_apply_specialized_q6_q8k_override\|bn_gpu_policy_metal
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_metal_q8_barriers_enabled\|q8_barriers_enabled' include/gpu_policy.h src/gpu_policy.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Metal native-quant barrier policy must use behavior names, not Q8 barrier helper names"
+    fail=1
+fi
+
 if grep -n -- '->q8k_quant_pipeline\|->q6_q8k_matvec_pipeline\|->q8k_quant_dispatches\|\.q8k_quant_pipeline\|\.q6_q8k_matvec_pipeline\|\.q8k_quant_dispatches\|metal_encode_q8k_quant' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal specialized native-quant state must use behavior names, not Q6/Q8K field names"
     fail=1

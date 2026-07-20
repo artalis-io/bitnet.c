@@ -3439,7 +3439,7 @@ int bn_gpu_policy_specialized_native_quant_decode_path_enabled(void) {
     return bn_gpu_policy_metal_specialized_native_quant_enabled();
 }
 
-int bn_gpu_policy_metal_q8_barriers_enabled(void) {
+int bn_gpu_policy_metal_native_quant_barriers_enabled(void) {
     return getenv("BN_METAL_Q8_BARRIERS") != NULL;
 }
 
