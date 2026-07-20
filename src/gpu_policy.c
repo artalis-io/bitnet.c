@@ -737,14 +737,16 @@ static int gpu_policy_moe_down_kquant_f32_cache_disabled(void) {
         "BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE");
 }
 
-static int gpu_policy_moe_down_small_kquant_f32_cache_requested(void) {
-    return gpu_policy_compat_env_enabled(
+static int gpu_policy_moe_down_small_expert_f32_cache_requested(void) {
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_MOE_DOWN_SMALL_EXPERT_F32_CACHE",
         "BN_CUDA_ENABLE_MOE_DOWN_SMALL_KQUANT_F32_CACHE",
         "BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
 }
 
-static int gpu_policy_moe_down_small_kquant_f32_cache_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+static int gpu_policy_moe_down_small_expert_f32_cache_disabled(void) {
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_MOE_DOWN_SMALL_EXPERT_F32_CACHE",
         "BN_CUDA_DISABLE_MOE_DOWN_SMALL_KQUANT_F32_CACHE",
         "BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");
 }
@@ -960,20 +962,20 @@ int bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(
         tensor_type);
 }
 
-static int gpu_policy_moe_down_small_kquant_f32_cache_enabled(
+static int gpu_policy_moe_down_small_expert_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
     return gpu && gpu->buffer_create_kquant_f32_cache &&
            bn_backend_quant_moe_down_small_kquant_f32_cache_supported(
                tensor_type) &&
-           gpu_policy_moe_down_small_kquant_f32_cache_requested() &&
-           !gpu_policy_moe_down_small_kquant_f32_cache_disabled();
+           gpu_policy_moe_down_small_expert_f32_cache_requested() &&
+           !gpu_policy_moe_down_small_expert_f32_cache_disabled();
 }
 
-int bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
+int bn_gpu_policy_moe_down_small_expert_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    return gpu_policy_moe_down_small_kquant_f32_cache_enabled(
+    return gpu_policy_moe_down_small_expert_f32_cache_enabled(
         gpu, tensor_type);
 }
 
@@ -1873,7 +1875,7 @@ int bn_gpu_policy_cuda_moe_down_f16_cache_enabled(int has_f16_data) {
 
 int bn_gpu_policy_cuda_moe_down_aux_f32_cache_enabled(int has_f32_data) {
     return has_f32_data &&
-           !gpu_policy_moe_down_small_kquant_f32_cache_disabled();
+           !gpu_policy_moe_down_small_expert_f32_cache_disabled();
 }
 
 int bn_gpu_policy_cuda_moe_down_prepared_pair8_enabled(int n_experts,

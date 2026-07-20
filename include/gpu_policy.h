@@ -58,7 +58,7 @@ size_t bn_gpu_policy_moe_down_kquant_f32_cache_bytes(
     int n_experts);
 int bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(
     int tensor_type);
-int bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
+int bn_gpu_policy_moe_down_small_expert_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type);
 int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,

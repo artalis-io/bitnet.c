@@ -2302,6 +2302,11 @@ if grep -n 'bn_gpu_policy_.*small_kquant_native\|small_kquant_native_enabled\|sm
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_moe_down_small_kquant_f32_cache\|gpu_policy_moe_down_small_kquant_f32_cache\|prefer_small_kquant_f32_cache' include/gpu_policy.h src/gpu_policy.c src/model_gpu.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU small-expert MoE cache policy must expose behavior names, not quant-shaped helper names"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_GPU_DISABLE_PREFILL_MATMUL")\|getenv("BN_GPU_PREFILL_MATMUL")\|getenv("BN_CUDA_DISABLE_PREFILL_DIRECT_KV")\|getenv("BN_CUDA_ENABLE_PREFILL_DIRECT_KV_WITH_CPU_FALLBACK")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend GPU policy helpers for prefill matmul/direct-KV env vars"
     fail=1
