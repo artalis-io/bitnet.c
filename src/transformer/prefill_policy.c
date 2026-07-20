@@ -259,6 +259,16 @@ int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
                                                              n_tokens);
 }
 
+int bn_transformer_prefill_dense_ffn_batch_gpu_available(
+    const BnGPUBackend *gpu,
+    int backend_available,
+    int has_gate,
+    int has_up,
+    int has_down) {
+    return gpu && gpu->dense_ffn_batch && backend_available && has_gate &&
+           has_up && has_down;
+}
+
 int bn_transformer_prefill_attention_min_tokens(void) {
     return bn_transformer_gpu_prefill_attention_min_tokens();
 }

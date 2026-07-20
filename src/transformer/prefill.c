@@ -344,9 +344,9 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
                                        int add_residual) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
-    if (!gpu || !gpu->dense_ffn_batch || !backend ||
-        !lw->ffn.ffn_gate.data || !lw->ffn.ffn_up.data ||
-        !lw->ffn.ffn_down.data)
+    if (!bn_transformer_prefill_dense_ffn_batch_gpu_available(
+            gpu, backend != NULL, lw->ffn.ffn_gate.data != NULL,
+            lw->ffn.ffn_up.data != NULL, lw->ffn.ffn_down.data != NULL))
         return -1;
 
     void *gateup_buf = bn_backend_model_handle(

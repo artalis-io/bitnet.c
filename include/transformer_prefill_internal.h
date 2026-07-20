@@ -250,6 +250,12 @@ int bn_transformer_prefill_dense_ffn_batch_tokens_allowed(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     int n_tokens);
+int bn_transformer_prefill_dense_ffn_batch_gpu_available(
+    const BnGPUBackend *gpu,
+    int backend_available,
+    int has_gate,
+    int has_up,
+    int has_down);
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,
