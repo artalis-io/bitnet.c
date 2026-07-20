@@ -64,7 +64,7 @@ int bn_transformer_gpu_can_fused_gateup_silu(const BnGPUBackend *gpu,
         return 0;
     uint32_t cap = bn_backend_quant_gpu_fused_gateup_silu_cap(tensor_type);
     return cap != 0 &&
-           bn_model_arch_activation_uses_silu_path(act_type) &&
+           bn_transformer_gpu_activation_uses_silu_path(act_type) &&
            bn_transformer_gpu_has_cap(gpu, cap);
 }
 
@@ -82,8 +82,12 @@ int bn_transformer_gpu_activation_uses_silu_path(int activation) {
     return bn_model_arch_activation_uses_silu_path(activation);
 }
 
+int bn_transformer_gpu_activation_is_relu2(int activation) {
+    return bn_model_arch_activation_is_relu2(activation);
+}
+
 BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind(int activation) {
-    return bn_model_arch_activation_is_relu2(activation)
+    return bn_transformer_gpu_activation_is_relu2(activation)
         ? BN_GPU_IR_ACTIVATION_RELU2
         : BN_GPU_IR_ACTIVATION_SILU;
 }
@@ -237,7 +241,7 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     const BnQWeight *up,
     int activation,
     int split_op_code) {
-    if (!gate || !up || bn_model_arch_activation_is_relu2(activation) ||
+    if (!gate || !up || bn_transformer_gpu_activation_is_relu2(activation) ||
         !bn_gpu_quant_split_op_is_asymmetric_kquant(split_op_code))
         return 0;
     return bn_transformer_gpu_can_use_stacked_gateup(gate, up) &&

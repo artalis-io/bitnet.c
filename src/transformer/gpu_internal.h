@@ -107,6 +107,7 @@ typedef struct {
 } BnTransformerGPUForwardPolicy;
 
 int bn_transformer_gpu_activation_uses_silu_path(int activation);
+int bn_transformer_gpu_activation_is_relu2(int activation);
 BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind(int activation);
 
 typedef struct {

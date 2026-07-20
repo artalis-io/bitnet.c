@@ -633,6 +633,11 @@ if grep -n 'bn_model_arch_activation_' src/transformer/gpu_emit.c >/dev/null 2>&
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_can_fused_gateup_silu/{flag=1} /^int bn_transformer_gpu_activation_uses_silu_path/{flag=0} flag{print} /^BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind/{flag=1} /^uint32_t bn_transformer_gpu_matvec_kquant_dot_flags/{flag=0}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_activation_' >/dev/null 2>&1; then
+    echo "Transformer GPU activation routing must use GPU policy activation helpers"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CODE_MATVEC_SPLIT\|BN_GPU_CODE_Q4K_MATVEC_SPLIT\|BN_GPU_CODE_Q8_MATVEC_SPLIT\|BN_GPU_CODE_Q5K_MATVEC_SPLIT\|BN_GPU_CODE_UNKNOWN' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must classify split op codes through GPU quant lowering helpers"
     fail=1

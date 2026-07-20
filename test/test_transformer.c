@@ -2920,6 +2920,10 @@ static void test_gpu_op_kind_mapping(void) {
         BN_MODEL_ACTIVATION_SILU));
     assert(!bn_transformer_gpu_activation_uses_silu_path(
         BN_MODEL_ACTIVATION_RELU2));
+    assert(bn_transformer_gpu_activation_is_relu2(
+        BN_MODEL_ACTIVATION_RELU2));
+    assert(!bn_transformer_gpu_activation_is_relu2(
+        BN_MODEL_ACTIVATION_SILU));
     assert(bn_transformer_gpu_ffn_activation_kind(
                BN_MODEL_ACTIVATION_SILU) == BN_GPU_IR_ACTIVATION_SILU);
     assert(bn_transformer_gpu_ffn_activation_kind(
