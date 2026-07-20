@@ -1410,6 +1410,11 @@ if grep -n 'BN_GPU_PROFILE' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'getenv("BN_\|setenv("BN_\|unsetenv("BN_' src/gpu_cuda.cu src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
+    echo "GPU backends must use GPU policy helpers for backend env policy"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_METAL_SHARED_WEIGHTS")\|getenv("BN_METAL_Q4_PREPARED")\|getenv("BN_METAL_ENABLE_Q6_Q8K")\|getenv("BN_METAL_FULL_BARRIERS")\|getenv("BN_METAL_ENABLE_BARRIERS")\|getenv("BN_METAL_DISABLE_BARRIERS")\|getenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT")\|getenv("BN_METAL_Q8_BARRIERS")\|getenv("BN_METAL_CPU_ORDER_RMSNORM")\|getenv("BN_GPU_Q4_Q8")\|getenv("BN_GPU_Q4_Q8_FROM_LAYER")\|getenv("BN_GPU_Q4_Q8_ATTN_ONLY")\|getenv("BN_GPU_Q4_Q8_FFN_ONLY")' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal backend must use GPU policy helpers for Metal/Q4-Q8 compatibility env vars"
     fail=1
