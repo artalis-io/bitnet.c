@@ -35,13 +35,14 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
                                       const BnMatvecTask *tasks,
                                       int n_tasks,
                                       const float *x,
-                                      int8_t *x_q_buf) {
+                                      int8_t *quantized_buf) {
     BnMatvecTask inline_tasks[8];
     BnMatvecTask *prepared = inline_tasks;
     if (n_tasks > 8) {
         prepared = (BnMatvecTask *)malloc((size_t)n_tasks * sizeof(*prepared));
         if (!prepared) {
-            bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
+            bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
+                                  bn_model_pool(m));
             return;
         }
     }
@@ -52,7 +53,8 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
         prepared[i].flags |=
             bn_transformer_cpu_force_float_kquant_task_flags(&m->config);
     }
-    bn_quant_matvec_batch(prepared, n_tasks, x, x_q_buf, bn_model_pool(m));
+    bn_quant_matvec_batch(prepared, n_tasks, x, quantized_buf,
+                          bn_model_pool(m));
     if (prepared != inline_tasks)
         free(prepared);
 }
@@ -432,11 +434,11 @@ static void debug_quant_matvec_prepared(BnModel *m,
                                         float *out,
                                         const BnQWeight *W,
                                         const float *x,
-                                        int8_t *x_q) {
+                                        int8_t *quantized_buf) {
     BnMatvecTask task = {
         out, W, debug_prepared_qweight(m, W), 0
     };
-    bn_quant_matvec_batch(&task, 1, x, x_q, bn_model_pool(m));
+    bn_quant_matvec_batch(&task, 1, x, quantized_buf, bn_model_pool(m));
 }
 
 static void debug_compare_q8_activation(const BnGPUBackend *gpu,

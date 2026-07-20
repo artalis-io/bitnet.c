@@ -134,7 +134,7 @@ static int prefill_all_kquant(const BnQWeight *const *W, int n) {
 
 static void prefill_quant_matmul_forced_kquant(
         const BnModel *m, float **out, const BnQWeight **W, int n,
-        const float *X, int n_tokens, int8_t *x_q_buf) {
+        const float *X, int n_tokens, int8_t *quantized_buf) {
     const BnBackendModel *backend = bn_model_backend(m);
     BnMatvecTask tasks[4];
     if (n > 4)
@@ -149,7 +149,7 @@ static void prefill_quant_matmul_forced_kquant(
             };
         }
         bn_quant_matvec_batch(tasks, n, X + (size_t)t * W[0]->cols,
-                              x_q_buf, bn_model_pool(m));
+                              quantized_buf, bn_model_pool(m));
     }
 }
 
@@ -158,24 +158,24 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      const BnQWeight *W,
                                      const float *X,
                                      int n_tokens,
-                                     int8_t *x_q_buf) {
+                                     int8_t *quantized_buf) {
     if (!bn_model_gpu(m)) {
         if (prefill_force_float_kquant(m) && prefill_qweight_is_kquant(W)) {
             float *outs[1] = { out };
             const BnQWeight *weights[1] = { W };
             prefill_quant_matmul_forced_kquant(
-                m, outs, weights, 1, X, n_tokens, x_q_buf);
+                m, outs, weights, 1, X, n_tokens, quantized_buf);
             return;
         }
         const BnBackendModel *backend = bn_model_backend(m);
         bn_quant_matmul_prepared(out, W,
                                  bn_backend_model_prepared_qweight(backend, W),
-                                 X, n_tokens, x_q_buf, bn_model_pool(m));
+                                 X, n_tokens, quantized_buf, bn_model_pool(m));
         return;
     }
     bn_transformer_prefill_quant_matmul_gpu_buffer(
         out, W, prefill_qweight_backend_buf(bn_model_backend(m), W), X,
-        n_tokens, x_q_buf, bn_model_pool(m), bn_model_gpu(m));
+        n_tokens, quantized_buf, bn_model_pool(m), bn_model_gpu(m));
 }
 
 static int prefill_quant_matmul_gpu_buf(const BnModel *m,
@@ -197,25 +197,26 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        int n,
                                        const float *X,
                                        int n_tokens,
-                                       int8_t *x_q_buf) {
+                                       int8_t *quantized_buf) {
     if (!bn_model_gpu(m)) {
         if (n <= 4 && prefill_force_float_kquant(m) &&
             prefill_all_kquant(W, n)) {
             prefill_quant_matmul_forced_kquant(
-                m, out, W, n, X, n_tokens, x_q_buf);
+                m, out, W, n, X, n_tokens, quantized_buf);
             return;
         }
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
         if (n > 4) {
             for (int i = 0; i < n; i++)
-                prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, x_q_buf);
+                prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens,
+                                         quantized_buf);
             return;
         }
         for (int i = 0; i < n; i++)
             prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
         bn_quant_matmul_prepared_multi(out, W, prepared, n, X, n_tokens,
-                                       x_q_buf, bn_model_pool(m));
+                                       quantized_buf, bn_model_pool(m));
         return;
     }
     if (n > 1 && n <= 16 && bn_model_gpu(m)->matmul_batch) {
@@ -230,13 +231,13 @@ static void prefill_quant_matmul_multi(const BnModel *m,
         }
         if (all_bufs) {
             bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
-                tasks, bufs, n, X, n_tokens, W[0]->cols, x_q_buf,
+                tasks, bufs, n, X, n_tokens, W[0]->cols, quantized_buf,
                 bn_model_pool(m), bn_model_gpu(m));
             return;
         }
     }
     for (int i = 0; i < n; i++)
-        prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, x_q_buf);
+        prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, quantized_buf);
 }
 
 static int prefill_qk_stacked_gpu(const BnModel *m,

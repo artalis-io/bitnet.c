@@ -46,12 +46,13 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
                                             const BnMatvecTask *tasks,
                                             int n_tasks,
                                             const float *x,
-                                            int8_t *x_q_buf) {
+                                            int8_t *quantized_buf) {
     BnMatvecTask inline_tasks[8];
     BnMatvecTask *prepared_tasks =
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
     if (!prepared_tasks) {
-        bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
+        bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
+                              bn_model_pool(m));
         return;
     }
     if (bn_model_gpu(m)) {
@@ -69,13 +70,14 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
                                                        prepared_tasks[i].W);
             bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
                 prepared_tasks, (const void **)bufs, n_tasks, x,
-                x_q_buf, bn_model_pool(m), bn_model_gpu(m));
+                quantized_buf, bn_model_pool(m), bn_model_gpu(m));
             free(heap_bufs);
             if (prepared_tasks != inline_tasks) free(prepared_tasks);
             return;
         }
     }
-    bn_quant_matvec_batch(prepared_tasks, n_tasks, x, x_q_buf, bn_model_pool(m));
+    bn_quant_matvec_batch(prepared_tasks, n_tasks, x, quantized_buf,
+                          bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
 

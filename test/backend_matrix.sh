@@ -1031,6 +1031,9 @@ if grep -n 'x_q_buf' \
     src/transformer/cpu_policy.c \
     include/transformer_prefill_internal.h \
     src/transformer/prefill_policy.c \
+    src/transformer/cpu.c \
+    src/transformer/prefill.c \
+    src/transformer/gpu_fallback.c \
     src/moe_internal.h \
     src/moe_policy.c >/dev/null 2>&1; then
     echo "GPU-buffer policy wrappers must use behavior names for quantized activation scratch buffers"
