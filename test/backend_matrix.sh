@@ -419,6 +419,15 @@ if grep -n 'bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports
     fail=1
 fi
 
+if grep -n 'BN_QUANT_CAP_MOE_Q4_GATEUP\|BN_QUANT_CAP_MOE_Q8_ROUTE\|BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU' \
+    include/quant.h \
+    src/quant/registry.c \
+    test/test_quant.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Quant MoE capability bits must use behavior names, not quant-format names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for stacked Q/K quant compatibility"
     fail=1

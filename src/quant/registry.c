@@ -37,18 +37,18 @@ static const BnQuantFormatOps g_quant_formats[] = {
     { BN_GGUF_TENSOR_F32,      "F32",      BN_QUANT_LAYOUT_DENSE,    1,   4,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_DENSE_GRAPH, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_F16,      "F16",      BN_QUANT_LAYOUT_DENSE,    1,   2,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED | BN_QUANT_CAP_GPU_DENSE_GRAPH | BN_QUANT_CAP_LOGITS_F16_PATH, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_BF16,     "BF16",     BN_QUANT_LAYOUT_DENSE,    1,   2,   BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_AUX_CACHE, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q4_0,     "Q4_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  18,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_CPU_REPACKED | BN_QUANT_CAP_GPU_DENSE_GRAPH | BN_QUANT_CAP_GPU_NATIVE | BN_QUANT_CAP_GPU_REPACKED | BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q4_0,     "Q4_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  18,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_CPU_REPACKED | BN_QUANT_CAP_GPU_DENSE_GRAPH | BN_QUANT_CAP_GPU_NATIVE | BN_QUANT_CAP_GPU_REPACKED | BN_QUANT_CAP_CPU_FUSED_KQUANT_GATEUP_SILU, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q4_1,     "Q4_1",     BN_QUANT_LAYOUT_BLOCK32,  32,  20,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q5_0,     "Q5_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  22,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH | BN_QUANT_CAP_AUX_CACHE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q5_1,     "Q5_1",     BN_QUANT_LAYOUT_BLOCK32,  32,  24,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q8_0,     "Q8_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  34,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT_FORMAT | BN_QUANT_CAP_MOE_ALL_F16_LAZY_AUX | BN_QUANT_CAP_MOE_PREFERS_QUANT_ONLY | BN_QUANT_CAP_MOE_Q8_ROUTE, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q8_0,     "Q8_0",     BN_QUANT_LAYOUT_BLOCK32,  32,  34,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT_FORMAT | BN_QUANT_CAP_MOE_ALL_F16_LAZY_AUX | BN_QUANT_CAP_MOE_PREFERS_QUANT_ONLY | BN_QUANT_CAP_MOE_NATIVE_QUANT_ROUTE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_I2_S,     "I2_S",     BN_QUANT_LAYOUT_I2S,      4,   1,   BN_QUANT_CAP_LOADABLE_CPU_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_MXFP4,    "MXFP4",    BN_QUANT_LAYOUT_BLOCK32,  32,  17,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_TQ1_0,    "TQ1_0",    BN_QUANT_LAYOUT_BLOCK256, 256, 54,  BN_QUANT_CAP_LOADABLE_CPU_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_TQ2_0,    "TQ2_0",    BN_QUANT_LAYOUT_BLOCK256, 256, 66,  BN_QUANT_CAP_LOADABLE_CPU_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q2_K,     "Q2_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 84,  BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q3_K,     "Q3_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 110, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_LAZY_AUX_CACHE, BN_QUANT_CPU_HOOKS },
-    { BN_GGUF_TENSOR_Q4_K,     "Q4_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 144, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREPARED_KQUANT_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH_KQUANT | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE | BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE | BN_QUANT_CAP_MOE_Q4_GATEUP, BN_QUANT_CPU_HOOKS },
+    { BN_GGUF_TENSOR_Q4_K,     "Q4_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 144, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREPARED_KQUANT_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH_KQUANT | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE | BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE | BN_QUANT_CAP_MOE_ROUTED_KQUANT_GATEUP, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q5_K,     "Q5_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 176, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREPARED_KQUANT_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH_KQUANT | BN_QUANT_CAP_GPU_FUSED_GATEUP_BACKEND_OPT_IN | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q6_K,     "Q6_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 210, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREPARED_KQUANT_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH_Q6K | BN_QUANT_CAP_MOE_LARGE_AUX_CACHE | BN_QUANT_CAP_LOGITS_Q6_F32_CACHE | BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE | BN_QUANT_CAP_MOE_DOWN_CUBLAS_CACHE | BN_QUANT_CAP_AUX_CACHE_F16, BN_QUANT_CPU_HOOKS },
     { BN_GGUF_TENSOR_Q8_K,     "Q8_K",     BN_QUANT_LAYOUT_BLOCK256, 256, 292, BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_TIED_LOGITS | BN_QUANT_CAP_GPU_DENSE_GRAPH, BN_QUANT_CPU_HOOKS },
@@ -408,8 +408,10 @@ int bn_quant_format_supports_moe_asymmetric_kquant_down_route(int gate_type,
                                                               int up_type,
                                                               int down_type,
                                                               int allow_asymmetric_kquant_down) {
-    return bn_quant_format_has_cap(gate_type, BN_QUANT_CAP_MOE_Q4_GATEUP) &&
-           bn_quant_format_has_cap(up_type, BN_QUANT_CAP_MOE_Q4_GATEUP) &&
+    return bn_quant_format_has_cap(gate_type,
+                                   BN_QUANT_CAP_MOE_ROUTED_KQUANT_GATEUP) &&
+           bn_quant_format_has_cap(up_type,
+                                   BN_QUANT_CAP_MOE_ROUTED_KQUANT_GATEUP) &&
            (bn_quant_format_has_cap(down_type,
                                     BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE) ||
             (allow_asymmetric_kquant_down &&
@@ -419,16 +421,18 @@ int bn_quant_format_supports_moe_asymmetric_kquant_down_route(int gate_type,
 
 int bn_quant_format_supports_moe_routed_kquant_gateup(int gate_type,
                                                       int up_type) {
-    return bn_quant_format_has_cap(gate_type, BN_QUANT_CAP_MOE_Q4_GATEUP) &&
-           bn_quant_format_has_cap(up_type, BN_QUANT_CAP_MOE_Q4_GATEUP);
+    return bn_quant_format_has_cap(gate_type,
+                                   BN_QUANT_CAP_MOE_ROUTED_KQUANT_GATEUP) &&
+           bn_quant_format_has_cap(up_type,
+                                   BN_QUANT_CAP_MOE_ROUTED_KQUANT_GATEUP);
 }
 
 int bn_quant_format_supports_cpu_fused_kquant_gateup_silu(int gate_type,
                                                           int up_type) {
     return bn_quant_format_has_cap(gate_type,
-                                   BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU) &&
+                                   BN_QUANT_CAP_CPU_FUSED_KQUANT_GATEUP_SILU) &&
            bn_quant_format_has_cap(up_type,
-                                   BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU);
+                                   BN_QUANT_CAP_CPU_FUSED_KQUANT_GATEUP_SILU);
 }
 
 int bn_quant_format_same_quant_format_pair_stackable(int left_type,
@@ -452,9 +456,12 @@ int bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
 int bn_quant_format_supports_moe_native_quant_route(int gate_type,
                                                     int up_type,
                                                     int down_type) {
-    return bn_quant_format_has_cap(gate_type, BN_QUANT_CAP_MOE_Q8_ROUTE) &&
-           bn_quant_format_has_cap(up_type, BN_QUANT_CAP_MOE_Q8_ROUTE) &&
-           bn_quant_format_has_cap(down_type, BN_QUANT_CAP_MOE_Q8_ROUTE);
+    return bn_quant_format_has_cap(gate_type,
+                                   BN_QUANT_CAP_MOE_NATIVE_QUANT_ROUTE) &&
+           bn_quant_format_has_cap(up_type,
+                                   BN_QUANT_CAP_MOE_NATIVE_QUANT_ROUTE) &&
+           bn_quant_format_has_cap(down_type,
+                                   BN_QUANT_CAP_MOE_NATIVE_QUANT_ROUTE);
 }
 
 BnQuantMatvecFn bn_quant_format_matvec(int type) {
