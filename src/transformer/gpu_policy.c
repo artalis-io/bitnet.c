@@ -1030,6 +1030,15 @@ int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default) {
         kquant_refine_default ? 64 : 8);
 }
 
+int bn_transformer_gpu_kquant_logits_refine_blocks_per_row(int cols) {
+    return bn_backend_quant_prepared_kquant_blocks_per_row(cols);
+}
+
+int bn_transformer_gpu_kquant_logits_refine_block_sums_per_row(
+    int blocks_per_row) {
+    return bn_backend_quant_prepared_kquant_block_sums_per_row(blocks_per_row);
+}
+
 int bn_transformer_gpu_native_quant_logits_refine_active(
     const BnGPUBackend *gpu,
     int native_quant_refine_default) {

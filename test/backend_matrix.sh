@@ -1072,6 +1072,17 @@ if grep -n 'BN_QK_K' src/transformer/cpu.c src/transformer/prefill.c src/transfo
     fail=1
 fi
 
+if grep -n 'BN_QK_K' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer GPU execution must use GPU policy helpers for K-quant logits refine geometry"
+    fail=1
+fi
+
+if ! grep -n 'bn_transformer_gpu_kquant_logits_refine_blocks_per_row' src/transformer/gpu_policy.c >/dev/null 2>&1 ||
+   ! grep -n 'bn_transformer_gpu_kquant_logits_refine_block_sums_per_row' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU K-quant logits refine geometry policy must live in transformer GPU policy"
+    fail=1
+fi
+
 if ! grep -n 'bn_backend_quant_prepared_kquant_blocks_per_row' include/backend_quant.h >/dev/null 2>&1 ||
    ! grep -n 'bn_backend_quant_prepared_kquant_block_sums_per_row' include/backend_quant.h >/dev/null 2>&1; then
     echo "Prepared K-quant block geometry helpers must live in backend quant policy"

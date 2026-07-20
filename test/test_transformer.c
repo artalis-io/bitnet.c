@@ -1465,6 +1465,12 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_GPU_Q6_Q8K_REFINE_TOP", "11", 1);
     assert(bn_transformer_gpu_kquant_logits_refine_top(1) == 11);
     unsetenv("BN_GPU_Q6_Q8K_REFINE_TOP");
+    assert(bn_transformer_gpu_kquant_logits_refine_blocks_per_row(
+               BN_QK_K * 3) == 3);
+    assert(bn_transformer_gpu_kquant_logits_refine_blocks_per_row(
+               BN_QK_K - 1) == 0);
+    assert(bn_transformer_gpu_kquant_logits_refine_block_sums_per_row(3) ==
+           48);
 
     W.type = BN_GGUF_TENSOR_Q8_0;
     logits.type = BN_GGUF_TENSOR_Q8_0;

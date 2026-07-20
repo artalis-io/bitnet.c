@@ -543,6 +543,9 @@ int bn_transformer_gpu_kquant_logits_refine_captures_xb(
     int refine_kquant_logits,
     int kquant_refine_default);
 int bn_transformer_gpu_kquant_logits_refine_top(int kquant_refine_default);
+int bn_transformer_gpu_kquant_logits_refine_blocks_per_row(int cols);
+int bn_transformer_gpu_kquant_logits_refine_block_sums_per_row(
+    int blocks_per_row);
 int bn_transformer_gpu_native_quant_logits_refine_active(
     const BnGPUBackend *gpu,
     int native_quant_refine_default);

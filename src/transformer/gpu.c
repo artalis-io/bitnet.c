@@ -589,11 +589,14 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
     if (top_n <= 0) return 0;
     if (top_n > 4096) top_n = 4096;
     if (top_n > n_logits) top_n = n_logits;
-    int n_blocks = W->cols / BN_QK_K;
-    if (n_blocks < 1 || n_blocks > BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS / 16)
+    int n_blocks =
+        bn_transformer_gpu_kquant_logits_refine_blocks_per_row(W->cols);
+    int n_block_sums =
+        bn_transformer_gpu_kquant_logits_refine_block_sums_per_row(n_blocks);
+    if (n_blocks < 1 || n_block_sums > BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS)
         return 0;
     float scales[n_blocks];
-    int16_t block_sums[n_blocks * 16];
+    int16_t block_sums[n_block_sums];
     bn_transformer_cpu_prepare_kquant_activation(x, quantized, scales,
                                                  block_sums, W->cols);
 
