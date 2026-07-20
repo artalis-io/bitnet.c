@@ -95,6 +95,11 @@ int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(int rows, int cols);
+int bn_gpu_policy_moe_route_all_active_two(int n_experts, int k);
+int bn_gpu_policy_moe_route_expanded_topk(int n_experts, int k);
+int bn_gpu_policy_moe_route_all_active_two_large_hidden(int n_experts,
+                                                        int k,
+                                                        int hidden_dim);
 int bn_gpu_policy_cuda_moe_down_quant_path_preferred(
     int routed_asymmetric_kquant,
     int down_type,

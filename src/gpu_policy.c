@@ -1002,6 +1002,21 @@ int bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(int rows, int cols) {
     return 0;
 }
 
+int bn_gpu_policy_moe_route_all_active_two(int n_experts, int k) {
+    return n_experts == 2 && k == 2;
+}
+
+int bn_gpu_policy_moe_route_expanded_topk(int n_experts, int k) {
+    return n_experts > 2 || k > 2;
+}
+
+int bn_gpu_policy_moe_route_all_active_two_large_hidden(int n_experts,
+                                                        int k,
+                                                        int hidden_dim) {
+    return bn_gpu_policy_moe_route_all_active_two(n_experts, k) &&
+           hidden_dim >= 4096;
+}
+
 int bn_gpu_policy_cuda_moe_down_quant_path_preferred(
     int routed_asymmetric_kquant,
     int down_type,
@@ -1010,7 +1025,8 @@ int bn_gpu_policy_cuda_moe_down_quant_path_preferred(
     int k) {
     return routed_asymmetric_kquant &&
            bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
-           hidden_dim <= 1024 && (n_experts > 2 || k > 2) &&
+           hidden_dim <= 1024 &&
+           bn_gpu_policy_moe_route_expanded_topk(n_experts, k) &&
            getenv("BN_CUDA_ENABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
 }
 
@@ -1025,8 +1041,11 @@ int bn_gpu_policy_cuda_moe_down_f32_cache_path_enabled(
     int k) {
     return bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
            has_f32_data && !prefer_quant_down &&
-           !(routed_asymmetric_kquant && n_experts == 2 && k == 2 &&
-             hidden_dim >= 4096 && dim <= 2048) &&
+           !(routed_asymmetric_kquant &&
+             bn_gpu_policy_moe_route_all_active_two_large_hidden(n_experts,
+                                                                 k,
+                                                                 hidden_dim) &&
+             dim <= 2048) &&
            getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_CACHE") == NULL;
 }
 
@@ -1046,7 +1065,7 @@ int bn_gpu_policy_cuda_moe_down_halfwarp_enabled(
     int n_experts,
     int k) {
     return bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
-           (n_experts > 2 || k > 2) &&
+           bn_gpu_policy_moe_route_expanded_topk(n_experts, k) &&
            (prefer_quant_down ||
             getenv("BN_CUDA_ENABLE_MOE_DOWN_HALFWARP") != NULL) &&
            getenv("BN_CUDA_DISABLE_MOE_DOWN_HALFWARP") == NULL;
@@ -1059,7 +1078,7 @@ int bn_gpu_policy_cuda_moe_down_split4_enabled(
     int k) {
     return !use_halfwarp &&
            bn_backend_quant_moe_down_q6_f32_cache_supported(down_type) &&
-           (n_experts > 2 || k > 2) &&
+           bn_gpu_policy_moe_route_expanded_topk(n_experts, k) &&
            getenv("BN_CUDA_ENABLE_MOE_DOWN_SPLIT4") != NULL &&
            getenv("BN_CUDA_DISABLE_MOE_DOWN_SPLIT4") == NULL;
 }
@@ -1105,7 +1124,7 @@ int bn_gpu_policy_cuda_moe_down_prefers_f32_cache(
 
 int bn_gpu_policy_cuda_moe_down_f32_pair2_enabled(int n_experts,
                                                       int k) {
-    return n_experts == 2 && k == 2 &&
+    return bn_gpu_policy_moe_route_all_active_two(n_experts, k) &&
            getenv("BN_CUDA_DISABLE_Q6K_MOE_DOWN_F32_PAIR2") == NULL;
 }
 
@@ -1189,7 +1208,9 @@ int bn_gpu_policy_cuda_moe_down_aux_f32_cache_enabled(int has_f32_data) {
 int bn_gpu_policy_cuda_moe_down_prepared_pair8_enabled(int n_experts,
                                                        int k,
                                                        int hidden_dim) {
-    return n_experts == 2 && k == 2 && hidden_dim >= 4096 &&
+    return bn_gpu_policy_moe_route_all_active_two_large_hidden(n_experts,
+                                                               k,
+                                                               hidden_dim) &&
            getenv("BN_CUDA_ENABLE_MOE_Q4K_PAIR_DOWN") != NULL &&
            getenv("BN_CUDA_DISABLE_MOE_Q4K_PAIR_DOWN") == NULL;
 }
@@ -1215,7 +1236,8 @@ int bn_gpu_policy_cuda_moe_gateup_prepared_8row_enabled(int dim) {
 
 int bn_gpu_policy_cuda_moe_gateup_prepared_split_enabled(int dim,
                                                          int n_experts) {
-    return dim <= 2048 && n_experts > 2 &&
+    return dim <= 2048 &&
+           bn_gpu_policy_moe_route_expanded_topk(n_experts, 0) &&
            getenv("BN_CUDA_ENABLE_MOE_GATEUP_SPLIT") != NULL &&
            getenv("BN_CUDA_DISABLE_MOE_GATEUP_SPLIT") == NULL;
 }
@@ -2039,7 +2061,8 @@ int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_native_quant,
           getenv("BN_CUDA_DISABLE_Q8_MOE_CUBLAS_GROUPED") == NULL) ||
          (routed_asymmetric_kquant &&
           getenv("BN_CUDA_DISABLE_MOE_CUBLAS_GROUPED") == NULL));
-    if (enabled && routed_asymmetric_kquant && !(n_experts == 2 && k == 2) &&
+    if (enabled && routed_asymmetric_kquant &&
+        !bn_gpu_policy_moe_route_all_active_two(n_experts, k) &&
         route_items <= 256 &&
         getenv("BN_CUDA_ENABLE_MOE_CUBLAS_GROUPED_SMALL") == NULL)
         enabled = 0;
@@ -2065,7 +2088,8 @@ int bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
     int use_grouped,
     int n_experts,
     int k) {
-    return use_grouped && n_experts == 2 && k == 2 &&
+    return use_grouped &&
+           bn_gpu_policy_moe_route_all_active_two(n_experts, k) &&
            getenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED") == NULL;
 }
 

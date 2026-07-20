@@ -1629,6 +1629,26 @@ if grep -n 'bn_gpu_policy_cuda_q6k_moe_quant_down_preferred\|bn_gpu_policy_cuda_
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_cuda_moe_down_quant_path_preferred/{flag=1} /^int bn_gpu_policy_cuda_moe_down_4row_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'n_experts > 2\|n_experts == 2 && k == 2' >/dev/null 2>&1; then
+    echo "CUDA MoE down policy must use route-shape behavior helpers"
+    fail=1
+fi
+
+if awk '/^int bn_gpu_policy_cuda_moe_down_halfwarp_enabled/{flag=1} /^int bn_gpu_policy_cuda_moe_down_scatter_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'n_experts > 2\|n_experts == 2 && k == 2' >/dev/null 2>&1; then
+    echo "CUDA MoE split down policy must use route-shape behavior helpers"
+    fail=1
+fi
+
+if awk '/^int bn_gpu_policy_cuda_moe_down_f32_pair2_enabled/{flag=1} /^int bn_gpu_policy_cuda_moe_down_f32_pair2_4row_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'n_experts == 2 && k == 2' >/dev/null 2>&1; then
+    echo "CUDA MoE F32 pair policy must use route-shape behavior helpers"
+    fail=1
+fi
+
+if awk '/^int bn_gpu_policy_cuda_moe_down_prepared_pair8_enabled/{flag=1} /^int bn_gpu_policy_cuda_moe_down_prepared_8row_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'n_experts == 2 && k == 2' >/dev/null 2>&1; then
+    echo "CUDA MoE prepared pair policy must use route-shape behavior helpers"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_PAIR_DOWN")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_PAIR_DOWN")\|getenv("BN_CUDA_ENABLE_MOE_Q4K_DOWN_8ROW")\|getenv("BN_CUDA_DISABLE_MOE_Q4K_DOWN_8ROW")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for Q4K MoE down variant env vars"
     fail=1

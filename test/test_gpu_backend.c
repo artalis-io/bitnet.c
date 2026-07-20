@@ -417,6 +417,16 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_model_uses_moe(&dense_model));
     assert(!bn_gpu_policy_moe_router_diff2_upload_enabled(&layers));
     assert(!bn_gpu_policy_moe_f16_aux_cache_auto_enabled(&layers));
+    assert(bn_gpu_policy_moe_route_all_active_two(2, 2));
+    assert(!bn_gpu_policy_moe_route_all_active_two(4, 2));
+    assert(!bn_gpu_policy_moe_route_all_active_two(2, 1));
+    assert(bn_gpu_policy_moe_route_expanded_topk(4, 2));
+    assert(bn_gpu_policy_moe_route_expanded_topk(2, 4));
+    assert(!bn_gpu_policy_moe_route_expanded_topk(2, 2));
+    assert(bn_gpu_policy_moe_route_all_active_two_large_hidden(2, 2,
+                                                               4096));
+    assert(!bn_gpu_policy_moe_route_all_active_two_large_hidden(2, 2,
+                                                                2048));
 
     BnConfig moe = {0};
     moe.dim = 2048;
