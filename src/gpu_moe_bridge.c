@@ -8,14 +8,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int gpu_moe_backend_can_upload_expert_buffers(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->buffer_create;
+}
+
+static void gpu_moe_destroy_buffer(BnGPUBackend *gpu, void *buffer) {
+    if (gpu && gpu->buffer_destroy && buffer)
+        gpu->buffer_destroy(gpu->ctx, buffer);
+}
+
 static void gpu_moe_destroy_partial(BnGPUBackend *gpu,
                                     void *gate,
                                     void *up,
                                     void *down) {
-    if (!gpu || !gpu->buffer_destroy) return;
-    if (gate) gpu->buffer_destroy(gpu->ctx, gate);
-    if (up) gpu->buffer_destroy(gpu->ctx, up);
-    if (down) gpu->buffer_destroy(gpu->ctx, down);
+    gpu_moe_destroy_buffer(gpu, gate);
+    gpu_moe_destroy_buffer(gpu, up);
+    gpu_moe_destroy_buffer(gpu, down);
 }
 
 static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
@@ -48,7 +57,8 @@ static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
                                                 int tensor_type,
                                                 int rows,
                                                 int cols) {
-    if (!gpu || !gpu->buffer_create || !gate_data || !up_data ||
+    if (!gpu_moe_backend_can_upload_expert_buffers(gpu) ||
+        !gate_data || !up_data ||
         gate_bytes == 0 || up_bytes == 0)
         return NULL;
     if (gpu->buffer_create_stacked2)
@@ -90,7 +100,7 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     if (!m || !sess || !lw || !out) return -1;
     BnGPUBackend *gpu = bn_model_gpu(m);
     BnMoEState *ms = sess->moe_state;
-    if (!gpu || !gpu->buffer_create || !ms) return -1;
+    if (!gpu_moe_backend_can_upload_expert_buffers(gpu) || !ms) return -1;
 
     const BnMoEExpertMap *em = &lw->moe.expert_map;
     BnGPUMoECache *gpu_cache = (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
@@ -207,12 +217,9 @@ void bn_gpu_moe_bridge_release_temporaries(
     if (!m || !temporaries || temporaries->n_buffers <= 0)
         return;
     BnGPUBackend *gpu = bn_model_gpu(m);
-    if (!gpu || !gpu->buffer_destroy)
-        return;
 
     for (int i = 0; i < temporaries->n_buffers; i++) {
-        if (temporaries->buffers[i])
-            gpu->buffer_destroy(gpu->ctx, temporaries->buffers[i]);
+        gpu_moe_destroy_buffer(gpu, temporaries->buffers[i]);
         temporaries->buffers[i] = NULL;
     }
     temporaries->n_buffers = 0;
@@ -223,7 +230,7 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     BnGPUMoECache *gpu_cache =
         (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
-    if (!gpu || !gpu->buffer_create || !gpu_cache)
+    if (!gpu_moe_backend_can_upload_expert_buffers(gpu) || !gpu_cache)
         return -1;
 
     BnMoEState temp_state;

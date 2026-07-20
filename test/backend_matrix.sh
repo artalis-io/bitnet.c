@@ -797,6 +797,11 @@ if [ "$(grep -c 'buffer_create_stacked2' src/gpu_moe_bridge.c)" -gt 2 ]; then
     fail=1
 fi
 
+if [ "$(grep -c 'buffer_destroy' src/gpu_moe_bridge.c)" -gt 2 ]; then
+    echo "src/gpu_moe_bridge.c must centralize MoE expert backend buffer destruction"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_cuda_moe_gateup_split_enabled' src/gpu_moe_bridge.c >/dev/null 2>&1; then
     echo "src/gpu_moe_bridge.c must use behavior-named GPU policy helpers for MoE gate-up split eligibility"
     fail=1
