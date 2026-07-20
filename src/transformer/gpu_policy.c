@@ -212,9 +212,7 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
 }
 
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
-    return bn_model_arch_moe_forces_float_kquant_gateup(c)
-        ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
-        : 0u;
+    return bn_moe_gateup_task_flags(c);
 }
 
 int bn_transformer_gpu_moe_gateup_split_supported(
