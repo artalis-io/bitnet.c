@@ -1111,7 +1111,9 @@ static const char *gpu_policy_cuda_cublas_gemm_algo_value(void) {
 }
 
 static int gpu_policy_cuda_down_kquant_cublas_f16_cache_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_CUBLAS_F16") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_CUBLAS_F16_CACHE",
+        "BN_CUDA_DISABLE_Q6K_CUBLAS_F16");
 }
 
 static int gpu_policy_cuda_native_quant_matmul_requested(void) {
@@ -1139,11 +1141,15 @@ static int gpu_policy_prepared_kquant_input_cache_disabled(void) {
 }
 
 static int gpu_policy_force_asymmetric_kquant_quant_matmul_requested(void) {
-    return getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_FORCE_ASYMMETRIC_KQUANT_QUANT_MATMUL",
+        "BN_CUDA_FORCE_Q4K_QUANT_MATMUL");
 }
 
 static int gpu_policy_force_down_kquant_quant_matmul_requested(void) {
-    return getenv("BN_CUDA_FORCE_Q6K_QUANT_MATMUL") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_FORCE_DOWN_KQUANT_QUANT_MATMUL",
+        "BN_CUDA_FORCE_Q6K_QUANT_MATMUL");
 }
 
 static int gpu_policy_down_kquant_4warp_long_disabled(void) {
