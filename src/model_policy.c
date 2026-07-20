@@ -143,6 +143,25 @@ int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config) {
     return bn_model_arch_uses_more_than_two_expert_moe(config);
 }
 
+int bn_model_config_moe_forces_float_kquant_gateup(
+    const BnConfig *config) {
+    return bn_model_arch_moe_forces_float_kquant_gateup(config);
+}
+
+int bn_model_config_moe_uses_scaled_router_input(
+    const BnConfig *config) {
+    return bn_model_arch_moe_uses_scaled_router_input(config);
+}
+
+int bn_model_config_moe_uses_dense_residual_branch(
+    const BnConfig *config) {
+    return bn_model_arch_moe_uses_dense_residual_branch(config);
+}
+
+int bn_model_config_moe_prefill_forces_matvec(const BnConfig *config) {
+    return bn_model_arch_moe_prefill_forces_matvec(config);
+}
+
 int bn_model_config_uses_small_dense_shape(const BnConfig *config) {
     return bn_model_arch_uses_small_dense_shape(config);
 }

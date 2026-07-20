@@ -1,10 +1,10 @@
 #include "moe_internal.h"
 #include "backend_quant.h"
-#include "model_arch.h"
+#include "model_internal.h"
 #include "transformer_cpu_backend_internal.h"
 
 uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
-    return bn_model_arch_moe_forces_float_kquant_gateup(c)
+    return bn_model_config_moe_forces_float_kquant_gateup(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
 }
@@ -12,9 +12,9 @@ uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
     BnMoEExecutionPolicy policy = {0};
     policy.uses_scaled_router_input =
-        bn_model_arch_moe_uses_scaled_router_input(c);
+        bn_model_config_moe_uses_scaled_router_input(c);
     policy.uses_dense_residual_branch =
-        bn_model_arch_moe_uses_dense_residual_branch(c);
+        bn_model_config_moe_uses_dense_residual_branch(c);
     policy.exact_silu =
         policy.uses_dense_residual_branch || !c ? -1 : c->moe_exact_silu;
     return policy;
@@ -23,27 +23,27 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
     BnMoEPrefillPolicy policy = {0};
     policy.force_matvec_prefill =
-        bn_model_arch_moe_prefill_forces_matvec(c);
+        bn_model_config_moe_prefill_forces_matvec(c);
     policy.uses_grouped_expert_route =
-        bn_model_arch_uses_more_than_two_expert_moe(c);
+        bn_model_config_uses_more_than_two_expert_moe(c);
     return policy;
 }
 
 int bn_moe_policy_uses_expert_weights(const BnConfig *c) {
-    return bn_model_arch_uses_moe(c);
+    return bn_model_config_uses_moe(c);
 }
 
 int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c) {
-    return bn_model_arch_uses_two_expert_all_active_moe(c);
+    return bn_model_config_uses_two_expert_all_active_moe(c);
 }
 
 int bn_moe_policy_uses_all_active_two_expert_route(const BnConfig *c,
                                                    int dim) {
-    return bn_model_arch_uses_all_active_two_expert_moe(c, dim);
+    return bn_model_config_uses_all_active_two_expert_moe(c, dim);
 }
 
 int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c) {
-    return bn_model_arch_uses_more_than_two_expert_moe(c);
+    return bn_model_config_uses_more_than_two_expert_moe(c);
 }
 
 int bn_moe_policy_supports_resident_routed_ffn_layout(
