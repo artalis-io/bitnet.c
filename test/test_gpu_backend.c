@@ -2099,7 +2099,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q4K_GATEUP_5WARP_2560");
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_GATEUP_2WARP");
     unsetenv("BN_CUDA_DISABLE_Q4K_GATEUP_2WARP");
+    unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_WARP");
     unsetenv("BN_CUDA_DISABLE_Q8_WARP");
+    unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_SSM_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_0_SSM_PREPARED_INPUT");
     unsetenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ");
@@ -2135,9 +2137,13 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_Q4K_ALL2_FIXED");
     unsetenv("BN_CUDA_DISABLE_MOE_ASYMMETRIC_KQUANT_GATEUP_4ROW");
     unsetenv("BN_CUDA_DISABLE_MOE_Q4K_GATEUP_4ROW");
+    unsetenv("BN_CUDA_ENABLE_F16_NATIVE_QUANT_SSM_MATVEC");
     unsetenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC");
+    unsetenv("BN_CUDA_DISABLE_F16_NATIVE_QUANT_SSM_MATVEC");
     unsetenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC");
+    unsetenv("BN_CUDA_ENABLE_F16_NATIVE_QUANT_MATVEC");
     unsetenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC");
+    unsetenv("BN_CUDA_DISABLE_F16_NATIVE_QUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC");
     unsetenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC");
     assert(bn_gpu_policy_cuda_symmetric_kquant_dot_enabled());
@@ -2256,8 +2262,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_GATEUP_QWARP4", "1", 1);
     setenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_GATEUP_5WARP_2560", "1", 1);
     setenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_GATEUP_2WARP", "1", 1);
-    setenv("BN_CUDA_DISABLE_Q8_WARP", "1", 1);
-    setenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC", "1", 1);
+    setenv("BN_CUDA_DISABLE_NATIVE_QUANT_WARP", "1", 1);
+    setenv("BN_CUDA_DISABLE_NATIVE_QUANT_SSM_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_Q8_0_SSM_PREPARED_INPUT", "1", 1);
     setenv("BN_CUDA_ENABLE_Q8_MIXED_PREPARED_INPUT", "1", 1);
     setenv("BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREPARED_INPUT", "1", 1);
@@ -2276,10 +2282,10 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_PROFILE_MOE_INTERNAL", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_MOE_ASYMMETRIC_KQUANT_FIXED", "1", 1);
     setenv("BN_CUDA_DISABLE_MOE_ASYMMETRIC_KQUANT_GATEUP_4ROW", "1", 1);
-    setenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC", "1", 1);
-    setenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC", "1", 1);
-    setenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC", "1", 1);
-    setenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC", "1", 1);
+    setenv("BN_CUDA_ENABLE_F16_NATIVE_QUANT_SSM_MATVEC", "1", 1);
+    setenv("BN_CUDA_DISABLE_F16_NATIVE_QUANT_SSM_MATVEC", "1", 1);
+    setenv("BN_CUDA_ENABLE_F16_NATIVE_QUANT_MATVEC", "1", 1);
+    setenv("BN_CUDA_DISABLE_F16_NATIVE_QUANT_MATVEC", "1", 1);
     setenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC", "1", 1);
     assert(!bn_gpu_policy_cuda_symmetric_kquant_dot_enabled());
     assert(!bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled());
@@ -2390,8 +2396,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled());
     assert(!bn_gpu_policy_cuda_f16_native_quant_matvec_enabled());
     assert(bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled());
-    unsetenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC");
-    unsetenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC");
+    unsetenv("BN_CUDA_DISABLE_F16_NATIVE_QUANT_SSM_MATVEC");
+    unsetenv("BN_CUDA_DISABLE_F16_NATIVE_QUANT_MATVEC");
     assert(bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled());
     assert(bn_gpu_policy_cuda_f16_native_quant_matvec_enabled());
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_NATIVE_DOT");
@@ -2707,6 +2713,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q4K_GATEUP_5WARP_2560");
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_GATEUP_2WARP");
     unsetenv("BN_CUDA_DISABLE_Q4K_GATEUP_2WARP");
+    unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_WARP");
     unsetenv("BN_CUDA_DISABLE_Q8_WARP");
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_NATIVE_DOT");
     unsetenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT");
