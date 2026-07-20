@@ -54,6 +54,7 @@ int bn_model_gguf_uses_moe(BnGGUFFile *file);
 int bn_model_gguf_context_length(BnGGUFFile *file);
 int bn_model_config_attention_layer_count(const BnConfig *config);
 int bn_model_config_ssm_layer_count(const BnConfig *config);
+int bn_model_config_uses_hybrid_layer_layout(const BnConfig *config);
 int bn_model_config_uses_hybrid_ssm(const BnConfig *config);
 int bn_model_config_uses_hybrid_moe(const BnConfig *config);
 int bn_model_config_uses_moe(const BnConfig *config);

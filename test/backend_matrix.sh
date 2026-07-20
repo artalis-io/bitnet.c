@@ -2208,6 +2208,11 @@ if awk '/^bn_transformer_prefill_sequence_policy/{flag=1} flag{print} flag && /^
     fail=1
 fi
 
+if grep -n '#include "model_arch.h"\|bn_model_arch_' src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill_policy.c must use model-policy helpers instead of reaching into model_arch"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_prefill_ssm_layer_disabled\|bn_gpu_policy_cuda_shared_q4_q8_dot_enabled\|bn_gpu_policy_cuda_shared_expert_gate_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use behavior-named GPU policy helpers for SSM/shared-expert compatibility policy"
     fail=1

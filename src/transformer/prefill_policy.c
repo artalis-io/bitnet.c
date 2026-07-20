@@ -1,7 +1,6 @@
 #include "transformer_prefill_internal.h"
 #include "backend_quant.h"
 #include "gpu_internal.h"
-#include "model_arch.h"
 #include "model_internal.h"
 #include "../moe_internal.h"
 
@@ -52,15 +51,15 @@ bn_transformer_prefill_sequence_policy(const BnConfig *c) {
 }
 
 int bn_transformer_prefill_uses_hybrid_layer_layout(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_layer_layout(c);
+    return bn_model_config_uses_hybrid_layer_layout(c);
 }
 
 int bn_transformer_prefill_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_ssm(c);
+    return bn_model_config_uses_hybrid_ssm(c);
 }
 
 int bn_transformer_prefill_uses_large_dense_hybrid_ssm(const BnConfig *c) {
-    return bn_model_arch_uses_large_dense_hybrid_ssm(c);
+    return bn_model_config_uses_large_dense_hybrid_ssm(c);
 }
 
 int bn_transformer_prefill_hybrid_chain_applicable(

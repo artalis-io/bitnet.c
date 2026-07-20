@@ -101,6 +101,10 @@ int bn_model_config_ssm_layer_count(const BnConfig *config) {
     return bn_model_arch_ssm_layer_count(config);
 }
 
+int bn_model_config_uses_hybrid_layer_layout(const BnConfig *config) {
+    return bn_model_arch_uses_hybrid_layer_layout(config);
+}
+
 int bn_model_config_uses_hybrid_ssm(const BnConfig *config) {
     return bn_model_arch_uses_hybrid_ssm(config);
 }
