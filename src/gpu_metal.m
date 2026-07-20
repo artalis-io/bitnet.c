@@ -40,12 +40,12 @@ typedef struct {
     id<MTLComputePipelineState> fwd_pipelines[BN_GPU_SHADER_COUNT]; /* forward-pass shaders */
     id<MTLComputePipelineState> q8_quant_pipeline;
     id<MTLComputePipelineState> q8k_quant_pipeline;
-    id<MTLComputePipelineState> q4_q8_matvec_pipeline;
-    id<MTLComputePipelineState> q4_prepared_q8_matvec_pipeline;
-    id<MTLComputePipelineState> q4_prepared_q8_split_pipeline;
-    id<MTLComputePipelineState> q4_prepared_q8_gateup_pipeline;
-    id<MTLComputePipelineState> q4_q8_split_pipeline;
-    id<MTLComputePipelineState> q4_q8_gateup_pipeline;
+    id<MTLComputePipelineState> exact_native_matvec_pipeline;
+    id<MTLComputePipelineState> prepared_exact_native_matvec_pipeline;
+    id<MTLComputePipelineState> prepared_exact_native_split_pipeline;
+    id<MTLComputePipelineState> prepared_exact_native_gateup_pipeline;
+    id<MTLComputePipelineState> exact_native_split_pipeline;
+    id<MTLComputePipelineState> exact_native_gateup_pipeline;
     id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
     id<MTLComputePipelineState> q6_q8k_matvec_pipeline;
     int exact_native_enabled;
@@ -1062,10 +1062,10 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     int use_prepared_exact_native = bn_gpu_policy_metal_exact_native_matvec_supported(
         type, ctx->exact_native_enabled, wbuf->native_quant_prepared,
         ctx->q8_quant_pipeline != nil, 0,
-        ctx->q4_prepared_q8_matvec_pipeline != nil);
+        ctx->prepared_exact_native_matvec_pipeline != nil);
     int use_exact_native = bn_gpu_policy_metal_exact_native_matvec_supported(
         type, ctx->exact_native_enabled, wbuf->native_quant_prepared,
-        ctx->q8_quant_pipeline != nil, ctx->q4_q8_matvec_pipeline != nil, 0);
+        ctx->q8_quant_pipeline != nil, ctx->exact_native_matvec_pipeline != nil, 0);
     int use_specialized_native_quant =
         bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
             type, cols, ctx->q8k_quant_pipeline != nil,
@@ -1091,7 +1091,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
 
         if (use_prepared_exact_native) {
             metal_encode_q8_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
-            [enc setComputePipelineState:ctx->q4_prepared_q8_matvec_pipeline];
+            [enc setComputePipelineState:ctx->prepared_exact_native_matvec_pipeline];
             [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
             [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
             [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1099,7 +1099,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
             [enc setBytes:params length:sizeof(params) atIndex:4];
         } else if (use_exact_native) {
             metal_encode_q8_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
-            [enc setComputePipelineState:ctx->q4_q8_matvec_pipeline];
+            [enc setComputePipelineState:ctx->exact_native_matvec_pipeline];
             [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
             [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
             [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1331,13 +1331,13 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (op->p[6] && wbuf &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
-                        ctx->q4_prepared_q8_matvec_pipeline)) {
-                    pipeline = ctx->q4_prepared_q8_matvec_pipeline;
+                        ctx->prepared_exact_native_matvec_pipeline)) {
+                    pipeline = ctx->prepared_exact_native_matvec_pipeline;
                 } else if (op->p[6] && wbuf &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
-                        ctx->q4_q8_matvec_pipeline)) {
-                    pipeline = ctx->q4_q8_matvec_pipeline;
+                        ctx->exact_native_matvec_pipeline)) {
+                    pipeline = ctx->exact_native_matvec_pipeline;
                 } else if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES) {
                     pipeline = ctx->pipelines[op->type];
                 }
@@ -1350,29 +1350,29 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                        metal_exact_native_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 1,
-                           ctx->q4_prepared_q8_gateup_pipeline)) {
-                pipeline = ctx->q4_prepared_q8_gateup_pipeline;
+                           ctx->prepared_exact_native_gateup_pipeline)) {
+                pipeline = ctx->prepared_exact_native_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                        op->p[6] && op->W_buf &&
                        metal_exact_native_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 0,
-                           ctx->q4_q8_gateup_pipeline)) {
-                pipeline = ctx->q4_q8_gateup_pipeline;
+                           ctx->exact_native_gateup_pipeline)) {
+                pipeline = ctx->exact_native_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        (op->flags & 1u) && op->W_buf &&
                        metal_exact_native_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 1,
-                           ctx->q4_prepared_q8_split_pipeline)) {
-                pipeline = ctx->q4_prepared_q8_split_pipeline;
+                           ctx->prepared_exact_native_split_pipeline)) {
+                pipeline = ctx->prepared_exact_native_split_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        (op->flags & 1u) && op->W_buf &&
                        metal_exact_native_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 0,
-                           ctx->q4_q8_split_pipeline)) {
-                pipeline = ctx->q4_q8_split_pipeline;
+                           ctx->exact_native_split_pipeline)) {
+                pipeline = ctx->exact_native_split_pipeline;
             } else if (shader > 0 && shader < BN_GPU_SHADER_COUNT) {
                 pipeline = ctx->fwd_pipelines[shader];
             }
@@ -1443,26 +1443,26 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 ((shader == BN_GPU_SHADER_MATVEC && op->p[6] &&
                   (metal_exact_native_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 1,
-                       ctx->q4_prepared_q8_matvec_pipeline) ||
+                       ctx->prepared_exact_native_matvec_pipeline) ||
                    metal_exact_native_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 0,
-                       ctx->q4_q8_matvec_pipeline))) ||
+                       ctx->exact_native_matvec_pipeline))) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
                   (metal_exact_native_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 1,
-                       ctx->q4_prepared_q8_split_pipeline) ||
+                       ctx->prepared_exact_native_split_pipeline) ||
                    metal_exact_native_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 0,
-                       ctx->q4_q8_split_pipeline))) ||
+                       ctx->exact_native_split_pipeline))) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
                   (metal_exact_native_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 1,
-                       ctx->q4_prepared_q8_gateup_pipeline) ||
+                       ctx->prepared_exact_native_gateup_pipeline) ||
                    metal_exact_native_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 0,
-                       ctx->q4_q8_gateup_pipeline))));
+                       ctx->exact_native_gateup_pipeline))));
             /* Skip redundant PSO switch — avoids GPU instruction cache flush */
             if (!native_quant_deferred_pso && pipeline != current_pso) {
                 [enc setComputePipelineState:pipeline];
@@ -1486,7 +1486,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (op->p[6] &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
-                        ctx->q4_prepared_q8_matvec_pipeline)) {
+                        ctx->prepared_exact_native_matvec_pipeline)) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
                         return -1;
@@ -1501,8 +1501,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
                     ctx->q8_matvec_dispatches++;
-                    [enc setComputePipelineState:ctx->q4_prepared_q8_matvec_pipeline];
-                    current_pso = ctx->q4_prepared_q8_matvec_pipeline;
+                    [enc setComputePipelineState:ctx->prepared_exact_native_matvec_pipeline];
+                    current_pso = ctx->prepared_exact_native_matvec_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1511,7 +1511,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if (op->p[6] &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
-                        ctx->q4_q8_matvec_pipeline)) {
+                        ctx->exact_native_matvec_pipeline)) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
                         return -1;
@@ -1526,8 +1526,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, n_tokens);
                     ctx->q8_matvec_dispatches++;
-                    [enc setComputePipelineState:ctx->q4_q8_matvec_pipeline];
-                    current_pso = ctx->q4_q8_matvec_pipeline;
+                    [enc setComputePipelineState:ctx->exact_native_matvec_pipeline];
+                    current_pso = ctx->exact_native_matvec_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1743,14 +1743,14 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if ((op->flags & 1u) &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
-                        ctx->q4_prepared_q8_split_pipeline)) {
+                        ctx->prepared_exact_native_split_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
                     ctx->q8_split_dispatches++;
-                    [enc setComputePipelineState:ctx->q4_prepared_q8_split_pipeline];
-                    current_pso = ctx->q4_prepared_q8_split_pipeline;
+                    [enc setComputePipelineState:ctx->prepared_exact_native_split_pipeline];
+                    current_pso = ctx->prepared_exact_native_split_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1761,7 +1761,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if ((op->flags & 1u) &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
-                        ctx->q4_q8_split_pipeline)) {
+                        ctx->exact_native_split_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     if (ctx->gpu_profile >= 2) {
@@ -1775,8 +1775,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
                     ctx->q8_split_dispatches++;
-                    [enc setComputePipelineState:ctx->q4_q8_split_pipeline];
-                    current_pso = ctx->q4_q8_split_pipeline;
+                    [enc setComputePipelineState:ctx->exact_native_split_pipeline];
+                    current_pso = ctx->exact_native_split_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1810,14 +1810,14 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (op->p[6] &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
-                        ctx->q4_prepared_q8_gateup_pipeline)) {
+                        ctx->prepared_exact_native_gateup_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
                     ctx->q8_gateup_dispatches++;
-                    [enc setComputePipelineState:ctx->q4_prepared_q8_gateup_pipeline];
-                    current_pso = ctx->q4_prepared_q8_gateup_pipeline;
+                    [enc setComputePipelineState:ctx->prepared_exact_native_gateup_pipeline];
+                    current_pso = ctx->prepared_exact_native_gateup_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1826,7 +1826,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 } else if (op->p[6] &&
                     metal_exact_native_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
-                        ctx->q4_q8_gateup_pipeline)) {
+                        ctx->exact_native_gateup_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     if (ctx->gpu_profile >= 2) {
@@ -1840,8 +1840,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     metal_encode_q8_quant(enc, ctx, ctx->act_bufs[op->buf_in],
                                           (uint32_t)op->cols, 1);
                     ctx->q8_gateup_dispatches++;
-                    [enc setComputePipelineState:ctx->q4_q8_gateup_pipeline];
-                    current_pso = ctx->q4_q8_gateup_pipeline;
+                    [enc setComputePipelineState:ctx->exact_native_gateup_pipeline];
+                    current_pso = ctx->exact_native_gateup_pipeline;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->q8_buf offset:0 atIndex:1];
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
@@ -1881,17 +1881,17 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                   op->p[6] &&
                   metal_exact_native_graph_path_supported(
                       ctx, op->type, grid_wbuf->native_quant_prepared, 0,
-                      ctx->q4_q8_matvec_pipeline)) ||
+                      ctx->exact_native_matvec_pipeline)) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
                   metal_exact_native_graph_path_supported(
                       ctx, op->type, grid_wbuf->native_quant_prepared, 0,
-                      ctx->q4_q8_split_pipeline)) ||
+                      ctx->exact_native_split_pipeline)) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
                   metal_exact_native_graph_path_supported(
                       ctx, op->type, grid_wbuf->native_quant_prepared, 0,
-                      ctx->q4_q8_gateup_pipeline)));
+                      ctx->exact_native_gateup_pipeline)));
             if (native_quant_tile) {
                 tile_rows = 16;
                 threads_per_tg = 128;
@@ -2184,22 +2184,22 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         if (ctx->exact_native_enabled) {
             ctx->q8_quant_pipeline = compile_shader(ctx, dir,
                 "q8_quantize.metal", "q8_quantize");
-            ctx->q4_q8_matvec_pipeline = compile_shader(ctx, dir,
+            ctx->exact_native_matvec_pipeline = compile_shader(ctx, dir,
                 "q4_native_prepared_q8_matvec.metal",
                 "q4_native_prepared_q8_matvec");
-            ctx->q4_prepared_q8_matvec_pipeline = compile_shader(ctx, dir,
+            ctx->prepared_exact_native_matvec_pipeline = compile_shader(ctx, dir,
                 "q4_prepared_q8_matvec.metal",
                 "q4_prepared_q8_matvec");
-            ctx->q4_prepared_q8_split_pipeline = compile_shader(ctx, dir,
+            ctx->prepared_exact_native_split_pipeline = compile_shader(ctx, dir,
                 "q4_prepared_q8_split.metal",
                 "q4_prepared_q8_split");
-            ctx->q4_prepared_q8_gateup_pipeline = compile_shader(ctx, dir,
+            ctx->prepared_exact_native_gateup_pipeline = compile_shader(ctx, dir,
                 "q4_prepared_q8_gateup.metal",
                 "q4_prepared_q8_gateup");
-            ctx->q4_q8_split_pipeline = compile_shader(ctx, dir,
+            ctx->exact_native_split_pipeline = compile_shader(ctx, dir,
                 "q4_matvec_split_prepared_q8.metal",
                 "q4_matvec_split_prepared_q8");
-            ctx->q4_q8_gateup_pipeline = compile_shader(ctx, dir,
+            ctx->exact_native_gateup_pipeline = compile_shader(ctx, dir,
                 "q4_fused_gateup_silu_prepared_q8.metal",
                 "q4_fused_gateup_silu_prepared_q8");
         }

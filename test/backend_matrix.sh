@@ -1274,6 +1274,11 @@ if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_pol
     fail=1
 fi
 
+if grep -n -- '->q4_q8_matvec_pipeline\|->q4_q8_split_pipeline\|->q4_q8_gateup_pipeline\|->q4_prepared_q8_matvec_pipeline\|->q4_prepared_q8_split_pipeline\|->q4_prepared_q8_gateup_pipeline\|\.q4_q8_matvec_pipeline\|\.q4_q8_split_pipeline\|\.q4_q8_gateup_pipeline\|\.q4_prepared_q8_matvec_pipeline\|\.q4_prepared_q8_split_pipeline\|\.q4_prepared_q8_gateup_pipeline' src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal exact-native pipeline state must use behavior names, not Q4/Q8 field names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_apply_specialized_q6_q8k_override\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_q6_q8k_matvec_supported' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Metal specialized native-quant policy must use behavior names, not Q6/Q8K helper names"
     fail=1
