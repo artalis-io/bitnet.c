@@ -651,6 +651,11 @@ if grep -n 'BN_MATVEC_TASK_NATIVE_QUANT' src/transformer/logits.c >/dev/null 2>&
     fail=1
 fi
 
+if grep -n '#include "gpu_backend.h"' src/transformer/logits.c >/dev/null 2>&1; then
+    echo "src/transformer/logits.c must use logits/GPU internal helpers instead of including backend GPU interfaces directly"
+    fail=1
+fi
+
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must use MoE policy helpers for float K-quant gate/up task flags"
     fail=1

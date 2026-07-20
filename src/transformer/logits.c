@@ -8,7 +8,6 @@
 #include "sh_log.h"
 #include "transformer_backend_internal.h"
 #include "gpu_internal.h"
-#include "gpu_backend.h"
 #include <math.h>
 
 #define BN_LOGITS_MAX_VLA_ELEMS 8192
