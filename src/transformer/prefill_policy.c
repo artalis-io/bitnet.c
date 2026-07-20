@@ -50,6 +50,10 @@ bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     return policy;
 }
 
+int bn_transformer_prefill_uses_hybrid_ssm(const BnConfig *c) {
+    return bn_transformer_prefill_sequence_policy(c).uses_hybrid_ssm;
+}
+
 int bn_transformer_prefill_hybrid_chain_applicable(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
@@ -463,7 +467,7 @@ bn_transformer_prefill_ssm_state_upload_policy(
     int gpu_attached) {
     BnTransformerPrefillSSMStateUploadPolicy policy = {0};
     policy.upload = gpu_attached &&
-                    bn_model_arch_uses_hybrid_ssm(c) &&
+                    bn_transformer_prefill_uses_hybrid_ssm(c) &&
                     bn_transformer_gpu_prefill_ssm_layer_disabled();
     return policy;
 }

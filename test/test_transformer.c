@@ -4233,6 +4233,7 @@ static void test_block_planning(void) {
     assert(!sequence_policy.uses_hybrid_layer_layout);
     assert(!sequence_policy.uses_hybrid_ssm);
     assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+    assert(!bn_transformer_prefill_uses_hybrid_ssm(NULL));
 
     BnConfig sequence = {0};
     sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);
@@ -4252,6 +4253,7 @@ static void test_block_planning(void) {
     assert(sequence_policy.uses_hybrid_layer_layout);
     assert(sequence_policy.uses_hybrid_ssm);
     assert(!sequence_policy.uses_large_dense_hybrid_ssm);
+    assert(bn_transformer_prefill_uses_hybrid_ssm(&sequence));
 
     sequence.dim = 4096;
     sequence_policy = bn_transformer_prefill_sequence_policy(&sequence);

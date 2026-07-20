@@ -1805,6 +1805,11 @@ if grep -n 'bn_gpu_policy_cuda_ssm_graph_disabled' src/transformer/gpu_policy.c 
     fail=1
 fi
 
+if awk '/^BnTransformerPrefillSSMStateUploadPolicy/{flag=1} /^BnTransformerPrefillEntryPolicy/{flag=0} flag{print}' src/transformer/prefill_policy.c | grep -n 'bn_model_arch_uses_hybrid_ssm' >/dev/null 2>&1; then
+    echo "Prefill SSM state upload policy must use prefill sequence policy helpers"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_prefill_ssm_layer_disabled\|bn_gpu_policy_cuda_shared_q4_q8_dot_enabled\|bn_gpu_policy_cuda_shared_expert_gate_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use behavior-named GPU policy helpers for SSM/shared-expert compatibility policy"
     fail=1
