@@ -25,8 +25,8 @@ extern "C" {
 #define BN_I8_MAX             127
 #define BN_I2S_BLOCK_ELEMS   128         // elements per I2S interleaved block
 #define BN_I2S_SUBROW_SIZE   32          // elements per sub-row
-#define BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT 1u
-#define BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K 8u
+#define BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT 1u
+#define BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT 8u
 
 // TQ1_0: base-3 ternary packing, 256 weights per block
 // qs packs 240 values (5 per byte in base-3), qh packs remaining 16 (4 per byte)

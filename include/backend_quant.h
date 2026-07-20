@@ -7,8 +7,8 @@
 #include "model_weights.h"
 #include "quant.h"
 
-#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT
-#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT
 
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     return bn_quant_format_gpu_split_cap(type);

@@ -16,12 +16,12 @@
 #define GPU_OP(code_) \
     .op_code = (code_)
 
-_Static_assert(BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT ==
+_Static_assert(BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT ==
                    BN_GPU_OP_FLAG_MATVEC_Q8K,
-               "quant Q8K matvec flag must match GPU IR flag");
-_Static_assert(BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K ==
+               "quant K-quant dot matvec flag must match GPU IR flag");
+_Static_assert(BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT ==
                    BN_GPU_OP_FLAG_MATVEC_EXACT_Q6K,
-               "quant exact Q6K matvec flag must match GPU IR flag");
+               "quant exact K-quant matvec flag must match GPU IR flag");
 
 static int emit_context_reserve_lowering(BnTransformerGPUEmitContext *ctx,
                                          int needed);

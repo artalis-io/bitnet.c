@@ -3917,7 +3917,7 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_gpu_fused_gateup_silu_cap(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CAP_Q4_FUSED_GATEUP_SILU);
     assert(bn_quant_format_gpu_matvec_kquant_dot_flag(BN_GGUF_TENSOR_Q4_K, 1) ==
-           BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT);
+           BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT);
     assert(bn_quant_format_gpu_matvec_kquant_dot_flag(BN_GGUF_TENSOR_Q4_K, 0) == 0);
     assert(bn_quant_format_gpu_matvec_kquant_dot_flag(BN_GGUF_TENSOR_Q8_0, 1) == 0);
     assert(bn_quant_format_supports_moe_routed_kquant_gateup(BN_GGUF_TENSOR_Q4_K,
@@ -4240,20 +4240,20 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_moe_down_small_kquant_f32_cache_supported(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_backend_quant_gpu_matvec_kquant_dot_flag(
-               BN_GGUF_TENSOR_Q4_K, 1) == BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT);
+               BN_GGUF_TENSOR_Q4_K, 1) == BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT);
     assert(bn_backend_quant_gpu_matvec_kquant_dot_flag(
                BN_GGUF_TENSOR_Q4_K, 0) == 0);
     assert(bn_backend_quant_gpu_matvec_kquant_dot_flag(
                BN_GGUF_TENSOR_Q8_0, 1) == 0);
     assert(bn_backend_quant_gpu_matvec_exact_kquant_flag(
                BN_GGUF_TENSOR_Q6_K, 1) ==
-           BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K);
+           BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT);
     assert(bn_backend_quant_gpu_matvec_exact_kquant_flag(
                BN_GGUF_TENSOR_Q6_K, 0) == 0);
     assert(bn_backend_quant_gpu_matvec_exact_kquant_flag(
                BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_quant_format_gpu_matvec_exact_kquant_flag(BN_GGUF_TENSOR_Q6_K, 1) ==
-           BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K);
+           BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT);
     assert(bn_quant_format_gpu_matvec_exact_kquant_flag(BN_GGUF_TENSOR_Q6_K, 0) == 0);
     assert(bn_quant_format_gpu_matvec_exact_kquant_flag(BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q5_K));
