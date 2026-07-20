@@ -1,6 +1,6 @@
 #include "transformer_cpu_backend_internal.h"
 #include "backend_quant.h"
-#include "model_arch.h"
+#include "model_internal.h"
 
 #include <stdlib.h>
 
@@ -123,15 +123,15 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
 }
 
 int bn_transformer_cpu_activation_is_relu2(int activation) {
-    return bn_model_arch_activation_is_relu2(activation);
+    return bn_model_activation_is_relu2(activation);
 }
 
 int bn_transformer_cpu_activation_is_gelu(int activation) {
-    return bn_model_arch_activation_is_gelu(activation);
+    return bn_model_activation_is_gelu(activation);
 }
 
 int bn_transformer_cpu_activation_uses_silu_path(int activation) {
-    return bn_model_arch_activation_uses_silu_path(activation);
+    return bn_model_activation_uses_silu_path(activation);
 }
 
 uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {

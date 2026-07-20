@@ -2,6 +2,7 @@
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_arch.h"
+#include "model_internal.h"
 #include "../moe_internal.h"
 
 #include <stdlib.h>
@@ -745,15 +746,15 @@ int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
 }
 
 int bn_transformer_prefill_activation_is_relu2(int activation) {
-    return bn_model_arch_activation_is_relu2(activation);
+    return bn_model_activation_is_relu2(activation);
 }
 
 int bn_transformer_prefill_activation_is_gelu(int activation) {
-    return bn_model_arch_activation_is_gelu(activation);
+    return bn_model_activation_is_gelu(activation);
 }
 
 int bn_transformer_prefill_activation_uses_silu_path(int activation) {
-    return bn_model_arch_activation_uses_silu_path(activation);
+    return bn_model_activation_uses_silu_path(activation);
 }
 
 int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,

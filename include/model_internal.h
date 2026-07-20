@@ -47,5 +47,8 @@ int bn_model_quant_dequant_row(int type,
                                int row,
                                int n,
                                float *out);
+int bn_model_activation_is_relu2(int activation);
+int bn_model_activation_is_gelu(int activation);
+int bn_model_activation_uses_silu_path(int activation);
 
 #endif // BN_MODEL_INTERNAL_H
