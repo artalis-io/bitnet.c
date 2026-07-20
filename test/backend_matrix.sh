@@ -2605,7 +2605,7 @@ if awk '/^int bn_gpu_policy_moe_all_f16_cache_forced/{flag=1} /^static int gpu_p
     fail=1
 fi
 
-if awk '/^int bn_gpu_policy_matmul_batch_enabled/{flag=1} /^size_t bn_gpu_policy_max_storage_binding_bytes/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1 ||
+if awk '/^int bn_gpu_policy_matvec_disabled/{flag=1} /^size_t bn_gpu_policy_max_storage_binding_bytes/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1 ||
    awk '/^int bn_gpu_policy_cuda_cublas_matmul_enabled/{flag=1} /^int bn_gpu_policy_moe_route_all_active_two/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
     echo "src/gpu_policy.c public matmul/K-quant policy helpers must compose local env policy helpers"
     fail=1
