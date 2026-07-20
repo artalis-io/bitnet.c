@@ -20401,31 +20401,31 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (bn_backend_quant_moe_down_uses_down_kquant(down_type)) {
                         int use_moe_down_float_path = cuda_use_moe_down_float_path();
                         int moe_all_active_two_pair_down_enabled =
-                            bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled();
+                            bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_enabled();
                         int moe_all_active_two_pair_down_f32_layer =
                             moe_all_active_two_kquant &&
                             down->f32_data &&
                             moe_all_active_two_pair_down_enabled &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_pair_down_f32_layers_disabled() &&
-                            bn_gpu_policy_all_active_two_kquant_q6k_pair_down_f32_layer_selected(moe_layer);
-                        int moe_all_active_two_q6k_ordered_down =
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layers_disabled() &&
+                            bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layer_selected(moe_layer);
+                        int moe_all_active_two_ordered_quant_down =
                             moe_all_active_two_kquant &&
-                            bn_gpu_policy_all_active_two_kquant_q6k_ordered_down_enabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_ordered_down_disabled();
+                            bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_enabled() &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_disabled();
                         int moe_all_active_two_allow_f32_down_default =
                             !moe_all_active_two_fast_moe_ffn ||
-                            bn_gpu_policy_all_active_two_kquant_q6k_f32_down_default_enabled();
+                            bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_enabled();
                         int moe_all_active_two_f32_down_default =
                             moe_all_active_two_kquant &&
                             down->f32_data &&
-                            !moe_all_active_two_q6k_ordered_down &&
+                            !moe_all_active_two_ordered_quant_down &&
                             !moe_all_active_two_pair_down_enabled &&
                             moe_all_active_two_allow_f32_down_default &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_f32_down_default_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_disabled();
                         int moe_all_active_two_f32_down =
                             (moe_all_active_two_f32_down_default ||
                              moe_all_active_two_pair_down_f32_layer) &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_f32_all_active_down_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_all_active_disabled();
                         int moe_all_active_two_disable_pair_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
@@ -20433,7 +20433,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int moe_all_active_two_disable_f32_cache =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_f32_cache_enabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled();
                         int use_moe_down_pair_path =
                             cuda_use_moe_down_pair_path(
                                 moe_all_active_two_f32_down_default,
@@ -20446,18 +20446,18 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         int moe_all_active_two_float_4row_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_float_4row_down_default_disabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_float_4row_down_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled() &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled();
                         int moe_all_active_two_exact_down_layer_selected =
-                            bn_gpu_policy_all_active_two_kquant_q6k_f32_exact_4row_down_layer_selected(
+                            bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(
                                 moe_layer);
                         int moe_all_active_two_f32_exact_4row_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
                             down->f32_data &&
                             moe_all_active_two_exact_down_layer_selected &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_f32_exact_4row_down_default_disabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_q6k_f32_exact_4row_down_disabled();
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled() &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled();
                         if (moe_all_active_two_f32_exact_4row_down) {
                             int row4_blocks = (dim + 3) / 4;
                             float skip_eps =
@@ -20498,18 +20498,18 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, n_experts, k);
                         } else if (use_moe_down_pair_path) {
-                            int use_q6k_all_active_two_accum =
+                            int use_all_active_two_down_accum =
                                 cuda_use_all_active_two_kquant_moe_down_accum(
                                     moe_all_active_two_kquant);
-                            int use_q6k_pair4_sum =
+                            int use_moe_down_pair4_sum =
                                 cuda_use_all_active_two_kquant_moe_down_pair4_sum(
                                     moe_all_active_two_kquant);
-                            int use_q6k_k8_4row_sum =
+                            int use_moe_down_k8_4row_sum =
                                 cuda_use_moe_down_prepared_k8_4row_sum(
                                     moe_all_active_two_kquant, k, hidden);
-                            int use_q6k_k8_8row_sum =
+                            int use_moe_down_k8_8row_sum =
                                 cuda_use_moe_down_prepared_k8_8row_sum(
-                                    use_q6k_k8_4row_sum, hidden);
+                                    use_moe_down_k8_4row_sum, hidden);
                             if (cuda_ensure_q8_k(ctx, hidden, k) != 0 ||
                                 cuda_ensure_prefill(ctx,
                                     (size_t)k * (size_t)dim) != 0)
@@ -20530,13 +20530,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 profile_ms[BN_CUDA_PROFILE_MOE_MID_QUANT] += (double)ms;
                                 cudaEventRecord(moe_ev_start, ctx->exec_stream);
                             }
-                            if (moe_all_active_two_q6k_ordered_down) {
+                            if (moe_all_active_two_ordered_quant_down) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                     moe_q6k_down_routed_q8k_ordered_kernel,
                                     (dim + 127) / 128, 128, 0,
                                     out, (const BnBlockQ6K *)down->data,
                                     mid_q, route, dim, hidden, n_experts, k);
-                            } else if (use_q6k_pair4_sum) {
+                            } else if (use_moe_down_pair4_sum) {
                                 if (cuda_use_all_active_two_kquant_moe_down_fixed(
                                         moe_all_active_two_kquant)) {
                                     int pair4_sum_blocks =
@@ -20555,14 +20555,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
                                 }
-                            } else if (use_q6k_k8_8row_sum) {
+                            } else if (use_moe_down_k8_8row_sum) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                     moe_q6k_down_routed_q8k_k8_8row_sum_kernel,
                                     (dim + 7) / 8, route_threads, 0,
                                     out, (const BnBlockQ6K *)down->data,
                                     mid_q, route, dim, hidden,
                                     n_experts, k);
-                            } else if (use_q6k_k8_4row_sum) {
+                            } else if (use_moe_down_k8_4row_sum) {
                                 int fuse_resid_norm =
                                     cuda_use_moe_down_resid_rmsnorm_fuse() &&
                                     next &&
@@ -20613,7 +20613,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         mid_q, route, dim, hidden,
                                         n_experts, k);
                                 }
-                            } else if (use_q6k_all_active_two_accum) {
+                            } else if (use_all_active_two_down_accum) {
                                 if (!cuda_use_all_active_two_kquant_moe_down_accum_4row()) {
                                     int all_active_two_blocks =
                                         ((dim + 1) / 2 + warps - 1) / warps;
@@ -20654,10 +20654,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     mid_q, route, dim, hidden,
                                     n_experts, k);
                             }
-                            if (!use_q6k_pair4_sum &&
-                                !use_q6k_k8_4row_sum &&
-                                !use_q6k_all_active_two_accum &&
-                                !moe_all_active_two_q6k_ordered_down) {
+                            if (!use_moe_down_pair4_sum &&
+                                !use_moe_down_k8_4row_sum &&
+                                !use_all_active_two_down_accum &&
+                                !moe_all_active_two_ordered_quant_down) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                     moe_sum_pairs_kernel,
                                     (dim + threads - 1) / threads, threads, 0,
