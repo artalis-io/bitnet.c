@@ -373,8 +373,9 @@ int      bn_quant_format_logits_q6_f32_cache_supported(int type);
 int      bn_quant_format_moe_all_f16_cache_supported(int type);
 int      bn_quant_format_moe_down_q6_f32_cache_supported(int type);
 int      bn_quant_format_moe_down_cublas_cache_supported(int type);
-int      bn_quant_format_moe_down_cublas_cache_elem_bytes(int type,
-                                                          int q6_as_f16);
+int      bn_quant_format_moe_down_cublas_cache_elem_bytes(
+    int type,
+    int down_kquant_f16_cache);
 int      bn_quant_format_moe_down_q4_f32_cache_supported(int type);
 int      bn_quant_format_moe_quant_only_after_cache(int type,
                                                     int native_quant_f16_cache);
@@ -382,7 +383,8 @@ int      bn_quant_format_lazy_moe_aux_cache_candidate(int type);
 int      bn_quant_format_moe_prefers_quant_only(int type);
 int      bn_quant_format_aux_cache_supported(int type);
 int      bn_quant_format_aux_cache_can_use_f16(int type);
-int      bn_quant_format_aux_cache_uses_f32(int type, int q6_as_f16);
+int      bn_quant_format_aux_cache_uses_f32(int type,
+                                            int down_kquant_f16_cache);
 int      bn_quant_format_aux_cache_prefers_large_budget(int type);
 int      bn_quant_format_eager_aux_cache_supported(int type);
 int      bn_quant_format_gpu_matvec_supported(int type);

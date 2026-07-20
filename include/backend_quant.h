@@ -549,9 +549,9 @@ static inline int bn_backend_quant_moe_down_cublas_cache_supported(int type) {
 }
 
 static inline int bn_backend_quant_moe_down_cublas_cache_elem_bytes(
-    int type, int q6_as_f16) {
-    return bn_quant_format_moe_down_cublas_cache_elem_bytes(type,
-                                                            q6_as_f16);
+    int type, int down_kquant_f16_cache) {
+    return bn_quant_format_moe_down_cublas_cache_elem_bytes(
+        type, down_kquant_f16_cache);
 }
 
 static inline int bn_backend_quant_moe_down_q4_f32_cache_supported(int type) {
@@ -585,9 +585,10 @@ static inline int bn_backend_quant_aux_cache_can_use_f16(int type) {
     return bn_quant_format_aux_cache_can_use_f16(type);
 }
 
-static inline int bn_backend_quant_aux_cache_uses_f32(int type,
-                                                      int q6_as_f16) {
-    return bn_quant_format_aux_cache_uses_f32(type, q6_as_f16);
+static inline int bn_backend_quant_aux_cache_uses_f32(
+    int type,
+    int down_kquant_f16_cache) {
+    return bn_quant_format_aux_cache_uses_f32(type, down_kquant_f16_cache);
 }
 
 static inline int bn_backend_quant_aux_cache_prefers_large_budget(int type) {
@@ -611,9 +612,9 @@ static inline int bn_backend_quant_aux_cache_add_q6_f32(
 }
 
 static inline int bn_backend_quant_aux_cache_f32_storage(
-    int type, int force_q4_f32, int q6_as_f16) {
+    int type, int force_q4_f32, int down_kquant_f16_cache) {
     return force_q4_f32 ||
-           bn_backend_quant_aux_cache_uses_f32(type, q6_as_f16);
+           bn_backend_quant_aux_cache_uses_f32(type, down_kquant_f16_cache);
 }
 
 typedef enum BnBackendQuantAuxCacheDequant {
@@ -632,7 +633,7 @@ typedef enum BnBackendQuantAuxCacheDequant {
 static inline BnBackendQuantAuxCacheDequant
 bn_backend_quant_aux_cache_dequant_route(int type,
                                          int force_q4_f32,
-                                         int q6_as_f16) {
+                                         int down_kquant_f16_cache) {
     if (bn_backend_quant_is_bf16(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16;
     if (bn_backend_quant_is_q8_0(type))
@@ -648,7 +649,7 @@ bn_backend_quant_aux_cache_dequant_route(int type,
     if (bn_backend_quant_is_q5k(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16;
     if (bn_backend_quant_moe_down_uses_down_kquant(type))
-        return q6_as_f16
+        return down_kquant_f16_cache
             ? BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16
             : BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32;
     return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE;

@@ -325,10 +325,10 @@ int bn_quant_format_moe_down_cublas_cache_supported(int type) {
 }
 
 int bn_quant_format_moe_down_cublas_cache_elem_bytes(int type,
-                                                     int q6_as_f16) {
+                                                     int down_kquant_f16_cache) {
     if (!bn_quant_format_moe_down_cublas_cache_supported(type))
         return 0;
-    return q6_as_f16 ? (int)sizeof(uint16_t) : (int)sizeof(float);
+    return down_kquant_f16_cache ? (int)sizeof(uint16_t) : (int)sizeof(float);
 }
 
 int bn_quant_format_moe_down_q4_f32_cache_supported(int type) {
@@ -367,8 +367,9 @@ int bn_quant_format_aux_cache_can_use_f16(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_AUX_CACHE_F16);
 }
 
-int bn_quant_format_aux_cache_uses_f32(int type, int q6_as_f16) {
-    return bn_quant_format_aux_cache_can_use_f16(type) && !q6_as_f16;
+int bn_quant_format_aux_cache_uses_f32(int type, int down_kquant_f16_cache) {
+    return bn_quant_format_aux_cache_can_use_f16(type) &&
+           !down_kquant_f16_cache;
 }
 
 int bn_quant_format_aux_cache_prefers_large_budget(int type) {
