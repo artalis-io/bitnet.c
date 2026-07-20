@@ -105,7 +105,7 @@ if grep -n 'int routed_q4 = gate_type == BN_GGUF_TENSOR_Q4_K\|int routed_q8 = ga
     fail=1
 fi
 
-if sed -n '/^static int cuda_ops_have_q8_moe_routed_ffn/,/^static int cuda_ops_have_moe_all_active_two_kquant_routed_ffn/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
+if sed -n '/^static int cuda_ops_have_native_quant_moe_routed_ffn/,/^static int cuda_ops_have_moe_all_active_two_kquant_routed_ffn/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1 ||
    sed -n '/^static int cuda_ops_have_moe_all_active_two_kquant_routed_ffn/,/^static int cuda_ops_have_logits/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q4_K\|(int)op->p\[3\] == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1 ||
    sed -n '/^static int cuda_ops_have_moe_cublas_decode/,/^static int cuda_ops_moe_max_experts/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q4_K\|(int)op->p\[3\] == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for routed MoE graph quant predicates"
@@ -1363,6 +1363,11 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q4K_Q8K_MOE_GATEUP")\|getenv("BN_CUDA_DISABLE
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q4k_moe_down_f32_cache_enabled\|bn_gpu_policy_cuda_q4k_moe_pair_down_enabled\|bn_gpu_policy_cuda_q4k_moe_down_8row_enabled\|bn_gpu_policy_cuda_q4k_q8k_moe_gateup_enabled\|bn_gpu_policy_cuda_q4k_moe_gateup_8row_enabled\|bn_gpu_policy_cuda_q4k_moe_gateup_split_enabled\|bn_gpu_policy_cuda_q8_moe_q8_1_batch_enabled\|bn_gpu_policy_cuda_q8_moe_q8x_enabled\|bn_gpu_policy_cuda_q8_moe_gateup_2row_enabled\|bn_gpu_policy_cuda_q8_moe_down_4row_enabled\|bn_gpu_policy_cuda_q8_moe_down_2row_enabled\|bn_gpu_policy_cuda_moe_q4k_q8k_dot_enabled\|bn_gpu_policy_cuda_moe_q4k_all_active_two_fixed_4row_enabled\|bn_gpu_policy_cuda_moe_q4k_gateup_4row_disabled' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA MoE prepared/block policy helpers must use behavior names, not Q4/Q8 facade names"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
@@ -1400,9 +1405,9 @@ for fn in \
     cuda_use_moe_down_prepared_pair_4row \
     cuda_use_moe_down_f32_cache \
     cuda_use_moe_down_f16_cache \
-    cuda_use_q4k_moe_down_f32_cache \
-    cuda_use_q4k_moe_pair_down \
-    cuda_use_q4k_moe_down_8row
+    cuda_use_moe_down_aux_f32_cache \
+    cuda_use_moe_down_prepared_pair8 \
+    cuda_use_moe_down_prepared_8row
 do
     if ! awk -v fn="$fn" '
         $0 ~ "static int " fn "\\(" { in_fn=1 }
