@@ -143,6 +143,11 @@ void bn_transformer_cpu_quant_matvec_prepared_flags(
     int8_t *quantized_buf,
     BnThreadPool *pool,
     uint32_t flags);
+void bn_transformer_cpu_quant_matvec_batch(const BnMatvecTask *tasks,
+                                           int n_tasks,
+                                           const float *x,
+                                           int8_t *quantized_buf,
+                                           BnThreadPool *pool);
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,

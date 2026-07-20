@@ -147,6 +147,14 @@ void bn_transformer_cpu_quant_matvec_prepared_flags(
                                    pool, flags);
 }
 
+void bn_transformer_cpu_quant_matvec_batch(const BnMatvecTask *tasks,
+                                           int n_tasks,
+                                           const float *x,
+                                           int8_t *quantized_buf,
+                                           BnThreadPool *pool) {
+    bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf, pool);
+}
+
 #if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_residual_add_neon(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 4)

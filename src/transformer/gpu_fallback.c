@@ -8,7 +8,6 @@
 #include "transformer_rmsnorm_internal.h"
 #include "moe.h"
 #include "platform.h"
-#include "quant.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -41,8 +40,9 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
     if (n_tasks > 8) {
         prepared = (BnMatvecTask *)malloc((size_t)n_tasks * sizeof(*prepared));
         if (!prepared) {
-            bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
-                                  bn_model_pool(m));
+            bn_transformer_cpu_quant_matvec_batch(tasks, n_tasks, x,
+                                                  quantized_buf,
+                                                  bn_model_pool(m));
             return;
         }
     }
@@ -53,10 +53,19 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
         prepared[i].flags |=
             bn_transformer_cpu_force_float_kquant_task_flags(&m->config);
     }
-    bn_quant_matvec_batch(prepared, n_tasks, x, quantized_buf,
-                          bn_model_pool(m));
+    bn_transformer_cpu_quant_matvec_batch(prepared, n_tasks, x, quantized_buf,
+                                          bn_model_pool(m));
     if (prepared != inline_tasks)
         free(prepared);
+}
+
+static void fallback_cpu_matvec(const BnModel *m,
+                                float *out,
+                                const BnQWeight *W,
+                                const float *x,
+                                int8_t *quantized_buf) {
+    BnMatvecTask task = { out, W, NULL, 0 };
+    fallback_cpu_matvec_batch(m, &task, 1, x, quantized_buf);
 }
 
 int bn_transformer_gpu_fallback_ssm_layer(
@@ -271,17 +280,15 @@ static void fallback_cpu_forward_ffn_from_xb(BnModel *m,
             { s->hb, &lw->ffn.ffn_gate, NULL, 0 },
             { s->hb2, &lw->ffn.ffn_up, NULL, 0 },
         };
-        bn_quant_matvec_batch(ffn, 2, s->xb, s->x_q, bn_model_pool(m));
+        fallback_cpu_matvec_batch(m, ffn, 2, s->xb, s->x_q);
     } else {
-        bn_quant_matvec(s->hb, &lw->ffn.ffn_up, s->xb, s->x_q,
-                        bn_model_pool(m));
+        fallback_cpu_matvec(m, s->hb, &lw->ffn.ffn_up, s->xb, s->x_q);
     }
     bn_transformer_cpu_apply_ffn_activation(s, ffn_plan, hidden_dim, 0);
     if (ffn_plan->has_sub_norm)
         fallback_rmsnorm(s->hb, s->hb, lw->norm.ffn_sub_norm,
                          hidden_dim, m->config.norm_eps);
-    bn_quant_matvec(s->xb, &lw->ffn.ffn_down, s->hb, s->x_q,
-                    bn_model_pool(m));
+    fallback_cpu_matvec(m, s->xb, &lw->ffn.ffn_down, s->hb, s->x_q);
     if (bn_transformer_ffn_uses_post_norm(&m->config) &&
         lw->norm.ffn_post_norm)
         fallback_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm,
@@ -337,8 +344,7 @@ int bn_transformer_gpu_fallback_cpu_ffn_down(
             gpu, down_input_buf, s->hb,
             (size_t)hidden_dim * sizeof(float)) != 0)
         return -1;
-    bn_quant_matvec(s->xb, &lw->ffn.ffn_down, s->hb, s->x_q,
-                    bn_model_pool(m));
+    fallback_cpu_matvec(m, s->xb, &lw->ffn.ffn_down, s->hb, s->x_q);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);
     if (bn_transformer_gpu_write_x(gpu, s->x,
                                    (size_t)dim * sizeof(float)) != 0)
@@ -369,8 +375,7 @@ int bn_transformer_gpu_debug_compare_ffn_down(
                                     (size_t)dim * sizeof(float)) != 0)
         return -1;
 
-    bn_quant_matvec(s->xb, &lw->ffn.ffn_down, s->hb, s->x_q,
-                    bn_model_pool(m));
+    fallback_cpu_matvec(m, s->xb, &lw->ffn.ffn_down, s->hb, s->x_q);
 
     double sum_abs = 0.0;
     double sum_sq = 0.0;
@@ -435,10 +440,9 @@ static void debug_quant_matvec_prepared(BnModel *m,
                                         const BnQWeight *W,
                                         const float *x,
                                         int8_t *quantized_buf) {
-    BnMatvecTask task = {
-        out, W, debug_prepared_qweight(m, W), 0
-    };
-    bn_quant_matvec_batch(&task, 1, x, quantized_buf, bn_model_pool(m));
+    bn_transformer_cpu_quant_matvec_prepared_flags(
+        out, W, debug_prepared_qweight(m, W), x, quantized_buf,
+        bn_model_pool(m), 0);
 }
 
 static void debug_compare_q8_activation(const BnGPUBackend *gpu,
@@ -724,11 +728,9 @@ int bn_transformer_gpu_debug_compare_attention(
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
     fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
-    bn_quant_matvec(s->q, &lw->attn.wq, s->xb, s->x_q, bn_model_pool(m));
-    bn_quant_matvec(key_cache_row, &lw->attn.wk, s->xb, s->x_q,
-                    bn_model_pool(m));
-    bn_quant_matvec(value_cache_row, &lw->attn.wv, s->xb, s->x_q,
-                    bn_model_pool(m));
+    fallback_cpu_matvec(m, s->q, &lw->attn.wq, s->xb, s->x_q);
+    fallback_cpu_matvec(m, key_cache_row, &lw->attn.wk, s->xb, s->x_q);
+    fallback_cpu_matvec(m, value_cache_row, &lw->attn.wv, s->xb, s->x_q);
 
     if (lw->attn.q_bias) {
         for (int i = 0; i < shape.q_dim; i++) s->q[i] += lw->attn.q_bias[i];
@@ -766,7 +768,7 @@ int bn_transformer_gpu_debug_compare_attention(
     };
     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
 
-    bn_quant_matvec(s->xb2, &lw->attn.wo, s->xb, s->x_q, bn_model_pool(m));
+    fallback_cpu_matvec(m, s->xb2, &lw->attn.wo, s->xb, s->x_q);
     bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
     double sum_abs = 0.0;
@@ -862,11 +864,9 @@ int bn_transformer_gpu_debug_compare_gqa(
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
     fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
-    bn_quant_matvec(s->q, &lw->attn.wq, s->xb, s->x_q, bn_model_pool(m));
-    bn_quant_matvec(key_cache_row, &lw->attn.wk, s->xb, s->x_q,
-                    bn_model_pool(m));
-    bn_quant_matvec(value_cache_row, &lw->attn.wv, s->xb, s->x_q,
-                    bn_model_pool(m));
+    fallback_cpu_matvec(m, s->q, &lw->attn.wq, s->xb, s->x_q);
+    fallback_cpu_matvec(m, key_cache_row, &lw->attn.wk, s->xb, s->x_q);
+    fallback_cpu_matvec(m, value_cache_row, &lw->attn.wv, s->xb, s->x_q);
 
     if (lw->attn.q_bias) {
         for (int i = 0; i < dim; i++) s->q[i] += lw->attn.q_bias[i];
@@ -1024,8 +1024,7 @@ int bn_transformer_gpu_fallback_logits(
         return -1;
     }
     double t_read = bn_platform_time_ms();
-    bn_quant_matvec(s->logits, logits->cpu_weight, s->xb, s->x_q,
-                    bn_model_pool(m));
+    fallback_cpu_matvec(m, s->logits, logits->cpu_weight, s->xb, s->x_q);
     double t_logits = bn_platform_time_ms();
     if (bn_transformer_gpu_profile_level() >= 3) {
         fprintf(stderr,
