@@ -6,14 +6,14 @@
 
 static inline int bn_gpu_quant_split_op_code(int type) {
     switch (bn_backend_quant_gpu_split_cap(type)) {
-        case BN_GPU_CAP_Q4_MATVEC_SPLIT:
-        case BN_GPU_CAP_Q5_MATVEC_SPLIT:
+        case BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT:
+        case BN_GPU_CAP_MIDBIT_BLOCK32_MATVEC_SPLIT:
             return BN_GPU_CODE_MATVEC_SPLIT;
-        case BN_GPU_CAP_Q4K_MATVEC_SPLIT:
+        case BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT:
             return BN_GPU_CODE_Q4K_MATVEC_SPLIT;
-        case BN_GPU_CAP_Q5K_MATVEC_SPLIT:
+        case BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT:
             return BN_GPU_CODE_Q5K_MATVEC_SPLIT;
-        case BN_GPU_CAP_Q8_MATVEC_SPLIT:
+        case BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT:
             return BN_GPU_CODE_Q8_MATVEC_SPLIT;
         default: return 0;
     }

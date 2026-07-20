@@ -599,13 +599,13 @@ static void test_gpu_capability_routing(void) {
                                               BN_GGUF_TENSOR_Q4_0,
                                               BN_GGUF_TENSOR_TQ1_0));
 
-    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
-               BN_GPU_CAP_Q5_MATVEC_SPLIT |
-               BN_GPU_CAP_Q4K_MATVEC_SPLIT |
-               BN_GPU_CAP_Q8_MATVEC_SPLIT |
-               BN_GPU_CAP_Q5K_MATVEC_SPLIT |
-               BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
-               BN_GPU_CAP_Q5_FUSED_GATEUP_SILU |
+    gpu.caps = BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
+               BN_GPU_CAP_MIDBIT_BLOCK32_MATVEC_SPLIT |
+               BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU |
+               BN_GPU_CAP_MIDBIT_BLOCK32_FUSED_GATEUP_SILU |
                BN_GPU_CAP_FLASH_ATTN;
     gpu.kind = BN_GPU_BACKEND_METAL;
 
@@ -713,7 +713,7 @@ static void test_gpu_capability_routing(void) {
         &gpu, BN_GGUF_TENSOR_Q4_0, 0));
     unsetenv("BN_GPU_DISABLE_FUSED_GATEUP");
     gpu.kind = BN_GPU_BACKEND_CUDA;
-    gpu.caps |= BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU;
+    gpu.caps |= BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU;
     unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
     assert(!bn_transformer_gpu_fused_gateup_silu_policy_allows(
         &gpu, BN_GGUF_TENSOR_Q5_K));
@@ -1264,7 +1264,7 @@ static void test_gpu_policy_helpers(void) {
     expert_map.up_rows = 32;
     expert_map.gate_cols = 64;
     expert_map.up_cols = 64;
-    gpu.caps = BN_GPU_CAP_Q4K_MATVEC_SPLIT;
+    gpu.caps = BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT;
     assert(bn_transformer_gpu_moe_gateup_split_supported(
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     assert(!bn_transformer_gpu_moe_gateup_split_supported(
@@ -1308,7 +1308,7 @@ static void test_gpu_policy_helpers(void) {
     up_w.type = BN_GGUF_TENSOR_Q4_K;
     up_w.rows = 32;
     up_w.cols = 64;
-    gpu.caps = BN_GPU_CAP_Q4K_MATVEC_SPLIT;
+    gpu.caps = BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT;
     assert(bn_transformer_gpu_dense_gateup_exact_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
@@ -1348,9 +1348,9 @@ static void test_gpu_policy_helpers(void) {
     packed_qkv_w.type = BN_GGUF_TENSOR_Q5_K;
     packed_qkv_w.rows = 64;
     packed_qkv_w.cols = 64;
-    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
-               BN_GPU_CAP_Q5K_MATVEC_SPLIT |
-               BN_GPU_CAP_Q8_MATVEC_SPLIT;
+    gpu.caps = BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
+               BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT;
     assert(bn_transformer_gpu_packed_qkv_split_supported(
         &gpu, &packed_qkv_w, 1, 0, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
     assert(!bn_transformer_gpu_packed_qkv_split_supported(
@@ -1389,7 +1389,7 @@ static void test_gpu_policy_helpers(void) {
     gpu.caps = 0;
     assert(!bn_transformer_gpu_qk_split_supported(
         &gpu, &q_w, &k_w, 32, 16, BN_GPU_CODE_MATVEC_SPLIT));
-    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT;
+    gpu.caps = BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT;
     assert(bn_transformer_gpu_ssm_qkvz_split_supported(
         &gpu, &q_w, BN_GPU_CODE_MATVEC_SPLIT));
     assert(!bn_transformer_gpu_ssm_qkvz_split_supported(
@@ -3635,11 +3635,11 @@ static void test_block_planning(void) {
     c.has_shared_expert = 1;
     c.shared_expert_intermediate_size = 2048;
 
-    gpu.caps = BN_GPU_CAP_Q4_MATVEC_SPLIT |
-               BN_GPU_CAP_Q4K_MATVEC_SPLIT |
-               BN_GPU_CAP_Q8_MATVEC_SPLIT |
-               BN_GPU_CAP_Q5K_MATVEC_SPLIT |
-               BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
+    gpu.caps = BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
+               BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT |
+               BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU |
                BN_GPU_CAP_FLASH_ATTN;
     gpu.kind = BN_GPU_BACKEND_METAL;
 

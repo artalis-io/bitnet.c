@@ -467,15 +467,15 @@ struct BnGPUBackend {
 
 // Backend capability bits
 #define BN_GPU_CAP_FLASH_ATTN  (1u << 0)  // fused flash attention shader available
-#define BN_GPU_CAP_Q8_MATVEC_SPLIT (1u << 1) // stacked Q8_0 split matvec shader available
-#define BN_GPU_CAP_Q5K_MATVEC_SPLIT (1u << 2) // Q5_K packed split matvec shader available
-#define BN_GPU_CAP_Q4_MATVEC_SPLIT (1u << 3) // stacked Q4_0 split matvec shader available
-#define BN_GPU_CAP_Q4_FUSED_GATEUP_SILU (1u << 4) // fused Q4_0 gate/up SiLU shader available
-#define BN_GPU_CAP_Q4K_MATVEC_SPLIT (1u << 5) // Q4_K packed split matvec shader available
-#define BN_GPU_CAP_Q5_FUSED_GATEUP_SILU (1u << 6) // fused Q5_0 gate/up SiLU shader available
-#define BN_GPU_CAP_Q5_MATVEC_SPLIT (1u << 7) // stacked Q5_0 split matvec shader available
-#define BN_GPU_CAP_Q8_FUSED_GATEUP_SILU (1u << 8) // fused Q8_0 gate/up SiLU shader available
-#define BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU (1u << 9) // fused Q5_K gate/up SiLU shader available
+#define BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT (1u << 1) // native-quant split matvec shader available
+#define BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT (1u << 2) // deinterleaved K-quant split matvec shader available
+#define BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT (1u << 3) // low-bit block32 split matvec shader available
+#define BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU (1u << 4) // low-bit block32 fused gate/up SiLU shader available
+#define BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT (1u << 5) // asymmetric K-quant split matvec shader available
+#define BN_GPU_CAP_MIDBIT_BLOCK32_FUSED_GATEUP_SILU (1u << 6) // mid-bit block32 fused gate/up SiLU shader available
+#define BN_GPU_CAP_MIDBIT_BLOCK32_MATVEC_SPLIT (1u << 7) // mid-bit block32 split matvec shader available
+#define BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU (1u << 8) // native-quant fused gate/up SiLU shader available
+#define BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU (1u << 9) // deinterleaved K-quant fused gate/up SiLU shader available
 #define BN_GPU_CAP_LAYERWISE_ROPE (1u << 10) // backend can vary RoPE frequency policy per layer
 
 #endif // BN_GPU_BACKEND_H

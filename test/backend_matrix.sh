@@ -60,6 +60,19 @@ if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'BN_GPU_CAP_Q8_MATVEC_SPLIT\|BN_GPU_CAP_Q5K_MATVEC_SPLIT\|BN_GPU_CAP_Q4_MATVEC_SPLIT\|BN_GPU_CAP_Q4_FUSED_GATEUP_SILU\|BN_GPU_CAP_Q4K_MATVEC_SPLIT\|BN_GPU_CAP_Q5_FUSED_GATEUP_SILU\|BN_GPU_CAP_Q5_MATVEC_SPLIT\|BN_GPU_CAP_Q8_FUSED_GATEUP_SILU\|BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU' \
+    include/gpu_backend.h \
+    src/gpu_quant_lowering_internal.h \
+    src/quant/registry.c \
+    src/gpu_cuda.cu \
+    src/gpu_metal.m \
+    src/gpu_wgpu.c \
+    test/test_gpu_backend.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "GPU backend capability bits must use behavior names, not quant-format names"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FLASH_FUSE")\|getenv("BN_CUDA_DISABLE_QK_NORM_ROPE_FUSE")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA QK norm rope fuse env policy"
     fail=1

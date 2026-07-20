@@ -21635,15 +21635,15 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     gpu->kind = BN_GPU_BACKEND_CUDA;
     gpu->max_storage_binding_size = (size_t)-1;
     gpu->caps = BN_GPU_CAP_FLASH_ATTN |
-                BN_GPU_CAP_Q4_MATVEC_SPLIT |
-                BN_GPU_CAP_Q5_MATVEC_SPLIT |
-                BN_GPU_CAP_Q4K_MATVEC_SPLIT |
-                BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
-                BN_GPU_CAP_Q5_FUSED_GATEUP_SILU |
-                BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU |
-                BN_GPU_CAP_Q8_FUSED_GATEUP_SILU |
-                BN_GPU_CAP_Q8_MATVEC_SPLIT |
-                BN_GPU_CAP_Q5K_MATVEC_SPLIT;
+                BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
+                BN_GPU_CAP_MIDBIT_BLOCK32_MATVEC_SPLIT |
+                BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT |
+                BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU |
+                BN_GPU_CAP_MIDBIT_BLOCK32_FUSED_GATEUP_SILU |
+                BN_GPU_CAP_DEINTERLEAVED_KQUANT_FUSED_GATEUP_SILU |
+                BN_GPU_CAP_NATIVE_QUANT_FUSED_GATEUP_SILU |
+                BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT |
+                BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT;
     return gpu;
 }
 

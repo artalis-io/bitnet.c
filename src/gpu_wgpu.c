@@ -2422,11 +2422,11 @@ BnGPUBackend *bn_gpu_wgpu_create(const char *shader_dir)
     gpu->write_activation  = wgpu_write_activation;
     gpu->read_activation   = wgpu_read_activation;
     gpu->ctx               = ctx;
-    gpu->caps              = BN_GPU_CAP_Q4_MATVEC_SPLIT |
-                             BN_GPU_CAP_Q4K_MATVEC_SPLIT |
-                             BN_GPU_CAP_Q4_FUSED_GATEUP_SILU |
-                             BN_GPU_CAP_Q8_MATVEC_SPLIT |
-                             BN_GPU_CAP_Q5K_MATVEC_SPLIT;
+    gpu->caps              = BN_GPU_CAP_LOWBIT_BLOCK32_MATVEC_SPLIT |
+                             BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT |
+                             BN_GPU_CAP_LOWBIT_BLOCK32_FUSED_GATEUP_SILU |
+                             BN_GPU_CAP_NATIVE_QUANT_MATVEC_SPLIT |
+                             BN_GPU_CAP_DEINTERLEAVED_KQUANT_MATVEC_SPLIT;
     gpu->kind              = BN_GPU_BACKEND_WEBGPU;
     gpu->max_storage_binding_size = (size_t)ctx->max_storage_binding_size;
 
