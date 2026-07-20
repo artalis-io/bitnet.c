@@ -1,5 +1,4 @@
 #include "transformer_plan_internal.h"
-#include "gpu_backend.h"
 #include "model_internal.h"
 #include "transformer_backend_internal.h"
 #include "transformer_cpu_backend_internal.h"

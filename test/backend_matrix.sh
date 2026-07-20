@@ -328,6 +328,11 @@ if grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' src/transformer/plan.c >
     fail=1
 fi
 
+if grep -n '#include "gpu_backend.h"' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use opaque planning types and GPU policy helpers instead of including backend GPU interfaces directly"
+    fail=1
+fi
+
 if rg -n 'bn_model_arch_cpu_force_float_kquant' \
     src/transformer \
     src/transformer.c \
