@@ -292,7 +292,7 @@ int bn_transformer_ffn_uses_gateup_split(
            bn_transformer_ffn_has_gate(c) &&
            gateup_stacked &&
            lw &&
-           bn_transformer_gpu_can_use_stacked_gateup(&lw->ffn.ffn_gate,
+           bn_transformer_gpu_can_stack_same_quant_format_gateup(&lw->ffn.ffn_gate,
                                                      &lw->ffn.ffn_up) &&
            bn_transformer_gpu_can_gateup_split_activation(
                gpu, lw->ffn.ffn_gate.type, c->act_type);

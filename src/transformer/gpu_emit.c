@@ -1075,7 +1075,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 0, 0, use_small_dense_exact);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
-                   bn_transformer_gpu_can_use_stacked_gateup(
+                   bn_transformer_gpu_can_stack_same_quant_format_gateup(
                        &lw->ffn.ffn_gate, &lw->ffn.ffn_up) &&
                    bn_transformer_gpu_can_matvec_split(res->gpu, lw->ffn.ffn_gate.type)) {
             int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
@@ -1763,7 +1763,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         int use_shared_fused_gateup =
             !prefer_shared_gateup_split &&
             shared->shared_gateup_stacked &&
-            bn_transformer_gpu_can_use_stacked_gateup(
+            bn_transformer_gpu_can_stack_same_quant_format_gateup(
                 &lw->shared.shared_gate, &lw->shared.shared_up) &&
             bn_transformer_gpu_can_fused_gateup_silu(
                 shared->gpu, lw->shared.shared_gate.type, 0);

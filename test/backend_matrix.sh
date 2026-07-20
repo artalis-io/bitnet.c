@@ -2662,6 +2662,11 @@ if grep -n 'bn_transformer_gpu_can_native_qkv' include/transformer_plan_internal
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_can_use_stacked_qk\|bn_transformer_gpu_can_use_stacked_gateup' include/transformer_plan_internal.h src/transformer/plan.c src/transformer/gpu_policy.c src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer stacked QK/gate-up helpers must name same-quant-format behavior explicitly"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_exact_q6k_flags' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU matvec flag policy must use behavior-named K-quant helpers"
     fail=1

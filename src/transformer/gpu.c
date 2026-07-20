@@ -753,7 +753,7 @@ static int gpu_qkv_resources_missing(
     int has_qkv = res && res->qkv_stacked && !plan->q_gated &&
                   !lw->attn.q_bias && !lw->attn.k_bias && !lw->attn.v_bias;
     int has_qk = res && res->qk_stacked && !plan->q_gated &&
-                 bn_transformer_gpu_can_use_stacked_qk_weights(
+                 bn_transformer_gpu_can_stack_same_quant_format_qk_weights(
                      &lw->attn.wq, &lw->attn.wk, plan->q_dim, plan->kv_dim);
     if (has_qkv)
         return 0;
@@ -780,7 +780,7 @@ static int gpu_dense_ffn_resources_missing(
         return 1;
     if (plan->has_gate && lw->ffn.ffn_gate.data) {
         int has_gateup = res && res->gateup_stacked &&
-                         bn_transformer_gpu_can_use_stacked_gateup(
+                         bn_transformer_gpu_can_stack_same_quant_format_gateup(
                              &lw->ffn.ffn_gate, &lw->ffn.ffn_up);
         if (!has_gateup && !(res && res->ffn_gate && res->ffn_up))
             return 1;

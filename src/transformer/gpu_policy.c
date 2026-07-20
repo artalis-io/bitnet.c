@@ -29,23 +29,23 @@ int bn_transformer_gpu_can_native_quant_qkv(int q_type, int k_type, int v_type) 
            bn_backend_quant_can_gpu_native(v_type);
 }
 
-int bn_transformer_gpu_can_use_stacked_qk(int q_type, int k_type) {
+int bn_transformer_gpu_can_stack_same_quant_format_qk(int q_type, int k_type) {
     return bn_backend_quant_stacked_pair_same_format(q_type, k_type);
 }
 
-int bn_transformer_gpu_can_use_stacked_qk_weights(const BnQWeight *q,
-                                                  const BnQWeight *k,
-                                                  int q_dim,
-                                                  int kv_dim) {
+int bn_transformer_gpu_can_stack_same_quant_format_qk_weights(const BnQWeight *q,
+                                                              const BnQWeight *k,
+                                                              int q_dim,
+                                                              int kv_dim) {
     return q && k &&
            q->rows == q_dim &&
            k->rows == kv_dim &&
            q->cols == k->cols &&
-           bn_transformer_gpu_can_use_stacked_qk(q->type, k->type);
+           bn_transformer_gpu_can_stack_same_quant_format_qk(q->type, k->type);
 }
 
-int bn_transformer_gpu_can_use_stacked_gateup(const BnQWeight *gate,
-                                              const BnQWeight *up) {
+int bn_transformer_gpu_can_stack_same_quant_format_gateup(const BnQWeight *gate,
+                                                          const BnQWeight *up) {
     return gate && up &&
            gate->rows == up->rows &&
            gate->cols == up->cols &&
@@ -317,7 +317,7 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     if (!gate || !up || bn_transformer_gpu_activation_is_relu2(activation) ||
         !bn_gpu_quant_split_op_is_asymmetric_kquant(split_op_code))
         return 0;
-    return bn_transformer_gpu_can_use_stacked_gateup(gate, up) &&
+    return bn_transformer_gpu_can_stack_same_quant_format_gateup(gate, up) &&
            bn_transformer_gpu_can_matvec_split(gpu, gate->type);
 }
 
