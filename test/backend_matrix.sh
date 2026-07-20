@@ -1241,7 +1241,7 @@ if ! grep -n 'bn_gpu_policy_metal_native_quant_prepared_enabled\|bn_gpu_policy_m
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_apply_q4_q8_prepared_override\|bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|metal_q4_prepared\|q4_prepared' include/gpu_policy.h src/gpu_policy.c src/main.c test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_gpu_policy_apply_q4_q8_prepared_override\|bn_gpu_policy_metal_q4_prepared_enabled\|bn_gpu_policy_metal_q4_prepared_upload_enabled\|metal_q4_prepared\|->q4_prepared[),;[:space:]]\|\.q4_prepared[),;[:space:]]\|int[[:space:]]\+q4_prepared[),;[:space:]]' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Metal prepared native-quant policy must use behavior names, not Q4-prepared helper names"
     fail=1
 fi

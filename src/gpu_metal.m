@@ -183,7 +183,7 @@ typedef struct {
     uint32_t      bias_offset;  /* u32 offset for fused bias, 0 = none */
     int           is_slab;
     int           q4_repacked;
-    int           q4_prepared;
+    int           native_quant_prepared;
 } BnMetalBuf;
 
 /* ── Shader compilation ────────────────────────────────────────────── */
@@ -351,7 +351,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
 
     int blocks_per_row = cols / 32;
     int n_blocks = rows * blocks_per_row;
-    if (allow_prepared && bn_gpu_policy_metal_q4_prepared_upload_enabled() &&
+    if (allow_prepared && bn_gpu_policy_metal_native_quant_prepared_upload_enabled() &&
         (rows % 4) == 0) {
         int n_groups = rows / 4;
         size_t n_group_blocks = (size_t)n_groups * (size_t)blocks_per_row;
@@ -413,7 +413,7 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
         buf->rows = rows;
         buf->cols = cols;
         buf->bias_offset = bias_offset;
-        buf->q4_prepared = 1;
+        buf->native_quant_prepared = 1;
         buf->q4_repacked = 1;
         return buf;
     }
@@ -1039,12 +1039,12 @@ static void metal_encode_q8k_quant(id<MTLComputeCommandEncoder> enc,
 
 static int metal_q4_q8_graph_path_supported(BnMetalCtx *ctx,
                                             int tensor_type,
-                                            int q4_prepared,
+                                            int native_quant_prepared,
                                             int prepared_path,
                                             id<MTLComputePipelineState> pipeline)
 {
     return bn_gpu_policy_metal_q4_q8_graph_path_supported(
-        tensor_type, ctx->q4_q8_enabled, q4_prepared, prepared_path,
+        tensor_type, ctx->q4_q8_enabled, native_quant_prepared, prepared_path,
         ctx->q8_quant_pipeline != nil, pipeline != nil);
 }
 
@@ -1059,18 +1059,18 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t x_size = (size_t)cols * sizeof(float);
     size_t out_size = (size_t)rows * sizeof(float);
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
-    int use_q4_prepared_q8 = bn_gpu_policy_metal_q4_q8_matvec_supported(
-        type, ctx->q4_q8_enabled, wbuf->q4_prepared,
+    int use_prepared_native_quant_q8 = bn_gpu_policy_metal_q4_q8_matvec_supported(
+        type, ctx->q4_q8_enabled, wbuf->native_quant_prepared,
         ctx->q8_quant_pipeline != nil, 0,
         ctx->q4_prepared_q8_matvec_pipeline != nil);
     int use_q4_q8 = bn_gpu_policy_metal_q4_q8_matvec_supported(
-        type, ctx->q4_q8_enabled, wbuf->q4_prepared,
+        type, ctx->q4_q8_enabled, wbuf->native_quant_prepared,
         ctx->q8_quant_pipeline != nil, ctx->q4_q8_matvec_pipeline != nil, 0);
     int use_q6_q8k = bn_gpu_policy_metal_q6_q8k_matvec_supported(
         type, cols, ctx->q8k_quant_pipeline != nil,
         ctx->q6_q8k_matvec_pipeline != nil);
-    if (wbuf->q4_prepared && !use_q4_prepared_q8) return -1;
-    if ((use_q4_prepared_q8 || use_q4_q8) &&
+    if (wbuf->native_quant_prepared && !use_prepared_native_quant_q8) return -1;
+    if ((use_prepared_native_quant_q8 || use_q4_q8) &&
         ensure_q8_scratch(ctx, cols, 1) != 0) return -1;
     if (use_q6_q8k && ensure_q8k_scratch(ctx, cols, 1) != 0) return -1;
 
@@ -1079,14 +1079,14 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     uint32_t params[8] = { (uint32_t)rows, (uint32_t)cols, 1, 0, 0, 0, 0, 0 };
     if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
 
-    uint32_t tile_rows = (use_q4_q8 && !use_q4_prepared_q8) ? 16 : 32;
+    uint32_t tile_rows = (use_q4_q8 && !use_prepared_native_quant_q8) ? 16 : 32;
     uint32_t wg_x = ((uint32_t)rows + tile_rows - 1) / tile_rows;
 
     @autoreleasepool {
         id<MTLCommandBuffer> cmd = [ctx->queue commandBuffer];
         id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
-        if (use_q4_prepared_q8) {
+        if (use_prepared_native_quant_q8) {
             metal_encode_q8_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
             [enc setComputePipelineState:ctx->q4_prepared_q8_matvec_pipeline];
             [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1139,7 +1139,7 @@ static int metal_matmul(void *vctx, float *out, void *W_buf, const float *X,
     BnMetalBuf *wbuf = (BnMetalBuf *)W_buf;
     if (!ctx || !wbuf || !X || !out) return -1;
     if (type < 0 || type >= BN_METAL_MAX_TYPES || !ctx->pipelines[type]) return -1;
-    if (wbuf->q4_prepared) return -1;
+    if (wbuf->native_quant_prepared) return -1;
 
     size_t x_size = (size_t)n_tokens * cols * sizeof(float);
     size_t out_size = (size_t)n_tokens * rows * sizeof(float);
@@ -1185,7 +1185,7 @@ static int metal_matvec_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
     int max_rows = 0;
     for (int i = 0; i < n_ops; i++) {
         BnMetalBuf *wbuf = (BnMetalBuf *)ops[i].W_buf;
-        if (wbuf && wbuf->q4_prepared)
+        if (wbuf && wbuf->native_quant_prepared)
             return -1;
         if (ops[i].rows > max_rows) max_rows = ops[i].rows;
     }
@@ -1327,12 +1327,12 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (op->p[6] && wbuf &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 1,
+                        ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->q4_prepared_q8_matvec_pipeline)) {
                     pipeline = ctx->q4_prepared_q8_matvec_pipeline;
                 } else if (op->p[6] && wbuf &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 0,
+                        ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->q4_q8_matvec_pipeline)) {
                     pipeline = ctx->q4_q8_matvec_pipeline;
                 } else if (op->type >= 0 && op->type < BN_METAL_MAX_TYPES) {
@@ -1346,28 +1346,28 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                        op->p[6] && op->W_buf &&
                        metal_q4_q8_graph_path_supported(
                            ctx, op->type,
-                           ((BnMetalBuf *)op->W_buf)->q4_prepared, 1,
+                           ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 1,
                            ctx->q4_prepared_q8_gateup_pipeline)) {
                 pipeline = ctx->q4_prepared_q8_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                        op->p[6] && op->W_buf &&
                        metal_q4_q8_graph_path_supported(
                            ctx, op->type,
-                           ((BnMetalBuf *)op->W_buf)->q4_prepared, 0,
+                           ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 0,
                            ctx->q4_q8_gateup_pipeline)) {
                 pipeline = ctx->q4_q8_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        (op->flags & 1u) && op->W_buf &&
                        metal_q4_q8_graph_path_supported(
                            ctx, op->type,
-                           ((BnMetalBuf *)op->W_buf)->q4_prepared, 1,
+                           ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 1,
                            ctx->q4_prepared_q8_split_pipeline)) {
                 pipeline = ctx->q4_prepared_q8_split_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        (op->flags & 1u) && op->W_buf &&
                        metal_q4_q8_graph_path_supported(
                            ctx, op->type,
-                           ((BnMetalBuf *)op->W_buf)->q4_prepared, 0,
+                           ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 0,
                            ctx->q4_q8_split_pipeline)) {
                 pipeline = ctx->q4_q8_split_pipeline;
             } else if (shader > 0 && shader < BN_GPU_SHADER_COUNT) {
@@ -1435,33 +1435,33 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 current_pso = nil;
             }
             BnMetalBuf *pre_wbuf = (BnMetalBuf *)op->W_buf;
-            int q4_q8_deferred_pso =
+            int native_quant_deferred_pso =
                 pre_wbuf &&
                 ((shader == BN_GPU_SHADER_MATVEC && op->p[6] &&
                   (metal_q4_q8_graph_path_supported(
-                       ctx, op->type, pre_wbuf->q4_prepared, 1,
+                       ctx, op->type, pre_wbuf->native_quant_prepared, 1,
                        ctx->q4_prepared_q8_matvec_pipeline) ||
                    metal_q4_q8_graph_path_supported(
-                       ctx, op->type, pre_wbuf->q4_prepared, 0,
+                       ctx, op->type, pre_wbuf->native_quant_prepared, 0,
                        ctx->q4_q8_matvec_pipeline))) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
                   (metal_q4_q8_graph_path_supported(
-                       ctx, op->type, pre_wbuf->q4_prepared, 1,
+                       ctx, op->type, pre_wbuf->native_quant_prepared, 1,
                        ctx->q4_prepared_q8_split_pipeline) ||
                    metal_q4_q8_graph_path_supported(
-                       ctx, op->type, pre_wbuf->q4_prepared, 0,
+                       ctx, op->type, pre_wbuf->native_quant_prepared, 0,
                        ctx->q4_q8_split_pipeline))) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
                   (metal_q4_q8_graph_path_supported(
-                       ctx, op->type, pre_wbuf->q4_prepared, 1,
+                       ctx, op->type, pre_wbuf->native_quant_prepared, 1,
                        ctx->q4_prepared_q8_gateup_pipeline) ||
                    metal_q4_q8_graph_path_supported(
-                       ctx, op->type, pre_wbuf->q4_prepared, 0,
+                       ctx, op->type, pre_wbuf->native_quant_prepared, 0,
                        ctx->q4_q8_gateup_pipeline))));
             /* Skip redundant PSO switch — avoids GPU instruction cache flush */
-            if (!q4_q8_deferred_pso && pipeline != current_pso) {
+            if (!native_quant_deferred_pso && pipeline != current_pso) {
                 [enc setComputePipelineState:pipeline];
                 current_pso = pipeline;
             }
@@ -1482,7 +1482,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (!wbuf) continue;
                 if (op->p[6] &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 1,
+                        ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->q4_prepared_q8_matvec_pipeline)) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
@@ -1507,7 +1507,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->p[6] &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 0,
+                        ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->q4_q8_matvec_pipeline)) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
@@ -1548,7 +1548,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:4];
                     [enc setBytes:params length:sizeof(params) atIndex:5];
                 } else {
-                    if (wbuf->q4_prepared)
+                    if (wbuf->native_quant_prepared)
                         return -1;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
@@ -1739,7 +1739,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
                 if ((op->flags & 1u) &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 1,
+                        ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->q4_prepared_q8_split_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
@@ -1757,7 +1757,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBytes:params length:sizeof(params) atIndex:6];
                 } else if ((op->flags & 1u) &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 0,
+                        ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->q4_q8_split_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
@@ -1782,7 +1782,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->rows] offset:0 atIndex:5];
                     [enc setBytes:params length:sizeof(params) atIndex:6];
                 } else {
-                    if (wbuf->q4_prepared)
+                    if (wbuf->native_quant_prepared)
                         return -1;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
@@ -1806,7 +1806,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
                 if (op->p[6] &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 1,
+                        ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->q4_prepared_q8_gateup_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
@@ -1822,7 +1822,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->p[6] &&
                     metal_q4_q8_graph_path_supported(
-                        ctx, op->type, wbuf->q4_prepared, 0,
+                        ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->q4_q8_gateup_pipeline)) {
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
@@ -1845,7 +1845,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else {
-                    if (wbuf->q4_prepared)
+                    if (wbuf->native_quant_prepared)
                         return -1;
                     [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
                     [enc setBuffer:ctx->act_bufs[op->buf_in] offset:0 atIndex:1];
@@ -1872,24 +1872,24 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             uint32_t tile_rows = 32;
             uint32_t threads_per_tg = 256;
             BnMetalBuf *grid_wbuf = (BnMetalBuf *)op->W_buf;
-            int q4_q8_tile =
+            int native_quant_tile =
                 grid_wbuf &&
                 ((shader == BN_GPU_SHADER_MATVEC &&
                   op->p[6] &&
                   metal_q4_q8_graph_path_supported(
-                      ctx, op->type, grid_wbuf->q4_prepared, 0,
+                      ctx, op->type, grid_wbuf->native_quant_prepared, 0,
                       ctx->q4_q8_matvec_pipeline)) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
                   metal_q4_q8_graph_path_supported(
-                      ctx, op->type, grid_wbuf->q4_prepared, 0,
+                      ctx, op->type, grid_wbuf->native_quant_prepared, 0,
                       ctx->q4_q8_split_pipeline)) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
                   metal_q4_q8_graph_path_supported(
-                      ctx, op->type, grid_wbuf->q4_prepared, 0,
+                      ctx, op->type, grid_wbuf->native_quant_prepared, 0,
                       ctx->q4_q8_gateup_pipeline)));
-            if (q4_q8_tile) {
+            if (native_quant_tile) {
                 tile_rows = 16;
                 threads_per_tg = 128;
             }
