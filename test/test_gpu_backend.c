@@ -1060,6 +1060,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MATVEC");
     unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_0");
+    unsetenv("BN_CUDA_DISABLE_LEGACY_5BIT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q5_0");
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q4_K");
@@ -1096,7 +1097,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6_K");
     setenv("BN_CUDA_DISABLE_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_NATIVE_QUANT_MATVEC", "1", 1);
-    setenv("BN_CUDA_DISABLE_Q5_0", "1", 1);
+    setenv("BN_CUDA_DISABLE_LEGACY_5BIT_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_DEINTERLEAVED_KQUANT_MATVEC", "1", 1);
     setenv("BN_CUDA_DISABLE_DOWN_KQUANT_MATVEC", "1", 1);
@@ -1119,6 +1120,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MATVEC");
     unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_0");
+    unsetenv("BN_CUDA_DISABLE_LEGACY_5BIT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q5_0");
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q4_K");
@@ -1128,6 +1130,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_Q6_K");
     unsetenv("BN_CUDA_DISABLE_PREPARED_NATIVE_QUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_K");
+    setenv("BN_CUDA_DISABLE_Q5_0", "1", 1);
+    assert(bn_gpu_policy_matvec_type_disabled(BN_GGUF_TENSOR_Q5_0));
+    unsetenv("BN_CUDA_DISABLE_Q5_0");
     setenv("BN_CUDA_DISABLE_Q8_0", "1", 1);
     setenv("BN_CUDA_DISABLE_Q8_K", "1", 1);
     assert(bn_gpu_policy_matvec_type_disabled(BN_GGUF_TENSOR_Q8_0));
@@ -1231,6 +1236,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE");
     unsetenv("BN_CUDA_DISABLE_QKV_KCACHE_FUSE");
     unsetenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT");
+    unsetenv("BN_CUDA_DISABLE_LEGACY_BLOCK_GATEUP_WARP");
     unsetenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP");
     unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_GATEUP_WARP");
     unsetenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP");
@@ -1252,7 +1258,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE", "1", 1);
     setenv("BN_CUDA_DISABLE_QKV_KCACHE_FUSE", "1", 1);
     setenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT", "1", 1);
-    setenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP", "1", 1);
+    setenv("BN_CUDA_DISABLE_LEGACY_BLOCK_GATEUP_WARP", "1", 1);
     setenv("BN_CUDA_DISABLE_NATIVE_QUANT_GATEUP_WARP", "1", 1);
     setenv("BN_CUDA_ENABLE_GRAPH_EXEC", "1", 1);
     setenv("BN_CUDA_MOE_GRAPH_MAX_EXPERTS", "7", 1);
@@ -1273,9 +1279,13 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_GRAPH_EXEC");
     setenv("BN_CUDA_ENABLE_MOE_FFN", "1", 1);
     assert(!bn_gpu_policy_cuda_decode_graph_default_enabled(0, 0));
+    unsetenv("BN_CUDA_DISABLE_LEGACY_BLOCK_GATEUP_WARP");
+    setenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP", "1", 1);
+    assert(bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled());
     unsetenv("BN_CUDA_DISABLE_QKV_MIXED_FUSE");
     unsetenv("BN_CUDA_DISABLE_QKV_KCACHE_FUSE");
     unsetenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT");
+    unsetenv("BN_CUDA_DISABLE_LEGACY_BLOCK_GATEUP_WARP");
     unsetenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP");
     unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_GATEUP_WARP");
     unsetenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP");
@@ -4312,8 +4322,12 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
     assert(bn_gpu_policy_metal_specialized_native_quant_enabled());
     assert(bn_gpu_policy_specialized_native_quant_decode_path_enabled());
+    unsetenv("BN_METAL_NATIVE_QUANT_BARRIERS");
     unsetenv("BN_METAL_Q8_BARRIERS");
     assert(!bn_gpu_policy_metal_native_quant_barriers_enabled());
+    setenv("BN_METAL_NATIVE_QUANT_BARRIERS", "1", 1);
+    assert(bn_gpu_policy_metal_native_quant_barriers_enabled());
+    unsetenv("BN_METAL_NATIVE_QUANT_BARRIERS");
     setenv("BN_METAL_Q8_BARRIERS", "1", 1);
     assert(bn_gpu_policy_metal_native_quant_barriers_enabled());
     unsetenv("BN_METAL_CPU_ORDER_RMSNORM");
@@ -4352,6 +4366,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
+    unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     unsetenv("BN_METAL_Q4_PREPARED");
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");
     assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
@@ -4456,6 +4471,9 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     bn_gpu_policy_apply_native_quant_prepared_override();
     assert(bn_gpu_policy_metal_native_quant_prepared_enabled());
+    assert(getenv("BN_METAL_NATIVE_QUANT_PREPARED") != NULL);
+    assert(getenv("BN_METAL_Q4_PREPARED") == NULL);
+    unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     unsetenv("BN_METAL_Q4_PREPARED");
     setenv("BN_METAL_Q4_PREPARED", "1", 1);
     assert(bn_gpu_policy_metal_native_quant_prepared_enabled());
@@ -4527,6 +4545,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MATVEC");
     unsetenv("BN_CUDA_DISABLE_NATIVE_QUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q8_0");
+    unsetenv("BN_CUDA_DISABLE_LEGACY_5BIT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q5_0");
     unsetenv("BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_MATVEC");
     unsetenv("BN_CUDA_DISABLE_Q4_K");
@@ -4550,6 +4569,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_SHARED_WEIGHTS");
     unsetenv("BN_METAL_ENABLE_SPECIALIZED_NATIVE_QUANT");
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
+    unsetenv("BN_METAL_NATIVE_QUANT_BARRIERS");
     unsetenv("BN_METAL_Q8_BARRIERS");
     unsetenv("BN_METAL_CPU_ORDER_RMSNORM");
     unsetenv("BN_METAL_FULL_BARRIERS");
@@ -4565,6 +4585,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_ATTN_ONLY");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
+    unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     unsetenv("BN_METAL_Q4_PREPARED");
     unsetenv("BN_GPU_DEBUG_ARGMAX");
     unsetenv("BN_GPU_PROFILE");

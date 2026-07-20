@@ -1816,6 +1816,16 @@ if grep -n 'bn_gpu_policy_metal_q8_barriers_enabled\|q8_barriers_enabled' includ
     fail=1
 fi
 
+if grep -n 'getenv("BN_METAL_Q4_PREPARED")\|getenv("BN_METAL_Q8_BARRIERS")\|setenv("BN_METAL_Q4_PREPARED"' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Metal native-quant prepared/barrier policy must read and set behavior-named env vars before Q4/Q8 compatibility aliases"
+    fail=1
+fi
+
+if ! grep -n 'BN_METAL_NATIVE_QUANT_PREPARED\|BN_METAL_Q4_PREPARED\|BN_METAL_NATIVE_QUANT_BARRIERS\|BN_METAL_Q8_BARRIERS' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "Metal native-quant prepared/barrier policy must keep behavior-named env vars with Q4/Q8 compatibility aliases"
+    fail=1
+fi
+
 if grep -n 'q4_repacked' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal repacked buffer metadata must use behavior names, not Q4 field names"
     fail=1
@@ -1941,6 +1951,16 @@ fi
 
 if grep -n 'getenv("BN_CUDA_DISABLE_MATVEC")\|getenv("BN_CUDA_DISABLE_Q8_0")\|getenv("BN_CUDA_DISABLE_Q5_0")\|getenv("BN_CUDA_DISABLE_Q4_K")\|getenv("BN_CUDA_DISABLE_Q5_K")\|getenv("BN_CUDA_DISABLE_Q6_K")\|getenv("BN_CUDA_DISABLE_Q8_K")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA backend must use GPU policy helpers for matvec type disable env vars"
+    fail=1
+fi
+
+if grep -n 'getenv("BN_CUDA_DISABLE_Q5_0")\|getenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP")' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "CUDA legacy block policy must read behavior-named env vars before Q5 compatibility aliases"
+    fail=1
+fi
+
+if ! grep -n 'BN_CUDA_DISABLE_LEGACY_5BIT_MATVEC\|BN_CUDA_DISABLE_Q5_0\|BN_CUDA_DISABLE_LEGACY_BLOCK_GATEUP_WARP\|BN_CUDA_DISABLE_Q5_GATEUP_WARP' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "CUDA legacy block policy must keep behavior-named env vars with Q5 compatibility aliases"
     fail=1
 fi
 
