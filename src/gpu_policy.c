@@ -1969,6 +1969,54 @@ static int gpu_policy_kquant_dot_requested(void) {
     return getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") != NULL;
 }
 
+static int gpu_policy_kquant_matvec4_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4K_Q8K_MATVEC4") != NULL;
+}
+
+static int gpu_policy_asymmetric_kquant_matmul8_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q4K_MATMUL8") != NULL;
+}
+
+static int gpu_policy_asymmetric_kquant_sharedx_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH") != NULL;
+}
+
+static int gpu_policy_asymmetric_kquant_batch_sharedx_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH") != NULL;
+}
+
+static int gpu_policy_down_kquant_dot_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_DOT") != NULL;
+}
+
+static int gpu_policy_down_kquant_dot_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q6K_DOT") != NULL;
+}
+
+static int gpu_policy_down_kquant_warp_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
+}
+
+static int gpu_policy_asymmetric_kquant_pair_matvec_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q6K_Q4K_PAIR_MATVEC") != NULL;
+}
+
+static int gpu_policy_asymmetric_kquant_pair_matvec_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") != NULL;
+}
+
+static int gpu_policy_down_kquant_prepared_dot_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q6K_Q8_1_DOT") != NULL;
+}
+
+static int gpu_policy_down_kquant_prepared_dot_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q6K_Q8_1_DOT") != NULL;
+}
+
+static int gpu_policy_down_kquant_prepared_dot_all_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q6K_Q8_1_ALL") != NULL;
+}
+
 int bn_gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
     return gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
@@ -2184,43 +2232,44 @@ int bn_gpu_policy_kquant_dot_forced(void) {
 
 int bn_gpu_policy_kquant_matvec4_enabled(int cols) {
     return cols >= 16384 &&
-           getenv("BN_CUDA_DISABLE_Q4K_Q8K_MATVEC4") == NULL;
+           !gpu_policy_kquant_matvec4_disabled();
 }
 
 int bn_gpu_policy_cuda_asymmetric_kquant_matmul8_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_Q4K_MATMUL8") != NULL;
+    return gpu_policy_asymmetric_kquant_matmul8_requested();
 }
 
 int bn_gpu_policy_cuda_asymmetric_kquant_sharedx_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4K_SHAREDX_BATCH") == NULL;
+    return !gpu_policy_asymmetric_kquant_sharedx_disabled();
 }
 
 int bn_gpu_policy_cuda_asymmetric_kquant_batch_sharedx_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_Q4K_SHAREDX_BATCH") != NULL;
+    return gpu_policy_asymmetric_kquant_batch_sharedx_requested();
 }
 
 int bn_gpu_policy_cuda_down_kquant_dot_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_DOT") == NULL;
+    return !gpu_policy_down_kquant_dot_disabled();
 }
 
 int bn_gpu_policy_cuda_down_kquant_dot_forced(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_DOT") != NULL;
+    return gpu_policy_down_kquant_dot_requested();
 }
 
 int bn_gpu_policy_cuda_down_kquant_warp_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_WARP") != NULL;
+    return gpu_policy_down_kquant_warp_requested();
 }
 
 int bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled(int cols) {
     return (cols < 5120 ||
-            getenv("BN_CUDA_ENABLE_Q6K_Q4K_PAIR_MATVEC") != NULL) &&
-           getenv("BN_CUDA_DISABLE_Q6K_Q4K_PAIR_MATVEC") == NULL;
+            gpu_policy_asymmetric_kquant_pair_matvec_requested()) &&
+           !gpu_policy_asymmetric_kquant_pair_matvec_disabled();
 }
 
 int bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(int is_logits_op) {
-    return getenv("BN_CUDA_ENABLE_Q6K_Q8_1_DOT") != NULL &&
-           getenv("BN_CUDA_DISABLE_Q6K_Q8_1_DOT") == NULL &&
-           (is_logits_op || getenv("BN_CUDA_ENABLE_Q6K_Q8_1_ALL") != NULL);
+    return gpu_policy_down_kquant_prepared_dot_requested() &&
+           !gpu_policy_down_kquant_prepared_dot_disabled() &&
+           (is_logits_op ||
+            gpu_policy_down_kquant_prepared_dot_all_requested());
 }
 
 int bn_gpu_policy_cuda_down_kquant_mmvq_enabled(int rows,
