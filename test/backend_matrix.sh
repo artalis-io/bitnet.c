@@ -792,6 +792,14 @@ if grep -n 'BN_CUDA_[^"]*\(QWEN\|GEMMA\)' \
     fail=1
 fi
 
+if rg -n 'qwen|gemma|QWEN|GEMMA' include src \
+    --glob '!include/model_arch.h' \
+    --glob '!src/model_arch.c' \
+    --glob '!src/gpu_policy.c' >/dev/null 2>&1; then
+    echo "model-family names must stay in model_arch or private GPU compatibility policy"
+    fail=1
+fi
+
 if awk '/^int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled/{flag=1} flag{print}' src/gpu_policy.c | grep -n 'BN_CUDA_[^"]*\(QWEN\|GEMMA\)' >/dev/null 2>&1; then
     echo "src/gpu_policy.c public helpers must keep model-family CUDA env aliases behind private compatibility helpers"
     fail=1
