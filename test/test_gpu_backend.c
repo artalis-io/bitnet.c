@@ -3563,6 +3563,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_ROUTE", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_DOT_PREPARED_INPUT_DEFAULT", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_DOT_PREPARED_INPUT_DEFAULT", "1", 1);
+    setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_BLOCK_PREPARED_INPUT",
+           "1", 1);
     setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_CPU_ATTN_SAFE", "1", 1);
@@ -3581,6 +3583,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_dot_prepared_input_default_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_route_dot_prepared_input_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_route_block_prepared_input_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
@@ -3601,6 +3604,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_ROUTE");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_DOT_PREPARED_INPUT_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_DOT_PREPARED_INPUT_DEFAULT");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_BLOCK_PREPARED_INPUT");
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_CPU_ATTN_SAFE");
