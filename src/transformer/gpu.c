@@ -580,8 +580,8 @@ static int gpu_resolve_moe_all_active_two_resources(
 
 static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
                                      const BnQWeight *W, const float *x,
-                                     int8_t *x_q_buf, int top_n) {
-    if (!logits || !W || !W->data || !x || !x_q_buf)
+                                     int8_t *quantized, int top_n) {
+    if (!logits || !W || !W->data || !x || !quantized)
         return 0;
     if (top_n <= 0) return 0;
     if (top_n > 4096) top_n = 4096;
@@ -589,10 +589,10 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
     int n_blocks = W->cols / BN_QK_K;
     if (n_blocks < 1 || n_blocks > BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS / 16)
         return 0;
-    float x_d[n_blocks];
-    int16_t x_bsums[n_blocks * 16];
-    bn_transformer_cpu_quantize_q8k_activation(x, x_q_buf, x_d, x_bsums,
-                                               W->cols);
+    float scales[n_blocks];
+    int16_t block_sums[n_blocks * 16];
+    bn_transformer_cpu_prepare_kquant_activation(x, quantized, scales,
+                                                 block_sums, W->cols);
 
     int ids[4096];
     float vals[4096];
@@ -619,7 +619,7 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
 
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_quant_q6_logits_refine_q8k_row(W, x_q_buf, x_d, x_bsums,
+        if (bn_quant_q6_logits_refine_q8k_row(W, quantized, scales, block_sums,
                                               ids[i], &row_sum) == 0)
             logits[ids[i]] = row_sum;
     }

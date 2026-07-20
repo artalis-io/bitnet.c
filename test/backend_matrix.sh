@@ -997,6 +997,15 @@ if grep -n '\battn_q8k_d\b\|\battn_q8k_bsums\b\|\bssm_q8k_d\b\|\bssm_q8k_bsums\b
     fail=1
 fi
 
+if grep -n 'bn_transformer_cpu_quantize_q8k_activation\|prepared_kquant_bsums\|prepared_kquant_d\|\bx_d\b\|\bx_bsums\b' \
+    include/transformer_cpu_backend_internal.h \
+    src/transformer/cpu_backend.c \
+    src/transformer/cpu.c \
+    src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "Transformer prepared K-quant activation helpers and buffers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for preq8k quant capability"
     fail=1

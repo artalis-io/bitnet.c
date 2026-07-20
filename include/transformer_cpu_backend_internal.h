@@ -31,8 +31,9 @@ typedef struct {
     int supports_prepared_kquant;
     int supports_float_kquant_prefill;
     void (*rmsnorm_prepared_kquant)(const float *x, const float *w, int dim,
-                                    float eps, float *out, int8_t *x_q,
-                                    float *x_d, int16_t *x_bsums);
+                                    float eps, float *out,
+                                    int8_t *quantized, float *scales,
+                                    int16_t *block_sums);
 } BnCPUBackendOps;
 
 typedef struct {
@@ -102,11 +103,11 @@ bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnConfig *c,
 int bn_transformer_cpu_backend_supports_float_kquant_prefill(void);
 int bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch(void);
 int bn_transformer_cpu_has_native_q8x_quant(void);
-void bn_transformer_cpu_quantize_q8k_activation(const float *x,
-                                                int8_t *x_q,
-                                                float *x_d,
-                                                int16_t *x_bsums,
-                                                int n);
+void bn_transformer_cpu_prepare_kquant_activation(const float *x,
+                                                  int8_t *quantized,
+                                                  float *scales,
+                                                  int16_t *block_sums,
+                                                  int n);
 int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
                                                  int8_t *x_q,
                                                  float *x_scales,

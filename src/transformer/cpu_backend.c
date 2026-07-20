@@ -52,15 +52,15 @@ int bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch(void) {
     return BN_TRANSFORMER_CPU_HAS_AVX2;
 }
 
-void bn_transformer_cpu_quantize_q8k_activation(const float *x,
-                                                int8_t *x_q,
-                                                float *x_d,
-                                                int16_t *x_bsums,
-                                                int n) {
+void bn_transformer_cpu_prepare_kquant_activation(const float *x,
+                                                  int8_t *quantized,
+                                                  float *scales,
+                                                  int16_t *block_sums,
+                                                  int n) {
 #if BN_TRANSFORMER_CPU_HAS_NATIVE_Q8X_QUANT
-    bn_quant_x_to_q8k(x, x_q, x_d, x_bsums, n);
+    bn_quant_x_to_q8k(x, quantized, scales, block_sums, n);
 #else
-    bn_quant_x_to_q8k_scalar(x, x_q, x_d, x_bsums, n);
+    bn_quant_x_to_q8k_scalar(x, quantized, scales, block_sums, n);
 #endif
 }
 
