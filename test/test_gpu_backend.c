@@ -427,6 +427,21 @@ static void test_gpu_policy_helpers(void) {
                                                                4096));
     assert(!bn_gpu_policy_moe_route_all_active_two_large_hidden(2, 2,
                                                                 2048));
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE");
+    assert(bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+        1, 1, BN_GGUF_TENSOR_Q6_K, 4096, 2, 2, 1, 1, 1));
+    setenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+        1, 1, BN_GGUF_TENSOR_Q6_K, 4096, 2, 2, 1, 1, 1));
+    unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_DECODE");
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+        2, 1, BN_GGUF_TENSOR_Q6_K, 4096, 2, 2, 1, 1, 1));
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+        1, 1, BN_GGUF_TENSOR_Q6_K, 2048, 2, 2, 1, 1, 1));
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+        1, 1, BN_GGUF_TENSOR_Q6_K, 4096, 4, 2, 1, 1, 1));
+    assert(!bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+        1, 1, BN_GGUF_TENSOR_Q6_K, 4096, 2, 2, 1, 0, 1));
 
     BnConfig moe = {0};
     moe.dim = 2048;

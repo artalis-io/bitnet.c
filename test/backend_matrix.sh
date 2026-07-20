@@ -2151,6 +2151,11 @@ if grep -n 'bn_gpu_policy_cuda_moe_route_batch_enabled' include/gpu_policy.h src
     fail=1
 fi
 
+if grep -n 'n_experts > 2[^0-9]\|n_experts == 2 && k == 2' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU MoE route-shape behavior helpers"
+    fail=1
+fi
+
 if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arch.h src/model_arch.c >/dev/null 2>&1; then
     echo "model_arch must expose backend-neutral policy names, not CUDA-named aliases"
     fail=1

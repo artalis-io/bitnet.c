@@ -2093,6 +2093,26 @@ int bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
            getenv("BN_CUDA_DISABLE_MOE_CUBLAS_ALL2_FIXED") == NULL;
 }
 
+int bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+    int n_tokens,
+    int routed_asymmetric_kquant,
+    int down_type,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_f16,
+    int up_f16,
+    int down_f16) {
+    return n_tokens == 1 &&
+           routed_asymmetric_kquant &&
+           bn_gpu_policy_moe_route_all_active_two_large_hidden(n_experts,
+                                                               k,
+                                                               hidden_dim) &&
+           bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
+           gate_f16 && up_f16 && down_f16 &&
+           bn_gpu_policy_cuda_moe_cublas_decode_enabled();
+}
+
 int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_asymmetric_kquant,
                                                 int routed_native_quant,
                                                 int n_tokens,

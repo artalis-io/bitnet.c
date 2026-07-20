@@ -375,7 +375,8 @@ static int cuda_use_optimistic_argmax_penalty(void) {
 }
 
 static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
-    return bn_gpu_policy_moe_routed_ffn_batch_allowed(n_experts > 2);
+    return bn_gpu_policy_moe_routed_ffn_batch_allowed(
+        bn_gpu_policy_moe_route_expanded_topk(n_experts, 0));
 }
 
 static int cuda_env_int(const char *name, int fallback) {
@@ -15022,11 +15023,10 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     size_t idx_bytes = route_items * sizeof(int);
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_all_active_two_decode =
-        n_tokens == 1 && routed_asymmetric_kquant && n_experts == 2 && k == 2 &&
-        bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
-        hidden_dim >= 4096 &&
-        gate->f16_data && up->f16_data && down->f16_data &&
-        bn_gpu_policy_cuda_moe_cublas_decode_enabled();
+        bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+            n_tokens, routed_asymmetric_kquant, down_type, hidden_dim,
+            n_experts, k, gate->f16_data != NULL, up->f16_data != NULL,
+            down->f16_data != NULL);
     size_t decode_route_bytes =
         use_cublas_all_active_two_decode ? 4u * sizeof(float) : 0u;
     if (cuda_ensure_ops(ctx, idx_bytes + weight_bytes + decode_route_bytes) != 0)
@@ -15441,11 +15441,10 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
             use_cublas_grouped, n_experts, k);
     int use_cublas_all_active_two_decode =
-        n_tokens == 1 && routed_asymmetric_kquant && n_experts == 2 && k == 2 &&
-        bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
-        hidden_dim >= 4096 &&
-        gate->f16_data && up->f16_data && down->f16_data &&
-        bn_gpu_policy_cuda_moe_cublas_decode_enabled();
+        bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+            n_tokens, routed_asymmetric_kquant, down_type, hidden_dim,
+            n_experts, k, gate->f16_data != NULL, up->f16_data != NULL,
+            down->f16_data != NULL);
     int use_sorted_slots =
         bn_gpu_policy_cuda_moe_sorted_slots_enabled(
             routed_asymmetric_kquant, routed_native_quant, n_tokens,
@@ -20059,7 +20058,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int k = (int)op->p[1];
             float expert_weights_scale = cuda_u32_to_f32(op->p[2]);
             int dim = op->cols;
-            int route_diff2 = n_experts == 2 && k == 2 && w && w->rows == 1;
+            int route_diff2 =
+                bn_gpu_policy_moe_route_all_active_two(n_experts, k) &&
+                w && w->rows == 1;
             if (!w || !w->data || !in || !route || !logits ||
                 n_experts <= 0 || k <= 0 || dim <= 0 ||
                 !bn_backend_quant_already_f32(w->type) ||
@@ -20117,7 +20118,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (const float *)w->data, in, dim,
                         expert_weights_scale);
                 }
-            } else if (n_experts == 2 && k == 2 && w->rows >= 2 &&
+            } else if (bn_gpu_policy_moe_route_all_active_two(n_experts, k) &&
+                   w->rows >= 2 &&
                    (dim % 16) == 0 &&
                    moe_all_active_two_route_dot_prepared_input_default_enabled &&
                    !bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled()) {
@@ -20402,7 +20404,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 quantize_q8_1_kernel, (dim + 31) / 32, 32,
                                 0, xq, in, dim);
                         }
-                        if (n_experts == 2 && k == 2 &&
+                        if (bn_gpu_policy_moe_route_all_active_two(n_experts,
+                                                                   k) &&
                             moe_all_active_two_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q4k_gateup_all2_mid_kernel,
@@ -20514,7 +20517,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     route, dim, hidden);
                             }
                         } else if (prefer_moe_down_f32_cache &&
-                            n_experts == 2 && k == 2 &&
+                            bn_gpu_policy_moe_route_all_active_two(n_experts,
+                                                                   k) &&
                             moe_all_active_two_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_all2_f32_cache_warp_kernel,
@@ -20735,7 +20739,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 route, dim, hidden, n_experts, k);
                         }
                     } else if (cuda_use_moe_down_aux_f32_cache(down)) {
-                        if (n_experts == 2 && k == 2 &&
+                        if (bn_gpu_policy_moe_route_all_active_two(n_experts,
+                                                                   k) &&
                             moe_all_active_two_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q6k_down_all2_f32_cache_4row_sum_kernel,

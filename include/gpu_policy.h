@@ -397,6 +397,16 @@ int bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
     int use_grouped,
     int n_experts,
     int k);
+int bn_gpu_policy_cuda_moe_cublas_all_active_two_decode_enabled(
+    int n_tokens,
+    int routed_asymmetric_kquant,
+    int down_type,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_f16,
+    int up_f16,
+    int down_f16);
 int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_asymmetric_kquant,
                                                 int routed_native_quant,
                                                 int n_tokens,
