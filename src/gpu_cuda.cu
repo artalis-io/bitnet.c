@@ -11259,7 +11259,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
 
     cuda_free_activations(ctx);
     ctx->kv_f16 = c->kv_f16;
-    ctx->has_moe_model = c->n_experts > 0;
+    ctx->has_moe_model = bn_gpu_policy_uses_moe(c);
 
     int n_attn = bn_gpu_policy_attention_layer_count(c);
     int q_dim = c->n_heads * c->head_size;

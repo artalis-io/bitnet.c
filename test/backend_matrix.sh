@@ -2161,6 +2161,11 @@ if grep -n 'n_experts > 2[^0-9]\|n_experts == 2 && k == 2' src/gpu_cuda.cu >/dev
     fail=1
 fi
 
+if grep -n 'c->n_experts > 0' src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use GPU policy helpers for loaded-model MoE presence"
+    fail=1
+fi
+
 if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arch.h src/model_arch.c >/dev/null 2>&1; then
     echo "model_arch must expose backend-neutral policy names, not CUDA-named aliases"
     fail=1
