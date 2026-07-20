@@ -915,13 +915,13 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");
-    assert(!bn_gpu_policy_moe_down_q4_f32_cache_enabled(
+    assert(!bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q4_K));
     setenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE", "1", 1);
-    assert(bn_gpu_policy_moe_down_q4_f32_cache_enabled(
+    assert(bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q4_K));
     setenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE", "1", 1);
-    assert(!bn_gpu_policy_moe_down_q4_f32_cache_enabled(
+    assert(!bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
         &gpu, BN_GGUF_TENSOR_Q4_K));
     unsetenv("BN_CUDA_ENABLE_Q4K_MOE_DOWN_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE");

@@ -152,20 +152,20 @@ static void *upload_moe_all_proj(BnModel *model,
         proj == 2 &&
         bn_gpu_policy_moe_down_kquant_f32_cache_preferred(
             gpu, type, cols, force_f16_cache);
-    int prefer_q4_f32_cache =
+    int prefer_small_kquant_f32_cache =
         proj == 2 &&
         !force_f16_cache &&
-        bn_gpu_policy_moe_down_q4_f32_cache_enabled(gpu, type);
+        bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(gpu, type);
     int force_full_buffer =
         force_f16_cache ||
         prefer_down_kquant_f32_cache ||
-        prefer_q4_f32_cache ||
+        prefer_small_kquant_f32_cache ||
         (proj == 2 &&
          bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(type));
     void *(*create_buffer)(void *, const void *, size_t, int, int, int) =
         force_f16_cache
             ? gpu->buffer_create_f16_cache :
-        (prefer_down_kquant_f32_cache || prefer_q4_f32_cache)
+        (prefer_down_kquant_f32_cache || prefer_small_kquant_f32_cache)
             ? gpu->buffer_create_q6_f32_cache :
         ((!force_full_buffer ||
           bn_gpu_policy_moe_quant_only_after_cache(type, q8_f16_cache)) &&

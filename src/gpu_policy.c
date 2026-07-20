@@ -732,7 +732,7 @@ int bn_gpu_policy_moe_down_kquant_f32_cache_requires_full_buffer(
         tensor_type);
 }
 
-static int gpu_policy_moe_down_q4_f32_cache_enabled(
+static int gpu_policy_moe_down_small_kquant_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
     return gpu && gpu->buffer_create_q6_f32_cache &&
@@ -741,10 +741,11 @@ static int gpu_policy_moe_down_q4_f32_cache_enabled(
            getenv("BN_CUDA_DISABLE_Q4K_MOE_DOWN_F32_CACHE") == NULL;
 }
 
-int bn_gpu_policy_moe_down_q4_f32_cache_enabled(
+int bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type) {
-    return gpu_policy_moe_down_q4_f32_cache_enabled(gpu, tensor_type);
+    return gpu_policy_moe_down_small_kquant_f32_cache_enabled(
+        gpu, tensor_type);
 }
 
 static int gpu_policy_moe_quant_only_after_cache(int tensor_type,
