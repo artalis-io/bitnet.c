@@ -2550,6 +2550,10 @@ static __device__ float cuda_dot_row(const void *wdata, const float *x,
         const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
         for (int c = tid; c < cols; c += blockDim.x)
             sum += cuda_fp16_to_fp32(w[c]) * x[c];
+    } else if (type == BN_GGUF_TENSOR_BF16) {
+        const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
+        for (int c = tid; c < cols; c += blockDim.x)
+            sum += cuda_bf16_to_fp32(w[c]) * x[c];
     } else if (type == BN_GGUF_TENSOR_Q8_0) {
         const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)wdata;
         int n_bpr = cols / 32;
@@ -2589,6 +2593,15 @@ static __device__ float cuda_dot_row(const void *wdata, const float *x,
                 ? (int)((qs & 15) | (((qh >> i) & 1u) << 4)) - 16
                 : (int)((qs >> 4) | (((qh >> i) & 1u) << 4)) - 16;
             sum += d * (float)q * x[c];
+        }
+    } else if (type == BN_GGUF_TENSOR_Q3_K) {
+        const BnBlockQ3K *blocks = (const BnBlockQ3K *)wdata;
+        int n_bpr = cols / BN_QK_K;
+        for (int c = tid; c < cols; c += blockDim.x) {
+            int b = c / BN_QK_K;
+            int i = c & (BN_QK_K - 1);
+            const BnBlockQ3K *blk = &blocks[(size_t)row * n_bpr + b];
+            sum += cuda_q3k_value(blk, i) * x[c];
         }
     } else if (type == BN_GGUF_TENSOR_Q4_K) {
         const BnBlockQ4K *blocks = (const BnBlockQ4K *)wdata;
@@ -2705,6 +2718,55 @@ static __device__ float cuda_dot_row(const void *wdata, const float *x,
             const BnBlockQ8K *blk = &blocks[(size_t)row * n_bpr + b];
             sum += blk->d * (float)blk->qs[i] * x[c];
         }
+    } else if (type == BN_GGUF_TENSOR_IQ4_XS) {
+        const BnBlockIQ4XS *blocks = (const BnBlockIQ4XS *)wdata;
+        int n_bpr = cols / BN_QK_K;
+        for (int c = tid; c < cols; c += blockDim.x) {
+            int b = c / BN_QK_K;
+            int i = c & (BN_QK_K - 1);
+            int group = i >> 5;
+            int in_group = i & 31;
+            const BnBlockIQ4XS *blk =
+                &blocks[(size_t)row * n_bpr + b];
+            int lo = (blk->scales_l[group >> 1] >>
+                      ((group & 1) * 4)) & 0xF;
+            int hi = (blk->scales_h >> (group * 2)) & 3;
+            float dl = cuda_fp16_to_fp32(blk->d) *
+                       (float)((lo | (hi << 4)) - 32);
+            uint8_t packed = blk->qs[group * 16 + (in_group & 15)];
+            int q = in_group < 16 ? (packed & 0xF) : (packed >> 4);
+            sum += dl * (float)bn_kvalues_iq4nl[q] * x[c];
+        }
+    } else if (type == BN_GGUF_TENSOR_IQ3_XXS) {
+        const BnBlockIQ3XXS *blocks = (const BnBlockIQ3XXS *)wdata;
+        int n_bpr = cols / BN_QK_K;
+        for (int c = tid; c < cols; c += blockDim.x) {
+            int b = c / BN_QK_K;
+            int i = c & (BN_QK_K - 1);
+            int ib32 = i >> 5;
+            int in32 = i & 31;
+            int l = in32 >> 3;
+            int j = in32 & 7;
+            const BnBlockIQ3XXS *blk =
+                &blocks[(size_t)row * n_bpr + b];
+            const uint8_t *qs = blk->qs + ib32 * 8;
+            const uint8_t *scales_and_signs = blk->qs + BN_QK_K / 4;
+            const uint8_t *auxp = scales_and_signs + 4 * ib32;
+            uint32_t aux32 = (uint32_t)auxp[0] |
+                             ((uint32_t)auxp[1] << 8) |
+                             ((uint32_t)auxp[2] << 16) |
+                             ((uint32_t)auxp[3] << 24);
+            float db = cuda_fp16_to_fp32(blk->d) *
+                       (0.5f + (float)(aux32 >> 28)) * 0.5f;
+            uint8_t signs =
+                bn_ksigns_iq2xs[(aux32 >> (7 * l)) & 0x7Fu];
+            uint32_t gridv = bn_iq3xxs_grid[qs[2 * l + (j >= 4)]];
+            uint8_t gv = (uint8_t)(gridv >> ((j & 3) * 8));
+            float w = (float)gv;
+            if (signs & bn_kmask_iq2xs[j])
+                w = -w;
+            sum += db * w * x[c];
+        }
     }
     return sum;
 }
@@ -2765,234 +2827,7 @@ static __global__ void matvec_kernel(void *out, const void *wdata,
     int token = blockIdx.y;
     int tid = threadIdx.x;
     const float *x_token = x + (size_t)token * cols;
-    float sum = 0.0f;
-
-    if (type == BN_GGUF_TENSOR_F32) {
-        const float *w = (const float *)wdata + (size_t)row * cols;
-        for (int c = tid; c < cols; c += blockDim.x)
-            sum += w[c] * x_token[c];
-    } else if (type == BN_GGUF_TENSOR_F16) {
-        const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
-        for (int c = tid; c < cols; c += blockDim.x)
-            sum += cuda_fp16_to_fp32(w[c]) * x_token[c];
-    } else if (type == BN_GGUF_TENSOR_BF16) {
-        const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
-        for (int c = tid; c < cols; c += blockDim.x)
-            sum += cuda_bf16_to_fp32(w[c]) * x_token[c];
-    } else if (type == BN_GGUF_TENSOR_Q8_0) {
-        const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)wdata;
-        int n_bpr = cols / 32;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / 32;
-            int i = c & 31;
-            const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_bpr + b];
-            float d = cuda_fp16_to_fp32(blk->d);
-            sum += d * (float)blk->qs[i] * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q4_0) {
-        const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)wdata;
-        int n_bpr = cols / 32;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / 32;
-            int i = c & 31;
-            const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_bpr + b];
-            float d = cuda_fp16_to_fp32(blk->d);
-            uint8_t qs = blk->qs[i & 15];
-            int q = i < 16 ? (int)(qs & 15) - 8 : (int)(qs >> 4) - 8;
-            sum += d * (float)q * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q5_0) {
-        const BnBlockQ5_0 *blocks = (const BnBlockQ5_0 *)wdata;
-        int n_bpr = cols / 32;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / 32;
-            int i = c & 31;
-            const BnBlockQ5_0 *blk = &blocks[(size_t)row * n_bpr + b];
-            float d = cuda_fp16_to_fp32(blk->d);
-            uint32_t qh = (uint32_t)blk->qh[0] |
-                          ((uint32_t)blk->qh[1] << 8) |
-                          ((uint32_t)blk->qh[2] << 16) |
-                          ((uint32_t)blk->qh[3] << 24);
-            uint8_t qs = blk->qs[i & 15];
-            int q = i < 16
-                ? (int)((qs & 15) | (((qh >> i) & 1u) << 4)) - 16
-                : (int)((qs >> 4) | (((qh >> i) & 1u) << 4)) - 16;
-            sum += d * (float)q * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q3_K) {
-        const BnBlockQ3K *blocks = (const BnBlockQ3K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ3K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += cuda_q3k_value(blk, i) * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q4_K) {
-        const BnBlockQ4K *blocks = (const BnBlockQ4K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        if (blockDim.x == BN_QK_K && tid < BN_QK_K) {
-            int lane = tid & 31;
-            int group = tid >> 5;
-            int pair = tid >> 6;
-            int high = tid & 32;
-            const BnBlockQ4K *row_blocks = blocks + (size_t)row * n_bpr;
-            for (int b = 0; b < n_bpr; b++) {
-                const BnBlockQ4K *blk = &row_blocks[b];
-                int sc = 0;
-                int mn = 0;
-                float d = 0.0f;
-                float dmin = 0.0f;
-                if (lane == 0) {
-                    cuda_q4k_group_scale_min(blk, group, &sc, &mn);
-                    d = cuda_fp16_to_fp32(blk->d);
-                    dmin = cuda_fp16_to_fp32(blk->dmin);
-                }
-                sc = __shfl_sync(0xffffffffu, sc, 0);
-                mn = __shfl_sync(0xffffffffu, mn, 0);
-                d = __shfl_sync(0xffffffffu, d, 0);
-                dmin = __shfl_sync(0xffffffffu, dmin, 0);
-                uint8_t packed = blk->qs[pair * 32 + lane];
-                int q = high ? (packed >> 4) : (packed & 15);
-                sum += (d * (float)sc * (float)q - dmin * (float)mn) *
-                       x_token[(size_t)b * BN_QK_K + tid];
-            }
-        } else {
-            for (int c = tid; c < cols; c += blockDim.x) {
-                int b = c / BN_QK_K;
-                int i = c & (BN_QK_K - 1);
-                const BnBlockQ4K *blk = &blocks[(size_t)row * n_bpr + b];
-                sum += cuda_q4k_value(blk, i) * x_token[c];
-            }
-        }
-    } else if (type == BN_GGUF_TENSOR_Q5_K) {
-        const BnBlockQ5K *blocks = (const BnBlockQ5K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ5K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += cuda_q5k_value(blk, i) * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q6_K) {
-        const BnBlockQ6K *blocks = (const BnBlockQ6K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        if (blockDim.x == BN_QK_K && tid < BN_QK_K) {
-            int chunk = tid / 128;
-            int in_chunk = tid & 127;
-            int l = in_chunk & 31;
-            int ql_off = chunk * 64;
-            int qh_off = chunk * 32;
-            int scale_idx = 0;
-            const BnBlockQ6K *row_blocks = blocks + (size_t)row * n_bpr;
-            if (in_chunk < 32) {
-                scale_idx = l / 16;
-                for (int b = 0; b < n_bpr; b++) {
-                    const BnBlockQ6K *blk = &row_blocks[b];
-                    int q = (int)((blk->ql[ql_off + l] & 0x0f) |
-                                  ((blk->qh[qh_off + l] & 0x03) << 4)) - 32;
-                    sum += cuda_fp16_to_fp32(blk->d) *
-                           (float)blk->scales[chunk * 8 + scale_idx] *
-                           (float)q * x_token[(size_t)b * BN_QK_K + tid];
-                }
-            } else if (in_chunk < 64) {
-                scale_idx = l / 16 + 2;
-                for (int b = 0; b < n_bpr; b++) {
-                    const BnBlockQ6K *blk = &row_blocks[b];
-                    int q = (int)((blk->ql[ql_off + l + 32] & 0x0f) |
-                                  (((blk->qh[qh_off + l] >> 2) & 0x03) << 4)) - 32;
-                    sum += cuda_fp16_to_fp32(blk->d) *
-                           (float)blk->scales[chunk * 8 + scale_idx] *
-                           (float)q * x_token[(size_t)b * BN_QK_K + tid];
-                }
-            } else if (in_chunk < 96) {
-                scale_idx = l / 16 + 4;
-                for (int b = 0; b < n_bpr; b++) {
-                    const BnBlockQ6K *blk = &row_blocks[b];
-                    int q = (int)((blk->ql[ql_off + l] >> 4) |
-                                  (((blk->qh[qh_off + l] >> 4) & 0x03) << 4)) - 32;
-                    sum += cuda_fp16_to_fp32(blk->d) *
-                           (float)blk->scales[chunk * 8 + scale_idx] *
-                           (float)q * x_token[(size_t)b * BN_QK_K + tid];
-                }
-            } else {
-                scale_idx = l / 16 + 6;
-                for (int b = 0; b < n_bpr; b++) {
-                    const BnBlockQ6K *blk = &row_blocks[b];
-                    int q = (int)((blk->ql[ql_off + l + 32] >> 4) |
-                                  (((blk->qh[qh_off + l] >> 6) & 0x03) << 4)) - 32;
-                    sum += cuda_fp16_to_fp32(blk->d) *
-                           (float)blk->scales[chunk * 8 + scale_idx] *
-                           (float)q * x_token[(size_t)b * BN_QK_K + tid];
-                }
-            }
-        } else {
-            for (int c = tid; c < cols; c += blockDim.x) {
-                int b = c / BN_QK_K;
-                int i = c & (BN_QK_K - 1);
-                const BnBlockQ6K *blk = &blocks[(size_t)row * n_bpr + b];
-                sum += cuda_q6k_value(blk, i) * x_token[c];
-            }
-        }
-    } else if (type == BN_GGUF_TENSOR_Q8_K) {
-        const BnBlockQ8K *blocks = (const BnBlockQ8K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ8K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += blk->d * (float)blk->qs[i] * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_IQ4_XS) {
-        const BnBlockIQ4XS *blocks = (const BnBlockIQ4XS *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            int group = i >> 5;
-            int in_group = i & 31;
-            const BnBlockIQ4XS *blk =
-                &blocks[(size_t)row * n_bpr + b];
-            int lo = (blk->scales_l[group >> 1] >>
-                      ((group & 1) * 4)) & 0xF;
-            int hi = (blk->scales_h >> (group * 2)) & 3;
-            float dl = cuda_fp16_to_fp32(blk->d) *
-                       (float)((lo | (hi << 4)) - 32);
-            uint8_t packed = blk->qs[group * 16 + (in_group & 15)];
-            int q = in_group < 16 ? (packed & 0xF) : (packed >> 4);
-            sum += dl * (float)bn_kvalues_iq4nl[q] * x_token[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_IQ3_XXS) {
-        const BnBlockIQ3XXS *blocks = (const BnBlockIQ3XXS *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            int ib32 = i >> 5;
-            int in32 = i & 31;
-            int l = in32 >> 3;
-            int j = in32 & 7;
-            const BnBlockIQ3XXS *blk =
-                &blocks[(size_t)row * n_bpr + b];
-            const uint8_t *qs = blk->qs + ib32 * 8;
-            const uint8_t *scales_and_signs = blk->qs + BN_QK_K / 4;
-            const uint8_t *auxp = scales_and_signs + 4 * ib32;
-            uint32_t aux32 = (uint32_t)auxp[0] |
-                             ((uint32_t)auxp[1] << 8) |
-                             ((uint32_t)auxp[2] << 16) |
-                             ((uint32_t)auxp[3] << 24);
-            float db = cuda_fp16_to_fp32(blk->d) *
-                       (0.5f + (float)(aux32 >> 28)) * 0.5f;
-            uint8_t signs =
-                bn_ksigns_iq2xs[(aux32 >> (7 * l)) & 0x7Fu];
-            uint32_t gridv = bn_iq3xxs_grid[qs[2 * l + (j >= 4)]];
-            uint8_t gv = (uint8_t)(gridv >> ((j & 3) * 8));
-            float w = (float)gv;
-            if (signs & bn_kmask_iq2xs[j])
-                w = -w;
-            sum += db * w * x_token[c];
-        }
-    }
+    float sum = cuda_dot_row(wdata, x_token, row, cols, type);
 
     extern __shared__ float scratch[];
     sum = cuda_block_reduce_sum(sum, scratch);
@@ -10406,93 +10241,7 @@ static __global__ void matvec_batch_kernel(float *out,
     const void *wdata = op.wdata;
     int cols = x_cols;
     int type = op.type;
-    float sum = 0.0f;
-
-    if (type == BN_GGUF_TENSOR_F32) {
-        const float *w = (const float *)wdata + (size_t)row * cols;
-        for (int c = tid; c < cols; c += blockDim.x)
-            sum += w[c] * x[c];
-    } else if (type == BN_GGUF_TENSOR_F16) {
-        const uint16_t *w = (const uint16_t *)wdata + (size_t)row * cols;
-        for (int c = tid; c < cols; c += blockDim.x)
-            sum += cuda_fp16_to_fp32(w[c]) * x[c];
-    } else if (type == BN_GGUF_TENSOR_Q8_0) {
-        const BnBlockQ8_0 *blocks = (const BnBlockQ8_0 *)wdata;
-        int n_bpr = cols / 32;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / 32;
-            int i = c & 31;
-            const BnBlockQ8_0 *blk = &blocks[(size_t)row * n_bpr + b];
-            float d = cuda_fp16_to_fp32(blk->d);
-            sum += d * (float)blk->qs[i] * x[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q4_0) {
-        const BnBlockQ4_0 *blocks = (const BnBlockQ4_0 *)wdata;
-        int n_bpr = cols / 32;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / 32;
-            int i = c & 31;
-            const BnBlockQ4_0 *blk = &blocks[(size_t)row * n_bpr + b];
-            float d = cuda_fp16_to_fp32(blk->d);
-            uint8_t qs = blk->qs[i & 15];
-            int q = i < 16 ? (int)(qs & 15) - 8 : (int)(qs >> 4) - 8;
-            sum += d * (float)q * x[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q5_0) {
-        const BnBlockQ5_0 *blocks = (const BnBlockQ5_0 *)wdata;
-        int n_bpr = cols / 32;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / 32;
-            int i = c & 31;
-            const BnBlockQ5_0 *blk = &blocks[(size_t)row * n_bpr + b];
-            float d = cuda_fp16_to_fp32(blk->d);
-            uint32_t qh = (uint32_t)blk->qh[0] |
-                          ((uint32_t)blk->qh[1] << 8) |
-                          ((uint32_t)blk->qh[2] << 16) |
-                          ((uint32_t)blk->qh[3] << 24);
-            uint8_t qs = blk->qs[i & 15];
-            int q = i < 16
-                ? (int)((qs & 15) | (((qh >> i) & 1u) << 4)) - 16
-                : (int)((qs >> 4) | (((qh >> i) & 1u) << 4)) - 16;
-            sum += d * (float)q * x[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q4_K) {
-        const BnBlockQ4K *blocks = (const BnBlockQ4K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ4K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += cuda_q4k_value(blk, i) * x[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q5_K) {
-        const BnBlockQ5K *blocks = (const BnBlockQ5K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ5K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += cuda_q5k_value(blk, i) * x[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q6_K) {
-        const BnBlockQ6K *blocks = (const BnBlockQ6K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ6K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += cuda_q6k_value(blk, i) * x[c];
-        }
-    } else if (type == BN_GGUF_TENSOR_Q8_K) {
-        const BnBlockQ8K *blocks = (const BnBlockQ8K *)wdata;
-        int n_bpr = cols / BN_QK_K;
-        for (int c = tid; c < cols; c += blockDim.x) {
-            int b = c / BN_QK_K;
-            int i = c & (BN_QK_K - 1);
-            const BnBlockQ8K *blk = &blocks[(size_t)row * n_bpr + b];
-            sum += blk->d * (float)blk->qs[i] * x[c];
-        }
-    }
+    float sum = cuda_dot_row(wdata, x, row, cols, type);
 
     extern __shared__ float scratch[];
     scratch[tid] = sum;

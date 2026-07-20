@@ -90,6 +90,12 @@ if grep -n 'BN_GGUF_TENSOR_Q8_0 && xq' src/gpu_cuda.cu >/dev/null 2>&1; then
     fail=1
 fi
 
+if awk '/^static __global__ void matvec_kernel/{flag=1} /^static __global__ void q8_0_matvec4_warp_kernel/{flag=0} flag{print}' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_' >/dev/null 2>&1 ||
+   awk '/^static __global__ void matvec_batch_kernel/{flag=1} /^static __global__ void ffn_activation_kernel/{flag=0} flag{print}' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu matvec kernels must use cuda_dot_row for backend-private quant dispatch"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC")\|getenv("BN_CUDA_ENABLE_Q6K_Q8_1_DOT")\|getenv("BN_CUDA_DISABLE_Q6K_Q8_1_DOT")\|getenv("BN_CUDA_ENABLE_Q6K_Q8_1_ALL")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_512_2048")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_1536_8960")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2560_9728")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_LOGITS_1536")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_LOGITS_SMALL")\|getenv("BN_CUDA_DISABLE_Q6K_MMVQ_2WARP_1536")\|getenv("BN_CUDA_ENABLE_Q6K_DOWN_RESID_RMSNORM_FUSE")\|getenv("BN_CUDA_DISABLE_Q4K_Q8K_MATVEC4")\|getenv("BN_CUDA_DISABLE_Q4K_4WARP_1536_8960")\|getenv("BN_CUDA_DISABLE_Q4K_4WARP_2560_9728")\|getenv("BN_CUDA_ENABLE_Q4K_OUT_RESID_RMSNORM_FUSE")\|getenv("BN_CUDA_DISABLE_Q5K_4WARP")\|getenv("BN_CUDA_ENABLE_Q5K_SPLIT_4WARP")\|getenv("BN_CUDA_DISABLE_Q8_0_SSM_PREQ")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for CUDA Q4/Q6/Q8 matvec variant env policy"
     fail=1
