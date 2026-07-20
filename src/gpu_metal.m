@@ -1288,8 +1288,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double t0 = bn_platform_time_ms();
     double t_encode = 0, t_gpu = 0;
     int n_barriers = 0;
-    BnMetalProfileShape matvec_shapes[32], q8_shapes[16], q4_shapes[16];
-    int n_matvec_shapes = 0, n_q8_shapes = 0, n_q4_shapes = 0;
+    BnMetalProfileShape matvec_shapes[32], native_quant_shapes[16], exact_native_weight_shapes[16];
+    int n_matvec_shapes = 0, n_native_quant_shapes = 0, n_exact_native_weight_shapes = 0;
     BnMetalProfileShape timed_shapes[64];
     int n_timed_shapes = 0;
     int profile_each_op = ctx->gpu_profile >= 4;
@@ -1297,8 +1297,8 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
     double shader_wall_ms[BN_GPU_SHADER_COUNT];
     int shader_profile_counts[BN_GPU_SHADER_COUNT];
     memset(matvec_shapes, 0, sizeof(matvec_shapes));
-    memset(q8_shapes, 0, sizeof(q8_shapes));
-    memset(q4_shapes, 0, sizeof(q4_shapes));
+    memset(native_quant_shapes, 0, sizeof(native_quant_shapes));
+    memset(exact_native_weight_shapes, 0, sizeof(exact_native_weight_shapes));
     memset(timed_shapes, 0, sizeof(timed_shapes));
     memset(shader_gpu_ms, 0, sizeof(shader_gpu_ms));
     memset(shader_wall_ms, 0, sizeof(shader_wall_ms));
@@ -1493,10 +1493,10 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
                         return -1;
                     if (ctx->gpu_profile >= 2) {
-                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                        metal_profile_add_shape(native_quant_shapes, &n_native_quant_shapes, 16,
                                                 shader, 0, (uint32_t)op->cols,
                                                 n_tokens);
-                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                        metal_profile_add_shape(exact_native_weight_shapes, &n_exact_native_weight_shapes, 16,
                                                 shader, (uint32_t)op->rows,
                                                 (uint32_t)op->cols, n_tokens);
                     }
@@ -1518,10 +1518,10 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (ensure_q8_scratch(ctx, op->cols, (int)n_tokens) != 0)
                         return -1;
                     if (ctx->gpu_profile >= 2) {
-                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                        metal_profile_add_shape(native_quant_shapes, &n_native_quant_shapes, 16,
                                                 shader, 0, (uint32_t)op->cols,
                                                 n_tokens);
-                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                        metal_profile_add_shape(exact_native_weight_shapes, &n_exact_native_weight_shapes, 16,
                                                 shader, (uint32_t)op->rows,
                                                 (uint32_t)op->cols, n_tokens);
                     }
@@ -1768,10 +1768,10 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     if (ctx->gpu_profile >= 2) {
-                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                        metal_profile_add_shape(native_quant_shapes, &n_native_quant_shapes, 16,
                                                 shader, 0, (uint32_t)op->cols,
                                                 1);
-                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                        metal_profile_add_shape(exact_native_weight_shapes, &n_exact_native_weight_shapes, 16,
                                                 shader, op->p[0],
                                                 (uint32_t)op->cols, 1);
                     }
@@ -1833,10 +1833,10 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (ensure_q8_scratch(ctx, op->cols, 1) != 0)
                         return -1;
                     if (ctx->gpu_profile >= 2) {
-                        metal_profile_add_shape(q8_shapes, &n_q8_shapes, 16,
+                        metal_profile_add_shape(native_quant_shapes, &n_native_quant_shapes, 16,
                                                 shader, 0, (uint32_t)op->cols,
                                                 1);
-                        metal_profile_add_shape(q4_shapes, &n_q4_shapes, 16,
+                        metal_profile_add_shape(exact_native_weight_shapes, &n_exact_native_weight_shapes, 16,
                                                 shader, op->p[2],
                                                 (uint32_t)op->cols, 1);
                     }
@@ -2059,22 +2059,22 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 fprintf(stderr, "  %-16s: %3d ops\n",
                         metal_shader_profile_name(s), cat_count[s]);
         }
-        if (n_q8_shapes > 0) {
-            fprintf(stderr, "[gpu:metal:breakdown] --- q8 activation quant shapes ---\n");
-            for (int i = 0; i < n_q8_shapes; i++) {
+        if (n_native_quant_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- native quant activation shapes ---\n");
+            for (int i = 0; i < n_native_quant_shapes; i++) {
                 fprintf(stderr, "  %-16s: %3d dispatches cols=%u tokens=%u\n",
-                        metal_shader_profile_name(q8_shapes[i].shader),
-                        q8_shapes[i].count, q8_shapes[i].cols,
-                        q8_shapes[i].aux);
+                        metal_shader_profile_name(native_quant_shapes[i].shader),
+                        native_quant_shapes[i].count, native_quant_shapes[i].cols,
+                        native_quant_shapes[i].aux);
             }
         }
-        if (n_q4_shapes > 0) {
-            fprintf(stderr, "[gpu:metal:breakdown] --- q4/q8 matvec shapes ---\n");
-            for (int i = 0; i < n_q4_shapes; i++) {
+        if (n_exact_native_weight_shapes > 0) {
+            fprintf(stderr, "[gpu:metal:breakdown] --- exact native weight matvec shapes ---\n");
+            for (int i = 0; i < n_exact_native_weight_shapes; i++) {
                 fprintf(stderr, "  %-16s: %3d dispatches rows=%u cols=%u tokens=%u\n",
-                        metal_shader_profile_name(q4_shapes[i].shader),
-                        q4_shapes[i].count, q4_shapes[i].rows,
-                        q4_shapes[i].cols, q4_shapes[i].aux);
+                        metal_shader_profile_name(exact_native_weight_shapes[i].shader),
+                        exact_native_weight_shapes[i].count, exact_native_weight_shapes[i].rows,
+                        exact_native_weight_shapes[i].cols, exact_native_weight_shapes[i].aux);
             }
         }
         if (n_matvec_shapes > 0) {

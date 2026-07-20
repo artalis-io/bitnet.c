@@ -1533,6 +1533,11 @@ if grep -n 'q8_quant_dispatches\|q8_matvec_dispatches\|q8_split_dispatches\|q8_g
     fail=1
 fi
 
+if grep -n 'q8_shapes\|q4_shapes\|n_q8_shapes\|n_q4_shapes\|q8 activation quant shapes\|q4/q8 matvec shapes' src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal native-quant profiling shape buckets must use behavior names, not Q4/Q8 bucket names"
+    fail=1
+fi
+
 if grep -n -- '->q8k_quant_pipeline\|->q6_q8k_matvec_pipeline\|->q8k_quant_dispatches\|\.q8k_quant_pipeline\|\.q6_q8k_matvec_pipeline\|\.q8k_quant_dispatches\|metal_encode_q8k_quant' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal specialized native-quant state must use behavior names, not Q6/Q8K field names"
     fail=1
