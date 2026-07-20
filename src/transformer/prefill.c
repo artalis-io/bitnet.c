@@ -221,7 +221,7 @@ static void prefill_quant_matmul_multi(const BnModel *m,
         return;
     }
     if (bn_transformer_prefill_quant_matmul_batch_gpu_available(
-            bn_model_gpu(m), n)) {
+            bn_model_gpu(m), n, 1, 1, 1, 1)) {
         const BnBackendModel *backend = bn_model_backend(m);
         BnMatvecTask tasks[16];
         const void *bufs[16];
@@ -290,8 +290,9 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
                                          int layer) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
-    if (!gpu || !gpu->matmul_batch || !backend || !lw || !q_tmp ||
-        !k_out || !v_out || !X)
+    if (!bn_transformer_prefill_quant_matmul_batch_gpu_available(
+            gpu, 2, q_tmp != NULL && k_out != NULL && v_out != NULL,
+            lw != NULL, backend != NULL, X != NULL))
         return -1;
     if (!bn_transformer_prefill_qkv_stack_batch_compatible(
             &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, q_stride, dim))

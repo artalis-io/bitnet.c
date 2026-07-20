@@ -772,8 +772,13 @@ int bn_transformer_prefill_quant_matmul_gpu_available(
 
 int bn_transformer_prefill_quant_matmul_batch_gpu_available(
     const BnGPUBackend *gpu,
-    int n_tasks) {
-    return gpu && gpu->matmul_batch && n_tasks > 1 && n_tasks <= 16;
+    int n_tasks,
+    int has_outputs,
+    int has_weights,
+    int has_weight_buffers,
+    int has_input) {
+    return gpu && gpu->matmul_batch && n_tasks > 1 && n_tasks <= 16 &&
+           has_outputs && has_weights && has_weight_buffers && has_input;
 }
 
 void bn_transformer_prefill_quant_matmul_gpu_buffer(float *out,
