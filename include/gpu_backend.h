@@ -522,6 +522,26 @@ static inline int bn_gpu_backend_can_create_stacked3_biased_buffer(
     return gpu && gpu->buffer_create_stacked3_biased;
 }
 
+static inline int bn_gpu_backend_can_matvec(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matvec;
+}
+
+static inline int bn_gpu_backend_can_matmul(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matmul;
+}
+
+static inline int bn_gpu_backend_can_matvec_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matvec_batch;
+}
+
+static inline int bn_gpu_backend_can_matmul_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matmul_batch;
+}
+
 static inline int bn_gpu_backend_can_destroy_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_destroy;
@@ -671,6 +691,55 @@ static inline void *bn_gpu_backend_create_stacked3_biased_buffer(
     return gpu->buffer_create_stacked3_biased(
         gpu->ctx, first_data, first_size, second_data, second_size,
         third_data, third_size, type, rows, cols, bias, bias_size);
+}
+
+static inline int bn_gpu_backend_matvec(const BnGPUBackend *gpu,
+                                        float *out,
+                                        void *buffer,
+                                        const float *x,
+                                        int rows,
+                                        int cols,
+                                        int type) {
+    if (!bn_gpu_backend_can_matvec(gpu))
+        return -1;
+    return gpu->matvec(gpu->ctx, out, buffer, x, rows, cols, type);
+}
+
+static inline int bn_gpu_backend_matmul(const BnGPUBackend *gpu,
+                                        float *out,
+                                        void *buffer,
+                                        const float *X,
+                                        int rows,
+                                        int cols,
+                                        int n_tokens,
+                                        int type) {
+    if (!bn_gpu_backend_can_matmul(gpu))
+        return -1;
+    return gpu->matmul(gpu->ctx, out, buffer, X, rows, cols, n_tokens,
+                       type);
+}
+
+static inline int bn_gpu_backend_matvec_batch(
+    const BnGPUBackend *gpu,
+    const BnGPUMatvecOp *ops,
+    int n_ops,
+    const float *x,
+    int x_cols) {
+    if (!bn_gpu_backend_can_matvec_batch(gpu))
+        return -1;
+    return gpu->matvec_batch(gpu->ctx, ops, n_ops, x, x_cols);
+}
+
+static inline int bn_gpu_backend_matmul_batch(
+    const BnGPUBackend *gpu,
+    const BnGPUMatvecOp *ops,
+    int n_ops,
+    const float *X,
+    int n_tokens,
+    int x_cols) {
+    if (!bn_gpu_backend_can_matmul_batch(gpu))
+        return -1;
+    return gpu->matmul_batch(gpu->ctx, ops, n_ops, X, n_tokens, x_cols);
 }
 
 static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,

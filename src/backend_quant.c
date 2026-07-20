@@ -102,9 +102,9 @@ void bn_backend_quant_matmul_gpu_buf(float *out, const BnQWeight *W,
                                      void *W_buf, const float *X,
                                      int n_tokens, int8_t *x_q_buf,
                                      BnThreadPool *pool, BnGPUBackend *gpu) {
-    if (gpu && gpu->matmul && W_buf && n_tokens > 1) {
-        if (gpu->matmul(gpu->ctx, out, W_buf, X,
-                        W->rows, W->cols, n_tokens, W->type) == 0)
+    if (W_buf && n_tokens > 1) {
+        if (bn_gpu_backend_matmul(gpu, out, W_buf, X, W->rows, W->cols,
+                                  n_tokens, W->type) == 0)
             return;
     }
     bn_quant_matmul(out, W, X, n_tokens, x_q_buf, pool);
@@ -128,7 +128,8 @@ void bn_backend_quant_matmul_batch_gpu_buf(const BnMatvecTask *tasks,
                                            int8_t *x_q_buf,
                                            BnThreadPool *pool,
                                            BnGPUBackend *gpu) {
-    if (gpu && gpu->matmul_batch && W_bufs && n_tasks > 1 && n_tasks <= 16 &&
+    if (bn_gpu_backend_can_matmul_batch(gpu) && W_bufs && n_tasks > 1 &&
+        n_tasks <= 16 &&
         n_tokens > 1) {
         BnGPUMatvecOp ops[16];
         int all_gpu = 1;
@@ -146,8 +147,8 @@ void bn_backend_quant_matmul_batch_gpu_buf(const BnMatvecTask *tasks,
             };
         }
         if (all_gpu &&
-            gpu->matmul_batch(gpu->ctx, ops, n_tasks, X, n_tokens,
-                              x_cols) == 0)
+            bn_gpu_backend_matmul_batch(gpu, ops, n_tasks, X, n_tokens,
+                                        x_cols) == 0)
             return;
     }
     bn_backend_quant_matmul_batch_cpu(tasks, n_tasks, X, n_tokens, x_q_buf,
@@ -168,9 +169,9 @@ void bn_backend_quant_matvec_gpu_buf_prepared(float *out, const BnQWeight *W,
                                               int8_t *x_q_buf,
                                               BnThreadPool *pool,
                                               BnGPUBackend *gpu) {
-    if (gpu && W_buf && gpu->matvec) {
-        if (gpu->matvec(gpu->ctx, out, W_buf, x,
-                        W->rows, W->cols, W->type) == 0)
+    if (W_buf) {
+        if (bn_gpu_backend_matvec(gpu, out, W_buf, x, W->rows, W->cols,
+                                  W->type) == 0)
             return;
     }
     bn_quant_matvec_prepared(out, W, prepared, x, x_q_buf, pool);
@@ -202,7 +203,7 @@ void bn_backend_quant_matvec_batch_gpu_buf(const BnMatvecTask *tasks,
             if (!W_bufs || !W_bufs[t]) { all_gpu = 0; break; }
         }
         if (all_gpu) {
-            if (gpu->matvec_batch && n_tasks <= 16) {
+            if (bn_gpu_backend_can_matvec_batch(gpu) && n_tasks <= 16) {
                 BnGPUMatvecOp ops[16];
                 for (int t = 0; t < n_tasks; t++) {
                     ops[t] = (BnGPUMatvecOp){
@@ -213,16 +214,17 @@ void bn_backend_quant_matvec_batch_gpu_buf(const BnMatvecTask *tasks,
                         .type = tasks[t].W->type,
                     };
                 }
-                if (gpu->matvec_batch(gpu->ctx, ops, n_tasks, x,
-                                       tasks[0].W->cols) == 0)
+                if (bn_gpu_backend_matvec_batch(gpu, ops, n_tasks, x,
+                                                tasks[0].W->cols) == 0)
                     return;
             }
-            if (gpu->matvec) {
+            if (bn_gpu_backend_can_matvec(gpu)) {
                 for (int t = 0; t < n_tasks; t++) {
                     const BnQWeight *W = tasks[t].W;
-                    if (gpu->matvec(gpu->ctx, tasks[t].out,
-                                    (void *)W_bufs[t], x,
-                                    W->rows, W->cols, W->type) != 0) {
+                    if (bn_gpu_backend_matvec(gpu, tasks[t].out,
+                                              (void *)W_bufs[t], x,
+                                              W->rows, W->cols,
+                                              W->type) != 0) {
                         bn_quant_matvec_batch(tasks, n_tasks, x, x_q_buf, pool);
                         return;
                     }
