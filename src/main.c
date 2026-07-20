@@ -75,7 +75,7 @@ typedef struct {
     int gpu_max_storage_binding_mb; // hidden diagnostic: allow large GPU logits
     int gpu_profile;    // hidden diagnostic: enable GPU timing logs
     int metal_disable_barriers; // hidden diagnostic: skip Metal memory barriers
-    int metal_enable_q6_q8k; // hidden diagnostic: use Q6_K x Q8_K Metal path
+    int metal_specialized_native_quant; // hidden diagnostic: use specialized native-quant Metal path
     int metal_native_quant_prepared; // hidden diagnostic: use prepared native-quant Metal upload layout
     int gpu_debug_qkv_split; // hidden diagnostic: print QKV split decision
     int gpu_disable_qkv_split; // hidden diagnostic: disable stacked QKV split
@@ -299,8 +299,9 @@ static CLIArgs parse_args(int argc, char **argv) {
             args.gpu_profile = parse_int(argv[++i], "--gpu-profile");
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
             args.metal_disable_barriers = 1;
-        } else if (strcmp(argv[i], "--metal-enable-q6-q8k") == 0) {
-            args.metal_enable_q6_q8k = 1;
+        } else if (strcmp(argv[i], "--metal-specialized-native-quant") == 0 ||
+                   strcmp(argv[i], "--metal-enable-q6-q8k") == 0) {
+            args.metal_specialized_native_quant = 1;
         } else if (strcmp(argv[i], "--metal-q4-prepared") == 0) {
             args.metal_native_quant_prepared = 1;
         } else if (strcmp(argv[i], "--metal-disable-q6-q8k") == 0) {
@@ -571,7 +572,7 @@ int main(int argc, char **argv) {
     }
     if (args.metal_disable_barriers)
         bn_gpu_policy_apply_metal_barrier_disable_override();
-    if (args.metal_enable_q6_q8k)
+    if (args.metal_specialized_native_quant)
         bn_gpu_policy_apply_specialized_native_quant_decode_override();
     if (args.metal_native_quant_prepared)
         bn_gpu_policy_apply_native_quant_prepared_override();

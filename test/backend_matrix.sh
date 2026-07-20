@@ -1746,6 +1746,11 @@ if grep -n 'bn_gpu_policy_apply_specialized_q6_q8k_override\|bn_gpu_policy_metal
     fail=1
 fi
 
+if grep -n 'metal_enable_q6_q8k\|--metal-enable-q6-q8k requested\|use Q6_K x Q8_K Metal path' src/main.c src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal specialized native-quant CLI internals must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_metal_q4_q8_matvec_supported\|bn_quant_format_metal_q6_q8k_matvec_supported\|bn_backend_quant_metal_q4_q8_matvec_supported\|bn_backend_quant_metal_q6_q8k_matvec_supported' include/quant.h src/quant/policy.c include/backend_quant.h src/gpu_policy.c test/test_quant.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Quant-format native GPU helpers must use behavior names, not Metal Q4/Q8 or Q6/Q8K names"
     fail=1

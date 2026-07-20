@@ -61,7 +61,9 @@ def parse_args():
     p.add_argument("--gpu-max-storage-binding-mb", type=int)
     p.add_argument("--metal-disable-barriers", action="store_true")
     p.add_argument("--metal-disable-q4-q8", action="store_true")
-    p.add_argument("--metal-enable-q6-q8k", action="store_true")
+    p.add_argument("--metal-specialized-native-quant", action="store_true")
+    p.add_argument("--metal-enable-q6-q8k", action="store_true",
+                   dest="metal_specialized_native_quant")
     p.add_argument("--metal-q4-prepared", action="store_true")
     p.add_argument("--benchmark", action="store_true")
     p.add_argument("--bench-tokens", type=int, default=128)
@@ -126,8 +128,8 @@ def append_bitnet_common_args(cmd, args):
         cmd.append("--metal-disable-barriers")
     if args.metal_disable_q4_q8:
         cmd.append("--metal-disable-q4-q8")
-    if args.metal_enable_q6_q8k:
-        cmd.append("--metal-enable-q6-q8k")
+    if args.metal_specialized_native_quant:
+        cmd.append("--metal-specialized-native-quant")
     if args.metal_q4_prepared:
         cmd.append("--metal-q4-prepared")
 
@@ -311,8 +313,8 @@ def run_bitnet_bench(args, prompt):
         cmd.append("--metal-disable-barriers")
     if args.metal_disable_q4_q8:
         cmd.append("--metal-disable-q4-q8")
-    if args.metal_enable_q6_q8k:
-        cmd.append("--metal-enable-q6-q8k")
+    if args.metal_specialized_native_quant:
+        cmd.append("--metal-specialized-native-quant")
     if args.metal_q4_prepared:
         cmd.append("--metal-q4-prepared")
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,

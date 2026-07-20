@@ -2180,8 +2180,8 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 "q6k_q8k_matvec.metal", "q6k_q8k_matvec");
             if (!ctx->specialized_native_quant_pipeline ||
                 !ctx->specialized_native_matvec_pipeline) {
-                fprintf(stderr, "[bn:gpu:metal] --metal-enable-q6-q8k requested "
-                        "but required Q8_K/Q6_K pipelines failed to compile\n");
+                fprintf(stderr, "[bn:gpu:metal] specialized native-quant path requested "
+                        "but required Metal pipelines failed to compile\n");
                 free(ctx);
                 return NULL;
             }
