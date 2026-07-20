@@ -4109,10 +4109,10 @@ static void test_quant_registry(void) {
                                                      2, 2,
                                                      BN_GGUF_TENSOR_Q6_K,
                                                      4096, 2049));
-    assert(bn_backend_quant_moe_all_active_two_q4_or_q6_shape(2, 2,
+    assert(bn_backend_quant_moe_all_active_two_graph_kquant_shape(2, 2,
                                                     BN_GGUF_TENSOR_Q4_K,
                                                     4096, 2048));
-    assert(!bn_backend_quant_moe_all_active_two_q4_or_q6_shape(2, 2,
+    assert(!bn_backend_quant_moe_all_active_two_graph_kquant_shape(2, 2,
                                                      BN_GGUF_TENSOR_Q4_K,
                                                      4095, 2048));
     assert(bn_backend_quant_requires_float_kquant_fallback(BN_GGUF_TENSOR_Q6_K));

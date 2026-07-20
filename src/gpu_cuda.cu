@@ -20275,14 +20275,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     int moe_all_active_two_kquant =
                         bn_backend_quant_moe_all_active_two_kquant_shape(
                             n_experts, k, down_type, hidden, dim);
-                    int moe_all_active_two_q4_or_q6 =
-                        bn_backend_quant_moe_all_active_two_q4_or_q6_shape(
+                    int moe_all_active_two_graph_kquant =
+                        bn_backend_quant_moe_all_active_two_graph_kquant_shape(
                             n_experts, k, down_type, hidden, dim);
                     int moe_all_active_two_fast_moe_ffn =
                         bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled();
                     int moe_all_active_two_fast_enabled =
                         bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
-                            moe_all_active_two_q4_or_q6);
+                            moe_all_active_two_graph_kquant);
                     int exact_silu =
                         (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
                     int use_cublas_all_active_two_decode =
@@ -20333,7 +20333,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         moe_all_active_two_kquant &&
                         !bn_gpu_policy_all_active_two_kquant_moe_dot_prepared_input_default_disabled();
                     int moe_all_active_two_fast_prepared_gateup =
-                        moe_all_active_two_q4_or_q6 &&
+                        moe_all_active_two_graph_kquant &&
                         bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_enabled() &&
                         !bn_gpu_policy_all_active_two_kquant_fast_prepared_gateup_disabled();
                     int use_moe_prepared_dot =

@@ -196,7 +196,7 @@ int bn_gpu_policy_cuda_moe_gateup_block_2row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_moe_down_block_4row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_moe_down_block_2row_enabled(int hidden_dim);
 int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
-    int all_active_two_q4_or_q6);
+    int all_active_two_graph_kquant);
 int bn_gpu_policy_cuda_moe_prepared_dot_enabled(
     int use_all_active_two_prepared_default,
     int fast_prepared_gateup,

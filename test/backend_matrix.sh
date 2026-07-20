@@ -2132,8 +2132,8 @@ if grep -n 'bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled\|bn_gpu_po
     fail=1
 fi
 
-if grep -n 'bn_backend_quant_moe_all2_q4q6\|bn_backend_quant_moe_all2_q4_or_q6' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "Backend quant all-active-two MoE predicates must use behavior names, not all2 shorthand"
+if grep -n 'bn_backend_quant_moe_all2_q4q6\|bn_backend_quant_moe_all2_q4_or_q6\|bn_backend_quant_moe_all_active_two_q4_or_q6_shape\|moe_all_active_two_q4_or_q6\|all_active_two_q4_or_q6' include/backend_quant.h include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Backend quant all-active-two MoE predicates must use behavior names, not Q4/Q6 shorthand"
     fail=1
 fi
 

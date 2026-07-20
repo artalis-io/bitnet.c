@@ -1295,9 +1295,9 @@ int bn_gpu_policy_cuda_moe_down_block_2row_enabled(int hidden_dim) {
 }
 
 int bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
-    int all_active_two_q4_or_q6) {
+    int all_active_two_graph_kquant) {
     return getenv("BN_CUDA_DISABLE_MOE_ALL2_FAST") == NULL &&
-           (!all_active_two_q4_or_q6 ||
+           (!all_active_two_graph_kquant ||
             bn_gpu_policy_all_active_two_kquant_moe_fast_route_enabled());
 }
 
