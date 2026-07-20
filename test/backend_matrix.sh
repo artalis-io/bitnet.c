@@ -1053,6 +1053,14 @@ if grep -n 'BnPrefillPreQ8KBuffers\|prefill_quant_matmul_preq8k_multi\|prefill_p
     fail=1
 fi
 
+if grep -n '\bxq\b\|\bxd\b\|\bxbs\b\|\bn_bpr\b' \
+    include/transformer_prefill_internal.h \
+    src/transformer/prefill_backend.c \
+    src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill prepared K-quant buffers must use behavior names, not Q8K implementation field names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_prepared_kquant' src/moe_cpu_kernels.c >/dev/null 2>&1; then
     echo "MoE CPU kernels must use MoE policy helpers for preq8k quant capability"
     fail=1

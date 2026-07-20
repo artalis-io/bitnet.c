@@ -1122,30 +1122,30 @@ static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,
                                                        const BnQWeight **W,
                                                        int n,
                                                        int n_tokens,
-                                                       const int8_t *x_q,
-                                                       const float *x_d,
-                                                       const int16_t *x_bsums,
+                                                       const int8_t *quantized,
+                                                       const float *scales,
+                                                       const int16_t *block_sums,
                                                        const float *x_float) {
     const BnBackendModel *backend = bn_model_backend(m);
     const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
     if (n > 4) {
         bn_quant_matmul_prepared_kquant_input_multi(
-            out, W, NULL, n, n_tokens, x_q, x_d, x_bsums, x_float,
+            out, W, NULL, n, n_tokens, quantized, scales, block_sums, x_float,
             bn_model_pool(m));
         return;
     }
     for (int i = 0; i < n; i++)
         prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
     bn_quant_matmul_prepared_kquant_input_multi(
-        out, W, prepared, n, n_tokens, x_q, x_d, x_bsums, x_float,
+        out, W, prepared, n, n_tokens, quantized, scales, block_sums, x_float,
         bn_model_pool(m));
 }
 
 typedef struct {
-    int8_t *xq;
-    float *xd;
-    int16_t *xbs;
-    int n_bpr;
+    int8_t *quantized;
+    float *scales;
+    int16_t *block_sums;
+    int blocks_per_row;
 } BnPrefillPreparedKQuantBuffers;
 
 static const BnPrefillCPUOps *prefill_cpu_ops(void) {
@@ -1157,10 +1157,10 @@ static size_t prefill_prepared_kquant_arena_bytes(int dim, int n_tokens) {
         return 0;
     if (dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
         return 0;
-    int n_bpr = dim / BN_QK_K;
+    int blocks_per_row = dim / BN_QK_K;
     return (size_t)n_tokens * (size_t)dim +
-           (size_t)n_tokens * (size_t)n_bpr * sizeof(float) +
-           (size_t)n_tokens * (size_t)n_bpr * 16 * sizeof(int16_t);
+           (size_t)n_tokens * (size_t)blocks_per_row * sizeof(float) +
+           (size_t)n_tokens * (size_t)blocks_per_row * 16 * sizeof(int16_t);
 }
 
 static BnPrefillPreparedKQuantBuffers
@@ -1172,17 +1172,19 @@ prefill_alloc_prepared_kquant_buffers(SHArena *arena,
         return b;
     if (!arena || dim <= 0 || n_tokens <= 0 || dim % BN_QK_K != 0)
         return b;
-    b.n_bpr = dim / BN_QK_K;
-    b.xq = (int8_t *)sh_arena_alloc(arena, (size_t)n_tokens * (size_t)dim);
-    b.xd = (float *)sh_arena_alloc(
-        arena, (size_t)n_tokens * (size_t)b.n_bpr * sizeof(float));
-    b.xbs = (int16_t *)sh_arena_alloc(
-        arena, (size_t)n_tokens * (size_t)b.n_bpr * 16 * sizeof(int16_t));
-    if (!b.xq || !b.xd || !b.xbs) {
-        b.xq = NULL;
-        b.xd = NULL;
-        b.xbs = NULL;
-        b.n_bpr = 0;
+    b.blocks_per_row = dim / BN_QK_K;
+    b.quantized = (int8_t *)sh_arena_alloc(arena,
+                                           (size_t)n_tokens * (size_t)dim);
+    b.scales = (float *)sh_arena_alloc(
+        arena, (size_t)n_tokens * (size_t)b.blocks_per_row * sizeof(float));
+    b.block_sums = (int16_t *)sh_arena_alloc(
+        arena, (size_t)n_tokens * (size_t)b.blocks_per_row * 16 *
+                   sizeof(int16_t));
+    if (!b.quantized || !b.scales || !b.block_sums) {
+        b.quantized = NULL;
+        b.scales = NULL;
+        b.block_sums = NULL;
+        b.blocks_per_row = 0;
     }
     return b;
 }
@@ -1192,11 +1194,12 @@ static int prefill_prepare_prepared_kquant(BnPrefillPreparedKQuantBuffers *b,
                                            int dim,
                                            int n_tokens) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
-    if (!b || !b->xq || !b->xd || !b->xbs || !x || dim <= 0 ||
-        n_tokens <= 0 || b->n_bpr <= 0 || !ops->prepare_prepared_kquant)
+    if (!b || !b->quantized || !b->scales || !b->block_sums || !x || dim <= 0 ||
+        n_tokens <= 0 || b->blocks_per_row <= 0 || !ops->prepare_prepared_kquant)
         return 0;
-    return ops->prepare_prepared_kquant(b->xq, b->xd, b->xbs, b->n_bpr,
-                               x, dim, n_tokens);
+    return ops->prepare_prepared_kquant(
+        b->quantized, b->scales, b->block_sums, b->blocks_per_row,
+        x, dim, n_tokens);
 }
 
 static int prefill_try_prepared_kquant_multi(const BnModel *m,
@@ -1208,7 +1211,7 @@ static int prefill_try_prepared_kquant_multi(const BnModel *m,
                                              int dim,
                                              int n_tokens) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
-    if (!m || !b || !b->xq || !out || !W || !X || n <= 0 || n > 4)
+    if (!m || !b || !b->quantized || !out || !W || !X || n <= 0 || n > 4)
         return 0;
     for (int i = 0; i < n; i++) {
         if (!bn_transformer_prefill_route_prepared_kquant_type_enabled(
@@ -1219,7 +1222,8 @@ static int prefill_try_prepared_kquant_multi(const BnModel *m,
     if (!prefill_prepare_prepared_kquant(b, X, dim, n_tokens))
         return 0;
     prefill_quant_matmul_prepared_kquant_multi(m, out, W, n, n_tokens,
-                                               b->xq, b->xd, b->xbs, X);
+                                               b->quantized, b->scales,
+                                               b->block_sums, X);
     return 1;
 }
 
@@ -1231,7 +1235,7 @@ static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
                                                     int dim,
                                                     int token_index) {
     const BnPrefillCPUOps *ops = prefill_cpu_ops();
-    if (!m || !b || !b->xq || !tasks || !x || n <= 0 || token_index < 0)
+    if (!m || !b || !b->quantized || !tasks || !x || n <= 0 || token_index < 0)
         return 0;
     for (int i = 0; i < n; i++) {
         if (!bn_transformer_prefill_route_prepared_kquant_type_enabled(
@@ -1240,9 +1244,9 @@ static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
             return 0;
     }
     bn_quant_matvec_batch_prepared_kquant_input(
-        tasks, n, b->xq + (size_t)token_index * dim,
-        b->xd + (size_t)token_index * b->n_bpr,
-        b->xbs + (size_t)token_index * b->n_bpr * 16,
+        tasks, n, b->quantized + (size_t)token_index * dim,
+        b->scales + (size_t)token_index * b->blocks_per_row,
+        b->block_sums + (size_t)token_index * b->blocks_per_row * 16,
         x, bn_model_pool(m));
     return 1;
 }

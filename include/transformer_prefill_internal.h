@@ -26,8 +26,9 @@ typedef struct {
     bn_tp_fn ssm_l2norm;
     bn_tp_fn ssm_delta;
     bn_tp_fn ssm_gate;
-    int (*prepare_prepared_kquant)(int8_t *xq, float *xd, int16_t *xbs,
-                                   int n_bpr, const float *x,
+    int (*prepare_prepared_kquant)(int8_t *quantized, float *scales,
+                                   int16_t *block_sums,
+                                   int blocks_per_row, const float *x,
                                    int dim, int n_tokens);
     int supports_prepared_kquant;
 } BnPrefillCPUOps;

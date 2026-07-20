@@ -127,21 +127,21 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
 #endif
 
 #if BN_TRANSFORMER_CPU_HAS_AVX2
-static int prefill_prepare_prepared_kquant_avx2(int8_t *xq,
-                                                float *xd,
-                                                int16_t *xbs,
-                                                int n_bpr,
+static int prefill_prepare_prepared_kquant_avx2(int8_t *quantized,
+                                                float *scales,
+                                                int16_t *block_sums,
+                                                int blocks_per_row,
                                                 const float *x,
                                                 int dim,
                                                 int n_tokens) {
-    if (!xq || !xd || !xbs || !x || dim <= 0 ||
-        n_tokens <= 0 || n_bpr <= 0)
+    if (!quantized || !scales || !block_sums || !x || dim <= 0 ||
+        n_tokens <= 0 || blocks_per_row <= 0)
         return 0;
     for (int t = 0; t < n_tokens; t++)
         bn_quant_x_to_q8k(x + (size_t)t * dim,
-                          xq + (size_t)t * dim,
-                          xd + (size_t)t * n_bpr,
-                          xbs + (size_t)t * n_bpr * 16, dim);
+                          quantized + (size_t)t * dim,
+                          scales + (size_t)t * blocks_per_row,
+                          block_sums + (size_t)t * blocks_per_row * 16, dim);
     return 1;
 }
 #endif
