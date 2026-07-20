@@ -2123,6 +2123,11 @@ if grep -n 'BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8\|BN_MODEL_ARCH_POLICY_S
     fail=1
 fi
 
+if grep -n 'args\.q4_q8_\|int[[:space:]]\+q4_q8_' src/main.c >/dev/null 2>&1; then
+    echo "CLI internal state for small-dense exact-native diagnostics must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_small_dense_q8_supported\|bn_backend_quant_cuda_small_dense_q8_supported\|bn_gpu_policy_small_dense_q8_cpu_attention_safe_disabled' include/backend_quant.h include/gpu_policy.h src/gpu_policy.c src/transformer/gpu_policy.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Small-dense native-quant policy must use behavior names, not Q8 internal helper names"
     fail=1

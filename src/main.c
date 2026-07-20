@@ -82,14 +82,14 @@ typedef struct {
     int gpu_disable_gateup_split; // hidden diagnostic: disable gate/up split
     int gpu_disable_fused_gateup; // hidden diagnostic: disable fused gate/up
     int gpu_split_residual_rmsnorm; // hidden diagnostic: split residual+rmsnorm
-    int metal_disable_q4_q8; // hidden diagnostic: use baseline Q4_0 Metal path
+    int metal_disable_small_dense_exact_native; // hidden diagnostic: use baseline Metal native path
     int metal_private_weights; // hidden diagnostic: upload weights to private Metal buffers
-    int q4_q8_to_layer; // hidden diagnostic: last Q4 x Q8 layer
-    int q4_q8_tail_native; // hidden diagnostic: final layers to leave on native Q4
-    int q4_q8_attn_only; // hidden diagnostic: use Q4 x Q8 only for attention
-    int q4_q8_ffn_only; // hidden diagnostic: use Q4 x Q8 only for FFN
-    int q4_q8_disable_gateup; // hidden diagnostic: use native Q4 fused gate/up
-    int q4_q8_disable_ffn_down; // hidden diagnostic: use native Q4 FFN down
+    int small_dense_exact_native_to_layer; // hidden diagnostic: last exact-native layer
+    int small_dense_exact_native_tail; // hidden diagnostic: final layers to leave on backend-native path
+    int small_dense_exact_native_attn_only; // hidden diagnostic: use exact-native path only for attention
+    int small_dense_exact_native_ffn_only; // hidden diagnostic: use exact-native path only for FFN
+    int small_dense_exact_native_disable_gateup; // hidden diagnostic: use baseline fused gate/up
+    int small_dense_exact_native_disable_ffn_down; // hidden diagnostic: use baseline FFN down
     int gpu_flash_min_kv; // hidden diagnostic: minimum KV length for GPU flash attention
     const char *shader_dir; // --shader-dir for WebGPU WGSL shaders
     const char *metal_shader_dir; // --metal-shader-dir for Metal shaders
@@ -132,13 +132,13 @@ static void print_usage(const char *prog) {
     fprintf(stderr, "  --cuda          Enable experimental CUDA backend (requires BN_ENABLE_CUDA=1)\n");
     fprintf(stderr, "  --gpu-profile <int>  Print GPU timing diagnostics\n");
     fprintf(stderr, "  --metal-disable-barriers  Skip Metal inter-dispatch barriers\n");
-    fprintf(stderr, "  --metal-q4-prepared  Use prepared Q4_0 Metal upload layout\n");
+    fprintf(stderr, "  --metal-q4-prepared  Use prepared native-quant Metal upload layout\n");
     fprintf(stderr, "  --gpu-debug-qkv-split  Print QKV split diagnostic\n");
     fprintf(stderr, "  --gpu-disable-qkv-split  Disable stacked QKV split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-gateup-split  Disable gate/up split diagnostic path\n");
     fprintf(stderr, "  --gpu-disable-fused-gateup  Disable fused gate/up diagnostic path\n");
     fprintf(stderr, "  --gpu-split-residual-rmsnorm  Split residual+rmsnorm diagnostic path\n");
-    fprintf(stderr, "  --q4-q8-tail-native <int>  Leave final N layers on native Q4 path\n");
+    fprintf(stderr, "  --q4-q8-tail-native <int>  Leave final N layers on backend-native path\n");
     fprintf(stderr, "  --shader-dir <path>        WebGPU shader directory (default: shaders/)\n");
     fprintf(stderr, "  --metal-shader-dir <path>  Metal shader directory (default: shaders/metal/)\n");
     fprintf(stderr, "  -t <int>        Number of threads (default: auto-detect)\n");
@@ -211,8 +211,8 @@ static CLIArgs parse_args(int argc, char **argv) {
     args.cache_mb = 4096;
     args.gpu_cache_mb = 4096;
     args.draft_k = 5;
-    args.q4_q8_to_layer = -1;
-    args.q4_q8_tail_native = -1;
+    args.small_dense_exact_native_to_layer = -1;
+    args.small_dense_exact_native_tail = -1;
     args.gpu_max_storage_binding_mb = -1;
     args.gpu_flash_min_kv = -1;
 
@@ -316,21 +316,21 @@ static CLIArgs parse_args(int argc, char **argv) {
         } else if (strcmp(argv[i], "--gpu-split-residual-rmsnorm") == 0) {
             args.gpu_split_residual_rmsnorm = 1;
         } else if (strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
-            args.metal_disable_q4_q8 = 1;
+            args.metal_disable_small_dense_exact_native = 1;
         } else if (strcmp(argv[i], "--metal-private-weights") == 0) {
             args.metal_private_weights = 1;
         } else if (strcmp(argv[i], "--q4-q8-to-layer") == 0 && i + 1 < argc) {
-            args.q4_q8_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
+            args.small_dense_exact_native_to_layer = parse_int(argv[++i], "--q4-q8-to-layer");
         } else if (strcmp(argv[i], "--q4-q8-tail-native") == 0 && i + 1 < argc) {
-            args.q4_q8_tail_native = parse_int(argv[++i], "--q4-q8-tail-native");
+            args.small_dense_exact_native_tail = parse_int(argv[++i], "--q4-q8-tail-native");
         } else if (strcmp(argv[i], "--q4-q8-attn-only") == 0) {
-            args.q4_q8_attn_only = 1;
+            args.small_dense_exact_native_attn_only = 1;
         } else if (strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
-            args.q4_q8_ffn_only = 1;
+            args.small_dense_exact_native_ffn_only = 1;
         } else if (strcmp(argv[i], "--q4-q8-disable-gateup") == 0) {
-            args.q4_q8_disable_gateup = 1;
+            args.small_dense_exact_native_disable_gateup = 1;
         } else if (strcmp(argv[i], "--q4-q8-disable-ffn-down") == 0) {
-            args.q4_q8_disable_ffn_down = 1;
+            args.small_dense_exact_native_disable_ffn_down = 1;
         } else if (strcmp(argv[i], "--gpu-flash-min-kv") == 0 && i + 1 < argc) {
             args.gpu_flash_min_kv = parse_int(argv[++i], "--gpu-flash-min-kv");
         } else if (strcmp(argv[i], "--shader-dir") == 0 && i + 1 < argc) {
@@ -590,27 +590,27 @@ int main(int argc, char **argv) {
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     if (args.gpu_split_residual_rmsnorm)
         setenv("BN_GPU_SPLIT_RESIDUAL_RMSNORM", "1", 1);
-    if (args.metal_disable_q4_q8)
+    if (args.metal_disable_small_dense_exact_native)
         bn_gpu_policy_apply_metal_q4_q8_default_disable_override();
     if (args.metal_private_weights)
         bn_gpu_policy_apply_metal_private_weights_override();
-    if (args.q4_q8_to_layer >= 0) {
+    if (args.small_dense_exact_native_to_layer >= 0) {
         char layer_env[32];
-        snprintf(layer_env, sizeof(layer_env), "%d", args.q4_q8_to_layer);
+        snprintf(layer_env, sizeof(layer_env), "%d", args.small_dense_exact_native_to_layer);
         setenv("BN_GPU_Q4_Q8_TO_LAYER", layer_env, 1);
     }
-    if (args.q4_q8_tail_native >= 0) {
+    if (args.small_dense_exact_native_tail >= 0) {
         char tail_env[32];
-        snprintf(tail_env, sizeof(tail_env), "%d", args.q4_q8_tail_native);
+        snprintf(tail_env, sizeof(tail_env), "%d", args.small_dense_exact_native_tail);
         setenv("BN_GPU_Q4_Q8_TAIL_NATIVE", tail_env, 1);
     }
-    if (args.q4_q8_attn_only)
+    if (args.small_dense_exact_native_attn_only)
         setenv("BN_GPU_Q4_Q8_ATTN_ONLY", "1", 1);
-    if (args.q4_q8_ffn_only)
+    if (args.small_dense_exact_native_ffn_only)
         setenv("BN_GPU_Q4_Q8_FFN_ONLY", "1", 1);
-    if (args.q4_q8_disable_gateup)
+    if (args.small_dense_exact_native_disable_gateup)
         setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
-    if (args.q4_q8_disable_ffn_down)
+    if (args.small_dense_exact_native_disable_ffn_down)
         setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
     if (args.gpu_flash_min_kv >= 0) {
         char min_kv_env[32];
