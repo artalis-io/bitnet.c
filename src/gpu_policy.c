@@ -2538,12 +2538,12 @@ int bn_gpu_policy_metal_q4_q8_graph_path_supported(
 int bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
     int tensor_type,
     int cols,
-    int has_q8k_quant_pipeline,
-    int has_q6_q8k_pipeline) {
+    int has_prepared_activation_pipeline,
+    int has_specialized_native_pipeline) {
     return bn_gpu_policy_metal_specialized_native_quant_enabled() &&
            bn_backend_quant_metal_q6_q8k_matvec_supported(tensor_type) &&
-           has_q8k_quant_pipeline &&
-           has_q6_q8k_pipeline &&
+           has_prepared_activation_pipeline &&
+           has_specialized_native_pipeline &&
            cols > 0 &&
            (cols % 256) == 0;
 }

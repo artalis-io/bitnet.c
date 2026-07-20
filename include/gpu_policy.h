@@ -517,8 +517,8 @@ int bn_gpu_policy_metal_q4_q8_graph_path_supported(
 int bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
     int tensor_type,
     int cols,
-    int has_q8k_quant_pipeline,
-    int has_q6_q8k_pipeline);
+    int has_prepared_activation_pipeline,
+    int has_specialized_native_pipeline);
 int bn_gpu_policy_metal_cpu_order_rmsnorm_enabled(void);
 int bn_gpu_policy_metal_full_barriers_enabled(void);
 int bn_gpu_policy_metal_barriers_enabled(void);
