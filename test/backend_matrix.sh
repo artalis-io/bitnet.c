@@ -1245,7 +1245,7 @@ if grep -n 'return gpu && gpu->kind == BN_GPU_BACKEND_CUDA' src/transformer/gpu_
     fail=1
 fi
 
-if ! grep -n 'bn_gpu_policy_metal_native_quant_prepared_enabled\|bn_gpu_policy_metal_native_quant_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_repacked_buffer_type\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
+if ! grep -n 'bn_gpu_policy_metal_native_quant_prepared_enabled\|bn_gpu_policy_metal_native_quant_prepared_upload_enabled\|bn_gpu_policy_metal_repacked_buffer_supported\|bn_gpu_policy_metal_repacked_buffer_type\|bn_gpu_policy_metal_specialized_native_quant_enabled\|bn_gpu_policy_metal_barriers_disabled' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must own Metal feature-policy env vars"
     fail=1
 fi
@@ -1257,6 +1257,11 @@ fi
 
 if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_policy_metal_apply_q4_q8_default\|bn_gpu_policy_metal_q4_q8_enabled' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Metal small-dense exact-native default policy must use behavior names, not Q4/Q8 default helper names"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_apply_specialized_q6_q8k_override\|bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_q6_q8k_matvec_supported' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Metal specialized native-quant policy must use behavior names, not Q6/Q8K helper names"
     fail=1
 fi
 
@@ -1283,7 +1288,7 @@ if awk '
     /static int metal_matvec\(/ { in_fn=1 }
     in_fn && /type == BN_GGUF_TENSOR_/ { bad=1 }
     in_fn && /bn_gpu_policy_metal_q4_q8_matvec_supported/ { saw_q4=1 }
-    in_fn && /bn_gpu_policy_metal_q6_q8k_matvec_supported/ { saw_q6=1 }
+    in_fn && /bn_gpu_policy_metal_specialized_native_quant_matvec_supported/ { saw_q6=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
 ' src/gpu_metal.m >/dev/null 2>&1; then
@@ -1296,7 +1301,7 @@ if awk '
     in_fn && /^static / && !/static int metal_execute\(/ { in_fn=0 }
     in_fn && /op->type == BN_GGUF_TENSOR_/ { bad=1 }
     in_fn && /metal_q4_q8_graph_path_supported/ { saw_q4=1 }
-    in_fn && /bn_gpu_policy_metal_q6_q8k_matvec_supported/ { saw_q6=1 }
+    in_fn && /bn_gpu_policy_metal_specialized_native_quant_matvec_supported/ { saw_q6=1 }
     END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
 ' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal graph optimized-path eligibility must use GPU policy helpers, not tensor-specific checks"
@@ -2060,8 +2065,8 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_GPU_BACKEND_METAL\|BN_GPU_BACKEND_WEBGPU\|BN
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_metal_q6_q8k_enabled\|bn_gpu_policy_metal_native_quant_prepared_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
-    echo "Transformer GPU policy must use behavior-named helpers for specialized Q6/Q8 and prepared Q4/Q8 policy"
+if grep -n 'bn_gpu_policy_metal_specialized_native_quant_enabled\|bn_gpu_policy_metal_native_quant_prepared_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend-neutral behavior helpers for Metal native-quant policy"
     fail=1
 fi
 

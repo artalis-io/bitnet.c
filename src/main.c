@@ -572,7 +572,7 @@ int main(int argc, char **argv) {
     if (args.metal_disable_barriers)
         bn_gpu_policy_apply_metal_barrier_disable_override();
     if (args.metal_enable_q6_q8k)
-        bn_gpu_policy_apply_specialized_q6_q8k_override();
+        bn_gpu_policy_apply_specialized_native_quant_decode_override();
     if (args.metal_native_quant_prepared)
         bn_gpu_policy_apply_native_quant_prepared_override();
     if (args.top_logits > 0) {

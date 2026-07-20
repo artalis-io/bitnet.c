@@ -484,7 +484,7 @@ int bn_gpu_policy_webgpu_repacked_buffer_supported(int tensor_type);
 int bn_gpu_policy_webgpu_repacked_bias_supported(int tensor_type);
 int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 void bn_gpu_policy_apply_metal_barrier_disable_override(void);
-void bn_gpu_policy_apply_specialized_q6_q8k_override(void);
+void bn_gpu_policy_apply_specialized_native_quant_decode_override(void);
 void bn_gpu_policy_apply_native_quant_prepared_override(void);
 void bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override(void);
 void bn_gpu_policy_apply_metal_private_weights_override(void);
@@ -497,7 +497,7 @@ int bn_gpu_policy_metal_repacked_buffer_supported(int tensor_type);
 int bn_gpu_policy_metal_repacked_buffer_type(int tensor_type);
 int bn_gpu_policy_metal_prepared_stacked_upload_blocked(int tensor_type);
 int bn_gpu_policy_metal_shared_weights_enabled(void);
-int bn_gpu_policy_metal_q6_q8k_enabled(void);
+int bn_gpu_policy_metal_specialized_native_quant_enabled(void);
 int bn_gpu_policy_specialized_native_quant_decode_path_enabled(void);
 int bn_gpu_policy_metal_q8_barriers_enabled(void);
 int bn_gpu_policy_metal_q4_q8_matvec_supported(int tensor_type,
@@ -513,10 +513,11 @@ int bn_gpu_policy_metal_q4_q8_graph_path_supported(
     int prepared_path,
     int has_q8_quant_pipeline,
     int has_pipeline);
-int bn_gpu_policy_metal_q6_q8k_matvec_supported(int tensor_type,
-                                                int cols,
-                                                int has_q8k_quant_pipeline,
-                                                int has_q6_q8k_pipeline);
+int bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
+    int tensor_type,
+    int cols,
+    int has_q8k_quant_pipeline,
+    int has_q6_q8k_pipeline);
 int bn_gpu_policy_metal_cpu_order_rmsnorm_enabled(void);
 int bn_gpu_policy_metal_full_barriers_enabled(void);
 int bn_gpu_policy_metal_barriers_enabled(void);

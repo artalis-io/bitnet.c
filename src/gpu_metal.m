@@ -1066,13 +1066,16 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     int use_q4_q8 = bn_gpu_policy_metal_q4_q8_matvec_supported(
         type, ctx->q4_q8_enabled, wbuf->native_quant_prepared,
         ctx->q8_quant_pipeline != nil, ctx->q4_q8_matvec_pipeline != nil, 0);
-    int use_q6_q8k = bn_gpu_policy_metal_q6_q8k_matvec_supported(
-        type, cols, ctx->q8k_quant_pipeline != nil,
-        ctx->q6_q8k_matvec_pipeline != nil);
+    int use_specialized_native_quant =
+        bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
+            type, cols, ctx->q8k_quant_pipeline != nil,
+            ctx->q6_q8k_matvec_pipeline != nil);
     if (wbuf->native_quant_prepared && !use_prepared_native_quant_q8) return -1;
     if ((use_prepared_native_quant_q8 || use_q4_q8) &&
         ensure_q8_scratch(ctx, cols, 1) != 0) return -1;
-    if (use_q6_q8k && ensure_q8k_scratch(ctx, cols, 1) != 0) return -1;
+    if (use_specialized_native_quant &&
+        ensure_q8k_scratch(ctx, cols, 1) != 0)
+        return -1;
 
     memcpy([ctx->x_buf contents], x, x_size);
 
@@ -1102,7 +1105,7 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
             [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
             [enc setBuffer:ctx->out_buf offset:0 atIndex:3];
             [enc setBytes:params length:sizeof(params) atIndex:4];
-        } else if (use_q6_q8k) {
+        } else if (use_specialized_native_quant) {
             metal_encode_q8k_quant(enc, ctx, ctx->x_buf, (uint32_t)cols, 1);
             [enc setComputePipelineState:ctx->q6_q8k_matvec_pipeline];
             [enc setBuffer:wbuf->buf offset:wbuf->offset atIndex:0];
@@ -1530,7 +1533,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->q8_scales_buf offset:0 atIndex:2];
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
-                } else if (bn_gpu_policy_metal_q6_q8k_matvec_supported(
+                } else if (bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
                                op->type, op->cols,
                                ctx->q8k_quant_pipeline != nil,
                                ctx->q6_q8k_matvec_pipeline != nil)) {
@@ -2166,7 +2169,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         ctx->cpu_order_rmsnorm_enabled =
             bn_gpu_policy_metal_cpu_order_rmsnorm_enabled();
 
-        if (bn_gpu_policy_metal_q6_q8k_enabled()) {
+        if (bn_gpu_policy_metal_specialized_native_quant_enabled()) {
             ctx->q8k_quant_pipeline = compile_shader(ctx, dir,
                 "q8k_quantize.metal", "q8k_quantize");
             ctx->q6_q8k_matvec_pipeline = compile_shader(ctx, dir,

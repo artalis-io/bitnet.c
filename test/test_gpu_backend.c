@@ -3352,22 +3352,22 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_METAL_SHARED_WEIGHTS", "1", 1);
     assert(bn_gpu_policy_metal_shared_weights_enabled());
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
-    assert(!bn_gpu_policy_metal_q6_q8k_enabled());
+    assert(!bn_gpu_policy_metal_specialized_native_quant_enabled());
     assert(!bn_gpu_policy_specialized_native_quant_decode_path_enabled());
-    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    assert(!bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 256, 1, 1));
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
-    assert(bn_gpu_policy_metal_q6_q8k_enabled());
+    assert(bn_gpu_policy_metal_specialized_native_quant_enabled());
     assert(bn_gpu_policy_specialized_native_quant_decode_path_enabled());
-    assert(bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    assert(bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 256, 1, 1));
-    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    assert(!bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_K, 256, 1, 1));
-    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    assert(!bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 128, 1, 1));
-    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    assert(!bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 256, 0, 1));
-    assert(!bn_gpu_policy_metal_q6_q8k_matvec_supported(
+    assert(!bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 256, 1, 0));
     unsetenv("BN_METAL_Q8_BARRIERS");
     assert(!bn_gpu_policy_metal_q8_barriers_enabled());
@@ -3528,7 +3528,7 @@ static void test_gpu_policy_helpers(void) {
     assert(getenv("BN_METAL_PRIVATE_WEIGHTS") != NULL);
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
-    bn_gpu_policy_apply_specialized_q6_q8k_override();
+    bn_gpu_policy_apply_specialized_native_quant_decode_override();
     assert(bn_gpu_policy_specialized_native_quant_decode_path_enabled());
     unsetenv("BN_METAL_ENABLE_Q6_Q8K");
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");

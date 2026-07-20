@@ -2421,7 +2421,7 @@ void bn_gpu_policy_apply_metal_barrier_disable_override(void) {
     setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
 }
 
-void bn_gpu_policy_apply_specialized_q6_q8k_override(void) {
+void bn_gpu_policy_apply_specialized_native_quant_decode_override(void) {
     setenv("BN_METAL_ENABLE_Q6_Q8K", "1", 1);
 }
 
@@ -2489,12 +2489,12 @@ int bn_gpu_policy_metal_shared_weights_enabled(void) {
     return getenv("BN_METAL_SHARED_WEIGHTS") != NULL;
 }
 
-int bn_gpu_policy_metal_q6_q8k_enabled(void) {
+int bn_gpu_policy_metal_specialized_native_quant_enabled(void) {
     return getenv("BN_METAL_ENABLE_Q6_Q8K") != NULL;
 }
 
 int bn_gpu_policy_specialized_native_quant_decode_path_enabled(void) {
-    return bn_gpu_policy_metal_q6_q8k_enabled();
+    return bn_gpu_policy_metal_specialized_native_quant_enabled();
 }
 
 int bn_gpu_policy_metal_q8_barriers_enabled(void) {
@@ -2531,12 +2531,12 @@ int bn_gpu_policy_metal_q4_q8_graph_path_supported(
            has_pipeline;
 }
 
-int bn_gpu_policy_metal_q6_q8k_matvec_supported(
+int bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
     int tensor_type,
     int cols,
     int has_q8k_quant_pipeline,
     int has_q6_q8k_pipeline) {
-    return bn_gpu_policy_metal_q6_q8k_enabled() &&
+    return bn_gpu_policy_metal_specialized_native_quant_enabled() &&
            bn_backend_quant_metal_q6_q8k_matvec_supported(tensor_type) &&
            has_q8k_quant_pipeline &&
            has_q6_q8k_pipeline &&
