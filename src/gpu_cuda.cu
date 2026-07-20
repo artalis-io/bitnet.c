@@ -379,12 +379,6 @@ static int cuda_use_moe_route_routed_ffn_batch(int n_experts) {
         bn_gpu_policy_moe_route_expanded_topk(n_experts, 0));
 }
 
-static int cuda_env_int(const char *name, int fallback) {
-    const char *env = getenv(name);
-    if (!env || !*env) return fallback;
-    return atoi(env);
-}
-
 enum {
     BN_CUDA_DENSE_PROF_INPUT_NORM,
     BN_CUDA_DENSE_PROF_QK,
@@ -428,8 +422,8 @@ static void cuda_dense_profile_maybe_print(double *totals,
                                            unsigned long long *layers,
                                            int n_tokens, int dim) {
     (*layers)++;
-    int every = cuda_env_int("BN_CUDA_PREFILL_DENSE_PROFILE_EVERY", 0);
-    if (every <= 0) every = 36;
+    int every =
+        bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(36);
     if ((*layers % (unsigned long long)every) != 0)
         return;
     double sum = 0.0;
@@ -11468,7 +11462,8 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
     size_t free_mem = 0;
     size_t total_mem = 0;
     if (cudaMemGetInfo(&free_mem, &total_mem) == cudaSuccess) {
-        int reserve_mb = cuda_env_int("BN_CUDA_CUBLAS_CACHE_RESERVE_MB", 4096);
+        int reserve_mb =
+            bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096);
         size_t reserve = reserve_mb > 0
             ? (size_t)reserve_mb * 1024u * 1024u : 0u;
         if (free_mem <= bytes + reserve)
@@ -11570,7 +11565,7 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
         size_t total_mem2 = 0;
         if (cudaMemGetInfo(&free_mem2, &total_mem2) == cudaSuccess) {
             int reserve_mb =
-                cuda_env_int("BN_CUDA_CUBLAS_CACHE_RESERVE_MB", 4096);
+                bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096);
             size_t reserve = reserve_mb > 0
                 ? (size_t)reserve_mb * 1024u * 1024u : 0u;
             if (free_mem2 <= f32_bytes + reserve)
@@ -11630,7 +11625,8 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     size_t free_mem = 0;
     size_t total_mem = 0;
     if (cudaMemGetInfo(&free_mem, &total_mem) == cudaSuccess) {
-        int reserve_mb = cuda_env_int("BN_CUDA_CUBLAS_CACHE_RESERVE_MB", 4096);
+        int reserve_mb =
+            bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096);
         size_t reserve = reserve_mb > 0
             ? (size_t)reserve_mb * 1024u * 1024u : 0u;
         if (free_mem <= bytes + reserve)
@@ -14891,8 +14887,8 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
         expert_ms += prof_expert_ms;
         shared_ms += prof_shared_ms;
         readback_ms += prof_readback_ms;
-        int every = cuda_env_int("BN_CUDA_PROFILE_MOE_FFN_BATCH_EVERY", 24);
-        if (every <= 0) every = 24;
+        int every =
+            bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(24);
         if ((calls % (unsigned long long)every) == 0) {
             fprintf(stderr,
                     "[bn:gpu:cuda:moe-ffn-batch] calls=%llu upload=%.3fms assign=%.3f expert=%.3f shared=%.3f readback=%.3f\n",
@@ -16073,8 +16069,8 @@ moe_route_routed_readback:
     BN_CUDA_MOE_PREFILL_PROFILE_STEP(6);
     if (profile_prefill_moe) {
         profile_calls++;
-        int every = cuda_env_int("BN_CUDA_PROFILE_MOE_PREFILL_EVERY", 48);
-        if (every <= 0) every = 48;
+        int every =
+            bn_gpu_policy_cuda_moe_prefill_profile_every_or_default(48);
         if ((profile_calls % (unsigned long long)every) == 0) {
             double total = 0.0;
             for (int i = 0; i < 7; i++) total += profile_totals[i];
@@ -16782,7 +16778,8 @@ static int cuda_prefill_moe_layer(
             n_kv_heads, head_size, kv_mul, kv_dim, qk_rows, qk_type,
             wv_rows, wv_type, wo_rows, wo_cols, wo_type, qk_norm_per_head,
             norm_eps, pos0, rope_dims, attention_scale, 1, kv_cache_off,
-            kv_cache_stride, cuda_env_int("BN_CUDA_MOE_PREFILL_MIN_TOKENS", 1)) != 0)
+            kv_cache_stride,
+            bn_gpu_policy_moe_prefill_min_tokens_or_default(1)) != 0)
         return -1;
     return cuda_moe_route_routed_ffn_batch_impl(
         vctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
@@ -18349,7 +18346,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     if (bn_gpu_policy_cuda_dump_ops_enabled() && n_ops > 0) {
         static int dumped = 0;
         if (!dumped || bn_gpu_policy_cuda_dump_ops_every_enabled()) {
-            int dump_limit = cuda_env_int("BN_CUDA_DUMP_OPS_LIMIT", 256);
+            int dump_limit =
+                bn_gpu_policy_cuda_dump_ops_limit_or_default(256);
             if (dump_limit <= 0 || dump_limit > n_ops) dump_limit = n_ops;
             int limit = n_ops < dump_limit ? n_ops : dump_limit;
             fprintf(stderr, "[bn:gpu:cuda:ops] n_ops=%d showing=%d\n",
@@ -21650,8 +21648,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         cudaEventDestroy(ev_start);
         cudaEventDestroy(ev_stop);
         profile_calls++;
-        int every = cuda_env_int("BN_CUDA_PROFILE_EVERY", 1);
-        if (every <= 0) every = 1;
+        int every = bn_gpu_policy_cuda_profile_every_or_default(1);
         if ((profile_calls % (unsigned long long)every) == 0) {
             fprintf(stderr, "[bn:gpu:cuda:profile] calls=%llu\n",
                     profile_calls);
@@ -21688,7 +21685,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         }
         double exec_ms = cuda_wall_ms() - wall_start;
         unsigned long long next_wall_call = wall_calls + 1;
-        int detail_limit = cuda_env_int("BN_CUDA_PROFILE_WALL_DETAIL", 0);
+        int detail_limit =
+            bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(0);
         if (detail_limit < 0 ||
             (detail_limit > 0 &&
              next_wall_call <= (unsigned long long)detail_limit)) {
@@ -21713,8 +21711,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             wall_launch_by_code[code] +=
                 (unsigned long long)exec_launch_by_code[code];
         wall_calls++;
-        int every = cuda_env_int("BN_CUDA_PROFILE_WALL_EVERY", 16);
-        if (every <= 0) every = 16;
+        int every = bn_gpu_policy_cuda_wall_profile_every_or_default(16);
         if ((wall_calls % (unsigned long long)every) == 0) {
             fprintf(stderr,
                     "[bn:gpu:cuda:wall] calls=%llu ops=%llu launches=%llu "
@@ -21817,7 +21814,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
         return NULL;
     }
     (void)cublasSetMathMode(ctx->cublas, CUBLAS_TENSOR_OP_MATH);
-    int ws_mb = cuda_env_int("BN_CUDA_CUBLAS_WORKSPACE_MB", 32);
+    int ws_mb = bn_gpu_policy_cuda_cublas_workspace_mb_or_default(32);
     if (ws_mb > 0) {
         size_t ws_bytes = (size_t)ws_mb * 1024u * 1024u;
         cudaError_t ws_err = cudaMalloc(&ctx->cublas_workspace, ws_bytes);

@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+static int env_positive_int_or_default(const char *name, int default_tokens);
+static int env_int_or_default(const char *name, int default_value);
+
 static int gpu_policy_compat_env_enabled(const char *name,
                                          const char *compat_name) {
     return getenv(name) != NULL ||
@@ -1776,6 +1779,14 @@ int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_CUBLAS_CACHE") != NULL;
 }
 
+int bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(int default_mb) {
+    return env_int_or_default("BN_CUDA_CUBLAS_CACHE_RESERVE_MB", default_mb);
+}
+
+int bn_gpu_policy_cuda_cublas_workspace_mb_or_default(int default_mb) {
+    return env_int_or_default("BN_CUDA_CUBLAS_WORKSPACE_MB", default_mb);
+}
+
 int bn_gpu_policy_cuda_nan_verbose_debug_enabled(void) {
     return getenv("BN_CUDA_DEBUG_NAN_VERBOSE") != NULL;
 }
@@ -1790,6 +1801,21 @@ int bn_gpu_policy_cuda_profile_enabled(void) {
 
 int bn_gpu_policy_cuda_wall_profile_enabled(void) {
     return getenv("BN_CUDA_PROFILE_WALL") != NULL;
+}
+
+int bn_gpu_policy_cuda_profile_every_or_default(int default_every) {
+    return env_positive_int_or_default("BN_CUDA_PROFILE_EVERY",
+                                       default_every);
+}
+
+int bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(
+    int default_limit) {
+    return env_int_or_default("BN_CUDA_PROFILE_WALL_DETAIL", default_limit);
+}
+
+int bn_gpu_policy_cuda_wall_profile_every_or_default(int default_every) {
+    return env_positive_int_or_default("BN_CUDA_PROFILE_WALL_EVERY",
+                                       default_every);
 }
 
 int bn_gpu_policy_cuda_profile_shapes_enabled(void) {
@@ -1820,6 +1846,10 @@ int bn_gpu_policy_cuda_dump_ops_every_enabled(void) {
     return getenv("BN_CUDA_DUMP_OPS_EVERY") != NULL;
 }
 
+int bn_gpu_policy_cuda_dump_ops_limit_or_default(int default_limit) {
+    return env_int_or_default("BN_CUDA_DUMP_OPS_LIMIT", default_limit);
+}
+
 int bn_gpu_policy_cuda_prefill_moe_layer_disabled(void) {
     return getenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER") != NULL;
 }
@@ -1834,6 +1864,12 @@ int bn_gpu_policy_cuda_prefill_dense_debug_enabled(void) {
 
 int bn_gpu_policy_cuda_prefill_dense_profile_enabled(void) {
     return getenv("BN_CUDA_PREFILL_DENSE_PROFILE") != NULL;
+}
+
+int bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(
+    int default_every) {
+    return env_positive_int_or_default("BN_CUDA_PREFILL_DENSE_PROFILE_EVERY",
+                                       default_every);
 }
 
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
@@ -2129,6 +2165,12 @@ int bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled(void) {
     return getenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL") != NULL;
 }
 
+int bn_gpu_policy_cuda_moe_prefill_profile_every_or_default(
+    int default_every) {
+    return env_positive_int_or_default("BN_CUDA_PROFILE_MOE_PREFILL_EVERY",
+                                       default_every);
+}
+
 int bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
     int add_norm_resid,
     int out_provided,
@@ -2169,6 +2211,12 @@ int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void) {
 
 int bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled(void) {
     return getenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL") != NULL;
+}
+
+int bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(
+    int default_every) {
+    return env_positive_int_or_default("BN_CUDA_PROFILE_MOE_FFN_BATCH_EVERY",
+                                       default_every);
 }
 
 int bn_gpu_policy_moe_cache_prefill_enabled(void) {

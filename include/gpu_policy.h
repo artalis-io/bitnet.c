@@ -314,10 +314,16 @@ int bn_gpu_policy_cuda_weighted_add_sigmoid_residual_rmsnorm_fuse_enabled(void);
 int bn_gpu_policy_cuda_weighted_add_sigmoid_residual_fuse_enabled(void);
 int bn_gpu_policy_cuda_readback_debug_enabled(void);
 int bn_gpu_policy_cuda_cublas_cache_debug_enabled(void);
+int bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(int default_mb);
+int bn_gpu_policy_cuda_cublas_workspace_mb_or_default(int default_mb);
 int bn_gpu_policy_cuda_nan_verbose_debug_enabled(void);
 int bn_gpu_policy_cuda_stream_exec_enabled(void);
 int bn_gpu_policy_cuda_profile_enabled(void);
 int bn_gpu_policy_cuda_wall_profile_enabled(void);
+int bn_gpu_policy_cuda_profile_every_or_default(int default_every);
+int bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(
+    int default_limit);
+int bn_gpu_policy_cuda_wall_profile_every_or_default(int default_every);
 int bn_gpu_policy_cuda_profile_shapes_enabled(void);
 const char *bn_gpu_policy_cuda_device_selector(void);
 int bn_gpu_policy_cuda_exec_fail_debug_enabled(void);
@@ -325,10 +331,13 @@ int bn_gpu_policy_cuda_sync_each_op_debug_enabled(void);
 int bn_gpu_policy_cuda_nan_debug_enabled(void);
 int bn_gpu_policy_cuda_dump_ops_enabled(void);
 int bn_gpu_policy_cuda_dump_ops_every_enabled(void);
+int bn_gpu_policy_cuda_dump_ops_limit_or_default(int default_limit);
 int bn_gpu_policy_cuda_prefill_moe_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_dense_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_dense_debug_enabled(void);
 int bn_gpu_policy_cuda_prefill_dense_profile_enabled(void);
+int bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(
+    int default_every);
 int bn_gpu_policy_cuda_prefill_ssm_layer_disabled(void);
 int bn_gpu_policy_prefill_ssm_layer_disabled(void);
 int bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled(
@@ -414,6 +423,8 @@ int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_asymmetric_kquant,
                                                 int use_grouped,
                                                 int use_gateup_only);
 int bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled(void);
+int bn_gpu_policy_cuda_moe_prefill_profile_every_or_default(
+    int default_every);
 int bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
     int add_norm_resid,
     int out_provided,
@@ -427,6 +438,8 @@ int bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_gateup_debug_enabled(void);
 int bn_gpu_policy_cuda_moe_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled(void);
+int bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(
+    int default_every);
 int bn_gpu_policy_moe_cache_prefill_enabled(void);
 int bn_gpu_policy_moe_prefill_shared_fuse_enabled(void);
 int bn_gpu_policy_moe_route_batch_enabled(void);

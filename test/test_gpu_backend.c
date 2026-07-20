@@ -612,9 +612,19 @@ static void test_gpu_policy_helpers(void) {
 
     unsetenv("BN_CUDA_DEBUG_CUBLAS_CACHE");
     assert(!bn_gpu_policy_cuda_cublas_cache_debug_enabled());
+    assert(bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096) ==
+           4096);
+    assert(bn_gpu_policy_cuda_cublas_workspace_mb_or_default(32) == 32);
     setenv("BN_CUDA_DEBUG_CUBLAS_CACHE", "1", 1);
+    setenv("BN_CUDA_CUBLAS_CACHE_RESERVE_MB", "128", 1);
+    setenv("BN_CUDA_CUBLAS_WORKSPACE_MB", "64", 1);
     assert(bn_gpu_policy_cuda_cublas_cache_debug_enabled());
+    assert(bn_gpu_policy_cuda_cublas_cache_reserve_mb_or_default(4096) ==
+           128);
+    assert(bn_gpu_policy_cuda_cublas_workspace_mb_or_default(32) == 64);
     unsetenv("BN_CUDA_DEBUG_CUBLAS_CACHE");
+    unsetenv("BN_CUDA_CUBLAS_CACHE_RESERVE_MB");
+    unsetenv("BN_CUDA_CUBLAS_WORKSPACE_MB");
 
     unsetenv("BN_CUDA_DISABLE_MOE_CUBLAS_GATEUP_F16_OUT");
     assert(bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled());
@@ -691,13 +701,23 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTE_SORT");
 
     unsetenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL");
+    unsetenv("BN_CUDA_PROFILE_MOE_PREFILL_EVERY");
     unsetenv("BN_CUDA_DISABLE_MOE_PREFILL_DIRECT_RESID_OUT");
     unsetenv("BN_CUDA_ENABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
     unsetenv("BN_CUDA_DISABLE_MOE_BATCH_FUSED_ROUTE_TOPK");
     assert(!bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled());
+    assert(bn_gpu_policy_cuda_moe_prefill_profile_every_or_default(48) ==
+           48);
     setenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL", "1", 1);
+    setenv("BN_CUDA_PROFILE_MOE_PREFILL_EVERY", "9", 1);
     assert(bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled());
+    assert(bn_gpu_policy_cuda_moe_prefill_profile_every_or_default(48) ==
+           9);
+    setenv("BN_CUDA_PROFILE_MOE_PREFILL_EVERY", "0", 1);
+    assert(bn_gpu_policy_cuda_moe_prefill_profile_every_or_default(48) ==
+           48);
     unsetenv("BN_CUDA_PROFILE_MOE_PREFILL_INTERNAL");
+    unsetenv("BN_CUDA_PROFILE_MOE_PREFILL_EVERY");
     assert(bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
         1, 0, 0, 1));
     assert(!bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
@@ -752,10 +772,20 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MOE_FFN_BATCH");
 
     unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL");
+    unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_EVERY");
     assert(!bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled());
+    assert(bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(24) ==
+           24);
     setenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL", "1", 1);
+    setenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_EVERY", "5", 1);
     assert(bn_gpu_policy_cuda_moe_ffn_batch_profile_enabled());
+    assert(bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(24) ==
+           5);
+    setenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_EVERY", "-1", 1);
+    assert(bn_gpu_policy_cuda_moe_ffn_batch_profile_every_or_default(24) ==
+           24);
     unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_INTERNAL");
+    unsetenv("BN_CUDA_PROFILE_MOE_FFN_BATCH_EVERY");
 
     unsetenv("BN_CUDA_ENABLE_DENSE_FFN");
     assert(!bn_gpu_policy_cuda_dense_ffn_enabled());
@@ -2130,7 +2160,10 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DEBUG_NAN_VERBOSE");
     unsetenv("BN_CUDA_DISABLE_STREAM_EXEC");
     unsetenv("BN_CUDA_PROFILE");
+    unsetenv("BN_CUDA_PROFILE_EVERY");
     unsetenv("BN_CUDA_PROFILE_WALL");
+    unsetenv("BN_CUDA_PROFILE_WALL_DETAIL");
+    unsetenv("BN_CUDA_PROFILE_WALL_EVERY");
     unsetenv("BN_CUDA_PROFILE_SHAPES");
     unsetenv("BN_CUDA_DEVICE");
     unsetenv("BN_CUDA_DEBUG_EXEC_FAIL");
@@ -2138,10 +2171,14 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DEBUG_NAN");
     unsetenv("BN_CUDA_DUMP_OPS");
     unsetenv("BN_CUDA_DUMP_OPS_EVERY");
+    unsetenv("BN_CUDA_DUMP_OPS_LIMIT");
     assert(!bn_gpu_policy_cuda_nan_verbose_debug_enabled());
     assert(bn_gpu_policy_cuda_stream_exec_enabled());
     assert(!bn_gpu_policy_cuda_profile_enabled());
+    assert(bn_gpu_policy_cuda_profile_every_or_default(1) == 1);
     assert(!bn_gpu_policy_cuda_wall_profile_enabled());
+    assert(bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(0) == 0);
+    assert(bn_gpu_policy_cuda_wall_profile_every_or_default(16) == 16);
     assert(!bn_gpu_policy_cuda_profile_shapes_enabled());
     assert(bn_gpu_policy_cuda_device_selector() == NULL);
     assert(!bn_gpu_policy_cuda_exec_fail_debug_enabled());
@@ -2149,10 +2186,14 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_nan_debug_enabled());
     assert(!bn_gpu_policy_cuda_dump_ops_enabled());
     assert(!bn_gpu_policy_cuda_dump_ops_every_enabled());
+    assert(bn_gpu_policy_cuda_dump_ops_limit_or_default(256) == 256);
     setenv("BN_CUDA_DEBUG_NAN_VERBOSE", "1", 1);
     setenv("BN_CUDA_DISABLE_STREAM_EXEC", "1", 1);
     setenv("BN_CUDA_PROFILE", "1", 1);
+    setenv("BN_CUDA_PROFILE_EVERY", "7", 1);
     setenv("BN_CUDA_PROFILE_WALL", "1", 1);
+    setenv("BN_CUDA_PROFILE_WALL_DETAIL", "3", 1);
+    setenv("BN_CUDA_PROFILE_WALL_EVERY", "11", 1);
     setenv("BN_CUDA_PROFILE_SHAPES", "1", 1);
     setenv("BN_CUDA_DEVICE", "auto", 1);
     setenv("BN_CUDA_DEBUG_EXEC_FAIL", "1", 1);
@@ -2160,10 +2201,18 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DEBUG_NAN", "1", 1);
     setenv("BN_CUDA_DUMP_OPS", "1", 1);
     setenv("BN_CUDA_DUMP_OPS_EVERY", "1", 1);
+    setenv("BN_CUDA_DUMP_OPS_LIMIT", "64", 1);
     assert(bn_gpu_policy_cuda_nan_verbose_debug_enabled());
     assert(!bn_gpu_policy_cuda_stream_exec_enabled());
     assert(bn_gpu_policy_cuda_profile_enabled());
+    assert(bn_gpu_policy_cuda_profile_every_or_default(1) == 7);
+    setenv("BN_CUDA_PROFILE_EVERY", "0", 1);
+    assert(bn_gpu_policy_cuda_profile_every_or_default(1) == 1);
     assert(bn_gpu_policy_cuda_wall_profile_enabled());
+    assert(bn_gpu_policy_cuda_wall_profile_detail_limit_or_default(0) == 3);
+    assert(bn_gpu_policy_cuda_wall_profile_every_or_default(16) == 11);
+    setenv("BN_CUDA_PROFILE_WALL_EVERY", "-4", 1);
+    assert(bn_gpu_policy_cuda_wall_profile_every_or_default(16) == 16);
     assert(bn_gpu_policy_cuda_profile_shapes_enabled());
     assert(strcmp(bn_gpu_policy_cuda_device_selector(), "auto") == 0);
     assert(bn_gpu_policy_cuda_exec_fail_debug_enabled());
@@ -2171,6 +2220,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_nan_debug_enabled());
     assert(bn_gpu_policy_cuda_dump_ops_enabled());
     assert(bn_gpu_policy_cuda_dump_ops_every_enabled());
+    assert(bn_gpu_policy_cuda_dump_ops_limit_or_default(256) == 64);
     unsetenv("BN_CUDA_ENABLE_LOGITS_CACHE");
     unsetenv("BN_CUDA_ENABLE_MOE_DECODE_CACHE");
     unsetenv("BN_CUDA_DISABLE_MOE_DECODE_CACHE");
@@ -2208,16 +2258,21 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DEBUG_NAN_VERBOSE");
     unsetenv("BN_CUDA_DISABLE_STREAM_EXEC");
     unsetenv("BN_CUDA_PROFILE");
+    unsetenv("BN_CUDA_PROFILE_EVERY");
     unsetenv("BN_CUDA_PROFILE_WALL");
+    unsetenv("BN_CUDA_PROFILE_WALL_DETAIL");
+    unsetenv("BN_CUDA_PROFILE_WALL_EVERY");
     unsetenv("BN_CUDA_DEBUG_EXEC_FAIL");
     unsetenv("BN_CUDA_DEBUG_SYNC_EACH_OP");
     unsetenv("BN_CUDA_DEBUG_NAN");
     unsetenv("BN_CUDA_DUMP_OPS");
     unsetenv("BN_CUDA_DUMP_OPS_EVERY");
+    unsetenv("BN_CUDA_DUMP_OPS_LIMIT");
     unsetenv("BN_CUDA_DISABLE_PREFILL_MOE_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER");
     unsetenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER");
     unsetenv("BN_CUDA_PREFILL_DENSE_PROFILE");
+    unsetenv("BN_CUDA_PREFILL_DENSE_PROFILE_EVERY");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH");
     unsetenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH");
@@ -2239,6 +2294,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_cuda_prefill_dense_layer_disabled());
     assert(!bn_gpu_policy_cuda_prefill_dense_debug_enabled());
     assert(!bn_gpu_policy_cuda_prefill_dense_profile_enabled());
+    assert(bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(36) ==
+           36);
     assert(!bn_gpu_policy_cuda_prefill_ssm_layer_disabled());
     assert(!bn_gpu_policy_prefill_ssm_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled());
@@ -2267,6 +2324,7 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER", "1", 1);
     setenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER", "1", 1);
     setenv("BN_CUDA_PREFILL_DENSE_PROFILE", "1", 1);
+    setenv("BN_CUDA_PREFILL_DENSE_PROFILE_EVERY", "6", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER", "1", 1);
     setenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH", "1", 1);
     setenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH", "1", 1);
@@ -2287,6 +2345,11 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_cuda_prefill_dense_layer_disabled());
     assert(bn_gpu_policy_cuda_prefill_dense_debug_enabled());
     assert(bn_gpu_policy_cuda_prefill_dense_profile_enabled());
+    assert(bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(36) ==
+           6);
+    setenv("BN_CUDA_PREFILL_DENSE_PROFILE_EVERY", "0", 1);
+    assert(bn_gpu_policy_cuda_prefill_dense_profile_every_or_default(36) ==
+           36);
     assert(bn_gpu_policy_cuda_prefill_ssm_layer_disabled());
     assert(bn_gpu_policy_prefill_ssm_layer_disabled());
     assert(!bn_gpu_policy_cuda_prefill_fused_asymmetric_kquant_gateup_batch_enabled());
@@ -2316,6 +2379,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_PREFILL_DENSE_LAYER");
     unsetenv("BN_CUDA_DEBUG_PREFILL_DENSE_LAYER");
     unsetenv("BN_CUDA_PREFILL_DENSE_PROFILE");
+    unsetenv("BN_CUDA_PREFILL_DENSE_PROFILE_EVERY");
     unsetenv("BN_CUDA_DISABLE_PREFILL_SSM_LAYER");
     unsetenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH");
     unsetenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH");
