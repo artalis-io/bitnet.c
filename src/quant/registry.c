@@ -404,26 +404,27 @@ int bn_quant_format_tied_logits_f32_weight_type(void) {
     return BN_GGUF_TENSOR_F32;
 }
 
-int bn_quant_format_supports_moe_q4_down_route(int gate_type,
-                                               int up_type,
-                                               int down_type,
-                                               int allow_q4_down) {
+int bn_quant_format_supports_moe_asymmetric_kquant_down_route(int gate_type,
+                                                              int up_type,
+                                                              int down_type,
+                                                              int allow_asymmetric_kquant_down) {
     return bn_quant_format_has_cap(gate_type, BN_QUANT_CAP_MOE_Q4_GATEUP) &&
            bn_quant_format_has_cap(up_type, BN_QUANT_CAP_MOE_Q4_GATEUP) &&
            (bn_quant_format_has_cap(down_type,
                                     BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE) ||
-            (allow_q4_down &&
+            (allow_asymmetric_kquant_down &&
              bn_quant_format_has_cap(down_type,
                                      BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE)));
 }
 
-int bn_quant_format_supports_moe_q4_gateup(int gate_type, int up_type) {
+int bn_quant_format_supports_moe_routed_kquant_gateup(int gate_type,
+                                                      int up_type) {
     return bn_quant_format_has_cap(gate_type, BN_QUANT_CAP_MOE_Q4_GATEUP) &&
            bn_quant_format_has_cap(up_type, BN_QUANT_CAP_MOE_Q4_GATEUP);
 }
 
-int bn_quant_format_supports_cpu_fused_q4_gateup_silu(int gate_type,
-                                                      int up_type) {
+int bn_quant_format_supports_cpu_fused_kquant_gateup_silu(int gate_type,
+                                                          int up_type) {
     return bn_quant_format_has_cap(gate_type,
                                    BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU) &&
            bn_quant_format_has_cap(up_type,
@@ -448,9 +449,9 @@ int bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
            bn_quant_format_supports_prepared_kquant(batch_type);
 }
 
-int bn_quant_format_supports_moe_q8_route(int gate_type,
-                                          int up_type,
-                                          int down_type) {
+int bn_quant_format_supports_moe_native_quant_route(int gate_type,
+                                                    int up_type,
+                                                    int down_type) {
     return bn_quant_format_has_cap(gate_type, BN_QUANT_CAP_MOE_Q8_ROUTE) &&
            bn_quant_format_has_cap(up_type, BN_QUANT_CAP_MOE_Q8_ROUTE) &&
            bn_quant_format_has_cap(down_type, BN_QUANT_CAP_MOE_Q8_ROUTE);

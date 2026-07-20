@@ -397,21 +397,23 @@ int      bn_quant_format_tied_logits_uses_f16_path(int type);
 int      bn_quant_format_tied_logits_i8_weight_type(void);
 int      bn_quant_format_tied_logits_f16_weight_type(void);
 int      bn_quant_format_tied_logits_f32_weight_type(void);
-int      bn_quant_format_supports_moe_q4_down_route(int gate_type,
-                                                     int up_type,
-                                                     int down_type,
-                                                     int allow_q4_down);
-int      bn_quant_format_supports_moe_q4_gateup(int gate_type, int up_type);
-int      bn_quant_format_supports_cpu_fused_q4_gateup_silu(int gate_type,
+int      bn_quant_format_supports_moe_asymmetric_kquant_down_route(
+    int gate_type,
+    int up_type,
+    int down_type,
+    int allow_asymmetric_kquant_down);
+int      bn_quant_format_supports_moe_routed_kquant_gateup(int gate_type,
                                                            int up_type);
+int      bn_quant_format_supports_cpu_fused_kquant_gateup_silu(int gate_type,
+                                                               int up_type);
 int      bn_quant_format_same_quant_format_pair_stackable(int left_type,
                                                           int right_type);
 int      bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
                                                       int shared_up_type,
                                                       int batch_type);
-int      bn_quant_format_supports_moe_q8_route(int gate_type,
-                                               int up_type,
-                                               int down_type);
+int      bn_quant_format_supports_moe_native_quant_route(int gate_type,
+                                                         int up_type,
+                                                         int down_type);
 BnQuantMatvecFn bn_quant_format_matvec(int type);
 BnQuantMatmulFn bn_quant_format_matmul(int type);
 size_t   bn_quant_format_data_size(int type, int rows, int cols);

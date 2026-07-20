@@ -407,6 +407,18 @@ if grep -n 'bn_quant_format_supports_q8_logits_refine\|bn_quant_format_supports_
     fail=1
 fi
 
+if grep -n 'bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q4_gateup\|bn_quant_format_supports_cpu_fused_q4_gateup_silu\|bn_quant_format_supports_moe_q8_route' \
+    include/quant.h \
+    include/backend_quant.h \
+    src/quant/registry.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/cpu_policy.c \
+    test/test_quant.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Quant MoE capability helpers must use behavior names, not quant-format names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU policy helpers for stacked Q/K quant compatibility"
     fail=1
@@ -553,10 +565,10 @@ if awk '
     /int bn_quant_format_tied_logits_uses_quant_path\(/ { in_fn=1 }
     /int bn_quant_format_supports_logits_i8_cache\(/ { in_fn=1 }
     /int bn_quant_format_tied_logits_uses_f16_path\(/ { in_fn=1 }
-    /int bn_quant_format_supports_moe_q4_down_route\(/ { in_fn=1 }
-    /int bn_quant_format_supports_moe_q4_gateup\(/ { in_fn=1 }
-    /int bn_quant_format_supports_cpu_fused_q4_gateup_silu\(/ { in_fn=1 }
-    /int bn_quant_format_supports_moe_q8_route\(/ { in_fn=1 }
+    /int bn_quant_format_supports_moe_asymmetric_kquant_down_route\(/ { in_fn=1 }
+    /int bn_quant_format_supports_moe_routed_kquant_gateup\(/ { in_fn=1 }
+    /int bn_quant_format_supports_cpu_fused_kquant_gateup_silu\(/ { in_fn=1 }
+    /int bn_quant_format_supports_moe_native_quant_route\(/ { in_fn=1 }
     in_fn && /BN_GGUF_TENSOR_/ { found=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit found ? 0 : 1 }
@@ -577,7 +589,7 @@ if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same
     fail=1
 fi
 
-if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format\|bn_quant_format_supports_moe_q4_gateup' src/transformer/gpu_emit.c >/dev/null 2>&1 ||
+if grep -n 'bn_quant_format_pair_same_format\|bn_backend_quant_stacked_pair_same_format\|bn_quant_format_supports_moe_routed_kquant_gateup' src/transformer/gpu_emit.c >/dev/null 2>&1 ||
    grep -n 'bn_backend_quant_moe_gateup_q4' src/transformer/gpu_emit.c src/transformer/gpu_policy.c include/backend_quant.h >/dev/null 2>&1; then
     echo "transformer GPU code must use GPU policy helpers for stacked pair and shared gate-up quant-format policy"
     fail=1
@@ -1074,7 +1086,7 @@ if grep -n 'BN_DUMP_LAYER_INP\|BN_DUMP_LAYER_POS\|BN_DUMP_ALL_HEADS\|BN_CPU_REFE
     fail=1
 fi
 
-if grep -n 'bn_quant_format_supports_cpu_fused_q4_gateup_silu' src/transformer/cpu.c src/transformer/cpu_policy.c >/dev/null 2>&1 ||
+if grep -n 'bn_quant_format_supports_cpu_fused_kquant_gateup_silu' src/transformer/cpu.c src/transformer/cpu_policy.c >/dev/null 2>&1 ||
    grep -n 'bn_backend_quant_cpu_fused_q4_gateup_silu' include/backend_quant.h src/transformer/cpu.c src/transformer/cpu_policy.c >/dev/null 2>&1; then
     echo "CPU execution code must use CPU backend policy helpers for fused gate-up quant capability"
     fail=1
@@ -2432,7 +2444,7 @@ if grep -n 'full_attn_interval\|n_ssm = c->n_layers - n_attn' src/gpu_wgpu.c src
     fail=1
 fi
 
-if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_q4_down_route\|bn_quant_format_supports_moe_q8_route' src/model_gpu.c >/dev/null 2>&1; then
+if grep -n 'bn_quant_format_gpu_float_buffer_type\|bn_quant_format_supports_moe_asymmetric_kquant_down_route\|bn_quant_format_supports_moe_native_quant_route' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU policy helpers for GPU upload quant-format policy"
     fail=1
 fi

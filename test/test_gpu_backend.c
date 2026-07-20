@@ -3920,17 +3920,17 @@ static void test_quant_registry(void) {
            BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT);
     assert(bn_quant_format_gpu_matvec_q8k_dot_flag(BN_GGUF_TENSOR_Q4_K, 0) == 0);
     assert(bn_quant_format_gpu_matvec_q8k_dot_flag(BN_GGUF_TENSOR_Q8_0, 1) == 0);
-    assert(bn_quant_format_supports_moe_q4_gateup(BN_GGUF_TENSOR_Q4_K,
+    assert(bn_quant_format_supports_moe_routed_kquant_gateup(BN_GGUF_TENSOR_Q4_K,
                                           BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_quant_format_supports_moe_q4_gateup(BN_GGUF_TENSOR_Q4_K,
+    assert(!bn_quant_format_supports_moe_routed_kquant_gateup(BN_GGUF_TENSOR_Q4_K,
                                            BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_moe_routed_kquant_gateup(BN_GGUF_TENSOR_Q4_K,
                                                      BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_moe_routed_kquant_gateup(BN_GGUF_TENSOR_Q4_K,
                                                       BN_GGUF_TENSOR_Q8_0));
-    assert(bn_quant_format_supports_cpu_fused_q4_gateup_silu(BN_GGUF_TENSOR_Q4_0,
+    assert(bn_quant_format_supports_cpu_fused_kquant_gateup_silu(BN_GGUF_TENSOR_Q4_0,
                                                      BN_GGUF_TENSOR_Q4_0));
-    assert(!bn_quant_format_supports_cpu_fused_q4_gateup_silu(BN_GGUF_TENSOR_Q4_0,
+    assert(!bn_quant_format_supports_cpu_fused_kquant_gateup_silu(BN_GGUF_TENSOR_Q4_0,
                                                       BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_cpu_fused_kquant_gateup_silu(BN_GGUF_TENSOR_Q4_0,
                                                          BN_GGUF_TENSOR_Q4_0));
@@ -3940,13 +3940,13 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_quant_format_same_quant_format_pair_stackable(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K));
-    assert(bn_quant_format_supports_moe_q4_down_route(BN_GGUF_TENSOR_Q4_K,
+    assert(bn_quant_format_supports_moe_asymmetric_kquant_down_route(BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q6_K, 0));
-    assert(!bn_quant_format_supports_moe_q4_down_route(BN_GGUF_TENSOR_Q4_K,
+    assert(!bn_quant_format_supports_moe_asymmetric_kquant_down_route(BN_GGUF_TENSOR_Q4_K,
                                                BN_GGUF_TENSOR_Q4_K,
                                                BN_GGUF_TENSOR_Q4_K, 0));
-    assert(bn_quant_format_supports_moe_q4_down_route(BN_GGUF_TENSOR_Q4_K,
+    assert(bn_quant_format_supports_moe_asymmetric_kquant_down_route(BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q4_K, 1));
     assert(bn_backend_quant_moe_routed_asymmetric_kquant(BN_GGUF_TENSOR_Q4_K,
@@ -3958,10 +3958,10 @@ static void test_quant_registry(void) {
     assert(!bn_backend_quant_moe_routed_asymmetric_kquant(BN_GGUF_TENSOR_Q4_K,
                                                           BN_GGUF_TENSOR_Q8_0,
                                                           BN_GGUF_TENSOR_Q6_K));
-    assert(bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
+    assert(bn_quant_format_supports_moe_native_quant_route(BN_GGUF_TENSOR_Q8_0,
                                                  BN_GGUF_TENSOR_Q8_0,
                                                  BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
+    assert(!bn_quant_format_supports_moe_native_quant_route(BN_GGUF_TENSOR_Q8_0,
                                                   BN_GGUF_TENSOR_Q8_0,
                                                   BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_moe_routed_native_quant(BN_GGUF_TENSOR_Q8_0,
@@ -4410,10 +4410,10 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_F32, 0, 0) ==
            BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE);
-    assert(bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
+    assert(bn_quant_format_supports_moe_native_quant_route(BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0,
                                          BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
+    assert(!bn_quant_format_supports_moe_native_quant_route(BN_GGUF_TENSOR_Q8_0,
                                           BN_GGUF_TENSOR_Q8_0,
                                           BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_data_size(BN_GGUF_TENSOR_Q5_0, 1, 32) == 22);

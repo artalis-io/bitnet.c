@@ -198,10 +198,10 @@ static inline int bn_backend_quant_moe_route_asymmetric_kquant_down(
     int up_type,
     int down_type,
     int allow_asymmetric_kquant_down) {
-    return bn_quant_format_supports_moe_q4_down_route(gate_type,
-                                                      up_type,
-                                                      down_type,
-                                                      allow_asymmetric_kquant_down);
+    return bn_quant_format_supports_moe_asymmetric_kquant_down_route(gate_type,
+                                                                     up_type,
+                                                                     down_type,
+                                                                     allow_asymmetric_kquant_down);
 }
 
 static inline int bn_backend_quant_moe_routed_asymmetric_kquant(
@@ -216,13 +216,14 @@ static inline int bn_backend_quant_moe_routed_asymmetric_kquant(
 
 static inline int bn_backend_quant_moe_routed_kquant_gateup(int gate_type,
                                                             int up_type) {
-    return bn_quant_format_supports_moe_q4_gateup(gate_type, up_type);
+    return bn_quant_format_supports_moe_routed_kquant_gateup(gate_type,
+                                                             up_type);
 }
 
 static inline int bn_backend_quant_cpu_fused_kquant_gateup_silu(int gate_type,
                                                                 int up_type) {
-    return bn_quant_format_supports_cpu_fused_q4_gateup_silu(gate_type,
-                                                             up_type);
+    return bn_quant_format_supports_cpu_fused_kquant_gateup_silu(gate_type,
+                                                                 up_type);
 }
 
 static inline int
@@ -253,16 +254,16 @@ static inline size_t bn_backend_quant_embedded_tensor_scale_offset(
 }
 
 static inline int bn_backend_quant_moe_route_native_quant(int gate_type,
-                                                int up_type,
-                                                int down_type) {
-    return bn_quant_format_supports_moe_q8_route(gate_type,
-                                                 up_type,
-                                                 down_type);
+                                                          int up_type,
+                                                          int down_type) {
+    return bn_quant_format_supports_moe_native_quant_route(gate_type,
+                                                           up_type,
+                                                           down_type);
 }
 
 static inline int bn_backend_quant_moe_routed_native_quant(int gate_type,
-                                                 int up_type,
-                                                 int down_type) {
+                                                           int up_type,
+                                                           int down_type) {
     return bn_backend_quant_moe_route_native_quant(gate_type, up_type,
                                                    down_type);
 }
