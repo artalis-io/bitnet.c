@@ -1,6 +1,6 @@
 #include "transformer_plan_internal.h"
 #include "gpu_backend.h"
-#include "model_arch.h"
+#include "model_internal.h"
 #include "transformer_backend_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_logits_internal.h"
@@ -14,31 +14,31 @@ void *bn_transformer_backend_handle_or(const BnBackendModel *backend,
 }
 
 int bn_transformer_is_attn_layer(const BnConfig *c, int layer) {
-    return bn_model_arch_is_attention_layer(c, layer);
+    return bn_model_config_is_attention_layer(c, layer);
 }
 
 int bn_transformer_attn_index(const BnConfig *c, int layer) {
-    return bn_model_arch_attention_layer_index(c, layer);
+    return bn_model_config_attention_layer_index(c, layer);
 }
 
 int bn_transformer_ssm_index(const BnConfig *c, int layer) {
-    return bn_model_arch_ssm_layer_index(c, layer);
+    return bn_model_config_ssm_layer_index(c, layer);
 }
 
 int bn_transformer_attention_layer_count(const BnConfig *c) {
-    return bn_model_arch_attention_layer_count(c);
+    return bn_model_config_attention_layer_count(c);
 }
 
 int bn_transformer_ssm_layer_count(const BnConfig *c) {
-    return bn_model_arch_ssm_layer_count(c);
+    return bn_model_config_ssm_layer_count(c);
 }
 
 int bn_transformer_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_ssm(c);
+    return bn_model_config_uses_hybrid_ssm(c);
 }
 
 int bn_transformer_uses_hybrid_moe(const BnConfig *c) {
-    return bn_model_arch_uses_hybrid_moe(c);
+    return bn_model_config_uses_hybrid_moe(c);
 }
 
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
@@ -201,12 +201,12 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
 uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
     const BnConfig *c) {
     return bn_transformer_cpu_float_kquant_task_flags(
-        bn_model_arch_requires_float_kquant_fallback(c));
+        bn_model_config_requires_float_kquant_fallback(c));
 }
 
 int bn_transformer_cpu_prefill_force_float_kquant_enabled(
     const BnConfig *c) {
-    return bn_model_arch_requires_float_kquant_fallback(c) &&
+    return bn_model_config_requires_float_kquant_fallback(c) &&
            bn_transformer_cpu_backend_supports_float_kquant_prefill();
 }
 
@@ -214,12 +214,12 @@ int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,
     int gpu_attached) {
     return !gpu_attached &&
-           bn_model_arch_prefill_uses_decode_for_parity(c);
+           bn_model_config_prefill_uses_decode_for_parity(c);
 }
 
 int bn_transformer_rmsnorm_uses_reference_order(
     const BnConfig *c) {
-    return bn_model_arch_rmsnorm_uses_reference_order(c);
+    return bn_model_config_rmsnorm_uses_reference_order(c);
 }
 
 int bn_transformer_rmsnorm_requires_reference_scalar_order(
@@ -230,27 +230,27 @@ int bn_transformer_rmsnorm_requires_reference_scalar_order(
 float bn_transformer_attention_scale(
     const BnConfig *c,
     int head_size) {
-    return bn_model_arch_attention_scale(c, head_size);
+    return bn_model_config_attention_scale(c, head_size);
 }
 
 int bn_transformer_attention_value_shares_key(
     const BnConfig *c) {
-    return bn_model_arch_attention_value_shares_key_config(c);
+    return bn_model_config_attention_value_shares_key(c);
 }
 
 int bn_transformer_attention_uses_post_norm(
     const BnConfig *c) {
-    return bn_model_arch_uses_attention_post_norm(c);
+    return bn_model_config_uses_attention_post_norm(c);
 }
 
 int bn_transformer_ffn_uses_post_norm(
     const BnConfig *c) {
-    return bn_model_arch_uses_ffn_post_norm(c);
+    return bn_model_config_uses_ffn_post_norm(c);
 }
 
 int bn_transformer_uses_layer_output_scale(
     const BnConfig *c) {
-    return bn_model_arch_uses_layer_output_scale(c);
+    return bn_model_config_uses_layer_output_scale(c);
 }
 
 BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
@@ -375,33 +375,33 @@ int bn_transformer_logits_weight_type(const BnWeights *w) {
 
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c) {
-    return bn_model_arch_per_layer_embedding_dim(c);
+    return bn_model_config_per_layer_embedding_dim(c);
 }
 
 int bn_transformer_uses_per_layer_embedding(
     const BnConfig *c) {
-    return bn_model_arch_uses_per_layer_embedding(c);
+    return bn_model_config_uses_per_layer_embedding(c);
 }
 
 int bn_transformer_divides_rope_freqs(
     const BnConfig *c,
     int layer) {
-    return bn_model_arch_divides_rope_freqs(c, layer);
+    return bn_model_config_divides_rope_freqs(c, layer);
 }
 
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c) {
-    return bn_model_arch_uses_reference_hybrid_ssm(c);
+    return bn_model_config_uses_reference_hybrid_ssm(c);
 }
 
 int bn_transformer_prefill_uses_exact_activation(
     const BnConfig *c) {
-    return bn_model_arch_prefill_uses_exact_activation(c);
+    return bn_model_config_prefill_uses_exact_activation(c);
 }
 
 int bn_transformer_ffn_uses_exact_scalar_activation(
     const BnConfig *c) {
-    return bn_model_arch_ffn_uses_reference_activation(c);
+    return bn_model_config_ffn_uses_reference_activation(c);
 }
 
 void bn_transformer_plan_attention(BnAttentionPlan *p,

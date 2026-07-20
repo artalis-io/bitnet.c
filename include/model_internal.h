@@ -54,6 +54,9 @@ int bn_model_gguf_uses_moe(BnGGUFFile *file);
 int bn_model_gguf_context_length(BnGGUFFile *file);
 int bn_model_config_attention_layer_count(const BnConfig *config);
 int bn_model_config_ssm_layer_count(const BnConfig *config);
+int bn_model_config_is_attention_layer(const BnConfig *config, int layer);
+int bn_model_config_attention_layer_index(const BnConfig *config, int layer);
+int bn_model_config_ssm_layer_index(const BnConfig *config, int layer);
 int bn_model_config_uses_hybrid_layer_layout(const BnConfig *config);
 int bn_model_config_uses_hybrid_ssm(const BnConfig *config);
 int bn_model_config_uses_hybrid_moe(const BnConfig *config);
@@ -68,11 +71,24 @@ int bn_model_config_uses_large_gpu_graph_fallback_shape(
     const BnConfig *config);
 int bn_model_config_uses_per_layer_embedding(const BnConfig *config);
 int bn_model_config_uses_large_dense_hybrid_ssm(const BnConfig *config);
+int bn_model_config_uses_reference_hybrid_ssm(const BnConfig *config);
 int bn_model_config_uses_non_hybrid_moe(const BnConfig *config);
 int bn_model_config_uses_dense_attention_only(const BnConfig *config);
 int bn_model_config_uses_small_dense_native_quant_shape(
     const BnConfig *config);
 int bn_model_config_requires_float_kquant_fallback(const BnConfig *config);
+int bn_model_config_prefill_uses_decode_for_parity(const BnConfig *config);
+int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config);
+float bn_model_config_attention_scale(const BnConfig *config,
+                                      int head_size);
+int bn_model_config_attention_value_shares_key(const BnConfig *config);
+int bn_model_config_uses_attention_post_norm(const BnConfig *config);
+int bn_model_config_uses_ffn_post_norm(const BnConfig *config);
+int bn_model_config_uses_layer_output_scale(const BnConfig *config);
+int bn_model_config_per_layer_embedding_dim(const BnConfig *config);
+int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer);
+int bn_model_config_prefill_uses_exact_activation(const BnConfig *config);
+int bn_model_config_ffn_uses_reference_activation(const BnConfig *config);
 int bn_model_config_dense_batch_prefill_shape_allowed(
     const BnConfig *config,
     int supports_large_dense_batch_prefill);

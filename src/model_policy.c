@@ -101,6 +101,19 @@ int bn_model_config_ssm_layer_count(const BnConfig *config) {
     return bn_model_arch_ssm_layer_count(config);
 }
 
+int bn_model_config_is_attention_layer(const BnConfig *config, int layer) {
+    return bn_model_arch_is_attention_layer(config, layer);
+}
+
+int bn_model_config_attention_layer_index(const BnConfig *config,
+                                          int layer) {
+    return bn_model_arch_attention_layer_index(config, layer);
+}
+
+int bn_model_config_ssm_layer_index(const BnConfig *config, int layer) {
+    return bn_model_arch_ssm_layer_index(config, layer);
+}
+
 int bn_model_config_uses_hybrid_layer_layout(const BnConfig *config) {
     return bn_model_arch_uses_hybrid_layer_layout(config);
 }
@@ -151,6 +164,10 @@ int bn_model_config_uses_large_dense_hybrid_ssm(const BnConfig *config) {
     return bn_model_arch_uses_large_dense_hybrid_ssm(config);
 }
 
+int bn_model_config_uses_reference_hybrid_ssm(const BnConfig *config) {
+    return bn_model_arch_uses_reference_hybrid_ssm(config);
+}
+
 int bn_model_config_uses_non_hybrid_moe(const BnConfig *config) {
     return bn_model_arch_uses_non_hybrid_moe(config);
 }
@@ -166,6 +183,54 @@ int bn_model_config_uses_small_dense_native_quant_shape(
 
 int bn_model_config_requires_float_kquant_fallback(const BnConfig *config) {
     return bn_model_arch_requires_float_kquant_fallback(config);
+}
+
+int bn_model_config_prefill_uses_decode_for_parity(
+    const BnConfig *config) {
+    return bn_model_arch_prefill_uses_decode_for_parity(config);
+}
+
+int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config) {
+    return bn_model_arch_rmsnorm_uses_reference_order(config);
+}
+
+float bn_model_config_attention_scale(const BnConfig *config,
+                                      int head_size) {
+    return bn_model_arch_attention_scale(config, head_size);
+}
+
+int bn_model_config_attention_value_shares_key(const BnConfig *config) {
+    return bn_model_arch_attention_value_shares_key_config(config);
+}
+
+int bn_model_config_uses_attention_post_norm(const BnConfig *config) {
+    return bn_model_arch_uses_attention_post_norm(config);
+}
+
+int bn_model_config_uses_ffn_post_norm(const BnConfig *config) {
+    return bn_model_arch_uses_ffn_post_norm(config);
+}
+
+int bn_model_config_uses_layer_output_scale(const BnConfig *config) {
+    return bn_model_arch_uses_layer_output_scale(config);
+}
+
+int bn_model_config_per_layer_embedding_dim(const BnConfig *config) {
+    return bn_model_arch_per_layer_embedding_dim(config);
+}
+
+int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer) {
+    return bn_model_arch_divides_rope_freqs(config, layer);
+}
+
+int bn_model_config_prefill_uses_exact_activation(
+    const BnConfig *config) {
+    return bn_model_arch_prefill_uses_exact_activation(config);
+}
+
+int bn_model_config_ffn_uses_reference_activation(
+    const BnConfig *config) {
+    return bn_model_arch_ffn_uses_reference_activation(config);
 }
 
 int bn_model_config_dense_batch_prefill_shape_allowed(
