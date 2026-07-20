@@ -13,7 +13,8 @@ int bn_transformer_logits_cpu_tied_kquant_hybrid_top(void) {
 }
 
 int bn_transformer_logits_cpu_native_tied_quant_enabled(void) {
-    return getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL;
+    return getenv("BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS") != NULL ||
+           getenv("BN_CPU_NATIVE_TIED_LOGITS") != NULL;
 }
 
 int bn_transformer_logits_backend_refine_supported(

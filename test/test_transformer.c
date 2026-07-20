@@ -2932,10 +2932,15 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_cpu_tied_kquant_hybrid_top() == 9);
     unsetenv("BN_CPU_TIED_Q6K_HYBRID_TOP");
 
+    unsetenv("BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS");
     unsetenv("BN_CPU_NATIVE_TIED_LOGITS");
     assert(!bn_transformer_logits_cpu_native_tied_quant_enabled());
+    setenv("BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS", "1", 1);
+    assert(bn_transformer_logits_cpu_native_tied_quant_enabled());
+    unsetenv("BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS");
     setenv("BN_CPU_NATIVE_TIED_LOGITS", "1", 1);
     assert(bn_transformer_logits_cpu_native_tied_quant_enabled());
+    unsetenv("BN_CPU_ENABLE_NATIVE_QUANT_TIED_LOGITS");
     unsetenv("BN_CPU_NATIVE_TIED_LOGITS");
 
     assert(bn_transformer_logits_untied_uses_f16_path(BN_GGUF_TENSOR_F16));
