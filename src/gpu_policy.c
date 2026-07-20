@@ -949,15 +949,20 @@ static int gpu_policy_legacy_5bit_matvec_disabled(void) {
 }
 
 static int gpu_policy_asymmetric_kquant_matvec_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4_K") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_ASYMMETRIC_KQUANT_MATVEC",
+        "BN_CUDA_DISABLE_Q4_K");
 }
 
 static int gpu_policy_deinterleaved_kquant_matvec_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q5_K") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DEINTERLEAVED_KQUANT_MATVEC",
+        "BN_CUDA_DISABLE_Q5_K");
 }
 
 static int gpu_policy_down_kquant_matvec_disabled_by_type(void) {
-    return getenv("BN_CUDA_DISABLE_Q6_K") != NULL;
+    return gpu_policy_compat_env_enabled("BN_CUDA_DISABLE_DOWN_KQUANT_MATVEC",
+                                         "BN_CUDA_DISABLE_Q6_K");
 }
 
 static int gpu_policy_prepared_native_quant_matvec_disabled(void) {
@@ -2485,17 +2490,23 @@ static int gpu_policy_cuda_prefill_ssm_layer_disabled(void) {
 
 static int gpu_policy_cuda_prefill_fused_asym_kquant_gateup_batch_disabled(
     void) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_PREFILL_FUSED_ASYMMETRIC_KQUANT_GATEUP_BATCH",
+        "BN_CUDA_DISABLE_PREFILL_FUSED_Q4K_GATEUP_BATCH");
 }
 
 static int gpu_policy_cuda_prefill_ssm_fused_asym_kquant_gateup_requested(
     void) {
-    return getenv("BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_PREFILL_SSM_FUSED_ASYMMETRIC_KQUANT_GATEUP_BATCH",
+        "BN_CUDA_ENABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH");
 }
 
 static int gpu_policy_cuda_prefill_ssm_fused_asym_kquant_gateup_disabled(
     void) {
-    return getenv("BN_CUDA_DISABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_PREFILL_SSM_FUSED_ASYMMETRIC_KQUANT_GATEUP_BATCH",
+        "BN_CUDA_DISABLE_PREFILL_SSM_FUSED_Q4K_GATEUP_BATCH");
 }
 
 static int gpu_policy_cuda_prefill_ssm_profile_requested(void) {
