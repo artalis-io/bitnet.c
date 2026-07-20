@@ -261,13 +261,13 @@ int bn_quant_format_gpu_allows_gateup_split_activation(int type,
     return act_type != 1 || type != BN_GGUF_TENSOR_Q4_K;
 }
 
-uint32_t bn_quant_format_gpu_matvec_q8k_dot_flag(int type, int enabled) {
+uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled) {
     return enabled && type == BN_GGUF_TENSOR_Q4_K
         ? BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT
         : 0u;
 }
 
-uint32_t bn_quant_format_gpu_matvec_exact_q6k_flag(int type, int enabled) {
+uint32_t bn_quant_format_gpu_matvec_exact_kquant_flag(int type, int enabled) {
     return enabled && type == BN_GGUF_TENSOR_Q6_K
         ? BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K
         : 0u;

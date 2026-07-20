@@ -350,8 +350,8 @@ uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type);
 int      bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type);
 int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
-uint32_t bn_quant_format_gpu_matvec_q8k_dot_flag(int type, int enabled);
-uint32_t bn_quant_format_gpu_matvec_exact_q6k_flag(int type, int enabled);
+uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled);
+uint32_t bn_quant_format_gpu_matvec_exact_kquant_flag(int type, int enabled);
 int      bn_quant_format_supports_exact_native_quant_matvec(int type);
 int      bn_quant_format_supports_specialized_native_quant_matvec(int type);
 int      bn_quant_format_dense_f32_type(void);
