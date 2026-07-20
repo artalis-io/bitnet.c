@@ -2026,6 +2026,16 @@ if grep -n 'c->dim > 2560 || c->dim <= 1024' src/transformer/gpu_policy.c >/dev/
     fail=1
 fi
 
+if awk '/^static int small_dense_backend_native_by_default/{flag=1} /^int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_small_dense_shape' >/dev/null 2>&1; then
+    echo "Small-dense backend default policy must use GPU shape policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_validate_forward/{flag=1} /^int bn_transformer_gpu_prefill_direct_kv_allowed/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_large_gpu_graph_fallback_shape\|bn_model_arch_uses_small_dense_shape' >/dev/null 2>&1; then
+    echo "GPU forward validation must use GPU shape policy helpers"
+    fail=1
+fi
+
 if grep -n 'bn_model_arch_.*cuda' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose behavior-named model_arch helpers, not CUDA-named compatibility aliases"
     fail=1

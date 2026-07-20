@@ -145,6 +145,14 @@ int bn_transformer_gpu_can_layerwise_rope(const BnGPUBackend *gpu) {
     return bn_transformer_gpu_has_cap(gpu, BN_GPU_CAP_LAYERWISE_ROPE);
 }
 
+int bn_transformer_gpu_uses_small_dense_shape(const BnConfig *c) {
+    return bn_model_arch_uses_small_dense_shape(c);
+}
+
+int bn_transformer_gpu_uses_large_graph_fallback_shape(const BnConfig *c) {
+    return bn_model_arch_uses_large_gpu_graph_fallback_shape(c);
+}
+
 int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
                                                const BnWeights *w) {
     return c && w &&
@@ -373,7 +381,7 @@ static int all_active_two_kquant_moe_requires_opt_in(const BnConfig *c,
 static int small_dense_backend_native_by_default(
     const BnConfig *c,
     const BnWeights *w) {
-    if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
+    if (!c || !w || !bn_transformer_gpu_uses_small_dense_shape(c))
         return 0;
     return bn_backend_quant_dense_graph_model_supported(w, c, 0);
 }
@@ -381,7 +389,7 @@ static int small_dense_backend_native_by_default(
 static int small_dense_backend_native_quant_by_default(
     const BnConfig *c,
     const BnWeights *w) {
-    if (!c || !w || !bn_model_arch_uses_small_dense_shape(c))
+    if (!c || !w || !bn_transformer_gpu_uses_small_dense_shape(c))
         return 0;
     return bn_backend_quant_dense_graph_model_supported(w, c, 1);
 }
@@ -1882,14 +1890,14 @@ int bn_transformer_gpu_validate_forward(
     int backend_large_native =
         bn_gpu_policy_backend_large_graph_native_enabled(gpu);
     if (!bn_gpu_policy_force_graph_enabled() && !backend_large_native &&
-        bn_model_arch_uses_large_gpu_graph_fallback_shape(c))
+        bn_transformer_gpu_uses_large_graph_fallback_shape(c))
         GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
     if (bn_transformer_gpu_requires_layerwise_rope(c, w) &&
         !bn_transformer_gpu_can_layerwise_rope(gpu))
         GPU_POLICY_REJECT("layerwise rope unsupported by gpu backend");
 
     if (bn_gpu_policy_backend_small_dense_native_enabled(gpu) &&
-        bn_model_arch_uses_small_dense_shape(c)) {
+        bn_transformer_gpu_uses_small_dense_shape(c)) {
         if (bn_gpu_policy_small_kquant_native_disabled()) {
             if (!small_dense_backend_native_quant_by_default(c, w))
                 GPU_POLICY_REJECT("small dense gpu graph disabled");

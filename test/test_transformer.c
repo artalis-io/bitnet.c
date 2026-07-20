@@ -809,6 +809,14 @@ static void test_gpu_policy_helpers(void) {
     c.n_layers = 4;
     assert(bn_transformer_gpu_graph_op_capacity(&c) >
            80 * c.n_layers);
+    assert(bn_transformer_gpu_uses_small_dense_shape(&c));
+    assert(!bn_transformer_gpu_uses_large_graph_fallback_shape(&c));
+    c.dim = 4096;
+    c.full_attn_interval = 4;
+    assert(!bn_transformer_gpu_uses_small_dense_shape(&c));
+    assert(bn_transformer_gpu_uses_large_graph_fallback_shape(&c));
+    c.full_attn_interval = 0;
+    c.dim = 0;
 
     BnGPUBackend gpu;
     BnTransformerGPULogitResources logits;
