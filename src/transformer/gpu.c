@@ -1,8 +1,6 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
 #include "platform.h"
-#include "quant.h"
-#include "quant_dispatch_internal.h"
 #include "session.h"
 #include "transformer_cpu_backend_internal.h"
 #include "../gpu_shader_ir_internal.h"
@@ -14,6 +12,24 @@
 #include <stdlib.h>
 
 #define BN_GPU_LOGITS_REFINE_MAX_SCALE_BLOCKS 8192
+
+static void gpu_cpu_quant_matvec_batch(BnModel *m,
+                                       const BnMatvecTask *tasks,
+                                       int n_tasks,
+                                       const float *x,
+                                       int8_t *quantized_buf) {
+    bn_transformer_cpu_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
+                                          bn_model_pool(m));
+}
+
+static void gpu_cpu_quant_matvec(BnModel *m,
+                                 float *out,
+                                 const BnQWeight *W,
+                                 const float *x,
+                                 int8_t *quantized_buf) {
+    bn_transformer_cpu_quant_matvec(out, W, x, quantized_buf,
+                                    bn_model_pool(m));
+}
 
 static void gpu_debug_compare_vec_local(const char *label,
                                         int layer,
@@ -158,10 +174,9 @@ static int gpu_debug_compute_moe_cpu_from_xb(
             { hb,  &wgate, NULL, gateup_flags },
             { hb2, &wup,   NULL, gateup_flags },
         };
-        bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                              bn_model_pool(m));
+        gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, moe_hidden, c->moe_exact_silu);
-        bn_quant_matvec(down, &wdown, hb, sess->state.x_q, bn_model_pool(m));
+        gpu_cpu_quant_matvec(m, down, &wdown, hb, sess->state.x_q);
         bn_moe_weighted_add(expert_out, down, weight, dim);
     }
 
@@ -171,11 +186,9 @@ static int gpu_debug_compute_moe_cpu_from_xb(
             { hb,  &lw->shared.shared_gate, NULL, gateup_flags },
             { hb2, &lw->shared.shared_up,   NULL, gateup_flags },
         };
-        bn_quant_matvec_batch(shared_gu_tasks, 2, xb_in, sess->state.x_q,
-                              bn_model_pool(m));
+        gpu_cpu_quant_matvec_batch(m, shared_gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
-        bn_quant_matvec(down, &lw->shared.shared_down, hb,
-                        sess->state.x_q, bn_model_pool(m));
+        gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, hb, sess->state.x_q);
         if (lw->shared.shared_expert_gate) {
             float gate_dot = 0.0f;
             for (int d = 0; d < dim; d++)
@@ -255,10 +268,9 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
             { hb,  &wgate, NULL, gateup_flags },
             { hb2, &wup,   NULL, gateup_flags },
         };
-        bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                              bn_model_pool(m));
+        gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, moe_hidden, c->moe_exact_silu);
-        bn_quant_matvec(down, &wdown, hb, sess->state.x_q, bn_model_pool(m));
+        gpu_cpu_quant_matvec(m, down, &wdown, hb, sess->state.x_q);
         bn_moe_weighted_add(routed_out, down, weight, dim);
     }
 
@@ -268,11 +280,9 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
             { hb,  &lw->shared.shared_gate, NULL, gateup_flags },
             { hb2, &lw->shared.shared_up,   NULL, gateup_flags },
         };
-        bn_quant_matvec_batch(shared_gu_tasks, 2, xb_in, sess->state.x_q,
-                              bn_model_pool(m));
+        gpu_cpu_quant_matvec_batch(m, shared_gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
-        bn_quant_matvec(down, &lw->shared.shared_down, hb,
-                        sess->state.x_q, bn_model_pool(m));
+        gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, hb, sess->state.x_q);
         if (lw->shared.shared_expert_gate) {
             float gate_dot = 0.0f;
             for (int d = 0; d < dim; d++)
@@ -319,11 +329,9 @@ static int gpu_compute_shared_expert_cpu_from_xb(
         { hb,  &lw->shared.shared_gate, NULL, gateup_flags },
         { hb2, &lw->shared.shared_up,   NULL, gateup_flags },
     };
-    bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                          bn_model_pool(m));
+    gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
     bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
-    bn_quant_matvec(down, &lw->shared.shared_down, hb,
-                    sess->state.x_q, bn_model_pool(m));
+    gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, hb, sess->state.x_q);
     memset(shared_out, 0, (size_t)dim * sizeof(float));
     if (lw->shared.shared_expert_gate) {
         float gate_dot = 0.0f;
@@ -387,8 +395,7 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
             { hb,  &wgate, NULL, gateup_flags },
             { hb2, &wup,   NULL, gateup_flags },
         };
-        bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                              bn_model_pool(m));
+        gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, moe_hidden, c->moe_exact_silu);
         memcpy(mid_out + (size_t)k * (size_t)moe_hidden, hb,
                (size_t)moe_hidden * sizeof(float));
@@ -443,8 +450,7 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
                 gateup_flags
             },
         };
-        bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                              bn_model_pool(m));
+        gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
     }
     return 0;
 }
@@ -468,8 +474,7 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
         { mid_out, &lw->shared.shared_gate, NULL, gateup_flags },
         { hb2,     &lw->shared.shared_up,   NULL, gateup_flags },
     };
-    bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                          bn_model_pool(m));
+    gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
     bn_moe_swiglu(mid_out, mid_out, hb2, hidden, c->moe_exact_silu);
     free(hb2);
     return 0;
@@ -501,11 +506,9 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
         { hb,  &lw->shared.shared_gate, NULL, gateup_flags },
         { hb2, &lw->shared.shared_up,   NULL, gateup_flags },
     };
-    bn_quant_matvec_batch(gu_tasks, 2, xb_in, sess->state.x_q,
-                          bn_model_pool(m));
+    gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
     bn_moe_swiglu(hb, hb, hb2, hidden, c->moe_exact_silu);
-    bn_quant_matvec(down_out, &lw->shared.shared_down, hb,
-                    sess->state.x_q, bn_model_pool(m));
+    gpu_cpu_quant_matvec(m, down_out, &lw->shared.shared_down, hb, sess->state.x_q);
     free(hb);
     free(hb2);
     return 0;
@@ -619,8 +622,8 @@ static int gpu_refine_kquant_logits_top(float *logits, int n_logits,
 
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_quant_q6_logits_refine_q8k_row(W, quantized, scales, block_sums,
-                                              ids[i], &row_sum) == 0)
+        if (bn_transformer_cpu_refine_q6_logits_prepared_activation_row(
+                W, quantized, scales, block_sums, ids[i], &row_sum) == 0)
             logits[ids[i]] = row_sum;
     }
     return n_top;
@@ -669,8 +672,8 @@ static int gpu_refine_native_quant_logits_top(float *logits, int n_logits,
         return 0;
     for (int i = 0; i < n_top; i++) {
         float row_sum;
-        if (bn_quant_q8_logits_refine_row(W, quantized, scales, ids[i],
-                                          &row_sum) == 0)
+        if (bn_transformer_cpu_refine_q8_logits_row(W, quantized, scales,
+                                                    ids[i], &row_sum) == 0)
             logits[ids[i]] = row_sum;
     }
     return n_top;
@@ -2051,8 +2054,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         if (cpu_logits &&
             bn_transformer_gpu_read_xb(gpu, s->xb,
                                        (size_t)dim * sizeof(float)) == 0) {
-            bn_quant_matvec(cpu_logits, logit_res->cpu_weight, s->xb,
-                            s->x_q, bn_model_pool(m));
+            gpu_cpu_quant_matvec(m, cpu_logits, logit_res->cpu_weight, s->xb, s->x_q);
             double sum_abs = 0.0;
             double sum_sq = 0.0;
             float max_abs = 0.0f;

@@ -1130,6 +1130,11 @@ if grep -n '#include "quant.h"\|bn_quant_' src/transformer/gpu_fallback.c >/dev/
     fail=1
 fi
 
+if grep -n '#include "quant.h"\|quant_dispatch_internal\|bn_quant_' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU/CPU backend helpers, not quant internals directly"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_prefill_can_preq8k\|bn_transformer_prefill_route_preq8k\|used_preq8k\|ssm_preq8k' \
     include/transformer_prefill_internal.h \
     src/transformer/prefill_policy.c \

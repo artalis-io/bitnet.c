@@ -130,6 +130,13 @@ int bn_transformer_cpu_refine_q6_logits_row(const BnQWeight *weight,
                                             const float *x,
                                             int row,
                                             float *out);
+int bn_transformer_cpu_refine_q6_logits_prepared_activation_row(
+    const BnQWeight *weight,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    int row,
+    float *out);
 void bn_transformer_cpu_quant_matvec(float *out,
                                      const BnQWeight *weight,
                                      const float *x,

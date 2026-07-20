@@ -127,6 +127,17 @@ int bn_transformer_cpu_refine_q6_logits_row(const BnQWeight *weight,
     return bn_quant_q6_logits_refine_row(weight, x, row, out);
 }
 
+int bn_transformer_cpu_refine_q6_logits_prepared_activation_row(
+    const BnQWeight *weight,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    int row,
+    float *out) {
+    return bn_quant_q6_logits_refine_q8k_row(weight, quantized, scales,
+                                             block_sums, row, out);
+}
+
 void bn_transformer_cpu_quant_matvec(float *out,
                                      const BnQWeight *weight,
                                      const float *x,
