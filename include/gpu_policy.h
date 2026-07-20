@@ -89,7 +89,7 @@ int bn_gpu_policy_cuda_native_quant_prepared_input_logits_default_enabled(
 int bn_gpu_policy_prepared_kquant_input_cache_enabled(void);
 int bn_gpu_policy_cuda_force_quant_matmul_for_type(
     int tensor_type,
-    int f16_q8_0_matmul_enabled);
+    int f16_native_quant_matmul_enabled);
 int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols);
@@ -254,15 +254,15 @@ int bn_gpu_policy_cuda_q4k_gateup_2warp_enabled(int enable_q4k_4warp,
                                                 int cols);
 int bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(int enable_q4k_4warp,
                                                 int cols);
-int bn_gpu_policy_cuda_q8_warp_disabled(void);
-int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void);
-int bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled(void);
-int bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(int type_a,
-                                                       int type_b,
-                                                       int cols);
-int bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled(void);
-int bn_gpu_policy_cuda_f16_q8_0_matvec_enabled(void);
-int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void);
+int bn_gpu_policy_cuda_native_quant_warp_disabled(void);
+int bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled(void);
+int bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled(void);
+int bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(int type_a,
+                                                                int type_b,
+                                                                int cols);
+int bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled(void);
+int bn_gpu_policy_cuda_f16_native_quant_matvec_enabled(void);
+int bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled(void);
 int bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled(void);
 int bn_gpu_policy_kquant_dot_enabled(void);
 int bn_gpu_policy_kquant_dot_forced(void);
@@ -429,7 +429,7 @@ int bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(void);
 int bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled(void);
 int bn_gpu_policy_cuda_qkv_kpair_opt_enabled(void);
 int bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled(void);
-int bn_gpu_policy_cuda_q8_gateup_warp_disabled(void);
+int bn_gpu_policy_cuda_native_quant_gateup_warp_disabled(void);
 int bn_gpu_policy_cuda_graph_exec_requested(void);
 int bn_gpu_policy_cuda_moe_graph_max_experts_or_default(
     int default_experts);

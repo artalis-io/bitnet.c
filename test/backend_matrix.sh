@@ -1344,6 +1344,15 @@ if grep -n 'bn_gpu_policy_cuda_q8_0_quant_matmul_enabled\|bn_gpu_policy_cuda_f16
     fail=1
 fi
 
+if grep -n 'bn_gpu_policy_cuda_q8_warp_disabled\|bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled\|bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled\|bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled\|bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled\|bn_gpu_policy_cuda_f16_q8_0_matvec_enabled\|bn_gpu_policy_cuda_f16_q5k_matvec_enabled\|bn_gpu_policy_cuda_q8_gateup_warp_disabled\|cuda_q8_0_prepared_input\|cuda_q8_prepared_input\|cuda_q8_0_ssm_prepared_input\|cuda_q8_mixed_prepared_input\|cuda_use_q8_0_quant_matmul\|cuda_use_q8_0_prepared_input_split\|cuda_use_f16_q8_0_matmul\|f16_q8_0_matmul_enabled\|q8_prepared_input_logits_default\|disable_q8_warp\|disable_q8_gateup_warp\|enable_q8_prepared_input_all\|disable_q8_prepared_input_logits' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA native-quant policy helpers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_moe_route_q8k_prepared_input_enabled\|bn_gpu_policy_cuda_moe_route_q8_1_prepared_input_enabled\|bn_gpu_policy_all_active_two_kquant_moe_q8k_default_disabled\|bn_gpu_policy_all_active_two_kquant_route_q8k_default_disabled\|bn_gpu_policy_all_active_two_kquant_route_q8_1_prepared_input_enabled\|cuda_moe_route_q8k_prepared_input\|cuda_moe_route_q8_1_prepared_input\|all_active_two_route_q8_1_prepared_input\|all_active_two_kquant_route_q8k_default' \
     include/gpu_policy.h \
     src/gpu_policy.c \

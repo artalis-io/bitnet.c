@@ -10982,15 +10982,15 @@ static int cuda_ensure_q8_0_f32(BnCudaCtx *ctx, int cols, int n_tokens) {
     return 0;
 }
 
-static int cuda_use_q8_0_quant_matmul(void) {
+static int cuda_use_native_quant_matmul(void) {
     return bn_gpu_policy_cuda_native_quant_matmul_enabled();
 }
 
-static int cuda_use_f16_q8_0_matmul(void) {
+static int cuda_use_f16_native_quant_matmul(void) {
     return bn_gpu_policy_cuda_f16_native_quant_matmul_enabled();
 }
 
-static int cuda_use_q8_0_prepared_input_split(void) {
+static int cuda_use_native_quant_prepared_input_split(void) {
     return bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled();
 }
 
@@ -11022,7 +11022,7 @@ static int cuda_launch_q8_0_matmul(BnCudaCtx *ctx, float *d_dst,
         return -1;
     int threads = 256;
     int warps = threads / 32;
-    if (cuda_use_q8_0_quant_matmul()) {
+    if (cuda_use_native_quant_matmul()) {
         int x_blocks = cols / 32;
         if (cuda_ensure_q8_0_f32(ctx, cols, n_tokens) != 0)
             return -1;
@@ -11806,7 +11806,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
 
 static int cuda_force_quant_matmul_for_type(int type) {
     return bn_gpu_policy_cuda_force_quant_matmul_for_type(
-        type, cuda_use_f16_q8_0_matmul());
+        type, cuda_use_f16_native_quant_matmul());
 }
 
 static int cuda_use_down_kquant_4warp_long(int rows, int cols) {
@@ -18377,16 +18377,16 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int force_down_kquant_dot_flag = 0;
     static int enable_down_kquant_warp_flag = 0;
     static int enable_q4k_4warp_flag = 1;
-    static int disable_q8_warp_flag = 0;
+    static int disable_native_quant_warp_flag = 0;
     static int disable_qkv_mixed_fuse_flag = 0;
     static int qkv_fuse_key_cache_flag = 1;
     static int enable_qkv_kpair_opt_flag = 1;
     static int disable_legacy_block_gateup_warp_flag = 0;
-    static int disable_q8_gateup_warp_flag = 0;
+    static int disable_native_quant_gateup_warp_flag = 0;
     static int enable_bias_rope_flash_fuse_flag = 0;
     static int enable_graph_exec_flag = 0;
-    static int enable_q8_prepared_input_all_flag = 0;
-    static int disable_q8_prepared_input_logits_flag = 0;
+    static int enable_native_quant_prepared_input_all_flag = 0;
+    static int disable_native_quant_prepared_input_logits_flag = 0;
     if (!flags_init) {
         fuse_bias_enabled_flag = bn_gpu_policy_cuda_fuse_bias_enabled();
         fuse_rope_flash_enabled_flag =
@@ -18406,7 +18406,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         enable_down_kquant_warp_flag =
             bn_gpu_policy_cuda_down_kquant_warp_enabled();
         enable_q4k_4warp_flag = bn_gpu_policy_cuda_q4k_4warp_enabled();
-        disable_q8_warp_flag = bn_gpu_policy_cuda_q8_warp_disabled();
+        disable_native_quant_warp_flag =
+            bn_gpu_policy_cuda_native_quant_warp_disabled();
         disable_qkv_mixed_fuse_flag =
             bn_gpu_policy_cuda_qkv_mixed_fuse_disabled();
         qkv_fuse_key_cache_flag =
@@ -18415,15 +18416,15 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             bn_gpu_policy_cuda_qkv_kpair_opt_enabled();
         disable_legacy_block_gateup_warp_flag =
             bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled();
-        disable_q8_gateup_warp_flag =
-            bn_gpu_policy_cuda_q8_gateup_warp_disabled();
+        disable_native_quant_gateup_warp_flag =
+            bn_gpu_policy_cuda_native_quant_gateup_warp_disabled();
         enable_bias_rope_flash_fuse_flag =
             bn_gpu_policy_cuda_bias_rope_flash_fuse_enabled();
         enable_graph_exec_flag =
             bn_gpu_policy_cuda_graph_exec_requested();
-        enable_q8_prepared_input_all_flag =
+        enable_native_quant_prepared_input_all_flag =
             bn_gpu_policy_cuda_native_quant_prepared_input_all_enabled();
-        disable_q8_prepared_input_logits_flag =
+        disable_native_quant_prepared_input_logits_flag =
             bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled();
         flags_init = 1;
     }
@@ -18438,18 +18439,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int force_down_kquant_dot = force_down_kquant_dot_flag;
     const int enable_down_kquant_warp = enable_down_kquant_warp_flag;
     const int enable_q4k_4warp = enable_q4k_4warp_flag;
-    const int disable_q8_warp = disable_q8_warp_flag;
+    const int disable_native_quant_warp = disable_native_quant_warp_flag;
     const int disable_qkv_mixed_fuse = disable_qkv_mixed_fuse_flag;
     const int qkv_fuse_key_cache = qkv_fuse_key_cache_flag;
     const int enable_qkv_kpair_opt = enable_qkv_kpair_opt_flag;
     const int disable_legacy_block_gateup_warp =
         disable_legacy_block_gateup_warp_flag;
-    const int disable_q8_gateup_warp = disable_q8_gateup_warp_flag;
+    const int disable_native_quant_gateup_warp =
+        disable_native_quant_gateup_warp_flag;
     const int enable_bias_rope_flash_fuse =
         enable_bias_rope_flash_fuse_flag;
-    const int enable_q8_prepared_input_all = enable_q8_prepared_input_all_flag;
-    const int disable_q8_prepared_input_logits =
-        disable_q8_prepared_input_logits_flag;
+    const int enable_native_quant_prepared_input_all =
+        enable_native_quant_prepared_input_all_flag;
+    const int disable_native_quant_prepared_input_logits =
+        disable_native_quant_prepared_input_logits_flag;
     int q8k_input_cache_valid = 0;
     int q8k_input_cache_buf = -1;
     int q8k_input_cache_cols = 0;
@@ -18504,9 +18507,9 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             moe_graph, default_moe_graph) &&
         cuda_ops_look_like_decode_graph(ops, n_ops, readback_buf,
                                         out_host, out_len);
-    int q8_prepared_input_logits_default =
+    int native_quant_prepared_input_logits_default =
         bn_gpu_policy_cuda_native_quant_prepared_input_logits_default_enabled(
-            disable_q8_prepared_input_logits);
+            disable_native_quant_prepared_input_logits);
     int graph_exec = (enable_graph_exec_flag || default_graph_exec) &&
                      n_ops > 10 && !profile;
     int graph_static_params = graph_exec && cuda_ops_have_logits(ops, n_ops);
@@ -18983,20 +18986,20 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (op->buf_out == BN_GPU_VALUE_SSM_V ||
                  op->buf_out == BN_GPU_VALUE_SSM_ALPHA ||
                  op->buf_out == BN_GPU_VALUE_SSM_BETA) &&
-                bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled();
+                bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled();
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
                 ((bn_backend_quant_native_quant_f16_cache_matvec_candidate(
                       op->type) &&
                   ((small_state_native_matvec &&
-                    bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled()) ||
+                    bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled()) ||
                    (op->cols <= 2048 &&
-                    bn_gpu_policy_cuda_f16_q8_0_matvec_enabled()))) ||
+                    bn_gpu_policy_cuda_f16_native_quant_matvec_enabled()))) ||
                  bn_backend_quant_f16_float_cache_matvec_candidate(
                      op->type) ||
                  (bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
                       op->type) &&
-                  bn_gpu_policy_cuda_f16_q5k_matvec_enabled()))) {
+                  bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled()))) {
                 int q_threads = 256;
                 int q_warps = q_threads / 32;
                 int q_blocks = (op->rows + q_warps - 1) / q_warps;
@@ -19377,10 +19380,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ5K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if ((enable_q8_prepared_input_all ||
+            } else if ((enable_native_quant_prepared_input_all ||
                         (small_state_native_matvec &&
-                         bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled()) ||
-                        (is_logits_op && q8_prepared_input_logits_default)) &&
+                         bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled()) ||
+                        (is_logits_op && native_quant_prepared_input_logits_default)) &&
                        bn_backend_quant_native_quant_prepared_input_matvec_candidate(
                            op->type) &&
                        (op->cols & 31) == 0) {
@@ -19397,7 +19400,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     blocks, q8_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, xq, bias, op->rows,
                     op->cols, out_offset);
-            } else if (!disable_q8_warp &&
+            } else if (!disable_native_quant_warp &&
                        bn_backend_quant_native_quant_warp_matvec_candidate(
                            op->type) &&
                        (op->cols & 31) == 0 && !bias) {
@@ -19519,7 +19522,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         ? (total_rows - split0 + 1) / 2
                         : total_rows - split0;
                     const BnCudaBlockQ8_1 *xq_mixed = NULL;
-                    if (bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(
+                    if (bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(
                             op->type, ops[i + 5].type, cols)) {
                         if (cuda_ensure_q8_1(ctx, cols) != 0)
                             BN_CUDA_EXEC_FAIL("qkv mixed q8 scratch alloc failed");
@@ -19847,7 +19850,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int q8_threads = 256;
                 int warps = q8_threads / 32;
                 int blocks = (total_rows + warps - 1) / warps;
-                if (cuda_use_q8_0_prepared_input_split()) {
+                if (cuda_use_native_quant_prepared_input_split()) {
                     if (cuda_ensure_q8_1(ctx, cols) != 0)
                         BN_CUDA_EXEC_FAIL("q8 split q8 scratch alloc failed");
                     BnCudaBlockQ8_1 *xq =
@@ -19906,7 +19909,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             } else if (bn_backend_quant_native_quant_fused_gateup_candidate(
                            op->type) &&
                        (cols & 31) == 0 &&
-                       !disable_q8_gateup_warp) {
+                       !disable_native_quant_gateup_warp) {
                 int q8_gateup_threads = 64;
                 int warps = q8_gateup_threads / 32;
                 int blocks = (gate_rows + warps - 1) / warps;

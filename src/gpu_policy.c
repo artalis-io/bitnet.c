@@ -59,35 +59,35 @@ static float gpu_policy_compat_env_float_or_default(const char *name,
     return (float)atof(env);
 }
 
-static int cuda_q8_0_prepared_input_split_requested(void) {
+static int cuda_native_quant_prepared_input_split_requested(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_ENABLE_Q8_0_PREPARED_INPUT_SPLIT",
         "BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT");
 }
 
-static int cuda_q8_0_prepared_input_split_disabled(void) {
+static int cuda_native_quant_prepared_input_split_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_Q8_0_PREPARED_INPUT_SPLIT",
         "BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT");
 }
 
-static int cuda_q8_prepared_input_requested(void) {
+static int cuda_native_quant_prepared_input_requested(void) {
     return gpu_policy_compat_env_enabled("BN_CUDA_ENABLE_Q8_PREPARED_INPUT",
                                          "BN_CUDA_ENABLE_Q8_PREQ");
 }
 
-static int cuda_q8_prepared_input_disabled(void) {
+static int cuda_native_quant_prepared_input_disabled(void) {
     return gpu_policy_compat_env_enabled("BN_CUDA_DISABLE_Q8_PREPARED_INPUT",
                                          "BN_CUDA_DISABLE_Q8_PREQ");
 }
 
-static int cuda_q8_prepared_input_logits_requested(void) {
+static int cuda_native_quant_prepared_input_logits_requested(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_ENABLE_Q8_PREPARED_INPUT_LOGITS",
         "BN_CUDA_ENABLE_Q8_PREQ_LOGITS");
 }
 
-static int cuda_q8_prepared_input_logits_disabled(void) {
+static int cuda_native_quant_prepared_input_logits_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_Q8_PREPARED_INPUT_LOGITS",
         "BN_CUDA_DISABLE_Q8_PREQ_LOGITS");
@@ -111,13 +111,13 @@ static int cuda_moe_route_block_prepared_input_disabled(void) {
         "BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT");
 }
 
-static int cuda_q8_0_ssm_prepared_input_disabled(void) {
+static int cuda_native_quant_ssm_prepared_input_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_Q8_0_SSM_PREPARED_INPUT",
         "BN_CUDA_DISABLE_Q8_0_SSM_PREQ");
 }
 
-static int cuda_q8_mixed_prepared_input_requested(void) {
+static int cuda_native_quant_mixed_prepared_input_requested(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_ENABLE_Q8_MIXED_PREPARED_INPUT",
         "BN_CUDA_ENABLE_Q8_MIXED_PREQ");
@@ -910,24 +910,24 @@ int bn_gpu_policy_cuda_f16_native_quant_matmul_enabled(void) {
 }
 
 int bn_gpu_policy_cuda_native_quant_prepared_input_split_enabled(void) {
-    return cuda_q8_0_prepared_input_split_requested() &&
-           !cuda_q8_0_prepared_input_split_disabled();
+    return cuda_native_quant_prepared_input_split_requested() &&
+           !cuda_native_quant_prepared_input_split_disabled();
 }
 
 int bn_gpu_policy_cuda_native_quant_prepared_input_all_enabled(void) {
-    return cuda_q8_prepared_input_requested() &&
-           !cuda_q8_prepared_input_disabled();
+    return cuda_native_quant_prepared_input_requested() &&
+           !cuda_native_quant_prepared_input_disabled();
 }
 
 int bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled(void) {
-    return cuda_q8_prepared_input_logits_disabled();
+    return cuda_native_quant_prepared_input_logits_disabled();
 }
 
 int bn_gpu_policy_cuda_native_quant_prepared_input_logits_default_enabled(
     int prepared_input_logits_disabled) {
     return !prepared_input_logits_disabled &&
-           (cuda_q8_prepared_input_logits_requested() ||
-            !cuda_q8_prepared_input_logits_disabled());
+           (cuda_native_quant_prepared_input_logits_requested() ||
+            !cuda_native_quant_prepared_input_logits_disabled());
 }
 
 int bn_gpu_policy_prepared_kquant_input_cache_enabled(void) {
@@ -936,10 +936,10 @@ int bn_gpu_policy_prepared_kquant_input_cache_enabled(void) {
 
 int bn_gpu_policy_cuda_force_quant_matmul_for_type(
     int tensor_type,
-    int f16_q8_0_matmul_enabled) {
+    int f16_native_quant_matmul_enabled) {
     return (bn_backend_quant_avoids_quant_matmul_on_f16_input(
                 tensor_type) &&
-            !f16_q8_0_matmul_enabled) ||
+            !f16_native_quant_matmul_enabled) ||
            (bn_backend_quant_force_q4k_quant_matmul_candidate(
                 tensor_type) &&
             getenv("BN_CUDA_FORCE_Q4K_QUANT_MATMUL") != NULL) ||
@@ -1552,39 +1552,39 @@ int bn_gpu_policy_cuda_q4k_gateup_4warp_enabled(int enable_q4k_4warp,
     return enable_q4k_4warp && cols <= 8192;
 }
 
-int bn_gpu_policy_cuda_q8_warp_disabled(void) {
+int bn_gpu_policy_cuda_native_quant_warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
 }
 
-int bn_gpu_policy_cuda_q8_0_ssm_matvec_enabled(void) {
+int bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") == NULL;
 }
 
-int bn_gpu_policy_cuda_q8_0_ssm_prepared_input_enabled(void) {
-    return !cuda_q8_0_ssm_prepared_input_disabled();
+int bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled(void) {
+    return !cuda_native_quant_ssm_prepared_input_disabled();
 }
 
-int bn_gpu_policy_cuda_q8_mixed_prepared_input_enabled(int type_a,
-                                                       int type_b,
-                                                       int cols) {
-    return cuda_q8_mixed_prepared_input_requested() &&
+int bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(int type_a,
+                                                                int type_b,
+                                                                int cols) {
+    return cuda_native_quant_mixed_prepared_input_requested() &&
            (bn_backend_quant_is_q8_0(type_a) ||
             bn_backend_quant_is_q8_0(type_b)) &&
            (cols & 31) == 0;
 }
 
-int bn_gpu_policy_cuda_f16_q8_0_ssm_matvec_enabled(void) {
+int bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled(void) {
     return getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC") != NULL &&
            getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC") == NULL &&
            getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL;
 }
 
-int bn_gpu_policy_cuda_f16_q8_0_matvec_enabled(void) {
+int bn_gpu_policy_cuda_f16_native_quant_matvec_enabled(void) {
     return getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL &&
            getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL;
 }
 
-int bn_gpu_policy_cuda_f16_q5k_matvec_enabled(void) {
+int bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled(void) {
     return getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC") != NULL;
 }
 
@@ -2228,7 +2228,7 @@ int bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP") != NULL;
 }
 
-int bn_gpu_policy_cuda_q8_gateup_warp_disabled(void) {
+int bn_gpu_policy_cuda_native_quant_gateup_warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q8_GATEUP_WARP") != NULL;
 }
 
