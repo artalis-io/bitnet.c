@@ -507,7 +507,7 @@ static void debug_compare_native_quant_activation(const BnGPUBackend *gpu,
     }
 
     fprintf(stderr,
-            "[bn:gpu:debug] q8_act_compare layer=%d pos=%d "
+            "[bn:gpu:debug] native_quant_act_compare layer=%d pos=%d "
             "q_max_abs=%d q_max_i=%d cpu_q=%d gpu_q=%d "
             "q_diff_count=%d q_mean_abs=%.9g "
             "scale_max_abs=%.9g scale_max_i=%d cpu_scale=%.9g "

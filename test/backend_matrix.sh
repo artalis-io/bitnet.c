@@ -2748,6 +2748,11 @@ if grep -n 'debug_compare_q8_activation' src/transformer/gpu_fallback.c >/dev/nu
     fail=1
 fi
 
+if grep -n 'q8_act_compare' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "Transformer GPU fallback native-quant activation diagnostics must use behavior names"
+    fail=1
+fi
+
 if grep -n '__ARM_NEON\|arm_neon.h\|vdupq_n_f32\|vmaxq_f32\|vst1q_f32' include/transformer_math_internal.h >/dev/null 2>&1; then
     echo "include/transformer_math_internal.h must keep ISA-specific softmax policy in transformer backend sources"
     fail=1
