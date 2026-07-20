@@ -40,6 +40,34 @@ static void *gpu_moe_create_expert_buffer(BnGPUBackend *gpu,
     return gpu->buffer_create(gpu->ctx, data, size, type, rows, cols);
 }
 
+static void *gpu_moe_create_gateup_split_buffer(BnGPUBackend *gpu,
+                                                const void *gate_data,
+                                                size_t gate_bytes,
+                                                const void *up_data,
+                                                size_t up_bytes,
+                                                int tensor_type,
+                                                int rows,
+                                                int cols) {
+    if (!gpu || !gpu->buffer_create || !gate_data || !up_data ||
+        gate_bytes == 0 || up_bytes == 0)
+        return NULL;
+    if (gpu->buffer_create_stacked2)
+        return gpu->buffer_create_stacked2(
+            gpu->ctx, gate_data, gate_bytes, up_data, up_bytes, tensor_type,
+            rows, cols);
+
+    size_t gateup_bytes = gate_bytes + up_bytes;
+    uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
+    if (!gateup_data)
+        return NULL;
+    memcpy(gateup_data, gate_data, gate_bytes);
+    memcpy(gateup_data + gate_bytes, up_data, up_bytes);
+    void *out = gpu->buffer_create(gpu->ctx, gateup_data, gateup_bytes,
+                                   tensor_type, rows, cols);
+    free(gateup_data);
+    return out;
+}
+
 static int gpu_moe_track_temporary(BnGPUMoETemporaryBuffers *temporaries,
                                    void *buffer) {
     if (!temporaries || !buffer)
@@ -87,23 +115,10 @@ int bn_gpu_moe_bridge_get_expert(BnModel *m,
     if (!gate_data || !up_data) return -1;
 
     if (use_split) {
-        size_t gateup_bytes = em->expert_gate_bytes + em->expert_up_bytes;
-        if (gpu->buffer_create_stacked2) {
-            out->gate = gpu->buffer_create_stacked2(
-                gpu->ctx, gate_data, em->expert_gate_bytes,
-                up_data, em->expert_up_bytes, em->gate_type,
-                em->gate_rows + em->up_rows, em->gate_cols);
-        } else {
-            uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
-            if (!gateup_data) return -1;
-            memcpy(gateup_data, gate_data, em->expert_gate_bytes);
-            memcpy(gateup_data + em->expert_gate_bytes, up_data,
-                   em->expert_up_bytes);
-            out->gate = gpu->buffer_create(
-                gpu->ctx, gateup_data, gateup_bytes, em->gate_type,
-                em->gate_rows + em->up_rows, em->gate_cols);
-            free(gateup_data);
-        }
+        out->gate = gpu_moe_create_gateup_split_buffer(
+            gpu, gate_data, em->expert_gate_bytes, up_data,
+            em->expert_up_bytes, em->gate_type, em->gate_rows + em->up_rows,
+            em->gate_cols);
         if (!out->gate) return -1;
     } else {
         out->gate = gpu_moe_create_expert_buffer(
@@ -277,29 +292,10 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
             void *up_gpu = NULL;
             void *down_gpu = NULL;
             if (use_split) {
-                if (gpu->buffer_create_stacked2) {
-                    gate_gpu = gpu->buffer_create_stacked2(
-                        gpu->ctx, gate_data, em->expert_gate_bytes,
-                        up_data, em->expert_up_bytes, em->gate_type,
-                        em->gate_rows + em->up_rows, em->gate_cols);
-                } else {
-                    size_t gateup_bytes =
-                        em->expert_gate_bytes + em->expert_up_bytes;
-                    uint8_t *gateup_data = (uint8_t *)malloc(gateup_bytes);
-                    if (!gateup_data) {
-                        free(temp_state.buf);
-                        free(temp_state.buf2);
-                        free(temp_state.buf5);
-                        return -1;
-                    }
-                    memcpy(gateup_data, gate_data, em->expert_gate_bytes);
-                    memcpy(gateup_data + em->expert_gate_bytes, up_data,
-                           em->expert_up_bytes);
-                    gate_gpu = gpu->buffer_create(
-                        gpu->ctx, gateup_data, gateup_bytes, em->gate_type,
-                        em->gate_rows + em->up_rows, em->gate_cols);
-                    free(gateup_data);
-                }
+                gate_gpu = gpu_moe_create_gateup_split_buffer(
+                    gpu, gate_data, em->expert_gate_bytes, up_data,
+                    em->expert_up_bytes, em->gate_type,
+                    em->gate_rows + em->up_rows, em->gate_cols);
             } else {
                 gate_gpu = gpu_moe_create_expert_buffer(
                     gpu, gate_data, em->expert_gate_bytes,
