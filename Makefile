@@ -673,7 +673,7 @@ else
 endif
 
 build_cpu_parity_backends:
-	@backends="$${CPU_PARITY_BACKENDS:-neon,scalar}"; \
+	@backends="$${CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512}"; \
 	qwen_backends="$${QWEN_CPU_PARITY_BACKENDS:-$$backends}"; \
 	gemma_backends="$${GEMMA4_CPU_PARITY_BACKENDS:-$$backends}"; \
 	selected=",$$backends,$$qwen_backends,$$gemma_backends,"; \

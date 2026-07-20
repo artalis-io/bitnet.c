@@ -295,6 +295,21 @@ if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
     fail=1
 fi
 
+if ! grep -n 'CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512' Makefile >/dev/null 2>&1 ||
+   ! grep -n 'CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512' test/qwen_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512' test/gemma4_cpu_parity.sh >/dev/null 2>&1; then
+    echo "CPU parity defaults must cover scalar/NEON/AVX2/AVX512 backends"
+    fail=1
+fi
+
+if ! grep -n 'missing_backends' test/qwen_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'missing_backends' test/gemma4_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'REQUIRE_MODELS.*!= "1"' test/qwen_cpu_parity.sh >/dev/null 2>&1 ||
+   ! grep -n 'REQUIRE_MODELS.*!= "1"' test/gemma4_cpu_parity.sh >/dev/null 2>&1; then
+    echo "CPU parity scripts must skip missing backend executables only outside required mode"
+    fail=1
+fi
+
 if grep -n 'BN_CPU_BACKEND_AVX2\|BN_CPU_BACKEND_AVX512' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use CPU backend helpers for AVX-family ISA policy"
     fail=1

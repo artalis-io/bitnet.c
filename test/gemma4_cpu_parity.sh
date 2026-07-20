@@ -9,13 +9,14 @@ NEON_BIN=${BITNET_NEON:-./bitnet}
 SCALAR_BIN=${BITNET_SCALAR:-./bitnet_scalar}
 AVX2_BIN=${BITNET_AVX2:-./bitnet_avx2}
 AVX512_BIN=${BITNET_AVX512:-./bitnet_avx512}
-BACKENDS=${GEMMA4_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-neon,scalar}}
+BACKENDS=${GEMMA4_CPU_PARITY_BACKENDS:-${CPU_PARITY_BACKENDS:-neon,scalar,avx2,avx512}}
 CASES=${GEMMA4_CPU_PARITY_CASES:-all}
 MAXSEQ=${GEMMA4_CPU_PARITY_MAXSEQ:-512}
 
 fail=0
 ran=0
 missing=0
+missing_backends=0
 
 find_model() {
     local env_name=$1
@@ -49,6 +50,11 @@ run_backend() {
     shift 5
 
     if [[ ! -x "$bitnet" ]]; then
+        if [[ "$REQUIRE_MODELS" != "1" ]]; then
+            echo "SKIP $backend $name: missing executable $bitnet"
+            missing_backends=$((missing_backends + 1))
+            return
+        fi
         echo "FAIL $backend $name: missing executable $bitnet"
         fail=1
         return
@@ -156,3 +162,6 @@ if [[ "$fail" -ne 0 ]]; then
 fi
 
 echo "Gemma4 CPU parity PASSED: ran=$ran skipped=$missing level=$LEVEL backends=$BACKENDS"
+if [[ "$missing_backends" -ne 0 ]]; then
+    echo "Gemma4 CPU parity backend skips: $missing_backends"
+fi
