@@ -2686,8 +2686,8 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_CUDA_\|bn_quant_format_supports_gpu_dense_gr
     fail=1
 fi
 
-if grep -n 'bn_quant_dequant_row' src/transformer.c >/dev/null 2>&1; then
-    echo "src/transformer.c must use model helpers for model-owned row dequantization"
+if grep -n '#include "quant.h"\|bn_quant_' src/transformer.c >/dev/null 2>&1; then
+    echo "src/transformer.c must use model/CPU backend helpers, not quant internals directly"
     fail=1
 fi
 

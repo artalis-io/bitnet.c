@@ -74,6 +74,14 @@ int bn_transformer_cpu_quantize_q8_blocks_native(const float *x,
     return 0;
 }
 
+void bn_transformer_cpu_quant_matvec(float *out,
+                                     const BnQWeight *weight,
+                                     const float *x,
+                                     int8_t *quantized_buf,
+                                     BnThreadPool *pool) {
+    bn_quant_matvec(out, weight, x, quantized_buf, pool);
+}
+
 #if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_residual_add_neon(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 4)

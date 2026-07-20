@@ -1,7 +1,7 @@
 #include "transformer_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer/gpu_internal.h"
-#include "quant.h"
 #include "turboquant.h"
 #include "moe.h"
 #include "session.h"
@@ -33,8 +33,9 @@ static int prepare_arch_per_layer_input(BnModel *m, BnSession *sess,
         !w->per_layer_token_embd.data || !w->per_layer_proj_norm)
         return -1;
 
-    bn_quant_matvec(s->per_layer_input, &w->per_layer_model_proj,
-                    s->x, s->x_q, bn_model_pool(m));
+    bn_transformer_cpu_quant_matvec(s->per_layer_input,
+                                    &w->per_layer_model_proj,
+                                    s->x, s->x_q, bn_model_pool(m));
 
     float proj_scale = 1.0f / sqrtf((float)c->dim);
     for (int i = 0; i < total; i++)
