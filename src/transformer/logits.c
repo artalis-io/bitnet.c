@@ -292,7 +292,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         if (bn_transformer_logits_cpu_native_tied_quant_enabled()) {
             bn_quant_matvec_prepared_flags(
                 s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
-                BN_MATVEC_TASK_NATIVE_QUANT);
+                bn_transformer_logits_native_quant_task_flags(1));
         } else {
             bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
                 s->logits, tied, prepared,

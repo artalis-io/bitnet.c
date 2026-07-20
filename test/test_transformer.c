@@ -2830,6 +2830,9 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_tied_i8_weight_type() == BN_GGUF_TENSOR_Q8_0);
     assert(bn_transformer_logits_tied_f16_weight_type() == BN_GGUF_TENSOR_F16);
     assert(bn_transformer_logits_tied_f32_weight_type() == BN_GGUF_TENSOR_F32);
+    assert(bn_transformer_logits_native_quant_task_flags(0) == 0);
+    assert(bn_transformer_logits_native_quant_task_flags(1) ==
+           BN_MATVEC_TASK_NATIVE_QUANT);
 
     unsetenv("BN_GPU_Q8_REFINE_TOP");
     assert(bn_transformer_logits_native_quant_refine_top() == 16);

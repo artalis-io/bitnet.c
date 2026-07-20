@@ -64,6 +64,10 @@ int bn_transformer_logits_tied_f32_weight_type(void) {
     return bn_backend_quant_tied_logits_f32_weight_type();
 }
 
+uint32_t bn_transformer_logits_native_quant_task_flags(int enabled) {
+    return enabled ? BN_MATVEC_TASK_NATIVE_QUANT : 0u;
+}
+
 void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
     float *out,
     const BnQWeight *W,

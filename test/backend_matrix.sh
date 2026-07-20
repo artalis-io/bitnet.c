@@ -455,6 +455,11 @@ if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/prefill.c >/dev/n
     fail=1
 fi
 
+if grep -n 'BN_MATVEC_TASK_NATIVE_QUANT' src/transformer/logits.c >/dev/null 2>&1; then
+    echo "src/transformer/logits.c must use logits policy helpers for native-quant task flags"
+    fail=1
+fi
+
 for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c
