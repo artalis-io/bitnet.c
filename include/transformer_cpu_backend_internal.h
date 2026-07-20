@@ -155,6 +155,23 @@ void bn_transformer_cpu_quant_matvec_batch(const BnMatvecTask *tasks,
                                            const float *x,
                                            int8_t *quantized_buf,
                                            BnThreadPool *pool);
+void bn_transformer_cpu_quant_matvec_batch_prepared_kquant_input(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    const float *x_float,
+    BnThreadPool *pool);
+int bn_transformer_cpu_fused_kquant_gateup_silu(
+    float *out,
+    const BnQWeight *gate,
+    const BnPreparedWeight *gate_prepared,
+    const BnQWeight *up,
+    const BnPreparedWeight *up_prepared,
+    const float *x,
+    int8_t *quantized_buf,
+    BnThreadPool *pool);
 void bn_transformer_cpu_quant_matvec_batch_gpu_buffers(
     const BnMatvecTask *tasks,
     const void **buffers,

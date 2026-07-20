@@ -6,7 +6,6 @@
 #include "transformer_rmsnorm_internal.h"
 #include "transformer_ssm_internal.h"
 #include "backend_model.h"
-#include "quant.h"
 #include "moe.h"
 #include "session.h"
 #include "sh_log.h"
@@ -51,8 +50,8 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
     BnMatvecTask *prepared_tasks =
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
     if (!prepared_tasks) {
-        bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
-                              bn_model_pool(m));
+        bn_transformer_cpu_quant_matvec_batch(tasks, n_tasks, x, quantized_buf,
+                                              bn_model_pool(m));
         return;
     }
     if (bn_model_gpu(m)) {
@@ -76,8 +75,8 @@ static void cpu_quant_matvec_batch_prepared(const BnModel *m,
             return;
         }
     }
-    bn_quant_matvec_batch(prepared_tasks, n_tasks, x, quantized_buf,
-                          bn_model_pool(m));
+    bn_transformer_cpu_quant_matvec_batch(prepared_tasks, n_tasks, x,
+                                          quantized_buf, bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
 }
 
@@ -103,12 +102,12 @@ static void cpu_quant_matvec_batch_prepared_kquant(const BnModel *m,
     BnMatvecTask *prepared_tasks =
         cpu_prepare_matvec_tasks(m, tasks, n_tasks, inline_tasks, 8);
     if (!prepared_tasks) {
-        bn_quant_matvec_batch_prepared_kquant_input(
+        bn_transformer_cpu_quant_matvec_batch_prepared_kquant_input(
             tasks, n_tasks, quantized, scales, block_sums, x_float,
             bn_model_pool(m));
         return;
     }
-    bn_quant_matvec_batch_prepared_kquant_input(
+    bn_transformer_cpu_quant_matvec_batch_prepared_kquant_input(
         prepared_tasks, n_tasks, quantized, scales, block_sums, x_float,
         bn_model_pool(m));
     if (prepared_tasks != inline_tasks) free(prepared_tasks);
@@ -1017,9 +1016,10 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
             if (bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
                     gpu, ffn_plan, dim,
                     lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) &&
-                bn_quant_q4_gate_up_silu(s->hb, &lw->ffn.ffn_gate, gate_prepared,
-                                         &lw->ffn.ffn_up, up_prepared, s->xb,
-                                         s->x_q, bn_model_pool(m)) == 0) {
+                bn_transformer_cpu_fused_kquant_gateup_silu(
+                    s->hb, &lw->ffn.ffn_gate, gate_prepared,
+                    &lw->ffn.ffn_up, up_prepared, s->xb, s->x_q,
+                    bn_model_pool(m)) == 0) {
                 ffn_activated = 1;
             } else
             {

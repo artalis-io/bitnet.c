@@ -166,6 +166,31 @@ void bn_transformer_cpu_quant_matvec_batch(const BnMatvecTask *tasks,
     bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf, pool);
 }
 
+void bn_transformer_cpu_quant_matvec_batch_prepared_kquant_input(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    const float *x_float,
+    BnThreadPool *pool) {
+    bn_quant_matvec_batch_prepared_kquant_input(
+        tasks, n_tasks, quantized, scales, block_sums, x_float, pool);
+}
+
+int bn_transformer_cpu_fused_kquant_gateup_silu(
+    float *out,
+    const BnQWeight *gate,
+    const BnPreparedWeight *gate_prepared,
+    const BnQWeight *up,
+    const BnPreparedWeight *up_prepared,
+    const float *x,
+    int8_t *quantized_buf,
+    BnThreadPool *pool) {
+    return bn_quant_q4_gate_up_silu(out, gate, gate_prepared, up,
+                                    up_prepared, x, quantized_buf, pool);
+}
+
 #if BN_TRANSFORMER_CPU_HAS_NEON
 static void cpu_residual_add_neon(float *x, const float *r, int dim) {
     for (int i = 0; i < dim; i += 4)
