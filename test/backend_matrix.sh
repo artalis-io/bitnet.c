@@ -2292,13 +2292,13 @@ if grep -n 'getenv("BN_CUDA_ENABLE_LARGE_HYBRID_ATTN")\|getenv("BN_CUDA_ENABLE_L
     fail=1
 fi
 
-if grep -n 'getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE")\|getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
-    echo "Transformer GPU policy must use backend GPU policy helpers for CUDA small K-quant native env vars"
+if grep -n 'getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE")\|getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE")\|getenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT")\|getenv("BN_CUDA_DISABLE_SMALL_STATE_NATIVE_QUANT")' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use backend GPU policy helpers for CUDA small-state native-quant env vars"
     fail=1
 fi
 
-if grep -n 'bn_gpu_policy_cuda_small_kquant_native_enabled\|bn_gpu_policy_cuda_small_kquant_native_disabled' include/gpu_policy.h test/test_gpu_backend.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
-    echo "Public GPU policy, tests, and transformer GPU policy must use neutral helpers for small K-quant native policy"
+if grep -n 'bn_gpu_policy_.*small_kquant_native\|small_kquant_native_enabled\|small_kquant_native_disabled' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Public GPU policy, tests, and transformer GPU policy must use behavior names for small-state native-quant policy"
     fail=1
 fi
 

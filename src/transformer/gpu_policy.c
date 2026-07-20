@@ -598,7 +598,7 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     const BnConfig *c = &m->config;
     if (!bn_transformer_gpu_uses_dense_attention_only(c))
         return 0;
-    if (bn_gpu_policy_small_kquant_native_enabled(
+    if (bn_gpu_policy_small_state_native_quant_enabled(
             bn_transformer_gpu_requires_float_kquant(c)))
         return 1;
     if (!bn_transformer_gpu_uses_small_dense_native_quant_shape(c))
@@ -1982,7 +1982,7 @@ int bn_transformer_gpu_validate_forward(
 
     if (bn_gpu_policy_backend_small_dense_native_enabled(gpu) &&
         bn_transformer_gpu_uses_small_dense_shape(c)) {
-        if (bn_gpu_policy_small_kquant_native_disabled()) {
+        if (bn_gpu_policy_small_state_native_quant_disabled()) {
             if (!small_dense_backend_native_quant_by_default(c, w))
                 GPU_POLICY_REJECT("small dense gpu graph disabled");
         } else if (!small_dense_backend_native_by_default(c, w)) {

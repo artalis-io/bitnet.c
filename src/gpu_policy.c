@@ -1041,12 +1041,16 @@ static int gpu_policy_matvec_batch_disabled(void) {
     return getenv("BN_CUDA_DISABLE_MATVEC_BATCH") != NULL;
 }
 
-static int gpu_policy_small_kquant_native_requested(void) {
-    return getenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE") != NULL;
+static int gpu_policy_small_state_native_quant_requested(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT",
+        "BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
 }
 
-static int gpu_policy_small_kquant_native_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE") != NULL;
+static int gpu_policy_small_state_native_quant_disabled(void) {
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_SMALL_STATE_NATIVE_QUANT",
+        "BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 }
 
 static const char *gpu_policy_max_storage_binding_mb_value(void) {
@@ -1091,23 +1095,23 @@ int bn_gpu_policy_matvec_batch_enabled(void) {
     return !gpu_policy_matvec_batch_disabled();
 }
 
-static int small_kquant_native_enabled(int force_float_kquant) {
-    if (gpu_policy_small_kquant_native_requested())
+static int small_state_native_quant_enabled(int force_float_kquant) {
+    if (gpu_policy_small_state_native_quant_requested())
         return 1;
-    return !gpu_policy_small_kquant_native_disabled() &&
+    return !gpu_policy_small_state_native_quant_disabled() &&
            !force_float_kquant;
 }
 
-int bn_gpu_policy_small_kquant_native_enabled(int force_float_kquant) {
-    return small_kquant_native_enabled(force_float_kquant);
+int bn_gpu_policy_small_state_native_quant_enabled(int force_float_kquant) {
+    return small_state_native_quant_enabled(force_float_kquant);
 }
 
-static int small_kquant_native_disabled(void) {
-    return gpu_policy_small_kquant_native_disabled();
+static int small_state_native_quant_disabled(void) {
+    return gpu_policy_small_state_native_quant_disabled();
 }
 
-int bn_gpu_policy_small_kquant_native_disabled(void) {
-    return small_kquant_native_disabled();
+int bn_gpu_policy_small_state_native_quant_disabled(void) {
+    return small_state_native_quant_disabled();
 }
 
 size_t bn_gpu_policy_max_storage_binding_bytes(size_t backend_limit) {

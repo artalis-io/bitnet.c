@@ -1199,6 +1199,8 @@ static void test_gpu_policy_helpers(void) {
     model.weights.emb_type = BN_GGUF_TENSOR_Q8_0;
     gpu.kind = BN_GPU_BACKEND_CUDA;
     gpu.execute = mock_gpu_execute;
+    unsetenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT");
+    unsetenv("BN_CUDA_DISABLE_SMALL_STATE_NATIVE_QUANT");
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
     assert(bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
@@ -1212,13 +1214,13 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_matvec_fallback_policy(&model, &gpu);
     assert(!matvec_fallback.keep_backend_matvec);
     assert(matvec_fallback.disable_backend_matvec);
-    setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    setenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT", "1", 1);
     assert(bn_transformer_gpu_backend_matvec_fallback_kept(&model, &gpu));
     matvec_fallback =
         bn_transformer_gpu_matvec_fallback_policy(&model, &gpu);
     assert(matvec_fallback.keep_backend_matvec);
     assert(!matvec_fallback.disable_backend_matvec);
-    unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
+    unsetenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT");
     model.weights.emb_type = BN_GGUF_TENSOR_Q8_0;
     layer.attn.wq.data = (void *)1;
     layer.attn.wq.type = BN_GGUF_TENSOR_Q4_K;

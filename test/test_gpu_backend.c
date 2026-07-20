@@ -1151,18 +1151,26 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_MATMUL_BATCH");
     unsetenv("BN_CUDA_DISABLE_MATVEC_BATCH");
 
+    unsetenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT");
+    unsetenv("BN_CUDA_DISABLE_SMALL_STATE_NATIVE_QUANT");
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
-    assert(bn_gpu_policy_small_kquant_native_enabled(0));
-    assert(!bn_gpu_policy_small_kquant_native_enabled(1));
-    assert(!bn_gpu_policy_small_kquant_native_disabled());
+    assert(bn_gpu_policy_small_state_native_quant_enabled(0));
+    assert(!bn_gpu_policy_small_state_native_quant_enabled(1));
+    assert(!bn_gpu_policy_small_state_native_quant_disabled());
+    setenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT", "1", 1);
+    assert(bn_gpu_policy_small_state_native_quant_enabled(1));
+    setenv("BN_CUDA_DISABLE_SMALL_STATE_NATIVE_QUANT", "1", 1);
+    assert(bn_gpu_policy_small_state_native_quant_enabled(1));
+    assert(bn_gpu_policy_small_state_native_quant_disabled());
+    unsetenv("BN_CUDA_ENABLE_SMALL_STATE_NATIVE_QUANT");
+    assert(!bn_gpu_policy_small_state_native_quant_enabled(0));
+    unsetenv("BN_CUDA_DISABLE_SMALL_STATE_NATIVE_QUANT");
     setenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE", "1", 1);
-    assert(bn_gpu_policy_small_kquant_native_enabled(1));
-    setenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE", "1", 1);
-    assert(bn_gpu_policy_small_kquant_native_enabled(1));
-    assert(bn_gpu_policy_small_kquant_native_disabled());
+    assert(bn_gpu_policy_small_state_native_quant_enabled(1));
     unsetenv("BN_CUDA_ENABLE_SMALL_KQUANT_NATIVE");
-    assert(!bn_gpu_policy_small_kquant_native_enabled(0));
+    setenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE", "1", 1);
+    assert(bn_gpu_policy_small_state_native_quant_disabled());
     unsetenv("BN_CUDA_DISABLE_SMALL_KQUANT_NATIVE");
 
     unsetenv("BN_GPU_DISABLE_PREFILL_MATMUL");
