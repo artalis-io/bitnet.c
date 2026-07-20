@@ -1153,47 +1153,69 @@ static int gpu_policy_force_down_kquant_quant_matmul_requested(void) {
 }
 
 static int gpu_policy_down_kquant_4warp_long_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_4WARP_LONG") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_4WARP_LONG",
+        "BN_CUDA_DISABLE_Q6K_4WARP_LONG");
 }
 
 static int gpu_policy_down_kquant_4warp_exact_1536x8960_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_4WARP_1536_8960") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_4WARP_1536_8960",
+        "BN_CUDA_DISABLE_Q6K_4WARP_1536_8960");
 }
 
 static int gpu_policy_down_kquant_4warp_mid_cols_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_4WARP_5120") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_DOWN_KQUANT_4WARP_5120",
+        "BN_CUDA_ENABLE_Q6K_4WARP_5120");
 }
 
 static int gpu_policy_down_kquant_5warp_exact_1536x8960_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_5WARP_1536_8960") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_5WARP_1536_8960",
+        "BN_CUDA_DISABLE_Q6K_5WARP_1536_8960");
 }
 
 static int gpu_policy_down_kquant_5warp_exact_2560x9728_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_5WARP_2560_9728") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_5WARP_2560_9728",
+        "BN_CUDA_DISABLE_Q6K_5WARP_2560_9728");
 }
 
 static int gpu_policy_down_kquant_3warp_exact_1536x8960_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_3WARP_1536_8960") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_3WARP_1536_8960",
+        "BN_CUDA_DISABLE_Q6K_3WARP_1536_8960");
 }
 
 static int gpu_policy_down_kquant_3warp_exact_2560x9728_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_3WARP_2560_9728") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_3WARP_2560_9728",
+        "BN_CUDA_DISABLE_Q6K_3WARP_2560_9728");
 }
 
 static int gpu_policy_down_kquant_2warp_long_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_2WARP_LONG") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_DOWN_KQUANT_2WARP_LONG",
+        "BN_CUDA_ENABLE_Q6K_2WARP_LONG");
 }
 
 static int gpu_policy_down_kquant_2warp_long_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q6K_2WARP_LONG") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_DOWN_KQUANT_2WARP_LONG",
+        "BN_CUDA_DISABLE_Q6K_2WARP_LONG");
 }
 
 static int gpu_policy_down_kquant_matvec4_1024x2560_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_MATVEC4_1024_2560") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_DOWN_KQUANT_MATVEC4_1024_2560",
+        "BN_CUDA_ENABLE_Q6K_MATVEC4_1024_2560");
 }
 
 static int gpu_policy_down_kquant_matvec4_512x2048_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q6K_MATVEC4_512_2048") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_DOWN_KQUANT_MATVEC4_512_2048",
+        "BN_CUDA_ENABLE_Q6K_MATVEC4_512_2048");
 }
 
 int bn_gpu_policy_cuda_cublas_matmul_enabled(void) {
