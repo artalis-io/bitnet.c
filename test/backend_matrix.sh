@@ -3165,6 +3165,12 @@ if grep -n 'gpu->matmul_batch(gpu->ctx' src/transformer/prefill.c >/dev/null 2>&
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_prefill_quant_matmul_backend_available/{flag=1} /^int bn_transformer_gpu_prefill_dense_ffn_batch_backend_available/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'gpu->matmul\|gpu->matmul_batch' >/dev/null 2>&1; then
+    echo "Transformer GPU prefill quant matmul policy must use GPU backend helpers"
+    fail=1
+fi
+
 if grep -n 'gpu->dense_ffn_batch' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer prefill execution must use GPU policy helpers for dense FFN batch backend calls"
     fail=1

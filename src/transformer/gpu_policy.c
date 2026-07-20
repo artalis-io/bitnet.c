@@ -328,12 +328,12 @@ uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
 
 int bn_transformer_gpu_prefill_quant_matmul_backend_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->matmul;
+    return bn_gpu_backend_can_matmul(gpu);
 }
 
 int bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->matmul_batch;
+    return bn_gpu_backend_can_matmul_batch(gpu);
 }
 
 int bn_transformer_gpu_prefill_quant_matmul_backend_run(
@@ -347,8 +347,8 @@ int bn_transformer_gpu_prefill_quant_matmul_backend_run(
     int tensor_type) {
     if (!bn_transformer_gpu_prefill_quant_matmul_backend_available(gpu))
         return -1;
-    return gpu->matmul(gpu->ctx, out, buf, X, rows, cols, n_tokens,
-                       tensor_type);
+    return bn_gpu_backend_matmul(gpu, out, buf, X, rows, cols, n_tokens,
+                                 tensor_type);
 }
 
 int bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(
@@ -360,7 +360,7 @@ int bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(
     int cols) {
     if (!bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(gpu))
         return -1;
-    return gpu->matmul_batch(gpu->ctx, ops, n_ops, X, n_tokens, cols);
+    return bn_gpu_backend_matmul_batch(gpu, ops, n_ops, X, n_tokens, cols);
 }
 
 int bn_transformer_gpu_prefill_dense_ffn_batch_backend_available(
