@@ -1192,6 +1192,9 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     c.policy_flags = 0;
+    assert(bn_transformer_prefill_float_kquant_fallback_task_flags(0) == 0);
+    assert(bn_transformer_prefill_float_kquant_fallback_task_flags(1) ==
+           BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
 
     BnMoEExpertMap expert_map;
     memset(&expert_map, 0, sizeof(expert_map));

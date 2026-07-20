@@ -489,6 +489,7 @@ int bn_transformer_prefill_qkv_stack_batch_compatible(const BnQWeight *q,
                                                       int q_stride,
                                                       int dim);
 int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type);
+uint32_t bn_transformer_prefill_float_kquant_fallback_task_flags(int enabled);
 int bn_transformer_prefill_quant_matmul_gpu_available(
     const BnGPUBackend *gpu,
     int has_output,

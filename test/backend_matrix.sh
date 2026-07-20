@@ -445,6 +445,11 @@ if grep -n 'bn_quant_format_is_float_kquant_fallback_candidate' src/transformer/
     fail=1
 fi
 
+if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use prefill policy helpers for float K-quant task flags"
+    fail=1
+fi
+
 for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c

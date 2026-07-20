@@ -122,6 +122,10 @@ static int prefill_qweight_is_kquant(const BnQWeight *w) {
     return w && bn_transformer_prefill_uses_float_kquant_fallback(w->type);
 }
 
+static uint32_t prefill_float_kquant_task_flags(void) {
+    return bn_transformer_prefill_float_kquant_fallback_task_flags(1);
+}
+
 static int prefill_all_kquant(const BnQWeight *const *W, int n) {
     if (n <= 0)
         return 0;
@@ -145,7 +149,7 @@ static void prefill_quant_matmul_forced_kquant(
                 out[i] + (size_t)t * W[i]->rows,
                 W[i],
                 bn_backend_model_prepared_qweight(backend, W[i]),
-                BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
+                prefill_float_kquant_task_flags()
             };
         }
         bn_quant_matvec_batch(tasks, n, X + (size_t)t * W[0]->cols,

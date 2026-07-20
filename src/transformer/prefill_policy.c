@@ -760,6 +760,10 @@ int bn_transformer_prefill_uses_float_kquant_fallback(int tensor_type) {
     return bn_backend_quant_requires_float_kquant_fallback(tensor_type);
 }
 
+uint32_t bn_transformer_prefill_float_kquant_fallback_task_flags(int enabled) {
+    return enabled ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT : 0u;
+}
+
 int bn_transformer_prefill_quant_matmul_gpu_available(
     const BnGPUBackend *gpu,
     int has_output,
