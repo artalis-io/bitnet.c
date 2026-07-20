@@ -542,6 +542,21 @@ static inline int bn_gpu_backend_can_matmul_batch(
     return gpu && gpu->matmul_batch;
 }
 
+static inline int bn_gpu_backend_can_dense_ffn_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->dense_ffn_batch;
+}
+
+static inline int bn_gpu_backend_can_dense_ffn_batch_norm(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->dense_ffn_batch_norm;
+}
+
+static inline int bn_gpu_backend_can_dense_ffn_batch_norm_resid(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->dense_ffn_batch_norm_resid;
+}
+
 static inline int bn_gpu_backend_can_destroy_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_destroy;
@@ -750,6 +765,73 @@ static inline int bn_gpu_backend_matmul_batch(
     if (!bn_gpu_backend_can_matmul_batch(gpu))
         return -1;
     return gpu->matmul_batch(gpu->ctx, ops, n_ops, X, n_tokens, x_cols);
+}
+
+static inline int bn_gpu_backend_dense_ffn_batch(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type) {
+    if (!bn_gpu_backend_can_dense_ffn_batch(gpu))
+        return -1;
+    return gpu->dense_ffn_batch(gpu->ctx, out, gate_buf, up_buf, down_buf,
+                                X, n_tokens, dim, hidden_dim, gate_type,
+                                up_type, down_type, act_type);
+}
+
+static inline int bn_gpu_backend_dense_ffn_batch_norm(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    void *norm_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    float norm_eps) {
+    if (!bn_gpu_backend_can_dense_ffn_batch_norm(gpu))
+        return -1;
+    return gpu->dense_ffn_batch_norm(
+        gpu->ctx, out, gate_buf, up_buf, down_buf, norm_buf, X, n_tokens,
+        dim, hidden_dim, gate_type, up_type, down_type, act_type, norm_eps);
+}
+
+static inline int bn_gpu_backend_dense_ffn_batch_norm_resid(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    void *norm_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    float norm_eps) {
+    if (!bn_gpu_backend_can_dense_ffn_batch_norm_resid(gpu))
+        return -1;
+    return gpu->dense_ffn_batch_norm_resid(
+        gpu->ctx, out, gate_buf, up_buf, down_buf, norm_buf, X, n_tokens,
+        dim, hidden_dim, gate_type, up_type, down_type, act_type, norm_eps);
 }
 
 static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
