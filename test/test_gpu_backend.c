@@ -2553,20 +2553,35 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_FAST_Q8K_GATEUP");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_PAIR_DOWN");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN_F32_LAYERS");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_PAIR_DOWN_F32_LAYERS");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN_F32_LAYERS");
     unsetenv("BN_CUDA_ALL2_Q4Q6_Q6K_PAIR_DOWN_F32_LAYERS");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ORDERED_DOWN");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_ORDERED_DOWN");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_ORDERED_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_ORDERED_DOWN");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_DOWN_DEFAULT");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_F32_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_ALL_ACTIVE_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_ALL2_DOWN");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_CACHE");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_Q6K_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_FLOAT_4ROW_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_FLOAT_4ROW_DOWN");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_LAYERS");
     unsetenv("BN_CUDA_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_LAYERS");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_DOWN_SKIP_EPS");
     unsetenv("BN_CUDA_ALL2_Q4Q6_DOWN_SKIP_EPS");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_FAST_MOE_GRAPH");
@@ -2969,6 +2984,66 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_DOT_PREPARED_INPUT_DEFAULT");
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FAST_PREPARED_GATEUP");
+    setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN", "1", 1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN_F32_LAYERS",
+           "1", 1);
+    setenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN_F32_LAYERS", "4-5",
+           1);
+    setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ORDERED_DOWN", "1", 1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_ORDERED_DOWN", "1", 1);
+    setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_DOWN_DEFAULT", "1",
+           1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_DOWN_DEFAULT", "1",
+           1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_ALL_ACTIVE_DOWN",
+           "1", 1);
+    setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_CACHE", "1", 1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN_DEFAULT",
+           "1", 1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN", "1",
+           1);
+    setenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_LAYERS",
+           "6", 1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_DEFAULT",
+           "1", 1);
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN",
+           "1", 1);
+    setenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_DOWN_SKIP_EPS", "0.125", 1);
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layers_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layer_selected(4));
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_f32_layer_selected(6));
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_ordered_quant_path_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_all_active_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(6));
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(4));
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) >
+           0.124f);
+    assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) <
+           0.126f);
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN_F32_LAYERS");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_PAIR_DOWN_F32_LAYERS");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ORDERED_DOWN");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_ORDERED_DOWN");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_ALL_ACTIVE_DOWN");
+    unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_CACHE");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_LAYERS");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_DOWN_SKIP_EPS");
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_FAST_GRAPH", "1", 1);
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_CUBLAS_DECODE", "1", 1);
