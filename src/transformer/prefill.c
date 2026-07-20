@@ -859,9 +859,14 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
-    if (!bn_transformer_prefill_moe_layer_chain_available(
+    int moe_layer_backend_available =
+        bn_transformer_prefill_moe_layer_backend_available(
+            gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0);
+    int moe_layer_chain_available =
+        bn_transformer_prefill_moe_layer_chain_available(
             gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0,
-            n_tokens) ||
+            n_tokens);
+    if (!moe_layer_chain_available ||
         !backend ||
         bn_model_tq_state(m) != NULL ||
         layer_rope_theta != c->rope_theta ||
@@ -872,7 +877,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
             fprintf(stderr,
                     "[bn:prefill:moe-chain] reject layer=%d basic gpu=%d hook=%d backend=%d tq=%d toks=%d min=%d theta=%d attn=%d moe=%d shared=%d bias=%d subnorm=%d scale=%d\n",
                     layer, gpu != NULL,
-                    gpu && gpu->prefill_moe_layer ? 1 : 0,
+                    moe_layer_backend_available,
                     backend != NULL, bn_model_tq_state(m) != NULL,
                     n_tokens,
                     bn_transformer_prefill_moe_chain_min_tokens(c, gpu),
