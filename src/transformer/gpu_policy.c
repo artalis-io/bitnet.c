@@ -30,7 +30,7 @@ int bn_transformer_gpu_can_native_quant_qkv(int q_type, int k_type, int v_type) 
 }
 
 int bn_transformer_gpu_can_stack_same_quant_format_qk(int q_type, int k_type) {
-    return bn_backend_quant_stacked_pair_same_format(q_type, k_type);
+    return bn_backend_quant_same_quant_format_pair_stackable(q_type, k_type);
 }
 
 int bn_transformer_gpu_can_stack_same_quant_format_qk_weights(const BnQWeight *q,
@@ -49,7 +49,8 @@ int bn_transformer_gpu_can_stack_same_quant_format_gateup(const BnQWeight *gate,
     return gate && up &&
            gate->rows == up->rows &&
            gate->cols == up->cols &&
-           bn_backend_quant_stacked_pair_same_format(gate->type, up->type);
+           bn_backend_quant_same_quant_format_pair_stackable(gate->type,
+                                                             up->type);
 }
 
 int bn_transformer_gpu_can_matvec_split(const BnGPUBackend *gpu,
@@ -135,8 +136,9 @@ int bn_transformer_gpu_prefers_gateup_split(int tensor_type) {
 }
 
 int bn_transformer_gpu_same_quant_format_pair_stackable(int left_type,
-                                                int right_type) {
-    return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
+                                                        int right_type) {
+    return bn_backend_quant_same_quant_format_pair_stackable(left_type,
+                                                            right_type);
 }
 
 int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,

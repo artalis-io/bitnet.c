@@ -80,9 +80,9 @@ int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
         return 0;
     if (bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch())
         return 1;
-    return bn_backend_quant_stacked_pair_same_format(shared_gate_type,
+    return bn_backend_quant_same_quant_format_pair_stackable(shared_gate_type,
                                                      batch_type) &&
-           bn_backend_quant_stacked_pair_same_format(shared_up_type,
+           bn_backend_quant_same_quant_format_pair_stackable(shared_up_type,
                                                      batch_type);
 }
 

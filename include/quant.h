@@ -404,7 +404,8 @@ int      bn_quant_format_supports_moe_q4_down_route(int gate_type,
 int      bn_quant_format_supports_moe_q4_gateup(int gate_type, int up_type);
 int      bn_quant_format_supports_cpu_fused_q4_gateup_silu(int gate_type,
                                                            int up_type);
-int      bn_quant_format_pair_same_format(int left_type, int right_type);
+int      bn_quant_format_same_quant_format_pair_stackable(int left_type,
+                                                          int right_type);
 int      bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
                                                       int shared_up_type,
                                                       int batch_type);

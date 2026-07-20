@@ -430,15 +430,18 @@ int bn_quant_format_supports_cpu_fused_q4_gateup_silu(int gate_type,
                                    BN_QUANT_CAP_CPU_FUSED_Q4_GATEUP_SILU);
 }
 
-int bn_quant_format_pair_same_format(int left_type, int right_type) {
+int bn_quant_format_same_quant_format_pair_stackable(int left_type,
+                                                     int right_type) {
     return left_type == right_type;
 }
 
 int bn_quant_format_supports_shared_gateup_batch(int shared_gate_type,
                                                  int shared_up_type,
                                                  int batch_type) {
-    if (bn_quant_format_pair_same_format(shared_gate_type, batch_type) &&
-        bn_quant_format_pair_same_format(shared_up_type, batch_type))
+    if (bn_quant_format_same_quant_format_pair_stackable(shared_gate_type,
+                                                         batch_type) &&
+        bn_quant_format_same_quant_format_pair_stackable(shared_up_type,
+                                                         batch_type))
         return 1;
     return bn_quant_format_supports_prepared_kquant(shared_gate_type) &&
            bn_quant_format_supports_prepared_kquant(shared_up_type) &&

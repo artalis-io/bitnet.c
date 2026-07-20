@@ -224,9 +224,11 @@ static inline int bn_backend_quant_cpu_fused_kquant_gateup_silu(int gate_type,
                                                              up_type);
 }
 
-static inline int bn_backend_quant_stacked_pair_same_format(int left_type,
-                                                            int right_type) {
-    return bn_quant_format_pair_same_format(left_type, right_type);
+static inline int
+bn_backend_quant_same_quant_format_pair_stackable(int left_type,
+                                                  int right_type) {
+    return bn_quant_format_same_quant_format_pair_stackable(left_type,
+                                                           right_type);
 }
 
 static inline int bn_backend_quant_shared_gateup_batch_type_supported(

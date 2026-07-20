@@ -731,8 +731,9 @@ int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
 }
 
 int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
-                                                    int right_type) {
-    return bn_backend_quant_stacked_pair_same_format(left_type, right_type);
+                                                            int right_type) {
+    return bn_backend_quant_same_quant_format_pair_stackable(left_type,
+                                                            right_type);
 }
 
 int bn_transformer_prefill_activation_is_relu2(int activation) {
