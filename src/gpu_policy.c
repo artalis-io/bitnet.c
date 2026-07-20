@@ -1437,11 +1437,11 @@ int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void) {
     return getenv("BN_CUDA_ENABLE_OPTIMISTIC_ARGMAX_PENALTY") != NULL;
 }
 
-int bn_gpu_policy_cuda_q5_matvec4_enabled(void) {
+int bn_gpu_policy_cuda_legacy_block_matvec4_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5_MATVEC4") != NULL;
 }
 
-int bn_gpu_policy_cuda_q5_warp_enabled(void) {
+int bn_gpu_policy_cuda_legacy_block_warp_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5_WARP") != NULL;
 }
 
@@ -1449,16 +1449,16 @@ int bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled(void) {
     return getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC") != NULL;
 }
 
-int bn_gpu_policy_cuda_q5k_4warp_enabled(int cols) {
+int bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(int cols) {
     return cols <= 8192 && getenv("BN_CUDA_DISABLE_Q5K_4WARP") == NULL;
 }
 
-int bn_gpu_policy_cuda_q5k_split_4warp_enabled(int cols) {
-    return bn_gpu_policy_cuda_q5k_4warp_enabled(cols) &&
+int bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(int cols) {
+    return bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(cols) &&
            getenv("BN_CUDA_ENABLE_Q5K_SPLIT_4WARP") != NULL;
 }
 
-int bn_gpu_policy_cuda_q5k_gateup_2warp_enabled(void) {
+int bn_gpu_policy_cuda_deinterleaved_kquant_gateup_2warp_enabled(void) {
     return getenv("BN_CUDA_DISABLE_Q5K_GATEUP_2WARP") == NULL;
 }
 
@@ -2224,7 +2224,7 @@ int bn_gpu_policy_cuda_qkv_kpair_opt_enabled(void) {
     return getenv("BN_CUDA_ENABLE_QKV_KPAIR_OPT") != NULL;
 }
 
-int bn_gpu_policy_cuda_q5_gateup_warp_disabled(void) {
+int bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q5_GATEUP_WARP") != NULL;
 }
 

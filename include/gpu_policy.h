@@ -228,12 +228,12 @@ int bn_gpu_policy_cuda_moe_logits_mmvq_1warp8_1536_unroll_enabled(
     int use_1warp16);
 int bn_gpu_policy_cuda_argmax_fast_enabled(void);
 int bn_gpu_policy_cuda_optimistic_argmax_penalty_enabled(void);
-int bn_gpu_policy_cuda_q5_matvec4_enabled(void);
-int bn_gpu_policy_cuda_q5_warp_enabled(void);
+int bn_gpu_policy_cuda_legacy_block_matvec4_enabled(void);
+int bn_gpu_policy_cuda_legacy_block_warp_enabled(void);
 int bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled(void);
-int bn_gpu_policy_cuda_q5k_4warp_enabled(int cols);
-int bn_gpu_policy_cuda_q5k_split_4warp_enabled(int cols);
-int bn_gpu_policy_cuda_q5k_gateup_2warp_enabled(void);
+int bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(int cols);
+int bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(int cols);
+int bn_gpu_policy_cuda_deinterleaved_kquant_gateup_2warp_enabled(void);
 int bn_gpu_policy_cuda_symmetric_kquant_dot_enabled(void);
 int bn_gpu_policy_cuda_deinterleaved_kquant_dot_enabled(void);
 int bn_gpu_policy_cuda_q4k_4warp_enabled(void);
@@ -428,7 +428,7 @@ int bn_gpu_policy_ssm_graph_disabled(void);
 int bn_gpu_policy_cuda_qkv_mixed_fuse_disabled(void);
 int bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled(void);
 int bn_gpu_policy_cuda_qkv_kpair_opt_enabled(void);
-int bn_gpu_policy_cuda_q5_gateup_warp_disabled(void);
+int bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled(void);
 int bn_gpu_policy_cuda_q8_gateup_warp_disabled(void);
 int bn_gpu_policy_cuda_graph_exec_requested(void);
 int bn_gpu_policy_cuda_moe_graph_max_experts_or_default(

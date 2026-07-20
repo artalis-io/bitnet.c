@@ -13121,14 +13121,14 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
             rows, cols, 0);
     } else if (bn_backend_quant_legacy_block_matvec_candidate(type) &&
                (cols & 31) == 0 &&
-               bn_gpu_policy_cuda_q5_matvec4_enabled()) {
+               bn_gpu_policy_cuda_legacy_block_matvec4_enabled()) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
     } else if (bn_backend_quant_legacy_block_matvec_candidate(type) &&
                (cols & 31) == 0 &&
-               bn_gpu_policy_cuda_q5_warp_enabled()) {
+               bn_gpu_policy_cuda_legacy_block_warp_enabled()) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
         q5_0_matvec_warp_kernel<<<blocks, threads>>>(
@@ -18369,8 +18369,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int flags_init = 0;
     static int fuse_bias_enabled_flag = 1;
     static int fuse_rope_flash_enabled_flag = 1;
-    static int enable_q5_matvec4_flag = 0;
-    static int enable_q5_warp_flag = 0;
+    static int enable_legacy_block_matvec4_flag = 0;
+    static int enable_legacy_block_warp_flag = 0;
     static int enable_symmetric_kquant_dot_flag = 1;
     static int enable_deinterleaved_kquant_dot_flag = 1;
     static int enable_down_kquant_dot_flag = 1;
@@ -18381,7 +18381,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     static int disable_qkv_mixed_fuse_flag = 0;
     static int qkv_fuse_key_cache_flag = 1;
     static int enable_qkv_kpair_opt_flag = 1;
-    static int disable_q5_gateup_warp_flag = 0;
+    static int disable_legacy_block_gateup_warp_flag = 0;
     static int disable_q8_gateup_warp_flag = 0;
     static int enable_bias_rope_flash_fuse_flag = 0;
     static int enable_graph_exec_flag = 0;
@@ -18391,9 +18391,10 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
         fuse_bias_enabled_flag = bn_gpu_policy_cuda_fuse_bias_enabled();
         fuse_rope_flash_enabled_flag =
             bn_gpu_policy_cuda_rope_flash_fuse_enabled();
-        enable_q5_matvec4_flag =
-            bn_gpu_policy_cuda_q5_matvec4_enabled();
-        enable_q5_warp_flag = bn_gpu_policy_cuda_q5_warp_enabled();
+        enable_legacy_block_matvec4_flag =
+            bn_gpu_policy_cuda_legacy_block_matvec4_enabled();
+        enable_legacy_block_warp_flag =
+            bn_gpu_policy_cuda_legacy_block_warp_enabled();
         enable_symmetric_kquant_dot_flag =
             bn_gpu_policy_cuda_symmetric_kquant_dot_enabled();
         enable_deinterleaved_kquant_dot_flag =
@@ -18412,8 +18413,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             bn_gpu_policy_cuda_qkv_key_cache_fuse_enabled();
         enable_qkv_kpair_opt_flag =
             bn_gpu_policy_cuda_qkv_kpair_opt_enabled();
-        disable_q5_gateup_warp_flag =
-            bn_gpu_policy_cuda_q5_gateup_warp_disabled();
+        disable_legacy_block_gateup_warp_flag =
+            bn_gpu_policy_cuda_legacy_block_gateup_warp_disabled();
         disable_q8_gateup_warp_flag =
             bn_gpu_policy_cuda_q8_gateup_warp_disabled();
         enable_bias_rope_flash_fuse_flag =
@@ -18428,10 +18429,11 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     }
     const int fuse_bias_enabled = fuse_bias_enabled_flag;
     const int fuse_rope_flash_enabled = fuse_rope_flash_enabled_flag;
-    const int enable_q5_matvec4 = enable_q5_matvec4_flag;
-    const int enable_q5_warp = enable_q5_warp_flag;
+    const int enable_legacy_block_matvec4 = enable_legacy_block_matvec4_flag;
+    const int enable_legacy_block_warp = enable_legacy_block_warp_flag;
     const int enable_symmetric_kquant_dot = enable_symmetric_kquant_dot_flag;
-    const int enable_deinterleaved_kquant_dot = enable_deinterleaved_kquant_dot_flag;
+    const int enable_deinterleaved_kquant_dot =
+        enable_deinterleaved_kquant_dot_flag;
     const int enable_down_kquant_dot = enable_down_kquant_dot_flag;
     const int force_down_kquant_dot = force_down_kquant_dot_flag;
     const int enable_down_kquant_warp = enable_down_kquant_warp_flag;
@@ -18440,7 +18442,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
     const int disable_qkv_mixed_fuse = disable_qkv_mixed_fuse_flag;
     const int qkv_fuse_key_cache = qkv_fuse_key_cache_flag;
     const int enable_qkv_kpair_opt = enable_qkv_kpair_opt_flag;
-    const int disable_q5_gateup_warp = disable_q5_gateup_warp_flag;
+    const int disable_legacy_block_gateup_warp =
+        disable_legacy_block_gateup_warp_flag;
     const int disable_q8_gateup_warp = disable_q8_gateup_warp_flag;
     const int enable_bias_rope_flash_fuse =
         enable_bias_rope_flash_fuse_flag;
@@ -19089,14 +19092,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 }
             }
             if (bn_backend_quant_legacy_block_matvec_candidate(op->type) &&
-                (op->cols & 31) == 0 && enable_q5_matvec4) {
+                (op->cols & 31) == 0 && enable_legacy_block_matvec4) {
                 BN_CUDA_LAUNCH(ctx, q5_0_matvec4_kernel,
                     (op->rows + 3) / 4, threads,
                     (size_t)threads * sizeof(float) * 4,
                     out, (const BnBlockQ5_0 *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
             } else if (bn_backend_quant_legacy_block_matvec_candidate(op->type) &&
-                       (op->cols & 31) == 0 && enable_q5_warp) {
+                       (op->cols & 31) == 0 && enable_legacy_block_warp) {
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
                 int blocks = (op->rows + warps - 1) / warps;
@@ -19360,7 +19363,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (op->cols + 31) / 32, 32, 0, xq, in, op->cols);
-                if (bn_gpu_policy_cuda_q5k_4warp_enabled(op->cols)) {
+                if (bn_gpu_policy_cuda_deinterleaved_kquant_4warp_enabled(op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q5k_dot_matvec_4warp_kernel, op->rows, 128, 0,
                         out, (const BnBlockQ5K *)w->data, xq, bias,
@@ -19824,7 +19827,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
-                if (bn_gpu_policy_cuda_q5k_split_4warp_enabled(cols)) {
+                if (bn_gpu_policy_cuda_deinterleaved_kquant_split_4warp_enabled(cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                         q5k_dot_matvec_split_4warp_kernel, total_rows, 128,
                         0, out0, out1, out2,
@@ -19892,7 +19895,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
             if (bn_backend_quant_legacy_block_fused_gateup_candidate(op->type) &&
                 (cols & 31) == 0 &&
-                !disable_q5_gateup_warp) {
+                !disable_legacy_block_gateup_warp) {
                 int q5_gateup_threads = 64;
                 int warps = q5_gateup_threads / 32;
                 int blocks = (gate_rows + warps - 1) / warps;
@@ -20002,7 +20005,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     (BnCudaBlockQ8_1 *)ctx->d_q8_1;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec, quantize_q8_1_kernel,
                     (cols + 31) / 32, 32, 0, xq, in, cols);
-                if (bn_gpu_policy_cuda_q5k_gateup_2warp_enabled()) {
+                if (bn_gpu_policy_cuda_deinterleaved_kquant_gateup_2warp_enabled()) {
                     int q5_gateup_threads = 256;
                     int groups = q5_gateup_threads / 64;
                     int blocks = (gate_rows + groups - 1) / groups;
