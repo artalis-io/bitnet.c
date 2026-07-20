@@ -991,6 +991,14 @@ bn_transformer_gpu_generate_argmax_policy(
 int bn_transformer_gpu_argmax_available(
     const BnGPUBackend *gpu,
     int want_argmax);
+int bn_transformer_gpu_argmax_backend_run(
+    BnGPUBackend *gpu,
+    int buf_idx,
+    int n,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token);
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -998,6 +1006,17 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     int want_argmax,
     int need_logits,
     int gpu_logits_need_cpu);
+int bn_transformer_gpu_matvec_argmax_backend_run(
+    BnGPUBackend *gpu,
+    void *W_buf,
+    int type,
+    int rows,
+    int cols,
+    int buf_idx,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token);
 int bn_transformer_gpu_moe_decode_cacheable(
     const BnConfig *c,
     const BnWeights *w,

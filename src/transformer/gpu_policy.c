@@ -1781,6 +1781,21 @@ int bn_transformer_gpu_argmax_available(
     return !want_argmax || (gpu && gpu->argmax_activation);
 }
 
+int bn_transformer_gpu_argmax_backend_run(
+    BnGPUBackend *gpu,
+    int buf_idx,
+    int n,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token) {
+    if (!gpu || !gpu->argmax_activation)
+        return -1;
+    return gpu->argmax_activation(gpu->ctx, buf_idx, n, penalty_tokens,
+                                  n_penalty_tokens, repeat_penalty,
+                                  out_token);
+}
+
 int bn_transformer_gpu_matvec_argmax_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -1807,6 +1822,24 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     return bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(
                c, logits->cols) &&
            !bn_gpu_policy_moe_logits_mmvq_argmax_disabled();
+}
+
+int bn_transformer_gpu_matvec_argmax_backend_run(
+    BnGPUBackend *gpu,
+    void *W_buf,
+    int type,
+    int rows,
+    int cols,
+    int buf_idx,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token) {
+    if (!gpu || !gpu->matvec_argmax_activation)
+        return -1;
+    return gpu->matvec_argmax_activation(
+        gpu->ctx, W_buf, type, rows, cols, buf_idx, penalty_tokens,
+        n_penalty_tokens, repeat_penalty, out_token);
 }
 
 int bn_transformer_gpu_moe_decode_cacheable(

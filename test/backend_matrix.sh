@@ -894,6 +894,11 @@ if grep -n '!gpu || !gpu->argmax_activation' src/transformer/gpu.c >/dev/null 2>
     fail=1
 fi
 
+if grep -n 'gpu->argmax_activation\|gpu->matvec_argmax_activation' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU policy helpers for argmax backend calls"
+    fail=1
+fi
+
 if grep -n 'gpu->read_activation' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU readback helpers instead of raw read_activation checks"
     fail=1

@@ -941,12 +941,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 need_logits ? c->vocab_size : 0) == 0) {
             if (argmax_token) {
                 int argmax_rc = cached_has_logits
-                    ? gpu->argmax_activation(
-                          gpu->ctx, BN_GPU_VALUE_LOGITS, c->vocab_size,
+                    ? bn_transformer_gpu_argmax_backend_run(
+                          gpu, BN_GPU_VALUE_LOGITS, c->vocab_size,
                           penalty_tokens, n_penalty_tokens, repeat_penalty,
                           argmax_token)
-                    : gpu->matvec_argmax_activation(
-                          gpu->ctx, logit_res->gpu_buf, logit_res->type,
+                    : bn_transformer_gpu_matvec_argmax_backend_run(
+                          gpu, logit_res->gpu_buf, logit_res->type,
                           logit_res->rows, logit_res->cols, BN_GPU_VALUE_XB,
                           penalty_tokens, n_penalty_tokens, repeat_penalty,
                           argmax_token);
@@ -1982,13 +1982,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             }
         }
         int argmax_rc = use_matvec_argmax
-            ? gpu->matvec_argmax_activation(
-                  gpu->ctx, logit_res->gpu_buf, logit_res->type,
+            ? bn_transformer_gpu_matvec_argmax_backend_run(
+                  gpu, logit_res->gpu_buf, logit_res->type,
                   logit_res->rows, logit_res->cols, BN_GPU_VALUE_XB,
                   penalty_tokens, n_penalty_tokens, repeat_penalty,
                   argmax_token)
-            : gpu->argmax_activation(
-                  gpu->ctx, BN_GPU_VALUE_LOGITS, c->vocab_size,
+            : bn_transformer_gpu_argmax_backend_run(
+                  gpu, BN_GPU_VALUE_LOGITS, c->vocab_size,
                   penalty_tokens, n_penalty_tokens, repeat_penalty,
                   argmax_token);
         if (argmax_rc != 0)
