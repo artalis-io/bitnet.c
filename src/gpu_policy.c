@@ -20,6 +20,14 @@ static int gpu_policy_compat_env_enabled2(const char *name,
            (compat_name2 && getenv(compat_name2) != NULL);
 }
 
+static int gpu_policy_compat_env_enabled3(const char *name,
+                                          const char *compat_name,
+                                          const char *compat_name2,
+                                          const char *compat_name3) {
+    return gpu_policy_compat_env_enabled2(name, compat_name, compat_name2) ||
+           (compat_name3 && getenv(compat_name3) != NULL);
+}
+
 static const char *gpu_policy_compat_env_value(const char *name,
                                                const char *compat_name) {
     const char *env = getenv(name);
@@ -63,71 +71,85 @@ static float gpu_policy_compat_env_float_or_default(const char *name,
 }
 
 static int cuda_native_quant_prepared_input_split_requested(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_NATIVE_QUANT_PREPARED_INPUT_SPLIT",
         "BN_CUDA_ENABLE_Q8_0_PREPARED_INPUT_SPLIT",
         "BN_CUDA_ENABLE_Q8_0_PREQ_SPLIT");
 }
 
 static int cuda_native_quant_prepared_input_split_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_NATIVE_QUANT_PREPARED_INPUT_SPLIT",
         "BN_CUDA_DISABLE_Q8_0_PREPARED_INPUT_SPLIT",
         "BN_CUDA_DISABLE_Q8_0_PREQ_SPLIT");
 }
 
 static int cuda_native_quant_prepared_input_requested(void) {
-    return gpu_policy_compat_env_enabled("BN_CUDA_ENABLE_Q8_PREPARED_INPUT",
-                                         "BN_CUDA_ENABLE_Q8_PREQ");
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_NATIVE_QUANT_PREPARED_INPUT",
+        "BN_CUDA_ENABLE_Q8_PREPARED_INPUT",
+        "BN_CUDA_ENABLE_Q8_PREQ");
 }
 
 static int cuda_native_quant_prepared_input_disabled(void) {
-    return gpu_policy_compat_env_enabled("BN_CUDA_DISABLE_Q8_PREPARED_INPUT",
-                                         "BN_CUDA_DISABLE_Q8_PREQ");
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_NATIVE_QUANT_PREPARED_INPUT",
+        "BN_CUDA_DISABLE_Q8_PREPARED_INPUT",
+        "BN_CUDA_DISABLE_Q8_PREQ");
 }
 
 static int cuda_native_quant_prepared_input_logits_requested(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_NATIVE_QUANT_PREPARED_INPUT_LOGITS",
         "BN_CUDA_ENABLE_Q8_PREPARED_INPUT_LOGITS",
         "BN_CUDA_ENABLE_Q8_PREQ_LOGITS");
 }
 
 static int cuda_native_quant_prepared_input_logits_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_NATIVE_QUANT_PREPARED_INPUT_LOGITS",
         "BN_CUDA_DISABLE_Q8_PREPARED_INPUT_LOGITS",
         "BN_CUDA_DISABLE_Q8_PREQ_LOGITS");
 }
 
 static int cuda_moe_route_dot_prepared_input_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_MOE_ROUTE_DOT_PREPARED_INPUT",
         "BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREPARED_INPUT",
         "BN_CUDA_DISABLE_MOE_ROUTE_Q8K_PREQUANT");
 }
 
 static int cuda_moe_route_block_prepared_input_requested(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_MOE_ROUTE_BLOCK_PREPARED_INPUT",
         "BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREPARED_INPUT",
         "BN_CUDA_ENABLE_MOE_ROUTE_Q8_1_PREQUANT");
 }
 
 static int cuda_moe_route_block_prepared_input_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_MOE_ROUTE_BLOCK_PREPARED_INPUT",
         "BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREPARED_INPUT",
         "BN_CUDA_DISABLE_MOE_ROUTE_Q8_1_PREQUANT");
 }
 
 static int cuda_native_quant_ssm_prepared_input_disabled(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_DISABLE_NATIVE_QUANT_SSM_PREPARED_INPUT",
         "BN_CUDA_DISABLE_Q8_0_SSM_PREPARED_INPUT",
         "BN_CUDA_DISABLE_Q8_0_SSM_PREQ");
 }
 
 static int cuda_native_quant_mixed_prepared_input_requested(void) {
-    return gpu_policy_compat_env_enabled(
+    return gpu_policy_compat_env_enabled2(
+        "BN_CUDA_ENABLE_NATIVE_QUANT_MIXED_PREPARED_INPUT",
         "BN_CUDA_ENABLE_Q8_MIXED_PREPARED_INPUT",
         "BN_CUDA_ENABLE_Q8_MIXED_PREQ");
 }
 
 static int all_active_two_route_block_prepared_input_requested(void) {
-    return gpu_policy_compat_env_enabled2(
+    return gpu_policy_compat_env_enabled3(
+        "BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_ROUTE_BLOCK_PREPARED_INPUT",
         "BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREPARED_INPUT",
         "BN_CUDA_ENABLE_ALL2_Q4Q6_ROUTE_Q8_1_PREQUANT",
         "BN_CUDA_ENABLE_QWEN2MOE_ROUTE_Q8_1_PREQUANT");
@@ -1032,19 +1054,27 @@ static int gpu_policy_cuda_down_kquant_cublas_f16_cache_disabled(void) {
 }
 
 static int gpu_policy_cuda_native_quant_matmul_requested(void) {
-    return getenv("BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_ENABLE_NATIVE_QUANT_MATMUL",
+        "BN_CUDA_ENABLE_Q8_0_QUANT_MATMUL");
 }
 
 static int gpu_policy_cuda_native_quant_matmul_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8_0_QUANT_MATMUL") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_NATIVE_QUANT_MATMUL",
+        "BN_CUDA_DISABLE_Q8_0_QUANT_MATMUL");
 }
 
 static int gpu_policy_cuda_f16_native_quant_matmul_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_F16_Q8_0_MATMUL") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_F16_NATIVE_QUANT_MATMUL",
+        "BN_CUDA_DISABLE_F16_Q8_0_MATMUL");
 }
 
 static int gpu_policy_prepared_kquant_input_cache_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8K_INPUT_CACHE") != NULL;
+    return gpu_policy_compat_env_enabled(
+        "BN_CUDA_DISABLE_PREPARED_KQUANT_INPUT_CACHE",
+        "BN_CUDA_DISABLE_Q8K_INPUT_CACHE");
 }
 
 static int gpu_policy_force_asymmetric_kquant_quant_matmul_requested(void) {
