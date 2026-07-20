@@ -1760,6 +1760,11 @@ if awk '/^int bn_gpu_policy_cuda_down_kquant_mmvq_enabled/{flag=1} /^int bn_gpu_
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_cuda_fuse_bias_enabled/{flag=1} /^int bn_gpu_policy_cuda_prefill_moe_layer_disabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c public CUDA fusion/debug policy helpers must compose local env policy helpers"
+    fail=1
+fi
+
 if ! awk '
     /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
     in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
