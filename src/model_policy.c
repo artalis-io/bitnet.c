@@ -84,3 +84,11 @@ int bn_model_activation_is_gelu(int activation) {
 int bn_model_activation_uses_silu_path(int activation) {
     return bn_model_arch_activation_uses_silu_path(activation);
 }
+
+int bn_model_gguf_uses_moe(BnGGUFFile *file) {
+    return bn_model_arch_gguf_uses_moe(file);
+}
+
+int bn_model_gguf_context_length(BnGGUFFile *file) {
+    return bn_model_arch_gguf_u32(file, "context_length");
+}

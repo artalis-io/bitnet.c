@@ -1,6 +1,7 @@
 #include "gpu_policy.h"
 #include "backend_quant.h"
 #include "model_arch.h"
+#include "model_internal.h"
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -3342,8 +3343,8 @@ int bn_gpu_policy_auto_caps_gguf_sequence(int webgpu,
                                           BnGGUFFile *gf,
                                           int cap_seq_len) {
     return bn_gpu_policy_auto_caps_sequence(
-        webgpu, cuda, metal, bn_model_arch_gguf_uses_moe(gf),
-        bn_model_arch_gguf_u32(gf, "context_length"), cap_seq_len);
+        webgpu, cuda, metal, bn_model_gguf_uses_moe(gf),
+        bn_model_gguf_context_length(gf), cap_seq_len);
 }
 
 int bn_gpu_policy_duplicate_moe_cache_enabled(void) {

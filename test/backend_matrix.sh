@@ -2654,6 +2654,11 @@ if grep -n 'bn_model_arch_gguf_uses_moe' src/main.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_auto_caps_gguf_sequence/{flag=1} flag{print} flag && /^}/{flag=0}' src/gpu_policy.c | grep -n 'bn_model_arch_gguf_\|bn_model_arch_gguf_u32' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c auto-cap policy must use model-policy GGUF metadata helpers"
+    fail=1
+fi
+
 if grep -n 'general\.architecture\|context_length\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch/GPU policy helpers for arch-prefixed GGUF sequence metadata"
     fail=1

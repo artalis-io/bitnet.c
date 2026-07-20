@@ -50,5 +50,7 @@ int bn_model_quant_dequant_row(int type,
 int bn_model_activation_is_relu2(int activation);
 int bn_model_activation_is_gelu(int activation);
 int bn_model_activation_uses_silu_path(int activation);
+int bn_model_gguf_uses_moe(BnGGUFFile *file);
+int bn_model_gguf_context_length(BnGGUFFile *file);
 
 #endif // BN_MODEL_INTERNAL_H
