@@ -3435,6 +3435,32 @@ do
 done
 
 for file in \
+    src/transformer.c \
+    src/transformer/cpu.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/gpu_fallback.c \
+    src/transformer/gpu_policy.c \
+    src/transformer/logits.c \
+    src/transformer/logits_backend.c \
+    src/transformer/logits_policy.c \
+    src/transformer/plan.c \
+    src/transformer/prefill.c \
+    src/transformer/prefill_policy.c \
+    src/moe.c \
+    src/moe_execute.c \
+    src/moe_math.c \
+    src/moe_policy.c \
+    src/moe_prefill.c \
+    src/moe_route.c
+do
+    if grep -n '#include "model_arch.h"\|bn_model_arch_\|Qwen\|qwen\|Gemma\|gemma' "$file" >/dev/null 2>&1; then
+        echo "$file must compose model-family policy through behavior helpers, not family names or model_arch"
+        fail=1
+    fi
+done
+
+for file in \
     src/moe_route.c \
     src/moe_math.c \
     src/moe_prefill.c \
