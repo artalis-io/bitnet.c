@@ -182,7 +182,6 @@ typedef struct {
     int           cols;
     uint32_t      bias_offset;  /* u32 offset for fused bias, 0 = none */
     int           is_slab;
-    int           q4_repacked;
     int           native_quant_prepared;
 } BnMetalBuf;
 
@@ -414,7 +413,6 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
         buf->cols = cols;
         buf->bias_offset = bias_offset;
         buf->native_quant_prepared = 1;
-        buf->q4_repacked = 1;
         return buf;
     }
 
@@ -479,7 +477,6 @@ static BnMetalBuf *metal_repack_q4_0_for_gpu(BnMetalCtx *ctx,
     buf->rows = rows;
     buf->cols = cols;
     buf->bias_offset = bias_offset;
-    buf->q4_repacked = 1;
     return buf;
 }
 
