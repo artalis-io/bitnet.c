@@ -11246,47 +11246,47 @@ static int cuda_buffer_create_f16_cache(BnCudaBuffer *buf,
                                                  force_q4_f32,
                                                  down_kquant_as_f16);
     switch (dequant_route) {
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DENSE_BFLOAT_TO_F16:
         dequant_bf16_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const uint16_t *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q8_0_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NATIVE_QUANT_TO_F16:
         dequant_q8_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ8_0 *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5_0_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_LEGACY_BLOCK_TO_F16:
         dequant_q5_0_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5_0 *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q3K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_COMPACT_KQUANT_TO_F16:
         dequant_q3k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ3K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F32:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_ASYMMETRIC_KQUANT_TO_F32:
         dequant_q4k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_ASYMMETRIC_KQUANT_TO_F16:
         dequant_q4k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ4K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DEINTERLEAVED_KQUANT_TO_F16:
         dequant_q5k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ5K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DOWN_KQUANT_TO_F16:
         dequant_q6k_to_f16_kernel<<<blocks, threads>>>(
             (__half *)buf->f16_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);
         break;
-    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32:
+    case BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DOWN_KQUANT_TO_F32:
         dequant_q6k_to_f32_kernel<<<blocks, threads>>>(
             (float *)buf->f32_data, (const BnBlockQ6K *)buf->data,
             buf->rows, buf->cols);

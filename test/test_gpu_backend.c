@@ -4382,31 +4382,31 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q6_K, 0, 1));
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_BF16, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_BF16_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DENSE_BFLOAT_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q8_0, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q8_0_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NATIVE_QUANT_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q5_0, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5_0_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_LEGACY_BLOCK_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q3_K, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q3K_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_COMPACT_KQUANT_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q4_K, 1, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F32);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_ASYMMETRIC_KQUANT_TO_F32);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q4_K, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q4K_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_ASYMMETRIC_KQUANT_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q5_K, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q5K_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DEINTERLEAVED_KQUANT_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q6_K, 0, 1) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F16);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DOWN_KQUANT_TO_F16);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_Q6_K, 0, 0) ==
-           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_Q6K_TO_F32);
+           BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DOWN_KQUANT_TO_F32);
     assert(bn_backend_quant_aux_cache_dequant_route(
                BN_GGUF_TENSOR_F32, 0, 0) ==
            BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NONE);
