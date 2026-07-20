@@ -344,6 +344,15 @@ do
     fi
 done
 
+if grep -n 'bn_backend_quant_moe_route_q4_down\|bn_backend_quant_moe_routed_q4' \
+    include/backend_quant.h \
+    src/gpu_policy.c \
+    src/transformer/gpu_policy.c \
+    src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "Backend quant MoE route helpers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_is_kquant_float_fallback_candidate' src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "src/transformer/prefill_policy.c must use behavior-named float K-quant fallback capability helpers"
     fail=1

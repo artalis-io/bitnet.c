@@ -95,13 +95,14 @@ int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(int rows, int cols);
-int bn_gpu_policy_cuda_moe_down_quant_path_preferred(int routed_q4,
-                                                    int down_type,
-                                                    int hidden_dim,
-                                                    int n_experts,
-                                                    int k);
+int bn_gpu_policy_cuda_moe_down_quant_path_preferred(
+    int routed_asymmetric_kquant,
+    int down_type,
+    int hidden_dim,
+    int n_experts,
+    int k);
 int bn_gpu_policy_cuda_moe_down_f32_cache_path_enabled(
-    int routed_q4,
+    int routed_asymmetric_kquant,
     int down_type,
     int has_f32_data,
     int prefer_quant_down,
@@ -372,7 +373,7 @@ int bn_gpu_policy_cuda_dense_ffn_batch_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_gateup_f16_out_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_grouped_variable_enabled(void);
 int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_q8,
-                                                  int routed_q4,
+                                                  int routed_asymmetric_kquant,
                                                   int gate_f16,
                                                   int up_f16,
                                                   int down_f16,
@@ -381,7 +382,7 @@ int bn_gpu_policy_cuda_moe_cublas_grouped_enabled(int routed_q8,
                                                   int route_items);
 int bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(int use_grouped,
                                                       int routed_q8,
-                                                      int routed_q4,
+                                                      int routed_asymmetric_kquant,
                                                       int gate_f16,
                                                       int up_f16,
                                                       int down_f16,
@@ -390,7 +391,7 @@ int bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
     int use_grouped,
     int n_experts,
     int k);
-int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_q4,
+int bn_gpu_policy_cuda_moe_sorted_slots_enabled(int routed_asymmetric_kquant,
                                                 int routed_q8,
                                                 int n_tokens,
                                                 int use_all_active_two_fixed,

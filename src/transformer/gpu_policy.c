@@ -1446,10 +1446,11 @@ int bn_transformer_gpu_moe_routed_kquant_down_allowed(
     const BnMoEExpertMap *map,
     int allow_kquant_down) {
     return map &&
-           bn_backend_quant_moe_route_q4_down(map->gate_type,
-                                              map->up_type,
-                                              map->down_type,
-                                              allow_kquant_down);
+           bn_backend_quant_moe_route_asymmetric_kquant_down(
+               map->gate_type,
+               map->up_type,
+               map->down_type,
+               allow_kquant_down);
 }
 
 int bn_transformer_gpu_moe_routed_native_quant(const BnMoEExpertMap *map) {

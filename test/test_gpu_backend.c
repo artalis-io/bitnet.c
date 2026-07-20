@@ -3860,15 +3860,15 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_supports_moe_q4_down_route(BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q4_K,
                                               BN_GGUF_TENSOR_Q4_K, 1));
-    assert(bn_backend_quant_moe_routed_q4(BN_GGUF_TENSOR_Q4_K,
-                                          BN_GGUF_TENSOR_Q4_K,
-                                          BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_moe_routed_q4(BN_GGUF_TENSOR_Q4_K,
-                                          BN_GGUF_TENSOR_Q4_K,
-                                          BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_moe_routed_q4(BN_GGUF_TENSOR_Q4_K,
-                                           BN_GGUF_TENSOR_Q8_0,
-                                           BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_moe_routed_asymmetric_kquant(BN_GGUF_TENSOR_Q4_K,
+                                                         BN_GGUF_TENSOR_Q4_K,
+                                                         BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_moe_routed_asymmetric_kquant(BN_GGUF_TENSOR_Q4_K,
+                                                         BN_GGUF_TENSOR_Q4_K,
+                                                         BN_GGUF_TENSOR_Q4_K));
+    assert(!bn_backend_quant_moe_routed_asymmetric_kquant(BN_GGUF_TENSOR_Q4_K,
+                                                          BN_GGUF_TENSOR_Q8_0,
+                                                          BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_supports_moe_q8_route(BN_GGUF_TENSOR_Q8_0,
                                                  BN_GGUF_TENSOR_Q8_0,
                                                  BN_GGUF_TENSOR_Q8_0));

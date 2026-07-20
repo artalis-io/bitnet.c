@@ -183,21 +183,25 @@ static inline int bn_backend_quant_gpu_prefers_gateup_split(int type) {
     return bn_quant_format_gpu_prefers_gateup_split(type);
 }
 
-static inline int bn_backend_quant_moe_route_q4_down(int gate_type,
-                                                     int up_type,
-                                                     int down_type,
-                                                     int allow_q4_down) {
+static inline int bn_backend_quant_moe_route_asymmetric_kquant_down(
+    int gate_type,
+    int up_type,
+    int down_type,
+    int allow_asymmetric_kquant_down) {
     return bn_quant_format_supports_moe_q4_down_route(gate_type,
                                                       up_type,
                                                       down_type,
-                                                      allow_q4_down);
+                                                      allow_asymmetric_kquant_down);
 }
 
-static inline int bn_backend_quant_moe_routed_q4(int gate_type,
-                                                 int up_type,
-                                                 int down_type) {
-    return bn_backend_quant_moe_route_q4_down(gate_type, up_type, down_type,
-                                              1);
+static inline int bn_backend_quant_moe_routed_asymmetric_kquant(
+    int gate_type,
+    int up_type,
+    int down_type) {
+    return bn_backend_quant_moe_route_asymmetric_kquant_down(gate_type,
+                                                             up_type,
+                                                             down_type,
+                                                             1);
 }
 
 static inline int bn_backend_quant_moe_routed_kquant_gateup(int gate_type,

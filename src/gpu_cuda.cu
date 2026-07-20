@@ -11829,20 +11829,20 @@ static int cuda_disable_down_kquant_matvec4_shape(int rows, int cols) {
     return bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(rows, cols);
 }
 
-static int cuda_prefer_moe_down_quant_path(int routed_q4, int down_type,
+static int cuda_prefer_moe_down_quant_path(int routed_asymmetric_kquant, int down_type,
                                           int hidden_dim, int n_experts,
                                           int k) {
     return bn_gpu_policy_cuda_moe_down_quant_path_preferred(
-        routed_q4, down_type, hidden_dim, n_experts, k);
+        routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
 }
 
-static int cuda_use_moe_down_f32_cache_path(int routed_q4, int down_type,
+static int cuda_use_moe_down_f32_cache_path(int routed_asymmetric_kquant, int down_type,
                                                 const BnCudaBuffer *down,
                                                 int prefer_quant_down,
                                                 int dim, int hidden_dim,
                                                 int n_experts, int k) {
     return bn_gpu_policy_cuda_moe_down_f32_cache_path_enabled(
-        routed_q4, down_type, down && down->f32_data != NULL,
+        routed_asymmetric_kquant, down_type, down && down->f32_data != NULL,
         prefer_quant_down, dim, hidden_dim, n_experts, k);
 }
 
@@ -14989,15 +14989,16 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     BnCudaBuffer *down = (BnCudaBuffer *)down_all_buf;
     if (!cuda_use_moe_routed_ffn_batch())
         return -1;
-    int routed_q4 =
-        bn_backend_quant_moe_routed_q4(gate_type, up_type, down_type);
+    int routed_asymmetric_kquant =
+        bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
+                                                      down_type);
     int routed_q8 =
         bn_backend_quant_moe_routed_native_quant(gate_type, up_type, down_type);
     if (!ctx || !out || !gate || !up || !down || !indices || !weights ||
         !X || !gate->data || !up->data || !down->data ||
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
         n_experts <= 0 || k <= 0 || !cuda_activation_is_silu(act_type) ||
-        (!routed_q4 && !routed_q8) ||
+        (!routed_asymmetric_kquant && !routed_q8) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
         return -1;
     if (gate->type != gate_type || up->type != up_type ||
@@ -15021,7 +15022,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     size_t idx_bytes = route_items * sizeof(int);
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_all_active_two_decode =
-        n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
+        n_tokens == 1 && routed_asymmetric_kquant && n_experts == 2 && k == 2 &&
         bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
         hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
@@ -15091,7 +15092,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
     int use_moe_block_prepared_batch =
         bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_q8);
     int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(
-        routed_q4, down_type, hidden_dim, n_experts, k);
+        routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
     if (use_moe_block_prepared_batch) {
         int x_blocks = dim / 32;
         if (cuda_ensure_q8_1(ctx, x_blocks * 32 * n_tokens) != 0)
@@ -15223,7 +15224,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
     } else if (cuda_use_moe_down_f32_cache_path(
-                   routed_q4, down_type, down, prefer_moe_down_quant_path,
+                   routed_asymmetric_kquant, down_type, down, prefer_moe_down_quant_path,
                    dim, hidden_dim, n_experts, k)) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
@@ -15355,8 +15356,9 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     BnCudaBuffer *norm = (BnCudaBuffer *)norm_buf;
     if (!cuda_use_moe_route_routed_ffn_batch(n_experts))
         return -1;
-    int routed_q4 =
-        bn_backend_quant_moe_routed_q4(gate_type, up_type, down_type);
+    int routed_asymmetric_kquant =
+        bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
+                                                      down_type);
     int routed_q8 =
         bn_backend_quant_moe_routed_native_quant(gate_type, up_type, down_type);
     if (!ctx || !router || !gate || !up || !down || (!X && !ctx->d_out) ||
@@ -15366,7 +15368,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         !cuda_activation_is_silu(act_type) ||
         !bn_backend_quant_already_f32(router->type) ||
         router->rows < n_experts || router->cols < dim ||
-        (!routed_q4 && !routed_q8) ||
+        (!routed_asymmetric_kquant && !routed_q8) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
         return -1;
     if (add_norm_resid && (!norm || !norm->data ||
@@ -15426,26 +15428,26 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     size_t weight_bytes = route_items * sizeof(float);
     int use_cublas_grouped =
         bn_gpu_policy_cuda_moe_cublas_grouped_enabled(
-            routed_q8, routed_q4, gate->f16_data != NULL,
+            routed_q8, routed_asymmetric_kquant, gate->f16_data != NULL,
             up->f16_data != NULL, down->f16_data != NULL,
             n_experts, k, n_tokens * k);
     int use_cublas_gateup_only =
         bn_gpu_policy_cuda_moe_cublas_gateup_only_enabled(
-            use_cublas_grouped, routed_q8, routed_q4,
+            use_cublas_grouped, routed_q8, routed_asymmetric_kquant,
             gate->f16_data != NULL, up->f16_data != NULL,
             down->f16_data != NULL, n_tokens);
     int use_cublas_all_active_two_fixed =
         bn_gpu_policy_cuda_moe_cublas_all_active_two_fixed_enabled(
             use_cublas_grouped, n_experts, k);
     int use_cublas_all_active_two_decode =
-        n_tokens == 1 && routed_q4 && n_experts == 2 && k == 2 &&
+        n_tokens == 1 && routed_asymmetric_kquant && n_experts == 2 && k == 2 &&
         bn_backend_quant_moe_down_uses_down_kquant(down_type) &&
         hidden_dim >= 4096 &&
         gate->f16_data && up->f16_data && down->f16_data &&
         bn_gpu_policy_cuda_moe_cublas_decode_enabled();
     int use_sorted_slots =
         bn_gpu_policy_cuda_moe_sorted_slots_enabled(
-            routed_q4, routed_q8, n_tokens, use_cublas_all_active_two_fixed,
+            routed_asymmetric_kquant, routed_q8, n_tokens, use_cublas_all_active_two_fixed,
             use_cublas_grouped, use_cublas_gateup_only);
     size_t sorted_route_aux_bytes = use_sorted_slots
         ? (route_items * sizeof(int) + (size_t)n_experts * 4u * sizeof(int))
@@ -15457,7 +15459,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
     int profile_prefill_moe =
         bn_gpu_policy_cuda_moe_prefill_internal_profile_enabled();
     int prefer_moe_down_quant_path = cuda_prefer_moe_down_quant_path(
-        routed_q4, down_type, hidden_dim, n_experts, k);
+        routed_asymmetric_kquant, down_type, hidden_dim, n_experts, k);
     int init_out_with_residual =
         add_norm_resid &&
         ((routed_q8 && hidden_dim <= 1024) ||
@@ -15466,7 +15468,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
           cuda_use_moe_down_8row(hidden_dim) &&
           cuda_use_moe_down_scatter(down_type, 0, 0) &&
           !cuda_use_moe_down_f32_cache_path(
-              routed_q4, down_type, down, prefer_moe_down_quant_path,
+              routed_asymmetric_kquant, down_type, down, prefer_moe_down_quant_path,
               dim, hidden_dim, n_experts, k)));
     int direct_device_resid_out =
         bn_gpu_policy_cuda_moe_prefill_direct_resid_out_enabled(
@@ -15926,7 +15928,7 @@ moe_route_routed_down:
             d_full_out, (const BnBlockQ8_0 *)down->data, d_mid, d_indices,
             d_weights, dim, hidden_dim, n_experts, k, n_tokens);
     } else if (cuda_use_moe_down_f32_cache_path(
-                   routed_q4, down_type, down, prefer_moe_down_quant_path,
+                   routed_asymmetric_kquant, down_type, down, prefer_moe_down_quant_path,
                    dim, hidden_dim, n_experts, k)) {
         moe_q6k_down_routed_f32_cache_batch_kernel<<<down_blocks, threads, 0>>>(
             d_full_out, (const float *)down->f32_data, d_mid, d_indices,
@@ -20197,11 +20199,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int down_type = (int)op->p[3];
             int moe_layer = (int)op->p[5];
             int dim = op->cols;
-            int routed_q4 =
+            int routed_asymmetric_kquant =
                 gate && up && down && gate->type == op->type &&
                 down->type == down_type &&
-                bn_backend_quant_moe_routed_q4(op->type, up->type,
-                                               down_type);
+                bn_backend_quant_moe_routed_asymmetric_kquant(op->type,
+                                                              up->type,
+                                                              down_type);
             int routed_q8 =
                 gate && up && down && gate->type == op->type &&
                 down->type == down_type &&
@@ -20209,7 +20212,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                down_type);
             if (!gate || !gate->data || !up || !up->data ||
                 !down || !down->data || !in || !route || !mid || !out ||
-                (!routed_q4 && !routed_q8) ||
+                (!routed_asymmetric_kquant && !routed_q8) ||
                 dim <= 0 || hidden <= 0 || n_experts <= 0 || k <= 0 ||
                 (dim % 32) != 0 || (hidden % 32) != 0 ||
                 gate->rows < hidden * n_experts || gate->cols < dim ||
