@@ -392,7 +392,7 @@ static void test_gpu_policy_helpers(void) {
     gpu.kind = BN_GPU_BACKEND_CUDA;
     gpu.buffer_create_quant_only = mock_create;
     gpu.buffer_create_f16_cache = mock_create;
-    gpu.buffer_create_q6_f32_cache = mock_create;
+    gpu.buffer_create_kquant_f32_cache = mock_create;
 
     BnConfig layers = {0};
     assert(bn_gpu_policy_attention_layer_count(NULL) == 0);

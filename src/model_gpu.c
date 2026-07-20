@@ -30,7 +30,7 @@ static void *upload_qweight_logits(BnGPUBackend *gpu, BnQWeight *w) {
     size_t sz = bn_backend_layout_qweight_data_size(w);
     if (sz == 0) return NULL;
     if (bn_gpu_policy_logits_kquant_f32_cache_enabled(gpu, w->type)) {
-        return gpu->buffer_create_q6_f32_cache(
+        return gpu->buffer_create_kquant_f32_cache(
             gpu->ctx, w->data, sz, w->type, w->rows, w->cols);
     }
     if (bn_gpu_policy_logits_f16_cache_enabled(gpu)) {
@@ -165,7 +165,7 @@ static void *upload_moe_all_proj(BnModel *model,
         force_f16_cache
             ? gpu->buffer_create_f16_cache :
         (prefer_down_kquant_f32_cache || prefer_small_kquant_f32_cache)
-            ? gpu->buffer_create_q6_f32_cache :
+            ? gpu->buffer_create_kquant_f32_cache :
         ((!force_full_buffer ||
           bn_gpu_policy_moe_quant_only_after_cache(
               type, native_quant_f16_cache)) &&

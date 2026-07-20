@@ -2145,6 +2145,11 @@ if grep -n 'bn_gpu_policy_logits_q6_f32_cache_enabled\|bn_gpu_policy_cuda_moe_do
     fail=1
 fi
 
+if grep -n 'buffer_create_q6_f32_cache\|cuda_buffer_create_q6_f32_cache' include/gpu_backend.h src/gpu_policy.c src/model_gpu.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU backend aux-cache upload hook must use behavior names, not Q6 field names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_moe_\(f16_aux_cache_auto_enabled\|resident_routed_ffn_quant_eligible\|all_f16_cache_forced\|all_f16_cache_enabled_for_type\|gateup_f16_cache_enabled\|partial_moe_f16_cache_enabled\|fit_debug_enabled\|lazy_aux_cache_enabled\)\|bn_gpu_policy_cuda_\(keep_individual_f16_cache_enabled\|individual_upload_quant_only_enabled\)' include/gpu_policy.h test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "GPU MoE residency policy must expose/test behavior-named helpers, not CUDA implementation aliases"
     fail=1

@@ -11486,7 +11486,7 @@ static void *cuda_buffer_create_quant_only(void *vctx, const void *data,
     return cuda_buffer_create_impl(vctx, data, size, type, rows, cols, 0);
 }
 
-static void *cuda_buffer_create_q6_f32_cache(void *vctx, const void *data,
+static void *cuda_buffer_create_kquant_f32_cache(void *vctx, const void *data,
                                              size_t size, int type, int rows,
                                              int cols) {
     return cuda_buffer_create_impl(vctx, data, size, type, rows, cols, 2);
@@ -21593,7 +21593,7 @@ BnGPUBackend *bn_gpu_cuda_create(void) {
     }
     gpu->buffer_create = cuda_buffer_create;
     gpu->buffer_create_quant_only = cuda_buffer_create_quant_only;
-    gpu->buffer_create_q6_f32_cache = cuda_buffer_create_q6_f32_cache;
+    gpu->buffer_create_kquant_f32_cache = cuda_buffer_create_kquant_f32_cache;
     gpu->buffer_create_f16_cache = cuda_buffer_create_force_f16_cache;
     gpu->buffer_create_stacked2 = cuda_buffer_create_stacked2;
     gpu->buffer_create_stacked3 = cuda_buffer_create_stacked3;
