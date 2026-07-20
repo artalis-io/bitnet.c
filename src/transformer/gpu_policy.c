@@ -149,8 +149,16 @@ int bn_transformer_gpu_uses_small_dense_shape(const BnConfig *c) {
     return bn_model_arch_uses_small_dense_shape(c);
 }
 
+int bn_transformer_gpu_uses_large_dense_shape(const BnConfig *c) {
+    return bn_model_arch_uses_large_dense_shape(c);
+}
+
 int bn_transformer_gpu_uses_large_graph_fallback_shape(const BnConfig *c) {
     return bn_model_arch_uses_large_gpu_graph_fallback_shape(c);
+}
+
+int bn_transformer_gpu_uses_per_layer_embedding(const BnConfig *c) {
+    return bn_model_arch_uses_per_layer_embedding(c);
 }
 
 int bn_transformer_gpu_uses_hybrid_ssm(const BnConfig *c) {
@@ -178,10 +186,22 @@ int bn_transformer_gpu_uses_small_dense_native_quant_shape(
     return bn_model_arch_uses_small_dense_native_quant_shape(c);
 }
 
+int bn_transformer_gpu_dense_logits_argmax_shape_allowed(
+    const BnConfig *c,
+    int logits_rows) {
+    return bn_model_arch_dense_logits_argmax_shape_allowed(c, logits_rows);
+}
+
+int bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(
+    const BnConfig *c,
+    int logits_cols) {
+    return bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(c, logits_cols);
+}
+
 int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
                                                const BnWeights *w) {
     return c && w &&
-           bn_model_arch_uses_per_layer_embedding(c) &&
+           bn_transformer_gpu_uses_per_layer_embedding(c) &&
            w->rope_freqs != NULL;
 }
 
@@ -482,14 +502,14 @@ int bn_transformer_gpu_small_dense_exact_ffn_down_enabled(
 int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    if (!bn_model_arch_uses_large_dense_shape(c) || !w ||
+    if (!bn_transformer_gpu_uses_large_dense_shape(c) || !w ||
         bn_gpu_policy_large_hybrid_attention_enabled() ||
         bn_gpu_policy_large_hybrid_cpu_attention_safe_disabled())
         return 0;
     if (!bn_gpu_policy_large_hybrid_cpu_attention_safe_enabled() &&
         !bn_gpu_policy_large_hybrid_cpu_attention_safe_forced())
         return 0;
-    if (bn_model_arch_uses_hybrid_ssm(c))
+    if (bn_transformer_gpu_uses_hybrid_ssm(c))
         return 1;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
@@ -1105,8 +1125,8 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         !bn_backend_quant_supports_kquant_logits_refine(logits->type))
         return 0;
 
-    if (!bn_model_arch_uses_moe(c)) {
-        return bn_model_arch_dense_logits_argmax_shape_allowed(
+    if (!bn_transformer_gpu_uses_moe(c)) {
+        return bn_transformer_gpu_dense_logits_argmax_shape_allowed(
                    c, logits->rows) ||
                bn_gpu_policy_dense_logits_argmax_enabled();
     }
@@ -1114,7 +1134,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
         return 1;
     if (bn_gpu_policy_moe_logits_mmvq_argmax_enabled())
         return 1;
-    return bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(
+    return bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(
                c, logits->cols) &&
            !bn_gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
@@ -1124,7 +1144,7 @@ int bn_transformer_gpu_moe_decode_cacheable(
     const BnWeights *w,
     const BnBackendModel *backend) {
     if (bn_gpu_policy_moe_decode_cache_disabled() ||
-        !c || !w || !backend || !bn_model_arch_uses_moe(c))
+        !c || !w || !backend || !bn_transformer_gpu_uses_moe(c))
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];

@@ -2046,6 +2046,26 @@ if awk '/^int bn_transformer_gpu_backend_matvec_fallback_kept/{flag=1} /^BnTrans
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_requires_layerwise_rope/{flag=1} /^BnBackendPlacement/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_per_layer_embedding' >/dev/null 2>&1; then
+    echo "GPU layerwise RoPE policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default/{flag=1} /^int bn_transformer_gpu_large_hybrid_cpu_attn_safe_fallback_enabled/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_large_dense_shape\|bn_model_arch_uses_hybrid_ssm' >/dev/null 2>&1; then
+    echo "GPU large hybrid attention safety policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_matvec_argmax_enabled/{flag=1} /^int bn_transformer_gpu_moe_decode_cacheable/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_moe\|bn_model_arch_dense_logits_argmax_shape_allowed\|bn_model_arch_moe_logits_mmvq_argmax_shape_allowed' >/dev/null 2>&1; then
+    echo "GPU logits argmax policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_moe_decode_cacheable/{flag=1} /^int bn_transformer_gpu_moe_decode_backend_cache/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'bn_model_arch_uses_moe' >/dev/null 2>&1; then
+    echo "GPU MoE decode cache policy must use GPU behavior policy helpers"
+    fail=1
+fi
+
 if grep -n 'bn_model_arch_.*cuda' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose behavior-named model_arch helpers, not CUDA-named compatibility aliases"
     fail=1

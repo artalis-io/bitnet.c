@@ -810,13 +810,19 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_graph_op_capacity(&c) >
            80 * c.n_layers);
     assert(bn_transformer_gpu_uses_small_dense_shape(&c));
+    assert(!bn_transformer_gpu_uses_large_dense_shape(&c));
     assert(!bn_transformer_gpu_uses_large_graph_fallback_shape(&c));
+    assert(!bn_transformer_gpu_uses_per_layer_embedding(&c));
     assert(bn_transformer_gpu_uses_dense_attention_only(&c));
     assert(!bn_transformer_gpu_uses_hybrid_ssm(&c));
     assert(!bn_transformer_gpu_uses_moe(&c));
+    c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
+    assert(bn_transformer_gpu_uses_per_layer_embedding(&c));
+    c.policy_flags = 0;
     c.dim = 4096;
     c.full_attn_interval = 4;
     assert(!bn_transformer_gpu_uses_small_dense_shape(&c));
+    assert(bn_transformer_gpu_uses_large_dense_shape(&c));
     assert(bn_transformer_gpu_uses_large_graph_fallback_shape(&c));
     assert(!bn_transformer_gpu_uses_dense_attention_only(&c));
     c.ssm_inner_size = 64;
@@ -832,6 +838,16 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts = 0;
     c.dim = 2048;
     assert(bn_transformer_gpu_uses_small_dense_native_quant_shape(&c));
+    assert(bn_transformer_gpu_dense_logits_argmax_shape_allowed(&c, 300000));
+    c.n_experts = 128;
+    assert(bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(&c,
+                                                                    1536));
+    assert(!bn_transformer_gpu_dense_logits_argmax_shape_allowed(&c,
+                                                                 300000));
+    c.n_experts = 0;
+    assert(bn_transformer_gpu_dense_logits_argmax_shape_allowed(&c, 300000));
+    assert(!bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(&c,
+                                                                    1536));
     c.dim = 0;
 
     BnGPUBackend gpu;
