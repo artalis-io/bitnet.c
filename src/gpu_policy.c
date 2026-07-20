@@ -1929,6 +1929,46 @@ static int gpu_policy_asymmetric_kquant_gateup_2warp_disabled(void) {
     return getenv("BN_CUDA_DISABLE_Q4K_GATEUP_2WARP") != NULL;
 }
 
+static int gpu_policy_native_quant_warp_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
+}
+
+static int gpu_policy_native_quant_ssm_matvec_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") != NULL;
+}
+
+static int gpu_policy_f16_native_quant_ssm_matvec_requested(void) {
+    return getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC") != NULL;
+}
+
+static int gpu_policy_f16_native_quant_ssm_matvec_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC") != NULL;
+}
+
+static int gpu_policy_f16_native_quant_matvec_requested(void) {
+    return getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL;
+}
+
+static int gpu_policy_f16_native_quant_matvec_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") != NULL;
+}
+
+static int gpu_policy_f16_packed_kquant_matvec_requested(void) {
+    return getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC") != NULL;
+}
+
+static int gpu_policy_symmetric_kquant_pair_matvec_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC") != NULL;
+}
+
+static int gpu_policy_kquant_dot_disabled(void) {
+    return getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") != NULL;
+}
+
+static int gpu_policy_kquant_dot_requested(void) {
+    return getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") != NULL;
+}
+
 int bn_gpu_policy_moe_logits_mmvq_argmax_disabled(void) {
     return gpu_policy_moe_logits_mmvq_argmax_disabled();
 }
@@ -2095,11 +2135,11 @@ int bn_gpu_policy_cuda_asymmetric_kquant_gateup_4warp_enabled(
 }
 
 int bn_gpu_policy_cuda_native_quant_warp_disabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8_WARP") != NULL;
+    return gpu_policy_native_quant_warp_disabled();
 }
 
 int bn_gpu_policy_cuda_native_quant_ssm_matvec_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q8_0_SSM_MATVEC") == NULL;
+    return !gpu_policy_native_quant_ssm_matvec_disabled();
 }
 
 int bn_gpu_policy_cuda_native_quant_ssm_prepared_input_enabled(void) {
@@ -2116,30 +2156,30 @@ int bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(int type_a,
 }
 
 int bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_F16_Q8_0_SSM_MATVEC") != NULL &&
-           getenv("BN_CUDA_DISABLE_F16_Q8_0_SSM_MATVEC") == NULL &&
-           getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL;
+    return gpu_policy_f16_native_quant_ssm_matvec_requested() &&
+           !gpu_policy_f16_native_quant_ssm_matvec_disabled() &&
+           !gpu_policy_f16_native_quant_matvec_disabled();
 }
 
 int bn_gpu_policy_cuda_f16_native_quant_matvec_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_F16_Q8_0_MATVEC") != NULL &&
-           getenv("BN_CUDA_DISABLE_F16_Q8_0_MATVEC") == NULL;
+    return gpu_policy_f16_native_quant_matvec_requested() &&
+           !gpu_policy_f16_native_quant_matvec_disabled();
 }
 
 int bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled(void) {
-    return getenv("BN_CUDA_ENABLE_F16_Q5K_MATVEC") != NULL;
+    return gpu_policy_f16_packed_kquant_matvec_requested();
 }
 
 int bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4K_PAIR_MATVEC") == NULL;
+    return !gpu_policy_symmetric_kquant_pair_matvec_disabled();
 }
 
 int bn_gpu_policy_kquant_dot_enabled(void) {
-    return getenv("BN_CUDA_DISABLE_Q4K_Q8K_DOT") == NULL;
+    return !gpu_policy_kquant_dot_disabled();
 }
 
 int bn_gpu_policy_kquant_dot_forced(void) {
-    return getenv("BN_CUDA_ENABLE_Q4K_Q8K_DOT") != NULL;
+    return gpu_policy_kquant_dot_requested();
 }
 
 int bn_gpu_policy_kquant_matvec4_enabled(int cols) {
