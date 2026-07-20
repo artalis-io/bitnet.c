@@ -534,13 +534,13 @@ int bn_gpu_policy_moe_all_f16_cache_forced(void) {
 static int gpu_policy_moe_all_f16_cache_enabled_for_type(
     const BnGPUBackend *gpu,
     int tensor_type,
-    int q8_f16_cache) {
+    int native_quant_f16_cache) {
     if (!gpu || !gpu->buffer_create_f16_cache ||
         getenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE") != NULL)
         return 0;
     if (gpu_policy_moe_all_f16_cache_forced())
         return 1;
-    if (!q8_f16_cache)
+    if (!native_quant_f16_cache)
         return 0;
     return bn_backend_quant_moe_all_f16_cache_supported(tensor_type);
 }
@@ -548,9 +548,9 @@ static int gpu_policy_moe_all_f16_cache_enabled_for_type(
 int bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
     const BnGPUBackend *gpu,
     int tensor_type,
-    int q8_f16_cache) {
-    return gpu_policy_moe_all_f16_cache_enabled_for_type(gpu, tensor_type,
-                                                         q8_f16_cache);
+    int native_quant_f16_cache) {
+    return gpu_policy_moe_all_f16_cache_enabled_for_type(
+        gpu, tensor_type, native_quant_f16_cache);
 }
 
 static int gpu_policy_moe_gateup_f16_cache_enabled(int eligible) {
@@ -751,14 +751,15 @@ int bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
 }
 
 static int gpu_policy_moe_quant_only_after_cache(int tensor_type,
-                                                 int q8_f16_cache) {
+                                                 int native_quant_f16_cache) {
     return bn_backend_quant_moe_quant_only_after_cache(tensor_type,
-                                                       q8_f16_cache);
+                                                       native_quant_f16_cache);
 }
 
 int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,
-                                             int q8_f16_cache) {
-    return gpu_policy_moe_quant_only_after_cache(tensor_type, q8_f16_cache);
+                                             int native_quant_f16_cache) {
+    return gpu_policy_moe_quant_only_after_cache(tensor_type,
+                                                 native_quant_f16_cache);
 }
 
 int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,

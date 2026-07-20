@@ -345,8 +345,9 @@ int bn_quant_format_force_quant_matmul_candidate(int type) {
 }
 
 int bn_quant_format_moe_quant_only_after_cache(int type,
-                                               int q8_f16_cache) {
-    return !q8_f16_cache || !bn_quant_format_moe_prefers_quant_only(type);
+                                               int native_quant_f16_cache) {
+    return !native_quant_f16_cache ||
+           !bn_quant_format_moe_prefers_quant_only(type);
 }
 
 int bn_quant_format_lazy_moe_aux_cache_candidate(int type) {

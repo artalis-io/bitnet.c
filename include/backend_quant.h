@@ -559,8 +559,9 @@ static inline int bn_backend_quant_moe_down_q4_f32_cache_supported(int type) {
 }
 
 static inline int bn_backend_quant_moe_quant_only_after_cache(
-    int type, int q8_f16_cache) {
-    return bn_quant_format_moe_quant_only_after_cache(type, q8_f16_cache);
+    int type, int native_quant_f16_cache) {
+    return bn_quant_format_moe_quant_only_after_cache(
+        type, native_quant_f16_cache);
 }
 
 static inline int bn_backend_quant_lazy_moe_aux_cache_candidate(int type) {

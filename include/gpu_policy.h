@@ -28,7 +28,7 @@ int bn_gpu_policy_moe_all_f16_cache_forced(void);
 int bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
     const BnGPUBackend *gpu,
     int tensor_type,
-    int q8_f16_cache);
+    int native_quant_f16_cache);
 int bn_gpu_policy_moe_gateup_f16_cache_enabled(int eligible);
 int bn_gpu_policy_partial_moe_f16_cache_enabled(int eligible);
 int bn_gpu_policy_moe_residency_fit_debug_enabled(void);
@@ -62,7 +62,7 @@ int bn_gpu_policy_moe_down_small_kquant_f32_cache_enabled(
     const BnGPUBackend *gpu,
     int tensor_type);
 int bn_gpu_policy_moe_quant_only_after_cache(int tensor_type,
-                                             int q8_f16_cache);
+                                             int native_quant_f16_cache);
 int bn_gpu_policy_moe_prefers_quant_only(const BnGPUBackend *gpu,
                                          int tensor_type);
 int bn_gpu_policy_matvec_disabled(void);
