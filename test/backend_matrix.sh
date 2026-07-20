@@ -1899,7 +1899,7 @@ if awk '/^int bn_gpu_policy_cuda_prefill_moe_layer_disabled/{flag=1} /^static in
     fail=1
 fi
 
-if grep -n 'bn_quant_format_logits_q6_f32_cache_supported\|bn_quant_format_moe_down_q6_f32_cache_supported\|bn_quant_format_moe_down_q4_f32_cache_supported\|bn_backend_quant_logits_q6_f32_cache_supported\|bn_backend_quant_moe_down_q6_f32_cache_supported\|bn_backend_quant_moe_down_q4_f32_cache_supported' \
+if grep -n 'bn_quant_format_logits_q6_f32_cache_supported\|bn_quant_format_moe_down_q6_f32_cache_supported\|bn_quant_format_moe_down_q4_f32_cache_supported\|bn_backend_quant_logits_q6_f32_cache_supported\|bn_backend_quant_moe_down_q6_f32_cache_supported\|bn_backend_quant_moe_down_q4_f32_cache_supported\|BN_QUANT_CAP_MOE_DOWN_Q6_F32_CACHE\|BN_QUANT_CAP_MOE_DOWN_Q4_F32_CACHE' \
     include/quant.h \
     include/backend_quant.h \
     src/quant/registry.c \
