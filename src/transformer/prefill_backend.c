@@ -212,6 +212,68 @@ const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void) {
     return &BN_PREFILL_CPU_OPS;
 }
 
+void bn_transformer_prefill_quant_matvec_batch(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const float *x,
+    int8_t *quantized_buf,
+    BnThreadPool *pool) {
+    bn_quant_matvec_batch(tasks, n_tasks, x, quantized_buf, pool);
+}
+
+void bn_transformer_prefill_quant_matmul_prepared(
+    float *out,
+    const BnQWeight *weight,
+    const BnPreparedWeight *prepared,
+    const float *x,
+    int n_tokens,
+    int8_t *quantized_buf,
+    BnThreadPool *pool) {
+    bn_quant_matmul_prepared(out, weight, prepared, x, n_tokens,
+                             quantized_buf, pool);
+}
+
+void bn_transformer_prefill_quant_matmul_prepared_multi(
+    float **out,
+    const BnQWeight **weights,
+    const BnPreparedWeight **prepared,
+    int n_tasks,
+    const float *x,
+    int n_tokens,
+    int8_t *quantized_buf,
+    BnThreadPool *pool) {
+    bn_quant_matmul_prepared_multi(out, weights, prepared, n_tasks, x,
+                                   n_tokens, quantized_buf, pool);
+}
+
+void bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
+    float **out,
+    const BnQWeight **weights,
+    const BnPreparedWeight **prepared,
+    int n_tasks,
+    int n_tokens,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    const float *x_float,
+    BnThreadPool *pool) {
+    bn_quant_matmul_prepared_kquant_input_multi(
+        out, weights, prepared, n_tasks, n_tokens, quantized, scales,
+        block_sums, x_float, pool);
+}
+
+void bn_transformer_prefill_quant_matvec_batch_prepared_kquant_input(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    const float *x_float,
+    BnThreadPool *pool) {
+    bn_quant_matvec_batch_prepared_kquant_input(
+        tasks, n_tasks, quantized, scales, block_sums, x_float, pool);
+}
+
 bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops) {

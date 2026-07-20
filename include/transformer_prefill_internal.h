@@ -522,5 +522,47 @@ void bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
     int8_t *quantized_buf,
     BnThreadPool *pool,
     BnGPUBackend *gpu);
+void bn_transformer_prefill_quant_matvec_batch(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const float *x,
+    int8_t *quantized_buf,
+    BnThreadPool *pool);
+void bn_transformer_prefill_quant_matmul_prepared(
+    float *out,
+    const BnQWeight *weight,
+    const BnPreparedWeight *prepared,
+    const float *x,
+    int n_tokens,
+    int8_t *quantized_buf,
+    BnThreadPool *pool);
+void bn_transformer_prefill_quant_matmul_prepared_multi(
+    float **out,
+    const BnQWeight **weights,
+    const BnPreparedWeight **prepared,
+    int n_tasks,
+    const float *x,
+    int n_tokens,
+    int8_t *quantized_buf,
+    BnThreadPool *pool);
+void bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
+    float **out,
+    const BnQWeight **weights,
+    const BnPreparedWeight **prepared,
+    int n_tasks,
+    int n_tokens,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    const float *x_float,
+    BnThreadPool *pool);
+void bn_transformer_prefill_quant_matvec_batch_prepared_kquant_input(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const int8_t *quantized,
+    const float *scales,
+    const int16_t *block_sums,
+    const float *x_float,
+    BnThreadPool *pool);
 
 #endif // BN_TRANSFORMER_PREFILL_INTERNAL_H

@@ -152,8 +152,9 @@ static void prefill_quant_matmul_forced_kquant(
                 prefill_float_kquant_task_flags()
             };
         }
-        bn_quant_matvec_batch(tasks, n, X + (size_t)t * W[0]->cols,
-                              quantized_buf, bn_model_pool(m));
+        bn_transformer_prefill_quant_matvec_batch(
+            tasks, n, X + (size_t)t * W[0]->cols, quantized_buf,
+            bn_model_pool(m));
     }
 }
 
@@ -172,9 +173,9 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
             return;
         }
         const BnBackendModel *backend = bn_model_backend(m);
-        bn_quant_matmul_prepared(out, W,
-                                 bn_backend_model_prepared_qweight(backend, W),
-                                 X, n_tokens, quantized_buf, bn_model_pool(m));
+        bn_transformer_prefill_quant_matmul_prepared(
+            out, W, bn_backend_model_prepared_qweight(backend, W),
+            X, n_tokens, quantized_buf, bn_model_pool(m));
         return;
     }
     bn_transformer_prefill_quant_matmul_gpu_buffer(
@@ -220,8 +221,9 @@ static void prefill_quant_matmul_multi(const BnModel *m,
         }
         for (int i = 0; i < n; i++)
             prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
-        bn_quant_matmul_prepared_multi(out, W, prepared, n, X, n_tokens,
-                                       quantized_buf, bn_model_pool(m));
+        bn_transformer_prefill_quant_matmul_prepared_multi(
+            out, W, prepared, n, X, n_tokens, quantized_buf,
+            bn_model_pool(m));
         return;
     }
     if (bn_transformer_prefill_quant_matmul_batch_gpu_available(
@@ -1143,14 +1145,14 @@ static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
     if (n > 4) {
-        bn_quant_matmul_prepared_kquant_input_multi(
+        bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
             out, W, NULL, n, n_tokens, quantized, scales, block_sums, x_float,
             bn_model_pool(m));
         return;
     }
     for (int i = 0; i < n; i++)
         prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
-    bn_quant_matmul_prepared_kquant_input_multi(
+    bn_transformer_prefill_quant_matmul_prepared_kquant_input_multi(
         out, W, prepared, n, n_tokens, quantized, scales, block_sums, x_float,
         bn_model_pool(m));
 }
@@ -1257,7 +1259,7 @@ static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
                 tasks[i].W->type))
             return 0;
     }
-    bn_quant_matvec_batch_prepared_kquant_input(
+    bn_transformer_prefill_quant_matvec_batch_prepared_kquant_input(
         tasks, n, b->quantized + (size_t)token_index * dim,
         b->scales + (size_t)token_index * b->blocks_per_row,
         b->block_sums + (size_t)token_index * b->blocks_per_row * 16,
@@ -2406,8 +2408,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type) ||
                     !prefill_try_prepared_kquant_matvec_batch(
                         m, &prepared_kquant, ab, 2, xb_t, dim, t)) {
-                    bn_quant_matvec_batch(ab, 2, xb_t, s->x_q,
-                                          bn_model_pool(m));
+                    bn_transformer_prefill_quant_matvec_batch(
+                        ab, 2, xb_t, s->x_q, bn_model_pool(m));
                 }
                 for (int h = 0; h < num_v_heads; h++) {
                     float dt = alpha_arr[h] + lw->ssm.ssm_dt_bias[h];

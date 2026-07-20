@@ -1120,6 +1120,11 @@ if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_
     fail=1
 fi
 
+if grep -n 'bn_quant_' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use prefill backend helpers, not quant internals directly"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_prefill_can_preq8k\|bn_transformer_prefill_route_preq8k\|used_preq8k\|ssm_preq8k' \
     include/transformer_prefill_internal.h \
     src/transformer/prefill_policy.c \
