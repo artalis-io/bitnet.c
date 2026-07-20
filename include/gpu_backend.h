@@ -470,6 +470,23 @@ static inline int bn_gpu_backend_can_create_buffer(
     return gpu && gpu->buffer_create;
 }
 
+static inline BnGPUBackendKind bn_gpu_backend_kind(
+    const BnGPUBackend *gpu) {
+    return gpu ? gpu->kind : BN_GPU_BACKEND_UNKNOWN;
+}
+
+static inline int bn_gpu_backend_is_cuda(const BnGPUBackend *gpu) {
+    return bn_gpu_backend_kind(gpu) == BN_GPU_BACKEND_CUDA;
+}
+
+static inline int bn_gpu_backend_is_metal(const BnGPUBackend *gpu) {
+    return bn_gpu_backend_kind(gpu) == BN_GPU_BACKEND_METAL;
+}
+
+static inline int bn_gpu_backend_is_webgpu(const BnGPUBackend *gpu) {
+    return bn_gpu_backend_kind(gpu) == BN_GPU_BACKEND_WEBGPU;
+}
+
 static inline int bn_gpu_backend_can_create_quant_only_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_create_quant_only;

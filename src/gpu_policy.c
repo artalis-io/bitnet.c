@@ -567,16 +567,9 @@ static const BnGPUPolicyBackendCaps GPU_POLICY_BACKEND_CAPS_CUDA = {
 
 static const BnGPUPolicyBackendCaps *
 gpu_policy_backend_caps(const BnGPUBackend *gpu) {
-    if (!gpu)
-        return &GPU_POLICY_BACKEND_CAPS_NONE;
-    switch (gpu->kind) {
-        case BN_GPU_BACKEND_CUDA:
-            return &GPU_POLICY_BACKEND_CAPS_CUDA;
-        case BN_GPU_BACKEND_METAL:
-        case BN_GPU_BACKEND_WEBGPU:
-        default:
-            return &GPU_POLICY_BACKEND_CAPS_NONE;
-    }
+    if (bn_gpu_backend_is_cuda(gpu))
+        return &GPU_POLICY_BACKEND_CAPS_CUDA;
+    return &GPU_POLICY_BACKEND_CAPS_NONE;
 }
 
 static int gpu_policy_cuda_moe_routed_ffn_disabled(void) {
@@ -592,14 +585,13 @@ int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible) {
 }
 
 BnBackendPlacement bn_gpu_policy_backend_placement(const BnGPUBackend *gpu) {
-    if (!gpu)
-        return BN_BACKEND_GPU_UNKNOWN;
-    switch (gpu->kind) {
-        case BN_GPU_BACKEND_METAL: return BN_BACKEND_METAL;
-        case BN_GPU_BACKEND_WEBGPU: return BN_BACKEND_WEBGPU;
-        case BN_GPU_BACKEND_CUDA: return BN_BACKEND_CUDA;
-        default: return BN_BACKEND_GPU_UNKNOWN;
-    }
+    if (bn_gpu_backend_is_metal(gpu))
+        return BN_BACKEND_METAL;
+    if (bn_gpu_backend_is_webgpu(gpu))
+        return BN_BACKEND_WEBGPU;
+    if (bn_gpu_backend_is_cuda(gpu))
+        return BN_BACKEND_CUDA;
+    return BN_BACKEND_GPU_UNKNOWN;
 }
 
 int bn_gpu_policy_float_buffer_type(void) {

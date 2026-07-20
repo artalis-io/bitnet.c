@@ -2813,6 +2813,11 @@ if grep -n 'gpu->memory_info' src/model_gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'gpu->kind' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c must use GPU backend helpers for backend identity"
+    fail=1
+fi
+
 if grep -n 'gpu->buffer_create_f16_cache\|gpu->buffer_create_kquant_f32_cache\|gpu->buffer_create_quant_only' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must use GPU backend helpers for optional cache-upload capability"
     fail=1
