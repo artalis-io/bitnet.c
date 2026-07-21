@@ -232,7 +232,9 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
     memset(&temp_state, 0, sizeof(temp_state));
     for (int layer = 0; layer < m->config.n_layers; layer++) {
         const BnLayerWeights *lw = &m->weights.layers[layer];
-        if (!lw->moe.router_weight)
+        BnTransformerGPULayerKindPolicy layer_kind =
+            bn_transformer_gpu_layer_kind_policy(lw);
+        if (!layer_kind.uses_moe)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         if (em->expert_gate_bytes > temp_state.buf_size)
@@ -266,7 +268,9 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
     int loaded = 0;
     for (int layer = 0; layer < m->config.n_layers; layer++) {
         const BnLayerWeights *lw = &m->weights.layers[layer];
-        if (!lw->moe.router_weight)
+        BnTransformerGPULayerKindPolicy layer_kind =
+            bn_transformer_gpu_layer_kind_policy(lw);
+        if (!layer_kind.uses_moe)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         int split_op_code = bn_transformer_gpu_matvec_split_op_code(
