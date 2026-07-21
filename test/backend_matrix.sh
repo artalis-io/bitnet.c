@@ -4004,6 +4004,14 @@ if rg -n 'if \([^)]*shared_expert_gate|gate_dot|shared_expert_gate\[d\]' src/moe
     fail=1
 fi
 
+if [ "$(grep -c '&lw->shared\.shared_gate' src/transformer/gpu.c)" -ne 1 ] ||
+   [ "$(grep -c '&lw->shared\.shared_up' src/transformer/gpu.c)" -ne 1 ] ||
+   [ "$(grep -c '&lw->shared\.shared_down' src/transformer/gpu.c)" -ne 2 ] ||
+   [ "$(grep -c 'bn_moe_shared_expert_gate_weight(lw' src/transformer/gpu.c)" -ne 1 ]; then
+    echo "Transformer GPU CPU fallback shared expert work must be centralized through shared helpers"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/moe_policy.c >/dev/null 2>&1; then
     echo "src/moe_policy.c must use model-policy helpers instead of reaching into model_arch"
     fail=1
