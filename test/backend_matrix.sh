@@ -2680,6 +2680,11 @@ if grep -n 'c->n_experts <= 0' src/model_gpu.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use MoE policy helpers for routed model GPU shape"
+    fail=1
+fi
+
 if grep -n '!lw->moe\.router_weight\|lw->moe\.router_weight &&\|lw->moe\.router_weight ?' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use model GPU layer policy for MoE layer decisions"
     fail=1

@@ -186,6 +186,48 @@ static void test_gpu_upload_weights(void) {
     printf("PASSED\n");
 }
 
+static void test_gpu_upload_moe_router(void) {
+    printf("test_gpu_upload_moe_router... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    model.config.n_layers = 1;
+    model.config.dim = 16;
+    model.config.hidden_dim = 32;
+    model.config.n_experts = 3;
+    model.config.n_experts_active = 2;
+    model.config.moe_intermediate_size = 8;
+
+    model.weights.layers = calloc(1, sizeof(BnLayerWeights));
+    assert(model.weights.layers);
+
+    float attn_norm[16];
+    float ffn_norm[16];
+    float router[3 * 16];
+    for (int i = 0; i < 16; i++) {
+        attn_norm[i] = 1.0f;
+        ffn_norm[i] = 1.0f;
+    }
+    for (int i = 0; i < 3 * 16; i++)
+        router[i] = (float)i;
+
+    BnLayerWeights *lw = &model.weights.layers[0];
+    lw->norm.attn_norm = attn_norm;
+    lw->norm.ffn_norm = ffn_norm;
+    lw->moe.router_weight = router;
+
+    assert(bn_model_upload_weights(&model, &mock_gpu) == 0);
+    void *router_gpu = bn_backend_model_handle(
+        bn_model_backend(&model), 0, BN_BACKEND_HANDLE_MOE_ROUTER);
+    assert(router_gpu != NULL);
+    float *router_copy = (float *)router_gpu;
+    assert(router_copy[0] == 0.0f);
+    assert(router_copy[3 * 16 - 1] == (float)(3 * 16 - 1));
+
+    bn_model_free(&model);
+    printf("PASSED\n");
+}
+
 // --- Test 2: GPU matvec ---
 static void test_gpu_matvec(void) {
     printf("test_gpu_matvec... ");
@@ -5587,6 +5629,7 @@ int main(void) {
     test_backend_layout_reasons();
     test_backend_layout_prepared_qweights();
     test_gpu_upload_weights();
+    test_gpu_upload_moe_router();
     test_gpu_matvec();
     test_gpu_fallback();
     test_gpu_release();
