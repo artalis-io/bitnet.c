@@ -286,6 +286,7 @@ int bn_moe_prefault_mmap(struct BnModel *m) {
     size_t page = ps > 0 ? (size_t)ps : 4096;
     volatile uint8_t sink = 0;
     size_t touched_pages = 0;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
     double t0 = bn_platform_time_ms();
 
     for (int l = 0; l < m->config.n_layers; l++) {
@@ -307,7 +308,7 @@ int bn_moe_prefault_mmap(struct BnModel *m) {
                 bn_moe_mmap_base_for_proj(bn_model_moe_io(m), em, p);
             if (!base) continue;
 
-            for (int e = 0; e < m->config.n_experts; e++) {
+            for (int e = 0; e < route_policy.total_experts; e++) {
                 const uint8_t *ptr = base + offsets[p] +
                     (size_t)e * (strides[p] ? strides[p] : proj_bytes);
                 for (size_t off = 0; off < proj_bytes; off += page) {

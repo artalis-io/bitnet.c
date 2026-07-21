@@ -3622,8 +3622,8 @@ do
     fi
 done
 
-if grep -n 'm->config\.n_experts <= 0' src/moe_cache.c >/dev/null 2>&1; then
-    echo "src/moe_cache.c must use model_arch helpers for loaded-model MoE presence policy"
+if grep -n 'm->config\.n_experts' src/moe_cache.c >/dev/null 2>&1; then
+    echo "src/moe_cache.c must use MoE route policy helpers for expert-count policy"
     fail=1
 fi
 
