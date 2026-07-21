@@ -1039,7 +1039,7 @@ int bn_transformer_gpu_prefill_moe_ffn_batch_available(
     int dim,
     int allow_kquant_down) {
     return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
-           gpu->moe_route_routed_ffn_batch_norm_resid &&
+           bn_gpu_backend_can_moe_route_routed_ffn_batch_norm_resid(gpu) &&
            bn_transformer_gpu_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
@@ -1074,10 +1074,8 @@ int bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
     float norm_eps,
     int norm_topk_prob,
     float expert_weights_scale) {
-    if (!gpu || !gpu->moe_route_routed_ffn_batch_norm_resid)
-        return -1;
-    return gpu->moe_route_routed_ffn_batch_norm_resid(
-        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+    return bn_gpu_backend_moe_route_routed_ffn_batch_norm_resid(
+        gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
         shared_gate_buf, shared_up_buf, shared_down_buf,
         shared_gate_weight_buf, ffn_norm_buf, X, n_tokens, dim, hidden_dim,
         n_experts, k, gate_type, up_type, down_type, act_type,
@@ -1153,7 +1151,7 @@ int bn_transformer_gpu_prefill_moe_layer_backend_available(
     const BnMoEExpertMap *map,
     int dim,
     int allow_kquant_down) {
-    return gpu && gpu->prefill_moe_layer &&
+    return bn_gpu_backend_can_prefill_moe_layer(gpu) &&
            bn_transformer_gpu_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
@@ -1217,20 +1215,18 @@ int bn_transformer_gpu_prefill_moe_layer_backend_run(
     float attention_scale,
     int norm_topk_prob,
     float expert_weights_scale) {
-    if (!gpu || !gpu->prefill_moe_layer)
-        return -1;
-    return gpu->prefill_moe_layer(
-        gpu->ctx, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
+    return bn_gpu_backend_prefill_moe_layer(
+        gpu, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
         up_all_buf, down_all_buf, shared_gate_buf, shared_up_buf,
         shared_down_buf, shared_gate_weight_buf, attn_norm_buf, ffn_norm_buf,
-        q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf,
-        X, K_out, V_out, n_tokens, dim, moe_hidden_dim, n_experts,
-        experts_active, n_heads, n_kv_heads, head_size, kv_mul, kv_dim,
-        qk_rows, qk_type, wv_rows, wv_type, wo_rows, wo_cols, wo_type,
-        gate_type, up_type, down_type, act_type, shared_hidden_dim,
-        shared_gate_type, shared_up_type, shared_down_type, qk_norm_per_head,
-        norm_eps, pos0, rope_dims, kv_cache_off, kv_cache_stride,
-        attention_scale, norm_topk_prob, expert_weights_scale);
+        q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf, X, K_out,
+        V_out, n_tokens, dim, moe_hidden_dim, n_experts, experts_active,
+        n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows, qk_type,
+        wv_rows, wv_type, wo_rows, wo_cols, wo_type, gate_type, up_type,
+        down_type, act_type, shared_hidden_dim, shared_gate_type,
+        shared_up_type, shared_down_type, qk_norm_per_head, norm_eps, pos0,
+        rope_dims, kv_cache_off, kv_cache_stride, attention_scale,
+        norm_topk_prob, expert_weights_scale);
 }
 
 int bn_transformer_gpu_prefill_moe_layer_chain_available(
@@ -1408,14 +1404,14 @@ int bn_transformer_gpu_moe_prefill_shared_batch_available(
     int backend_available) {
     return backend_available &&
            bn_transformer_gpu_moe_prefill_tokens_allowed(gpu, n_tokens) &&
-           gpu->dense_ffn_batch &&
+           bn_gpu_backend_can_dense_ffn_batch(gpu) &&
            bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
 
 int bn_transformer_gpu_moe_prefill_shared_dense_ffn_available(
     const BnGPUBackend *gpu) {
     return bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           gpu->dense_ffn_batch;
+           bn_gpu_backend_can_dense_ffn_batch(gpu);
 }
 
 int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
@@ -1442,7 +1438,7 @@ int bn_transformer_gpu_moe_prefill_route_batch_available(
     return backend_available &&
            bn_moe_policy_uses_grouped_expert_route(c) &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           gpu->moe_route_batch;
+           bn_gpu_backend_can_moe_route_batch(gpu);
 }
 
 int bn_transformer_gpu_moe_prefill_route_batch_backend_run(
@@ -1457,11 +1453,9 @@ int bn_transformer_gpu_moe_prefill_route_batch_backend_run(
     int k,
     int norm_topk_prob,
     float expert_weights_scale) {
-    if (!gpu || !gpu->moe_route_batch)
-        return -1;
-    return gpu->moe_route_batch(gpu->ctx, indices, weights, router_buf, X,
-                                n_tokens, dim, n_experts, k,
-                                norm_topk_prob, expert_weights_scale);
+    return bn_gpu_backend_moe_route_batch(
+        gpu, indices, weights, router_buf, X, n_tokens, dim, n_experts, k,
+        norm_topk_prob, expert_weights_scale);
 }
 
 int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
@@ -1469,7 +1463,7 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_norm_resid_available(
     const BnConfig *c) {
     return c &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           gpu->moe_route_routed_ffn_batch_norm_resid &&
+           bn_gpu_backend_can_moe_route_routed_ffn_batch_norm_resid(gpu) &&
            bn_transformer_gpu_moe_routed_ffn_batch_allowed(c);
 }
 
@@ -1481,7 +1475,7 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_batch_available(
     int allow_kquant_down) {
     return c &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           gpu->moe_route_routed_ffn_batch &&
+           bn_gpu_backend_can_moe_route_routed_ffn_batch(gpu) &&
            bn_transformer_gpu_moe_routed_ffn_batch_allowed(c) &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
@@ -1506,10 +1500,8 @@ int bn_transformer_gpu_moe_prefill_routed_ffn_batch_backend_run(
     int act_type,
     int norm_topk_prob,
     float expert_weights_scale) {
-    if (!gpu || !gpu->moe_route_routed_ffn_batch)
-        return -1;
-    return gpu->moe_route_routed_ffn_batch(
-        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+    return bn_gpu_backend_moe_route_routed_ffn_batch(
+        gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
         X, n_tokens, dim, hidden_dim, n_experts, k, gate_type, up_type,
         down_type, act_type, norm_topk_prob, expert_weights_scale);
 }
@@ -1523,7 +1515,7 @@ int bn_transformer_gpu_moe_prefill_resident_expert_batch_available(
     int prefer_cached_expert_batch) {
     return !prefer_cached_expert_batch &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           gpu->moe_routed_ffn_batch &&
+           bn_gpu_backend_can_moe_routed_ffn_batch(gpu) &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
 }
@@ -1546,10 +1538,8 @@ int bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
     int up_type,
     int down_type,
     int act_type) {
-    if (!gpu || !gpu->moe_routed_ffn_batch)
-        return -1;
-    return gpu->moe_routed_ffn_batch(
-        gpu->ctx, out, gate_all_buf, up_all_buf, down_all_buf, indices,
+    return bn_gpu_backend_moe_routed_ffn_batch(
+        gpu, out, gate_all_buf, up_all_buf, down_all_buf, indices,
         weights, X, n_tokens, dim, hidden_dim, n_experts, k, gate_type,
         up_type, down_type, act_type);
 }
@@ -1563,7 +1553,7 @@ int bn_transformer_gpu_moe_prefill_split_expert_batch_available(
     int used_resident_expert_batch) {
     return !used_resident_expert_batch &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           gpu->moe_ffn_batch &&
+           bn_gpu_backend_can_moe_ffn_batch(gpu) &&
            !bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
                c, map, dim, allow_kquant_down);
 }
@@ -1593,10 +1583,8 @@ int bn_transformer_gpu_moe_prefill_split_expert_batch_backend_run(
     int shared_gate_type,
     int shared_up_type,
     int shared_down_type) {
-    if (!gpu || !gpu->moe_ffn_batch)
-        return -1;
-    return gpu->moe_ffn_batch(
-        gpu->ctx, out, experts, n_experts, expert_offsets, expert_counts,
+    return bn_gpu_backend_moe_ffn_batch(
+        gpu, out, experts, n_experts, expert_offsets, expert_counts,
         token_ids, weights, X, n_tokens, dim, hidden_dim, gate_type, up_type,
         down_type, act_type, shared_gate_buf, shared_up_buf, shared_down_buf,
         shared_gate_weight_buf, shared_hidden_dim, shared_gate_type,
@@ -1607,7 +1595,7 @@ int bn_transformer_gpu_moe_prefill_single_expert_batch_available(
     const BnGPUBackend *gpu,
     int n_tokens) {
     return bn_transformer_gpu_moe_prefill_tokens_allowed(gpu, n_tokens) &&
-           gpu->dense_ffn_batch;
+           bn_gpu_backend_can_dense_ffn_batch(gpu);
 }
 
 int bn_transformer_gpu_moe_lazy_aux_cache_enabled(void) {

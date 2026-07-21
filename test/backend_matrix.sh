@@ -1665,6 +1665,11 @@ if awk '/^int bn_transformer_gpu_batch_prefill_enabled/{flag=1} /^int bn_transfo
     fail=1
 fi
 
+if grep -n 'gpu->\(prefill_\|moe_\|dense_ffn_batch\)' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use GPU backend helpers for prefill/MoE/dense batch calls"
+    fail=1
+fi
+
 if grep -n 'gpu->prefill_moe_layer' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for MoE layer availability"
     fail=1

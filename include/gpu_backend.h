@@ -562,6 +562,31 @@ static inline int bn_gpu_backend_can_dense_ffn_batch_norm_resid(
     return gpu && gpu->dense_ffn_batch_norm_resid;
 }
 
+static inline int bn_gpu_backend_can_moe_ffn_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->moe_ffn_batch;
+}
+
+static inline int bn_gpu_backend_can_moe_routed_ffn_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->moe_routed_ffn_batch;
+}
+
+static inline int bn_gpu_backend_can_moe_route_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->moe_route_batch;
+}
+
+static inline int bn_gpu_backend_can_moe_route_routed_ffn_batch(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->moe_route_routed_ffn_batch;
+}
+
+static inline int bn_gpu_backend_can_moe_route_routed_ffn_batch_norm_resid(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->moe_route_routed_ffn_batch_norm_resid;
+}
+
 static inline int bn_gpu_backend_can_prefill_attention(
     const BnGPUBackend *gpu) {
     return gpu && gpu->prefill_attention;
@@ -585,6 +610,11 @@ static inline int bn_gpu_backend_can_prefill_qkv_attention_wo_norm_resid(
 static inline int bn_gpu_backend_can_prefill_dense_layer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->prefill_dense_layer;
+}
+
+static inline int bn_gpu_backend_can_prefill_moe_layer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_moe_layer;
 }
 
 static inline int bn_gpu_backend_can_prefill_ssm_layer(
@@ -899,6 +929,153 @@ static inline int bn_gpu_backend_dense_ffn_batch_norm_resid(
         dim, hidden_dim, gate_type, up_type, down_type, act_type, norm_eps);
 }
 
+static inline int bn_gpu_backend_moe_ffn_batch(
+    const BnGPUBackend *gpu,
+    float *out,
+    const BnGPUMoEPrefillExpert *experts,
+    int n_experts,
+    const int *expert_offsets,
+    const int *expert_counts,
+    const int *token_ids,
+    const float *weights,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    void *shared_gate_buf,
+    void *shared_up_buf,
+    void *shared_down_buf,
+    void *shared_gate_weight_buf,
+    int shared_hidden_dim,
+    int shared_gate_type,
+    int shared_up_type,
+    int shared_down_type) {
+    if (!bn_gpu_backend_can_moe_ffn_batch(gpu))
+        return -1;
+    return gpu->moe_ffn_batch(
+        gpu->ctx, out, experts, n_experts, expert_offsets, expert_counts,
+        token_ids, weights, X, n_tokens, dim, hidden_dim, gate_type, up_type,
+        down_type, act_type, shared_gate_buf, shared_up_buf, shared_down_buf,
+        shared_gate_weight_buf, shared_hidden_dim, shared_gate_type,
+        shared_up_type, shared_down_type);
+}
+
+static inline int bn_gpu_backend_moe_routed_ffn_batch(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    const int *indices,
+    const float *weights,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type) {
+    if (!bn_gpu_backend_can_moe_routed_ffn_batch(gpu))
+        return -1;
+    return gpu->moe_routed_ffn_batch(
+        gpu->ctx, out, gate_all_buf, up_all_buf, down_all_buf, indices,
+        weights, X, n_tokens, dim, hidden_dim, n_experts, k, gate_type,
+        up_type, down_type, act_type);
+}
+
+static inline int bn_gpu_backend_moe_route_batch(
+    const BnGPUBackend *gpu,
+    int *indices,
+    float *weights,
+    void *router_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int n_experts,
+    int k,
+    int norm_topk_prob,
+    float expert_weights_scale) {
+    if (!bn_gpu_backend_can_moe_route_batch(gpu))
+        return -1;
+    return gpu->moe_route_batch(gpu->ctx, indices, weights, router_buf, X,
+                                n_tokens, dim, n_experts, k,
+                                norm_topk_prob, expert_weights_scale);
+}
+
+static inline int bn_gpu_backend_moe_route_routed_ffn_batch(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *router_buf,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    int norm_topk_prob,
+    float expert_weights_scale) {
+    if (!bn_gpu_backend_can_moe_route_routed_ffn_batch(gpu))
+        return -1;
+    return gpu->moe_route_routed_ffn_batch(
+        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+        X, n_tokens, dim, hidden_dim, n_experts, k, gate_type, up_type,
+        down_type, act_type, norm_topk_prob, expert_weights_scale);
+}
+
+static inline int bn_gpu_backend_moe_route_routed_ffn_batch_norm_resid(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *router_buf,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    void *shared_gate_buf,
+    void *shared_up_buf,
+    void *shared_down_buf,
+    void *shared_gate_weight_buf,
+    void *norm_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_experts,
+    int k,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    int shared_hidden_dim,
+    int shared_gate_type,
+    int shared_up_type,
+    int shared_down_type,
+    float norm_eps,
+    int norm_topk_prob,
+    float expert_weights_scale) {
+    if (!bn_gpu_backend_can_moe_route_routed_ffn_batch_norm_resid(gpu))
+        return -1;
+    return gpu->moe_route_routed_ffn_batch_norm_resid(
+        gpu->ctx, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
+        shared_gate_buf, shared_up_buf, shared_down_buf,
+        shared_gate_weight_buf, norm_buf, X, n_tokens, dim, hidden_dim,
+        n_experts, k, gate_type, up_type, down_type, act_type,
+        shared_hidden_dim, shared_gate_type, shared_up_type,
+        shared_down_type, norm_eps, norm_topk_prob, expert_weights_scale);
+}
+
 static inline int bn_gpu_backend_prefill_attention(
     const BnGPUBackend *gpu,
     float *out,
@@ -1080,6 +1257,80 @@ static inline int bn_gpu_backend_prefill_dense_layer(
         wv_rows, wv_type, wo_rows, wo_cols, wo_type, gate_type, up_type,
         down_type, act_type, qk_norm_per_head, norm_eps, pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
+}
+
+static inline int bn_gpu_backend_prefill_moe_layer(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *qk_buf,
+    void *wv_buf,
+    void *wo_buf,
+    void *router_buf,
+    void *gate_all_buf,
+    void *up_all_buf,
+    void *down_all_buf,
+    void *shared_gate_buf,
+    void *shared_up_buf,
+    void *shared_down_buf,
+    void *shared_gate_weight_buf,
+    void *attn_norm_buf,
+    void *ffn_norm_buf,
+    void *q_norm_buf,
+    void *k_norm_buf,
+    void *q_bias_buf,
+    void *k_bias_buf,
+    void *v_bias_buf,
+    const float *X,
+    float *K_out,
+    float *V_out,
+    int n_tokens,
+    int dim,
+    int moe_hidden_dim,
+    int n_experts,
+    int experts_active,
+    int n_heads,
+    int n_kv_heads,
+    int head_size,
+    int kv_mul,
+    int kv_dim,
+    int qk_rows,
+    int qk_type,
+    int wv_rows,
+    int wv_type,
+    int wo_rows,
+    int wo_cols,
+    int wo_type,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    int shared_hidden_dim,
+    int shared_gate_type,
+    int shared_up_type,
+    int shared_down_type,
+    int qk_norm_per_head,
+    float norm_eps,
+    int pos0,
+    int rope_dims,
+    uint32_t kv_cache_off,
+    int kv_cache_stride,
+    float attention_scale,
+    int norm_topk_prob,
+    float expert_weights_scale) {
+    if (!bn_gpu_backend_can_prefill_moe_layer(gpu))
+        return -1;
+    return gpu->prefill_moe_layer(
+        gpu->ctx, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
+        up_all_buf, down_all_buf, shared_gate_buf, shared_up_buf,
+        shared_down_buf, shared_gate_weight_buf, attn_norm_buf, ffn_norm_buf,
+        q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf,
+        X, K_out, V_out, n_tokens, dim, moe_hidden_dim, n_experts,
+        experts_active, n_heads, n_kv_heads, head_size, kv_mul, kv_dim,
+        qk_rows, qk_type, wv_rows, wv_type, wo_rows, wo_cols, wo_type,
+        gate_type, up_type, down_type, act_type, shared_hidden_dim,
+        shared_gate_type, shared_up_type, shared_down_type, qk_norm_per_head,
+        norm_eps, pos0, rope_dims, kv_cache_off, kv_cache_stride,
+        attention_scale, norm_topk_prob, expert_weights_scale);
 }
 
 static inline int bn_gpu_backend_prefill_ssm_layer(
