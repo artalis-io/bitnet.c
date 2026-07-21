@@ -36,7 +36,7 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = g->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = g->kv_cache_uses_fp16_rows;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 4 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -47,7 +47,7 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
 
         for (int i = 0; i < n_kv; i++) {
             int t = (start + i) % seq_len;
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 float k_buf[head_size];
                 for (int d = 0; d < head_size; d += 4) {
@@ -69,7 +69,7 @@ void bn_transformer_gqa_neon_range(void *ctx, int h_start, int h_end) {
             int t = (start + i) % seq_len;
             float a = att[i];
             float32x4_t a_v = vdupq_n_f32(a);
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 for (int d = 0; d < head_size; d += 16) {
                     vst1q_f32(xb_h + d,      vmlaq_f32(vld1q_f32(xb_h + d),      a_v, vcvt_f32_f16(vreinterpret_f16_u16(vld1_u16(v_f16 + d)))));
@@ -104,7 +104,7 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = g->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = g->kv_cache_uses_fp16_rows;
     float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 4 != 0) return;
 
@@ -127,7 +127,7 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
                 int t = (start + ti) % seq_len;
                 float k_buf[head_size];
                 const float *k_t;
-                if (kv_f16) {
+                if (kv_cache_uses_fp16_rows) {
                     const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                     for (int d = 0; d < head_size; d += 4) {
                         float16x4_t hv = vreinterpret_f16_u16(vld1_u16(k_f16 + d));
@@ -140,7 +140,7 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
 
                 if (ti + 1 < ti_end) {
                     int t_next = (start + ti + 1) % seq_len;
-                    if (kv_f16)
+                    if (kv_cache_uses_fp16_rows)
                         __builtin_prefetch((const uint16_t *)s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size, 0, 0);
                     else
                         __builtin_prefetch(s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size, 0, 0);
@@ -153,7 +153,7 @@ void bn_transformer_flash_gqa_neon_range(void *ctx, int h_start, int h_end) {
                 // Online softmax update
                 float v_buf[head_size];
                 const float *v_t;
-                if (kv_f16) {
+                if (kv_cache_uses_fp16_rows) {
                     const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                     for (int d = 0; d < head_size; d += 4) {
                         float16x4_t hv = vreinterpret_f16_u16(vld1_u16(v_f16 + d));

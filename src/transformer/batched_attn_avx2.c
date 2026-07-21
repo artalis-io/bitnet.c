@@ -120,7 +120,7 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
@@ -157,7 +157,7 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
             float att[n_kv > BN_MAX_VLA_ELEMS ? 1 : n_kv];
             if (n_kv > BN_MAX_VLA_ELEMS) return;
 
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *kc_base = (const uint16_t *)s->key_cache + loff;
                 for (int i = 0; i < n_kv; i++) {
                     int ki = (kv_start + i) % seq_len;
@@ -175,7 +175,7 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
 
             float xb_local[head_size];
             memset(xb_local, 0, head_size * sizeof(float));
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *vc_base = (const uint16_t *)s->value_cache + loff;
                 for (int i = 0; i < n_kv; i++)
                     batched_acc_v_fp16(xb_local, att[i], vc_base + (size_t)((kv_start + i) % seq_len) * kv_dim + kv_h * head_size, head_size);
@@ -211,7 +211,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
@@ -259,14 +259,14 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
 
                     if (ti + 1 < ti_end) {
                         int ki_next = (kv_start + ti + 1) % seq_len;
-                        if (kv_f16)
+                        if (kv_cache_uses_fp16_rows)
                             _mm_prefetch((const char *)((const uint16_t *)s->key_cache + loff + (size_t)ki_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                         else
                             _mm_prefetch((const char *)(s->key_cache + loff + (size_t)ki_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                     }
 
                     float score;
-                    if (kv_f16)
+                    if (kv_cache_uses_fp16_rows)
                         score = batched_dot_fp16(q_local, (const uint16_t *)s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
                     else
                         score = batched_dot_fp32(q_local, s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
@@ -283,7 +283,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
 
                     float w = batched_fast_expf(score - running_max);
                     running_sum += w;
-                    if (kv_f16)
+                    if (kv_cache_uses_fp16_rows)
                         batched_acc_v_fp16(out_buf, w, (const uint16_t *)s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
                     else
                         batched_acc_v_fp32(out_buf, w, s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
@@ -320,7 +320,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
@@ -368,14 +368,14 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
 
                 if (ti + 1 < ti_end) {
                     int ki_next = (kv_start + ti + 1) % seq_len;
-                    if (kv_f16)
+                    if (kv_cache_uses_fp16_rows)
                         _mm_prefetch((const char *)((const uint16_t *)s->key_cache + loff + (size_t)ki_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                     else
                         _mm_prefetch((const char *)(s->key_cache + loff + (size_t)ki_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                 }
 
                 float score;
-                if (kv_f16)
+                if (kv_cache_uses_fp16_rows)
                     score = batched_dot_fp16(q_local, (const uint16_t *)s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
                 else
                     score = batched_dot_fp32(q_local, s->key_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size) * attn_scale;
@@ -392,7 +392,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
 
                 float w = batched_fast_expf(score - running_max);
                 running_sum += w;
-                if (kv_f16)
+                if (kv_cache_uses_fp16_rows)
                     batched_acc_v_fp16(out_buf, w, (const uint16_t *)s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);
                 else
                     batched_acc_v_fp32(out_buf, w, s->value_cache + loff + (size_t)ki * kv_dim + kv_h * head_size, head_size);

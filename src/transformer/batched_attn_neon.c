@@ -191,7 +191,7 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = b->kv_cache_uses_fp16_rows;
     float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS) return;
 
@@ -208,7 +208,7 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
             float xb_local[head_size];
             batched_prepare_q(b, h, t, q_local);
 
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *kc_base = (const uint16_t *)s->key_cache + loff;
                 for (int i = 0; i < n_kv; i++) {
                     int ki = (kv_start + i) % seq_len;
@@ -228,7 +228,7 @@ void bn_transformer_batched_attn_naive_neon_range(void *ctx, int h_start,
 
             bn_transformer_softmax(att, n_kv);
             memset(xb_local, 0, (size_t)head_size * sizeof(float));
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *vc_base = (const uint16_t *)s->value_cache + loff;
                 for (int i = 0; i < n_kv; i++) {
                     int ki = (kv_start + i) % seq_len;
@@ -261,7 +261,7 @@ void bn_transformer_batched_attn_flash_neon_range(void *ctx, int h_start,
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = b->kv_cache_uses_fp16_rows;
     float attn_scale = b->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS) return;
 
@@ -284,7 +284,7 @@ void bn_transformer_batched_attn_flash_neon_range(void *ctx, int h_start,
                 for (int ti = ti_start; ti < ti_end; ti++) {
                     int ki = (kv_start + ti) % seq_len;
                     float score;
-                    if (kv_f16) {
+                    if (kv_cache_uses_fp16_rows) {
                         score = batched_dot_fp16_neon(q_local,
                                                       (const uint16_t *)s->key_cache + loff +
                                                       (size_t)ki * kv_dim + kv_h * head_size,
@@ -310,7 +310,7 @@ void bn_transformer_batched_attn_flash_neon_range(void *ctx, int h_start,
 
                     float w = expf(score - running_max);
                     running_sum += w;
-                    if (kv_f16) {
+                    if (kv_cache_uses_fp16_rows) {
                         batched_acc_v_fp16_neon(out_buf, w,
                                                 (const uint16_t *)s->value_cache + loff +
                                                 (size_t)ki * kv_dim + kv_h * head_size,

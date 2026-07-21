@@ -1034,11 +1034,28 @@ if grep -n 'c->kv_tq_bits\|c->kv_f16' \
     fail=1
 fi
 
+if grep -n '\bkv_f16\b' \
+    src/transformer/gqa_scalar.c \
+    src/transformer/gqa_neon.c \
+    src/transformer/gqa_avx2.c \
+    src/transformer/gqa_wasm.c >/dev/null 2>&1; then
+    echo "GQA kernels must use KV cache behavior names, not kv_f16 storage names"
+    fail=1
+fi
+
 if grep -n 'c->kv_tq_bits\|c->kv_f16' \
     src/transformer/batched_attn_scalar.c \
     src/transformer/batched_attn_neon.c \
     src/transformer/batched_attn_avx2.c >/dev/null 2>&1; then
     echo "batched attention kernels must use planned KV cache row policy from BnBatchedAttnCtx"
+    fail=1
+fi
+
+if grep -n '\bkv_f16\b' \
+    src/transformer/batched_attn_scalar.c \
+    src/transformer/batched_attn_neon.c \
+    src/transformer/batched_attn_avx2.c >/dev/null 2>&1; then
+    echo "batched attention kernels must use KV cache behavior names, not kv_f16 storage names"
     fail=1
 fi
 

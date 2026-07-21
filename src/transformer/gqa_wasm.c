@@ -13,7 +13,7 @@ void bn_transformer_gqa_wasm_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = g->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = g->kv_cache_uses_fp16_rows;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 4 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -26,7 +26,7 @@ void bn_transformer_gqa_wasm_range(void *ctx, int h_start, int h_end) {
             int t = (start + i) % seq_len;
             float k_buf[head_size];
             const float *k_t;
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 for (int d = 0; d < head_size; d++) k_buf[d] = bn_fp16_to_fp32(k_f16[d]);
                 k_t = k_buf;
@@ -54,7 +54,7 @@ void bn_transformer_gqa_wasm_range(void *ctx, int h_start, int h_end) {
             int t = (start + i) % seq_len;
             float v_buf[head_size];
             const float *v_t;
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 for (int d = 0; d < head_size; d++) v_buf[d] = bn_fp16_to_fp32(v_f16[d]);
                 v_t = v_buf;
@@ -89,7 +89,7 @@ void bn_transformer_flash_gqa_wasm_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = g->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = g->kv_cache_uses_fp16_rows;
     float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 4 != 0) return;
 
@@ -112,7 +112,7 @@ void bn_transformer_flash_gqa_wasm_range(void *ctx, int h_start, int h_end) {
                 int t = (start + ti) % seq_len;
                 float k_buf[head_size];
                 const float *k_t;
-                if (kv_f16) {
+                if (kv_cache_uses_fp16_rows) {
                     const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                     for (int d = 0; d < head_size; d++) k_buf[d] = bn_fp16_to_fp32(k_f16[d]);
                     k_t = k_buf;
@@ -136,7 +136,7 @@ void bn_transformer_flash_gqa_wasm_range(void *ctx, int h_start, int h_end) {
                 // Online softmax update
                 float v_buf[head_size];
                 const float *v_t;
-                if (kv_f16) {
+                if (kv_cache_uses_fp16_rows) {
                     const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                     for (int d = 0; d < head_size; d++) v_buf[d] = bn_fp16_to_fp32(v_f16[d]);
                     v_t = v_buf;

@@ -13,7 +13,7 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = g->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = g->kv_cache_uses_fp16_rows;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -27,7 +27,7 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
             // Prefetch next KV entry
             if (i + 1 < n_kv) {
                 int t_next = (start + i + 1) % seq_len;
-                if (kv_f16)
+                if (kv_cache_uses_fp16_rows)
                     _mm_prefetch((const char *)((const uint16_t *)s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                 else
                     _mm_prefetch((const char *)(s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
@@ -35,7 +35,7 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
             // Dot product with inline F16→F32 conversion (no intermediate buffer)
             __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps();
             __m256 a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 int d = 0;
                 for (; d + 31 < head_size; d += 32) {
@@ -74,14 +74,14 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
             // Prefetch next value entry
             if (i + 1 < n_kv) {
                 int t_next = (start + i + 1) % seq_len;
-                if (kv_f16)
+                if (kv_cache_uses_fp16_rows)
                     _mm_prefetch((const char *)((const uint16_t *)s->value_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                 else
                     _mm_prefetch((const char *)(s->value_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
             }
             float a = att[i];
             __m256 av = _mm256_set1_ps(a);
-            if (kv_f16) {
+            if (kv_cache_uses_fp16_rows) {
                 const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                 for (int d = 0; d < head_size; d += 8)
                     _mm256_storeu_ps(xb_h + d, _mm256_fmadd_ps(av, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(v_f16 + d))), _mm256_loadu_ps(xb_h + d)));
@@ -108,7 +108,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = g->kv_cache_uses_fp16_rows;
+    int kv_cache_uses_fp16_rows = g->kv_cache_uses_fp16_rows;
     float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 
@@ -133,7 +133,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                 // Prefetch next K entry
                 if (ti + 1 < ti_end) {
                     int t_next = (start + ti + 1) % seq_len;
-                    if (kv_f16)
+                    if (kv_cache_uses_fp16_rows)
                         _mm_prefetch((const char *)((const uint16_t *)s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
                     else
                         _mm_prefetch((const char *)(s->key_cache + loff + (size_t)t_next * kv_dim + kv_h * head_size), _MM_HINT_T0);
@@ -142,7 +142,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                 // Score: dot(Q, K) * scale — inline F16 conversion, no temp buffer
                 __m256 a0 = _mm256_setzero_ps(), a1 = _mm256_setzero_ps();
                 __m256 a2 = _mm256_setzero_ps(), a3 = _mm256_setzero_ps();
-                if (kv_f16) {
+                if (kv_cache_uses_fp16_rows) {
                     const uint16_t *k_f16 = (const uint16_t *)s->key_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                     int d = 0;
                     for (; d + 31 < head_size; d += 32) {
@@ -186,7 +186,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
                 running_sum += w;
                 __m256 wv = _mm256_set1_ps(w);
                 // V accumulation with inline F16 conversion (no temp buffer)
-                if (kv_f16) {
+                if (kv_cache_uses_fp16_rows) {
                     const uint16_t *v_f16 = (const uint16_t *)s->value_cache + loff + (size_t)t * kv_dim + kv_h * head_size;
                     for (int vd = 0; vd < head_size; vd += 8)
                         _mm256_storeu_ps(out_buf + vd, _mm256_fmadd_ps(wv, _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)(v_f16 + vd))), _mm256_loadu_ps(out_buf + vd)));
