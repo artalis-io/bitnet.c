@@ -271,6 +271,8 @@ int bn_transformer_prefill_dense_ffn_batch_gpu_available(
     int has_gate,
     int has_up,
     int has_down);
+int bn_transformer_prefill_dense_ffn_batch_norm_resid_gpu_available(
+    const BnGPUBackend *gpu);
 BnTransformerPrefillSSMChainPolicy
 bn_transformer_prefill_ssm_chain_policy(
     int chain_available,

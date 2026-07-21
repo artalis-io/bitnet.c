@@ -2485,7 +2485,8 @@ prefill_ssm_done:
                 bn_transformer_prefill_ffn_batch_policy(
                     c->has_ffn_gate,
                     can_use_dense_ffn_batch,
-                    gpu_ffn && gpu_ffn->dense_ffn_batch_norm_resid,
+                    bn_transformer_prefill_dense_ffn_batch_norm_resid_gpu_available(
+                        gpu_ffn),
                     ffn_norm_buf != NULL,
                     n_tokens,
                     dense_ffn_batch_min_tokens,

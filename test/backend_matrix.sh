@@ -1633,7 +1633,7 @@ if grep -n 'bn_model_gpu(m)->matmul_batch' src/transformer/prefill.c >/dev/null 
     fail=1
 fi
 
-if grep -n '!gpu || !gpu->dense_ffn_batch' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n '->dense_ffn_batch' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for dense FFN GPU batch availability"
     fail=1
 fi

@@ -296,6 +296,12 @@ int bn_transformer_prefill_dense_ffn_batch_gpu_available(
            has_up && has_down;
 }
 
+int bn_transformer_prefill_dense_ffn_batch_norm_resid_gpu_available(
+    const BnGPUBackend *gpu) {
+    return bn_transformer_gpu_prefill_dense_ffn_batch_norm_resid_backend_available(
+        gpu);
+}
+
 int bn_transformer_prefill_attention_min_tokens(void) {
     return bn_transformer_gpu_prefill_attention_min_tokens();
 }
