@@ -613,7 +613,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     // 5. Shared expert (if present, always resident)
     t0 = bn_moe_time_ms();
     if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
-        int shared_hidden = c->shared_expert_intermediate_size;
+        int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
 
         if (!shared_gu_ready) {
             BnMatvecTask shared_gu[2];

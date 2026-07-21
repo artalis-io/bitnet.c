@@ -80,6 +80,10 @@ int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
            lw->shared.shared_gate.data != NULL;
 }
 
+int bn_moe_policy_shared_expert_hidden_dim(const BnConfig *c) {
+    return bn_model_config_shared_expert_hidden_dim(c);
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {

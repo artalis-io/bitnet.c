@@ -3882,6 +3882,19 @@ if grep -n 'full_attn_interval\|c->n_layers - n_attn' src/session.c >/dev/null 2
     fail=1
 fi
 
+for file in \
+    src/transformer/plan.c \
+    src/transformer/gpu.c \
+    src/transformer/gpu_resources.c \
+    src/moe_execute.c \
+    src/moe_prefill.c
+do
+    if grep -n 'shared_expert_intermediate_size' "$file" >/dev/null 2>&1; then
+        echo "$file must use MoE/model-policy helpers for shared expert hidden dimensions"
+        fail=1
+    fi
+done
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/session.c >/dev/null 2>&1; then
     echo "src/session.c must use model-policy helpers instead of reaching into model_arch"
     fail=1

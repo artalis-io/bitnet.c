@@ -613,7 +613,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     if (!used_gpu_shared_batch &&
         bn_moe_policy_has_loaded_shared_expert(c, lw)) {
         t0 = bn_moe_time_ms();
-        int shared_hidden = c->shared_expert_intermediate_size;
+        int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
         float *sh_gate = gate_buf;  // reuse (T_max >= 1, shared_hidden <= moe_hidden usually)
         float *sh_up = up_buf;
         float *sh_down = down_buf;

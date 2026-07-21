@@ -249,7 +249,7 @@ int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
         return 0;
     }
 
-    out->hidden_dim = c->shared_expert_intermediate_size;
+    out->hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
     out->gate_type = info.gate_type;
     out->up_type = info.up_type;
     out->down_type = info.down_type;

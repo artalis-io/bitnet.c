@@ -533,7 +533,7 @@ void bn_transformer_plan_moe(BnMoEPlan *p,
     p->n_active = c->n_experts_active;
     p->hidden_dim = c->moe_intermediate_size;
     p->has_shared_expert = bn_transformer_moe_has_shared_expert(c, lw);
-    p->shared_hidden_dim = c->shared_expert_intermediate_size;
+    p->shared_hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
     if (bn_transformer_moe_requires_cpu_fallback(p->placement, lw)) {
         p->needs_cpu_fallback = 1;
         p->placement = BN_EXEC_CPU_FALLBACK;

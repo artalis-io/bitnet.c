@@ -354,13 +354,21 @@ static void test_moe_prefill_policy(void) {
 
     BnLayerWeights lw = {0};
     c.has_shared_expert = 1;
+    c.shared_expert_intermediate_size = 256;
     assert(bn_moe_policy_has_shared_expert(&c, &lw));
+    assert(bn_moe_policy_shared_expert_hidden_dim(&c) == 256);
     c.has_shared_expert = 0;
     assert(!bn_moe_policy_has_shared_expert(&c, &lw));
+    assert(bn_moe_policy_shared_expert_hidden_dim(&c) == 0);
     lw.shared.shared_expert_gate = (float *)1;
     assert(bn_moe_policy_has_shared_expert(&c, &lw));
+    assert(bn_moe_policy_shared_expert_hidden_dim(&c) == 0);
     lw.shared.shared_expert_gate = NULL;
     c.has_shared_expert = 1;
+    assert(bn_moe_policy_shared_expert_hidden_dim(&c) == 256);
+    c.shared_expert_intermediate_size = 0;
+    assert(bn_moe_policy_shared_expert_hidden_dim(&c) == 0);
+    c.shared_expert_intermediate_size = 256;
     assert(!bn_moe_policy_has_shared_expert(NULL, &lw));
     assert(!bn_moe_policy_has_shared_expert_gate_vector(&lw));
     lw.shared.shared_expert_gate = (float *)1;
