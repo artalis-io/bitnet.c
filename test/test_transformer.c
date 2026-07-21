@@ -4153,7 +4153,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_cpu_float_kquant_task_flags(0) == 0);
     assert(bn_transformer_cpu_float_kquant_task_flags(1) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
-    assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) ==
+    assert(bn_transformer_cpu_float_kquant_fallback_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(fabsf(bn_transformer_attention_scale(&c, 128) -
                  (1.0f / sqrtf(128.0f))) < 1e-7f);
@@ -4207,7 +4207,7 @@ static void test_block_planning(void) {
     assert(uses_float_kquant_fallback ==
            backend_supports_float_kquant_prefill);
     c.policy_flags = 0;
-    assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
+    assert(bn_transformer_cpu_float_kquant_fallback_task_flags(&c) == 0);
     assert(!bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c));
     assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY;

@@ -140,7 +140,7 @@ uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {
     return enabled ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT : 0u;
 }
 
-uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
+uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
     const BnConfig *c) {
     return bn_transformer_cpu_float_kquant_task_flags(
         bn_model_config_requires_float_kquant_fallback(c));

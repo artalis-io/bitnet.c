@@ -52,7 +52,7 @@ static void fallback_cpu_matvec_batch(const BnModel *m,
         prepared[i].prepared =
             fallback_cpu_prepared_qweight(m, tasks[i].W);
         prepared[i].flags |=
-            bn_transformer_cpu_force_float_kquant_task_flags(&m->config);
+            bn_transformer_cpu_float_kquant_fallback_task_flags(&m->config);
     }
     bn_transformer_cpu_quant_matvec_batch(prepared, n_tasks, x, quantized_buf,
                                           bn_model_pool(m));

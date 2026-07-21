@@ -281,7 +281,7 @@ BnExecPlacement bn_transformer_preferred_placement(const BnGPUBackend *gpu,
 BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
                                                     BnExecPlacement placement);
 BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void);
-uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
+uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
     const BnConfig *c);
 int bn_transformer_cpu_prefill_uses_float_kquant_fallback(
     const BnConfig *c);
