@@ -155,28 +155,6 @@ int bn_transformer_attention_uses_rope_qk_fusion(
     return placement == BN_EXEC_GPU && !k_bias;
 }
 
-BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled) {
-    if (c->kv_tq_bits > 0 && tq_enabled) return BN_KV_TQ;
-    if (c->kv_f16) return BN_KV_FP16;
-    return BN_KV_FP32;
-}
-
-int bn_transformer_kv_mode_stores_host_float_rows(BnKVMode mode) {
-    return mode == BN_KV_FP32;
-}
-
-int bn_transformer_kv_mode_uses_turboquant(BnKVMode mode) {
-    return mode == BN_KV_TQ;
-}
-
-int bn_transformer_kv_mode_uses_fp16(BnKVMode mode) {
-    return mode == BN_KV_FP16;
-}
-
-int bn_transformer_kv_mode_uses_cpu_gqa_cache(BnKVMode mode) {
-    return mode != BN_KV_TQ;
-}
-
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,
                                      const BnLayerWeights *lw,

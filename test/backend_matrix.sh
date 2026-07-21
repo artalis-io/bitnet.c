@@ -1000,6 +1000,11 @@ if grep -n 'kv_tq_bits\|kv_f16' src/transformer/prefill.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'kv_tq_bits\|kv_f16' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must compose KV mode through transformer KV policy helpers"
+    fail=1
+fi
+
 if grep -n 'gpu->execute\|gpu->read_activation\|gpu->write_activation' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU backend helpers instead of raw execution/activation transfer hooks"
     fail=1
