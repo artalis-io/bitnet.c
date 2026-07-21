@@ -14,6 +14,7 @@ typedef struct {
                         int n, int exact_silu);
     void (*weighted_add)(float *dst, const float *src, float weight, int n);
     void (*residual_add)(float *x, const float *r, int n);
+    int supports_mixed_shared_gateup_batch;
 } BnMoECPUOps;
 
 #if BN_TRANSFORMER_CPU_HAS_NEON
@@ -253,6 +254,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_swiglu_silu_scalar,
         moe_weighted_add_neon,
         moe_residual_add_neon,
+        0,
     };
 #elif BN_TRANSFORMER_CPU_HAS_AVX2
     static const BnMoECPUOps ops = {
@@ -263,6 +265,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_swiglu_silu_avx2,
         moe_weighted_add_avx2,
         moe_residual_add_avx2,
+        1,
     };
 #elif BN_TRANSFORMER_CPU_HAS_WASM_SIMD128
     static const BnMoECPUOps ops = {
@@ -273,6 +276,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_swiglu_silu_scalar,
         moe_weighted_add_scalar,
         moe_residual_add_scalar,
+        0,
     };
 #else
     static const BnMoECPUOps ops = {
@@ -283,6 +287,7 @@ static const BnMoECPUOps *bn_moe_cpu_ops(void) {
         moe_swiglu_silu_scalar,
         moe_weighted_add_scalar,
         moe_residual_add_scalar,
+        0,
     };
 #endif
     return &ops;
@@ -311,7 +316,8 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
                                    int shared_gate_type, int shared_up_type) {
     if (!tasks || n_tasks <= 0)
         return 0;
-    int mixed_shared_gateup_supported = BN_TRANSFORMER_CPU_HAS_AVX2;
+    int mixed_shared_gateup_supported =
+        bn_moe_cpu_ops()->supports_mixed_shared_gateup_batch;
     int batch_type = tasks[0].W->type;
     int can_batch = bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
         shared_gate_type, shared_up_type, batch_type,

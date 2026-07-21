@@ -4131,6 +4131,11 @@ if awk '/^void bn_moe_rmsnorm/{flag=1} /^int bn_moe_can_batch_shared_gateup/{fla
     fail=1
 fi
 
+if awk '/^int bn_moe_can_batch_shared_gateup/{flag=1} /^void bn_moe_quant_matvec/{flag=0} flag{print}' src/moe_cpu_kernels.c | grep -n 'BN_TRANSFORMER_CPU_HAS_\|__AVX\|__ARM_NEON' >/dev/null 2>&1; then
+    echo "src/moe_cpu_kernels.c shared gateup capability must come from local MoE CPU ops"
+    fail=1
+fi
+
 if grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE policy helpers for float K-quant gate/up task flags"
     fail=1
