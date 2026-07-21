@@ -7,6 +7,10 @@ static const BnKVCPUOps *kv_cpu_ops(void) {
     return bn_transformer_kv_cpu_ops();
 }
 
+int bn_transformer_kv_host_float_cache_rows_available(const BnConfig *c) {
+    return c && c->kv_tq_bits <= 0 && !c->kv_f16;
+}
+
 void bn_transformer_tq_write_kv(const BnTQState *tq,
                                 BnRunState *s,
                                 const float *k_tmp,

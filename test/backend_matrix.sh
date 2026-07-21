@@ -985,6 +985,11 @@ if grep -n 'gpu->read_activation\|gpu->write_activation' src/transformer/gpu_fal
     fail=1
 fi
 
+if grep -n 'kv_tq_bits\|kv_f16' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_fallback.c must use KV policy helpers for host-float cache row availability"
+    fail=1
+fi
+
 if grep -n 'gpu->execute\|gpu->read_activation\|gpu->write_activation' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU backend helpers instead of raw execution/activation transfer hooks"
     fail=1

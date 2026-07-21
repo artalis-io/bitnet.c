@@ -2,6 +2,7 @@
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_kv_internal.h"
 #include "transformer_logits_internal.h"
 #include "transformer_prefill_internal.h"
 #include "transformer_rmsnorm_internal.h"
@@ -579,6 +580,15 @@ static void test_cpu_execution_helpers(void) {
     bn_transformer_cpu_apply_ffn_activation(&s, &ffn, 8, 1);
     for (int i = 0; i < 8; i++)
         assert(fabsf(unchanged[i] - (float)(i + 1)) < 1e-6f);
+
+    BnConfig kv = {0};
+    assert(bn_transformer_kv_host_float_cache_rows_available(&kv));
+    kv.kv_f16 = 1;
+    assert(!bn_transformer_kv_host_float_cache_rows_available(&kv));
+    kv.kv_f16 = 0;
+    kv.kv_tq_bits = 3;
+    assert(!bn_transformer_kv_host_float_cache_rows_available(&kv));
+    assert(!bn_transformer_kv_host_float_cache_rows_available(NULL));
 
     printf("PASSED\n");
 }

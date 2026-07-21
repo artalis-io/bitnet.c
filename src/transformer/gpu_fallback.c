@@ -4,6 +4,7 @@
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer_gqa_internal.h"
+#include "transformer_kv_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
 #include "moe.h"
@@ -179,7 +180,8 @@ int bn_transformer_gpu_fallback_cpu_attention(
     bn_transformer_plan_layer_shape(&shape, c, lw, layer,
                                     bn_model_tq_state(m) != NULL);
     if (!shape.is_attn || shape.q_gated ||
-        c->kv_tq_bits > 0 || c->kv_f16 || lw->norm.attn_sub_norm)
+        !bn_transformer_kv_host_float_cache_rows_available(c) ||
+        lw->norm.attn_sub_norm)
         return -1;
 
     if (bn_transformer_gpu_emit_context_flush(emit, gpu) != 0)
@@ -678,7 +680,8 @@ int bn_transformer_gpu_debug_compare_attention(
     bn_transformer_plan_layer_shape(&shape, c, lw, layer,
                                     bn_model_tq_state(m) != NULL);
     if (!shape.is_attn || shape.q_gated ||
-        c->kv_tq_bits > 0 || c->kv_f16 || lw->norm.attn_sub_norm)
+        !bn_transformer_kv_host_float_cache_rows_available(c) ||
+        lw->norm.attn_sub_norm)
         return -1;
 
     float *cpu_in = (float *)malloc((size_t)dim * sizeof(float));
@@ -817,7 +820,7 @@ int bn_transformer_gpu_debug_compare_gqa(
     bn_transformer_plan_layer_shape(&shape, c, lw, layer,
                                     bn_model_tq_state(m) != NULL);
     if (!shape.is_attn || shape.q_gated || shape.q_wide ||
-        c->kv_tq_bits > 0 || c->kv_f16 ||
+        !bn_transformer_kv_host_float_cache_rows_available(c) ||
         lw->attn.q_norm || lw->attn.k_norm || lw->norm.attn_sub_norm)
         return -1;
 

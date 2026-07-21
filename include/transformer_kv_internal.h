@@ -1,6 +1,7 @@
 #ifndef BN_TRANSFORMER_KV_INTERNAL_H
 #define BN_TRANSFORMER_KV_INTERNAL_H
 
+#include "model_config.h"
 #include "model_run_state.h"
 #include "threadpool.h"
 #include <stddef.h>
@@ -18,6 +19,7 @@ typedef struct {
 } BnKVCPUOps;
 
 const BnKVCPUOps *bn_transformer_kv_cpu_ops(void);
+int bn_transformer_kv_host_float_cache_rows_available(const BnConfig *c);
 
 void bn_transformer_tq_write_kv(const BnTQState *tq,
                                 BnRunState *s,
