@@ -2572,6 +2572,18 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA' src/model_gpu.c >/dev/null 2>&1
     fail=1
 fi
 
+if awk '
+    /^static void \*upload_shared_expert_gate\(/ { helper=1 }
+    /^static void \*upload_moe_router_diff2\(/ { helper=0 }
+    /^static int add_shared_expert_gate_upload_bytes\(/ { helper=1 }
+    /^static size_t estimate_gpu_base_model_bytes\(/ { helper=0 }
+    !helper && /lw->shared\.shared_expert_gate/ { found=1 }
+    END { exit found ? 0 : 1 }
+' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must use shared expert gate upload helpers outside helper bodies"
+    fail=1
+fi
+
 if grep -n 'gpu->buffer_create' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU backend helpers for model buffer uploads"
     fail=1

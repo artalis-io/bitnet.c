@@ -120,6 +120,17 @@ static void *upload_f32_buf(BnGPUBackend *gpu, const float *data, int n_elems) {
                                   BN_MODEL_GPU_UPLOAD_STANDARD);
 }
 
+static void *upload_shared_expert_gate(BnGPUBackend *gpu,
+                                       const BnLayerWeights *lw,
+                                       int dim) {
+    if (!bn_moe_policy_has_shared_expert_gate_vector(lw) || dim <= 0)
+        return NULL;
+    return upload_gpu_buffer_mode(gpu, lw->shared.shared_expert_gate,
+                                  (size_t)dim * sizeof(float),
+                                  bn_gpu_policy_float_buffer_type(), 1, dim,
+                                  BN_MODEL_GPU_UPLOAD_STANDARD);
+}
+
 static void *upload_moe_router_diff2(BnGPUBackend *gpu,
                                      const float *router_weight,
                                      int dim) {
@@ -421,6 +432,14 @@ static int add_f32_bytes(size_t *total, const float *data, int n_elems) {
     return add_size_checked(total, bytes);
 }
 
+static int add_shared_expert_gate_upload_bytes(size_t *total,
+                                               const BnLayerWeights *lw,
+                                               int dim) {
+    if (!bn_moe_policy_has_shared_expert_gate_vector(lw))
+        return 0;
+    return add_f32_bytes(total, lw->shared.shared_expert_gate, dim);
+}
+
 static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
                                             const BnWeights *w) {
     if (!c || !w)
@@ -461,8 +480,7 @@ static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
             add_f32_bytes(&total, lw->norm.ffn_norm, c->dim) != 0 ||
             add_f32_bytes(&total, lw->moe.router_weight,
                           c->n_experts * c->dim) != 0 ||
-            add_f32_bytes(&total, lw->shared.shared_expert_gate,
-                          c->dim) != 0)
+            add_shared_expert_gate_upload_bytes(&total, lw, c->dim) != 0)
             return SIZE_MAX;
         BnModelGPUMoELayerPolicy moe_layer =
             model_gpu_moe_layer_policy(c, lw);
@@ -940,13 +958,8 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 return -1;
             }
         }
-        void *shared_expert_gate_gpu = lw->shared.shared_expert_gate
-            ? upload_gpu_buffer_mode(
-                gpu, lw->shared.shared_expert_gate,
-                (size_t)c->dim * sizeof(float),
-                bn_gpu_policy_float_buffer_type(), 1, c->dim,
-                BN_MODEL_GPU_UPLOAD_STANDARD)
-            : NULL;
+        void *shared_expert_gate_gpu =
+            upload_shared_expert_gate(gpu, lw, c->dim);
         if (register_gpu_handle(model, l, BN_BACKEND_HANDLE_ATTN_NORM,
                                 attn_norm_gpu) != 0 ||
             register_gpu_handle(model, l, BN_BACKEND_HANDLE_FFN_NORM,
