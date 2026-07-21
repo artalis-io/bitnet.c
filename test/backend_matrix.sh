@@ -2735,6 +2735,14 @@ if grep -n 'c->has_shared_expert' src/transformer/prefill.c >/dev/null 2>&1; the
     fail=1
 fi
 
+if [ "$(grep -c 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE' src/transformer/prefill.c)" -ne 1 ] ||
+   [ "$(grep -c '&lw->shared\.shared_gate' src/transformer/prefill.c)" -ne 1 ] ||
+   [ "$(grep -c '&lw->shared\.shared_up' src/transformer/prefill.c)" -ne 1 ] ||
+   [ "$(grep -c '&lw->shared\.shared_down' src/transformer/prefill.c)" -ne 1 ]; then
+    echo "Transformer prefill shared expert resources must be composed through the local resource helper"
+    fail=1
+fi
+
 if grep -n 'router_weight != NULL' src/transformer/gpu_policy.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU/prefill layer-kind policy must compose MoE router policy helpers"
     fail=1
