@@ -65,6 +65,10 @@ int bn_model_config_uses_all_active_two_expert_moe(const BnConfig *config,
                                                    int dim);
 int bn_model_config_uses_two_expert_all_active_moe(const BnConfig *config);
 int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config);
+int bn_model_config_moe_total_experts(const BnConfig *config);
+int bn_model_config_moe_active_experts(const BnConfig *config);
+int bn_model_config_moe_expert_hidden_dim(const BnConfig *config);
+int bn_model_config_moe_route_shape_valid(const BnConfig *config);
 int bn_model_config_shared_expert_hidden_dim(const BnConfig *config);
 int bn_model_config_moe_forces_float_kquant_gateup(const BnConfig *config);
 int bn_model_config_moe_uses_scaled_router_input(const BnConfig *config);

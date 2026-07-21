@@ -143,6 +143,23 @@ int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config) {
     return bn_model_arch_uses_more_than_two_expert_moe(config);
 }
 
+int bn_model_config_moe_total_experts(const BnConfig *config) {
+    return config ? config->n_experts : 0;
+}
+
+int bn_model_config_moe_active_experts(const BnConfig *config) {
+    return config ? config->n_experts_active : 0;
+}
+
+int bn_model_config_moe_expert_hidden_dim(const BnConfig *config) {
+    return config ? config->moe_intermediate_size : 0;
+}
+
+int bn_model_config_moe_route_shape_valid(const BnConfig *config) {
+    return bn_model_config_moe_active_experts(config) > 0 &&
+           bn_model_config_moe_expert_hidden_dim(config) > 0;
+}
+
 int bn_model_config_shared_expert_hidden_dim(const BnConfig *config) {
     if (!config || !config->has_shared_expert ||
         config->shared_expert_intermediate_size <= 0)

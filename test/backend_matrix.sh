@@ -3632,6 +3632,11 @@ if grep -n 'c->n_experts > 0' src/model.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use model-config/MoE policy helpers for routed expert shape and weighting"
+    fail=1
+fi
+
 if grep -n 'bn_gguf_get_u32(f, key)' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model_arch helpers for arch-prefixed scalar GGUF metadata"
     fail=1

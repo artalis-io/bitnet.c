@@ -398,16 +398,19 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     // MoE config
     bn_model_arch_load_moe_config(c, f, arch_ops, prefix);
     if (bn_model_arch_uses_moe(c)) {
-        if (c->n_experts_active <= 0 || c->moe_intermediate_size <= 0) {
+        int total_experts = bn_model_config_moe_total_experts(c);
+        int active_experts = bn_model_config_moe_active_experts(c);
+        int expert_hidden_dim = bn_model_config_moe_expert_hidden_dim(c);
+        if (!bn_model_config_moe_route_shape_valid(c)) {
             SH_LOG_ERROR("Invalid MoE config: n_experts_active and moe_intermediate_size must be > 0");
             return -1;
         }
 
         {
             char ne_s[16], ka_s[16], mi_s[16];
-            snprintf(ne_s, sizeof(ne_s), "%d", c->n_experts);
-            snprintf(ka_s, sizeof(ka_s), "%d", c->n_experts_active);
-            snprintf(mi_s, sizeof(mi_s), "%d", c->moe_intermediate_size);
+            snprintf(ne_s, sizeof(ne_s), "%d", total_experts);
+            snprintf(ka_s, sizeof(ka_s), "%d", active_experts);
+            snprintf(mi_s, sizeof(mi_s), "%d", expert_hidden_dim);
             SH_LOG_INFO("MoE config", "experts", ne_s, "active", ka_s, "expert_hidden", mi_s);
         }
     }
@@ -858,9 +861,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
             expert_names.down = down_name;
 
-            if (bn_moe_load_expert_map(f, &expert_names, c->n_experts,
-                                       c->moe_intermediate_size,
-                                       &lw->moe.expert_map) != 0)
+            if (bn_moe_load_expert_map(
+                    f, &expert_names,
+                    bn_model_config_moe_total_experts(c),
+                    bn_model_config_moe_expert_hidden_dim(c),
+                    &lw->moe.expert_map) != 0)
                 goto fail_layers;
 
             // Shared expert (optional, always resident)

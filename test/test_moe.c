@@ -1,5 +1,6 @@
 #include "moe.h"
 #include "model.h"
+#include "model_internal.h"
 #include "model_arch.h"
 #include "quant.h"
 #include "../src/moe_internal.h"
@@ -317,6 +318,20 @@ static void test_moe_prefill_policy(void) {
     assert(route_policy.expert_hidden_dim == 128);
     assert(route_policy.norm_topk_prob == 1);
     assert(route_policy.expert_weights_scale == 0.5f);
+    assert(bn_model_config_moe_total_experts(&c) == 4);
+    assert(bn_model_config_moe_active_experts(&c) == 2);
+    assert(bn_model_config_moe_expert_hidden_dim(&c) == 128);
+    assert(bn_model_config_moe_route_shape_valid(&c));
+    assert(bn_model_config_moe_total_experts(NULL) == 0);
+    assert(bn_model_config_moe_active_experts(NULL) == 0);
+    assert(bn_model_config_moe_expert_hidden_dim(NULL) == 0);
+    assert(!bn_model_config_moe_route_shape_valid(NULL));
+    c.n_experts_active = 0;
+    assert(!bn_model_config_moe_route_shape_valid(&c));
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 0;
+    assert(!bn_model_config_moe_route_shape_valid(&c));
+    c.moe_intermediate_size = 128;
     route_policy = bn_moe_route_policy(NULL);
     assert(route_policy.total_experts == 0);
     assert(route_policy.active_experts == 0);
