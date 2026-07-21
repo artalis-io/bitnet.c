@@ -750,7 +750,9 @@ int bn_transformer_gpu_all_active_two_kquant_moe_model(const BnConfig *c,
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
-        if (!lw->moe.router_weight)
+        BnTransformerGPULayerKindPolicy layer_kind =
+            bn_transformer_gpu_layer_kind_policy(lw);
+        if (!layer_kind.uses_moe)
             continue;
         if (bn_transformer_gpu_all_active_two_kquant_moe_layer(c, lw, c->dim))
             return 1;
@@ -1852,7 +1854,9 @@ int bn_transformer_gpu_moe_decode_cacheable(
         return 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
-        if (!lw->moe.router_weight)
+        BnTransformerGPULayerKindPolicy layer_kind =
+            bn_transformer_gpu_layer_kind_policy(lw);
+        if (!layer_kind.uses_moe)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         int routed_kquant_down = bn_transformer_gpu_moe_routed_kquant_down(em);
@@ -2676,7 +2680,9 @@ int bn_transformer_gpu_validate_forward(
             out->has_ssm = 1;
             continue;
         }
-        if (lw->moe.router_weight)
+        BnTransformerGPULayerKindPolicy layer_kind =
+            bn_transformer_gpu_layer_kind_policy(lw);
+        if (layer_kind.uses_moe)
             out->has_moe = 1;
         if (!lw->attn.wq.data && !lw->ssm.wqkv.data)
             GPU_POLICY_REJECT("attention layer has no wq/wqkv data");

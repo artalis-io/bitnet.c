@@ -3083,6 +3083,11 @@ if grep -n 'BN_GPU_BACKEND_CUDA\|BN_GPU_BACKEND_METAL\|BN_GPU_BACKEND_WEBGPU\|BN
     fail=1
 fi
 
+if grep -n 'if (!lw->moe\.router_weight)\|if (lw->moe\.router_weight)' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use layer-kind policy for MoE layer decisions"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_metal_specialized_native_quant_enabled\|bn_gpu_policy_metal_native_quant_prepared_enabled' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU policy must use backend-neutral behavior helpers for Metal native-quant policy"
     fail=1
