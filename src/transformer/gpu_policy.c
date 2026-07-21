@@ -938,7 +938,7 @@ int bn_transformer_gpu_batch_prefill_enabled(
         return 0;
     if (bn_transformer_gpu_uses_hybrid_ssm(c)) {
         return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
-               gpu->prefill_ssm_layer &&
+               bn_gpu_backend_can_prefill_ssm_layer(gpu) &&
                bn_gpu_policy_prefill_hybrid_chain_enabled() &&
                !bn_transformer_gpu_prefill_ssm_layer_disabled();
     }
