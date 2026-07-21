@@ -69,6 +69,7 @@ int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c);
 int bn_moe_policy_uses_all_active_two_expert_route(const BnConfig *c,
                                                    int dim);
 int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c);
+int bn_moe_policy_layer_has_router(const BnLayerWeights *lw);
 int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
                                            const BnLayerWeights *lw);
 int bn_moe_policy_supports_resident_routed_ffn_layout(

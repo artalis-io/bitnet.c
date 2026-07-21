@@ -237,7 +237,7 @@ static void *upload_moe_all_proj(BnModel *model,
 static BnModelGPUMoELayerPolicy
 model_gpu_moe_layer_policy(const BnConfig *c, const BnLayerWeights *lw) {
     BnModelGPUMoELayerPolicy policy = {0};
-    policy.uses_moe = lw && lw->moe.router_weight != NULL;
+    policy.uses_moe = bn_moe_policy_layer_has_router(lw);
     if (!c || !policy.uses_moe)
         return policy;
     const BnMoEExpertMap *em = &lw->moe.expert_map;

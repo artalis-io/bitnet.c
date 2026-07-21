@@ -340,6 +340,11 @@ static void test_moe_prefill_policy(void) {
     assert(!bn_moe_policy_uses_all_active_two_expert_set(NULL));
     assert(!bn_moe_policy_uses_all_active_two_expert_route(NULL, 0));
     assert(!bn_moe_policy_uses_grouped_expert_route(NULL));
+    assert(!bn_moe_policy_layer_has_router(NULL));
+    BnLayerWeights routed_lw = {0};
+    assert(!bn_moe_policy_layer_has_router(&routed_lw));
+    routed_lw.moe.router_weight = (float *)1;
+    assert(bn_moe_policy_layer_has_router(&routed_lw));
 
     c.n_experts = 4;
     c.n_experts_active = 2;

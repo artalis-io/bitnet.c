@@ -2668,6 +2668,11 @@ if grep -n '!lw->moe\.router_weight\|lw->moe\.router_weight &&\|lw->moe\.router_
     fail=1
 fi
 
+if grep -n 'router_weight != NULL' src/model_gpu.c >/dev/null 2>&1; then
+    echo "src/model_gpu.c must compose MoE router policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->n_experts > 2' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose model_arch helpers for MoE shape policy"
     fail=1
