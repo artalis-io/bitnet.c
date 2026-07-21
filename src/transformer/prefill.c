@@ -130,30 +130,31 @@ static float *prefill_decode_tokens_with_logits(BnModel *m, BnSession *sess,
     return need_last_logits ? logits : (logits ? sess->state.x : NULL);
 }
 
-static int prefill_force_float_kquant(const BnModel *m) {
+static int prefill_uses_float_kquant_fallback(const BnModel *m) {
     return m && bn_transformer_cpu_prefill_force_float_kquant_enabled(
         &m->config);
 }
 
-static int prefill_qweight_is_kquant(const BnQWeight *w) {
+static int prefill_qweight_uses_float_kquant_fallback(const BnQWeight *w) {
     return w && bn_transformer_prefill_uses_float_kquant_fallback(w->type);
 }
 
-static uint32_t prefill_float_kquant_task_flags(void) {
+static uint32_t prefill_float_kquant_fallback_task_flags(void) {
     return bn_transformer_prefill_float_kquant_fallback_task_flags(1);
 }
 
-static int prefill_all_kquant(const BnQWeight *const *W, int n) {
+static int prefill_all_weights_use_float_kquant_fallback(
+        const BnQWeight *const *W, int n) {
     if (n <= 0)
         return 0;
     for (int i = 0; i < n; i++) {
-        if (!prefill_qweight_is_kquant(W[i]))
+        if (!prefill_qweight_uses_float_kquant_fallback(W[i]))
             return 0;
     }
     return 1;
 }
 
-static void prefill_quant_matmul_forced_kquant(
+static void prefill_quant_matmul_float_kquant_fallback(
         const BnModel *m, float **out, const BnQWeight **W, int n,
         const float *X, int n_tokens, int8_t *quantized_buf) {
     const BnBackendModel *backend = bn_model_backend(m);
@@ -166,7 +167,7 @@ static void prefill_quant_matmul_forced_kquant(
                 out[i] + (size_t)t * W[i]->rows,
                 W[i],
                 bn_backend_model_prepared_qweight(backend, W[i]),
-                prefill_float_kquant_task_flags()
+                prefill_float_kquant_fallback_task_flags()
             };
         }
         bn_transformer_prefill_quant_matvec_batch(
@@ -182,10 +183,11 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      int n_tokens,
                                      int8_t *quantized_buf) {
     if (!bn_model_gpu(m)) {
-        if (prefill_force_float_kquant(m) && prefill_qweight_is_kquant(W)) {
+        if (prefill_uses_float_kquant_fallback(m) &&
+            prefill_qweight_uses_float_kquant_fallback(W)) {
             float *outs[1] = { out };
             const BnQWeight *weights[1] = { W };
-            prefill_quant_matmul_forced_kquant(
+            prefill_quant_matmul_float_kquant_fallback(
                 m, outs, weights, 1, X, n_tokens, quantized_buf);
             return;
         }
@@ -222,9 +224,9 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        int n_tokens,
                                        int8_t *quantized_buf) {
     if (!bn_model_gpu(m)) {
-        if (n <= 4 && prefill_force_float_kquant(m) &&
-            prefill_all_kquant(W, n)) {
-            prefill_quant_matmul_forced_kquant(
+        if (n <= 4 && prefill_uses_float_kquant_fallback(m) &&
+            prefill_all_weights_use_float_kquant_fallback(W, n)) {
+            prefill_quant_matmul_float_kquant_fallback(
                 m, out, W, n, X, n_tokens, quantized_buf);
             return;
         }
@@ -1230,7 +1232,7 @@ static int prefill_try_prepared_kquant_multi(const BnModel *m,
         return 0;
     for (int i = 0; i < n; i++) {
         if (!bn_transformer_prefill_route_prepared_kquant_type_enabled(
-                ops, bn_model_gpu(m), prefill_force_float_kquant(m), dim,
+                ops, bn_model_gpu(m), prefill_uses_float_kquant_fallback(m), dim,
                 W[i]->type))
             return 0;
     }
@@ -1254,7 +1256,7 @@ static int prefill_try_prepared_kquant_matvec_batch(const BnModel *m,
         return 0;
     for (int i = 0; i < n; i++) {
         if (!bn_transformer_prefill_route_prepared_kquant_type_enabled(
-                ops, bn_model_gpu(m), prefill_force_float_kquant(m), dim,
+                ops, bn_model_gpu(m), prefill_uses_float_kquant_fallback(m), dim,
                 tasks[i].W->type))
             return 0;
     }
@@ -1946,7 +1948,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 int used_prepared_kquant =
                     bn_transformer_prefill_route_prepared_kquant_triple_enabled(
                         prefill_cpu_ops(), bn_model_gpu(m),
-                        prefill_force_float_kquant(m), dim,
+                        prefill_uses_float_kquant_fallback(m), dim,
                         lw->attn.wq.type, lw->attn.wk.type,
                         lw->attn.wv.type) &&
                     prefill_try_prepared_kquant_multi(
@@ -2343,7 +2345,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 ssm_prepared_kquant =
                     bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                         prefill_cpu_ops(), bn_model_gpu(m),
-                        prefill_force_float_kquant(m), dim,
+                        prefill_uses_float_kquant_fallback(m), dim,
                         lw->ssm.wqkv.type, lw->ssm.wz.type) &&
                     prefill_try_prepared_kquant_multi(
                         m, &prepared_kquant, qz_out, qz_w, 2, Xb, dim,
@@ -2391,7 +2393,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 if (!ssm_prepared_kquant ||
                     !bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                         prefill_cpu_ops(), bn_model_gpu(m),
-                        prefill_force_float_kquant(m), dim,
+                        prefill_uses_float_kquant_fallback(m), dim,
                         lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type) ||
                     !prefill_try_prepared_kquant_matvec_batch(
                         m, &prepared_kquant, ab, 2, xb_t, dim, t)) {
@@ -2502,7 +2504,7 @@ prefill_ssm_done:
                     };
                     if (!bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                             prefill_cpu_ops(), bn_model_gpu(m),
-                            prefill_force_float_kquant(m), dim,
+                            prefill_uses_float_kquant_fallback(m), dim,
                             lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) ||
                         !prefill_try_prepared_kquant_multi(m, &prepared_kquant, gu_out, gu_w,
                                                   2, Xb, dim, n_tokens))
