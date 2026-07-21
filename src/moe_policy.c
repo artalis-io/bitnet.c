@@ -1,7 +1,6 @@
 #include "moe_internal.h"
 #include "backend_quant.h"
 #include "model_internal.h"
-#include "transformer_cpu_backend_internal.h"
 
 uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
     return bn_model_config_moe_forces_float_kquant_gateup(c)
@@ -138,11 +137,12 @@ int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
 int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
     int shared_gate_type,
     int shared_up_type,
-    int batch_type) {
+    int batch_type,
+    int mixed_shared_gateup_supported) {
     if (!bn_moe_policy_supports_shared_gateup_batch_type(
             shared_gate_type, shared_up_type, batch_type))
         return 0;
-    if (bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch())
+    if (mixed_shared_gateup_supported)
         return 1;
     return bn_backend_quant_same_quant_format_pair_stackable(shared_gate_type,
                                                      batch_type) &&

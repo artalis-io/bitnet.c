@@ -311,12 +311,15 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
                                    int shared_gate_type, int shared_up_type) {
     if (!tasks || n_tasks <= 0)
         return 0;
+    int mixed_shared_gateup_supported = BN_TRANSFORMER_CPU_HAS_AVX2;
     int batch_type = tasks[0].W->type;
     int can_batch = bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
-        shared_gate_type, shared_up_type, batch_type);
+        shared_gate_type, shared_up_type, batch_type,
+        mixed_shared_gateup_supported);
     for (int i = 1; can_batch && i < n_tasks; i++)
         can_batch = bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
-            shared_gate_type, shared_up_type, tasks[i].W->type);
+            shared_gate_type, shared_up_type, tasks[i].W->type,
+            mixed_shared_gateup_supported);
     return can_batch;
 }
 

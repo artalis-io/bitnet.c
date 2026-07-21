@@ -49,10 +49,6 @@ int bn_transformer_cpu_has_native_quant_activation(void) {
     return BN_TRANSFORMER_CPU_HAS_NATIVE_QUANT_ACTIVATION;
 }
 
-int bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch(void) {
-    return BN_TRANSFORMER_CPU_HAS_AVX2;
-}
-
 void bn_transformer_cpu_prepare_kquant_activation(const float *x,
                                                   int8_t *quantized,
                                                   float *scales,

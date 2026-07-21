@@ -1378,6 +1378,11 @@ if grep -n 'cpu_reference_q4_dot_env_enabled' src/transformer/cpu_policy.c >/dev
     fail=1
 fi
 
+if grep -n 'transformer_cpu_backend_internal.h\|bn_transformer_cpu_backend_supports_' src/moe_policy.c >/dev/null 2>&1; then
+    echo "MoE policy must take CPU backend capabilities as inputs, not depend on transformer CPU backend internals"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled/{flag=1} /^int bn_transformer_cpu_activation_is_relu2/{flag=0} flag{print}' src/transformer/cpu_policy.c | grep -n 'bn_model_arch_activation_' >/dev/null 2>&1; then
     echo "CPU fast-path policy must use CPU activation policy helpers"
     fail=1

@@ -4,7 +4,6 @@
 #include "model_arch.h"
 #include "quant.h"
 #include "../src/moe_internal.h"
-#include "transformer_cpu_backend_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -460,12 +459,13 @@ static void test_moe_quant_policy_helpers(void) {
     assert(!bn_moe_policy_supports_shared_gateup_batch_type(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q8_K));
     assert(bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
-        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0, 0));
     assert(!bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
-        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_0));
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q4_0, 0));
+    assert(!bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K, 0));
     assert(bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
-        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K) ==
-           bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch());
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K, 1));
 
     BnLayerWeights lw = {0};
     float shared_gate_data[4] = {0};

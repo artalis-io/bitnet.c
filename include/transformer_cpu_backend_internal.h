@@ -108,7 +108,6 @@ bn_tp_fn bn_transformer_cpu_ssm_delta_op(const BnConfig *c,
 bn_tp_fn bn_transformer_cpu_ssm_gate_op(const BnConfig *c,
                                         const BnCPUBackendOps *ops);
 int bn_transformer_cpu_backend_supports_float_kquant_prefill(void);
-int bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch(void);
 int bn_transformer_cpu_has_native_quant_activation(void);
 void bn_transformer_cpu_prepare_kquant_activation(const float *x,
                                                   int8_t *quantized,

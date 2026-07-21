@@ -111,7 +111,8 @@ int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
 int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
     int shared_gate_type,
     int shared_up_type,
-    int batch_type);
+    int batch_type,
+    int mixed_shared_gateup_supported);
 int bn_moe_policy_can_batch_loaded_shared_gateup(
     const BnMatvecTask *tasks,
     int n_tasks,
