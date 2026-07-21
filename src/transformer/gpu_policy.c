@@ -2337,8 +2337,7 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
 }
 
 uint32_t bn_transformer_gpu_moe_route_normalization_flags(const BnConfig *c) {
-    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
-    return route_policy.norm_topk_prob
+    return bn_moe_policy_normalizes_topk_route_weights(c)
         ? 0u
         : BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
 }
@@ -2419,11 +2418,10 @@ int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all) {
-    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     return router_diff &&
            bn_moe_policy_uses_all_active_two_expert_route(
                c, c ? c->dim : 0) &&
-           route_policy.norm_topk_prob &&
+           bn_moe_policy_normalizes_topk_route_weights(c) &&
            !moe_gate_all &&
            bn_gpu_policy_moe_router_gpu_enabled();
 }

@@ -61,6 +61,10 @@ int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c) {
     return bn_model_config_uses_more_than_two_expert_moe(c);
 }
 
+int bn_moe_policy_normalizes_topk_route_weights(const BnConfig *c) {
+    return c ? c->moe_norm_topk_prob : 0;
+}
+
 int bn_moe_policy_layer_has_router(const BnLayerWeights *lw) {
     return lw ? lw->moe.router_weight != NULL : 0;
 }

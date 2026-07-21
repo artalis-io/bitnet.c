@@ -1383,6 +1383,16 @@ if grep -n 'transformer_cpu_backend_internal.h\|bn_transformer_cpu_backend_suppo
     fail=1
 fi
 
+if awk '/^uint32_t bn_transformer_gpu_moe_route_normalization_flags/{flag=1}
+        /^BnTransformerGPUMoEDecodeRoutePolicy/{flag=0}
+        flag{print}
+        /^int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled/{flag=1}
+        /^int bn_transformer_gpu_all_active_two_kquant_moe_route_layer_selected/{flag=0}' \
+        src/transformer/gpu_policy.c | grep -n 'norm_topk_prob' >/dev/null 2>&1; then
+    echo "Transformer GPU MoE route policy must use behavior-named normalized top-k route helpers"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled/{flag=1} /^int bn_transformer_cpu_activation_is_relu2/{flag=0} flag{print}' src/transformer/cpu_policy.c | grep -n 'bn_model_arch_activation_' >/dev/null 2>&1; then
     echo "CPU fast-path policy must use CPU activation policy helpers"
     fail=1

@@ -317,6 +317,11 @@ static void test_moe_prefill_policy(void) {
     assert(route_policy.expert_hidden_dim == 128);
     assert(route_policy.norm_topk_prob == 1);
     assert(route_policy.expert_weights_scale == 0.5f);
+    assert(bn_moe_policy_normalizes_topk_route_weights(&c));
+    c.moe_norm_topk_prob = 0;
+    assert(!bn_moe_policy_normalizes_topk_route_weights(&c));
+    c.moe_norm_topk_prob = 1;
+    assert(!bn_moe_policy_normalizes_topk_route_weights(NULL));
     assert(bn_model_config_moe_total_experts(&c) == 4);
     assert(bn_model_config_moe_active_experts(&c) == 2);
     assert(bn_model_config_moe_expert_hidden_dim(&c) == 128);

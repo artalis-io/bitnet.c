@@ -2959,6 +2959,13 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
     assert(bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
         &c, (void *)1, NULL));
+    assert(bn_transformer_gpu_moe_route_normalization_flags(&c) == 0u);
+    c.moe_norm_topk_prob = 0;
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
+        &c, (void *)1, NULL));
+    assert(bn_transformer_gpu_moe_route_normalization_flags(&c) ==
+           BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM);
+    c.moe_norm_topk_prob = 1;
     gpu.kind = BN_GPU_BACKEND_CUDA;
     BnTransformerGPUMoEDirectRoutePolicy direct_route =
         bn_transformer_gpu_moe_direct_route_policy(&gpu, &c, (void *)1, NULL);
