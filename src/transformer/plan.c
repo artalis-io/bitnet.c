@@ -529,9 +529,10 @@ void bn_transformer_plan_moe(BnMoEPlan *p,
     p->layer = layer;
     p->placement = bn_transformer_preferred_placement(gpu, prefer_gpu);
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
-    p->n_experts = c->n_experts;
-    p->n_active = c->n_experts_active;
-    p->hidden_dim = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    p->n_experts = route_policy.total_experts;
+    p->n_active = route_policy.active_experts;
+    p->hidden_dim = route_policy.expert_hidden_dim;
     p->has_shared_expert = bn_transformer_moe_has_shared_expert(c, lw);
     p->shared_hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
     if (bn_transformer_moe_requires_cpu_fallback(p->placement, lw)) {

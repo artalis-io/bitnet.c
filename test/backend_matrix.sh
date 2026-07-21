@@ -3921,6 +3921,16 @@ if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_
     fail=1
 fi
 
+if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must use MoE policy helpers for routed expert shape and weighting"
+    fail=1
+fi
+
+if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|m->config\.n_experts\|m->config\.moe_intermediate_size\|m->config\.moe_norm_topk_prob\|m->config\.moe_expert_weights_scale' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use MoE policy helpers for routed expert shape and weighting"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/session.c >/dev/null 2>&1; then
     echo "src/session.c must use model-policy helpers instead of reaching into model_arch"
     fail=1

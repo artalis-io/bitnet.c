@@ -13,6 +13,7 @@
 #include "sh_arena.h"
 #include "sh_log.h"
 #include "platform.h"
+#include "../moe_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -541,7 +542,6 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
                                        float *V_out,
                                        int n_tokens,
                                        int dim,
-                                       int moe_hidden_dim,
                                        int n_heads,
                                        int n_kv_heads,
                                        int head_size,
@@ -555,6 +555,7 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
                                        float attention_scale) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
     if (!bn_transformer_prefill_moe_layer_backend_available(
@@ -610,8 +611,8 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         up_all_buf, down_all_buf, shared.gate, shared.up,
         shared.down, shared.gate_weight, attn_norm_buf, ffn_norm_buf,
         q_norm_buf, k_norm_buf, q_bias_buf, k_bias_buf, v_bias_buf,
-        X, K_out, V_out, n_tokens, dim, moe_hidden_dim,
-        m->config.n_experts, m->config.n_experts_active, n_heads,
+        X, K_out, V_out, n_tokens, dim, route_policy.expert_hidden_dim,
+        route_policy.total_experts, route_policy.active_experts, n_heads,
         n_kv_heads, head_size, kv_mul, kv_dim,
         lw->attn.wq.rows + lw->attn.wk.rows, lw->attn.wq.type,
         lw->attn.wv.rows, lw->attn.wv.type, lw->attn.wo.rows,
@@ -622,8 +623,8 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         shared.down_type,
         m->config.qk_norm_per_head, m->config.norm_eps, pos0, rope_dims,
         kv_cache_off, kv_cache_stride,
-        attention_scale, m->config.moe_norm_topk_prob,
-        m->config.moe_expert_weights_scale);
+        attention_scale, route_policy.norm_topk_prob,
+        route_policy.expert_weights_scale);
 }
 
 static int prefill_moe_ffn_gpu_batch(const BnModel *m,
@@ -661,17 +662,19 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
     BnTransformerGPUMoESharedFFNResources shared;
     if (prefill_shared_expert_resources(&shared, c, lw, backend, layer) < 0)
         return -1;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
 
     return bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
         gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
         shared.gate, shared.up, shared.down,
         shared.gate_weight, ffn_norm_buf, X, n_tokens, dim,
-        c->moe_intermediate_size, c->n_experts, c->n_experts_active,
+        route_policy.expert_hidden_dim, route_policy.total_experts,
+        route_policy.active_experts,
         lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
         lw->moe.expert_map.down_type, c->act_type,
         shared.hidden_dim, shared.gate_type, shared.up_type,
-        shared.down_type, c->norm_eps, c->moe_norm_topk_prob,
-        c->moe_expert_weights_scale);
+        shared.down_type, c->norm_eps, route_policy.norm_topk_prob,
+        route_policy.expert_weights_scale);
 }
 
 static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
@@ -1563,8 +1566,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                           m, layer_out, lw, layer_in,
                           chain_kv.write_host_kv ? K_new : NULL,
                           chain_kv.write_host_kv ? V_new : NULL,
-                          n_tokens, dim, c->moe_intermediate_size,
-                          c->n_heads, layer_n_kv_heads, layer_head_size,
+                          n_tokens, dim, c->n_heads, layer_n_kv_heads,
+                          layer_head_size,
                           layer_kv_mul, layer_kv_dim, layer_rope_dims,
                           l, pos0, kv_cache_off, kv_dim,
                           prefill_attention_scale(c, layer_head_size))
@@ -1673,8 +1676,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                               m, layer_out, lw, layer_in,
                               chain_kv.write_host_kv ? K_new : NULL,
                               chain_kv.write_host_kv ? V_new : NULL,
-                              n_tokens, dim, c->moe_intermediate_size,
-                              c->n_heads, layer_n_kv_heads, layer_head_size,
+                              n_tokens, dim, c->n_heads, layer_n_kv_heads,
+                              layer_head_size,
                               layer_kv_mul, layer_kv_dim, layer_rope_dims, l,
                               pos0, kv_cache_off, kv_dim,
                               prefill_attention_scale(c, layer_head_size))
