@@ -267,6 +267,10 @@ int bn_transformer_attention_uses_rope_qk_fusion(
     BnExecPlacement placement,
     const void *k_bias);
 BnKVMode bn_transformer_kv_mode(const BnConfig *c, int tq_enabled);
+int bn_transformer_kv_mode_stores_host_float_rows(BnKVMode mode);
+int bn_transformer_kv_mode_uses_turboquant(BnKVMode mode);
+int bn_transformer_kv_mode_uses_fp16(BnKVMode mode);
+int bn_transformer_kv_mode_uses_cpu_gqa_cache(BnKVMode mode);
 void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
                                      const BnConfig *c,
                                      const BnLayerWeights *lw,

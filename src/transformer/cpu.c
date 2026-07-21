@@ -423,6 +423,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         int q_dim = shape->q_dim;
         int q_gated = shape->q_gated;
         int q_wide = shape->q_wide;
+        BnKVMode kv_mode = shape->kv_mode;
 
         /* Prepared K-quant attn RMSNorm: quantize s->xb once, reuse for Q and K+V */
         int attn_prepared_kquant = 0;
@@ -455,7 +456,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             float *v_tmp = s->hb2 + kv_dim;
 
             // Q+K+V matvecs (reuse cached prepared K-quant activation if available)
-            if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m)) && !c->kv_f16) {
+            if (bn_transformer_kv_mode_stores_host_float_rows(kv_mode)) {
                 float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
                 float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
                 BnMatvecTask qkv[3] = {
@@ -512,19 +513,19 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                              layer_rope_dims, rope_cos, rope_sin);
 
             // Write KV + GQA
-            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
+            if (bn_transformer_kv_mode_uses_turboquant(kv_mode)) {
                 bn_transformer_tq_write_kv(bn_model_tq_state(m), s, k_tmp, v_tmp,
                             n_kv_heads, head_size, attn_idx, cache_pos, c->seq_len);
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
-            } else if (c->kv_f16) {
+            } else if (bn_transformer_kv_mode_uses_fp16(kv_mode)) {
                 bn_transformer_write_kv_fp16(s, loff, cache_pos,
                                              kv_cache_stride, k_tmp, v_tmp,
                                              kv_dim);
             }
             // FP32 path already wrote to cache directly
 
-            if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m))) {
+            if (bn_transformer_kv_mode_uses_cpu_gqa_cache(kv_mode)) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len,
@@ -565,7 +566,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             if (!has_kv) {
                 /* Shared-KV layer: Q-only projection, then attend to the
                  * reused cache layer selected by the model-family policy. */
-            } else if ((c->kv_tq_bits > 0 && bn_model_tq_state(m)) || c->kv_f16) {
+            } else if (!bn_transformer_kv_mode_stores_host_float_rows(kv_mode)) {
                 BnMatvecTask kv[2] = {
                      { k_tmp, &lw->attn.wk, NULL, 0 },
                      { v_tmp, &lw->attn.wv, NULL, 0 },
@@ -600,13 +601,13 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 bn_transformer_cpu_apply_rope_heads(k_tmp, n_kv_heads, head_size,
                                  layer_rope_dims, rope_cos, rope_sin);
 
-            if (has_kv && c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
+            if (has_kv && bn_transformer_kv_mode_uses_turboquant(kv_mode)) {
                 // TQ write + GQA
                 bn_transformer_tq_write_kv(bn_model_tq_state(m), s, k_tmp, v_tmp,
                             n_kv_heads, head_size, attn_idx, cache_pos, c->seq_len);
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
-            } else if (has_kv && c->kv_f16) {
+            } else if (has_kv && bn_transformer_kv_mode_uses_fp16(kv_mode)) {
                 bn_transformer_write_kv_fp16(s, loff, cache_pos,
                                              kv_cache_stride, k_tmp, v_tmp,
                                              kv_dim);
@@ -640,7 +641,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             float *key_cache_row   = s->key_cache   + loff + (size_t)cache_pos * kv_cache_stride;
             float *value_cache_row = s->value_cache + loff + (size_t)cache_pos * kv_cache_stride;
 
-            if (c->kv_tq_bits > 0 && bn_model_tq_state(m)) {
+            if (bn_transformer_kv_mode_uses_turboquant(kv_mode)) {
                 // --- TurboQuant KV path ---
                 // Use temp buffers for K/V, then quantize into TQ cache
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
@@ -684,7 +685,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 bn_transformer_tq_gqa_dispatch(m, s, attn_idx, pos, n_heads,
                                 n_kv_heads, head_size, kv_mul);
 
-            } else if (c->kv_f16) {
+            } else if (bn_transformer_kv_mode_uses_fp16(kv_mode)) {
                 float *k_tmp = s->hb, *v_tmp = s->hb2;
                 BnMatvecTask qkv[3] = {
                      { s->q,  &lw->attn.wq, NULL, 0 },
@@ -762,7 +763,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
             }
 
             // GQA attention (standard path — TQ handled above)
-            if (!(c->kv_tq_bits > 0 && bn_model_tq_state(m))) {
+            if (bn_transformer_kv_mode_uses_cpu_gqa_cache(kv_mode)) {
                 int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                 BnGQACtx gctx = { c, s, loff, pos, n_kv, kv_mul, head_size, kv_cache_stride,
                                   c->seq_len,

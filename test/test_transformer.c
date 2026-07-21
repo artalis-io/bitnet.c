@@ -583,11 +583,26 @@ static void test_cpu_execution_helpers(void) {
 
     BnConfig kv = {0};
     assert(bn_transformer_kv_host_float_cache_rows_available(&kv));
+    assert(bn_transformer_kv_mode(&kv, 0) == BN_KV_FP32);
+    assert(bn_transformer_kv_mode_stores_host_float_rows(BN_KV_FP32));
+    assert(!bn_transformer_kv_mode_uses_turboquant(BN_KV_FP32));
+    assert(!bn_transformer_kv_mode_uses_fp16(BN_KV_FP32));
+    assert(bn_transformer_kv_mode_uses_cpu_gqa_cache(BN_KV_FP32));
     kv.kv_f16 = 1;
     assert(!bn_transformer_kv_host_float_cache_rows_available(&kv));
+    assert(bn_transformer_kv_mode(&kv, 0) == BN_KV_FP16);
+    assert(!bn_transformer_kv_mode_stores_host_float_rows(BN_KV_FP16));
+    assert(!bn_transformer_kv_mode_uses_turboquant(BN_KV_FP16));
+    assert(bn_transformer_kv_mode_uses_fp16(BN_KV_FP16));
+    assert(bn_transformer_kv_mode_uses_cpu_gqa_cache(BN_KV_FP16));
     kv.kv_f16 = 0;
     kv.kv_tq_bits = 3;
     assert(!bn_transformer_kv_host_float_cache_rows_available(&kv));
+    assert(bn_transformer_kv_mode(&kv, 1) == BN_KV_TQ);
+    assert(!bn_transformer_kv_mode_stores_host_float_rows(BN_KV_TQ));
+    assert(bn_transformer_kv_mode_uses_turboquant(BN_KV_TQ));
+    assert(!bn_transformer_kv_mode_uses_fp16(BN_KV_TQ));
+    assert(!bn_transformer_kv_mode_uses_cpu_gqa_cache(BN_KV_TQ));
     assert(!bn_transformer_kv_host_float_cache_rows_available(NULL));
 
     printf("PASSED\n");
