@@ -748,6 +748,8 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
 
     /* Compute buffer sizes (same logic as wgpu) */
     int n_attn = bn_gpu_policy_attention_layer_count(c);
+    BnGPUMoERouteShape moe_route_shape =
+        bn_gpu_policy_moe_route_shape(c);
     int q_dim = c->n_heads * c->head_size;
     int xb_size = q_dim > c->dim ? q_dim : c->dim;
 
@@ -758,7 +760,8 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
     sizes[BN_GPU_BUF_Q]           = (size_t)q_dim * sizeof(float);
     {
         int hb_dim = c->hidden_dim;
-        if (c->moe_intermediate_size > hb_dim) hb_dim = c->moe_intermediate_size;
+        if (moe_route_shape.expert_hidden_dim > hb_dim)
+            hb_dim = moe_route_shape.expert_hidden_dim;
         sizes[BN_GPU_BUF_HB]  = (size_t)hb_dim * sizeof(float);
         sizes[BN_GPU_BUF_HB2] = (size_t)hb_dim * sizeof(float);
     }
@@ -774,9 +777,11 @@ static int metal_init_activations(void *vctx, const void *config_ptr)
         sizes[BN_GPU_BUF_QKV] = qkv_size > gated_q_size ? qkv_size : gated_q_size;
     }
 
-    if (c->moe_intermediate_size > 0) {
-        sizes[BN_GPU_BUF_MOE_HB]  = (size_t)c->moe_intermediate_size * sizeof(float);
-        sizes[BN_GPU_BUF_MOE_HB2] = (size_t)c->moe_intermediate_size * sizeof(float);
+    if (moe_route_shape.expert_hidden_dim > 0) {
+        sizes[BN_GPU_BUF_MOE_HB] =
+            (size_t)moe_route_shape.expert_hidden_dim * sizeof(float);
+        sizes[BN_GPU_BUF_MOE_HB2] =
+            (size_t)moe_route_shape.expert_hidden_dim * sizeof(float);
         sizes[BN_GPU_BUF_MOE_OUT] = (size_t)c->dim * sizeof(float);
     }
 

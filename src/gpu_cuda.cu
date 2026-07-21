@@ -11013,11 +11013,13 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
     ctx->has_moe_model = bn_gpu_policy_uses_moe(c);
 
     int n_attn = bn_gpu_policy_attention_layer_count(c);
+    BnGPUMoERouteShape moe_route_shape =
+        bn_gpu_policy_moe_route_shape(c);
     int q_dim = c->n_heads * c->head_size;
     int xb_size = q_dim > c->dim ? q_dim : c->dim;
     int hb_dim = c->hidden_dim;
-    if (c->moe_intermediate_size > hb_dim)
-        hb_dim = c->moe_intermediate_size;
+    if (moe_route_shape.expert_hidden_dim > hb_dim)
+        hb_dim = moe_route_shape.expert_hidden_dim;
 
     size_t sizes[BN_GPU_VALUE_COUNT] = {0};
     sizes[BN_GPU_VALUE_X] = (size_t)c->dim * sizeof(float);
@@ -11050,16 +11052,19 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
             ? qkv_size
             : gated_q_size;
     }
-    if (c->moe_intermediate_size > 0) {
-        int moe_scratch = c->moe_intermediate_size;
-        if (c->n_experts > moe_scratch)
-            moe_scratch = c->n_experts;
-        if (2 * c->n_experts_active > moe_scratch)
-            moe_scratch = 2 * c->n_experts_active;
-        if (c->n_experts_active > 0 &&
-            c->moe_intermediate_size <= INT_MAX / c->n_experts_active &&
-            c->moe_intermediate_size * c->n_experts_active > moe_scratch)
-            moe_scratch = c->moe_intermediate_size * c->n_experts_active;
+    if (moe_route_shape.expert_hidden_dim > 0) {
+        int moe_scratch = moe_route_shape.expert_hidden_dim;
+        if (moe_route_shape.total_experts > moe_scratch)
+            moe_scratch = moe_route_shape.total_experts;
+        if (2 * moe_route_shape.active_experts > moe_scratch)
+            moe_scratch = 2 * moe_route_shape.active_experts;
+        if (moe_route_shape.active_experts > 0 &&
+            moe_route_shape.expert_hidden_dim <=
+                INT_MAX / moe_route_shape.active_experts &&
+            moe_route_shape.expert_hidden_dim *
+                moe_route_shape.active_experts > moe_scratch)
+            moe_scratch = moe_route_shape.expert_hidden_dim *
+                moe_route_shape.active_experts;
         sizes[BN_GPU_VALUE_MOE_HB] =
             (size_t)moe_scratch * sizeof(float);
         sizes[BN_GPU_VALUE_MOE_HB2] =

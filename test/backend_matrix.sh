@@ -207,6 +207,14 @@ if grep -n 'bn_gpu_policy_cuda_q5_matvec4_enabled\|bn_gpu_policy_cuda_q5_warp_en
     fail=1
 fi
 
+if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts' \
+    src/gpu_wgpu.c \
+    src/gpu_metal.m \
+    src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "GPU backend activation sizing must use GPU MoE route-shape policy"
+    fail=1
+fi
+
 if sed -n '/int small_state_native_matvec =/,/bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q3_K\|op->type == BN_GGUF_TENSOR_IQ3_XXS\|op->type == BN_GGUF_TENSOR_IQ4_XS\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA f16/logits matvec quant predicates"
     fail=1

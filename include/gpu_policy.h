@@ -10,6 +10,12 @@
 extern "C" {
 #endif
 
+typedef struct {
+    int total_experts;
+    int active_experts;
+    int expert_hidden_dim;
+} BnGPUMoERouteShape;
+
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible);
 BnBackendPlacement bn_gpu_policy_backend_placement(const BnGPUBackend *gpu);
 int bn_gpu_policy_float_buffer_type(void);
@@ -18,6 +24,7 @@ int bn_gpu_policy_ssm_layer_count(const BnConfig *c);
 int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c);
 int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c);
 int bn_gpu_policy_uses_moe(const BnConfig *c);
+BnGPUMoERouteShape bn_gpu_policy_moe_route_shape(const BnConfig *c);
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c);
 int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c);
 int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(

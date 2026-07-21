@@ -491,6 +491,10 @@ static void test_gpu_policy_helpers(void) {
     moe.n_experts = 2;
     moe.n_experts_active = 2;
     moe.moe_intermediate_size = 4096;
+    BnGPUMoERouteShape route_shape = bn_gpu_policy_moe_route_shape(&moe);
+    assert(route_shape.total_experts == 2);
+    assert(route_shape.active_experts == 2);
+    assert(route_shape.expert_hidden_dim == 4096);
     assert(bn_gpu_policy_uses_moe(&moe));
     BnModel moe_model = {0};
     moe_model.config = moe;

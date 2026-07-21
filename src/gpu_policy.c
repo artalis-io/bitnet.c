@@ -1,6 +1,7 @@
 #include "gpu_policy.h"
 #include "backend_quant.h"
 #include "model_internal.h"
+#include "moe_internal.h"
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -616,6 +617,16 @@ int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c) {
 
 int bn_gpu_policy_uses_moe(const BnConfig *c) {
     return bn_model_config_uses_moe(c);
+}
+
+BnGPUMoERouteShape bn_gpu_policy_moe_route_shape(const BnConfig *c) {
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    BnGPUMoERouteShape shape = {
+        route_policy.total_experts,
+        route_policy.active_experts,
+        route_policy.expert_hidden_dim
+    };
+    return shape;
 }
 
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c) {
