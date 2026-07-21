@@ -42,6 +42,12 @@ typedef struct {
     int uses_grouped_expert_route;
 } BnMoEPrefillPolicy;
 
+typedef struct {
+    const BnQWeight *gate;
+    const BnQWeight *up;
+    const BnQWeight *down;
+} BnMoESharedExpertWeights;
+
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
@@ -101,6 +107,9 @@ int bn_moe_shared_expert_gateup_tasks(BnMatvecTask *tasks,
                                       const BnLayerWeights *lw,
                                       uint32_t flags);
 const BnQWeight *bn_moe_shared_expert_down_weight(const BnLayerWeights *lw);
+int bn_moe_shared_expert_projection_weights(
+    BnMoESharedExpertWeights *out,
+    const BnLayerWeights *lw);
 int bn_moe_quant_uses_embedded_tensor_scale(int type);
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
 void bn_moe_quant_matvec(float *out,

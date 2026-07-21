@@ -629,7 +629,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         float *sh_u = need_sh ? (float *)bn_malloc(&a, sz_shg) : sh_up;
         float *sh_d = need_sh ? (float *)bn_malloc(&a, sz_shd) : sh_down;
 
-        if (sh_g && sh_u && sh_d) {
+        BnMoESharedExpertWeights shared_weights = {0};
+        if (sh_g && sh_u && sh_d &&
+            bn_moe_shared_expert_projection_weights(&shared_weights, lw)) {
             int used_gpu_shared = 0;
             BnGPUBackend *gpu = bn_model_gpu(m);
             BnBackendModel *backend = bn_model_backend(m);
@@ -654,23 +656,23 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     float *gate_t = sh_g + (size_t)t * shared_hidden;
                     float *up_t = sh_u + (size_t)t * shared_hidden;
                     float *down_t = sh_d + (size_t)t * dim;
-                    BnMatvecTask shared_gu[2] = {
-                         { gate_t, &lw->shared.shared_gate, NULL, 0 },
-                         { up_t,   &lw->shared.shared_up,   NULL, 0 },
-                    };
-                    bn_moe_quant_matvec_batch(shared_gu, 2, x_t,
-                                              x_q_scratch, bn_model_pool(m));
+                    BnMatvecTask shared_gu[2];
+                    int n_shared_gu = bn_moe_shared_expert_gateup_tasks(
+                        shared_gu, gate_t, up_t, lw, 0);
+                    if (n_shared_gu > 0)
+                        bn_moe_quant_matvec_batch(shared_gu, n_shared_gu, x_t,
+                                                  x_q_scratch, bn_model_pool(m));
                     for (int h = 0; h < shared_hidden; h++) {
                         float g = gate_t[h];
                         gate_t[h] = (g / (1.0f + expf(-g))) * up_t[h];
                     }
-                    bn_moe_quant_matvec(down_t, &lw->shared.shared_down,
+                    bn_moe_quant_matvec(down_t, shared_weights.down,
                                         gate_t, x_q_scratch, bn_model_pool(m));
                 }
             } else if (!used_gpu_shared) {
-                bn_moe_quant_matmul(sh_g, &lw->shared.shared_gate, Xb,
+                bn_moe_quant_matmul(sh_g, shared_weights.gate, Xb,
                                     n_tokens, x_q_scratch, bn_model_pool(m));
-                bn_moe_quant_matmul(sh_u, &lw->shared.shared_up, Xb,
+                bn_moe_quant_matmul(sh_u, shared_weights.up, Xb,
                                     n_tokens, x_q_scratch, bn_model_pool(m));
 
                 size_t sh_total = (size_t)n_tokens * shared_hidden;
@@ -679,7 +681,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     sh_g[i] = (g / (1.0f + expf(-g))) * sh_u[i];
                 }
 
-                bn_moe_quant_matmul(sh_d, &lw->shared.shared_down, sh_g,
+                bn_moe_quant_matmul(sh_d, shared_weights.down, sh_g,
                                     n_tokens, x_q_scratch, bn_model_pool(m));
             }
 

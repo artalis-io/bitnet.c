@@ -3982,8 +3982,8 @@ if grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE_F
     fail=1
 fi
 
-if grep -n '&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down\|lw->shared\.shared_gate\.type\|lw->shared\.shared_up\.type' src/moe_execute.c >/dev/null 2>&1; then
-    echo "src/moe_execute.c must compose shared expert projection tasks through MoE policy helpers"
+if grep -n '&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down\|lw->shared\.shared_gate\.type\|lw->shared\.shared_up\.type' src/moe_execute.c src/moe_prefill.c >/dev/null 2>&1; then
+    echo "MoE execution must compose shared expert projection tasks through MoE policy helpers"
     fail=1
 fi
 

@@ -432,10 +432,13 @@ static void test_moe_quant_policy_helpers(void) {
     float gate_out[4] = {0};
     float up_out[4] = {0};
     BnMatvecTask shared_tasks[2];
+    BnMoESharedExpertWeights shared_weights;
     assert(!bn_moe_policy_can_batch_loaded_shared_gateup(NULL, 0, &lw));
     assert(bn_moe_shared_expert_gateup_tasks(
                shared_tasks, gate_out, up_out, &lw, 123u) == 0);
     assert(bn_moe_shared_expert_down_weight(&lw) == NULL);
+    assert(!bn_moe_shared_expert_projection_weights(
+        &shared_weights, &lw));
 
     lw.shared.shared_gate.data = shared_gate_data;
     lw.shared.shared_gate.type = BN_GGUF_TENSOR_Q4_0;
@@ -459,6 +462,11 @@ static void test_moe_quant_policy_helpers(void) {
     assert(shared_tasks[1].flags == 123u);
     assert(bn_moe_shared_expert_down_weight(&lw) ==
            &lw.shared.shared_down);
+    assert(bn_moe_shared_expert_projection_weights(
+        &shared_weights, &lw));
+    assert(shared_weights.gate == &lw.shared.shared_gate);
+    assert(shared_weights.up == &lw.shared.shared_up);
+    assert(shared_weights.down == &lw.shared.shared_down);
 
     printf("PASSED\n");
 }

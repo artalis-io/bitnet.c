@@ -136,22 +136,35 @@ int bn_moe_shared_expert_gateup_tasks(BnMatvecTask *tasks,
                                       float *up_out,
                                       const BnLayerWeights *lw,
                                       uint32_t flags) {
+    BnMoESharedExpertWeights weights;
     if (!tasks || !gate_out || !up_out ||
-        !bn_moe_policy_has_loaded_shared_gate_projection(lw))
+        !bn_moe_shared_expert_projection_weights(&weights, lw))
         return 0;
     tasks[0] = (BnMatvecTask){
-        gate_out, &lw->shared.shared_gate, NULL, flags
+        gate_out, weights.gate, NULL, flags
     };
     tasks[1] = (BnMatvecTask){
-        up_out, &lw->shared.shared_up, NULL, flags
+        up_out, weights.up, NULL, flags
     };
     return 2;
 }
 
 const BnQWeight *bn_moe_shared_expert_down_weight(const BnLayerWeights *lw) {
-    return bn_moe_policy_has_loaded_shared_gate_projection(lw)
-        ? &lw->shared.shared_down
+    BnMoESharedExpertWeights weights;
+    return bn_moe_shared_expert_projection_weights(&weights, lw)
+        ? weights.down
         : NULL;
+}
+
+int bn_moe_shared_expert_projection_weights(
+    BnMoESharedExpertWeights *out,
+    const BnLayerWeights *lw) {
+    if (!out || !bn_moe_policy_has_loaded_shared_gate_projection(lw))
+        return 0;
+    out->gate = &lw->shared.shared_gate;
+    out->up = &lw->shared.shared_up;
+    out->down = &lw->shared.shared_down;
+    return 1;
 }
 
 int bn_moe_quant_uses_embedded_tensor_scale(int type) {
