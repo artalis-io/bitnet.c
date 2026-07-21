@@ -1015,6 +1015,11 @@ if grep -n 'c->kv_tq_bits\|c->kv_f16' src/transformer/gpu_emit.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n 'c->kv_tq_bits\|c->kv_f16' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use KV policy helpers instead of raw KV config checks"
+    fail=1
+fi
+
 if grep -n 'c->kv_tq_bits\|c->kv_f16' \
     src/transformer/gqa_scalar.c \
     src/transformer/gqa_neon.c \

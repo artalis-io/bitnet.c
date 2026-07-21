@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "transformer_kv_internal.h"
 #include "gpu_policy.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../gpu_quant_lowering_internal.h"
@@ -1012,7 +1013,8 @@ int bn_transformer_gpu_batch_prefill_enabled(
         return 0;
     if (bn_gpu_policy_prefill_matmul_enabled())
         return 1;
-    if (c->kv_tq_bits != 0)
+    if (bn_transformer_kv_mode_uses_turboquant(
+            bn_transformer_kv_mode(c, 1)))
         return 0;
     if (bn_transformer_gpu_small_dense_prefill_decode_fallback_requested(
             gpu, c) ||
@@ -1071,7 +1073,8 @@ int bn_transformer_gpu_prefill_direct_kv_allowed(
              gpu, c)) &&
         !bn_gpu_policy_prefill_direct_kv_with_cpu_fallback_enabled())
         return 0;
-    if (c->kv_f16 || pos0 < 0 || pos0 + n_tokens > c->seq_len)
+    if (bn_transformer_kv_host_cache_uses_fp16_rows(c) ||
+        pos0 < 0 || pos0 + n_tokens > c->seq_len)
         return 0;
     return 1;
 }
