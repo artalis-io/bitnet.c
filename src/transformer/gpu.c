@@ -306,11 +306,15 @@ static int gpu_compute_shared_expert_mid_cpu_from_xb(
     if (!hb2)
         return -1;
 
-    BnMatvecTask gu_tasks[2] = {
-        { mid_out, &lw->shared.shared_gate, NULL, gateup_flags },
-        { hb2,    &lw->shared.shared_up,   NULL, gateup_flags },
-    };
-    gpu_cpu_quant_matvec_batch(m, gu_tasks, 2, xb_in, sess->state.x_q);
+    BnMatvecTask gu_tasks[2];
+    int n_gu_tasks = bn_moe_shared_expert_gateup_tasks(
+        gu_tasks, mid_out, hb2, lw, gateup_flags);
+    if (n_gu_tasks <= 0) {
+        free(hb2);
+        return -1;
+    }
+    gpu_cpu_quant_matvec_batch(m, gu_tasks, n_gu_tasks, xb_in,
+                               sess->state.x_q);
     bn_moe_swiglu(mid_out, mid_out, hb2, shared_hidden, c->moe_exact_silu);
     free(hb2);
     return 0;
@@ -344,7 +348,13 @@ static int gpu_compute_shared_expert_cpu_from_xb(
         free(down);
         return -1;
     }
-    gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, mid, sess->state.x_q);
+    const BnQWeight *shared_down = bn_moe_shared_expert_down_weight(lw);
+    if (!shared_down) {
+        free(mid);
+        free(down);
+        return -1;
+    }
+    gpu_cpu_quant_matvec(m, down, shared_down, mid, sess->state.x_q);
     memset(shared_out, 0, (size_t)dim * sizeof(float));
     float shared_weight = bn_moe_shared_expert_gate_weight(lw, xb_in, dim);
     bn_moe_weighted_add(shared_out, down, shared_weight, dim);
@@ -492,8 +502,12 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
         free(mid);
         return -1;
     }
-    gpu_cpu_quant_matvec(m, down_out, &lw->shared.shared_down, mid,
-                         sess->state.x_q);
+    const BnQWeight *shared_down = bn_moe_shared_expert_down_weight(lw);
+    if (!shared_down) {
+        free(mid);
+        return -1;
+    }
+    gpu_cpu_quant_matvec(m, down_out, shared_down, mid, sess->state.x_q);
     free(mid);
     return 0;
 }
