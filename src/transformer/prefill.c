@@ -539,10 +539,12 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
                                        float attention_scale) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
+    BnTransformerPrefillLayerKindPolicy layer_kind =
+        bn_transformer_prefill_layer_kind_policy(lw);
     if (!bn_transformer_prefill_moe_layer_backend_available(
             gpu, &m->config, &lw->moe.expert_map, dim, 0) ||
         !backend ||
-        !lw->moe.router_weight || !lw->attn.wq.data ||
+        !layer_kind.uses_moe || !lw->attn.wq.data ||
         !lw->attn.wk.data || !lw->attn.wv.data || !lw->attn.wo.data)
         return -1;
 
@@ -638,10 +640,12 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
+    BnTransformerPrefillLayerKindPolicy layer_kind =
+        bn_transformer_prefill_layer_kind_policy(lw);
     if (!bn_transformer_prefill_moe_ffn_batch_available(
             gpu, c, &lw->moe.expert_map, dim, 0) ||
         !backend ||
-        !lw->moe.router_weight || n_tokens <= 0 || dim <= 0)
+        !layer_kind.uses_moe || n_tokens <= 0 || dim <= 0)
         return -1;
 
     void *router_buf = bn_backend_model_handle(
@@ -705,7 +709,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
     if (!lw)
         return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
-        bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+        bn_transformer_prefill_layer_kind_policy(lw);
     BnTransformerPrefillSSMMoEChainPolicy policy =
         bn_transformer_prefill_ssm_moe_chain_policy(
             bn_transformer_prefill_ssm_moe_chain_available(
@@ -783,7 +787,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
     BnTransformerPrefillLayerKindPolicy layer_kind =
-        bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+        bn_transformer_prefill_layer_kind_policy(lw);
     int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
@@ -880,11 +884,13 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
         bn_transformer_prefill_moe_layer_chain_available(
             gpu, c, lw ? &lw->moe.expert_map : NULL, c ? c->dim : 0, 0,
             n_tokens);
+    BnTransformerPrefillLayerKindPolicy layer_kind =
+        bn_transformer_prefill_layer_kind_policy(lw);
     if (!moe_layer_chain_available ||
         !backend ||
         bn_model_tq_state(m) != NULL ||
         layer_rope_theta != c->rope_theta ||
-        !plan->is_attn || !lw->moe.router_weight ||
+        !plan->is_attn || !layer_kind.uses_moe ||
         lw->norm.attn_sub_norm ||
         lw->norm.layer_output_scale) {
         if (bn_transformer_prefill_moe_chain_debug_enabled())
@@ -896,7 +902,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
                     n_tokens,
                     bn_transformer_prefill_moe_chain_min_tokens(c, gpu),
                     layer_rope_theta == c->rope_theta, plan->is_attn,
-                    lw->moe.router_weight != NULL, c->has_shared_expert,
+                    layer_kind.uses_moe, c->has_shared_expert,
                     lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias,
                     lw->norm.attn_sub_norm != NULL,
                     lw->norm.layer_output_scale != NULL);
@@ -1067,7 +1073,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     if (!lw)
         return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
-        bn_transformer_prefill_layer_kind_policy(lw->moe.router_weight);
+        bn_transformer_prefill_layer_kind_policy(lw);
     BnTransformerPrefillSSMChainPolicy policy =
         bn_transformer_prefill_ssm_chain_policy(
             bn_transformer_prefill_ssm_dense_chain_available(gpu, c,
@@ -1579,8 +1585,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 uint32_t kv_cache_off =
                     (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
                 BnTransformerPrefillLayerKindPolicy layer_kind =
-                    bn_transformer_prefill_layer_kind_policy(
-                        lw->moe.router_weight);
+                    bn_transformer_prefill_layer_kind_policy(lw);
                 int layer_rc = layer_kind.uses_moe
                     ? prefill_moe_layer_gpu_batch(
                           m, layer_out, lw, layer_in,
@@ -1690,8 +1695,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     uint32_t kv_cache_off =
                         (uint32_t)(loff + (size_t)pos0 * (size_t)kv_dim);
                     BnTransformerPrefillLayerKindPolicy layer_kind =
-                        bn_transformer_prefill_layer_kind_policy(
-                            lw->moe.router_weight);
+                        bn_transformer_prefill_layer_kind_policy(lw);
                     int layer_rc = layer_kind.uses_moe
                         ? prefill_moe_layer_gpu_batch(
                               m, layer_out, lw, layer_in,
@@ -1744,8 +1748,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int kern_ssm =
                         c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
                     BnTransformerPrefillLayerKindPolicy layer_kind =
-                        bn_transformer_prefill_layer_kind_policy(
-                            lw->moe.router_weight);
+                        bn_transformer_prefill_layer_kind_policy(lw);
                     int r_is_moe = layer_kind.uses_moe;
                     float *ssm_out =
                         (!r_is_moe && l == c->n_layers - 1) ? act : NULL;
@@ -1796,8 +1799,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 rope_cache_theta = layer_rope_theta;
             }
             BnTransformerPrefillLayerKindPolicy layer_kind =
-                bn_transformer_prefill_layer_kind_policy(
-                    lw->moe.router_weight);
+                bn_transformer_prefill_layer_kind_policy(lw);
             BnTransformerPrefillDenseLayerBatchPolicy dense_layer_batch =
                 bn_transformer_prefill_dense_layer_batch_policy(
                     bn_model_gpu(m) != NULL,
@@ -2303,7 +2305,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             &rplan, c, rlw, rl,
                             bn_model_tq_state(m) != NULL);
                         int r_did_ffn = 0;
-                        int r_is_moe = rlw->moe.router_weight != NULL;
+                        BnTransformerPrefillLayerKindPolicy r_layer_kind =
+                            bn_transformer_prefill_layer_kind_policy(rlw);
+                        int r_is_moe = r_layer_kind.uses_moe;
                         float *layer_out =
                             (!r_is_moe && rl == run_end - 1) ? act : NULL;
                         const float *layer_in = (rl == l) ? act : NULL;
@@ -2461,8 +2465,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     act[(size_t)t * dim + d] += Xb[(size_t)t * dim + d];
         }
 prefill_ssm_done:
+        ;
 
-        if (lw->moe.router_weight) {
+        BnTransformerPrefillLayerKindPolicy layer_kind =
+            bn_transformer_prefill_layer_kind_policy(lw);
+        if (layer_kind.uses_moe) {
             if (bn_moe_forward_batch(m, sess, lw, l, act, Xb, n_tokens) != 0) {
                 sh_arena_free(pf_arena);
                 return NULL;

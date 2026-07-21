@@ -4301,15 +4301,19 @@ static void test_block_planning(void) {
     assert(bn_transformer_ffn_uses_exact_scalar_activation(&c));
     c.policy_flags = 0;
 
+    BnLayerWeights prefill_dense_lw = {0};
+    BnLayerWeights prefill_moe_lw = {0};
+    prefill_moe_lw.moe.router_weight = (float *)1;
+
     BnTransformerPrefillLayerKindPolicy prefill_layer_kind =
         bn_transformer_prefill_layer_kind_policy(NULL);
     assert(!prefill_layer_kind.uses_moe);
     prefill_layer_kind =
-        bn_transformer_prefill_layer_kind_policy((void *)1);
+        bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw);
     assert(prefill_layer_kind.uses_moe);
 
     prefill_layer_kind =
-        bn_transformer_prefill_layer_kind_policy(NULL);
+        bn_transformer_prefill_layer_kind_policy(&prefill_dense_lw);
 
     BnQWeight prefill_q = {0};
     BnQWeight prefill_k = {0};
@@ -4513,7 +4517,7 @@ static void test_block_planning(void) {
     assert(!dense_layer_batch.enabled);
     dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
         1, 0, 1, 16, 16, 0, 10000.0f, 10000.0f,
-        bn_transformer_prefill_layer_kind_policy((void *)1),
+        bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     assert(!dense_layer_batch.enabled);
     dense_layer_batch = bn_transformer_prefill_dense_layer_batch_policy(
@@ -4536,7 +4540,7 @@ static void test_block_planning(void) {
     assert(!dense_layer_chain.enabled);
     dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
         1, 1, 0, 16, 16, 10000.0f, 10000.0f, 1,
-        bn_transformer_prefill_layer_kind_policy((void *)1),
+        bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
         1, 1, 0, 0, 0, 0, 0, 0);
     assert(!dense_layer_chain.enabled);
     dense_layer_chain = bn_transformer_prefill_dense_layer_chain_policy(
@@ -4640,7 +4644,7 @@ static void test_block_planning(void) {
         0, prefill_layer_kind, 1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
-        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
         1, 1, 0, 0, 0, 0, 0, 16, 64, 256, 4);
     assert(!ssm_chain.enabled);
     ssm_chain = bn_transformer_prefill_ssm_chain_policy(
@@ -4681,22 +4685,22 @@ static void test_block_planning(void) {
 
     BnTransformerPrefillSSMMoEChainPolicy ssm_moe_chain =
         bn_transformer_prefill_ssm_moe_chain_policy(
-            1, bn_transformer_prefill_layer_kind_policy((void *)1),
+            1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
             0, 0, 0, 0, 0, 16, 64, 256, 4);
     assert(ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
         1, prefill_layer_kind, 0, 0, 0, 0, 0, 16, 64, 256, 4);
     assert(!ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
-        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
         0, 1, 0, 0, 0, 16, 64, 256, 4);
     assert(!ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
-        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
         0, 0, 1, 0, 1, 16, 64, 256, 4);
     assert(!ssm_moe_chain.enabled);
     ssm_moe_chain = bn_transformer_prefill_ssm_moe_chain_policy(
-        1, bn_transformer_prefill_layer_kind_policy((void *)1),
+        1, bn_transformer_prefill_layer_kind_policy(&prefill_moe_lw),
         0, 0, 0, 0, 0, 16, 0, 256, 4);
     assert(!ssm_moe_chain.enabled);
 

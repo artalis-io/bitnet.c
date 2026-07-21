@@ -2467,6 +2467,16 @@ if awk '/^bn_transformer_prefill_sequence_policy/{flag=1} flag{print} flag && /^
     fail=1
 fi
 
+if grep -n 'bn_transformer_prefill_layer_kind_policy(const void \*' include/transformer_prefill_internal.h src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Prefill layer-kind policy must take layer weights, not raw MoE storage pointers"
+    fail=1
+fi
+
+if grep -n 'lw->moe\.router_weight\|rlw->moe\.router_weight' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use prefill layer-kind policy for MoE layer decisions"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "src/transformer/prefill_policy.c must use model-policy helpers instead of reaching into model_arch"
     fail=1

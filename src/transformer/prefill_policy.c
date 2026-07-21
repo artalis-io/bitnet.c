@@ -19,9 +19,9 @@ int bn_transformer_prefill_force_token_attention_enabled(void) {
 }
 
 BnTransformerPrefillLayerKindPolicy
-bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight) {
+bn_transformer_prefill_layer_kind_policy(const BnLayerWeights *lw) {
     BnTransformerPrefillLayerKindPolicy policy = {0};
-    policy.uses_moe = moe_router_weight != NULL;
+    policy.uses_moe = lw && lw->moe.router_weight != NULL;
     return policy;
 }
 

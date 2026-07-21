@@ -153,7 +153,7 @@ int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
 int bn_transformer_prefill_force_token_attention_enabled(void);
 BnTransformerPrefillLayerKindPolicy
-bn_transformer_prefill_layer_kind_policy(const void *moe_router_weight);
+bn_transformer_prefill_layer_kind_policy(const BnLayerWeights *lw);
 BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
 bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
