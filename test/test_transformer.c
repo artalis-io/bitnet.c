@@ -719,7 +719,22 @@ static void test_gpu_capability_routing(void) {
     shared_gateup_lw.shared.shared_up.rows = 64;
     shared_gateup_lw.shared.shared_gate.cols = 128;
     shared_gateup_lw.shared.shared_up.cols = 128;
+    shared_gateup_lw.shared.shared_down.type = BN_GGUF_TENSOR_Q4_0;
+    shared_gateup_lw.shared.shared_down.rows = 128;
+    shared_gateup_lw.shared.shared_down.cols = 64;
     shared_gateup_lw.shared.shared_gate.data = (void *)1;
+    BnTransformerGPUMoESharedProjectionInfo shared_info;
+    assert(bn_transformer_gpu_resolve_moe_shared_projection_info(
+        &shared_info, &shared_gateup_lw));
+    assert(shared_info.gate_type == BN_GGUF_TENSOR_Q4_0);
+    assert(shared_info.up_type == BN_GGUF_TENSOR_Q4_0);
+    assert(shared_info.down_type == BN_GGUF_TENSOR_Q4_0);
+    assert(shared_info.gate_rows == 64);
+    assert(shared_info.up_rows == 64);
+    assert(shared_info.down_rows == 128);
+    assert(shared_info.gate_cols == 128);
+    assert(shared_info.up_cols == 128);
+    assert(shared_info.down_cols == 64);
     shared_gateup_resources.gpu = &gpu;
     shared_gateup_resources.shared_gate = (void *)1;
     shared_gateup_resources.shared_gateup_stacked = (void *)1;

@@ -1,4 +1,5 @@
 #include "gpu_internal.h"
+#include "../moe_internal.h"
 
 #include <string.h>
 
@@ -174,16 +175,47 @@ bn_transformer_gpu_resolve_moe_shared_resources(
     const BnBackendModel *backend,
     const BnLayerWeights *lw,
     int layer) {
+    BnMoESharedExpertWeights weights;
+    if (!bn_moe_shared_expert_projection_weights(&weights, lw)) {
+        return (BnTransformerGPUMoESharedResources){
+            .gpu = gpu,
+            .shared_expert_gate = backend_handle_or(
+                backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE),
+            .shared_gateup_stacked = backend_handle_or(
+                backend, layer, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED),
+        };
+    }
     return (BnTransformerGPUMoESharedResources){
         .gpu = gpu,
-        .shared_gate = qweight_backend_buf(backend, &lw->shared.shared_gate),
-        .shared_up = qweight_backend_buf(backend, &lw->shared.shared_up),
-        .shared_down = qweight_backend_buf(backend, &lw->shared.shared_down),
+        .shared_gate = qweight_backend_buf(backend, weights.gate),
+        .shared_up = qweight_backend_buf(backend, weights.up),
+        .shared_down = qweight_backend_buf(backend, weights.down),
         .shared_expert_gate = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE),
         .shared_gateup_stacked = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED),
     };
+}
+
+int bn_transformer_gpu_resolve_moe_shared_projection_info(
+    BnTransformerGPUMoESharedProjectionInfo *out,
+    const BnLayerWeights *lw) {
+    if (!out)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    BnMoESharedExpertWeights weights;
+    if (!bn_moe_shared_expert_projection_weights(&weights, lw))
+        return 0;
+    out->gate_type = weights.gate->type;
+    out->up_type = weights.up->type;
+    out->down_type = weights.down->type;
+    out->gate_rows = weights.gate->rows;
+    out->up_rows = weights.up->rows;
+    out->down_rows = weights.down->rows;
+    out->gate_cols = weights.gate->cols;
+    out->up_cols = weights.up->cols;
+    out->down_cols = weights.down->cols;
+    return 1;
 }
 
 int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
@@ -202,6 +234,9 @@ int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
     BnTransformerGPUMoESharedResources shared =
         bn_transformer_gpu_resolve_moe_shared_resources(
             bn_backend_model_gpu(backend), backend, lw, layer);
+    BnTransformerGPUMoESharedProjectionInfo info;
+    if (!bn_transformer_gpu_resolve_moe_shared_projection_info(&info, lw))
+        return 0;
     void *stacked_gateup = allow_stacked_gateup
         ? shared.shared_gateup_stacked
         : NULL;
@@ -215,8 +250,8 @@ int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
     }
 
     out->hidden_dim = c->shared_expert_intermediate_size;
-    out->gate_type = lw->shared.shared_gate.type;
-    out->up_type = lw->shared.shared_up.type;
-    out->down_type = lw->shared.shared_down.type;
+    out->gate_type = info.gate_type;
+    out->up_type = info.up_type;
+    out->down_type = info.down_type;
     return 1;
 }

@@ -1756,58 +1756,62 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
     if (bn_transformer_gpu_shared_expert_path_available(lw, shared)) {
         BnTransformerGPUSharedExpertGateupPolicy shared_gateup =
             bn_transformer_gpu_shared_expert_gateup_policy(lw, shared);
+        BnTransformerGPUMoESharedProjectionInfo shared_info;
+        if (!bn_transformer_gpu_resolve_moe_shared_projection_info(
+                &shared_info, lw))
+            return;
         if (shared_gateup.use_fused_gateup) {
             bn_transformer_gpu_emit_context_fused_gateup_silu(
-                ctx, lw->shared.shared_gate.type,
+                ctx, shared_info.gate_type,
                 shared->shared_gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
-                lw->shared.shared_gate.rows, lw->shared.shared_up.rows,
-                lw->shared.shared_gate.cols, shared_gateup.use_kquant_dot,
+                shared_info.gate_rows, shared_info.up_rows,
+                shared_info.gate_cols, shared_gateup.use_kquant_dot,
                 bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         } else if (shared_gateup.use_gateup_split) {
             emit_context_matvec_split(
-                ctx, lw->shared.shared_gate.type,
+                ctx, shared_info.gate_type,
                 shared->shared_gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, -1,
-                lw->shared.shared_gate.rows + lw->shared.shared_up.rows,
-                lw->shared.shared_gate.cols, lw->shared.shared_gate.rows,
+                shared_info.gate_rows + shared_info.up_rows,
+                shared_info.gate_cols, shared_info.gate_rows,
                 0, 0, 0, 0);
         } else {
             uint32_t shared_gate_flags =
                 bn_transformer_gpu_matvec_kquant_dot_flags(
-                    lw->shared.shared_gate.type,
+                    shared_info.gate_type,
                     shared_gateup.use_kquant_dot);
             uint32_t shared_up_flags =
                 bn_transformer_gpu_matvec_kquant_dot_flags(
-                    lw->shared.shared_up.type,
+                    shared_info.up_type,
                     shared_gateup.use_kquant_dot);
             emit_context_matvec_flags(
-                ctx, lw->shared.shared_gate.type,
+                ctx, shared_info.gate_type,
                 shared->shared_gate,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
-                lw->shared.shared_gate.rows, lw->shared.shared_gate.cols, 0,
+                shared_info.gate_rows, shared_info.gate_cols, 0,
                 shared_gate_flags);
             emit_context_matvec_flags(
-                ctx, lw->shared.shared_up.type,
+                ctx, shared_info.up_type,
                 shared->shared_up,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2,
-                lw->shared.shared_up.rows, lw->shared.shared_up.cols, 0,
+                shared_info.up_rows, shared_info.up_cols, 0,
                 shared_up_flags);
         }
         if (!shared_gateup.use_fused_gateup) {
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
-                lw->shared.shared_gate.rows, 0, BN_GPU_IR_ACTIVATION_SILU,
+                shared_info.gate_rows, 0, BN_GPU_IR_ACTIVATION_SILU,
                 bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         }
         uint32_t shared_down_flags =
             bn_transformer_gpu_matvec_exact_kquant_flags(
-                lw->shared.shared_down.type, shared_gateup.use_kquant_dot);
+                shared_info.down_type, shared_gateup.use_kquant_dot);
         emit_context_matvec_flags(
-            ctx, lw->shared.shared_down.type,
+            ctx, shared_info.down_type,
             shared->shared_down,
-            BN_GPU_VALUE_HB, BN_GPU_VALUE_XB2, lw->shared.shared_down.rows,
-            lw->shared.shared_down.cols, 0, shared_down_flags);
+            BN_GPU_VALUE_HB, BN_GPU_VALUE_XB2, shared_info.down_rows,
+            shared_info.down_cols, 0, shared_down_flags);
         uint32_t u_one;
         { float one = 1.0f; memcpy(&u_one, &one, 4); }
         if (bn_transformer_gpu_shared_expert_gate_enabled(

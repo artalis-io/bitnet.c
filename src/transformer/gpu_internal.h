@@ -82,6 +82,18 @@ typedef struct {
 } BnTransformerGPUMoESharedResources;
 
 typedef struct {
+    int gate_type;
+    int up_type;
+    int down_type;
+    int gate_rows;
+    int up_rows;
+    int down_rows;
+    int gate_cols;
+    int up_cols;
+    int down_cols;
+} BnTransformerGPUMoESharedProjectionInfo;
+
+typedef struct {
     void *gate;
     void *up;
     void *down;
@@ -1321,6 +1333,9 @@ bn_transformer_gpu_resolve_moe_shared_resources(
     const BnBackendModel *backend,
     const BnLayerWeights *lw,
     int layer);
+int bn_transformer_gpu_resolve_moe_shared_projection_info(
+    BnTransformerGPUMoESharedProjectionInfo *out,
+    const BnLayerWeights *lw);
 int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
     BnTransformerGPUMoESharedFFNResources *out,
     const BnBackendModel *backend,

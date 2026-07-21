@@ -345,9 +345,10 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
 int bn_transformer_gpu_shared_expert_path_available(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared) {
+    BnTransformerGPUMoESharedProjectionInfo info;
     return lw &&
            shared &&
-           bn_moe_policy_has_loaded_shared_gate_projection(lw) &&
+           bn_transformer_gpu_resolve_moe_shared_projection_info(&info, lw) &&
            shared->shared_gate;
 }
 
@@ -368,30 +369,35 @@ bn_transformer_gpu_shared_expert_gateup_policy(
     if (!bn_transformer_gpu_shared_expert_path_available(lw, shared))
         return policy;
 
+    BnTransformerGPUMoESharedProjectionInfo info;
+    if (!bn_transformer_gpu_resolve_moe_shared_projection_info(&info, lw))
+        return policy;
     int shared_kquant_dot_eligible =
         bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
-            lw->shared.shared_gate.type, lw->shared.shared_up.type,
-            lw->shared.shared_gate.cols);
+            info.gate_type, info.up_type, info.gate_cols);
     policy.use_kquant_dot =
         bn_transformer_gpu_shared_kquant_dot_enabled(
             shared_kquant_dot_eligible);
 
     int prefer_shared_gateup_split =
         bn_transformer_gpu_shared_expert_prefers_gateup_split(
-            lw->shared.shared_gate.type);
+            info.gate_type);
+    BnMoESharedExpertWeights weights;
+    if (!bn_moe_shared_expert_projection_weights(&weights, lw))
+        return policy;
     policy.use_fused_gateup =
         !prefer_shared_gateup_split &&
         shared->shared_gateup_stacked &&
         bn_transformer_gpu_can_stack_same_quant_format_gateup(
-            &lw->shared.shared_gate, &lw->shared.shared_up) &&
+            weights.gate, weights.up) &&
         bn_transformer_gpu_can_fused_gateup_silu(
-            shared->gpu, lw->shared.shared_gate.type, 0);
+            shared->gpu, info.gate_type, 0);
     policy.use_gateup_split =
         !policy.use_fused_gateup &&
         bn_transformer_gpu_gateup_split_enabled() &&
         shared->shared_gateup_stacked &&
         bn_transformer_gpu_can_matvec_split(
-            shared->gpu, lw->shared.shared_gate.type);
+            shared->gpu, info.gate_type);
     return policy;
 }
 

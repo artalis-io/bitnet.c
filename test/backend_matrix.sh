@@ -3183,6 +3183,11 @@ if awk '/bn_transformer_gpu_shared_expert_path_available\(lw, shared\)/{flag=1} 
     fail=1
 fi
 
+if grep -n 'lw->shared\.shared_gate\|lw->shared\.shared_up\|lw->shared\.shared_down' src/transformer/gpu_policy.c src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "Shared expert GPU policy/emission must use resolved shared projection metadata"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_gpu_upload_ssm_state/{flag=1} /^void bn_transformer_gpu_emit_context_dense_ffn/{flag=0} flag{print}' \
     src/transformer/gpu_emit.c | grep -n 'bn_transformer_uses_hybrid_ssm\|bn_model_config_uses_hybrid_ssm\|bn_model_arch_uses_hybrid_ssm' >/dev/null 2>&1; then
     echo "GPU SSM state upload must use behavior-named GPU upload policy helpers"
