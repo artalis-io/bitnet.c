@@ -1,4 +1,5 @@
 #include "transformer_plan_internal.h"
+#include "gpu_internal.h"
 #include "model_internal.h"
 #include "transformer_backend_internal.h"
 #include "transformer_cpu_backend_internal.h"
@@ -321,7 +322,9 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
 
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw) {
-    return placement == BN_EXEC_GPU && lw && lw->moe.router_weight;
+    BnTransformerGPULayerKindPolicy layer_kind =
+        bn_transformer_gpu_layer_kind_policy(lw);
+    return placement == BN_EXEC_GPU && layer_kind.uses_moe;
 }
 
 int bn_transformer_ssm_uses_qkvz_stack(

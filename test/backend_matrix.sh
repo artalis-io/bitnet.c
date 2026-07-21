@@ -3683,7 +3683,7 @@ if grep -n 'p->has_shared_expert = .*has_shared_expert.*shared_expert_gate' src/
     fail=1
 fi
 
-if grep -n 'p->placement == BN_EXEC_GPU && .*moe\.router_weight' src/transformer/plan.c >/dev/null 2>&1; then
+if grep -n 'p->placement == BN_EXEC_GPU && .*moe\.router_weight\|placement == BN_EXEC_GPU && .*moe\.router_weight\|lw && lw->moe\.router_weight' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer MoE planning must use CPU-fallback policy helpers"
     fail=1
 fi
