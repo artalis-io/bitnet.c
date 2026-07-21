@@ -772,7 +772,9 @@ static int gpu_dense_ffn_resources_missing(
     const BnLayerWeights *lw,
     const BnFFNPlan *plan,
     const BnTransformerGPUDenseFFNResources *res) {
-    if (lw->moe.router_weight)
+    BnTransformerGPULayerKindPolicy layer_kind =
+        bn_transformer_gpu_layer_kind_policy(lw);
+    if (layer_kind.uses_moe)
         return 0;
     if ((lw->ffn.ffn_gate.data && !(res && res->ffn_gate)) ||
         (lw->ffn.ffn_up.data && !(res && res->ffn_up)) ||
@@ -984,7 +986,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         BnFFNPlan layer_ffn_plan;
         int layer_ffn_plan_valid = 0;
         BnTransformerGPUDenseFFNResources layer_ffn_res = {0};
-        if (!lw->moe.router_weight) {
+        BnTransformerGPULayerKindPolicy layer_kind =
+            bn_transformer_gpu_layer_kind_policy(lw);
+        if (!layer_kind.uses_moe) {
             bn_transformer_plan_ffn(
                 &layer_ffn_plan, c, lw, gpu, backend, l, 1);
             layer_ffn_plan_valid = 1;
@@ -1122,7 +1126,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
         // ---- FFN (MoE or dense) ----
         ffn_block:;
-        if (lw->moe.router_weight) {
+        if (layer_kind.uses_moe) {
             int use_cpu_moe_fallback =
                 bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
                     gpu, c, &lw->moe.expert_map, dim, 1, l,

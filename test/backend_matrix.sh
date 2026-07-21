@@ -3090,6 +3090,26 @@ if awk '/^int bn_transformer_gpu_upload_ssm_state/{flag=1} /^void bn_transformer
     fail=1
 fi
 
+if awk '/^static int gpu_dense_ffn_resources_missing/{flag=1} /^static float \*bn_transformer_gpu_forward_impl/{flag=0} flag{print}' \
+    src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1; then
+    echo "GPU dense FFN resource checks must use GPU layer-kind policy"
+    fail=1
+fi
+
+if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseExactNativeLayerUsePolicy/{flag=0} flag{print}' \
+    src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1 ||
+   awk '/ffn_block:;/{flag=1} /BnGPUMoETemporaryBuffers moe_temporaries;/{flag=0} flag{print}' \
+    src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1; then
+    echo "GPU decode MoE/dense branching must use GPU layer-kind policy"
+    fail=1
+fi
+
+if awk '/^int bn_transformer_gpu_fallback_ssm_layer/{flag=1} /^int bn_transformer_gpu_fallback_moe_layer/{flag=0} flag{print}' \
+    src/transformer/gpu_fallback.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1; then
+    echo "GPU SSM fallback MoE/dense branching must use GPU layer-kind policy"
+    fail=1
+fi
+
 if sed -n '/^int bn_gpu_policy_backend_flash_default_enabled/,/^int bn_gpu_policy_argmax_debug_enabled/p' \
     src/gpu_policy.c | grep -n 'bn_gpu_policy_backend_is_cuda' >/dev/null 2>&1; then
     echo "GPU backend capability helpers must use the backend capability table, not repeated CUDA predicates"

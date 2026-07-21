@@ -230,6 +230,10 @@ typedef struct {
     int ffn_state_pos;
 } BnTransformerGPUComparePolicy;
 
+typedef struct {
+    int uses_moe;
+} BnTransformerGPULayerKindPolicy;
+
 int bn_transformer_gpu_validate_forward(
     BnTransformerGPUForwardPolicy *out,
     const BnGPUBackend *gpu,
@@ -252,6 +256,8 @@ int bn_transformer_gpu_uses_moe(const BnConfig *c);
 int bn_transformer_gpu_uses_dense_attention_only(const BnConfig *c);
 int bn_transformer_gpu_uses_small_dense_native_quant_shape(
     const BnConfig *c);
+BnTransformerGPULayerKindPolicy
+bn_transformer_gpu_layer_kind_policy(const BnLayerWeights *lw);
 int bn_transformer_gpu_should_upload_ssm_state(const BnConfig *c);
 int bn_transformer_gpu_requires_float_kquant(const BnConfig *c);
 int bn_transformer_gpu_dense_batch_prefill_shape_allowed_for_backend(

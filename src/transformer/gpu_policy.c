@@ -233,6 +233,13 @@ int bn_transformer_gpu_uses_small_dense_native_quant_shape(
     return bn_model_config_uses_small_dense_native_quant_shape(c);
 }
 
+BnTransformerGPULayerKindPolicy
+bn_transformer_gpu_layer_kind_policy(const BnLayerWeights *lw) {
+    BnTransformerGPULayerKindPolicy policy = {0};
+    policy.uses_moe = lw && lw->moe.router_weight != NULL;
+    return policy;
+}
+
 int bn_transformer_gpu_should_upload_ssm_state(const BnConfig *c) {
     return bn_transformer_gpu_uses_hybrid_ssm(c);
 }

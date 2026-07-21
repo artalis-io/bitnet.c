@@ -86,7 +86,9 @@ int bn_transformer_gpu_fallback_ssm_layer(
         return -1;
     bn_transformer_cpu_forward_ssm_block(m, sess, lw, layer);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);
-    if (lw->moe.router_weight)
+    BnTransformerGPULayerKindPolicy layer_kind =
+        bn_transformer_gpu_layer_kind_policy(lw);
+    if (layer_kind.uses_moe)
         bn_moe_forward(m, sess, lw, layer);
     else
         bn_transformer_cpu_forward_ffn_block(m, sess, lw, layer, sess->pos, NULL);

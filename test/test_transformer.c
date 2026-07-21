@@ -834,6 +834,16 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_uses_dense_attention_only(&c));
     assert(!bn_transformer_gpu_uses_hybrid_ssm(&c));
     assert(!bn_transformer_gpu_uses_moe(&c));
+    BnLayerWeights gpu_dense_lw = {0};
+    BnLayerWeights gpu_moe_lw = {0};
+    gpu_moe_lw.moe.router_weight = (float *)1;
+    BnTransformerGPULayerKindPolicy gpu_layer_kind =
+        bn_transformer_gpu_layer_kind_policy(NULL);
+    assert(!gpu_layer_kind.uses_moe);
+    gpu_layer_kind = bn_transformer_gpu_layer_kind_policy(&gpu_dense_lw);
+    assert(!gpu_layer_kind.uses_moe);
+    gpu_layer_kind = bn_transformer_gpu_layer_kind_policy(&gpu_moe_lw);
+    assert(gpu_layer_kind.uses_moe);
     c.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
     assert(bn_transformer_gpu_uses_per_layer_embedding(&c));
     c.policy_flags = 0;
