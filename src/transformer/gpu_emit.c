@@ -1000,7 +1000,7 @@ int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess) {
     if (!bn_gpu_backend_can_write_activation(gpu)) return -1;
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
-    if (!bn_transformer_uses_hybrid_ssm(c))
+    if (!bn_transformer_gpu_should_upload_ssm_state(c))
         return 0;
     if (!s->ssm_state || !s->ssm_conv_state) return -1;
 

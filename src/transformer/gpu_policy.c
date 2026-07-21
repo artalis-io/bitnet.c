@@ -233,6 +233,10 @@ int bn_transformer_gpu_uses_small_dense_native_quant_shape(
     return bn_model_config_uses_small_dense_native_quant_shape(c);
 }
 
+int bn_transformer_gpu_should_upload_ssm_state(const BnConfig *c) {
+    return bn_transformer_gpu_uses_hybrid_ssm(c);
+}
+
 int bn_transformer_gpu_requires_float_kquant(const BnConfig *c) {
     return bn_model_config_requires_float_kquant_fallback(c);
 }

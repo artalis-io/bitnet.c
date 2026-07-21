@@ -3074,6 +3074,12 @@ if awk '/^void bn_transformer_gpu_emit_context_dense_ffn/{flag=1} /^void bn_tran
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_upload_ssm_state/{flag=1} /^void bn_transformer_gpu_emit_context_dense_ffn/{flag=0} flag{print}' \
+    src/transformer/gpu_emit.c | grep -n 'bn_transformer_uses_hybrid_ssm\|bn_model_config_uses_hybrid_ssm\|bn_model_arch_uses_hybrid_ssm' >/dev/null 2>&1; then
+    echo "GPU SSM state upload must use behavior-named GPU upload policy helpers"
+    fail=1
+fi
+
 if sed -n '/^int bn_gpu_policy_backend_flash_default_enabled/,/^int bn_gpu_policy_argmax_debug_enabled/p' \
     src/gpu_policy.c | grep -n 'bn_gpu_policy_backend_is_cuda' >/dev/null 2>&1; then
     echo "GPU backend capability helpers must use the backend capability table, not repeated CUDA predicates"
