@@ -33,6 +33,18 @@ BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
     return policy;
 }
 
+BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c) {
+    BnMoERoutePolicy policy = {0};
+    if (!c)
+        return policy;
+    policy.total_experts = c->n_experts;
+    policy.active_experts = c->n_experts_active;
+    policy.expert_hidden_dim = c->moe_intermediate_size;
+    policy.norm_topk_prob = c->moe_norm_topk_prob;
+    policy.expert_weights_scale = c->moe_expert_weights_scale;
+    return policy;
+}
+
 int bn_moe_policy_uses_expert_weights(const BnConfig *c) {
     return bn_model_config_uses_moe(c);
 }

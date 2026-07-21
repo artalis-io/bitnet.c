@@ -13,14 +13,14 @@ typedef struct {
 } BnMoEBatchRouterCtx;
 
 static void moe_batch_router_range(void *ctx, int start, int end) {
-    BnMoEBatchRouterCtx *c = (BnMoEBatchRouterCtx *)ctx;
+    BnMoEBatchRouterCtx *rctx = (BnMoEBatchRouterCtx *)ctx;
     for (int idx = start; idx < end; idx++) {
-        int t = idx / c->n_experts;
-        int e = idx - t * c->n_experts;
-        const float *row = c->router_w + (size_t)e * c->dim;
-        const float *x = c->x + (size_t)t * c->dim;
-        c->logits[(size_t)t * c->n_experts + e] =
-            bn_moe_dot_row(row, x, c->dim);
+        int t = idx / rctx->n_experts;
+        int e = idx - t * rctx->n_experts;
+        const float *row = rctx->router_w + (size_t)e * rctx->dim;
+        const float *x = rctx->x + (size_t)t * rctx->dim;
+        rctx->logits[(size_t)t * rctx->n_experts + e] =
+            bn_moe_dot_row(row, x, rctx->dim);
     }
 }
 
@@ -100,9 +100,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     BnConfig *c = &m->config;
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
-    int moe_hidden = c->moe_intermediate_size;
-    int K = c->n_experts_active;
-    int n_experts = c->n_experts;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    int moe_hidden = route_policy.expert_hidden_dim;
+    int K = route_policy.active_experts;
+    int n_experts = route_policy.total_experts;
     BnMoEPrefillPolicy prefill_policy = bn_moe_prefill_policy(c);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
 
@@ -138,8 +139,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         c->act_type, shared_gpu.hidden_dim,
                         shared_gpu.gate_type, shared_gpu.up_type,
                         shared_gpu.down_type,
-                        c->norm_eps, c->moe_norm_topk_prob,
-                        c->moe_expert_weights_scale) == 0) {
+                        c->norm_eps, route_policy.norm_topk_prob,
+                        route_policy.expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     ms->stats.compute_time_ms +=
                         bn_moe_time_ms() - t_compute;
@@ -175,8 +176,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         gpu, moe_out, router, gate_all, up_all, down_all,
                         Xb, n_tokens, dim, moe_hidden, n_experts, K,
                         map->gate_type, map->up_type, map->down_type,
-                        c->act_type, c->moe_norm_topk_prob,
-                        c->moe_expert_weights_scale) == 0) {
+                        c->act_type, route_policy.norm_topk_prob,
+                        route_policy.expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     int shared_ok = 1;
                     if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
@@ -268,8 +269,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         int route_rc = router_gpu
             ? bn_transformer_gpu_moe_prefill_route_batch_backend_run(
                   route_gpu, all_indices, all_weights, router_gpu, Xb,
-                  n_tokens, dim, n_experts, K, c->moe_norm_topk_prob,
-                  c->moe_expert_weights_scale)
+                  n_tokens, dim, n_experts, K, route_policy.norm_topk_prob,
+                  route_policy.expert_weights_scale)
             : -1;
         if (route_rc == 0)
             used_gpu_route = 1;
@@ -282,8 +283,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     if (!used_gpu_route) {
         moe_batch_route(batch_logits, all_indices, all_weights, Xb,
                         lw->moe.router_weight, n_tokens, dim, n_experts, K,
-                        c->moe_norm_topk_prob,
-                        c->moe_expert_weights_scale, bn_model_pool(m));
+                        route_policy.norm_topk_prob,
+                        route_policy.expert_weights_scale, bn_model_pool(m));
     }
     ms->stats.route_time_ms += bn_moe_time_ms() - t0;
 

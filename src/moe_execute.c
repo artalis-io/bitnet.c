@@ -47,6 +47,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     }
 
     double t0 = bn_moe_time_ms();
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
     BnQWeight wgate = bn_moe_make_qweight(gate_data, map->gate_type,
                                           map->gate_rows, map->gate_cols);
     BnQWeight wup = bn_moe_make_qweight(up_data, map->up_type,
@@ -62,7 +63,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
 
     t0 = bn_moe_time_ms();
     bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                  m->config.moe_intermediate_size,
+                  route_policy.expert_hidden_dim,
                   bn_moe_policy_exact_silu(&m->config));
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
@@ -129,9 +130,10 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     BnRunState *s = &sess->state;
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
-    int moe_hidden = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    int moe_hidden = route_policy.expert_hidden_dim;
     BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(c);
-    int K = c->n_experts_active;
+    int K = route_policy.active_experts;
     uint32_t gateup_flags = bn_moe_gateup_task_flags(c);
     double t0;
 
@@ -154,9 +156,10 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                          (lw->moe.router_scale ? lw->moe.router_scale[d] : 1.0f);
         router_x = s->xb2;
     }
-    bn_moe_route(ms, router_x, lw->moe.router_weight, dim, c->n_experts, K,
-                 c->moe_norm_topk_prob, c->moe_expert_weights_scale,
-                 bn_model_pool(m));
+    bn_moe_route(ms, router_x, lw->moe.router_weight, dim,
+                 route_policy.total_experts, K,
+                 route_policy.norm_topk_prob,
+                 route_policy.expert_weights_scale, bn_model_pool(m));
     ms->stats.route_time_ms += bn_moe_time_ms() - t0;
 
     // 3. Zero output accumulator

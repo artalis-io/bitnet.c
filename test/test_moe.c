@@ -308,6 +308,21 @@ static void test_moe_prefill_policy(void) {
 
     c.n_experts = 4;
     c.n_experts_active = 2;
+    c.moe_intermediate_size = 128;
+    c.moe_norm_topk_prob = 1;
+    c.moe_expert_weights_scale = 0.5f;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&c);
+    assert(route_policy.total_experts == 4);
+    assert(route_policy.active_experts == 2);
+    assert(route_policy.expert_hidden_dim == 128);
+    assert(route_policy.norm_topk_prob == 1);
+    assert(route_policy.expert_weights_scale == 0.5f);
+    route_policy = bn_moe_route_policy(NULL);
+    assert(route_policy.total_experts == 0);
+    assert(route_policy.active_experts == 0);
+    assert(route_policy.expert_hidden_dim == 0);
+    assert(route_policy.norm_topk_prob == 0);
+    assert(route_policy.expert_weights_scale == 0.0f);
     c.has_shared_expert = 1;
     policy = bn_moe_prefill_policy(&c);
     assert(!policy.force_matvec_prefill);
