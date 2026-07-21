@@ -1163,6 +1163,20 @@ static void test_gpu_policy_helpers(void) {
     BnLayerWeights shared_layer;
     memset(&shared_layer, 0, sizeof(shared_layer));
     c.has_shared_expert = 1;
+    assert(!bn_transformer_gpu_moe_has_loaded_shared_expert(
+        &c, &shared_layer));
+    shared_layer.shared.shared_gate.data = (void *)1;
+    assert(bn_transformer_gpu_moe_has_loaded_shared_expert(
+        &c, &shared_layer));
+    c.has_shared_expert = 0;
+    assert(!bn_transformer_gpu_moe_has_loaded_shared_expert(
+        &c, &shared_layer));
+    shared_layer.shared.shared_expert_gate = (float *)1;
+    assert(bn_transformer_gpu_moe_has_loaded_shared_expert(
+        &c, &shared_layer));
+    shared_layer.shared.shared_expert_gate = NULL;
+    shared_layer.shared.shared_gate.data = NULL;
+    c.has_shared_expert = 1;
     BnTransformerGPUMoESharedCPUFallbackPolicy shared_fallback =
         bn_transformer_gpu_moe_shared_cpu_fallback_policy(
             &c, &shared_layer);

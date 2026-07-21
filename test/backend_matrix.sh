@@ -2688,6 +2688,11 @@ if grep -n 'c->n_experts <= 0' src/transformer/gpu_policy.c >/dev/null 2>&1; the
     fail=1
 fi
 
+if grep -n 'has_shared_expert && lw->shared\.shared_gate\.data\|m->config\.has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.shared_gate\.data' src/transformer/gpu.c src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer GPU/prefill code must use loaded shared MoE expert policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->n_experts > 0 || c->full_attn_interval > 0 ||' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose model_arch helpers for small dense CUDA shape policy"
     fail=1

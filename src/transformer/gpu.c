@@ -180,7 +180,7 @@ static int gpu_debug_compute_moe_cpu_from_xb(
         bn_moe_weighted_add(expert_out, down, weight, dim);
     }
 
-    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+    if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
         int shared_hidden = c->shared_expert_intermediate_size;
         BnMatvecTask shared_gu_tasks[2] = {
             { hb,  &lw->shared.shared_gate, NULL, gateup_flags },
@@ -274,7 +274,7 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
         bn_moe_weighted_add(routed_out, down, weight, dim);
     }
 
-    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+    if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
         int shared_hidden = c->shared_expert_intermediate_size;
         BnMatvecTask shared_gu_tasks[2] = {
             { hb,  &lw->shared.shared_gate, NULL, gateup_flags },
@@ -308,7 +308,7 @@ static int gpu_compute_shared_expert_cpu_from_xb(
     const float *xb_in,
     float *shared_out) {
     if (!m || !sess || !lw || !xb_in || !shared_out ||
-        !lw->shared.shared_gate.data)
+        !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
         return -1;
     BnConfig *c = &m->config;
     int shared_hidden = c->shared_expert_intermediate_size;
@@ -462,7 +462,7 @@ static int gpu_debug_compute_shared_mid_cpu_from_xb(
     const float *xb_in,
     float *mid_out) {
     if (!m || !sess || !lw || !xb_in || !mid_out ||
-        !lw->shared.shared_gate.data)
+        !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
@@ -488,7 +488,7 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
     const float *xb_in,
     float *down_out) {
     if (!m || !sess || !lw || !xb_in || !down_out || dim <= 0 ||
-        !lw->shared.shared_gate.data)
+        !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
         return -1;
     BnConfig *c = &m->config;
     int hidden = c->shared_expert_intermediate_size;
@@ -1527,7 +1527,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     bn_transformer_gpu_emit_context_residual_rmsnorm(
                         &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
                         BN_GPU_VALUE_XB, dim, u_eps, next_norm);
-                } else if (c->has_shared_expert && lw->shared.shared_gate.data) {
+                } else if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
                     BnTransformerGPUMoESharedResources moe_shared =
                         bn_transformer_gpu_resolve_moe_shared_resources(
                             gpu, backend, lw, l);
@@ -1571,7 +1571,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         free(moe_gpu_shared_part);
                     }
                     if (moe_debug.compare_shared_mid &&
-                        c->has_shared_expert && lw->shared.shared_gate.data) {
+                        bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
                         int shared_hidden =
                             c->shared_expert_intermediate_size;
                         size_t shared_mid_bytes =
@@ -1596,7 +1596,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         free(moe_gpu_shared_mid);
                     }
                     if (moe_debug.compare_shared_down &&
-                        c->has_shared_expert && lw->shared.shared_gate.data) {
+                        bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
                         size_t shared_down_bytes =
                             (size_t)dim * sizeof(float);
                         float *moe_cpu_shared_down =

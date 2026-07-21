@@ -2554,6 +2554,14 @@ int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible) {
     return bn_gpu_policy_moe_shared_cpu_fallback_enabled(eligible);
 }
 
+int bn_transformer_gpu_moe_has_loaded_shared_expert(
+    const BnConfig *c,
+    const BnLayerWeights *lw) {
+    return bn_transformer_moe_has_shared_expert(c, lw) &&
+           lw &&
+           lw->shared.shared_gate.data != NULL;
+}
+
 BnTransformerGPUMoESharedCPUFallbackPolicy
 bn_transformer_gpu_moe_shared_cpu_fallback_policy(
     const BnConfig *c,
@@ -2561,8 +2569,7 @@ bn_transformer_gpu_moe_shared_cpu_fallback_policy(
     BnTransformerGPUMoESharedCPUFallbackPolicy policy = {0};
     policy.enabled =
         bn_transformer_gpu_moe_shared_cpu_fallback_enabled(
-            c && c->has_shared_expert && lw &&
-            lw->shared.shared_gate.data != NULL);
+            bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw));
     return policy;
 }
 
