@@ -234,6 +234,12 @@ typedef struct {
     int uses_moe;
 } BnTransformerGPULayerKindPolicy;
 
+typedef struct {
+    int use_kquant_dot;
+    int use_fused_gateup;
+    int use_gateup_split;
+} BnTransformerGPUSharedExpertGateupPolicy;
+
 int bn_transformer_gpu_validate_forward(
     BnTransformerGPUForwardPolicy *out,
     const BnGPUBackend *gpu,
@@ -498,6 +504,10 @@ int bn_transformer_gpu_shared_expert_path_available(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared);
 int bn_transformer_gpu_shared_expert_gate_available(
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoESharedResources *shared);
+BnTransformerGPUSharedExpertGateupPolicy
+bn_transformer_gpu_shared_expert_gateup_policy(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared);
 int bn_transformer_gpu_logits_needs_cpu_fallback(

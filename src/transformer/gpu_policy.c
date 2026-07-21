@@ -360,6 +360,41 @@ int bn_transformer_gpu_shared_expert_gate_available(
            shared->shared_expert_gate;
 }
 
+BnTransformerGPUSharedExpertGateupPolicy
+bn_transformer_gpu_shared_expert_gateup_policy(
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoESharedResources *shared) {
+    BnTransformerGPUSharedExpertGateupPolicy policy = {0};
+    if (!bn_transformer_gpu_shared_expert_path_available(lw, shared))
+        return policy;
+
+    int shared_kquant_dot_eligible =
+        bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
+            lw->shared.shared_gate.type, lw->shared.shared_up.type,
+            lw->shared.shared_gate.cols);
+    policy.use_kquant_dot =
+        bn_transformer_gpu_shared_kquant_dot_enabled(
+            shared_kquant_dot_eligible);
+
+    int prefer_shared_gateup_split =
+        bn_transformer_gpu_shared_expert_prefers_gateup_split(
+            lw->shared.shared_gate.type);
+    policy.use_fused_gateup =
+        !prefer_shared_gateup_split &&
+        shared->shared_gateup_stacked &&
+        bn_transformer_gpu_can_stack_same_quant_format_gateup(
+            &lw->shared.shared_gate, &lw->shared.shared_up) &&
+        bn_transformer_gpu_can_fused_gateup_silu(
+            shared->gpu, lw->shared.shared_gate.type, 0);
+    policy.use_gateup_split =
+        !policy.use_fused_gateup &&
+        bn_transformer_gpu_gateup_split_enabled() &&
+        shared->shared_gateup_stacked &&
+        bn_transformer_gpu_can_matvec_split(
+            shared->gpu, lw->shared.shared_gate.type);
+    return policy;
+}
+
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_moe_gateup_task_flags(c);
 }

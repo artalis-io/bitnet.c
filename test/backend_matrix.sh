@@ -3171,6 +3171,12 @@ if awk '/^void bn_transformer_gpu_emit_context_dense_ffn/{flag=1} /^void bn_tran
     fail=1
 fi
 
+if awk '/bn_transformer_gpu_shared_expert_path_available\(lw, shared\)/{flag=1} /bn_transformer_gpu_emit_context_residual_rmsnorm/{flag=0} flag{print}' \
+    src/transformer/gpu_emit.c | grep -n 'bn_transformer_gpu_shared_kquant_gateup_dot_eligible\|bn_transformer_gpu_shared_kquant_dot_enabled\|bn_transformer_gpu_shared_expert_prefers_gateup_split\|bn_transformer_gpu_gateup_split_enabled\|bn_transformer_gpu_can_matvec_split\|bn_transformer_gpu_can_fused_gateup_silu' >/dev/null 2>&1; then
+    echo "Shared expert GPU emission must use composed shared gate/up policy helpers"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_gpu_upload_ssm_state/{flag=1} /^void bn_transformer_gpu_emit_context_dense_ffn/{flag=0} flag{print}' \
     src/transformer/gpu_emit.c | grep -n 'bn_transformer_uses_hybrid_ssm\|bn_model_config_uses_hybrid_ssm\|bn_model_arch_uses_hybrid_ssm' >/dev/null 2>&1; then
     echo "GPU SSM state upload must use behavior-named GPU upload policy helpers"

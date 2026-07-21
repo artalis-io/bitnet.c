@@ -709,6 +709,43 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, 256));
 
+    BnLayerWeights shared_gateup_lw;
+    memset(&shared_gateup_lw, 0, sizeof(shared_gateup_lw));
+    BnTransformerGPUMoESharedResources shared_gateup_resources;
+    memset(&shared_gateup_resources, 0, sizeof(shared_gateup_resources));
+    shared_gateup_lw.shared.shared_gate.type = BN_GGUF_TENSOR_Q4_0;
+    shared_gateup_lw.shared.shared_up.type = BN_GGUF_TENSOR_Q4_0;
+    shared_gateup_lw.shared.shared_gate.rows = 64;
+    shared_gateup_lw.shared.shared_up.rows = 64;
+    shared_gateup_lw.shared.shared_gate.cols = 128;
+    shared_gateup_lw.shared.shared_up.cols = 128;
+    shared_gateup_lw.shared.shared_gate.data = (void *)1;
+    shared_gateup_resources.gpu = &gpu;
+    shared_gateup_resources.shared_gate = (void *)1;
+    shared_gateup_resources.shared_gateup_stacked = (void *)1;
+    BnTransformerGPUSharedExpertGateupPolicy shared_gateup =
+        bn_transformer_gpu_shared_expert_gateup_policy(
+            &shared_gateup_lw, &shared_gateup_resources);
+    assert(!shared_gateup.use_kquant_dot);
+    assert(shared_gateup.use_fused_gateup);
+    assert(!shared_gateup.use_gateup_split);
+
+    shared_gateup_lw.shared.shared_gate.type = BN_GGUF_TENSOR_Q8_0;
+    shared_gateup_lw.shared.shared_up.type = BN_GGUF_TENSOR_Q8_0;
+    shared_gateup = bn_transformer_gpu_shared_expert_gateup_policy(
+        &shared_gateup_lw, &shared_gateup_resources);
+    assert(!shared_gateup.use_kquant_dot);
+    assert(!shared_gateup.use_fused_gateup);
+    assert(shared_gateup.use_gateup_split);
+
+    shared_gateup_lw.shared.shared_gate.type = BN_GGUF_TENSOR_Q4_K;
+    shared_gateup_lw.shared.shared_up.type = BN_GGUF_TENSOR_Q4_K;
+    shared_gateup_lw.shared.shared_gate.cols = 256;
+    shared_gateup_lw.shared.shared_up.cols = 256;
+    shared_gateup = bn_transformer_gpu_shared_expert_gateup_policy(
+        &shared_gateup_lw, &shared_gateup_resources);
+    assert(shared_gateup.use_kquant_dot);
+
     setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     assert(!bn_transformer_gpu_fused_gateup_silu_policy_allows(
         &gpu, BN_GGUF_TENSOR_Q4_0));
