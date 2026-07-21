@@ -12,6 +12,55 @@ typedef struct {
     int n_experts;
 } BnMoEBatchRouterCtx;
 
+typedef struct {
+    void *gate;
+    void *up;
+    void *down;
+    void *gate_weight;
+    int hidden;
+    int gate_type;
+    int up_type;
+    int down_type;
+} BnMoEPrefillSharedGPUResources;
+
+static int moe_prefill_shared_gpu_resources(
+    BnMoEPrefillSharedGPUResources *out,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    const BnBackendModel *backend,
+    int layer,
+    int allow_stacked_gateup) {
+    if (!out) return 0;
+    memset(out, 0, sizeof(*out));
+    if (!backend || !bn_moe_policy_has_loaded_shared_expert(c, lw))
+        return 0;
+
+    void *stacked_gateup = allow_stacked_gateup
+        ? bn_backend_model_handle(
+              backend, layer, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED)
+        : NULL;
+    out->gate = stacked_gateup ? stacked_gateup
+                               : bn_backend_model_qweight_buf(
+                                     backend, &lw->shared.shared_gate);
+    out->up = stacked_gateup ? NULL
+                             : bn_backend_model_qweight_buf(
+                                   backend, &lw->shared.shared_up);
+    out->down = bn_backend_model_qweight_buf(backend,
+                                             &lw->shared.shared_down);
+    out->gate_weight = bn_backend_model_handle(
+        backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
+    if (!out->gate || !out->down || (!out->up && !stacked_gateup)) {
+        memset(out, 0, sizeof(*out));
+        return 0;
+    }
+
+    out->hidden = c->shared_expert_intermediate_size;
+    out->gate_type = lw->shared.shared_gate.type;
+    out->up_type = lw->shared.shared_up.type;
+    out->down_type = lw->shared.shared_down.type;
+    return 1;
+}
+
 static void moe_batch_router_range(void *ctx, int start, int end) {
     BnMoEBatchRouterCtx *c = (BnMoEBatchRouterCtx *)ctx;
     for (int idx = start; idx < end; idx++) {
@@ -124,45 +173,18 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 backend, l, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
             void *norm = bn_backend_model_handle(
                 backend, l, BN_BACKEND_HANDLE_FFN_NORM);
-            void *shared_gate = NULL;
-            void *shared_up = NULL;
-            void *shared_down = NULL;
-            void *shared_gate_weight = NULL;
-            int shared_hidden = 0;
-            int shared_gate_type = 0;
-            int shared_up_type = 0;
-            int shared_down_type = 0;
-            if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
-                shared_gate = bn_backend_model_qweight_buf(
-                    backend, &lw->shared.shared_gate);
-                shared_up = bn_backend_model_qweight_buf(
-                    backend, &lw->shared.shared_up);
-                shared_down = bn_backend_model_qweight_buf(
-                    backend, &lw->shared.shared_down);
-                shared_gate_weight = bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
-                if (shared_gate && shared_up && shared_down) {
-                    shared_hidden = c->shared_expert_intermediate_size;
-                    shared_gate_type = lw->shared.shared_gate.type;
-                    shared_up_type = lw->shared.shared_up.type;
-                    shared_down_type = lw->shared.shared_down.type;
-                } else {
-                    shared_gate = NULL;
-                    shared_up = NULL;
-                    shared_down = NULL;
-                    shared_gate_weight = NULL;
-                }
-            }
+            BnMoEPrefillSharedGPUResources shared_gpu;
+            moe_prefill_shared_gpu_resources(&shared_gpu, c, lw, backend, l, 0);
             if (router && gate_all && up_all && down_all && norm) {
                 t0 = bn_moe_time_ms();
                 if (bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
                         gpu, act, router, gate_all, up_all, down_all,
-                        shared_gate, shared_up, shared_down,
-                        shared_gate_weight, norm, act, n_tokens, dim,
+                        shared_gpu.gate, shared_gpu.up, shared_gpu.down,
+                        shared_gpu.gate_weight, norm, act, n_tokens, dim,
                         moe_hidden, n_experts, K,
                         map->gate_type, map->up_type, map->down_type,
-                        c->act_type, shared_hidden, shared_gate_type,
-                        shared_up_type, shared_down_type,
+                        c->act_type, shared_gpu.hidden, shared_gpu.gate_type,
+                        shared_gpu.up_type, shared_gpu.down_type,
                         c->norm_eps, c->moe_norm_topk_prob,
                         c->moe_expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
@@ -471,44 +493,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             }
             if (all_resident) {
                 const BnBackendModel *backend = bn_model_backend(m);
-                void *shared_gate = NULL;
-                void *shared_up = NULL;
-                void *shared_down = NULL;
-                void *shared_gate_weight = NULL;
-                int shared_hidden = 0;
-                int shared_gate_type = 0;
-                int shared_up_type = 0;
-                int shared_down_type = 0;
+                BnMoEPrefillSharedGPUResources shared_gpu = {0};
+                int has_shared_gpu = 0;
                 if (bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
                         gpu_batch, c, lw, backend != NULL)) {
-                    shared_gate = bn_backend_model_handle(
-                        backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
-                    if (shared_gate) {
-                        shared_up = NULL;
-                    } else {
-                        shared_gate = bn_backend_model_qweight_buf(
-                            backend, &lw->shared.shared_gate);
-                        shared_up = bn_backend_model_qweight_buf(
-                            backend, &lw->shared.shared_up);
-                    }
-                    shared_down = bn_backend_model_qweight_buf(
-                        backend, &lw->shared.shared_down);
-                    shared_gate_weight = bn_backend_model_handle(
-                        backend, l, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
-                    if (shared_gate && shared_down &&
-                        (shared_up || bn_backend_model_handle(
-                            backend, l,
-                            BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED))) {
-                        shared_hidden = c->shared_expert_intermediate_size;
-                        shared_gate_type = lw->shared.shared_gate.type;
-                        shared_up_type = lw->shared.shared_up.type;
-                        shared_down_type = lw->shared.shared_down.type;
-                    } else {
-                        shared_gate = NULL;
-                        shared_up = NULL;
-                        shared_down = NULL;
-                        shared_gate_weight = NULL;
-                    }
+                    has_shared_gpu = moe_prefill_shared_gpu_resources(
+                        &shared_gpu, c, lw, backend, l, 1);
                 }
                 t0 = bn_moe_time_ms();
                 if (bn_transformer_gpu_moe_prefill_split_expert_batch_backend_run(
@@ -516,15 +506,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         expert_offsets, expert_counts, group_token_ids,
                         group_weights, Xb, n_tokens, dim, moe_hidden,
                         map->gate_type, map->up_type, map->down_type,
-                        c->act_type, shared_gate, shared_up, shared_down,
-                        shared_gate_weight, shared_hidden, shared_gate_type,
-                        shared_up_type, shared_down_type) == 0) {
+                        c->act_type, shared_gpu.gate, shared_gpu.up,
+                        shared_gpu.down, shared_gpu.gate_weight,
+                        shared_gpu.hidden, shared_gpu.gate_type,
+                        shared_gpu.up_type, shared_gpu.down_type) == 0) {
                     used_gpu_moe_batch = 1;
-                    used_gpu_shared_batch =
-                        shared_gate && shared_down &&
-                        (shared_up || bn_backend_model_handle(
-                            backend, l,
-                            BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED));
+                    used_gpu_shared_batch = has_shared_gpu;
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                 }
             }
@@ -698,27 +685,14 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             BnBackendModel *backend = bn_model_backend(m);
             if (bn_transformer_gpu_moe_prefill_shared_batch_available(
                     gpu, n_tokens, backend != NULL)) {
-                void *gate_gpu = bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED);
-                void *up_gpu = NULL;
-                if (!gate_gpu) {
-                    gate_gpu = bn_backend_model_qweight_buf(
-                        backend, &lw->shared.shared_gate);
-                    up_gpu = bn_backend_model_qweight_buf(
-                        backend, &lw->shared.shared_up);
-                }
-                void *down_gpu = bn_backend_model_qweight_buf(
-                    backend, &lw->shared.shared_down);
-                if (gate_gpu && down_gpu &&
-                    (up_gpu || bn_backend_model_handle(
-                        backend, l,
-                        BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED)) &&
+                BnMoEPrefillSharedGPUResources shared_gpu;
+                if (moe_prefill_shared_gpu_resources(
+                        &shared_gpu, c, lw, backend, l, 1) &&
                     bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
-                        gpu, sh_d, gate_gpu, up_gpu, down_gpu, Xb,
-                        n_tokens, dim, shared_hidden,
-                        lw->shared.shared_gate.type,
-                        lw->shared.shared_up.type,
-                        lw->shared.shared_down.type,
+                        gpu, sh_d, shared_gpu.gate, shared_gpu.up,
+                        shared_gpu.down, Xb, n_tokens, dim, shared_hidden,
+                        shared_gpu.gate_type, shared_gpu.up_type,
+                        shared_gpu.down_type,
                         c->act_type) == 0) {
                     used_gpu_shared = 1;
                 }
