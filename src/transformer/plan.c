@@ -1,6 +1,7 @@
 #include "transformer_plan_internal.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
+#include "../moe_internal.h"
 #include "transformer_backend_internal.h"
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_logits_internal.h"
@@ -321,7 +322,7 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
 }
 
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {
-    return lw ? lw->moe.router_weight != NULL : 0;
+    return bn_moe_policy_layer_has_router(lw);
 }
 
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
