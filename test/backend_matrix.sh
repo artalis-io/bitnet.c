@@ -309,7 +309,6 @@ if grep -n 'bn_backend_quant_cuda_q5k_deint_pair_matvec\|bn_backend_quant_cuda_q
 fi
 
 if ! grep -n '"avx512"' src/transformer/cpu_backend.c >/dev/null 2>&1 ||
-   ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/plan.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/prefill_backend.c >/dev/null 2>&1 ||
    ! grep -n '"avx512"' src/transformer/kv_backend.c >/dev/null 2>&1; then
     echo "CPU backend matrix must expose AVX512 as an explicit backend"
@@ -383,6 +382,17 @@ fi
 
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/plan.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use CPU policy helpers for float K-quant task flags"
+    fail=1
+fi
+
+if grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill\|bn_transformer_cpu_float_kquant_task_flags' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "src/transformer/plan.c must leave CPU float K-quant fallback task policy in CPU policy helpers"
+    fail=1
+fi
+
+if ! grep -n 'bn_transformer_cpu_backend_supports_float_kquant_prefill' src/transformer/cpu_policy.c >/dev/null 2>&1 ||
+   ! grep -n 'bn_transformer_cpu_float_kquant_task_flags' src/transformer/cpu_policy.c >/dev/null 2>&1; then
+    echo "CPU float K-quant fallback task policy must live in src/transformer/cpu_policy.c"
     fail=1
 fi
 

@@ -140,6 +140,18 @@ uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {
     return enabled ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT : 0u;
 }
 
+uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
+    const BnConfig *c) {
+    return bn_transformer_cpu_float_kquant_task_flags(
+        bn_model_config_requires_float_kquant_fallback(c));
+}
+
+int bn_transformer_cpu_prefill_force_float_kquant_enabled(
+    const BnConfig *c) {
+    return bn_model_config_requires_float_kquant_fallback(c) &&
+           bn_transformer_cpu_backend_supports_float_kquant_prefill();
+}
+
 BnTransformerCPUPostNormPolicy
 bn_transformer_cpu_attention_post_norm_policy(int uses_attention_post_norm,
                                               int has_attn_post_norm) {

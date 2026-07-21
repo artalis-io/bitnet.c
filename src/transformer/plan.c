@@ -193,18 +193,6 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
     return bn_transformer_gpu_backend_placement(gpu);
 }
 
-uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
-    const BnConfig *c) {
-    return bn_transformer_cpu_float_kquant_task_flags(
-        bn_model_config_requires_float_kquant_fallback(c));
-}
-
-int bn_transformer_cpu_prefill_force_float_kquant_enabled(
-    const BnConfig *c) {
-    return bn_model_config_requires_float_kquant_fallback(c) &&
-           bn_transformer_cpu_backend_supports_float_kquant_prefill();
-}
-
 int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,
     int gpu_attached) {
