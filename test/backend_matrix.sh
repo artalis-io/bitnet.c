@@ -674,6 +674,12 @@ if grep -n 'gpu->dense_ffn' src/transformer/cpu.c src/transformer/cpu_policy.c >
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_dense_ffn_fast_path_available/{flag=1} /^uint32_t bn_transformer_gpu_matvec_kquant_dot_flags/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'gpu->dense_ffn' >/dev/null 2>&1; then
+    echo "Transformer GPU dense FFN fast path policy must use GPU backend helpers"
+    fail=1
+fi
+
 if grep -n 'BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must use MoE policy helpers for float K-quant gate/up task flags"
     fail=1

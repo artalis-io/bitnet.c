@@ -105,8 +105,7 @@ int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
 int bn_transformer_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan) {
-    return gpu &&
-           gpu->dense_ffn &&
+    return bn_gpu_backend_can_dense_ffn(gpu) &&
            ffn_plan &&
            ffn_plan->has_gate &&
            !ffn_plan->has_sub_norm &&
@@ -127,10 +126,9 @@ int bn_transformer_gpu_dense_ffn_fast_path_run(
     int up_type,
     int down_type,
     int act_type) {
-    if (!gpu || !gpu->dense_ffn) return -1;
-    return gpu->dense_ffn(gpu->ctx, out, gate_buf, up_buf, down_buf, x,
-                          dim, hidden_dim, gate_type, up_type, down_type,
-                          act_type);
+    return bn_gpu_backend_dense_ffn(gpu, out, gate_buf, up_buf, down_buf, x,
+                                    dim, hidden_dim, gate_type, up_type,
+                                    down_type, act_type);
 }
 
 uint32_t bn_transformer_gpu_matvec_kquant_dot_flags(int tensor_type,
