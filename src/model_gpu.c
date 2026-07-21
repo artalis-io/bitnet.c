@@ -23,6 +23,12 @@ typedef enum {
     BN_MODEL_GPU_UPLOAD_F16_CACHE,
 } BnModelGPUUploadMode;
 
+typedef struct {
+    int uses_moe;
+    int uploads_router_diff2;
+    int resident_routed_ffn_eligible;
+} BnModelGPUMoELayerPolicy;
+
 BnGPUBackend *bn_model_gpu(const BnModel *model) {
     return model ? bn_backend_model_gpu(bn_model_backend(model)) : NULL;
 }
@@ -228,14 +234,20 @@ static void *upload_moe_all_proj(BnModel *model,
                                   upload_mode);
 }
 
-static int can_use_resident_moe_routed_ffn(const BnConfig *c,
-                                           const BnLayerWeights *lw) {
-    if (!c || !lw || !lw->moe.router_weight)
-        return 0;
+static BnModelGPUMoELayerPolicy
+model_gpu_moe_layer_policy(const BnConfig *c, const BnLayerWeights *lw) {
+    BnModelGPUMoELayerPolicy policy = {0};
+    policy.uses_moe = lw && lw->moe.router_weight != NULL;
+    if (!c || !policy.uses_moe)
+        return policy;
     const BnMoEExpertMap *em = &lw->moe.expert_map;
-    return bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
-               em->gate_type, em->up_type, em->down_type) &&
-           bn_moe_policy_supports_resident_routed_ffn_layout(c, em);
+    policy.uploads_router_diff2 =
+        bn_gpu_policy_moe_router_diff2_upload_enabled(c);
+    policy.resident_routed_ffn_eligible =
+        bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
+            em->gate_type, em->up_type, em->down_type) &&
+        bn_moe_policy_supports_resident_routed_ffn_layout(c, em);
+    return policy;
 }
 
 static int can_use_resident_moe_routed_ffn_model(const BnConfig *c,
@@ -245,10 +257,12 @@ static int can_use_resident_moe_routed_ffn_model(const BnConfig *c,
     int moe_layers = 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
-        if (!lw->moe.router_weight)
+        BnModelGPUMoELayerPolicy policy =
+            model_gpu_moe_layer_policy(c, lw);
+        if (!policy.uses_moe)
             continue;
         moe_layers++;
-        if (!can_use_resident_moe_routed_ffn(c, lw))
+        if (!policy.resident_routed_ffn_eligible)
             return 0;
     }
     return moe_layers > 0;
@@ -450,8 +464,9 @@ static size_t estimate_gpu_base_model_bytes(const BnConfig *c,
             add_f32_bytes(&total, lw->shared.shared_expert_gate,
                           c->dim) != 0)
             return SIZE_MAX;
-        if (bn_gpu_policy_moe_router_diff2_upload_enabled(c) &&
-            lw->moe.router_weight &&
+        BnModelGPUMoELayerPolicy moe_layer =
+            model_gpu_moe_layer_policy(c, lw);
+        if (moe_layer.uploads_router_diff2 &&
             add_f32_bytes(&total, lw->moe.router_weight, c->dim) != 0)
             return SIZE_MAX;
         if (add_f32_bytes(&total, lw->attn.q_bias, lw->attn.wq.rows) != 0 ||
@@ -851,11 +866,13 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
 
         void *attn_norm_gpu = upload_f32_buf(gpu, lw->norm.attn_norm, c->dim);
         void *ffn_norm_gpu  = upload_f32_buf(gpu, lw->norm.ffn_norm, c->dim);
+        BnModelGPUMoELayerPolicy moe_layer =
+            model_gpu_moe_layer_policy(c, lw);
         void *moe_router_diff_gpu =
-            bn_gpu_policy_moe_router_diff2_upload_enabled(c)
+            moe_layer.uploads_router_diff2
                 ? upload_moe_router_diff2(gpu, lw->moe.router_weight, c->dim)
                 : NULL;
-        void *moe_router_gpu = lw->moe.router_weight
+        void *moe_router_gpu = moe_layer.uses_moe
             ? upload_gpu_buffer_mode(
                 gpu, lw->moe.router_weight,
                 (size_t)c->n_experts * (size_t)c->dim * sizeof(float),
@@ -863,7 +880,7 @@ int bn_model_upload_weights(BnModel *model, BnGPUBackend *gpu) {
                 c->n_experts, c->dim, BN_MODEL_GPU_UPLOAD_STANDARD)
             : NULL;
         int upload_moe_all = upload_moe_all_model &&
-                             can_use_resident_moe_routed_ffn(c, lw);
+                             moe_layer.resident_routed_ffn_eligible;
         int upload_layer_f16_cache =
             upload_moe_all_native_quant_f16_cache ||
             (upload_moe_all_f16_cache_layers > 0 &&
