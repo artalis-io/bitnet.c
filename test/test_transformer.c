@@ -583,6 +583,9 @@ static void test_cpu_execution_helpers(void) {
 
     BnConfig kv = {0};
     assert(bn_transformer_kv_host_float_cache_rows_available(&kv));
+    assert(!bn_transformer_kv_host_cache_uses_fp16_rows(&kv));
+    assert(!bn_transformer_kv_requires_gpu_cache_write_staging(&kv));
+    assert(bn_transformer_kv_host_cache_element_size(&kv) == sizeof(float));
     assert(bn_transformer_kv_mode(&kv, 0) == BN_KV_FP32);
     assert(bn_transformer_kv_mode_stores_host_float_rows(BN_KV_FP32));
     assert(!bn_transformer_kv_mode_uses_turboquant(BN_KV_FP32));
@@ -590,6 +593,9 @@ static void test_cpu_execution_helpers(void) {
     assert(bn_transformer_kv_mode_uses_cpu_gqa_cache(BN_KV_FP32));
     kv.kv_f16 = 1;
     assert(!bn_transformer_kv_host_float_cache_rows_available(&kv));
+    assert(bn_transformer_kv_host_cache_uses_fp16_rows(&kv));
+    assert(bn_transformer_kv_requires_gpu_cache_write_staging(&kv));
+    assert(bn_transformer_kv_host_cache_element_size(&kv) == sizeof(uint16_t));
     assert(bn_transformer_kv_mode(&kv, 0) == BN_KV_FP16);
     assert(!bn_transformer_kv_mode_stores_host_float_rows(BN_KV_FP16));
     assert(!bn_transformer_kv_mode_uses_turboquant(BN_KV_FP16));

@@ -11,6 +11,19 @@ int bn_transformer_kv_host_float_cache_rows_available(const BnConfig *c) {
     return c && c->kv_tq_bits <= 0 && !c->kv_f16;
 }
 
+int bn_transformer_kv_host_cache_uses_fp16_rows(const BnConfig *c) {
+    return bn_transformer_kv_mode_uses_fp16(bn_transformer_kv_mode(c, 0));
+}
+
+int bn_transformer_kv_requires_gpu_cache_write_staging(const BnConfig *c) {
+    return bn_transformer_kv_host_cache_uses_fp16_rows(c);
+}
+
+size_t bn_transformer_kv_host_cache_element_size(const BnConfig *c) {
+    return bn_transformer_kv_host_cache_uses_fp16_rows(c) ? sizeof(uint16_t)
+                                                         : sizeof(float);
+}
+
 void bn_transformer_tq_write_kv(const BnTQState *tq,
                                 BnRunState *s,
                                 const float *k_tmp,

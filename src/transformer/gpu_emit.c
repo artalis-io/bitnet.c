@@ -6,6 +6,7 @@
 #include "moe.h"
 #include "quant.h"
 #include "transformer_backend_internal.h"
+#include "transformer_kv_internal.h"
 #include "session.h"
 #include <math.h>
 #include <stdint.h>
@@ -972,7 +973,7 @@ int bn_transformer_gpu_upload_kv_cache(BnModel *m, BnSession *sess,
 
     int n_attn = bn_transformer_attention_layer_count(c);
     if (n_attn <= 0 || c->seq_len <= 0 || c->kv_dim <= 0) return -1;
-    size_t elem_size = c->kv_f16 ? sizeof(uint16_t) : sizeof(float);
+    size_t elem_size = bn_transformer_kv_host_cache_element_size(c);
     int first = pos0 % c->seq_len;
     int rows_left = n_tokens > c->seq_len ? c->seq_len : n_tokens;
     if (n_tokens > c->seq_len)
@@ -1188,32 +1189,35 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     int q_gated = !use_packed_qkv && plan->q_gated;
     int packed_split_op_code = bn_transformer_gpu_matvec_split_op_code(
         lw->ssm.wqkv.type);
+    int kv_cache_uses_fp16 = bn_transformer_kv_host_cache_uses_fp16_rows(c);
+    int kv_cache_write_needs_staging =
+        bn_transformer_kv_requires_gpu_cache_write_staging(c);
     int use_packed_qkv_split =
         bn_transformer_gpu_packed_qkv_split_supported(
             res ? res->gpu : NULL, &lw->ssm.wqkv, use_packed_qkv,
-            c->kv_f16, packed_split_op_code);
+            kv_cache_uses_fp16, packed_split_op_code);
 
     int qkv_split_op_code = bn_transformer_gpu_matvec_split_op_code(
         lw->attn.wq.type);
     int qkv_split_enabled = bn_transformer_gpu_qkv_split_enabled(use_small_dense_exact_native);
     int qk_split_enabled = bn_transformer_gpu_qk_split_enabled();
-    int use_split = qkv_split_enabled && !c->kv_f16 &&
+    int use_split = qkv_split_enabled && !kv_cache_write_needs_staging &&
                     qkv_stacked && !q_gated &&
                     !q_bias && !k_bias && !v_bias &&
                     bn_transformer_gpu_qkv_split_standard_supported(
                         res ? res->gpu : NULL, &lw->attn.wq,
                         qkv_split_op_code);
     int use_native_quant_split =
-        qkv_split_enabled && !c->kv_f16 && qkv_stacked && !q_gated &&
+        qkv_split_enabled && !kv_cache_write_needs_staging && qkv_stacked && !q_gated &&
         !q_bias && !k_bias && !v_bias &&
         bn_transformer_gpu_qkv_split_native_quant_supported(
             res ? res->gpu : NULL, &lw->attn.wq, qkv_split_op_code);
     int use_packed_kquant_split =
-        qkv_split_enabled && !c->kv_f16 && qkv_stacked && !q_gated &&
+        qkv_split_enabled && !kv_cache_write_needs_staging && qkv_stacked && !q_gated &&
         !q_bias && !k_bias && !v_bias &&
         bn_transformer_gpu_qkv_split_packed_kquant_supported(
             res ? res->gpu : NULL, &lw->attn.wq, qkv_split_op_code);
-    int use_qk_split = qk_split_enabled && !c->kv_f16 &&
+    int use_qk_split = qk_split_enabled && !kv_cache_write_needs_staging &&
                        qk_stacked && !q_gated &&
                        bn_transformer_gpu_qk_split_supported(
                            res ? res->gpu : NULL, &lw->attn.wq, &lw->attn.wk,
@@ -1225,12 +1229,12 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
         fprintf(stderr,
                 "[bn:gpu:debug] qkv_split disabled=%d stacked=%p qk=%p q_gated=%d "
                 "q_bias=%p k_bias=%p v_bias=%p op=%d can=%d use=%d qk_use=%d "
-                "kv_f16=%d q_rows=%d/%d k_rows=%d/%d cols=%d/%d types=%d/%d\n",
+                "kv_cache_fp16=%d q_rows=%d/%d k_rows=%d/%d cols=%d/%d types=%d/%d\n",
                 !qkv_split_enabled, qkv_stacked, qk_stacked, q_gated, q_bias, k_bias,
                 v_bias, qkv_split_op_code,
                 bn_transformer_gpu_can_matvec_split(res->gpu, lw->attn.wq.type),
                 use_split || use_native_quant_split || use_packed_kquant_split, use_qk_split,
-                c->kv_f16, lw->attn.wq.rows, q_dim, lw->attn.wk.rows, kv_dim,
+                kv_cache_uses_fp16, lw->attn.wq.rows, q_dim, lw->attn.wk.rows, kv_dim,
                 lw->attn.wq.cols, lw->attn.wk.cols, lw->attn.wq.type,
                 lw->attn.wk.type);
         qkv_debug_printed = 1;
@@ -1280,7 +1284,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                  NULL, deinterleave_params);
         } else {
             if (use_qk_split) {
-                int k_needs_scratch = k_bias || c->kv_f16;
+                int k_needs_scratch = k_bias || kv_cache_write_needs_staging;
                 int k_split_buf = k_needs_scratch ? BN_GPU_VALUE_SCRATCH
                                                    : BN_GPU_VALUE_KEY_CACHE;
                 int k_split_offset = k_needs_scratch ? 0 : (int)kv_cache_off;
@@ -1308,7 +1312,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
         }
 
         if (use_qk_split) {
-            if (k_bias || c->kv_f16) {
+            if (k_bias || kv_cache_write_needs_staging) {
                 uint32_t bias_params[8] = {
                     (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0
                 };
@@ -1334,7 +1338,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                     ctx, BN_GPU_VALUE_SCRATCH, BN_GPU_VALUE_KEY_CACHE, 0,
                     (int)kv_cache_off, kv_dim);
             }
-        } else if (k_bias || c->kv_f16) {
+        } else if (k_bias || kv_cache_write_needs_staging) {
             emit_context_matvec_flags(
                 ctx, lw->attn.wk.type,
                 res ? res->wk : NULL, BN_GPU_VALUE_XB,
@@ -1374,7 +1378,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                                          use_small_dense_exact_native));
         }
 
-        if (v_bias || c->kv_f16) {
+        if (v_bias || kv_cache_write_needs_staging) {
             emit_context_matvec_flags(
                 ctx, lw->attn.wv.type,
                 res ? res->wv : NULL, BN_GPU_VALUE_XB,
@@ -1412,7 +1416,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                              BN_GPU_VALUE_Q, -1, -1, n_heads, q_norm,
                              ph_params);
     }
-    if (k_norm && !k_bias && !c->kv_f16) {
+    if (k_norm && !k_bias && !kv_cache_write_needs_staging) {
         uint32_t ph_params[8] = {
             (uint32_t)head_size, u_eps,
             (uint32_t)c->qk_norm_per_head, kv_cache_off, 0, 0, 0, 0
@@ -1464,8 +1468,10 @@ void bn_transformer_gpu_emit_context_attention_gqa(
     uint32_t kv_cache_off,
     int has_moe) {
     void *k_bias = res ? res->k_bias : NULL;
+    int kv_cache_write_needs_staging =
+        bn_transformer_kv_requires_gpu_cache_write_staging(c);
 
-    if (!k_bias && !c->kv_f16) {
+    if (!k_bias && !kv_cache_write_needs_staging) {
         emit_context_rope(ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_KEY_CACHE,
                           n_heads, head_size, pos, rope_dims, c->n_kv_heads,
                           kv_cache_off);

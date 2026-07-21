@@ -1005,6 +1005,11 @@ if grep -n 'gpu->execute\|gpu->read_activation\|gpu->write_activation' src/trans
     fail=1
 fi
 
+if grep -n 'c->kv_tq_bits\|c->kv_f16' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must use KV policy helpers instead of raw KV config checks"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1

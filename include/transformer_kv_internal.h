@@ -21,6 +21,9 @@ typedef struct {
 
 const BnKVCPUOps *bn_transformer_kv_cpu_ops(void);
 int bn_transformer_kv_host_float_cache_rows_available(const BnConfig *c);
+int bn_transformer_kv_host_cache_uses_fp16_rows(const BnConfig *c);
+int bn_transformer_kv_requires_gpu_cache_write_staging(const BnConfig *c);
+size_t bn_transformer_kv_host_cache_element_size(const BnConfig *c);
 
 void bn_transformer_tq_write_kv(const BnTQState *tq,
                                 BnRunState *s,
