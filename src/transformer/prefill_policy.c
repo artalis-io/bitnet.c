@@ -713,11 +713,11 @@ int bn_transformer_prefill_prepared_kquant_block_sums_per_row(
 int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
-    int force_float_kquant,
+    int uses_float_kquant_fallback,
     int dim,
     int tensor_type) {
     return !gpu &&
-           !force_float_kquant &&
+           !uses_float_kquant_fallback &&
            bn_transformer_prefill_prepared_kquant_blocks_per_row(dim) > 0 &&
            bn_transformer_prefill_can_prepared_kquant_type(ops, tensor_type);
 }
@@ -725,25 +725,25 @@ int bn_transformer_prefill_route_prepared_kquant_type_enabled(
 int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
-    int force_float_kquant,
+    int uses_float_kquant_fallback,
     int dim,
     int left_type,
     int right_type) {
     return bn_transformer_prefill_route_prepared_kquant_type_enabled(
-               ops, gpu, force_float_kquant, dim, left_type) &&
+               ops, gpu, uses_float_kquant_fallback, dim, left_type) &&
            bn_backend_quant_supports_prepared_kquant(right_type);
 }
 
 int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
-    int force_float_kquant,
+    int uses_float_kquant_fallback,
     int dim,
     int first_type,
     int second_type,
     int third_type) {
     return bn_transformer_prefill_route_prepared_kquant_pair_enabled(
-               ops, gpu, force_float_kquant, dim, first_type, second_type) &&
+               ops, gpu, uses_float_kquant_fallback, dim, first_type, second_type) &&
            bn_backend_quant_supports_prepared_kquant(third_type);
 }
 

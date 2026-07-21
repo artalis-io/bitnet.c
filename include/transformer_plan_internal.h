@@ -283,7 +283,7 @@ BnBackendPlacement bn_transformer_backend_placement(const BnGPUBackend *gpu,
 BnCPUBackendPlacement bn_transformer_cpu_backend_placement(void);
 uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
     const BnConfig *c);
-int bn_transformer_cpu_prefill_force_float_kquant_enabled(
+int bn_transformer_cpu_prefill_uses_float_kquant_fallback(
     const BnConfig *c);
 int bn_transformer_cpu_prefill_decode_for_parity_enabled(
     const BnConfig *c,

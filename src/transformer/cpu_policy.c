@@ -146,7 +146,7 @@ uint32_t bn_transformer_cpu_force_float_kquant_task_flags(
         bn_model_config_requires_float_kquant_fallback(c));
 }
 
-int bn_transformer_cpu_prefill_force_float_kquant_enabled(
+int bn_transformer_cpu_prefill_uses_float_kquant_fallback(
     const BnConfig *c) {
     return bn_model_config_requires_float_kquant_fallback(c) &&
            bn_transformer_cpu_backend_supports_float_kquant_prefill();

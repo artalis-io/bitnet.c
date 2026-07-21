@@ -131,7 +131,7 @@ static float *prefill_decode_tokens_with_logits(BnModel *m, BnSession *sess,
 }
 
 static int prefill_uses_float_kquant_fallback(const BnModel *m) {
-    return m && bn_transformer_cpu_prefill_force_float_kquant_enabled(
+    return m && bn_transformer_cpu_prefill_uses_float_kquant_fallback(
         &m->config);
 }
 

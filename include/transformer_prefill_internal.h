@@ -456,20 +456,20 @@ int bn_transformer_prefill_prepared_kquant_block_sums_per_row(
 int bn_transformer_prefill_route_prepared_kquant_type_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
-    int force_float_kquant,
+    int uses_float_kquant_fallback,
     int dim,
     int tensor_type);
 int bn_transformer_prefill_route_prepared_kquant_pair_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
-    int force_float_kquant,
+    int uses_float_kquant_fallback,
     int dim,
     int left_type,
     int right_type);
 int bn_transformer_prefill_route_prepared_kquant_triple_enabled(
     const BnPrefillCPUOps *ops,
     const BnGPUBackend *gpu,
-    int force_float_kquant,
+    int uses_float_kquant_fallback,
     int dim,
     int first_type,
     int second_type,

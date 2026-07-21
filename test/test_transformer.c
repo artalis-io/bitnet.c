@@ -4198,17 +4198,17 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
     assert(bn_transformer_prefill_uses_exact_activation(&c));
     assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
-    int force_float_kquant =
-        bn_transformer_cpu_prefill_force_float_kquant_enabled(&c);
+    int uses_float_kquant_fallback =
+        bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c);
     int backend_supports_float_kquant_prefill =
         bn_transformer_cpu_backend_supports_float_kquant_prefill();
     assert(backend_supports_float_kquant_prefill ==
            bn_transformer_cpu_backend_ops()->supports_float_kquant_prefill);
-    assert(force_float_kquant ==
+    assert(uses_float_kquant_fallback ==
            backend_supports_float_kquant_prefill);
     c.policy_flags = 0;
     assert(bn_transformer_cpu_force_float_kquant_task_flags(&c) == 0);
-    assert(!bn_transformer_cpu_prefill_force_float_kquant_enabled(&c));
+    assert(!bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c));
     assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY;
     assert(bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
