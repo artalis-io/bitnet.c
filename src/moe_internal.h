@@ -134,6 +134,9 @@ double bn_moe_time_ms(void);
 void bn_moe_rmsnorm(float *out, const float *x, const float *w,
                     int size, float eps);
 float bn_moe_dot_row(const float *row, const float *x, int dim);
+float bn_moe_shared_expert_gate_weight(const BnLayerWeights *lw,
+                                       const float *x,
+                                       int dim);
 int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
                      int dim, int start_expert);
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,

@@ -630,17 +630,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         bn_moe_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q,
                             bn_model_pool(m));
 
-        // Apply shared expert sigmoid gate if present:
-        // gate = sigmoid(dot(input, gate_weight)) — scalar per token
-        if (lw->shared.shared_expert_gate) {
-            float gate_dot = 0.0f;
-            for (int d = 0; d < dim; d++)
-                gate_dot += s->xb[d] * lw->shared.shared_expert_gate[d];
-            float gate = 1.0f / (1.0f + expf(-gate_dot));
-            bn_moe_weighted_add(ms->expert_out, s->xb2, gate, dim);
-        } else {
-            bn_moe_weighted_add(ms->expert_out, s->xb2, 1.0f, dim);
-        }
+        float shared_weight =
+            bn_moe_shared_expert_gate_weight(lw, s->xb, dim);
+        bn_moe_weighted_add(ms->expert_out, s->xb2, shared_weight, dim);
     }
     ms->stats.shared_time_ms += bn_moe_time_ms() - t0;
 

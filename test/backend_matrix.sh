@@ -3963,6 +3963,11 @@ if grep -n 'c->has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.
     fail=1
 fi
 
+if rg -n 'if \([^)]*shared_expert_gate|gate_dot|shared_expert_gate\[d\]' src/moe_execute.c src/moe_prefill.c src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "MoE execute/prefill/GPU CPU fallback code must compose shared expert gate weight helpers"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/moe_policy.c >/dev/null 2>&1; then
     echo "src/moe_policy.c must use model-policy helpers instead of reaching into model_arch"
     fail=1

@@ -189,15 +189,9 @@ static int gpu_debug_compute_moe_cpu_from_xb(
         gpu_cpu_quant_matvec_batch(m, shared_gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
         gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, hb, sess->state.x_q);
-        if (lw->shared.shared_expert_gate) {
-            float gate_dot = 0.0f;
-            for (int d = 0; d < dim; d++)
-                gate_dot += xb_in[d] * lw->shared.shared_expert_gate[d];
-            float gate = 1.0f / (1.0f + expf(-gate_dot));
-            bn_moe_weighted_add(expert_out, down, gate, dim);
-        } else {
-            bn_moe_weighted_add(expert_out, down, 1.0f, dim);
-        }
+        float shared_weight =
+            bn_moe_shared_expert_gate_weight(lw, xb_in, dim);
+        bn_moe_weighted_add(expert_out, down, shared_weight, dim);
     }
 
     for (int i = 0; i < dim; i++)
@@ -283,15 +277,9 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
         gpu_cpu_quant_matvec_batch(m, shared_gu_tasks, 2, xb_in, sess->state.x_q);
         bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
         gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, hb, sess->state.x_q);
-        if (lw->shared.shared_expert_gate) {
-            float gate_dot = 0.0f;
-            for (int d = 0; d < dim; d++)
-                gate_dot += xb_in[d] * lw->shared.shared_expert_gate[d];
-            float gate = 1.0f / (1.0f + expf(-gate_dot));
-            bn_moe_weighted_add(shared_out, down, gate, dim);
-        } else {
-            bn_moe_weighted_add(shared_out, down, 1.0f, dim);
-        }
+        float shared_weight =
+            bn_moe_shared_expert_gate_weight(lw, xb_in, dim);
+        bn_moe_weighted_add(shared_out, down, shared_weight, dim);
     }
 
     free(hb);
@@ -333,15 +321,8 @@ static int gpu_compute_shared_expert_cpu_from_xb(
     bn_moe_swiglu(hb, hb, hb2, shared_hidden, c->moe_exact_silu);
     gpu_cpu_quant_matvec(m, down, &lw->shared.shared_down, hb, sess->state.x_q);
     memset(shared_out, 0, (size_t)dim * sizeof(float));
-    if (lw->shared.shared_expert_gate) {
-        float gate_dot = 0.0f;
-        for (int d = 0; d < dim; d++)
-            gate_dot += xb_in[d] * lw->shared.shared_expert_gate[d];
-        float gate = 1.0f / (1.0f + expf(-gate_dot));
-        bn_moe_weighted_add(shared_out, down, gate, dim);
-    } else {
-        bn_moe_weighted_add(shared_out, down, 1.0f, dim);
-    }
+    float shared_weight = bn_moe_shared_expert_gate_weight(lw, xb_in, dim);
+    bn_moe_weighted_add(shared_out, down, shared_weight, dim);
 
     free(hb);
     free(hb2);

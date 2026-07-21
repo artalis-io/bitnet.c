@@ -227,22 +227,14 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                                     lw->shared.shared_up.type,
                                     lw->shared.shared_down.type,
                                     c->act_type) == 0) {
-                                if (lw->shared.shared_expert_gate) {
-                                    for (int t = 0; t < n_tokens; t++) {
-                                        float gate_dot = 0.0f;
-                                        for (int d = 0; d < dim; d++)
-                                            gate_dot += Xb[(size_t)t * dim + d] *
-                                                        lw->shared.shared_expert_gate[d];
-                                        float gate = 1.0f / (1.0f + expf(-gate_dot));
-                                        for (int d = 0; d < dim; d++)
-                                            moe_out[(size_t)t * dim + d] +=
-                                                gate * sh_d[(size_t)t * dim + d];
-                                    }
-                                } else {
-                                    for (int t = 0; t < n_tokens; t++)
-                                        for (int d = 0; d < dim; d++)
-                                            moe_out[(size_t)t * dim + d] +=
-                                                sh_d[(size_t)t * dim + d];
+                                for (int t = 0; t < n_tokens; t++) {
+                                    const float *x_t = Xb + (size_t)t * dim;
+                                    float gate =
+                                        bn_moe_shared_expert_gate_weight(
+                                            lw, x_t, dim);
+                                    for (int d = 0; d < dim; d++)
+                                        moe_out[(size_t)t * dim + d] +=
+                                            gate * sh_d[(size_t)t * dim + d];
                                 }
                                 ms->stats.shared_time_ms += bn_moe_time_ms() - ts;
                                 shared_ok = 1;
@@ -767,20 +759,12 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                                     n_tokens, x_q_scratch, bn_model_pool(m));
             }
 
-            // Apply shared expert sigmoid gate if present
-            if (lw->shared.shared_expert_gate) {
-                for (int t = 0; t < n_tokens; t++) {
-                    float gate_dot = 0.0f;
-                    for (int d = 0; d < dim; d++)
-                        gate_dot += Xb[(size_t)t * dim + d] * lw->shared.shared_expert_gate[d];
-                    float gate = 1.0f / (1.0f + expf(-gate_dot));
-                    for (int d = 0; d < dim; d++)
-                        moe_out[(size_t)t * dim + d] += gate * sh_d[(size_t)t * dim + d];
-                }
-            } else {
-                for (int t = 0; t < n_tokens; t++)
-                    for (int d = 0; d < dim; d++)
-                        moe_out[(size_t)t * dim + d] += sh_d[(size_t)t * dim + d];
+            for (int t = 0; t < n_tokens; t++) {
+                const float *x_t = Xb + (size_t)t * dim;
+                float gate = bn_moe_shared_expert_gate_weight(lw, x_t, dim);
+                for (int d = 0; d < dim; d++)
+                    moe_out[(size_t)t * dim + d] +=
+                        gate * sh_d[(size_t)t * dim + d];
             }
         } else if (need_sh) {
             SH_LOG_ERROR("Failed to allocate shared expert batch buffers");
