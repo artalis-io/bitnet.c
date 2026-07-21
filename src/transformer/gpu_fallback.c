@@ -980,8 +980,8 @@ int bn_transformer_gpu_debug_compare_qkv(
     }
     if (lw->attn.k_bias) {
         int head_size = m->config.head_size;
-        int rope_dims = m->config.rope_dim_count > 0
-            ? m->config.rope_dim_count : head_size;
+        int rope_dims = bn_transformer_rope_dims_for_head(&m->config,
+                                                          head_size);
         int half = rope_dims / 2;
         for (int h = 0; h < m->config.n_kv_heads; h++) {
             float *kh = cpu_k + (size_t)h * head_size;
