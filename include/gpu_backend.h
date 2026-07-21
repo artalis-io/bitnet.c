@@ -582,6 +582,11 @@ static inline int bn_gpu_backend_can_prefill_qkv_attention_wo_norm_resid(
     return gpu && gpu->prefill_qkv_attention_wo_norm_resid;
 }
 
+static inline int bn_gpu_backend_can_prefill_dense_layer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_dense_layer;
+}
+
 static inline int bn_gpu_backend_can_prefill_ssm_layer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->prefill_ssm_layer;
@@ -1018,6 +1023,63 @@ static inline int bn_gpu_backend_prefill_qkv_attention_wo_norm_resid(
         head_size, kv_mul, kv_dim, qk_rows, qk_type, wv_rows, wv_type,
         wo_rows, wo_cols, wo_type, qk_norm_per_head, norm_eps, pos0,
         rope_dims, attention_scale);
+}
+
+static inline int bn_gpu_backend_prefill_dense_layer(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *qk_buf,
+    void *wv_buf,
+    void *wo_buf,
+    void *gate_buf,
+    void *up_buf,
+    void *down_buf,
+    void *attn_norm_buf,
+    void *ffn_norm_buf,
+    void *q_norm_buf,
+    void *k_norm_buf,
+    void *q_bias_buf,
+    void *k_bias_buf,
+    void *v_bias_buf,
+    const float *X,
+    float *K_out,
+    float *V_out,
+    int n_tokens,
+    int dim,
+    int hidden_dim,
+    int n_heads,
+    int n_kv_heads,
+    int head_size,
+    int kv_mul,
+    int kv_dim,
+    int qk_rows,
+    int qk_type,
+    int wv_rows,
+    int wv_type,
+    int wo_rows,
+    int wo_cols,
+    int wo_type,
+    int gate_type,
+    int up_type,
+    int down_type,
+    int act_type,
+    int qk_norm_per_head,
+    float norm_eps,
+    int pos0,
+    int rope_dims,
+    uint32_t kv_cache_off,
+    int kv_cache_stride,
+    float attention_scale) {
+    if (!bn_gpu_backend_can_prefill_dense_layer(gpu))
+        return -1;
+    return gpu->prefill_dense_layer(
+        gpu->ctx, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
+        attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf, q_bias_buf,
+        k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim, hidden_dim,
+        n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows, qk_type,
+        wv_rows, wv_type, wo_rows, wo_cols, wo_type, gate_type, up_type,
+        down_type, act_type, qk_norm_per_head, norm_eps, pos0, rope_dims,
+        kv_cache_off, kv_cache_stride, attention_scale);
 }
 
 static inline int bn_gpu_backend_prefill_ssm_layer(

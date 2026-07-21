@@ -1087,7 +1087,7 @@ int bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
 
 int bn_transformer_gpu_prefill_dense_layer_backend_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->prefill_dense_layer;
+    return bn_gpu_backend_can_prefill_dense_layer(gpu);
 }
 
 int bn_transformer_gpu_prefill_dense_layer_backend_run(
@@ -1137,8 +1137,8 @@ int bn_transformer_gpu_prefill_dense_layer_backend_run(
     float attention_scale) {
     if (!bn_transformer_gpu_prefill_dense_layer_backend_available(gpu))
         return -1;
-    return gpu->prefill_dense_layer(
-        gpu->ctx, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
+    return bn_gpu_backend_prefill_dense_layer(
+        gpu, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
         attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf, q_bias_buf,
         k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim, hidden_dim,
         n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows, qk_type,

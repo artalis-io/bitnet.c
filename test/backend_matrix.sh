@@ -1653,6 +1653,12 @@ if grep -n 'gpu->prefill_dense_layer' src/transformer/prefill.c src/transformer/
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_prefill_dense_layer_backend_available/{flag=1} /^int bn_transformer_gpu_prefill_moe_layer_backend_available/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'gpu->prefill_dense_layer' >/dev/null 2>&1; then
+    echo "Transformer GPU prefill dense layer policy must use GPU backend helpers"
+    fail=1
+fi
+
 if grep -n 'gpu->prefill_moe_layer' src/transformer/prefill.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill execution code must use prefill policy helpers for MoE layer availability"
     fail=1
