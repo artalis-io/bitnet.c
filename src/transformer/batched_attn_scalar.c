@@ -100,7 +100,7 @@ void bn_transformer_batched_attn_naive_scalar_range(void *ctx, int h_start, int 
     int hs = b->head_size, kv_dim = b->kv_dim, kv_mul = b->kv_mul;
     int seq_len = b->seq_len, n_tokens = b->n_tokens, pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->c->kv_f16;
+    int kv_f16 = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;
@@ -174,7 +174,7 @@ void bn_transformer_batched_attn_flash_scalar_range(void *ctx, int h_start, int 
     int hs = b->head_size, kv_dim = b->kv_dim, kv_mul = b->kv_mul;
     int seq_len = b->seq_len, n_tokens = b->n_tokens, pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->c->kv_f16;
+    int kv_f16 = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims, half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
     int q_row_stride = b->q_row_stride > 0 ? b->q_row_stride : b->wq_rows;

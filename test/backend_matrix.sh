@@ -1019,6 +1019,14 @@ if grep -n 'c->kv_tq_bits\|c->kv_f16' \
     fail=1
 fi
 
+if grep -n 'c->kv_tq_bits\|c->kv_f16' \
+    src/transformer/batched_attn_scalar.c \
+    src/transformer/batched_attn_neon.c \
+    src/transformer/batched_attn_avx2.c >/dev/null 2>&1; then
+    echo "batched attention kernels must use planned KV cache row policy from BnBatchedAttnCtx"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1

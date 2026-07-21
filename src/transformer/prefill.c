@@ -2049,6 +2049,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .rope_cos = rope_cos_buf, .rope_sin = rope_sin_buf,
                     .rope_stride = half_rope,
                     .attention_scale = prefill_attention_scale(c, layer_head_size),
+                    .kv_cache_uses_fp16_rows =
+                        bn_transformer_kv_host_cache_uses_fp16_rows(c),
                     .q_norm = lw->attn.q_norm, .k_norm = lw->attn.k_norm,
                     .q_bias = lw->attn.q_bias, .k_bias = lw->attn.k_bias,
                     .v_bias = lw->attn.v_bias,

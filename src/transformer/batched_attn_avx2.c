@@ -120,7 +120,7 @@ void bn_transformer_batched_attn_naive_avx2_range(void *ctx, int h_start, int h_
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->c->kv_f16;
+    int kv_f16 = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
@@ -211,7 +211,7 @@ void bn_transformer_batched_attn_flash_avx2_range(void *ctx, int h_start, int h_
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->c->kv_f16;
+    int kv_f16 = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;
@@ -320,7 +320,7 @@ void bn_transformer_batched_attn_flash_avx2_pair_range(void *ctx, int unit_start
     int n_tokens = b->n_tokens;
     int pos0 = b->pos0;
     size_t loff = b->loff;
-    int kv_f16 = b->c->kv_f16;
+    int kv_f16 = b->kv_cache_uses_fp16_rows;
     int rope_dims = b->rope_dims;
     int half_rope = rope_dims / 2;
     int rope_stride = b->rope_stride > 0 ? b->rope_stride : half_rope;

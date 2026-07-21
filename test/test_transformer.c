@@ -5328,6 +5328,8 @@ static void test_batched_attn_fp16_kv(void) {
         .seq_len = seq_len, .rope_dims = 0,
         .rope_freq = NULL, .rope_cos = rope_cos, .rope_sin = rope_sin,
         .attention_scale = 1.0f / sqrtf((float)head_size),
+        .kv_cache_uses_fp16_rows =
+            bn_transformer_kv_host_cache_uses_fp16_rows(&c),
         .q_norm = NULL, .k_norm = NULL,
         .q_bias = NULL, .k_bias = NULL, .v_bias = NULL,
         .qk_norm_per_head = 0, .norm_eps = 1e-5f,
