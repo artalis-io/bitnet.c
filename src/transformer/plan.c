@@ -317,8 +317,7 @@ int bn_transformer_ffn_requires_cpu_fallback(
 
 int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw) {
-    return (c && c->has_shared_expert) ||
-           (lw && lw->shared.shared_expert_gate);
+    return bn_moe_policy_has_shared_expert(c, lw);
 }
 
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {

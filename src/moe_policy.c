@@ -50,6 +50,12 @@ int bn_moe_policy_layer_has_router(const BnLayerWeights *lw) {
     return lw ? lw->moe.router_weight != NULL : 0;
 }
 
+int bn_moe_policy_has_shared_expert(const BnConfig *c,
+                                    const BnLayerWeights *lw) {
+    return (c && c->has_shared_expert) ||
+           (lw && lw->shared.shared_expert_gate);
+}
+
 int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
                                            const BnLayerWeights *lw) {
     return c &&
