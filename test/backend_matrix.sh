@@ -3028,6 +3028,11 @@ if grep -n 'if (!lw->moe\.router_weight)\|if (model->weights\.layers\[l\]\.moe\.
     fail=1
 fi
 
+if grep -n 'router_weight != NULL' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must compose MoE router policy helpers for loaded-layer decisions"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for CUDA prefill chain debug env vars"
     fail=1

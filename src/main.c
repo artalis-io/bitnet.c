@@ -3,6 +3,7 @@
 #include "gguf.h"
 #include "model.h"
 #include "moe.h"
+#include "moe_internal.h"
 #include "gpu_backend.h"
 #include "gpu_policy.h"
 #include "generate.h"
@@ -384,7 +385,7 @@ typedef struct {
 static BnMainLoadedMoELayerPolicy
 main_loaded_moe_layer_policy(const BnLayerWeights *lw) {
     BnMainLoadedMoELayerPolicy policy = {0};
-    policy.uses_moe = lw && lw->moe.router_weight != NULL;
+    policy.uses_moe = bn_moe_policy_layer_has_router(lw);
     return policy;
 }
 
