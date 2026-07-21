@@ -91,6 +91,16 @@ int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
     int shared_gate_type,
     int shared_up_type,
     int batch_type);
+int bn_moe_policy_can_batch_loaded_shared_gateup(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const BnLayerWeights *lw);
+int bn_moe_shared_expert_gateup_tasks(BnMatvecTask *tasks,
+                                      float *gate_out,
+                                      float *up_out,
+                                      const BnLayerWeights *lw,
+                                      uint32_t flags);
+const BnQWeight *bn_moe_shared_expert_down_weight(const BnLayerWeights *lw);
 int bn_moe_quant_uses_embedded_tensor_scale(int type);
 size_t bn_moe_quant_embedded_tensor_scale_offset(int type, int rows, int cols);
 void bn_moe_quant_matvec(float *out,

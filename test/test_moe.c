@@ -425,6 +425,41 @@ static void test_moe_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K) ==
            bn_transformer_cpu_backend_supports_mixed_shared_gateup_batch());
 
+    BnLayerWeights lw = {0};
+    float shared_gate_data[4] = {0};
+    float shared_up_data[4] = {0};
+    float shared_down_data[4] = {0};
+    float gate_out[4] = {0};
+    float up_out[4] = {0};
+    BnMatvecTask shared_tasks[2];
+    assert(!bn_moe_policy_can_batch_loaded_shared_gateup(NULL, 0, &lw));
+    assert(bn_moe_shared_expert_gateup_tasks(
+               shared_tasks, gate_out, up_out, &lw, 123u) == 0);
+    assert(bn_moe_shared_expert_down_weight(&lw) == NULL);
+
+    lw.shared.shared_gate.data = shared_gate_data;
+    lw.shared.shared_gate.type = BN_GGUF_TENSOR_Q4_0;
+    lw.shared.shared_up.data = shared_up_data;
+    lw.shared.shared_up.type = BN_GGUF_TENSOR_Q4_0;
+    lw.shared.shared_down.data = shared_down_data;
+    lw.shared.shared_down.type = BN_GGUF_TENSOR_Q4_0;
+
+    BnQWeight routed = {0};
+    routed.type = BN_GGUF_TENSOR_Q4_0;
+    BnMatvecTask routed_tasks[1] = {{ gate_out, &routed, NULL, 0 }};
+    assert(bn_moe_policy_can_batch_loaded_shared_gateup(
+        routed_tasks, 1, &lw));
+    assert(bn_moe_shared_expert_gateup_tasks(
+               shared_tasks, gate_out, up_out, &lw, 123u) == 2);
+    assert(shared_tasks[0].out == gate_out);
+    assert(shared_tasks[0].W == &lw.shared.shared_gate);
+    assert(shared_tasks[0].flags == 123u);
+    assert(shared_tasks[1].out == up_out);
+    assert(shared_tasks[1].W == &lw.shared.shared_up);
+    assert(shared_tasks[1].flags == 123u);
+    assert(bn_moe_shared_expert_down_weight(&lw) ==
+           &lw.shared.shared_down);
+
     printf("PASSED\n");
 }
 

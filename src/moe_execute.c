@@ -212,12 +212,10 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]  , NULL, gateup_flags };
             }
             if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
-                int can_batch_shared = bn_moe_can_batch_shared_gateup(
-                    gu_tasks, n_gu, lw->shared.shared_gate.type,
-                    lw->shared.shared_up.type);
-                if (can_batch_shared) {
-                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb,  &lw->shared.shared_gate, NULL, gateup_flags };
-                    gu_tasks[n_gu++] = (BnMatvecTask){ s->hb2, &lw->shared.shared_up  , NULL, gateup_flags };
+                if (bn_moe_policy_can_batch_loaded_shared_gateup(
+                        gu_tasks, n_gu, lw)) {
+                    n_gu += bn_moe_shared_expert_gateup_tasks(
+                        &gu_tasks[n_gu], s->hb, s->hb2, lw, gateup_flags);
                     shared_gu_ready = 1;
                 }
             }
@@ -618,17 +616,20 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
         int shared_hidden = c->shared_expert_intermediate_size;
 
         if (!shared_gu_ready) {
-            BnMatvecTask shared_gu[2] = {
-                 { s->hb,  &lw->shared.shared_gate, NULL, gateup_flags },
-                 { s->hb2, &lw->shared.shared_up  , NULL, gateup_flags },
-            };
-            bn_moe_quant_matvec_batch(shared_gu, 2, s->xb, s->x_q,
-                                      bn_model_pool(m));
+            BnMatvecTask shared_gu[2];
+            int n_shared_gu = bn_moe_shared_expert_gateup_tasks(
+                shared_gu, s->hb, s->hb2, lw, gateup_flags);
+            if (n_shared_gu > 0)
+                bn_moe_quant_matvec_batch(shared_gu, n_shared_gu, s->xb,
+                                          s->x_q, bn_model_pool(m));
         }
         bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden,
                       exec_policy.exact_silu);
-        bn_moe_quant_matvec(s->xb2, &lw->shared.shared_down, s->hb, s->x_q,
-                            bn_model_pool(m));
+        const BnQWeight *shared_down =
+            bn_moe_shared_expert_down_weight(lw);
+        if (shared_down)
+            bn_moe_quant_matvec(s->xb2, shared_down, s->hb, s->x_q,
+                                bn_model_pool(m));
 
         float shared_weight =
             bn_moe_shared_expert_gate_weight(lw, s->xb, dim);

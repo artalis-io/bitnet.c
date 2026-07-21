@@ -120,6 +120,40 @@ int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
                                                      batch_type);
 }
 
+int bn_moe_policy_can_batch_loaded_shared_gateup(
+    const BnMatvecTask *tasks,
+    int n_tasks,
+    const BnLayerWeights *lw) {
+    if (!bn_moe_policy_has_loaded_shared_gate_projection(lw))
+        return 0;
+    return bn_moe_can_batch_shared_gateup(
+        tasks, n_tasks, lw->shared.shared_gate.type,
+        lw->shared.shared_up.type);
+}
+
+int bn_moe_shared_expert_gateup_tasks(BnMatvecTask *tasks,
+                                      float *gate_out,
+                                      float *up_out,
+                                      const BnLayerWeights *lw,
+                                      uint32_t flags) {
+    if (!tasks || !gate_out || !up_out ||
+        !bn_moe_policy_has_loaded_shared_gate_projection(lw))
+        return 0;
+    tasks[0] = (BnMatvecTask){
+        gate_out, &lw->shared.shared_gate, NULL, flags
+    };
+    tasks[1] = (BnMatvecTask){
+        up_out, &lw->shared.shared_up, NULL, flags
+    };
+    return 2;
+}
+
+const BnQWeight *bn_moe_shared_expert_down_weight(const BnLayerWeights *lw) {
+    return bn_moe_policy_has_loaded_shared_gate_projection(lw)
+        ? &lw->shared.shared_down
+        : NULL;
+}
+
 int bn_moe_quant_uses_embedded_tensor_scale(int type) {
     return bn_backend_quant_has_embedded_tensor_scale(type);
 }
