@@ -1,5 +1,7 @@
 #include "gpu_internal.h"
 
+#include <string.h>
+
 static inline void *qweight_backend_buf(const BnBackendModel *backend,
                                         const BnQWeight *w) {
     return bn_backend_model_qweight_buf(backend, w);
@@ -182,4 +184,39 @@ bn_transformer_gpu_resolve_moe_shared_resources(
         .shared_gateup_stacked = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED),
     };
+}
+
+int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
+    BnTransformerGPUMoESharedFFNResources *out,
+    const BnBackendModel *backend,
+    const BnConfig *c,
+    const BnLayerWeights *lw,
+    int layer,
+    int allow_stacked_gateup) {
+    if (!out)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    if (!backend || !bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw))
+        return 0;
+
+    BnTransformerGPUMoESharedResources shared =
+        bn_transformer_gpu_resolve_moe_shared_resources(
+            bn_backend_model_gpu(backend), backend, lw, layer);
+    void *stacked_gateup = allow_stacked_gateup
+        ? shared.shared_gateup_stacked
+        : NULL;
+    out->gate = stacked_gateup ? stacked_gateup : shared.shared_gate;
+    out->up = stacked_gateup ? NULL : shared.shared_up;
+    out->down = shared.shared_down;
+    out->gate_weight = shared.shared_expert_gate;
+    if (!out->gate || !out->down || (!out->up && !stacked_gateup)) {
+        memset(out, 0, sizeof(*out));
+        return 0;
+    }
+
+    out->hidden_dim = c->shared_expert_intermediate_size;
+    out->gate_type = lw->shared.shared_gate.type;
+    out->up_type = lw->shared.shared_up.type;
+    out->down_type = lw->shared.shared_down.type;
+    return 1;
 }

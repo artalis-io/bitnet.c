@@ -35,17 +35,6 @@ typedef struct {
     double logits_ms;
 } BnPrefillProfile;
 
-typedef struct {
-    void *gate;
-    void *up;
-    void *down;
-    void *gate_weight;
-    int hidden_dim;
-    int gate_type;
-    int up_type;
-    int down_type;
-} BnPrefillSharedExpertResources;
-
 static inline double prefill_profile_now(const BnPrefillProfile *p) {
     return p && p->enabled ? bn_platform_time_ms() : 0.0;
 }
@@ -68,7 +57,7 @@ static inline void *prefill_backend_role_or_qweight(
 }
 
 static int prefill_shared_expert_resources(
-        BnPrefillSharedExpertResources *out,
+        BnTransformerGPUMoESharedFFNResources *out,
         const BnConfig *c,
         const BnLayerWeights *lw,
         const BnBackendModel *backend,
@@ -77,25 +66,9 @@ static int prefill_shared_expert_resources(
     memset(out, 0, sizeof(*out));
     if (!bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw))
         return 0;
-    if (!backend)
+    if (!bn_transformer_gpu_resolve_moe_shared_ffn_resources(
+            out, backend, c, lw, layer, 0))
         return -1;
-
-    out->gate = prefill_qweight_backend_buf(backend,
-                                            &lw->shared.shared_gate);
-    out->up = prefill_qweight_backend_buf(backend, &lw->shared.shared_up);
-    out->down = prefill_qweight_backend_buf(backend,
-                                            &lw->shared.shared_down);
-    out->gate_weight = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_SHARED_EXPERT_GATE);
-    if (!out->gate || !out->up || !out->down) {
-        memset(out, 0, sizeof(*out));
-        return -1;
-    }
-
-    out->hidden_dim = c->shared_expert_intermediate_size;
-    out->gate_type = lw->shared.shared_gate.type;
-    out->up_type = lw->shared.shared_up.type;
-    out->down_type = lw->shared.shared_down.type;
     return 1;
 }
 
@@ -607,7 +580,7 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
     void *down_all_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    BnPrefillSharedExpertResources shared;
+    BnTransformerGPUMoESharedFFNResources shared;
     if (prefill_shared_expert_resources(
             &shared, &m->config, lw, backend, layer) < 0)
         return -1;
@@ -685,7 +658,7 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         !ffn_norm_buf)
         return -1;
 
-    BnPrefillSharedExpertResources shared;
+    BnTransformerGPUMoESharedFFNResources shared;
     if (prefill_shared_expert_resources(&shared, c, lw, backend, layer) < 0)
         return -1;
 
@@ -770,7 +743,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
           down_all_buf && ffn_norm_buf))
         return 0;
 
-    BnPrefillSharedExpertResources shared;
+    BnTransformerGPUMoESharedFFNResources shared;
     if (prefill_shared_expert_resources(&shared, c, lw, backend, layer) < 0)
         return 0;
     return 1;
@@ -933,7 +906,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
         (!lw->attn.v_bias ||
          bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS));
     if (ready) {
-        BnPrefillSharedExpertResources shared;
+        BnTransformerGPUMoESharedFFNResources shared;
         ready = prefill_shared_expert_resources(
                     &shared, c, lw, backend, layer) >= 0;
     }

@@ -2735,11 +2735,9 @@ if grep -n 'c->has_shared_expert' src/transformer/prefill.c >/dev/null 2>&1; the
     fail=1
 fi
 
-if [ "$(grep -c 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE' src/transformer/prefill.c)" -ne 1 ] ||
-   [ "$(grep -c '&lw->shared\.shared_gate' src/transformer/prefill.c)" -ne 1 ] ||
-   [ "$(grep -c '&lw->shared\.shared_up' src/transformer/prefill.c)" -ne 1 ] ||
-   [ "$(grep -c '&lw->shared\.shared_down' src/transformer/prefill.c)" -ne 1 ]; then
-    echo "Transformer prefill shared expert resources must be composed through the local resource helper"
+if grep -n 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE\|BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED\|&lw->shared\.shared_gate\|&lw->shared\.shared_up\|&lw->shared\.shared_down' src/transformer/prefill.c >/dev/null 2>&1 ||
+   [ "$(grep -c 'bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/transformer/prefill.c)" -ne 1 ]; then
+    echo "Transformer prefill shared expert resources must be composed through the GPU resource helper"
     fail=1
 fi
 
@@ -3994,8 +3992,9 @@ if grep -n 'c->has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.
     fail=1
 fi
 
-if [ "$(grep -c 'BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED' src/moe_prefill.c)" -ne 1 ]; then
-    echo "MoE prefill shared expert GPU resources must be composed through the prefill helper"
+if grep -n 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE\|BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED' src/moe_prefill.c >/dev/null 2>&1 ||
+   [ "$(grep -c 'bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/moe_prefill.c)" -ne 3 ]; then
+    echo "MoE prefill shared expert GPU resources must be composed through the GPU resource helper"
     fail=1
 fi
 
