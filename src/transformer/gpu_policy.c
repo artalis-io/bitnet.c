@@ -2555,9 +2555,7 @@ int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible) {
 int bn_transformer_gpu_moe_has_loaded_shared_expert(
     const BnConfig *c,
     const BnLayerWeights *lw) {
-    return bn_transformer_moe_has_shared_expert(c, lw) &&
-           lw &&
-           lw->shared.shared_gate.data != NULL;
+    return bn_moe_policy_has_loaded_shared_expert_path(c, lw);
 }
 
 BnTransformerGPUMoESharedCPUFallbackPolicy
