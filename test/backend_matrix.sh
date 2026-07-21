@@ -2998,6 +2998,11 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/main.c >/dev/null 2>&1;
     fail=1
 fi
 
+if grep -n 'if (!lw->moe\.router_weight)\|if (model->weights\.layers\[l\]\.moe\.router_weight)' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must use loaded-model MoE layer policy helpers for MoE layer decisions"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DEBUG_PREFILL_MOE_CHAIN\|BN_CUDA_DEBUG_PREFILL_HYBRID_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for CUDA prefill chain debug env vars"
     fail=1

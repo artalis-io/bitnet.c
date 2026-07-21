@@ -377,13 +377,24 @@ static CLIArgs parse_args(int argc, char **argv) {
 }
 
 #if defined(BN_ENABLE_WEBGPU) || defined(BN_ENABLE_METAL) || defined(BN_ENABLE_CUDA)
+typedef struct {
+    int uses_moe;
+} BnMainLoadedMoELayerPolicy;
+
+static BnMainLoadedMoELayerPolicy
+main_loaded_moe_layer_policy(const BnLayerWeights *lw) {
+    BnMainLoadedMoELayerPolicy policy = {0};
+    policy.uses_moe = lw && lw->moe.router_weight != NULL;
+    return policy;
+}
+
 static size_t model_moe_entry_bytes(const BnModel *model,
                                     const BnGPUBackend *gpu) {
     if (!model || model->config.n_layers <= 0)
         return 0;
     for (int l = 0; l < model->config.n_layers; l++) {
         const BnLayerWeights *lw = &model->weights.layers[l];
-        if (!lw->moe.router_weight)
+        if (!main_loaded_moe_layer_policy(lw).uses_moe)
             continue;
         const BnMoEExpertMap *em = &lw->moe.expert_map;
         size_t entry = em->expert_gate_bytes + em->expert_up_bytes +
@@ -404,7 +415,7 @@ static int model_moe_layer_count(const BnModel *model) {
         return 0;
     int count = 0;
     for (int l = 0; l < model->config.n_layers; l++)
-        if (model->weights.layers[l].moe.router_weight)
+        if (main_loaded_moe_layer_policy(&model->weights.layers[l]).uses_moe)
             count++;
     return count;
 }
@@ -423,7 +434,7 @@ static int model_count_gpu_routed_moe_resident(const BnModel *model,
     int resident_layers = 0;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &model->weights.layers[l];
-        if (!lw->moe.router_weight)
+        if (!main_loaded_moe_layer_policy(lw).uses_moe)
             continue;
         moe_layers++;
         if (bn_backend_model_handle(backend, l, BN_BACKEND_HANDLE_MOE_GATE_ALL) &&
