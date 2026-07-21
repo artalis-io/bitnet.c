@@ -2177,7 +2177,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                     BnGQACtx gctx = { c, s, loff, pos, n_kv, layer_kv_mul,
                                       layer_head_size, kv_dim, c->seq_len,
-                                      prefill_attention_scale(c, layer_head_size) };
+                                      prefill_attention_scale(c, layer_head_size),
+                                      bn_transformer_kv_host_cache_uses_fp16_rows(c) };
                     bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, layer_kv_mul);
 
                     if (q_gated) {

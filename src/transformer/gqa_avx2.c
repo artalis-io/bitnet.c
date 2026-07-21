@@ -5,7 +5,6 @@
 
 void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     BnGQACtx *g = (BnGQACtx *)ctx;
-    const BnConfig *c = g->c;
     BnRunState *s = g->s;
     int head_size = g->head_size;
     int kv_dim = g->kv_dim;
@@ -14,7 +13,7 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = c->kv_f16;
+    int kv_f16 = g->kv_cache_uses_fp16_rows;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 
     for (int h = h_start; h < h_end; h++) {
@@ -101,7 +100,6 @@ void bn_transformer_gqa_avx2_range(void *ctx, int h_start, int h_end) {
 
 void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     BnGQACtx *g = (BnGQACtx *)ctx;
-    const BnConfig *c = g->c;
     BnRunState *s = g->s;
     int head_size = g->head_size;
     int kv_dim = g->kv_dim;
@@ -110,7 +108,7 @@ void bn_transformer_flash_gqa_avx2_range(void *ctx, int h_start, int h_end) {
     int seq_len = g->seq_len;
     int start = g->pos - n_kv + 1;
     size_t loff = g->loff;
-    int kv_f16 = c->kv_f16;
+    int kv_f16 = g->kv_cache_uses_fp16_rows;
     float attn_scale = g->attention_scale;
     if (head_size > BN_MAX_VLA_ELEMS || head_size % 8 != 0) return;
 

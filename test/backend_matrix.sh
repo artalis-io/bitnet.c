@@ -1010,6 +1010,15 @@ if grep -n 'c->kv_tq_bits\|c->kv_f16' src/transformer/gpu_emit.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n 'c->kv_tq_bits\|c->kv_f16' \
+    src/transformer/gqa_scalar.c \
+    src/transformer/gqa_neon.c \
+    src/transformer/gqa_avx2.c \
+    src/transformer/gqa_wasm.c >/dev/null 2>&1; then
+    echo "GQA kernels must use planned KV cache row policy from BnGQACtx"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_[^"]*QWEN' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must expose model-family CUDA env vars only as compatibility fallbacks for neutral policy helpers"
     fail=1
