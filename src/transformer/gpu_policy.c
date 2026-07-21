@@ -164,6 +164,13 @@ int bn_transformer_gpu_prefers_gateup_split(int tensor_type) {
     return bn_backend_quant_gpu_prefers_gateup_split(tensor_type);
 }
 
+int bn_transformer_gpu_dense_ffn_prefers_gateup_split(
+    const BnConfig *c,
+    int gate_type) {
+    return bn_transformer_gpu_prefers_gateup_split(gate_type) &&
+           bn_model_config_uses_hybrid_moe(c);
+}
+
 int bn_transformer_gpu_same_quant_format_pair_stackable(int left_type,
                                                         int right_type) {
     return bn_backend_quant_same_quant_format_pair_stackable(left_type,
@@ -313,6 +320,10 @@ int bn_transformer_gpu_split_residual_rmsnorm_enabled(void) {
 int bn_transformer_gpu_shared_kquant_dot_enabled(int eligible) {
     return eligible &&
            bn_gpu_policy_shared_kquant_dot_enabled();
+}
+
+int bn_transformer_gpu_shared_expert_prefers_gateup_split(int gate_type) {
+    return bn_transformer_gpu_prefers_gateup_split(gate_type);
 }
 
 int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {

@@ -447,6 +447,9 @@ int bn_transformer_gpu_dense_gateup_exact_split_supported(
     const BnQWeight *up,
     int activation,
     int split_op_code);
+int bn_transformer_gpu_dense_ffn_prefers_gateup_split(
+    const BnConfig *c,
+    int gate_type);
 int bn_transformer_gpu_packed_qkv_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *qkv,
@@ -483,6 +486,7 @@ int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
                                                          int up_type,
                                                          int cols);
 int bn_transformer_gpu_shared_kquant_dot_enabled(int eligible);
+int bn_transformer_gpu_shared_expert_prefers_gateup_split(int gate_type);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);

@@ -1052,8 +1052,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             bn_transformer_gpu_activation_uses_silu_path(
                 ffn_plan->activation));
         int prefer_gateup_split =
-            bn_transformer_gpu_prefers_gateup_split(lw->ffn.ffn_gate.type) &&
-            bn_transformer_uses_hybrid_moe(c);
+            bn_transformer_gpu_dense_ffn_prefers_gateup_split(
+                c, lw->ffn.ffn_gate.type);
         int use_fused_gateup = !prefer_gateup_split &&
                                gateup_stacked &&
                                bn_transformer_gpu_can_fused_gateup_silu(res->gpu, lw->ffn.ffn_gate.type,
@@ -1762,7 +1762,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             bn_transformer_gpu_shared_kquant_dot_enabled(
                 shared_kquant_dot_eligible);
         int prefer_shared_gateup_split =
-            bn_transformer_gpu_prefers_gateup_split(
+            bn_transformer_gpu_shared_expert_prefers_gateup_split(
                 lw->shared.shared_gate.type);
         int use_shared_fused_gateup =
             !prefer_shared_gateup_split &&

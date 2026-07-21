@@ -3068,6 +3068,12 @@ if grep -n 'bn_gpu_policy_metal_specialized_native_quant_enabled\|bn_gpu_policy_
     fail=1
 fi
 
+if awk '/^void bn_transformer_gpu_emit_context_dense_ffn/{flag=1} /^void bn_transformer_gpu_emit_context_attention_qkv/{flag=0} flag{print}' \
+    src/transformer/gpu_emit.c | grep -n 'bn_transformer_gpu_prefers_gateup_split\|bn_transformer_uses_hybrid_moe' >/dev/null 2>&1; then
+    echo "Dense FFN GPU emission must use behavior-named gate/up split policy helpers"
+    fail=1
+fi
+
 if sed -n '/^int bn_gpu_policy_backend_flash_default_enabled/,/^int bn_gpu_policy_argmax_debug_enabled/p' \
     src/gpu_policy.c | grep -n 'bn_gpu_policy_backend_is_cuda' >/dev/null 2>&1; then
     echo "GPU backend capability helpers must use the backend capability table, not repeated CUDA predicates"
