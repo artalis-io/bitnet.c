@@ -320,6 +320,10 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
            (lw && lw->shared.shared_expert_gate);
 }
 
+int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {
+    return lw ? lw->moe.router_weight != NULL : 0;
+}
+
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw) {
     BnTransformerGPULayerKindPolicy layer_kind =

@@ -3911,6 +3911,7 @@ static void test_block_planning(void) {
 
     lw.ffn_kind = BN_LAYER_FFN_MOE;
     lw.moe.router_weight = (float *)1;
+    assert(bn_transformer_moe_layer_has_router(&lw));
     assert(bn_transformer_moe_has_shared_expert(&c, &lw));
     c.has_shared_expert = 0;
     assert(!bn_transformer_moe_has_shared_expert(&c, &lw));
@@ -3929,6 +3930,9 @@ static void test_block_planning(void) {
     assert(moe.has_shared_expert);
     assert(moe.shared_hidden_dim == 2048);
     assert(moe.needs_cpu_fallback);
+    lw.moe.router_weight = NULL;
+    assert(!bn_transformer_moe_layer_has_router(&lw));
+    assert(!bn_transformer_moe_layer_has_router(NULL));
 
     w.emb_out_i8 = (int8_t *)1;
     w.emb_type = BN_GGUF_TENSOR_F16;

@@ -323,6 +323,7 @@ int bn_transformer_ffn_requires_cpu_fallback(
     BnExecPlacement placement);
 int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw);
+int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);
 int bn_transformer_ssm_uses_qkvz_stack(

@@ -2698,6 +2698,11 @@ if grep -n 'c->has_shared_expert' src/transformer/prefill_policy.c >/dev/null 2>
     fail=1
 fi
 
+if grep -n 'router_weight != NULL' src/transformer/gpu_policy.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU/prefill layer-kind policy must compose MoE router policy helpers"
+    fail=1
+fi
+
 if grep -n 'has_shared_expert && lw->shared\.shared_gate\.data\|m->config\.has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.shared_gate\.data' src/transformer/gpu.c src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer GPU/prefill code must use loaded shared MoE expert policy helpers"
     fail=1

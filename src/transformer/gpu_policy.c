@@ -236,7 +236,7 @@ int bn_transformer_gpu_uses_small_dense_native_quant_shape(
 BnTransformerGPULayerKindPolicy
 bn_transformer_gpu_layer_kind_policy(const BnLayerWeights *lw) {
     BnTransformerGPULayerKindPolicy policy = {0};
-    policy.uses_moe = lw && lw->moe.router_weight != NULL;
+    policy.uses_moe = bn_transformer_moe_layer_has_router(lw);
     return policy;
 }
 
