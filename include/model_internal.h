@@ -96,6 +96,16 @@ int bn_model_config_uses_ffn_post_norm(const BnConfig *config);
 int bn_model_config_uses_layer_output_scale(const BnConfig *config);
 int bn_model_config_per_layer_embedding_dim(const BnConfig *config);
 int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer);
+int bn_model_config_rope_dims_for_head(const BnConfig *config,
+                                       int layer_head_size);
+float bn_model_config_rope_theta_for_head(const BnConfig *config,
+                                          int layer_head_size);
+float bn_model_config_rope_base_theta(const BnConfig *config);
+int bn_model_config_rope_uses_base_frequency(const BnConfig *config,
+                                             int layer_head_size);
+void bn_model_config_init_rope_frequencies(const BnConfig *config,
+                                           float *freqs,
+                                           int capacity_pairs);
 float bn_model_config_final_logit_softcap(const BnConfig *config);
 int bn_model_config_prefill_uses_exact_activation(const BnConfig *config);
 int bn_model_config_ffn_uses_reference_activation(const BnConfig *config);

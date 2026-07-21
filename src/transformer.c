@@ -138,21 +138,15 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerWeights *lw = &m->weights.layers[l];
         int layer_head_size = lw->attn.head_size > 0 ? lw->attn.head_size : head_size;
-        int use_swa_rope = c->rope_theta_swa > 0.0f && layer_head_size < c->head_size;
-        int base_rope_dims = c->rope_text_dims > 0
-            ? c->rope_text_dims
-            : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
-        int rope_dims = use_swa_rope && c->rope_dim_count_swa > 0
-            ? c->rope_dim_count_swa
-            : base_rope_dims;
-        if (rope_dims > layer_head_size) rope_dims = layer_head_size;
+        int rope_dims = bn_transformer_rope_dims_for_head(c, layer_head_size);
         int half_rope = rope_dims / 2;
         float rope_cos[half_rope], rope_sin[half_rope];
-        float theta = use_swa_rope ? c->rope_theta_swa : c->rope_theta;
+        float theta = bn_transformer_rope_theta_for_head(c, layer_head_size);
         for (int i = 0; i < half_rope; i++) {
             float freq = 1.0f / powf(theta, (float)(2 * i) / (float)rope_dims);
             if (bn_transformer_uses_per_layer_embedding(c) &&
-                !use_swa_rope && m->weights.rope_freqs) {
+                bn_transformer_rope_uses_base_frequency(c, layer_head_size) &&
+                m->weights.rope_freqs) {
                 if (bn_transformer_divides_rope_freqs(c, l))
                     freq /= m->weights.rope_freqs[i];
                 else

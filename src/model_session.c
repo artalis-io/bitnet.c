@@ -404,15 +404,7 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (ssm_state_size_total > 0 && (!s->ssm_state || !s->ssm_conv_state))
         return -1;
 
-    int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : c->head_size;
-    int half_rope = rope_dims / 2;
-    for (int i = 0; i < half_rope; i++)
-        s->rope_freq[i] = 1.0f / powf(c->rope_theta, (float)(2 * i) / (float)rope_dims);
-    if (c->rope_text_dims > 0) {
-        int text_pairs = c->rope_text_dims / 2;
-        for (int i = text_pairs; i < half_rope; i++)
-            s->rope_freq[i] = 0.0f;
-    }
+    bn_model_config_init_rope_frequencies(c, s->rope_freq, half_head);
 
     *moe_out = NULL;
     if (bn_model_config_uses_moe(c)) {

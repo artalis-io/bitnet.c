@@ -343,6 +343,17 @@ int bn_transformer_uses_per_layer_embedding(
 int bn_transformer_divides_rope_freqs(
     const BnConfig *c,
     int layer);
+int bn_transformer_rope_dims_for_head(
+    const BnConfig *c,
+    int layer_head_size);
+float bn_transformer_rope_theta_for_head(
+    const BnConfig *c,
+    int layer_head_size);
+float bn_transformer_rope_base_theta(
+    const BnConfig *c);
+int bn_transformer_rope_uses_base_frequency(
+    const BnConfig *c,
+    int layer_head_size);
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c);
 int bn_transformer_prefill_uses_exact_activation(

@@ -395,6 +395,29 @@ int bn_transformer_divides_rope_freqs(
     return bn_model_config_divides_rope_freqs(c, layer);
 }
 
+int bn_transformer_rope_dims_for_head(
+    const BnConfig *c,
+    int layer_head_size) {
+    return bn_model_config_rope_dims_for_head(c, layer_head_size);
+}
+
+float bn_transformer_rope_theta_for_head(
+    const BnConfig *c,
+    int layer_head_size) {
+    return bn_model_config_rope_theta_for_head(c, layer_head_size);
+}
+
+float bn_transformer_rope_base_theta(
+    const BnConfig *c) {
+    return bn_model_config_rope_base_theta(c);
+}
+
+int bn_transformer_rope_uses_base_frequency(
+    const BnConfig *c,
+    int layer_head_size) {
+    return bn_model_config_rope_uses_base_frequency(c, layer_head_size);
+}
+
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c) {
     return bn_model_config_uses_reference_hybrid_ssm(c);

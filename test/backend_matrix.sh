@@ -3692,6 +3692,11 @@ if grep -n 'full_attn_interval\|n_attn_layers = (c->full_attn_interval > 0)\|n_s
     fail=1
 fi
 
+if grep -n 'c->rope_dim_count\|c->rope_text_dims\|c->rope_theta' src/model_session.c src/transformer.c src/transformer/gpu.c src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Session/decode/GPU execution must use RoPE policy helpers for config-specific RoPE behavior"
+    fail=1
+fi
+
 for file in src/model_session.c src/model_embed.c
 do
     if grep -n '#include "model_arch.h"\|bn_model_arch_' "$file" >/dev/null 2>&1; then

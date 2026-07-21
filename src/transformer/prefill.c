@@ -752,6 +752,10 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
     return 1;
 }
 
+static float prefill_base_rope_theta(const BnConfig *c) {
+    return bn_transformer_rope_base_theta(c);
+}
+
 static int prefill_dense_layer_chain_ready(const BnModel *m,
                                            const BnLayerWeights *lw,
                                            const BnLayerShapePlan *plan,
@@ -780,7 +784,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
             n_tokens,
             bn_transformer_prefill_dense_chain_min_tokens(c, gpu),
             layer_rope_theta,
-            c->rope_theta,
+            prefill_base_rope_theta(c),
             plan->is_attn,
             layer_kind,
             c->has_ffn_gate,
@@ -864,7 +868,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     if (!moe_layer_chain_available ||
         !backend ||
         bn_model_tq_state(m) != NULL ||
-        layer_rope_theta != c->rope_theta ||
+        layer_rope_theta != prefill_base_rope_theta(c) ||
         !plan->is_attn || !layer_kind.uses_moe ||
         lw->norm.attn_sub_norm ||
         lw->norm.layer_output_scale) {
@@ -876,7 +880,8 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
                     backend != NULL, bn_model_tq_state(m) != NULL,
                     n_tokens,
                     bn_transformer_prefill_moe_chain_min_tokens(c, gpu),
-                    layer_rope_theta == c->rope_theta, plan->is_attn,
+                    layer_rope_theta == prefill_base_rope_theta(c),
+                    plan->is_attn,
                     layer_kind.uses_moe,
                     bn_transformer_moe_has_shared_expert(c, lw),
                     lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias,
@@ -1275,19 +1280,11 @@ static int prefill_use_shared_all_active_two_decode_fallback(const BnModel *m) {
 }
 
 static int prefill_layer_rope_dims(const BnConfig *c, int layer_head_size) {
-    int use_swa_rope = c->rope_theta_swa > 0.0f && layer_head_size < c->head_size;
-    int base_rope_dims = c->rope_text_dims > 0
-        ? c->rope_text_dims
-        : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
-    int rope_dims = use_swa_rope && c->rope_dim_count_swa > 0
-        ? c->rope_dim_count_swa
-        : base_rope_dims;
-    return rope_dims > layer_head_size ? layer_head_size : rope_dims;
+    return bn_transformer_rope_dims_for_head(c, layer_head_size);
 }
 
 static float prefill_layer_rope_theta(const BnConfig *c, int layer_head_size) {
-    return (c->rope_theta_swa > 0.0f && layer_head_size < c->head_size)
-        ? c->rope_theta_swa : c->rope_theta;
+    return bn_transformer_rope_theta_for_head(c, layer_head_size);
 }
 
 static float prefill_attention_scale(const BnConfig *c, int head_size) {
@@ -1430,9 +1427,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return NULL;
     }
 
-    int rope_dims = c->rope_text_dims > 0
-        ? c->rope_text_dims
-        : (c->rope_dim_count > 0 ? c->rope_dim_count : head_size);
+    int rope_dims = prefill_layer_rope_dims(c, head_size);
     int half_rope = rope_dims / 2;
     if (half_rope > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("RoPE dimensions too large for stack VLAs");
@@ -1783,7 +1778,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     n_tokens,
                     bn_transformer_prefill_dense_chain_min_tokens(
                         c, bn_model_gpu(m)),
-                    pos0, layer_rope_theta, c->rope_theta, layer_kind,
+                    pos0, layer_rope_theta, prefill_base_rope_theta(c),
+                    layer_kind,
                     c->has_ffn_gate, lw->ffn.ffn_up.data != NULL,
                     lw->attn.q_bias != NULL, lw->attn.k_bias != NULL,
                     lw->attn.v_bias != NULL,
@@ -1849,7 +1845,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     n_tokens,
                     bn_transformer_prefill_attention_min_tokens(),
                     layer_rope_theta,
-                    c->rope_theta,
+                    prefill_base_rope_theta(c),
                     lw->attn.q_bias != NULL,
                     lw->attn.k_bias != NULL,
                     lw->attn.v_bias != NULL,

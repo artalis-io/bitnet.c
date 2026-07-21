@@ -2,6 +2,7 @@
 #include "backend_quant.h"
 #include "model_arch.h"
 #include "quant.h"
+#include <math.h>
 
 int bn_model_quant_type_supported(int type) {
     return bn_quant_format_supported(type);
@@ -264,6 +265,68 @@ int bn_model_config_per_layer_embedding_dim(const BnConfig *config) {
 
 int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer) {
     return bn_model_arch_divides_rope_freqs(config, layer);
+}
+
+static int model_config_uses_swa_rope(const BnConfig *config,
+                                      int layer_head_size) {
+    return config && config->rope_theta_swa > 0.0f &&
+           layer_head_size < config->head_size;
+}
+
+int bn_model_config_rope_dims_for_head(const BnConfig *config,
+                                       int layer_head_size) {
+    if (!config || layer_head_size <= 0)
+        return 0;
+    int base_rope_dims = config->rope_text_dims > 0
+        ? config->rope_text_dims
+        : (config->rope_dim_count > 0 ? config->rope_dim_count
+                                      : layer_head_size);
+    int rope_dims = model_config_uses_swa_rope(config, layer_head_size) &&
+                    config->rope_dim_count_swa > 0
+        ? config->rope_dim_count_swa
+        : base_rope_dims;
+    if (rope_dims > layer_head_size)
+        rope_dims = layer_head_size;
+    return rope_dims > 0 ? rope_dims : 0;
+}
+
+float bn_model_config_rope_theta_for_head(const BnConfig *config,
+                                          int layer_head_size) {
+    if (!config)
+        return 0.0f;
+    return model_config_uses_swa_rope(config, layer_head_size)
+        ? config->rope_theta_swa : config->rope_theta;
+}
+
+float bn_model_config_rope_base_theta(const BnConfig *config) {
+    return config ? config->rope_theta : 0.0f;
+}
+
+int bn_model_config_rope_uses_base_frequency(const BnConfig *config,
+                                             int layer_head_size) {
+    return !model_config_uses_swa_rope(config, layer_head_size);
+}
+
+void bn_model_config_init_rope_frequencies(const BnConfig *config,
+                                           float *freqs,
+                                           int capacity_pairs) {
+    if (!config || !freqs || capacity_pairs <= 0)
+        return;
+    int rope_dims = config->rope_dim_count > 0
+        ? config->rope_dim_count : config->head_size;
+    int half_rope = rope_dims / 2;
+    if (half_rope > capacity_pairs)
+        half_rope = capacity_pairs;
+    for (int i = 0; i < half_rope; i++)
+        freqs[i] = 1.0f / powf(config->rope_theta,
+                               (float)(2 * i) / (float)rope_dims);
+    if (config->rope_text_dims > 0) {
+        int text_pairs = config->rope_text_dims / 2;
+        if (text_pairs < 0)
+            text_pairs = 0;
+        for (int i = text_pairs; i < half_rope; i++)
+            freqs[i] = 0.0f;
+    }
 }
 
 float bn_model_config_final_logit_softcap(const BnConfig *config) {

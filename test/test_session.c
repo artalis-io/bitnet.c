@@ -278,6 +278,27 @@ static void test_session_moe_route_buffers(void) {
     printf("PASSED\n");
 }
 
+// Test: model RoPE policy initializes reusable session frequencies
+static void test_session_rope_frequency_policy(void) {
+    printf("test_session_rope_frequency_policy... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+    model.config.rope_dim_count = 8;
+    model.config.rope_text_dims = 4;
+
+    BnSession *s = bn_session_create(&model, NULL);
+    assert(s != NULL);
+    assert(s->state.rope_freq != NULL);
+    assert(s->state.rope_freq[0] == 1.0f);
+    assert(s->state.rope_freq[2] == 0.0f);
+    assert(s->state.rope_freq[3] == 0.0f);
+
+    bn_session_free(s, NULL);
+    printf("PASSED\n");
+}
+
 // Test: session reset clears TQ caches
 static void test_session_reset_tq(void) {
     printf("test_session_reset_tq... ");
@@ -370,6 +391,7 @@ int main(void) {
     test_multiple_sessions();
     test_session_shared_expert_hidden_buffers();
     test_session_moe_route_buffers();
+    test_session_rope_frequency_policy();
     test_session_reset_tq();
     test_session_gpu_graph_isolation();
     printf("\nAll session tests passed!\n");

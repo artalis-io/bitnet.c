@@ -835,9 +835,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int n_heads = c->n_heads;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int q_dim = n_heads * head_size;
-    int rope_dims = c->rope_text_dims > 0
-        ? c->rope_text_dims
-        : (c->rope_dim_count > 0 ? c->rope_dim_count : head_size);
+    int rope_dims = bn_transformer_rope_dims_for_head(c, head_size);
     int half_rope = rope_dims / 2;
     float rope_cos[half_rope], rope_sin[half_rope];
     for (int i = 0; i < half_rope; i++) {
