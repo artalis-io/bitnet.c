@@ -105,3 +105,23 @@ void bn_transformer_write_kv_fp32(BnRunState *s,
     memcpy(kc, k_tmp, (size_t)kv_dim * sizeof(float));
     memcpy(vc, v_tmp, (size_t)kv_dim * sizeof(float));
 }
+
+int bn_transformer_write_host_kv_cache_row(BnRunState *s,
+                                           BnKVMode mode,
+                                           size_t loff,
+                                           int cache_pos,
+                                           int kv_cache_stride,
+                                           const float *k_tmp,
+                                           const float *v_tmp,
+                                           int kv_dim) {
+    if (bn_transformer_kv_mode_uses_turboquant(mode))
+        return -1;
+    if (bn_transformer_kv_mode_uses_fp16(mode)) {
+        bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_cache_stride,
+                                     k_tmp, v_tmp, kv_dim);
+        return 0;
+    }
+    bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_cache_stride,
+                                 k_tmp, v_tmp, kv_dim);
+    return 0;
+}

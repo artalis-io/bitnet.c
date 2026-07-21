@@ -605,6 +605,30 @@ static void test_cpu_execution_helpers(void) {
     assert(!bn_transformer_kv_mode_uses_cpu_gqa_cache(BN_KV_TQ));
     assert(!bn_transformer_kv_host_float_cache_rows_available(NULL));
 
+    float key_cache[8] = {0};
+    float value_cache[8] = {0};
+    float k_src[2] = {3.0f, 4.0f};
+    float v_src[2] = {5.0f, 6.0f};
+    s.key_cache = key_cache;
+    s.value_cache = value_cache;
+    assert(bn_transformer_write_host_kv_cache_row(
+               &s, BN_KV_FP32, 2, 1, 2, k_src, v_src, 2) == 0);
+    assert(fabsf(key_cache[4] - 3.0f) < 1e-6f);
+    assert(fabsf(key_cache[5] - 4.0f) < 1e-6f);
+    assert(fabsf(value_cache[4] - 5.0f) < 1e-6f);
+    assert(fabsf(value_cache[5] - 6.0f) < 1e-6f);
+
+    uint16_t key_cache16[2] = {0};
+    uint16_t value_cache16[2] = {0};
+    s.key_cache = (float *)key_cache16;
+    s.value_cache = (float *)value_cache16;
+    assert(bn_transformer_write_host_kv_cache_row(
+               &s, BN_KV_FP16, 0, 0, 2, k_src, v_src, 2) == 0);
+    assert(key_cache16[0] != 0);
+    assert(value_cache16[0] != 0);
+    assert(bn_transformer_write_host_kv_cache_row(
+               &s, BN_KV_TQ, 0, 0, 2, k_src, v_src, 2) != 0);
+
     printf("PASSED\n");
 }
 

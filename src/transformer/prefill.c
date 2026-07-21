@@ -1584,14 +1584,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         int cache_pos = pos % c->seq_len;
                         float *k_t = K_new + (size_t)t * layer_kv_dim;
                         float *v_t = V_new + (size_t)t * layer_kv_dim;
-                        if (c->kv_f16)
-                            bn_transformer_write_kv_fp16(s, loff, cache_pos,
-                                                         kv_dim, k_t, v_t,
-                                                         layer_kv_dim);
-                        else
-                            bn_transformer_write_kv_fp32(s, loff, cache_pos,
-                                                         kv_dim, k_t, v_t,
-                                                         layer_kv_dim);
+                        if (bn_transformer_write_host_kv_cache_row(
+                                s, plan.kv_mode, loff, cache_pos, kv_dim,
+                                k_t, v_t, layer_kv_dim) != 0) {
+                            sh_arena_free(pf_arena);
+                            return NULL;
+                        }
                     }
                 }
             }
@@ -1695,14 +1693,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             int cache_pos = pos % c->seq_len;
                             float *k_t = K_new + (size_t)t * layer_kv_dim;
                             float *v_t = V_new + (size_t)t * layer_kv_dim;
-                            if (c->kv_f16)
-                                bn_transformer_write_kv_fp16(
-                                    s, loff, cache_pos, kv_dim, k_t, v_t,
-                                    layer_kv_dim);
-                            else
-                                bn_transformer_write_kv_fp32(
-                                    s, loff, cache_pos, kv_dim, k_t, v_t,
-                                    layer_kv_dim);
+                            if (bn_transformer_write_host_kv_cache_row(
+                                    s, plan.kv_mode, loff, cache_pos, kv_dim,
+                                    k_t, v_t, layer_kv_dim) != 0) {
+                                sh_arena_free(pf_arena);
+                                return NULL;
+                            }
                         }
                     }
                 } else {
@@ -1808,14 +1804,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         int cache_pos = pos % c->seq_len;
                         float *k_t = K_new + (size_t)t * layer_kv_dim;
                         float *v_t = V_new + (size_t)t * layer_kv_dim;
-                        if (c->kv_f16)
-                            bn_transformer_write_kv_fp16(s, loff, cache_pos,
-                                                         kv_dim, k_t, v_t,
-                                                         layer_kv_dim);
-                        else
-                            bn_transformer_write_kv_fp32(s, loff, cache_pos,
-                                                         kv_dim, k_t, v_t,
-                                                         layer_kv_dim);
+                        if (bn_transformer_write_host_kv_cache_row(
+                                s, plan.kv_mode, loff, cache_pos, kv_dim,
+                                k_t, v_t, layer_kv_dim) != 0) {
+                            sh_arena_free(pf_arena);
+                            return NULL;
+                        }
                     }
                     continue;
                 }
@@ -2020,12 +2014,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                             layer_head_size,
                                                             layer_rope_dims, rc, rs);
 
-                        if (c->kv_f16)
-                            bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                         k_t, v_t, layer_kv_dim);
-                        else
-                            bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                         k_t, v_t, layer_kv_dim);
+                        if (bn_transformer_write_host_kv_cache_row(
+                                s, plan.kv_mode, loff, cache_pos, kv_dim,
+                                k_t, v_t, layer_kv_dim) != 0) {
+                            sh_arena_free(pf_arena);
+                            return NULL;
+                        }
                     }
                 } else {
                     for (int t = 0; t < n_tokens; t++) {
@@ -2033,12 +2027,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         int cache_pos = pos % c->seq_len;
                         float *k_t = K_new + (size_t)t * layer_kv_dim;
                         float *v_t = V_new + (size_t)t * layer_kv_dim;
-                        if (c->kv_f16)
-                            bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                         k_t, v_t, layer_kv_dim);
-                        else
-                            bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                         k_t, v_t, layer_kv_dim);
+                        if (bn_transformer_write_host_kv_cache_row(
+                                s, plan.kv_mode, loff, cache_pos, kv_dim,
+                                k_t, v_t, layer_kv_dim) != 0) {
+                            sh_arena_free(pf_arena);
+                            return NULL;
+                        }
                     }
                 }
 
@@ -2173,12 +2167,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                         layer_head_size,
                                                         layer_rope_dims, rc, rs);
 
-                    if (c->kv_f16)
-                        bn_transformer_write_kv_fp16(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, layer_kv_dim);
-                    else
-                        bn_transformer_write_kv_fp32(s, loff, cache_pos, kv_dim,
-                                                     k_t, v_t, layer_kv_dim);
+                    if (bn_transformer_write_host_kv_cache_row(
+                            s, plan.kv_mode, loff, cache_pos, kv_dim,
+                            k_t, v_t, layer_kv_dim) != 0) {
+                        sh_arena_free(pf_arena);
+                        return NULL;
+                    }
 
                     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                     BnGQACtx gctx = { c, s, loff, pos, n_kv, layer_kv_mul,

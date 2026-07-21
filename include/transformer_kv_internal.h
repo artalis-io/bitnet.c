@@ -3,6 +3,7 @@
 
 #include "model_config.h"
 #include "model_run_state.h"
+#include "transformer_plan_internal.h"
 #include "threadpool.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -58,5 +59,13 @@ void bn_transformer_write_kv_fp32(BnRunState *s,
                                   const float *k_tmp,
                                   const float *v_tmp,
                                   int kv_dim);
+int bn_transformer_write_host_kv_cache_row(BnRunState *s,
+                                           BnKVMode mode,
+                                           size_t loff,
+                                           int cache_pos,
+                                           int kv_cache_stride,
+                                           const float *k_tmp,
+                                           const float *v_tmp,
+                                           int kv_dim);
 
 #endif // BN_TRANSFORMER_KV_INTERNAL_H
