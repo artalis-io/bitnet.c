@@ -1,5 +1,6 @@
 #include "model.h"
 #include "model_internal.h"
+#include "moe_internal.h"
 #include "sh_arena.h"
 #include "turboquant.h"
 #include <limits.h>
@@ -82,8 +83,10 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         hb_size = shared_expert_hidden;
     if (shared_expert_hidden > hb2_size)
         hb2_size = shared_expert_hidden;
-    if (bn_model_config_uses_moe(c) && c->moe_intermediate_size > x_q_size)
-        x_q_size = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    if (bn_model_config_uses_moe(c) &&
+        route_policy.expert_hidden_dim > x_q_size)
+        x_q_size = route_policy.expert_hidden_dim;
     int per_layer_dim = bn_model_config_per_layer_embedding_dim(c);
     if (per_layer_dim > 0) {
         size_t per_layer_total = 0;
@@ -139,29 +142,29 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
 
         size_t tmp = 0;
         if (checked_add_size(&moe_arena_bytes, sizeof(BnMoEState)) != 0 ||
-            checked_mul_size((size_t)c->n_experts, sizeof(float), &tmp) != 0 ||
+            checked_mul_size((size_t)route_policy.total_experts, sizeof(float), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
             checked_mul_size((size_t)c->dim, sizeof(float), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
-            checked_mul_size((size_t)c->n_experts_active, sizeof(float), &tmp) != 0 ||
+            checked_mul_size((size_t)route_policy.active_experts, sizeof(float), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
-            checked_mul_size((size_t)c->n_experts_active, sizeof(int), &tmp) != 0 ||
+            checked_mul_size((size_t)route_policy.active_experts, sizeof(int), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
-            checked_mul_size((size_t)c->moe_intermediate_size, sizeof(float), &tmp) != 0 ||
+            checked_mul_size((size_t)route_policy.expert_hidden_dim, sizeof(float), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
             checked_mul_size(5, moe_expert_buf_size, &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0)
             return 0;
-        int moe_k = c->n_experts_active;
+        int moe_k = route_policy.active_experts;
         if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
-        if (checked_mul3_size((size_t)moe_k, (size_t)c->moe_intermediate_size,
+        if (checked_mul3_size((size_t)moe_k, (size_t)route_policy.expert_hidden_dim,
                               sizeof(float), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
             checked_mul3_size((size_t)moe_k, (size_t)c->dim, sizeof(float), &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
-            checked_mul_size((size_t)moe_k, (size_t)c->moe_intermediate_size, &tmp) != 0 ||
+            checked_mul_size((size_t)moe_k, (size_t)route_policy.expert_hidden_dim, &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0 ||
             checked_mul_size((size_t)(13 + 3 * moe_k), SH_ARENA_ALIGN, &tmp) != 0 ||
             checked_add_size(&moe_arena_bytes, tmp) != 0)
@@ -301,8 +304,10 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         hb_size = shared_expert_hidden;
     if (shared_expert_hidden > hb2_size)
         hb2_size = shared_expert_hidden;
-    if (bn_model_config_uses_moe(c) && c->moe_intermediate_size > x_q_size)
-        x_q_size = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    if (bn_model_config_uses_moe(c) &&
+        route_policy.expert_hidden_dim > x_q_size)
+        x_q_size = route_policy.expert_hidden_dim;
     int per_layer_dim = bn_model_config_per_layer_embedding_dim(c);
     if (per_layer_dim > 0) {
         size_t per_layer_total = 0;
@@ -414,12 +419,12 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         BnMoEState *ms = (BnMoEState *)sh_arena_calloc(arena, 1, sizeof(BnMoEState));
         if (!ms) return -1;
 
-        ms->router_logits  = (float *)sh_arena_calloc(arena, c->n_experts, sizeof(float));
+        ms->router_logits  = (float *)sh_arena_calloc(arena, route_policy.total_experts, sizeof(float));
         ms->expert_out     = (float *)sh_arena_calloc(arena, c->dim, sizeof(float));
-        ms->expert_weights = (float *)sh_arena_calloc(arena, c->n_experts_active, sizeof(float));
-        ms->expert_indices = (int *)sh_arena_calloc(arena, c->n_experts_active, sizeof(int));
-        ms->expert_hb      = (float *)sh_arena_calloc(arena, c->moe_intermediate_size, sizeof(float));
-        ms->expert_hb2     = (float *)sh_arena_calloc(arena, c->moe_intermediate_size, sizeof(float));
+        ms->expert_weights = (float *)sh_arena_calloc(arena, route_policy.active_experts, sizeof(float));
+        ms->expert_indices = (int *)sh_arena_calloc(arena, route_policy.active_experts, sizeof(int));
+        ms->expert_hb      = (float *)sh_arena_calloc(arena, route_policy.expert_hidden_dim, sizeof(float));
+        ms->expert_hb2     = (float *)sh_arena_calloc(arena, route_policy.expert_hidden_dim, sizeof(float));
 
         alloc_moe_pread_bufs(ms, w, arena);
 
@@ -427,18 +432,18 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
             !ms->expert_indices || !ms->expert_hb || !ms->expert_hb2)
             return -1;
 
-        int moe_k = c->n_experts_active;
+        int moe_k = route_policy.active_experts;
         if (moe_k > BN_MAX_MOE_K) moe_k = BN_MAX_MOE_K;
         for (int k = 0; k < moe_k; k++) {
-            ms->expert_hb_batch[k]   = (float *)sh_arena_calloc(arena, c->moe_intermediate_size, sizeof(float));
-            ms->expert_hb2_batch[k]  = (float *)sh_arena_calloc(arena, c->moe_intermediate_size, sizeof(float));
+            ms->expert_hb_batch[k]   = (float *)sh_arena_calloc(arena, route_policy.expert_hidden_dim, sizeof(float));
+            ms->expert_hb2_batch[k]  = (float *)sh_arena_calloc(arena, route_policy.expert_hidden_dim, sizeof(float));
             ms->expert_down_batch[k] = (float *)sh_arena_calloc(arena, c->dim, sizeof(float));
             if (!ms->expert_hb_batch[k] || !ms->expert_hb2_batch[k] || !ms->expert_down_batch[k])
                 return -1;
         }
 
         ms->down_x_q_bufs = (int8_t *)sh_arena_alloc(arena,
-            (size_t)moe_k * c->moe_intermediate_size);
+            (size_t)moe_k * route_policy.expert_hidden_dim);
 
         *moe_out = ms;
     }

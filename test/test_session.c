@@ -228,6 +228,56 @@ static void test_session_shared_expert_hidden_buffers(void) {
     printf("PASSED\n");
 }
 
+// Test: routed MoE policy sizes request-local expert buffers
+static void test_session_moe_route_buffers(void) {
+    printf("test_session_moe_route_buffers... ");
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+    model.config.n_experts = 4;
+    model.config.n_experts_active = 3;
+    model.config.moe_intermediate_size = 192;
+
+    BnSession *s = bn_session_create(&model, NULL);
+    assert(s != NULL);
+    assert(s->moe_state != NULL);
+
+    BnMoEState *ms = s->moe_state;
+    assert(ms->router_logits != NULL);
+    assert(ms->expert_weights != NULL);
+    assert(ms->expert_indices != NULL);
+    assert(ms->expert_hb != NULL);
+    assert(ms->expert_hb2 != NULL);
+    assert(ms->expert_hb_batch[2] != NULL);
+    assert(ms->expert_hb2_batch[2] != NULL);
+    assert(ms->expert_down_batch[2] != NULL);
+    assert(ms->down_x_q_bufs != NULL);
+
+    ms->router_logits[3] = 1.0f;
+    ms->expert_weights[2] = 2.0f;
+    ms->expert_indices[2] = 3;
+    ms->expert_hb[191] = 4.0f;
+    ms->expert_hb2[191] = 5.0f;
+    ms->expert_hb_batch[2][191] = 6.0f;
+    ms->expert_hb2_batch[2][191] = 7.0f;
+    ms->expert_down_batch[2][63] = 8.0f;
+    ms->down_x_q_bufs[3 * 192 - 1] = 9;
+
+    assert(ms->router_logits[3] == 1.0f);
+    assert(ms->expert_weights[2] == 2.0f);
+    assert(ms->expert_indices[2] == 3);
+    assert(ms->expert_hb[191] == 4.0f);
+    assert(ms->expert_hb2[191] == 5.0f);
+    assert(ms->expert_hb_batch[2][191] == 6.0f);
+    assert(ms->expert_hb2_batch[2][191] == 7.0f);
+    assert(ms->expert_down_batch[2][63] == 8.0f);
+    assert(ms->down_x_q_bufs[3 * 192 - 1] == 9);
+
+    bn_session_free(s, NULL);
+    printf("PASSED\n");
+}
+
 // Test: session reset clears TQ caches
 static void test_session_reset_tq(void) {
     printf("test_session_reset_tq... ");
@@ -319,6 +369,7 @@ int main(void) {
     test_session_pos_tracking();
     test_multiple_sessions();
     test_session_shared_expert_hidden_buffers();
+    test_session_moe_route_buffers();
     test_session_reset_tq();
     test_session_gpu_graph_isolation();
     printf("\nAll session tests passed!\n");
