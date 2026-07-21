@@ -3993,7 +3993,7 @@ if grep -n 'c->has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.
 fi
 
 if grep -n 'BN_BACKEND_HANDLE_SHARED_EXPERT_GATE\|BN_BACKEND_HANDLE_SHARED_GATEUP_STACKED' src/moe_prefill.c >/dev/null 2>&1 ||
-   [ "$(grep -c 'bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/moe_prefill.c)" -ne 3 ]; then
+   [ "$(grep -c 'bn_transformer_gpu_resolve_moe_shared_ffn_resources' src/moe_prefill.c)" -ne 4 ]; then
     echo "MoE prefill shared expert GPU resources must be composed through the GPU resource helper"
     fail=1
 fi

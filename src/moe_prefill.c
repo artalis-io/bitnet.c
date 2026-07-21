@@ -181,26 +181,22 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     int shared_ok = 1;
                     if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
                         shared_ok = 0;
-                        int shared_hidden = c->shared_expert_intermediate_size;
                         size_t sz_shd = (size_t)n_tokens * dim * sizeof(float);
                         float *sh_d = (float *)bn_malloc(&a, sz_shd);
-                        void *sg = bn_backend_model_qweight_buf(
-                            backend, &lw->shared.shared_gate);
-                        void *su = bn_backend_model_qweight_buf(
-                            backend, &lw->shared.shared_up);
-                        void *sd = bn_backend_model_qweight_buf(
-                            backend, &lw->shared.shared_down);
+                        BnTransformerGPUMoESharedFFNResources shared_gpu;
                         if (sh_d &&
                             bn_transformer_gpu_moe_prefill_shared_dense_ffn_available(
                                 gpu) &&
-                            sg && su && sd) {
+                            bn_transformer_gpu_resolve_moe_shared_ffn_resources(
+                                &shared_gpu, backend, c, lw, l, 0)) {
                             double ts = bn_moe_time_ms();
                             if (bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
-                                    gpu, sh_d, sg, su, sd, Xb,
-                                    n_tokens, dim, shared_hidden,
-                                    lw->shared.shared_gate.type,
-                                    lw->shared.shared_up.type,
-                                    lw->shared.shared_down.type,
+                                    gpu, sh_d, shared_gpu.gate, shared_gpu.up,
+                                    shared_gpu.down, Xb, n_tokens, dim,
+                                    shared_gpu.hidden_dim,
+                                    shared_gpu.gate_type,
+                                    shared_gpu.up_type,
+                                    shared_gpu.down_type,
                                     c->act_type) == 0) {
                                 for (int t = 0; t < n_tokens; t++) {
                                     const float *x_t = Xb + (size_t)t * dim;
