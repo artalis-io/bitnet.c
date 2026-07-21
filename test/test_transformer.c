@@ -2200,7 +2200,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_moe_route_topk_enabled(
         (void *)2, 1, 0));
     assert(bn_transformer_gpu_moe_routed_ffn_enabled(
-        0, 1, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
+        0, 1, (void *)4, (void *)5, (void *)6, &map, &c, 2048));
     assert(route_policy.route_flags == 0);
     assert(bn_transformer_gpu_moe_route_normalization_flags(&c) == 0);
     c.moe_norm_topk_prob = 0;
@@ -2230,7 +2230,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_route_topk_enabled(
         (void *)2, 1, 1));
     assert(bn_transformer_gpu_moe_routed_ffn_enabled(
-        1, 0, (void *)4, (void *)5, (void *)6, &map, 4096, 2048));
+        1, 0, (void *)4, (void *)5, (void *)6, &map, &c, 2048));
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN");
     unsetenv("BN_CUDA_ENABLE_QWEN2MOE_FAST_MOE_FFN");

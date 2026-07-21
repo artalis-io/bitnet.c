@@ -1185,7 +1185,7 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
     void *moe_up_all,
     void *moe_down_all,
     const BnMoEExpertMap *map,
-    int moe_hidden,
+    const BnConfig *c,
     int dim);
 BnTransformerGPUMoEDecodeRoutePolicy
 bn_transformer_gpu_moe_decode_route_policy(

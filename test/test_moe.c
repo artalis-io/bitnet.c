@@ -512,10 +512,12 @@ static void test_moe_resident_routed_ffn_layout_policy(void) {
     em.gate_cols = 16;
     em.up_cols = 16;
     em.down_cols = 32;
+    assert(bn_moe_policy_supports_resident_routed_ffn_shape(16, 32, &em));
     assert(bn_moe_policy_supports_resident_routed_ffn_layout(&c, &em));
     assert(bn_moe_policy_supports_gateup_split_layout(&em));
 
     em.up_cols = 15;
+    assert(!bn_moe_policy_supports_resident_routed_ffn_shape(16, 32, &em));
     assert(!bn_moe_policy_supports_resident_routed_ffn_layout(&c, &em));
     assert(!bn_moe_policy_supports_gateup_split_layout(&em));
     em.up_cols = 16;
@@ -523,7 +525,9 @@ static void test_moe_resident_routed_ffn_layout_policy(void) {
     assert(!bn_moe_policy_supports_gateup_split_layout(&em));
     em.up_rows = 32;
     em.down_cols = 31;
+    assert(!bn_moe_policy_supports_resident_routed_ffn_shape(16, 32, &em));
     assert(!bn_moe_policy_supports_resident_routed_ffn_layout(&c, &em));
+    assert(!bn_moe_policy_supports_resident_routed_ffn_shape(16, 32, NULL));
     assert(!bn_moe_policy_supports_resident_routed_ffn_layout(NULL, &em));
     assert(!bn_moe_policy_supports_resident_routed_ffn_layout(&c, NULL));
     assert(!bn_moe_policy_supports_gateup_split_layout(NULL));

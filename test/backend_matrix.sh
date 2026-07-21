@@ -2959,6 +2959,11 @@ if grep -n 'em->gate_rows != c->moe_intermediate_size\|map->gate_rows == moe_hid
     fail=1
 fi
 
+if grep -n 'c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->n_experts_active\|c->n_experts\|c->moe_expert_weights_scale' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use MoE route policy helpers for routed expert shape and weighting"
+    fail=1
+fi
+
 if grep -n 'map->gate_rows == map->up_rows\|map->gate_cols == map->up_cols' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose MoE policy helpers for MoE gate/up split layout"
     fail=1

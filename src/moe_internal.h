@@ -97,6 +97,10 @@ int bn_moe_policy_has_loaded_shared_expert_path(const BnConfig *c,
 int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
                                            const BnLayerWeights *lw);
 int bn_moe_policy_shared_expert_hidden_dim(const BnConfig *c);
+int bn_moe_policy_supports_resident_routed_ffn_shape(
+    int dim,
+    int expert_hidden_dim,
+    const BnMoEExpertMap *em);
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em);

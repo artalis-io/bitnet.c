@@ -100,16 +100,26 @@ int bn_moe_policy_shared_expert_hidden_dim(const BnConfig *c) {
     return bn_model_config_shared_expert_hidden_dim(c);
 }
 
+int bn_moe_policy_supports_resident_routed_ffn_shape(
+    int dim,
+    int expert_hidden_dim,
+    const BnMoEExpertMap *em) {
+    return em &&
+           em->gate_rows == expert_hidden_dim &&
+           em->up_rows == expert_hidden_dim &&
+           em->gate_cols == dim &&
+           em->up_cols == dim &&
+           em->down_rows == dim &&
+           em->down_cols == expert_hidden_dim;
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {
-    return c && em &&
-           em->gate_rows == c->moe_intermediate_size &&
-           em->up_rows == c->moe_intermediate_size &&
-           em->gate_cols == c->dim &&
-           em->up_cols == c->dim &&
-           em->down_rows == c->dim &&
-           em->down_cols == c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    return c &&
+           bn_moe_policy_supports_resident_routed_ffn_shape(
+               c->dim, route_policy.expert_hidden_dim, em);
 }
 
 int bn_moe_policy_supports_gateup_split_layout(const BnMoEExpertMap *em) {

@@ -2323,7 +2323,7 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
     void *moe_up_all,
     void *moe_down_all,
     const BnMoEExpertMap *map,
-    int moe_hidden,
+    const BnConfig *c,
     int dim) {
     if ((!gpu_route_topk && !cpu_route_resident_ffn) ||
         !moe_gate_all || !moe_up_all || !moe_down_all ||
@@ -2331,14 +2331,14 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
          !bn_transformer_gpu_moe_routed_native_quant(map)) ||
         !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
-    BnConfig c = {0};
-    c.dim = dim;
-    c.moe_intermediate_size = moe_hidden;
-    return bn_moe_policy_supports_resident_routed_ffn_layout(&c, map);
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    return bn_moe_policy_supports_resident_routed_ffn_shape(
+        dim, route_policy.expert_hidden_dim, map);
 }
 
 uint32_t bn_transformer_gpu_moe_route_normalization_flags(const BnConfig *c) {
-    return c && c->moe_norm_topk_prob
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    return route_policy.norm_topk_prob
         ? 0u
         : BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM;
 }
@@ -2388,7 +2388,7 @@ bn_transformer_gpu_moe_decode_route_policy(
         lw && bn_transformer_gpu_moe_routed_ffn_enabled(
             policy.gpu_route_topk, policy.cpu_route_resident_ffn,
             moe_gate_all, moe_up_all, moe_down_all, &lw->moe.expert_map,
-            c ? c->moe_intermediate_size : 0, dim);
+            c, dim);
     return policy;
 }
 
@@ -2419,10 +2419,11 @@ int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all) {
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     return router_diff &&
            bn_moe_policy_uses_all_active_two_expert_route(
                c, c ? c->dim : 0) &&
-           c->moe_norm_topk_prob &&
+           route_policy.norm_topk_prob &&
            !moe_gate_all &&
            bn_gpu_policy_moe_router_gpu_enabled();
 }
