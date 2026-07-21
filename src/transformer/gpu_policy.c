@@ -1254,7 +1254,7 @@ int bn_transformer_gpu_prefill_ssm_moe_chain_available(
     int allow_kquant_down,
     int n_tokens) {
     return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
-           gpu->prefill_ssm_layer &&
+           bn_gpu_backend_can_prefill_ssm_layer(gpu) &&
            !bn_transformer_gpu_prefill_ssm_layer_disabled() &&
            n_tokens >=
                bn_transformer_gpu_prefill_moe_chain_min_tokens(c, gpu) &&
@@ -1264,7 +1264,7 @@ int bn_transformer_gpu_prefill_ssm_moe_chain_available(
 
 int bn_transformer_gpu_prefill_ssm_layer_backend_available(
     const BnGPUBackend *gpu) {
-    return gpu && gpu->prefill_ssm_layer;
+    return bn_gpu_backend_can_prefill_ssm_layer(gpu);
 }
 
 int bn_transformer_gpu_prefill_ssm_layer_backend_run(
@@ -1311,15 +1311,14 @@ int bn_transformer_gpu_prefill_ssm_layer_backend_run(
     int *did_ffn) {
     if (!bn_transformer_gpu_prefill_ssm_layer_backend_available(gpu))
         return -1;
-    return gpu->prefill_ssm_layer(
-        gpu->ctx, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
-        qkvz_stacked_buf, ab_stacked_buf, ssm_out_buf, attn_norm_buf,
-        conv1d_buf, dt_bias_buf, a_log_buf, ssm_norm_buf, ffn_gate_buf,
-        ffn_up_buf, ffn_down_buf, ffn_norm_buf, X, n_tokens, dim, qkv_dim,
-        inner_dim, num_k_heads, head_k_dim, num_v_heads, head_v_dim,
-        conv_kernel, ssm_idx, wqkv_type, wz_type, alpha_type, beta_type,
-        out_type, hidden_dim, ffn_gate_type, ffn_up_type, ffn_down_type,
-        act_type, norm_eps, did_ffn);
+    return bn_gpu_backend_prefill_ssm_layer(
+        gpu, out, wqkv_buf, wz_buf, alpha_buf, beta_buf, qkvz_stacked_buf,
+        ab_stacked_buf, ssm_out_buf, attn_norm_buf, conv1d_buf, dt_bias_buf,
+        a_log_buf, ssm_norm_buf, ffn_gate_buf, ffn_up_buf, ffn_down_buf,
+        ffn_norm_buf, X, n_tokens, dim, qkv_dim, inner_dim, num_k_heads,
+        head_k_dim, num_v_heads, head_v_dim, conv_kernel, ssm_idx, wqkv_type,
+        wz_type, alpha_type, beta_type, out_type, hidden_dim, ffn_gate_type,
+        ffn_up_type, ffn_down_type, act_type, norm_eps, did_ffn);
 }
 
 int bn_transformer_gpu_prefill_ssm_dense_chain_available(
@@ -1327,7 +1326,7 @@ int bn_transformer_gpu_prefill_ssm_dense_chain_available(
     const BnConfig *c,
     int n_tokens) {
     return bn_gpu_policy_backend_prefill_chain_supported(gpu) &&
-           gpu->prefill_ssm_layer &&
+           bn_gpu_backend_can_prefill_ssm_layer(gpu) &&
            !bn_transformer_gpu_prefill_ssm_layer_disabled() &&
            n_tokens >=
                bn_transformer_gpu_prefill_dense_chain_min_tokens(c, gpu);

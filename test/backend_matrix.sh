@@ -1243,6 +1243,12 @@ if grep -n 'gpu->prefill_ssm_layer' src/transformer/prefill.c src/transformer/pr
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_prefill_ssm_moe_chain_available/{flag=1} /^int bn_transformer_gpu_prefill_dense_chain_enabled/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'gpu->prefill_ssm_layer' >/dev/null 2>&1; then
+    echo "Transformer GPU prefill SSM layer policy must use GPU backend helpers"
+    fail=1
+fi
+
 if grep -n 'BN_CUDA_DISABLE_PREFILL_DENSE_CHAIN\|BN_CUDA_DISABLE_PREFILL_HYBRID_CHAIN\|BN_CUDA_DISABLE_PREFILL_ATTN\|BN_CUDA_DISABLE_PREFILL_SSM_RUN_CHAIN' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must use GPU policy helpers for prefill chain/attention env vars"
     fail=1

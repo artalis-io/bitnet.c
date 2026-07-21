@@ -582,6 +582,11 @@ static inline int bn_gpu_backend_can_prefill_qkv_attention_wo_norm_resid(
     return gpu && gpu->prefill_qkv_attention_wo_norm_resid;
 }
 
+static inline int bn_gpu_backend_can_prefill_ssm_layer(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->prefill_ssm_layer;
+}
+
 static inline int bn_gpu_backend_can_destroy_buffer(
     const BnGPUBackend *gpu) {
     return gpu && gpu->buffer_destroy;
@@ -1013,6 +1018,61 @@ static inline int bn_gpu_backend_prefill_qkv_attention_wo_norm_resid(
         head_size, kv_mul, kv_dim, qk_rows, qk_type, wv_rows, wv_type,
         wo_rows, wo_cols, wo_type, qk_norm_per_head, norm_eps, pos0,
         rope_dims, attention_scale);
+}
+
+static inline int bn_gpu_backend_prefill_ssm_layer(
+    const BnGPUBackend *gpu,
+    float *out,
+    void *wqkv_buf,
+    void *wz_buf,
+    void *alpha_buf,
+    void *beta_buf,
+    void *qkvz_stacked_buf,
+    void *ab_stacked_buf,
+    void *ssm_out_buf,
+    void *attn_norm_buf,
+    void *conv1d_buf,
+    void *dt_bias_buf,
+    void *a_log_buf,
+    void *ssm_norm_buf,
+    void *ffn_gate_buf,
+    void *ffn_up_buf,
+    void *ffn_down_buf,
+    void *ffn_norm_buf,
+    const float *X,
+    int n_tokens,
+    int dim,
+    int qkv_dim,
+    int inner_dim,
+    int num_k_heads,
+    int head_k_dim,
+    int num_v_heads,
+    int head_v_dim,
+    int conv_kernel,
+    int ssm_idx,
+    int wqkv_type,
+    int wz_type,
+    int alpha_type,
+    int beta_type,
+    int out_type,
+    int hidden_dim,
+    int ffn_gate_type,
+    int ffn_up_type,
+    int ffn_down_type,
+    int act_type,
+    float norm_eps,
+    int *did_ffn) {
+    if (!bn_gpu_backend_can_prefill_ssm_layer(gpu))
+        return -1;
+    return gpu->prefill_ssm_layer(
+        gpu->ctx, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
+        qkvz_stacked_buf, ab_stacked_buf, ssm_out_buf, attn_norm_buf,
+        conv1d_buf, dt_bias_buf, a_log_buf, ssm_norm_buf, ffn_gate_buf,
+        ffn_up_buf, ffn_down_buf, ffn_norm_buf, X, n_tokens, dim, qkv_dim,
+        inner_dim, num_k_heads, head_k_dim, num_v_heads, head_v_dim,
+        conv_kernel, ssm_idx, wqkv_type, wz_type, alpha_type, beta_type,
+        out_type, hidden_dim, ffn_gate_type, ffn_up_type, ffn_down_type,
+        act_type, norm_eps, did_ffn);
 }
 
 static inline int bn_gpu_backend_execute(const BnGPUBackend *gpu,
