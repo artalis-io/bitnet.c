@@ -362,6 +362,10 @@ static void test_moe_prefill_policy(void) {
     lw.shared.shared_expert_gate = NULL;
     c.has_shared_expert = 1;
     assert(!bn_moe_policy_has_shared_expert(NULL, &lw));
+    assert(!bn_moe_policy_has_shared_expert_gate_vector(&lw));
+    lw.shared.shared_expert_gate = (float *)1;
+    assert(bn_moe_policy_has_shared_expert_gate_vector(&lw));
+    lw.shared.shared_expert_gate = NULL;
     assert(!bn_moe_policy_has_loaded_shared_gate_projection(&lw));
     lw.shared.shared_gate.data = (void *)1;
     assert(bn_moe_policy_has_loaded_shared_gate_projection(&lw));

@@ -820,9 +820,21 @@ static void test_gpu_capability_routing(void) {
     shared_resources.shared_gate = (void *)1;
     assert(bn_transformer_gpu_shared_expert_path_available(
         &shared_path_lw, &shared_resources));
+    assert(!bn_transformer_gpu_shared_expert_gate_available(
+        &shared_path_lw, &shared_resources));
+    shared_path_lw.shared.shared_expert_gate = (float *)1;
+    assert(!bn_transformer_gpu_shared_expert_gate_available(
+        &shared_path_lw, &shared_resources));
+    shared_resources.shared_expert_gate = (void *)1;
+    assert(bn_transformer_gpu_shared_expert_gate_available(
+        &shared_path_lw, &shared_resources));
     assert(!bn_transformer_gpu_shared_expert_path_available(
         NULL, &shared_resources));
     assert(!bn_transformer_gpu_shared_expert_path_available(
+        &shared_path_lw, NULL));
+    assert(!bn_transformer_gpu_shared_expert_gate_available(
+        NULL, &shared_resources));
+    assert(!bn_transformer_gpu_shared_expert_gate_available(
         &shared_path_lw, NULL));
 
     gpu.kind = BN_GPU_BACKEND_METAL;

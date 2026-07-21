@@ -2708,6 +2708,11 @@ if grep -n 'lw->shared\.shared_gate\.data && shared && shared->shared_gate' src/
     fail=1
 fi
 
+if rg -nU 'lw->shared\.shared_expert_gate\s*&&\s*shared->shared_expert_gate' src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_emit.c must compose shared expert gate availability helpers"
+    fail=1
+fi
+
 if grep -n 'c->has_shared_expert' src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "src/transformer/prefill_policy.c must compose shared MoE expert policy helpers"
     fail=1

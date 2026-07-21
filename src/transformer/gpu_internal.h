@@ -497,6 +497,9 @@ int bn_transformer_gpu_shared_expert_prefers_gateup_split(int gate_type);
 int bn_transformer_gpu_shared_expert_path_available(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared);
+int bn_transformer_gpu_shared_expert_gate_available(
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoESharedResources *shared);
 int bn_transformer_gpu_logits_needs_cpu_fallback(
     const BnGPUBackend *gpu,
     const BnTransformerGPULogitResources *logits);

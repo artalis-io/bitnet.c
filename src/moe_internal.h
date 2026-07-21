@@ -72,6 +72,8 @@ int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c);
 int bn_moe_policy_layer_has_router(const BnLayerWeights *lw);
 int bn_moe_policy_has_shared_expert(const BnConfig *c,
                                     const BnLayerWeights *lw);
+int bn_moe_policy_has_shared_expert_gate_vector(
+    const BnLayerWeights *lw);
 int bn_moe_policy_has_loaded_shared_gate_projection(
     const BnLayerWeights *lw);
 int bn_moe_policy_has_loaded_shared_expert_path(const BnConfig *c,

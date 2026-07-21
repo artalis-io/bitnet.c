@@ -1827,8 +1827,8 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         uint32_t u_one;
         { float one = 1.0f; memcpy(&u_one, &one, 4); }
         if (bn_transformer_gpu_shared_expert_gate_enabled(
-                lw->shared.shared_expert_gate &&
-                shared->shared_expert_gate)) {
+                bn_transformer_gpu_shared_expert_gate_available(
+                    lw, shared))) {
             uint32_t weighted_add_params[8] = {
                 (uint32_t)dim, u_one,
                 (moe->n_experts == 0 && !moe->preserve_output) ? 1u : 0u,
