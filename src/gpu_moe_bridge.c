@@ -3,6 +3,7 @@
 #include "gpu_moe_cache.h"
 #include "gpu_policy.h"
 #include "moe.h"
+#include "moe_internal.h"
 #include "transformer/gpu_internal.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -180,21 +181,21 @@ int bn_gpu_moe_bridge_resolve_resources(BnGPUMoEResources *out,
     if (!out || !expert_storage || expert_cap < 0 || !m || !sess || !lw ||
         !temporaries)
         return -1;
-    BnConfig *c = &m->config;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
     BnMoEState *ms = sess->moe_state;
     if (!ms) return -1;
 
     memset(out, 0, sizeof(*out));
     out->expert_map = &lw->moe.expert_map;
     out->experts = expert_storage;
-    out->moe_hidden = c->moe_intermediate_size;
+    out->moe_hidden = route_policy.expert_hidden_dim;
     memset(temporaries, 0, sizeof(*temporaries));
 
-    int K = c->n_experts_active;
+    int K = route_policy.active_experts;
     if (K > expert_cap) return -1;
     for (int k = 0; k < K; k++) {
         int eidx = ms->expert_indices[k];
-        if (eidx < 0 || eidx >= c->n_experts) continue;
+        if (eidx < 0 || eidx >= route_policy.total_experts) continue;
         BnGPUMoEResolvedExpert *expert = &expert_storage[out->n_experts];
         memset(expert, 0, sizeof(*expert));
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, eidx,
@@ -227,6 +228,7 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
         (BnGPUMoECache *)bn_model_moe_io(m)->gpu_moe_cache;
     if (!gpu_moe_backend_can_upload_expert_buffers(gpu) || !gpu_cache)
         return -1;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
 
     BnMoEState temp_state;
     memset(&temp_state, 0, sizeof(temp_state));
@@ -279,7 +281,7 @@ int bn_gpu_moe_bridge_preload_all(BnModel *m) {
             gpu, bn_transformer_gpu_moe_gateup_split_supported(
                      gpu, em, split_op_code));
 
-        for (int expert_idx = 0; expert_idx < m->config.n_experts;
+        for (int expert_idx = 0; expert_idx < route_policy.total_experts;
              expert_idx++) {
             const void *gate_data = bn_moe_get_expert_proj(
                 bn_model_moe_io(m), &temp_state, em, expert_idx, 0);

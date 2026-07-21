@@ -798,6 +798,11 @@ if grep -n 'gpu_quant_lowering_internal\|bn_gpu_quant_split_op_code' src/gpu_moe
     fail=1
 fi
 
+if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|m->config\.n_experts' src/gpu_moe_bridge.c >/dev/null 2>&1; then
+    echo "src/gpu_moe_bridge.c must use MoE policy helpers for routed expert shape"
+    fail=1
+fi
+
 if [ "$(grep -c 'buffer_create_stacked2' src/gpu_moe_bridge.c)" -gt 2 ]; then
     echo "src/gpu_moe_bridge.c must centralize split gate-up expert upload mechanics"
     fail=1
