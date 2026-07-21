@@ -77,10 +77,11 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
-    if (c->has_shared_expert && c->shared_expert_intermediate_size > hb_size)
-        hb_size = c->shared_expert_intermediate_size;
-    if (c->has_shared_expert && c->shared_expert_intermediate_size > hb2_size)
-        hb2_size = c->shared_expert_intermediate_size;
+    int shared_expert_hidden = bn_model_config_shared_expert_hidden_dim(c);
+    if (shared_expert_hidden > hb_size)
+        hb_size = shared_expert_hidden;
+    if (shared_expert_hidden > hb2_size)
+        hb2_size = shared_expert_hidden;
     if (bn_model_config_uses_moe(c) && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
     int per_layer_dim = bn_model_config_per_layer_embedding_dim(c);
@@ -295,10 +296,11 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
-    if (c->has_shared_expert && c->shared_expert_intermediate_size > hb_size)
-        hb_size = c->shared_expert_intermediate_size;
-    if (c->has_shared_expert && c->shared_expert_intermediate_size > hb2_size)
-        hb2_size = c->shared_expert_intermediate_size;
+    int shared_expert_hidden = bn_model_config_shared_expert_hidden_dim(c);
+    if (shared_expert_hidden > hb_size)
+        hb_size = shared_expert_hidden;
+    if (shared_expert_hidden > hb2_size)
+        hb2_size = shared_expert_hidden;
     if (bn_model_config_uses_moe(c) && c->moe_intermediate_size > x_q_size)
         x_q_size = c->moe_intermediate_size;
     int per_layer_dim = bn_model_config_per_layer_embedding_dim(c);

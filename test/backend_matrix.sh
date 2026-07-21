@@ -3887,6 +3887,11 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/session.c >/dev/null 2>
     fail=1
 fi
 
+if grep -n 'has_shared_expert\|shared_expert_intermediate_size' src/model_session.c >/dev/null 2>&1; then
+    echo "src/model_session.c must use model-policy helpers for shared expert session buffer sizing"
+    fail=1
+fi
+
 for file in include/model_config.h include/model_weights.h include/model_run_state.h include/transformer_plan_internal.h
 do
     if grep -n 'Gemma4\|Qwen\|gemma4_\|qwen2_moe\|qwen2moe_\|BN_MODEL_ARCH_POLICY_\|RMSNORM_LLAMA\|requires_llama_scalar' "$file" >/dev/null 2>&1; then

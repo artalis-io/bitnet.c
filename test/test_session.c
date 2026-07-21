@@ -194,6 +194,40 @@ static void test_multiple_sessions(void) {
     printf("PASSED\n");
 }
 
+// Test: shared expert policy sizes the reusable hidden buffers
+static void test_session_shared_expert_hidden_buffers(void) {
+    printf("test_session_shared_expert_hidden_buffers... ");
+
+    BnModel base;
+    memset(&base, 0, sizeof(base));
+    init_test_config(&base.config);
+
+    BnModel model;
+    memset(&model, 0, sizeof(model));
+    init_test_config(&model.config);
+    model.config.has_shared_expert = 1;
+    model.config.shared_expert_intermediate_size = 256;
+
+    size_t base_size = bn_model_session_arena_size(&base.config,
+                                                   &base.weights);
+    size_t shared_size = bn_model_session_arena_size(&model.config,
+                                                     &model.weights);
+    size_t expected_growth = 2 * (size_t)(256 - base.config.hidden_dim) *
+                             sizeof(float);
+    assert(base_size > 0);
+    assert(shared_size == base_size + expected_growth);
+
+    BnSession *s = bn_session_create(&model, NULL);
+    assert(s != NULL);
+    s->state.hb[255] = 3.0f;
+    s->state.hb2[255] = 7.0f;
+    assert(s->state.hb[255] == 3.0f);
+    assert(s->state.hb2[255] == 7.0f);
+
+    bn_session_free(s, NULL);
+    printf("PASSED\n");
+}
+
 // Test: session reset clears TQ caches
 static void test_session_reset_tq(void) {
     printf("test_session_reset_tq... ");
@@ -284,6 +318,7 @@ int main(void) {
     test_session_reset();
     test_session_pos_tracking();
     test_multiple_sessions();
+    test_session_shared_expert_hidden_buffers();
     test_session_reset_tq();
     test_session_gpu_graph_isolation();
     printf("\nAll session tests passed!\n");

@@ -143,6 +143,13 @@ int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config) {
     return bn_model_arch_uses_more_than_two_expert_moe(config);
 }
 
+int bn_model_config_shared_expert_hidden_dim(const BnConfig *config) {
+    if (!config || !config->has_shared_expert ||
+        config->shared_expert_intermediate_size <= 0)
+        return 0;
+    return config->shared_expert_intermediate_size;
+}
+
 int bn_model_config_moe_forces_float_kquant_gateup(
     const BnConfig *config) {
     return bn_model_arch_moe_forces_float_kquant_gateup(config);
