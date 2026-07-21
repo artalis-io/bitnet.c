@@ -1444,9 +1444,7 @@ int bn_transformer_gpu_moe_prefill_split_shared_fuse_available(
     const BnLayerWeights *lw,
     int backend_available) {
     return backend_available &&
-           c && lw &&
-           c->has_shared_expert &&
-           lw->shared.shared_gate.data &&
+           bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw) &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
            bn_transformer_gpu_moe_prefill_shared_fuse_enabled();
 }
