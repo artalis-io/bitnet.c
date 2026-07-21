@@ -705,9 +705,9 @@ int bn_transformer_gpu_packed_qkv_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *qkv,
     int use_packed_qkv,
-    int kv_f16,
+    int kv_cache_uses_fp16_rows,
     int split_op_code) {
-    return qkv && use_packed_qkv && !kv_f16 &&
+    return qkv && use_packed_qkv && !kv_cache_uses_fp16_rows &&
            bn_gpu_quant_split_op_is_deinterleaved_kquant(split_op_code) &&
            bn_transformer_gpu_can_matvec_split(gpu, qkv->type);
 }

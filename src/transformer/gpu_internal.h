@@ -490,7 +490,7 @@ int bn_transformer_gpu_packed_qkv_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *qkv,
     int use_packed_qkv,
-    int kv_f16,
+    int kv_cache_uses_fp16_rows,
     int split_op_code);
 int bn_transformer_gpu_qkv_split_standard_supported(
     const BnGPUBackend *gpu,

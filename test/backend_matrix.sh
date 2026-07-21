@@ -1020,6 +1020,11 @@ if grep -n 'c->kv_tq_bits\|c->kv_f16' src/transformer/gpu_policy.c >/dev/null 2>
     fail=1
 fi
 
+if grep -n '\bkv_f16\b' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use KV cache behavior names, not kv_f16 storage names"
+    fail=1
+fi
+
 if grep -n 'c->kv_tq_bits\|c->kv_f16' \
     src/transformer/gqa_scalar.c \
     src/transformer/gqa_neon.c \
