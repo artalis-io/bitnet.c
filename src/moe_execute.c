@@ -211,7 +211,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k], NULL, gateup_flags };
                 gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]  , NULL, gateup_flags };
             }
-            if (c->has_shared_expert && lw->shared.shared_gate.data) {
+            if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
                 int can_batch_shared = bn_moe_can_batch_shared_gateup(
                     gu_tasks, n_gu, lw->shared.shared_gate.type,
                     lw->shared.shared_up.type);
@@ -614,7 +614,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
     // 5. Shared expert (if present, always resident)
     t0 = bn_moe_time_ms();
-    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+    if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
         int shared_hidden = c->shared_expert_intermediate_size;
 
         if (!shared_gu_ready) {

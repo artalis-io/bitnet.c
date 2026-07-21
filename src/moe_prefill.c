@@ -132,7 +132,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             int shared_gate_type = 0;
             int shared_up_type = 0;
             int shared_down_type = 0;
-            if (c->has_shared_expert && lw->shared.shared_gate.data) {
+            if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
                 shared_gate = bn_backend_model_qweight_buf(
                     backend, &lw->shared.shared_gate);
                 shared_up = bn_backend_model_qweight_buf(
@@ -204,7 +204,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         c->moe_expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     int shared_ok = 1;
-                    if (c->has_shared_expert && lw->shared.shared_gate.data) {
+                    if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
                         shared_ok = 0;
                         int shared_hidden = c->shared_expert_intermediate_size;
                         size_t sz_shd = (size_t)n_tokens * dim * sizeof(float);
@@ -682,7 +682,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
     // 6. Shared expert (if present) — batch matmul across all tokens
     if (!used_gpu_shared_batch &&
-        c->has_shared_expert && lw->shared.shared_gate.data) {
+        bn_moe_policy_has_loaded_shared_expert(c, lw)) {
         t0 = bn_moe_time_ms();
         int shared_hidden = c->shared_expert_intermediate_size;
         float *sh_gate = gate_buf;  // reuse (T_max >= 1, shared_hidden <= moe_hidden usually)

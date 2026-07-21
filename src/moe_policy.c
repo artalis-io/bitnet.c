@@ -46,6 +46,14 @@ int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c) {
     return bn_model_config_uses_more_than_two_expert_moe(c);
 }
 
+int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
+                                           const BnLayerWeights *lw) {
+    return c &&
+           c->has_shared_expert &&
+           lw &&
+           lw->shared.shared_gate.data != NULL;
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *em) {

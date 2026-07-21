@@ -347,6 +347,17 @@ static void test_moe_prefill_policy(void) {
     assert(!bn_moe_policy_uses_all_active_two_expert_route(&c, 0));
     assert(bn_moe_policy_uses_grouped_expert_route(&c));
 
+    BnLayerWeights lw = {0};
+    c.has_shared_expert = 1;
+    assert(!bn_moe_policy_has_loaded_shared_expert(&c, &lw));
+    lw.shared.shared_gate.data = (void *)1;
+    assert(bn_moe_policy_has_loaded_shared_expert(&c, &lw));
+    c.has_shared_expert = 0;
+    assert(!bn_moe_policy_has_loaded_shared_expert(&c, &lw));
+    assert(!bn_moe_policy_has_loaded_shared_expert(NULL, &lw));
+    c.has_shared_expert = 1;
+    assert(!bn_moe_policy_has_loaded_shared_expert(&c, NULL));
+
     printf("PASSED\n");
 }
 

@@ -3908,6 +3908,11 @@ if ! grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE
     fail=1
 fi
 
+if grep -n 'c->has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.shared_gate\.data' src/moe_execute.c src/moe_prefill.c >/dev/null 2>&1; then
+    echo "MoE execute/prefill code must use MoE policy helpers for loaded shared-expert decisions"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/moe_policy.c >/dev/null 2>&1; then
     echo "src/moe_policy.c must use model-policy helpers instead of reaching into model_arch"
     fail=1
