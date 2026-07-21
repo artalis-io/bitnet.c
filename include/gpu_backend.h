@@ -612,6 +612,16 @@ static inline int bn_gpu_backend_can_read_activation(
     return gpu && gpu->read_activation;
 }
 
+static inline int bn_gpu_backend_can_argmax_activation(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->argmax_activation;
+}
+
+static inline int bn_gpu_backend_can_matvec_argmax_activation(
+    const BnGPUBackend *gpu) {
+    return gpu && gpu->matvec_argmax_activation;
+}
+
 static inline int bn_gpu_backend_can_query_memory(
     const BnGPUBackend *gpu) {
     return gpu && gpu->memory_info;
@@ -1047,6 +1057,39 @@ static inline int bn_gpu_backend_read_activation(const BnGPUBackend *gpu,
     if (!bn_gpu_backend_can_read_activation(gpu))
         return -1;
     return gpu->read_activation(gpu->ctx, buf_idx, out, size, offset);
+}
+
+static inline int bn_gpu_backend_argmax_activation(
+    const BnGPUBackend *gpu,
+    int buf_idx,
+    int n,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token) {
+    if (!bn_gpu_backend_can_argmax_activation(gpu))
+        return -1;
+    return gpu->argmax_activation(gpu->ctx, buf_idx, n, penalty_tokens,
+                                  n_penalty_tokens, repeat_penalty,
+                                  out_token);
+}
+
+static inline int bn_gpu_backend_matvec_argmax_activation(
+    const BnGPUBackend *gpu,
+    void *W_buf,
+    int type,
+    int rows,
+    int cols,
+    int buf_idx,
+    const int *penalty_tokens,
+    int n_penalty_tokens,
+    float repeat_penalty,
+    int *out_token) {
+    if (!bn_gpu_backend_can_matvec_argmax_activation(gpu))
+        return -1;
+    return gpu->matvec_argmax_activation(
+        gpu->ctx, W_buf, type, rows, cols, buf_idx, penalty_tokens,
+        n_penalty_tokens, repeat_penalty, out_token);
 }
 
 static inline int bn_gpu_backend_query_memory(const BnGPUBackend *gpu,

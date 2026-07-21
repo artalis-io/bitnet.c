@@ -946,6 +946,12 @@ if grep -n 'gpu->argmax_activation\|gpu->matvec_argmax_activation' src/transform
     fail=1
 fi
 
+if awk '/^BnTransformerGPUGenerateArgmaxPolicy/{flag=1} /^int bn_transformer_gpu_moe_decode_cacheable/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'gpu->argmax_activation\|gpu->matvec_argmax_activation' >/dev/null 2>&1; then
+    echo "Transformer GPU argmax policy must use GPU backend helpers"
+    fail=1
+fi
+
 if grep -n 'gpu->read_activation' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "src/transformer/gpu.c must use GPU readback helpers instead of raw read_activation checks"
     fail=1

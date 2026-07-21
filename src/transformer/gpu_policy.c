@@ -1764,8 +1764,7 @@ bn_transformer_gpu_generate_argmax_policy(
     float repeat_penalty) {
     BnTransformerGPUGenerateArgmaxPolicy policy = {0};
     policy.enabled =
-        gpu &&
-        gpu->argmax_activation &&
+        bn_gpu_backend_can_argmax_activation(gpu) &&
         top_logits <= 0 &&
         temperature == 0.0f &&
         repeat_penalty >= 1.0f;
@@ -1775,7 +1774,7 @@ bn_transformer_gpu_generate_argmax_policy(
 int bn_transformer_gpu_argmax_available(
     const BnGPUBackend *gpu,
     int want_argmax) {
-    return !want_argmax || (gpu && gpu->argmax_activation);
+    return !want_argmax || bn_gpu_backend_can_argmax_activation(gpu);
 }
 
 int bn_transformer_gpu_argmax_backend_run(
@@ -1786,11 +1785,9 @@ int bn_transformer_gpu_argmax_backend_run(
     int n_penalty_tokens,
     float repeat_penalty,
     int *out_token) {
-    if (!gpu || !gpu->argmax_activation)
-        return -1;
-    return gpu->argmax_activation(gpu->ctx, buf_idx, n, penalty_tokens,
-                                  n_penalty_tokens, repeat_penalty,
-                                  out_token);
+    return bn_gpu_backend_argmax_activation(gpu, buf_idx, n, penalty_tokens,
+                                            n_penalty_tokens, repeat_penalty,
+                                            out_token);
 }
 
 int bn_transformer_gpu_matvec_argmax_enabled(
@@ -1801,7 +1798,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
     int need_logits,
     int gpu_logits_need_cpu) {
     if (!gpu || !c || !logits || !want_argmax || need_logits ||
-        !gpu->matvec_argmax_activation ||
+        !bn_gpu_backend_can_matvec_argmax_activation(gpu) ||
         bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu) ||
         bn_gpu_policy_logits_argmax_disabled() ||
         !bn_backend_quant_supports_kquant_logits_refine(logits->type))
@@ -1832,10 +1829,8 @@ int bn_transformer_gpu_matvec_argmax_backend_run(
     int n_penalty_tokens,
     float repeat_penalty,
     int *out_token) {
-    if (!gpu || !gpu->matvec_argmax_activation)
-        return -1;
-    return gpu->matvec_argmax_activation(
-        gpu->ctx, W_buf, type, rows, cols, buf_idx, penalty_tokens,
+    return bn_gpu_backend_matvec_argmax_activation(
+        gpu, W_buf, type, rows, cols, buf_idx, penalty_tokens,
         n_penalty_tokens, repeat_penalty, out_token);
 }
 
