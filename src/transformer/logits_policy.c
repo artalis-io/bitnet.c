@@ -1,6 +1,7 @@
 #include "transformer_logits_internal.h"
 #include "backend_quant.h"
 #include "gpu_internal.h"
+#include "model_internal.h"
 
 #include <stdlib.h>
 
@@ -63,6 +64,10 @@ int bn_transformer_logits_tied_f16_weight_type(void) {
 
 int bn_transformer_logits_tied_f32_weight_type(void) {
     return bn_backend_quant_tied_logits_f32_weight_type();
+}
+
+float bn_transformer_logits_final_softcap(const BnConfig *c) {
+    return bn_model_config_final_logit_softcap(c);
 }
 
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled) {

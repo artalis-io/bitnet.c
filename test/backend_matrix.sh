@@ -602,6 +602,11 @@ if grep -n 'bn_quant_format_supports_q[68]_logits_refine\|bn_backend_quant_suppo
     fail=1
 fi
 
+if grep -n 'final_logit_softcap' src/transformer/logits.c >/dev/null 2>&1; then
+    echo "src/transformer/logits.c must use logits/model policy helpers for final logit softcap"
+    fail=1
+fi
+
 if grep -n '#include "quant.h"\|bn_quant_' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use CPU backend/logits policy helpers, not quant internals directly"
     fail=1

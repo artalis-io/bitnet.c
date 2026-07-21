@@ -3058,6 +3058,11 @@ static void test_logits_policy_helpers(void) {
     assert(bn_transformer_logits_native_quant_task_flags(0) == 0);
     assert(bn_transformer_logits_native_quant_task_flags(1) ==
            BN_MATVEC_TASK_NATIVE_QUANT);
+    assert(bn_transformer_logits_final_softcap(NULL) == 0.0f);
+    BnConfig softcap_config = {0};
+    assert(bn_transformer_logits_final_softcap(&softcap_config) == 0.0f);
+    softcap_config.final_logit_softcap = 30.0f;
+    assert(bn_transformer_logits_final_softcap(&softcap_config) == 30.0f);
 
     unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q8_REFINE_TOP");

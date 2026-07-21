@@ -67,6 +67,7 @@ int bn_transformer_logits_tied_uses_f16_path(int tensor_type);
 int bn_transformer_logits_tied_i8_weight_type(void);
 int bn_transformer_logits_tied_f16_weight_type(void);
 int bn_transformer_logits_tied_f32_weight_type(void);
+float bn_transformer_logits_final_softcap(const BnConfig *c);
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled);
 void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
     float *out,

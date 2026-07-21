@@ -306,11 +306,13 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     }
     }
 
-    if (c->final_logit_softcap != 0.0f) {
-        float cap = c->final_logit_softcap;
-        float inv = 1.0f / cap;
-        for (int i = 0; i < c->vocab_size; i++)
-            s->logits[i] = tanhf(s->logits[i] * inv) * cap;
+    {
+        float cap = bn_transformer_logits_final_softcap(c);
+        if (cap != 0.0f) {
+            float inv = 1.0f / cap;
+            for (int i = 0; i < c->vocab_size; i++)
+                s->logits[i] = tanhf(s->logits[i] * inv) * cap;
+        }
     }
 
     return s->logits;

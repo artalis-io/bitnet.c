@@ -266,6 +266,10 @@ int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer) {
     return bn_model_arch_divides_rope_freqs(config, layer);
 }
 
+float bn_model_config_final_logit_softcap(const BnConfig *config) {
+    return config ? config->final_logit_softcap : 0.0f;
+}
+
 int bn_model_config_prefill_uses_exact_activation(
     const BnConfig *config) {
     return bn_model_arch_prefill_uses_exact_activation(config);
