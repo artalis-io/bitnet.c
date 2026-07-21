@@ -1753,7 +1753,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         }
     }
 
-    if (lw->shared.shared_gate.data && shared && shared->shared_gate) {
+    if (bn_transformer_gpu_shared_expert_path_available(lw, shared)) {
         int shared_kquant_dot_eligible =
             bn_transformer_gpu_shared_kquant_gateup_dot_eligible(
                 lw->shared.shared_gate.type, lw->shared.shared_up.type,

@@ -342,6 +342,15 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
            bn_gpu_policy_shared_expert_gate_enabled();
 }
 
+int bn_transformer_gpu_shared_expert_path_available(
+    const BnLayerWeights *lw,
+    const BnTransformerGPUMoESharedResources *shared) {
+    return lw &&
+           shared &&
+           bn_moe_policy_has_loaded_shared_gate_projection(lw) &&
+           shared->shared_gate;
+}
+
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_moe_gateup_task_flags(c);
 }

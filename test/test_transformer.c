@@ -810,6 +810,21 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_shared_expert_gate_enabled(1));
     unsetenv("BN_CUDA_DISABLE_SHARED_EXPERT_GATE");
 
+    BnLayerWeights shared_path_lw;
+    memset(&shared_path_lw, 0, sizeof(shared_path_lw));
+    BnTransformerGPUMoESharedResources shared_resources;
+    memset(&shared_resources, 0, sizeof(shared_resources));
+    shared_path_lw.shared.shared_gate.data = (void *)1;
+    assert(!bn_transformer_gpu_shared_expert_path_available(
+        &shared_path_lw, &shared_resources));
+    shared_resources.shared_gate = (void *)1;
+    assert(bn_transformer_gpu_shared_expert_path_available(
+        &shared_path_lw, &shared_resources));
+    assert(!bn_transformer_gpu_shared_expert_path_available(
+        NULL, &shared_resources));
+    assert(!bn_transformer_gpu_shared_expert_path_available(
+        &shared_path_lw, NULL));
+
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));
     assert(!bn_transformer_gpu_can_layerwise_rope(&gpu));
