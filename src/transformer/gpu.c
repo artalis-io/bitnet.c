@@ -89,7 +89,8 @@ static int gpu_debug_compute_moe_actual_cpu_from_state(
     if (!m || !sess || !lw || !x_out || !sess->moe_state)
         return -1;
     BnRunState *s = &sess->state;
-    int K = m->config.n_experts_active;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
+    int K = route_policy.active_experts;
     if (K > BN_MAX_MOE_K)
         K = BN_MAX_MOE_K;
     float *save_x = (float *)malloc((size_t)dim * sizeof(float));
@@ -137,8 +138,9 @@ static int gpu_debug_compute_moe_cpu_from_xb(
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
     int exact_silu = bn_moe_policy_exact_silu(c);
-    int K = c->n_experts_active;
-    int moe_hidden = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    int K = route_policy.active_experts;
+    int moe_hidden = route_policy.expert_hidden_dim;
     uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     float *expert_out = (float *)calloc((size_t)dim, sizeof(float));
     float *hb = (float *)malloc((size_t)moe_hidden * sizeof(float));
@@ -226,8 +228,9 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
     int exact_silu = bn_moe_policy_exact_silu(c);
-    int K = c->n_experts_active;
-    int moe_hidden = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    int K = route_policy.active_experts;
+    int moe_hidden = route_policy.expert_hidden_dim;
     uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     float *hb = (float *)malloc((size_t)moe_hidden * sizeof(float));
     float *hb2 = (float *)malloc((size_t)moe_hidden * sizeof(float));
@@ -378,8 +381,9 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
     int exact_silu = bn_moe_policy_exact_silu(c);
-    int K = c->n_experts_active;
-    int moe_hidden = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    int K = route_policy.active_experts;
+    int moe_hidden = route_policy.expert_hidden_dim;
     uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     float *hb = (float *)malloc((size_t)moe_hidden * sizeof(float));
     float *hb2 = (float *)malloc((size_t)moe_hidden * sizeof(float));
@@ -437,8 +441,9 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
         return -1;
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
-    int n_experts = c->n_experts;
-    int moe_hidden = c->moe_intermediate_size;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    int n_experts = route_policy.total_experts;
+    int moe_hidden = route_policy.expert_hidden_dim;
     if (n_experts <= 0 || moe_hidden <= 0)
         return -1;
     uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
@@ -570,7 +575,7 @@ static int gpu_resolve_moe_all_active_two_resources(
     out->expert_map = &lw->moe.expert_map;
     out->experts = storage;
     out->n_experts = 2;
-    out->moe_hidden = c->moe_intermediate_size;
+    out->moe_hidden = bn_moe_route_policy(c).expert_hidden_dim;
     for (int e = 0; e < 2; e++) {
         memset(&storage[e], 0, sizeof(storage[e]));
         if (bn_gpu_moe_bridge_get_expert(m, sess, lw, layer, e, temps,
@@ -828,6 +833,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int kv_dim = c->kv_dim;
     int head_size = c->head_size;
     int n_heads = c->n_heads;
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int q_dim = n_heads * head_size;
     int rope_dims = c->rope_text_dims > 0
         ? c->rope_text_dims
@@ -1264,9 +1270,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     } else {
                         bn_moe_route(sess->moe_state, s->xb,
                                      lw->moe.router_weight, dim,
-                                     c->n_experts, c->n_experts_active,
-                                     c->moe_norm_topk_prob,
-                                     c->moe_expert_weights_scale,
+                                     route_policy.total_experts,
+                                     route_policy.active_experts,
+                                     route_policy.norm_topk_prob,
+                                     route_policy.expert_weights_scale,
                                      bn_model_pool(m));
                         if (gpu_debug_compute_moe_cpu_from_xb(
                                 m, sess, lw, dim, s->x, s->xb,
@@ -1287,12 +1294,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                             &emit, "gpu moe cpu route input readback failed");
                     bn_moe_route(sess->moe_state, s->xb,
                                  lw->moe.router_weight, dim,
-                                 c->n_experts, c->n_experts_active,
-                                 c->moe_norm_topk_prob,
-                                 c->moe_expert_weights_scale,
+                                 route_policy.total_experts,
+                                 route_policy.active_experts,
+                                 route_policy.norm_topk_prob,
+                                 route_policy.expert_weights_scale,
                                  bn_model_pool(m));
                     float route_tmp[BN_MAX_MOE_K * 2];
-                    int K = c->n_experts_active;
+                    int K = route_policy.active_experts;
                     if (K > BN_MAX_MOE_K)
                         return bn_transformer_gpu_reject_forward(
                             &emit, "gpu moe route K too large");
@@ -1309,15 +1317,16 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 } else if (bn_transformer_gpu_emit_context_moe_route_topk(
                                &emit, moe_router, BN_GPU_VALUE_XB,
                                BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
-                               dim, c->n_experts, c->n_experts_active,
-                               c->moe_expert_weights_scale,
+                               dim, route_policy.total_experts,
+                               route_policy.active_experts,
+                               route_policy.expert_weights_scale,
                                moe_route.route_flags) != 0) {
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route emit failed");
                 }
                 if (moe_debug.compare_route) {
                     float route_tmp[BN_MAX_MOE_K * 2];
-                    int K = c->n_experts_active;
+                    int K = route_policy.active_experts;
                     if (K > BN_MAX_MOE_K ||
                         bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                         bn_transformer_gpu_read_activation_buf(
@@ -1338,9 +1347,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 if (moe_debug.compare_raw &&
                     moe_gate_all && moe_up_all &&
                     moe_route.all_active_two_kquant_moe) {
-                    int K = c->n_experts_active;
-                    int n_experts = c->n_experts;
-                    int moe_hidden = c->moe_intermediate_size;
+                    int K = route_policy.active_experts;
+                    int n_experts = route_policy.total_experts;
+                    int moe_hidden = route_policy.expert_hidden_dim;
                     size_t raw_bytes =
                         (size_t)n_experts * (size_t)moe_hidden *
                         sizeof(float);
@@ -1420,14 +1429,15 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_OUT,
                         lw->moe.expert_map.gate_type,
                         lw->moe.expert_map.down_type, dim,
-                        c->moe_intermediate_size, c->n_experts,
-                        c->n_experts_active, bn_moe_policy_exact_silu(c),
-                        l) != 0)
+                        route_policy.expert_hidden_dim,
+                        route_policy.total_experts,
+                        route_policy.active_experts,
+                        bn_moe_policy_exact_silu(c), l) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed ffn emit failed");
                 if (moe_debug.compare_mid) {
-                    int K = c->n_experts_active;
-                    int moe_hidden = c->moe_intermediate_size;
+                    int K = route_policy.active_experts;
+                    int moe_hidden = route_policy.expert_hidden_dim;
                     size_t mid_bytes =
                         (size_t)K * (size_t)moe_hidden * sizeof(float);
                     float *moe_cpu_mid = (float *)malloc(mid_bytes);
@@ -1536,7 +1546,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                             gpu, backend, lw, l);
                     BnGPUMoEResources shared_only = {
                         &lw->moe.expert_map, NULL, 1,
-                        c->moe_intermediate_size, 1
+                        route_policy.expert_hidden_dim, 1
                     };
                     bn_transformer_gpu_emit_context_moe(
                         &emit, &shared_only, &moe_shared, lw, dim, u_eps,
@@ -1679,8 +1689,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 if (bn_transformer_gpu_emit_context_moe_route_topk(
                         &emit, moe_router, BN_GPU_VALUE_XB,
                         BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2,
-                        dim, c->n_experts, c->n_experts_active,
-                        c->moe_expert_weights_scale,
+                        dim, route_policy.total_experts,
+                        route_policy.active_experts,
+                        route_policy.expert_weights_scale,
                         moe_route.route_flags) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route emit failed");
@@ -1688,7 +1699,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route topk failed");
                 float route_tmp[BN_MAX_MOE_K * 2];
-                int K = c->n_experts_active;
+                int K = route_policy.active_experts;
                 if (K > BN_MAX_MOE_K)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe route K too large");
@@ -1712,9 +1723,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     int cpu_indices[BN_MAX_MOE_K];
                     bn_moe_route(sess->moe_state, s->xb,
                                  lw->moe.router_weight, dim,
-                                 c->n_experts, c->n_experts_active,
-                                 c->moe_norm_topk_prob,
-                                 c->moe_expert_weights_scale,
+                                 route_policy.total_experts,
+                                 route_policy.active_experts,
+                                 route_policy.norm_topk_prob,
+                                 route_policy.expert_weights_scale,
                                  bn_model_pool(m));
                     for (int k = 0; k < K; k++) {
                         cpu_weights[k] = sess->moe_state->expert_weights[k];
@@ -1747,9 +1759,10 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 ? bn_platform_time_ms() : 0.0;
             if (!did_gpu_route_topk) {
                 bn_moe_route(sess->moe_state, s->xb, lw->moe.router_weight,
-                             dim, c->n_experts, c->n_experts_active,
-                             c->moe_norm_topk_prob,
-                             c->moe_expert_weights_scale,
+                             dim, route_policy.total_experts,
+                             route_policy.active_experts,
+                             route_policy.norm_topk_prob,
+                             route_policy.expert_weights_scale,
                              bn_model_pool(m));
             }
             double moe_prof_t3 = moe_route_profile
@@ -1778,7 +1791,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             double moe_prof_t4 = moe_route_profile
                 ? bn_platform_time_ms() : 0.0;
             gpu_moe_route_profile_add(
-                dim, c->n_experts, moe_prof_t1 - moe_prof_t0,
+                dim, route_policy.total_experts, moe_prof_t1 - moe_prof_t0,
                 moe_prof_t2 - moe_prof_t1, moe_prof_t3 - moe_prof_t2,
                 moe_prof_t4 - moe_prof_t3);
             BnTransformerGPUMoESharedResources moe_shared =
