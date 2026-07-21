@@ -3895,6 +3895,17 @@ do
     fi
 done
 
+for file in \
+    src/transformer/gpu.c \
+    src/moe_execute.c \
+    src/moe_prefill.c
+do
+    if grep -n 'moe_exact_silu' "$file" >/dev/null 2>&1; then
+        echo "$file must use MoE policy helpers for exact SwiGLU/SILU behavior"
+        fail=1
+    fi
+done
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/session.c >/dev/null 2>&1; then
     echo "src/session.c must use model-policy helpers instead of reaching into model_arch"
     fail=1

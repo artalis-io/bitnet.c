@@ -20,6 +20,10 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
     return policy;
 }
 
+int bn_moe_policy_exact_silu(const BnConfig *c) {
+    return bn_moe_execution_policy(c).exact_silu;
+}
+
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
     BnMoEPrefillPolicy policy = {0};
     policy.force_matvec_prefill =

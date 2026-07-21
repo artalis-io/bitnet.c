@@ -63,7 +63,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     t0 = bn_moe_time_ms();
     bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
                   m->config.moe_intermediate_size,
-                  m->config.moe_exact_silu);
+                  bn_moe_policy_exact_silu(&m->config));
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();

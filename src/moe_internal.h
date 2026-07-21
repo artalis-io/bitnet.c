@@ -69,6 +69,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
 uint32_t bn_moe_gateup_task_flags(const BnConfig *c);
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
+int bn_moe_policy_exact_silu(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);
 int bn_moe_policy_uses_expert_weights(const BnConfig *c);
 int bn_moe_policy_uses_all_active_two_expert_set(const BnConfig *c);
