@@ -158,11 +158,11 @@ int bn_moe_policy_can_batch_loaded_shared_gateup(
     const BnMatvecTask *tasks,
     int n_tasks,
     const BnLayerWeights *lw) {
-    if (!bn_moe_policy_has_loaded_shared_gate_projection(lw))
+    BnMoESharedExpertWeights weights;
+    if (!bn_moe_shared_expert_projection_weights(&weights, lw))
         return 0;
     return bn_moe_can_batch_shared_gateup(
-        tasks, n_tasks, lw->shared.shared_gate.type,
-        lw->shared.shared_up.type);
+        tasks, n_tasks, weights.gate->type, weights.up->type);
 }
 
 int bn_moe_shared_expert_gateup_tasks(BnMatvecTask *tasks,
