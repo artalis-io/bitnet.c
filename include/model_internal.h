@@ -127,6 +127,6 @@ int bn_model_config_allows_small_dense_prefill_decode_fallback(
 int bn_model_config_small_dense_prefill_min_tokens(const BnConfig *config);
 int bn_model_config_allows_small_dense_native_logit_refine(
     const BnConfig *config);
-int bn_model_config_moe_prefers_exact_gpu_attention(const BnConfig *config);
+int bn_model_config_moe_prefers_reference_gpu_attention(const BnConfig *config);
 
 #endif // BN_MODEL_INTERNAL_H

@@ -1110,7 +1110,7 @@ bn_transformer_gpu_decode_cacheability_policy(
 int bn_transformer_gpu_all_active_two_kquant_moe_cpu_moe_safe_default(
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_moe_exact_attention_enabled(
+int bn_transformer_gpu_moe_reference_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_ssm_cpu_fallback_required(

@@ -3055,6 +3055,11 @@ if grep -n 'bn_transformer_gpu_cuda_\(all_active_two_kquant_moe_q6_logits_refine
     fail=1
 fi
 
+if grep -n 'BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION\|bn_model_arch_moe_prefers_exact_gpu_attention\|bn_model_config_moe_prefers_exact_gpu_attention\|bn_transformer_gpu_moe_exact_attention_enabled\|bn_gpu_policy_backend_moe_exact_attention_supported\|bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled\|\bmoe_exact_attention\b' include/model_arch.h include/model_internal.h include/gpu_policy.h src/model_arch.c src/model_policy.c src/gpu_policy.c src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_moe.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "MoE reference GPU attention policy must use reference behavior names, not exact-attention policy names"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_gpu_cuda_\(all2_moe_direct_route_enabled\|all_active_two_kquant_moe_route_layer_selected\|all_active_two_kquant_moe_route_layer_range\|all_active_two_kquant_moe_exact_gpu_route_enabled\|all_active_two_kquant_moe_router\)' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
     echo "MoE route transformer GPU policy must expose backend-neutral helper names, not CUDA-named aliases"
     fail=1

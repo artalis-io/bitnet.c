@@ -2100,7 +2100,7 @@ static void test_gpu_policy_helpers(void) {
     manual_small_dense_exact_native_policy.from_layer = -1;
     manual_small_dense_exact_native_policy.to_layer = -1;
     manual_small_dense_exact_native_policy.ffn_only = 0;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION;
     small_dense_exact_native_use = bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
         &gpu, &c, &manual_small_dense_exact_native_policy, 0, 0, -1);
     assert(!small_dense_exact_native_use.use_layer);
@@ -2336,16 +2336,19 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_all_active_two_kquant_moe_cpu_moe_safe_default(
         &c, &moe_w));
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE");
-    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION;
-    assert(bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
+    c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION;
+    assert(bn_transformer_gpu_moe_reference_attention_enabled(&gpu, &c));
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_ATTN", "1", 1);
+    assert(!bn_transformer_gpu_moe_reference_attention_enabled(&gpu, &c));
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_ATTN");
     setenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN", "1", 1);
-    assert(!bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_reference_attention_enabled(&gpu, &c));
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN");
     setenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN", "1", 1);
-    assert(!bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_reference_attention_enabled(&gpu, &c));
     unsetenv("BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
     gpu.kind = BN_GPU_BACKEND_METAL;
-    assert(!bn_transformer_gpu_moe_exact_attention_enabled(&gpu, &c));
+    assert(!bn_transformer_gpu_moe_reference_attention_enabled(&gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
     c.policy_flags = 0;
 
@@ -3432,7 +3435,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
     assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
-    assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
+    assert(!bn_model_arch_moe_prefers_reference_gpu_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(!bn_model_arch_moe_uses_dense_residual_branch(&c));
     assert(!bn_model_arch_uses_moe(&c));
@@ -3530,7 +3533,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(!bn_model_arch_requires_float_kquant_fallback(&c));
     assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
-    assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
+    assert(!bn_model_arch_moe_prefers_reference_gpu_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
     assert(bn_model_arch_rmsnorm_uses_reference_order(&c));
@@ -3564,9 +3567,9 @@ static void test_model_arch_registry(void) {
     c.dim = 0;
 
     c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK |
-                      BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION;
+                      BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION;
     assert(bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
-    assert(bn_model_arch_moe_prefers_exact_gpu_attention(&c));
+    assert(bn_model_arch_moe_prefers_reference_gpu_attention(&c));
 
     char name[128];
     char scale[128];

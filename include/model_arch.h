@@ -25,7 +25,7 @@
     BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK (1u << 12)
 #define BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK   (1u << 13)
-#define BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION            (1u << 14)
+#define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION        (1u << 14)
 #define BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT            (1u << 15)
 #define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH          (1u << 16)
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE           (1u << 17)
@@ -144,7 +144,7 @@ int bn_model_arch_allows_small_dense_prefill_decode_fallback(
 int bn_model_arch_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c);
-int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c);
+int bn_model_arch_moe_prefers_reference_gpu_attention(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
 int bn_model_arch_moe_uses_dense_residual_branch(const BnConfig *c);
 int bn_model_arch_uses_moe(const BnConfig *c);

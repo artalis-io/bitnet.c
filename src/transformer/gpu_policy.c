@@ -2042,12 +2042,12 @@ int bn_transformer_gpu_all_active_two_kquant_moe_cpu_moe_safe_default(
            !bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled();
 }
 
-int bn_transformer_gpu_moe_exact_attention_enabled(
+int bn_transformer_gpu_moe_reference_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_gpu_policy_backend_moe_exact_attention_supported(gpu) &&
-           bn_model_config_moe_prefers_exact_gpu_attention(c) &&
-           !bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled();
+    return bn_gpu_policy_backend_moe_reference_attention_supported(gpu) &&
+           bn_model_config_moe_prefers_reference_gpu_attention(c) &&
+           !bn_gpu_policy_all_active_two_kquant_moe_reference_attention_disabled();
 }
 
 int bn_transformer_gpu_ssm_cpu_fallback_required(
@@ -2192,10 +2192,10 @@ bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
     if (use.small_dense_exact_native_path)
         use.use_layer = 1;
 
-    int exact_attention =
-        bn_transformer_gpu_moe_exact_attention_enabled(gpu, c);
+    int reference_attention =
+        bn_transformer_gpu_moe_reference_attention_enabled(gpu, c);
     use.use_attention =
-        (use.use_layer || exact_attention) && !policy->ffn_only;
+        (use.use_layer || reference_attention) && !policy->ffn_only;
     use.use_ffn = use.use_layer && !policy->attn_only;
     use.use_ffn_down = use.use_ffn;
     if (use.small_dense_exact_native_path &&

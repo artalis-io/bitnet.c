@@ -389,7 +389,7 @@ int bn_model_config_allows_small_dense_native_logit_refine(
     return bn_model_arch_allows_small_dense_native_logit_refine(config);
 }
 
-int bn_model_config_moe_prefers_exact_gpu_attention(
+int bn_model_config_moe_prefers_reference_gpu_attention(
     const BnConfig *config) {
-    return bn_model_arch_moe_prefers_exact_gpu_attention(config);
+    return bn_model_arch_moe_prefers_reference_gpu_attention(config);
 }

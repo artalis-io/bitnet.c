@@ -458,8 +458,9 @@ static int all_active_two_kquant_moe_cpu_moe_safe_disabled(void) {
         "BN_CUDA_DISABLE_QWEN2MOE_CPU_MOE_SAFE");
 }
 
-static int all_active_two_kquant_moe_exact_attention_disabled(void) {
-    return gpu_policy_compat_env_enabled2(
+static int all_active_two_kquant_moe_reference_attention_disabled(void) {
+    return gpu_policy_compat_env_enabled3(
+        "BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_ATTN",
         "BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_EXACT_ATTN",
         "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_ATTN",
         "BN_CUDA_DISABLE_QWEN2MOE_EXACT_ATTN");
@@ -516,7 +517,7 @@ typedef struct {
     int native_quant_logits_refine_default;
     int all_active_two_kquant_moe_logits_refine_default;
     int decode_graph_cache;
-    int moe_exact_attention;
+    int moe_reference_attention;
     int ssm_graph;
     int large_hybrid_argmax;
     int all_active_two_moe_direct_route;
@@ -550,7 +551,7 @@ static const BnGPUPolicyBackendCaps GPU_POLICY_BACKEND_CAPS_CUDA = {
     .native_quant_logits_refine_default = 1,
     .all_active_two_kquant_moe_logits_refine_default = 1,
     .decode_graph_cache = 1,
-    .moe_exact_attention = 1,
+    .moe_reference_attention = 1,
     .ssm_graph = 1,
     .large_hybrid_argmax = 1,
     .all_active_two_moe_direct_route = 1,
@@ -4068,9 +4069,9 @@ int bn_gpu_policy_backend_decode_graph_cache_supported(
     return gpu_policy_backend_caps(gpu)->decode_graph_cache;
 }
 
-int bn_gpu_policy_backend_moe_exact_attention_supported(
+int bn_gpu_policy_backend_moe_reference_attention_supported(
     const BnGPUBackend *gpu) {
-    return gpu_policy_backend_caps(gpu)->moe_exact_attention;
+    return gpu_policy_backend_caps(gpu)->moe_reference_attention;
 }
 
 int bn_gpu_policy_backend_ssm_graph_supported(const BnGPUBackend *gpu) {
@@ -4427,8 +4428,8 @@ int bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled(void) {
     return all_active_two_kquant_moe_cpu_moe_safe_disabled();
 }
 
-int bn_gpu_policy_all_active_two_kquant_moe_exact_attention_disabled(void) {
-    return all_active_two_kquant_moe_exact_attention_disabled();
+int bn_gpu_policy_all_active_two_kquant_moe_reference_attention_disabled(void) {
+    return all_active_two_kquant_moe_reference_attention_disabled();
 }
 
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled(void) {

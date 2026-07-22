@@ -274,8 +274,9 @@ int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c) {
                   BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK) != 0);
 }
 
-int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION) != 0);
+int bn_model_arch_moe_prefers_reference_gpu_attention(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION) != 0);
 }
 
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c) {
@@ -809,7 +810,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
             BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU |
             BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK |
-            BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION |
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK,
             bn_model_arch_match_qwen2,
