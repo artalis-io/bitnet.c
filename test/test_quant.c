@@ -190,9 +190,9 @@ static void test_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_Q6_K));
     assert(!bn_quant_format_supports_requested_quant_matmul(
         BN_GGUF_TENSOR_Q5_K));
-    assert(bn_quant_format_supports_exact_native_quant_matvec(
+    assert(bn_quant_format_supports_direct_native_quant_matvec(
         BN_GGUF_TENSOR_Q4_0));
-    assert(!bn_quant_format_supports_exact_native_quant_matvec(
+    assert(!bn_quant_format_supports_direct_native_quant_matvec(
         BN_GGUF_TENSOR_Q6_K));
     assert(bn_quant_format_supports_specialized_native_quant_matvec(
         BN_GGUF_TENSOR_Q6_K));

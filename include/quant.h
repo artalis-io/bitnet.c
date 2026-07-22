@@ -353,7 +353,7 @@ int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
 uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled);
 uint32_t bn_quant_format_gpu_matvec_reference_kquant_flag(int type,
                                                           int enabled);
-int      bn_quant_format_supports_exact_native_quant_matvec(int type);
+int      bn_quant_format_supports_direct_native_quant_matvec(int type);
 int      bn_quant_format_supports_specialized_native_quant_matvec(int type);
 int      bn_quant_format_dense_f32_type(void);
 int      bn_quant_format_gpu_float_buffer_type(void);

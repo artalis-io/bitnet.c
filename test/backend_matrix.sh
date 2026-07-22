@@ -565,6 +565,17 @@ if grep -n 'bn_quant_format_supports_q8_logits_refine\|bn_quant_format_supports_
     fail=1
 fi
 
+if grep -n 'bn_quant_format_supports_exact_native_quant_matvec\|bn_backend_quant_supports_exact_native_quant_matvec' \
+    include/quant.h \
+    include/backend_quant.h \
+    src/quant/policy.c \
+    src/gpu_policy.c \
+    test/test_quant.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Direct native quant matvec helpers must use behavior names, not exact-path names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_q8_logits_refine_row\|bn_quant_q6_logits_refine_row' src/transformer/cpu_backend.c >/dev/null 2>&1; then
     echo "Transformer CPU backend must use backend_quant behavior helpers for logits refine rows"
     fail=1

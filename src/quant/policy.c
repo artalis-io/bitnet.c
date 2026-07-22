@@ -149,7 +149,7 @@ int bn_quant_format_eager_aux_cache_supported(int type) {
     }
 }
 
-int bn_quant_format_supports_exact_native_quant_matvec(int type) {
+int bn_quant_format_supports_direct_native_quant_matvec(int type) {
     return type == BN_GGUF_TENSOR_Q4_0;
 }
 
