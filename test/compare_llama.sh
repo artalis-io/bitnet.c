@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
         --metal-disable-small-dense-native-quant|--metal-disable-small-dense-exact-native|--metal-disable-q4-q8) BITNET_ARGS+=(--metal-disable-small-dense-native-quant); shift ;;
         --metal-specialized-native-quant) BITNET_ARGS+=(--metal-specialized-native-quant); shift ;;
         --metal-enable-q6-q8k) BITNET_ARGS+=(--metal-specialized-native-quant); shift ;;
-        --metal-disable-q6-q8k) BITNET_ARGS+=(--metal-disable-q6-q8k); shift ;;
+        --metal-disable-specialized-native-quant|--metal-disable-q6-q8k) BITNET_ARGS+=(--metal-disable-specialized-native-quant); shift ;;
         --gpu-cpu-fallback-layer) BITNET_ARGS+=(--gpu-cpu-fallback-layer "$2"); shift 2 ;;
         --gpu-cpu-fallback-from-layer) BITNET_ARGS+=(--gpu-cpu-fallback-from-layer "$2"); shift 2 ;;
         --gpu-max-storage-binding-mb) BITNET_ARGS+=(--gpu-max-storage-binding-mb "$2"); shift 2 ;;

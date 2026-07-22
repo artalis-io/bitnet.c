@@ -84,6 +84,10 @@ def parse_args():
     p.add_argument("--metal-specialized-native-quant", action="store_true")
     p.add_argument("--metal-enable-q6-q8k", action="store_true",
                    dest="metal_specialized_native_quant")
+    p.add_argument("--metal-disable-specialized-native-quant",
+                   "--metal-disable-q6-q8k",
+                   dest="metal_disable_specialized_native_quant",
+                   action="store_true")
     p.add_argument("--metal-native-quant-prepared", "--metal-q4-prepared",
                    dest="metal_native_quant_prepared", action="store_true")
     p.add_argument("--benchmark", action="store_true")
@@ -152,6 +156,8 @@ def append_bitnet_common_args(cmd, args):
         cmd.append("--metal-disable-small-dense-native-quant")
     if args.metal_specialized_native_quant:
         cmd.append("--metal-specialized-native-quant")
+    if args.metal_disable_specialized_native_quant:
+        cmd.append("--metal-disable-specialized-native-quant")
     if args.metal_native_quant_prepared:
         cmd.append("--metal-native-quant-prepared")
 
@@ -338,6 +344,8 @@ def run_bitnet_bench(args, prompt):
         cmd.append("--metal-disable-small-dense-native-quant")
     if args.metal_specialized_native_quant:
         cmd.append("--metal-specialized-native-quant")
+    if args.metal_disable_specialized_native_quant:
+        cmd.append("--metal-disable-specialized-native-quant")
     if args.metal_native_quant_prepared:
         cmd.append("--metal-native-quant-prepared")
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE,
