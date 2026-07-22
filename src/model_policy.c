@@ -364,14 +364,14 @@ int bn_model_config_moe_logits_mmvq_argmax_shape_allowed(
                                                               logits_cols);
 }
 
-int bn_model_config_allows_small_dense_exact_native(
+int bn_model_config_allows_small_dense_native_quant(
     const BnConfig *config) {
-    return bn_model_arch_allows_small_dense_exact_native(config);
+    return bn_model_arch_allows_small_dense_native_quant(config);
 }
 
-int bn_model_config_small_dense_exact_native_to_layer(
+int bn_model_config_small_dense_native_quant_to_layer(
     const BnConfig *config) {
-    return bn_model_arch_small_dense_exact_native_to_layer(config);
+    return bn_model_arch_small_dense_native_quant_to_layer(config);
 }
 
 int bn_model_config_allows_small_dense_prefill_decode_fallback(

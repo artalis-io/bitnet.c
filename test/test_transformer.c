@@ -2563,7 +2563,7 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_small_dense_native_quant_decode_policy(&gpu, &c, &small_dense_native_quant_layer);
     assert(small_dense_native_quant_decode.small_dense_native_quant_default);
     c.n_layers = 61;
-    assert(bn_model_arch_small_dense_exact_native_to_layer(&c) == 27);
+    assert(bn_model_arch_small_dense_native_quant_to_layer(&c) == 27);
     small_dense_native_quant_decode =
         bn_transformer_gpu_small_dense_native_quant_decode_policy(&gpu, &c, &small_dense_native_quant_layer);
     assert(small_dense_native_quant_decode.small_dense_native_quant_default);
@@ -2578,7 +2578,7 @@ static void test_gpu_policy_helpers(void) {
                &c, 1, 9) == 9);
     small_dense_native_quant_layer.to_layer = -1;
     c.n_layers = 33;
-    assert(bn_model_arch_small_dense_exact_native_to_layer(&c) == -1);
+    assert(bn_model_arch_small_dense_native_quant_to_layer(&c) == -1);
     small_dense_native_quant_decode =
         bn_transformer_gpu_small_dense_native_quant_decode_policy(&gpu, &c, &small_dense_native_quant_layer);
     assert(small_dense_native_quant_decode.small_dense_native_quant_to_layer == -1);
@@ -3450,7 +3450,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_allows_small_dense_prefill_decode_fallback(&c));
     assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
-    assert(bn_model_arch_allows_small_dense_exact_native(&c));
+    assert(bn_model_arch_allows_small_dense_native_quant(&c));
     assert(bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 7);
     assert(bn_model_arch_prefill_uses_exact_activation(&c));
@@ -3468,7 +3468,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_small_dense_shape(&c));
     assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(!bn_model_arch_allows_small_dense_prefill_decode_fallback(&c));
-    assert(!bn_model_arch_allows_small_dense_exact_native(&c));
+    assert(!bn_model_arch_allows_small_dense_native_quant(&c));
     assert(!bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 0);
     c.ssm_inner_size = 128;

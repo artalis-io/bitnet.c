@@ -119,8 +119,8 @@ int bn_model_config_dense_logits_argmax_shape_allowed(
 int bn_model_config_moe_logits_mmvq_argmax_shape_allowed(
     const BnConfig *config,
     int logits_cols);
-int bn_model_config_allows_small_dense_exact_native(const BnConfig *config);
-int bn_model_config_small_dense_exact_native_to_layer(
+int bn_model_config_allows_small_dense_native_quant(const BnConfig *config);
+int bn_model_config_small_dense_native_quant_to_layer(
     const BnConfig *config);
 int bn_model_config_allows_small_dense_prefill_decode_fallback(
     const BnConfig *config);

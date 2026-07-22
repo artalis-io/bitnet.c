@@ -3440,9 +3440,9 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_large_hybrid_prefill_disabled());
     assert(bn_gpu_policy_large_hybrid_argmax_enabled());
     assert(bn_gpu_policy_fused_gateup_enabled());
-    assert(bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_fused_gateup_enabled());
     assert(bn_gpu_policy_gateup_split_enabled());
-    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_ffn_down_enabled());
     assert(bn_gpu_policy_qkv_split_enabled());
     assert(!bn_gpu_policy_qkv_split_debug_enabled());
     assert(bn_gpu_policy_ssm_qkvz_split_enabled());
@@ -3457,7 +3457,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_backend_small_dense_native_enabled(&gpu));
     assert(bn_gpu_policy_backend_all_active_two_kquant_moe_supported(&gpu));
     assert(bn_gpu_policy_backend_cpu_attention_fallback_supported(&gpu));
-    assert(bn_gpu_policy_backend_small_dense_exact_native_supported(&gpu));
+    assert(bn_gpu_policy_backend_small_dense_native_quant_supported(&gpu));
     assert(bn_gpu_policy_backend_prefill_decode_fallback_supported(&gpu));
     assert(bn_gpu_policy_backend_prefill_chain_supported(&gpu));
     assert(bn_gpu_policy_backend_matvec_fallback_supported(&gpu));
@@ -3483,7 +3483,7 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_backend_small_dense_native_enabled(&gpu));
     assert(!bn_gpu_policy_backend_all_active_two_kquant_moe_supported(&gpu));
     assert(!bn_gpu_policy_backend_cpu_attention_fallback_supported(&gpu));
-    assert(!bn_gpu_policy_backend_small_dense_exact_native_supported(&gpu));
+    assert(!bn_gpu_policy_backend_small_dense_native_quant_supported(&gpu));
     assert(!bn_gpu_policy_backend_prefill_decode_fallback_supported(&gpu));
     assert(!bn_gpu_policy_backend_prefill_chain_supported(&gpu));
     assert(!bn_gpu_policy_backend_matvec_fallback_supported(&gpu));
@@ -3527,8 +3527,8 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_moe_routed_ffn_batch_allowed(1));
     assert(!bn_gpu_policy_moe_cpu_actual_override_enabled());
     assert(!bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
+    assert(!bn_gpu_policy_small_dense_native_quant_disabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_ffn_down_requested());
     assert(!bn_gpu_policy_small_dense_prefill_disabled());
     assert(!bn_gpu_policy_native_quant_logits_refine_requested());
     assert(!bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -3539,8 +3539,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_NATIVE_QUANT_LOGITS_REFINE", "1", 1);
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_NATIVE_QUANT_LOGITS_REFINE", "1", 1);
     assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
+    assert(bn_gpu_policy_small_dense_native_quant_disabled());
+    assert(bn_gpu_policy_small_dense_native_quant_ffn_down_requested());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
     assert(bn_gpu_policy_native_quant_logits_refine_requested());
     assert(bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -3557,8 +3557,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
+    assert(bn_gpu_policy_small_dense_native_quant_disabled());
+    assert(bn_gpu_policy_small_dense_native_quant_ffn_down_requested());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
     assert(bn_gpu_policy_native_quant_logits_refine_requested());
     assert(bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -3575,8 +3575,8 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_ENABLE_SMALL_QWEN_Q8_LOGITS_REFINE", "1", 1);
     setenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_LOGITS_REFINE", "1", 1);
     assert(bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled());
-    assert(bn_gpu_policy_small_dense_exact_native_disabled());
-    assert(bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
+    assert(bn_gpu_policy_small_dense_native_quant_disabled());
+    assert(bn_gpu_policy_small_dense_native_quant_ffn_down_requested());
     assert(bn_gpu_policy_small_dense_prefill_disabled());
     assert(bn_gpu_policy_native_quant_logits_refine_requested());
     assert(bn_gpu_policy_native_quant_logits_refine_disabled());
@@ -4066,9 +4066,9 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_GPU_MOE_ROUTE_PROFILE", "1", 1);
     setenv("BN_GPU_MOE_ROUTE_PROFILE_EVERY", "5", 1);
     assert(!bn_gpu_policy_fused_gateup_enabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_fused_gateup_enabled());
     assert(!bn_gpu_policy_gateup_split_enabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_ffn_down_requested());
+    assert(!bn_gpu_policy_small_dense_native_quant_ffn_down_requested());
     assert(!bn_gpu_policy_qkv_split_enabled());
     assert(bn_gpu_policy_qkv_split_debug_enabled());
     assert(!bn_gpu_policy_ssm_qkvz_split_enabled());
@@ -4447,12 +4447,12 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
     unsetenv("BN_METAL_Q4_PREPARED");
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");
-    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
-    assert(!bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
-    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_enabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_attn_only_enabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_ffn_only_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_from_layer_or_default(40) ==
            -1);
-    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+    assert(bn_gpu_policy_small_dense_native_quant_to_layer_or_default(40, 0) ==
            -1);
     assert(!bn_gpu_policy_metal_native_quant_prepared_enabled());
     assert(!bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled());
@@ -4477,8 +4477,8 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_0));
     assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 0, 0, 1, 1, 0));
-    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
-    assert(bn_gpu_policy_metal_small_dense_exact_native_enabled());
+    bn_gpu_policy_metal_apply_small_dense_native_quant_default();
+    assert(bn_gpu_policy_metal_small_dense_native_quant_enabled());
     assert(bn_gpu_policy_metal_exact_native_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 1, 0));
     assert(bn_gpu_policy_metal_exact_native_matvec_supported(
@@ -4506,29 +4506,29 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 0));
     assert(getenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER") != NULL);
-    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+    assert(bn_gpu_policy_small_dense_native_quant_from_layer_or_default(40) ==
            0);
-    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+    assert(bn_gpu_policy_small_dense_native_quant_to_layer_or_default(40, 0) ==
            6);
-    assert(!bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
-    assert(bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
+    assert(!bn_gpu_policy_small_dense_native_quant_attn_only_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_ffn_only_enabled());
     unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "10", 1);
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER", "20", 1);
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
-    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+    assert(bn_gpu_policy_small_dense_native_quant_from_layer_or_default(40) ==
            10);
-    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+    assert(bn_gpu_policy_small_dense_native_quant_to_layer_or_default(40, 0) ==
            20);
-    assert(bn_gpu_policy_small_dense_exact_native_attn_only_enabled());
-    assert(bn_gpu_policy_small_dense_exact_native_ffn_only_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_attn_only_enabled());
+    assert(bn_gpu_policy_small_dense_native_quant_ffn_only_enabled());
     unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER");
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", "4", 1);
-    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+    assert(bn_gpu_policy_small_dense_native_quant_to_layer_or_default(40, 0) ==
            35);
     setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", "100", 1);
-    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+    assert(bn_gpu_policy_small_dense_native_quant_to_layer_or_default(40, 0) ==
            -1);
     unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
     unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
@@ -4538,9 +4538,9 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_GPU_Q4_Q8", "1", 1);
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "12", 1);
     setenv("BN_GPU_Q4_Q8_TO_LAYER", "18", 1);
-    assert(bn_gpu_policy_small_dense_exact_native_from_layer_or_default(40) ==
+    assert(bn_gpu_policy_small_dense_native_quant_from_layer_or_default(40) ==
            12);
-    assert(bn_gpu_policy_small_dense_exact_native_to_layer_or_default(40, 0) ==
+    assert(bn_gpu_policy_small_dense_native_quant_to_layer_or_default(40, 0) ==
            18);
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
@@ -4582,16 +4582,16 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_Q4_Q8_TAIL_NATIVE");
     unsetenv("BN_GPU_Q4_Q8_FFN_ONLY");
     setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT", "1", 1);
-    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
-    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
+    bn_gpu_policy_metal_apply_small_dense_native_quant_default();
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_enabled());
     unsetenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT");
     setenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT", "1", 1);
-    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
-    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
+    bn_gpu_policy_metal_apply_small_dense_native_quant_default();
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_enabled());
     unsetenv("BN_METAL_DISABLE_Q4_Q8_DEFAULT");
-    bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override();
-    bn_gpu_policy_metal_apply_small_dense_exact_native_default();
-    assert(!bn_gpu_policy_metal_small_dense_exact_native_enabled());
+    bn_gpu_policy_apply_metal_small_dense_native_quant_default_disable_override();
+    bn_gpu_policy_metal_apply_small_dense_native_quant_default();
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_enabled());
     bn_gpu_policy_apply_metal_private_weights_override();
     assert(getenv("BN_METAL_PRIVATE_WEIGHTS") != NULL);
     unsetenv("BN_METAL_PRIVATE_WEIGHTS");

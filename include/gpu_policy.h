@@ -523,10 +523,10 @@ int bn_gpu_policy_metal_mmap_zero_copy_enabled(void);
 void bn_gpu_policy_apply_metal_barrier_disable_override(void);
 void bn_gpu_policy_apply_specialized_native_quant_decode_override(void);
 void bn_gpu_policy_apply_native_quant_prepared_override(void);
-void bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override(void);
+void bn_gpu_policy_apply_metal_small_dense_native_quant_default_disable_override(void);
 void bn_gpu_policy_apply_metal_private_weights_override(void);
-void bn_gpu_policy_metal_apply_small_dense_exact_native_default(void);
-int bn_gpu_policy_metal_small_dense_exact_native_enabled(void);
+void bn_gpu_policy_metal_apply_small_dense_native_quant_default(void);
+int bn_gpu_policy_metal_small_dense_native_quant_enabled(void);
 int bn_gpu_policy_metal_native_quant_prepared_enabled(void);
 int bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled(void);
 int bn_gpu_policy_metal_native_quant_prepared_upload_enabled(void);
@@ -560,15 +560,15 @@ int bn_gpu_policy_metal_full_barriers_enabled(void);
 int bn_gpu_policy_metal_barriers_enabled(void);
 int bn_gpu_policy_metal_barriers_disabled(void);
 int bn_gpu_policy_fused_gateup_enabled(void);
-int bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled(void);
-int bn_gpu_policy_small_dense_exact_native_attn_only_enabled(void);
-int bn_gpu_policy_small_dense_exact_native_ffn_only_enabled(void);
-int bn_gpu_policy_small_dense_exact_native_from_layer_or_default(int n_layers);
-int bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
+int bn_gpu_policy_small_dense_native_quant_fused_gateup_enabled(void);
+int bn_gpu_policy_small_dense_native_quant_attn_only_enabled(void);
+int bn_gpu_policy_small_dense_native_quant_ffn_only_enabled(void);
+int bn_gpu_policy_small_dense_native_quant_from_layer_or_default(int n_layers);
+int bn_gpu_policy_small_dense_native_quant_to_layer_or_default(
     int n_layers,
     int native_quant_prepared);
 int bn_gpu_policy_gateup_split_enabled(void);
-int bn_gpu_policy_small_dense_exact_native_ffn_down_enabled(void);
+int bn_gpu_policy_small_dense_native_quant_ffn_down_enabled(void);
 int bn_gpu_policy_qkv_split_enabled(void);
 int bn_gpu_policy_qkv_split_debug_enabled(void);
 int bn_gpu_policy_ssm_qkvz_split_enabled(void);
@@ -588,7 +588,7 @@ int bn_gpu_policy_backend_all_active_two_kquant_moe_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_cpu_attention_fallback_supported(
     const BnGPUBackend *gpu);
-int bn_gpu_policy_backend_small_dense_exact_native_supported(
+int bn_gpu_policy_backend_small_dense_native_quant_supported(
     const BnGPUBackend *gpu);
 int bn_gpu_policy_backend_prefill_decode_fallback_supported(
     const BnGPUBackend *gpu);
@@ -638,8 +638,8 @@ int bn_gpu_policy_moe_routed_ffn_batch_enabled(void);
 int bn_gpu_policy_moe_routed_ffn_batch_allowed(int large_moe);
 int bn_gpu_policy_moe_cpu_actual_override_enabled(void);
 int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled(void);
-int bn_gpu_policy_small_dense_exact_native_disabled(void);
-int bn_gpu_policy_small_dense_exact_native_ffn_down_requested(void);
+int bn_gpu_policy_small_dense_native_quant_disabled(void);
+int bn_gpu_policy_small_dense_native_quant_ffn_down_requested(void);
 int bn_gpu_policy_small_dense_prefill_disabled(void);
 int bn_gpu_policy_native_quant_logits_refine_requested(void);
 int bn_gpu_policy_native_quant_logits_refine_disabled(void);

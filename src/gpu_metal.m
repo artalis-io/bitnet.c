@@ -2171,8 +2171,8 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
         fprintf(stderr, "[bn:gpu:metal] compiled %d/%d matvec pipelines\n",
                 compiled, n_supported_types);
 
-        bn_gpu_policy_metal_apply_small_dense_exact_native_default();
-        ctx->exact_native_enabled = bn_gpu_policy_metal_small_dense_exact_native_enabled();
+        bn_gpu_policy_metal_apply_small_dense_native_quant_default();
+        ctx->exact_native_enabled = bn_gpu_policy_metal_small_dense_native_quant_enabled();
         ctx->native_quant_barriers_enabled =
             bn_gpu_policy_metal_native_quant_barriers_enabled();
         ctx->cpu_order_rmsnorm_enabled =

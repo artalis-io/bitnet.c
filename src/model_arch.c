@@ -501,12 +501,12 @@ int bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
            logits_cols == 1536;
 }
 
-int bn_model_arch_allows_small_dense_exact_native(const BnConfig *c) {
+int bn_model_arch_allows_small_dense_native_quant(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE) != 0) &&
            bn_model_arch_uses_small_dense_shape(c);
 }
 
-int bn_model_arch_small_dense_exact_native_to_layer(const BnConfig *c) {
+int bn_model_arch_small_dense_native_quant_to_layer(const BnConfig *c) {
     if (!c || c->n_layers <= 33)
         return -1;
     return c->n_layers - 33 - 1;
@@ -514,7 +514,7 @@ int bn_model_arch_small_dense_exact_native_to_layer(const BnConfig *c) {
 
 int bn_model_arch_allows_small_dense_native_logit_refine(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE) != 0) &&
-           bn_model_arch_allows_small_dense_exact_native(c);
+           bn_model_arch_allows_small_dense_native_quant(c);
 }
 
 int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c) {

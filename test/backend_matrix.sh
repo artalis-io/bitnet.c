@@ -3637,6 +3637,11 @@ if grep -n 'BnTransformerGPUSmallDenseExactNative\|bn_transformer_gpu_small_dens
     fail=1
 fi
 
+if grep -n 'bn_model_\(arch\|config\)_.*small_dense_exact_native\|bn_gpu_policy_.*small_dense_exact_native\|small_dense_exact_native' include/model_arch.h include/model_internal.h include/gpu_policy.h src/model_arch.c src/model_policy.c src/gpu_policy.c src/transformer/gpu_policy.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Small-dense model/GPU policy helpers must use native-quant behavior names"
+    fail=1
+fi
+
 if grep -n '\bexact_layer\b' src/transformer/gpu_internal.h src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU CPU fallback layer policy must use selected-layer behavior names, not exact-layer names"
     fail=1

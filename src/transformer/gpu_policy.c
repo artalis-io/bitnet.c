@@ -293,7 +293,7 @@ int bn_transformer_gpu_fused_gateup_silu_policy_allows(
 
 int bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(int use_small_dense_native_quant) {
     return use_small_dense_native_quant &&
-           bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled();
+           bn_gpu_policy_small_dense_native_quant_fused_gateup_enabled();
 }
 
 int bn_transformer_gpu_gateup_split_enabled(void) {
@@ -302,7 +302,7 @@ int bn_transformer_gpu_gateup_split_enabled(void) {
 
 int bn_transformer_gpu_small_dense_native_quant_down_enabled(int use_small_dense_native_quant_down) {
     return use_small_dense_native_quant_down &&
-           bn_gpu_policy_small_dense_exact_native_ffn_down_enabled();
+           bn_gpu_policy_small_dense_native_quant_ffn_down_enabled();
 }
 
 int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_native_quant) {
@@ -862,7 +862,7 @@ int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_fallback_enabled(
 int bn_transformer_gpu_small_dense_native_quant_cpu_attn_safe_default(
     const BnConfig *c,
     const BnWeights *w) {
-    return bn_model_config_allows_small_dense_exact_native(c) &&
+    return bn_model_config_allows_small_dense_native_quant(c) &&
            small_dense_backend_native_quant_by_default(c, w) &&
            !bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled();
 }
@@ -881,9 +881,9 @@ int bn_transformer_gpu_small_dense_native_quant_default(
     const BnConfig *c,
     int small_dense_native_quant_from_layer) {
     return small_dense_native_quant_from_layer < 0 &&
-           bn_gpu_policy_backend_small_dense_exact_native_supported(gpu) &&
-           bn_model_config_allows_small_dense_exact_native(c) &&
-           !bn_gpu_policy_small_dense_exact_native_disabled();
+           bn_gpu_policy_backend_small_dense_native_quant_supported(gpu) &&
+           bn_model_config_allows_small_dense_native_quant(c) &&
+           !bn_gpu_policy_small_dense_native_quant_disabled();
 }
 
 int bn_transformer_gpu_small_dense_native_quant_to_layer(
@@ -892,15 +892,15 @@ int bn_transformer_gpu_small_dense_native_quant_to_layer(
     int small_dense_native_quant_to_layer) {
     if (!small_dense_native_quant_default || small_dense_native_quant_to_layer >= 0)
         return small_dense_native_quant_to_layer;
-    return bn_model_config_small_dense_exact_native_to_layer(c);
+    return bn_model_config_small_dense_native_quant_to_layer(c);
 }
 
 int bn_transformer_gpu_small_dense_native_quant_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
-    return bn_gpu_policy_backend_small_dense_exact_native_supported(gpu) &&
-           bn_model_config_allows_small_dense_exact_native(c) &&
-           bn_gpu_policy_small_dense_exact_native_ffn_down_requested();
+    return bn_gpu_policy_backend_small_dense_native_quant_supported(gpu) &&
+           bn_model_config_allows_small_dense_native_quant(c) &&
+           bn_gpu_policy_small_dense_native_quant_ffn_down_requested();
 }
 
 int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
@@ -2140,15 +2140,15 @@ bn_transformer_gpu_small_dense_native_quant_layer_policy(const BnConfig *c) {
     int n_layers = c ? c->n_layers : 0;
     BnTransformerGPUSmallDenseNativeQuantLayerPolicy policy = {
         .from_layer =
-            bn_gpu_policy_small_dense_exact_native_from_layer_or_default(
+            bn_gpu_policy_small_dense_native_quant_from_layer_or_default(
                 n_layers),
-        .to_layer = bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
+        .to_layer = bn_gpu_policy_small_dense_native_quant_to_layer_or_default(
             n_layers,
             bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled()),
         .attn_only =
-            bn_gpu_policy_small_dense_exact_native_attn_only_enabled(),
+            bn_gpu_policy_small_dense_native_quant_attn_only_enabled(),
         .ffn_only =
-            bn_gpu_policy_small_dense_exact_native_ffn_only_enabled(),
+            bn_gpu_policy_small_dense_native_quant_ffn_only_enabled(),
     };
     return policy;
 }

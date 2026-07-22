@@ -174,68 +174,68 @@ static int small_dense_native_quant_cpu_attention_safe_disabled(void) {
         "BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
 }
 
-static int small_dense_exact_native_disabled(void) {
+static int small_dense_native_quant_disabled(void) {
     return gpu_policy_compat_env_enabled2(
         "BN_CUDA_DISABLE_SMALL_DENSE_EXACT_NATIVE",
         "BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8",
         "BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
 }
 
-static int small_dense_exact_native_ffn_down_requested(void) {
+static int small_dense_native_quant_ffn_down_requested(void) {
     return gpu_policy_compat_env_enabled2(
         "BN_CUDA_ENABLE_SMALL_DENSE_EXACT_NATIVE_FFN_DOWN",
         "BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN",
         "BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
 }
 
-static int small_dense_exact_native_enabled(void) {
+static int small_dense_native_quant_enabled(void) {
     return gpu_policy_compat_env_enabled("BN_GPU_SMALL_DENSE_EXACT_NATIVE",
                                          "BN_GPU_Q4_Q8");
 }
 
-static int small_dense_exact_native_default_disabled(void) {
+static int small_dense_native_quant_default_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT",
         "BN_METAL_DISABLE_Q4_Q8_DEFAULT");
 }
 
-static int small_dense_exact_native_gateup_disabled(void) {
+static int small_dense_native_quant_gateup_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP",
         "BN_GPU_Q4_Q8_DISABLE_GATEUP");
 }
 
-static int small_dense_exact_native_ffn_down_disabled(void) {
+static int small_dense_native_quant_ffn_down_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN",
         "BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
 }
 
-static int small_dense_exact_native_attn_only(void) {
+static int small_dense_native_quant_attn_only(void) {
     return gpu_policy_compat_env_enabled(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY",
         "BN_GPU_Q4_Q8_ATTN_ONLY");
 }
 
-static int small_dense_exact_native_ffn_only(void) {
+static int small_dense_native_quant_ffn_only(void) {
     return gpu_policy_compat_env_enabled(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY",
         "BN_GPU_Q4_Q8_FFN_ONLY");
 }
 
-static const char *small_dense_exact_native_from_layer_env(void) {
+static const char *small_dense_native_quant_from_layer_env(void) {
     return gpu_policy_compat_env_value(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER",
         "BN_GPU_Q4_Q8_FROM_LAYER");
 }
 
-static const char *small_dense_exact_native_to_layer_env(void) {
+static const char *small_dense_native_quant_to_layer_env(void) {
     return gpu_policy_compat_env_value(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER",
         "BN_GPU_Q4_Q8_TO_LAYER");
 }
 
-static const char *small_dense_exact_native_tail_layer_env(void) {
+static const char *small_dense_native_quant_tail_layer_env(void) {
     return gpu_policy_compat_env_value(
         "BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE",
         "BN_GPU_Q4_Q8_TAIL_NATIVE");
@@ -508,7 +508,7 @@ typedef struct {
     int small_dense_native;
     int all_active_two_kquant_moe;
     int cpu_attention_fallback;
-    int small_dense_exact_native;
+    int small_dense_native_quant;
     int prefill_decode_fallback;
     int prefill_chain;
     int matvec_fallback;
@@ -542,7 +542,7 @@ static const BnGPUPolicyBackendCaps GPU_POLICY_BACKEND_CAPS_CUDA = {
     .small_dense_native = 1,
     .all_active_two_kquant_moe = 1,
     .cpu_attention_fallback = 1,
-    .small_dense_exact_native = 1,
+    .small_dense_native_quant = 1,
     .prefill_decode_fallback = 1,
     .prefill_chain = 1,
     .matvec_fallback = 1,
@@ -3767,7 +3767,7 @@ void bn_gpu_policy_apply_native_quant_prepared_override(void) {
     setenv("BN_METAL_NATIVE_QUANT_PREPARED", "1", 1);
 }
 
-void bn_gpu_policy_apply_metal_small_dense_exact_native_default_disable_override(void) {
+void bn_gpu_policy_apply_metal_small_dense_native_quant_default_disable_override(void) {
     setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT", "1", 1);
 }
 
@@ -3775,20 +3775,20 @@ void bn_gpu_policy_apply_metal_private_weights_override(void) {
     setenv("BN_METAL_PRIVATE_WEIGHTS", "1", 1);
 }
 
-void bn_gpu_policy_metal_apply_small_dense_exact_native_default(void) {
-    if (!small_dense_exact_native_enabled() &&
-        !small_dense_exact_native_default_disabled()) {
+void bn_gpu_policy_metal_apply_small_dense_native_quant_default(void) {
+    if (!small_dense_native_quant_enabled() &&
+        !small_dense_native_quant_default_disabled()) {
         setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE", "1", 1);
-        if (!small_dense_exact_native_from_layer_env())
+        if (!small_dense_native_quant_from_layer_env())
             setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "0", 1);
-        if (!small_dense_exact_native_attn_only() &&
-            !small_dense_exact_native_ffn_only())
+        if (!small_dense_native_quant_attn_only() &&
+            !small_dense_native_quant_ffn_only())
             setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
     }
 }
 
-int bn_gpu_policy_metal_small_dense_exact_native_enabled(void) {
-    return small_dense_exact_native_enabled();
+int bn_gpu_policy_metal_small_dense_native_quant_enabled(void) {
+    return small_dense_native_quant_enabled();
 }
 
 int bn_gpu_policy_metal_native_quant_prepared_enabled(void) {
@@ -3801,12 +3801,12 @@ int bn_gpu_policy_small_dense_native_quant_prepared_layer_default_enabled(void) 
 }
 
 int bn_gpu_policy_metal_native_quant_prepared_upload_enabled(void) {
-    const char *from_layer = small_dense_exact_native_from_layer_env();
+    const char *from_layer = small_dense_native_quant_from_layer_env();
     return bn_gpu_policy_metal_native_quant_prepared_enabled() &&
-           small_dense_exact_native_enabled() &&
+           small_dense_native_quant_enabled() &&
            (!from_layer || atoi(from_layer) <= 0) &&
-           !small_dense_exact_native_attn_only() &&
-           !small_dense_exact_native_ffn_only();
+           !small_dense_native_quant_attn_only() &&
+           !small_dense_native_quant_ffn_only();
 }
 
 int bn_gpu_policy_metal_repacked_buffer_supported(int tensor_type) {
@@ -3906,33 +3906,33 @@ int bn_gpu_policy_fused_gateup_enabled(void) {
     return getenv("BN_GPU_DISABLE_FUSED_GATEUP") == NULL;
 }
 
-int bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled(void) {
-    return !small_dense_exact_native_gateup_disabled();
+int bn_gpu_policy_small_dense_native_quant_fused_gateup_enabled(void) {
+    return !small_dense_native_quant_gateup_disabled();
 }
 
-int bn_gpu_policy_small_dense_exact_native_attn_only_enabled(void) {
-    return small_dense_exact_native_attn_only();
+int bn_gpu_policy_small_dense_native_quant_attn_only_enabled(void) {
+    return small_dense_native_quant_attn_only();
 }
 
-int bn_gpu_policy_small_dense_exact_native_ffn_only_enabled(void) {
-    return small_dense_exact_native_ffn_only();
+int bn_gpu_policy_small_dense_native_quant_ffn_only_enabled(void) {
+    return small_dense_native_quant_ffn_only();
 }
 
-int bn_gpu_policy_small_dense_exact_native_from_layer_or_default(int n_layers) {
-    const char *env = small_dense_exact_native_from_layer_env();
+int bn_gpu_policy_small_dense_native_quant_from_layer_or_default(int n_layers) {
+    const char *env = small_dense_native_quant_from_layer_env();
     if (env)
         return atoi(env);
-    return bn_gpu_policy_metal_small_dense_exact_native_enabled() ? n_layers - 1 : -1;
+    return bn_gpu_policy_metal_small_dense_native_quant_enabled() ? n_layers - 1 : -1;
 }
 
-int bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
+int bn_gpu_policy_small_dense_native_quant_to_layer_or_default(
     int n_layers,
     int native_quant_prepared) {
-    const char *env = small_dense_exact_native_to_layer_env();
+    const char *env = small_dense_native_quant_to_layer_env();
     if (env)
         return atoi(env);
 
-    env = small_dense_exact_native_tail_layer_env();
+    env = small_dense_native_quant_tail_layer_env();
     if (env) {
         int tail_native = atoi(env);
         if (tail_native > 0) {
@@ -3942,7 +3942,7 @@ int bn_gpu_policy_small_dense_exact_native_to_layer_or_default(
         return -1;
     }
 
-    if (bn_gpu_policy_metal_small_dense_exact_native_enabled() && !native_quant_prepared &&
+    if (bn_gpu_policy_metal_small_dense_native_quant_enabled() && !native_quant_prepared &&
         n_layers > 33)
         return n_layers - 33 - 1;
     return -1;
@@ -3952,8 +3952,8 @@ int bn_gpu_policy_gateup_split_enabled(void) {
     return getenv("BN_GPU_DISABLE_GATEUP_SPLIT") == NULL;
 }
 
-int bn_gpu_policy_small_dense_exact_native_ffn_down_enabled(void) {
-    return !small_dense_exact_native_ffn_down_disabled();
+int bn_gpu_policy_small_dense_native_quant_ffn_down_enabled(void) {
+    return !small_dense_native_quant_ffn_down_disabled();
 }
 
 int bn_gpu_policy_qkv_split_enabled(void) {
@@ -4023,9 +4023,9 @@ int bn_gpu_policy_backend_cpu_attention_fallback_supported(
     return gpu_policy_backend_caps(gpu)->cpu_attention_fallback;
 }
 
-int bn_gpu_policy_backend_small_dense_exact_native_supported(
+int bn_gpu_policy_backend_small_dense_native_quant_supported(
     const BnGPUBackend *gpu) {
-    return gpu_policy_backend_caps(gpu)->small_dense_exact_native;
+    return gpu_policy_backend_caps(gpu)->small_dense_native_quant;
 }
 
 int bn_gpu_policy_backend_prefill_decode_fallback_supported(
@@ -4276,12 +4276,12 @@ int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled(void) {
     return small_dense_native_quant_cpu_attention_safe_disabled();
 }
 
-int bn_gpu_policy_small_dense_exact_native_disabled(void) {
-    return small_dense_exact_native_disabled();
+int bn_gpu_policy_small_dense_native_quant_disabled(void) {
+    return small_dense_native_quant_disabled();
 }
 
-int bn_gpu_policy_small_dense_exact_native_ffn_down_requested(void) {
-    return small_dense_exact_native_ffn_down_requested();
+int bn_gpu_policy_small_dense_native_quant_ffn_down_requested(void) {
+    return small_dense_native_quant_ffn_down_requested();
 }
 
 int bn_gpu_policy_small_dense_prefill_disabled(void) {
