@@ -356,7 +356,7 @@ float bn_transformer_rope_base_theta(
 int bn_transformer_rope_uses_base_frequency(
     const BnConfig *c,
     int layer_head_size);
-int bn_transformer_cpu_uses_scalar_hybrid_ssm(
+int bn_transformer_ssm_uses_reference_ops(
     const BnConfig *c);
 int bn_transformer_prefill_uses_reference_activation(
     const BnConfig *c);

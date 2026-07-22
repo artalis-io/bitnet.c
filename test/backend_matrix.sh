@@ -4137,6 +4137,12 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/transformer/plan.c >/de
     fail=1
 fi
 
+if rg -n 'bn_transformer_cpu_uses_scalar_hybrid_ssm' \
+    include src test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer SSM reference-op policy must not expose CPU/scalar naming"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval' src/prompt_cache.c >/dev/null 2>&1; then
     echo "src/prompt_cache.c must use model_arch helpers for hybrid layer layout policy"
     fail=1

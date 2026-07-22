@@ -279,7 +279,7 @@ void bn_transformer_prefill_quant_matvec_batch_prepared_kquant_input(
 bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+    if (bn_transformer_ssm_uses_reference_ops(c))
         return bn_transformer_ssm_conv_silu_scalar_range;
     return ops ? ops->ssm_conv_silu : BN_PREFILL_CPU_OPS.ssm_conv_silu;
 }
@@ -287,7 +287,7 @@ bn_tp_fn bn_transformer_prefill_ssm_conv_silu_op(
 bn_tp_fn bn_transformer_prefill_ssm_l2norm_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+    if (bn_transformer_ssm_uses_reference_ops(c))
         return bn_transformer_ssm_l2norm_scalar_range;
     return ops ? ops->ssm_l2norm : BN_PREFILL_CPU_OPS.ssm_l2norm;
 }
@@ -295,7 +295,7 @@ bn_tp_fn bn_transformer_prefill_ssm_l2norm_op(
 bn_tp_fn bn_transformer_prefill_ssm_delta_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+    if (bn_transformer_ssm_uses_reference_ops(c))
         return bn_transformer_ssm_delta_scalar_range;
     return ops ? ops->ssm_delta : BN_PREFILL_CPU_OPS.ssm_delta;
 }
@@ -303,7 +303,7 @@ bn_tp_fn bn_transformer_prefill_ssm_delta_op(
 bn_tp_fn bn_transformer_prefill_ssm_gate_op(
     const BnConfig *c,
     const BnPrefillCPUOps *ops) {
-    if (bn_transformer_cpu_uses_scalar_hybrid_ssm(c))
+    if (bn_transformer_ssm_uses_reference_ops(c))
         return bn_transformer_ssm_gate_scalar_range;
     return ops ? ops->ssm_gate : BN_PREFILL_CPU_OPS.ssm_gate;
 }

@@ -4193,7 +4193,7 @@ static void test_block_planning(void) {
     assert(!bn_transformer_per_layer_embedding_dim(&c));
     assert(!bn_transformer_divides_rope_freqs(&c, 0));
     assert(bn_transformer_divides_rope_freqs(&c, 5));
-    assert(!bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
+    assert(!bn_transformer_ssm_uses_reference_ops(&c));
     assert(bn_transformer_prefill_uses_reference_activation(&c));
     assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     int uses_float_kquant_fallback =
@@ -5264,7 +5264,7 @@ static void test_block_planning(void) {
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM;
     c.per_layer_input_dim = 0;
     c.full_attn_interval = 4;
-    assert(bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
+    assert(bn_transformer_ssm_uses_reference_ops(&c));
 #if defined(__AVX512F__) && !defined(BN_FORCE_SCALAR)
     assert(cpu_backend == BN_CPU_BACKEND_AVX512);
 #endif

@@ -395,7 +395,7 @@ int bn_transformer_rope_uses_base_frequency(
     return bn_model_config_rope_uses_base_frequency(c, layer_head_size);
 }
 
-int bn_transformer_cpu_uses_scalar_hybrid_ssm(
+int bn_transformer_ssm_uses_reference_ops(
     const BnConfig *c) {
     return bn_model_config_uses_reference_hybrid_ssm(c);
 }
