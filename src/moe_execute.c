@@ -48,6 +48,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
 
     double t0 = bn_moe_time_ms();
     BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
+    BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(&m->config);
     BnQWeight wgate = bn_moe_make_qweight(gate_data, map->gate_type,
                                           map->gate_rows, map->gate_cols);
     BnQWeight wup = bn_moe_make_qweight(up_data, map->up_type,
@@ -64,7 +65,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     t0 = bn_moe_time_ms();
     bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
                   route_policy.expert_hidden_dim,
-                  bn_moe_policy_uses_reference_silu(&m->config));
+                  exec_policy.uses_reference_silu);
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
