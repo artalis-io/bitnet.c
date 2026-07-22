@@ -2368,12 +2368,12 @@ bn_transformer_gpu_moe_decode_route_policy(
     policy.route_layer_selected =
         bn_transformer_gpu_all_active_two_kquant_moe_route_layer_selected(
             layer, from_layer, to_layer);
-    policy.exact_gpu_route =
-        bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled(
+    policy.reference_gpu_route =
+        bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
             policy.all_active_two_kquant_moe, policy.route_layer_selected);
     policy.router = bn_transformer_gpu_all_active_two_kquant_moe_router(
         c, moe_router, router_diff, policy.route_layer_selected,
-        policy.exact_gpu_route);
+        policy.reference_gpu_route);
     policy.route_flags |= bn_transformer_gpu_moe_route_normalization_flags(c);
 
     int routed_native_quant = lw &&
@@ -2447,7 +2447,7 @@ void bn_transformer_gpu_all_active_two_kquant_moe_route_layer_range(
                                                   route_to_layer);
 }
 
-int bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled(
+int bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
     int all_active_two_kquant_moe,
     int route_layer_selected) {
     return all_active_two_kquant_moe &&
@@ -2461,13 +2461,13 @@ void *bn_transformer_gpu_all_active_two_kquant_moe_router(
     void *moe_router,
     void *router_diff,
     int route_layer_selected,
-    int exact_gpu_route) {
+    int reference_gpu_route) {
     if (router_diff &&
         bn_moe_policy_uses_all_active_two_expert_route(
             c, c ? c->dim : 0) &&
         route_layer_selected &&
         bn_gpu_policy_moe_router_diff2_enabled() &&
-        !exact_gpu_route)
+        !reference_gpu_route)
         return router_diff;
     return moe_router;
 }

@@ -2247,7 +2247,7 @@ static void test_gpu_policy_helpers(void) {
             (void *)2, (void *)3, (void *)4, (void *)5, (void *)6);
     assert(route_policy.all_active_two_kquant_moe);
     assert(!route_policy.route_layer_selected);
-    assert(!route_policy.exact_gpu_route);
+    assert(!route_policy.reference_gpu_route);
     assert(route_policy.router == (void *)2);
     assert(!route_policy.gpu_route_topk);
     assert(route_policy.cpu_route_resident_ffn);
@@ -2276,7 +2276,7 @@ static void test_gpu_policy_helpers(void) {
     assert(route_policy.route_layer_selected);
     assert(bn_transformer_gpu_all_active_two_kquant_moe_route_layer_selected(
         0, -1, -1));
-    assert(!bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled(
+    assert(!bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
         1, 1));
     assert(route_policy.router == (void *)3);
     assert(route_policy.gpu_route_topk);
@@ -2293,7 +2293,7 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
-    assert(bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled(
+    assert(bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
         1, 1));
     assert(!bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));

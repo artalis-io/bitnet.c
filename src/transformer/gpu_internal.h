@@ -190,7 +190,7 @@ typedef struct {
 typedef struct {
     int all_active_two_kquant_moe;
     int route_layer_selected;
-    int exact_gpu_route;
+    int reference_gpu_route;
     int gpu_route_topk;
     int cpu_route_resident_ffn;
     int gpu_routed_ffn;
@@ -1219,7 +1219,7 @@ int bn_transformer_gpu_all_active_two_kquant_moe_route_layer_selected(
 void bn_transformer_gpu_all_active_two_kquant_moe_route_layer_range(
     int *route_from_layer,
     int *route_to_layer);
-int bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled(
+int bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
     int all_active_two_kquant_moe,
     int route_layer_selected);
 void *bn_transformer_gpu_all_active_two_kquant_moe_router(
@@ -1227,7 +1227,7 @@ void *bn_transformer_gpu_all_active_two_kquant_moe_router(
     void *moe_router,
     void *router_diff,
     int route_layer_selected,
-    int exact_gpu_route);
+    int reference_gpu_route);
 int bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in(
     const BnConfig *c,
     const BnMoEExpertMap *map,
