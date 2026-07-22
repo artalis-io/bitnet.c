@@ -779,7 +779,7 @@ for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c
 do
-    if grep -n 'bn_quant_format_gpu_requires_exact_silu\|bn_backend_quant_gpu_requires_exact_silu\|bn_quant_format_gpu_prefers_gateup_split\|bn_backend_quant_gpu_prefers_gateup_split\|bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_backend_quant_can_gpu_gateup_split_activation' "$file" >/dev/null 2>&1; then
+    if grep -n 'bn_quant_format_gpu_requires_reference_silu\|bn_backend_quant_gpu_requires_reference_silu\|bn_quant_format_gpu_prefers_gateup_split\|bn_backend_quant_gpu_prefers_gateup_split\|bn_backend_quant_gpu_fused_gateup_requires_cuda_opt_in\|bn_backend_quant_can_gpu_gateup_split_activation' "$file" >/dev/null 2>&1; then
         echo "$file must use quant format GPU behavior helpers for quant-format policy"
         fail=1
     fi
@@ -788,7 +788,7 @@ done
 if awk '
     /int bn_quant_format_can_gpu_native\(/ { in_fn=1 }
     /int bn_quant_format_can_gpu_repack\(/ { in_fn=1 }
-    /int bn_quant_format_gpu_requires_exact_silu\(/ { in_fn=1 }
+    /int bn_quant_format_gpu_requires_reference_silu\(/ { in_fn=1 }
     /int bn_quant_format_gpu_prefers_gateup_split\(/ { in_fn=1 }
     /int bn_quant_format_gpu_fused_gateup_requires_backend_opt_in\(/ { in_fn=1 }
     /int bn_quant_format_logits_kquant_f32_cache_supported\(/ { in_fn=1 }
@@ -816,6 +816,17 @@ if awk '
     END { exit found ? 0 : 1 }
 ' src/quant/registry.c >/dev/null 2>&1; then
     echo "src/quant/registry.c must use quant capability flags for GPU behavior helpers"
+    fail=1
+fi
+
+if grep -n 'BN_QUANT_CAP_GPU_EXACT_SILU\|bn_quant_format_gpu_requires_exact_silu\|bn_backend_quant_gpu_requires_exact_silu' \
+    include/quant.h \
+    include/backend_quant.h \
+    src/quant/registry.c \
+    src/transformer/gpu_policy.c \
+    test/test_quant.c \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "GPU SiLU quant policy must use reference behavior names, not exact-path names"
     fail=1
 fi
 

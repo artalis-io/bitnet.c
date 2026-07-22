@@ -214,8 +214,8 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_format_gpu_uses_repacked_layout(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_supports_repacked_bias(BN_GGUF_TENSOR_Q8_0));
     assert(bn_quant_format_gpu_dispatch_tile_rows(BN_GGUF_TENSOR_Q8_0) == 32u);
-    assert(bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_gpu_requires_reference_silu(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_gpu_requires_reference_silu(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(

@@ -234,8 +234,8 @@ static inline int bn_backend_quant_convert_dense_to_float(
     return bn_quant_format_convert_dense_to_f32(type, src, dst, n);
 }
 
-static inline int bn_backend_quant_gpu_requires_exact_silu(int type) {
-    return bn_quant_format_gpu_requires_exact_silu(type);
+static inline int bn_backend_quant_gpu_requires_reference_silu(int type) {
+    return bn_quant_format_gpu_requires_reference_silu(type);
 }
 
 static inline int bn_backend_quant_gpu_prefers_gateup_split(int type) {

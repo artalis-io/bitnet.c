@@ -268,7 +268,7 @@ typedef enum {
     BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK = 1u << 11,
     BN_QUANT_CAP_NATIVE_QUANT_LOGITS_REFINE = 1u << 12,
     BN_QUANT_CAP_KQUANT_LOGITS_REFINE = 1u << 13,
-    BN_QUANT_CAP_GPU_EXACT_SILU = 1u << 14,
+    BN_QUANT_CAP_GPU_REFERENCE_SILU = 1u << 14,
     BN_QUANT_CAP_GPU_GATEUP_SPLIT_PREFERRED = 1u << 15,
     BN_QUANT_CAP_GPU_FUSED_GATEUP_BACKEND_OPT_IN = 1u << 16,
     BN_QUANT_CAP_GPU_NATIVE = 1u << 17,
@@ -344,7 +344,7 @@ int      bn_quant_q6_logits_refine_q8k_row(const BnQWeight *W,
                                             float *out);
 uint32_t bn_quant_format_gpu_split_cap(int type);
 int      bn_quant_format_can_gpu_split(int type);
-int      bn_quant_format_gpu_requires_exact_silu(int type);
+int      bn_quant_format_gpu_requires_reference_silu(int type);
 int      bn_quant_format_gpu_prefers_gateup_split(int type);
 uint32_t bn_quant_format_gpu_fused_gateup_silu_cap(int type);
 int      bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type);

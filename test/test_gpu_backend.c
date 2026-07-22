@@ -4911,8 +4911,8 @@ static void test_quant_registry(void) {
                BN_GGUF_TENSOR_Q4_0, f16_src, f32_dst, 2) == -1);
     assert(bn_transformer_cpu_has_native_quant_activation() ==
            TEST_EXPECT_NATIVE_QUANT_ACTIVATION);
-    assert(bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_quant_format_gpu_requires_exact_silu(BN_GGUF_TENSOR_Q4_0));
+    assert(bn_quant_format_gpu_requires_reference_silu(BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_quant_format_gpu_requires_reference_silu(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q4_K));

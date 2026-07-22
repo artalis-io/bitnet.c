@@ -18,7 +18,7 @@
     (BN_QUANT_CAP_LOADABLE_CPU_EMBEDDED_PREPARED_KQUANT | BN_QUANT_CAP_TIED_LOGITS_QUANT_PATH)
 #define BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT_FORMAT \
     (BN_QUANT_CAP_GPU_DENSE_GRAPH | BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT | \
-     BN_QUANT_CAP_NATIVE_QUANT_LOGITS_REFINE | BN_QUANT_CAP_GPU_EXACT_SILU | \
+     BN_QUANT_CAP_NATIVE_QUANT_LOGITS_REFINE | BN_QUANT_CAP_GPU_REFERENCE_SILU | \
      BN_QUANT_CAP_GPU_GATEUP_SPLIT_PREFERRED)
 #define BN_QUANT_CAP_GPU_DENSE_GRAPH_KQUANT \
     (BN_QUANT_CAP_GPU_DENSE_GRAPH | BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK)
@@ -232,8 +232,8 @@ int bn_quant_format_can_gpu_split(int type) {
     return bn_quant_format_gpu_split_cap(type) != 0;
 }
 
-int bn_quant_format_gpu_requires_exact_silu(int type) {
-    return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_EXACT_SILU);
+int bn_quant_format_gpu_requires_reference_silu(int type) {
+    return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_REFERENCE_SILU);
 }
 
 int bn_quant_format_gpu_prefers_gateup_split(int type) {

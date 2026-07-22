@@ -153,7 +153,7 @@ int bn_transformer_gpu_float_buffer_type(void) {
 
 uint32_t bn_transformer_gpu_reference_silu_flags(int tensor_type,
                                              int use_silu) {
-    return use_silu && bn_backend_quant_gpu_requires_exact_silu(tensor_type)
+    return use_silu && bn_backend_quant_gpu_requires_reference_silu(tensor_type)
         ? BN_GPU_OP_FLAG_EXACT_SILU
         : 0u;
 }
