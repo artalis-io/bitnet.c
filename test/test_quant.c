@@ -76,6 +76,10 @@ static void test_quant_policy_helpers(void) {
     assert(!bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q6_dot_enabled(0));
     unsetenv("BN_CPU_REFERENCE_Q6_DOT");
+    setenv("BN_CPU_LLAMA_DOT", "1", 1);
+    assert(bn_quant_policy_reference_q4_dot_enabled(0));
+    assert(bn_quant_policy_reference_q6_dot_enabled(0));
+    unsetenv("BN_CPU_LLAMA_DOT");
     setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
     assert(bn_quant_policy_reference_q4_dot_enabled(0));
     assert(bn_quant_policy_reference_q6_dot_enabled(0));

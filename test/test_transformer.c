@@ -4171,16 +4171,6 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_can_fused_kquant_gateup_silu(
         BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
     unsetenv("BN_CPU_REFERENCE_Q4_DOT");
-    setenv("BN_CPU_LLAMA_DOT", "1", 1);
-    assert(!bn_transformer_cpu_fused_kquant_gateup_silu_allowed());
-    assert(!bn_transformer_cpu_can_fused_kquant_gateup_silu(
-        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
-    unsetenv("BN_CPU_LLAMA_DOT");
-    setenv("BN_CPU_LLAMA_Q4_DOT", "1", 1);
-    assert(!bn_transformer_cpu_fused_kquant_gateup_silu_allowed());
-    assert(!bn_transformer_cpu_can_fused_kquant_gateup_silu(
-        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
-    unsetenv("BN_CPU_LLAMA_Q4_DOT");
 
     assert(!bn_transformer_cpu_can_prepared_kquant_pair(
         NULL, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
