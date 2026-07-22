@@ -166,9 +166,9 @@ Follow-up checks:
   kernels mostly assign one output row to each 8-lane group. A first
   row-grouped two-row Q4_0 x Q8 matvec diagnostic was not kept: it measured
   94.50 tok/s versus llama.cpp 99.76 tok/s on that run, and the direct
-  `bench_kernels` FFN `up`/`down` rows were slower than the default Q4/Q8
-  shader. Lightweight `--gpu-profile 1` timing shows the warmed decode
-  frames spend about 8.9-9.6ms in GPU execution, 0.1ms in encoding, and
+  `bench_kernels` FFN `up`/`down` rows were slower than the default
+  small-dense native-quant shader. Lightweight `--gpu-profile 1` timing shows
+  the warmed decode frames spend about 8.9-9.6ms in GPU execution, 0.1ms in encoding, and
   effectively 0.0ms in logits readback, so reducing full-logit readback is not
   expected to close the current Metal parity gap on this setup.
 - `bench_kernels --metal` now uses GPU-resident weights for per-matrix matvec
