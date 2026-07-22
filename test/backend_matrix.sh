@@ -2111,8 +2111,8 @@ if grep -n '^[[:space:]]*setenv("BN_GPU_Q4_Q8\|^[[:space:]]*setenv("BN_METAL_Q4_
     fail=1
 fi
 
-if grep -n '^[[:space:]]*setenv("BN_GPU_Q6_Q8K_REFINE_TOP"\|^[[:space:]]*setenv("BN_GPU_Q8_REFINE_TOP"\|^[[:space:]]*setenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_METAL_ENABLE_Q6_Q8K"\|^[[:space:]]*setenv("BN_METAL_Q4_PREPARED"' test/test_transformer.c >/dev/null 2>&1; then
-    echo "Transformer policy tests must use behavior-named logits and Metal env vars; legacy names belong in GPU policy alias tests"
+if grep -n '^[[:space:]]*setenv("BN_GPU_Q6_Q8K_REFINE_TOP"\|^[[:space:]]*setenv("BN_GPU_Q8_REFINE_TOP"\|^[[:space:]]*setenv("BN_GPU_ENABLE_Q6_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_DISABLE_Q6_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_ENABLE_Q8_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_GPU_DISABLE_Q8_LOGITS_REFINE"\|^[[:space:]]*setenv("BN_METAL_ENABLE_Q6_Q8K"\|^[[:space:]]*setenv("BN_METAL_Q4_PREPARED"\|^[[:space:]]*setenv("BN_CUDA_DISABLE_Q4_Q8_DECODE_CACHE"' test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer policy tests must use behavior-named logits, Metal, and decode-cache env vars; legacy names belong in GPU policy alias tests"
     fail=1
 fi
 
