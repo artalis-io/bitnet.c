@@ -1132,6 +1132,12 @@ if awk '/^int bn_gpu_policy_small_dense_native_quant_cpu_attention_safe_disabled
     fail=1
 fi
 
+if awk '/^static int small_state_native_quant_enabled/{flag=1} /^static int small_state_native_quant_disabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'force_float_kquant' >/dev/null 2>&1 ||
+   grep -n 'bn_gpu_policy_small_state_native_quant_enabled(int force_float_kquant)' include/gpu_policy.h >/dev/null 2>&1; then
+    echo "small-state native quant policy must use float K-quant fallback behavior names"
+    fail=1
+fi
+
 if grep -n 'getenv("BN_CUDA_DISABLE_PREFILL_BATCHED_GEMM")\|getenv("BN_CUDA_DEBUG_PREFILL_GEMM")' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use GPU policy helpers for prefill GEMM env policy"
     fail=1

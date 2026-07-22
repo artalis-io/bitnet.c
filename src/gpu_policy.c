@@ -1097,15 +1097,16 @@ int bn_gpu_policy_matvec_batch_enabled(void) {
     return !gpu_policy_matvec_batch_disabled();
 }
 
-static int small_state_native_quant_enabled(int force_float_kquant) {
+static int small_state_native_quant_enabled(int uses_float_kquant_fallback) {
     if (gpu_policy_small_state_native_quant_requested())
         return 1;
     return !gpu_policy_small_state_native_quant_disabled() &&
-           !force_float_kquant;
+           !uses_float_kquant_fallback;
 }
 
-int bn_gpu_policy_small_state_native_quant_enabled(int force_float_kquant) {
-    return small_state_native_quant_enabled(force_float_kquant);
+int bn_gpu_policy_small_state_native_quant_enabled(
+    int uses_float_kquant_fallback) {
+    return small_state_native_quant_enabled(uses_float_kquant_fallback);
 }
 
 static int small_state_native_quant_disabled(void) {
