@@ -3068,6 +3068,11 @@ if grep -n 'c->dim >= 4096' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'arch_min\|large arch' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must use behavior/shape names for model-derived GPU policy"
+    fail=1
+fi
+
 if grep -n 'c->dim <= 2560 &&' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose model_arch helpers for small dense CUDA shape policy"
     fail=1

@@ -1093,9 +1093,9 @@ int bn_transformer_gpu_prefill_dense_chain_min_tokens(
     if (bn_gpu_policy_prefill_attention_min_tokens_configured())
         return bn_transformer_gpu_prefill_attention_min_tokens();
     if (bn_gpu_policy_backend_prefill_chain_supported(gpu) && c) {
-        int arch_min = bn_model_config_small_dense_prefill_min_tokens(c);
-        if (arch_min > 0)
-            return arch_min;
+        int shape_min = bn_model_config_small_dense_prefill_min_tokens(c);
+        if (shape_min > 0)
+            return shape_min;
     }
     if (bn_gpu_policy_backend_prefill_chain_supported(gpu) && c)
         return 16;
@@ -2743,7 +2743,7 @@ int bn_transformer_gpu_validate_forward(
         bn_gpu_policy_backend_large_graph_native_enabled(gpu);
     if (!bn_gpu_policy_force_graph_enabled() && !backend_large_native &&
         bn_transformer_gpu_uses_large_graph_fallback_shape(c))
-        GPU_POLICY_REJECT("large arch/hybrid/moe gpu graph disabled");
+        GPU_POLICY_REJECT("large shape/hybrid/moe gpu graph disabled");
     if (bn_transformer_gpu_requires_layerwise_rope(c, w) &&
         !bn_transformer_gpu_can_layerwise_rope(gpu))
         GPU_POLICY_REJECT("layerwise rope unsupported by gpu backend");
