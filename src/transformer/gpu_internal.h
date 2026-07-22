@@ -157,20 +157,20 @@ typedef struct {
     int to_layer;
     int attn_only;
     int ffn_only;
-} BnTransformerGPUSmallDenseExactNativeLayerPolicy;
+} BnTransformerGPUSmallDenseNativeQuantLayerPolicy;
 
 typedef struct {
-    int small_dense_exact_native_default;
-    int small_dense_exact_native_to_layer;
-} BnTransformerGPUSmallDenseExactNativeDecodePolicy;
+    int small_dense_native_quant_default;
+    int small_dense_native_quant_to_layer;
+} BnTransformerGPUSmallDenseNativeQuantDecodePolicy;
 
 typedef struct {
     int use_layer;
-    int small_dense_exact_native_path;
+    int small_dense_native_quant_path;
     int use_attention;
     int use_ffn;
     int use_ffn_down;
-} BnTransformerGPUSmallDenseExactNativeLayerUsePolicy;
+} BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy;
 
 typedef struct {
     int use_cache;
@@ -562,15 +562,15 @@ int bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c,
     const BnWeights *w);
-int bn_transformer_gpu_small_dense_exact_native_default(
+int bn_transformer_gpu_small_dense_native_quant_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    int small_dense_exact_native_from_layer);
-int bn_transformer_gpu_small_dense_exact_native_to_layer(
+    int small_dense_native_quant_from_layer);
+int bn_transformer_gpu_small_dense_native_quant_to_layer(
     const BnConfig *c,
-    int small_dense_exact_native_default,
-    int small_dense_exact_native_to_layer);
-int bn_transformer_gpu_small_dense_exact_native_ffn_down_enabled(
+    int small_dense_native_quant_default,
+    int small_dense_native_quant_to_layer);
+int bn_transformer_gpu_small_dense_native_quant_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
@@ -606,11 +606,11 @@ BnTransformerGPUMatvecFallbackPolicy
 bn_transformer_gpu_matvec_fallback_policy(
     const BnModel *m,
     const BnGPUBackend *gpu);
-int bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(
-    int use_small_dense_exact_native);
-int bn_transformer_gpu_small_dense_exact_native_down_enabled(
-    int use_small_dense_exact_native_down);
-int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_exact_native);
+int bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(
+    int use_small_dense_native_quant);
+int bn_transformer_gpu_small_dense_native_quant_down_enabled(
+    int use_small_dense_native_quant_down);
+int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_native_quant);
 int bn_transformer_gpu_qk_split_enabled(void);
 int bn_transformer_gpu_qkv_split_debug_enabled(void);
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
@@ -1031,7 +1031,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnConfig *c,
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
-    int small_dense_exact_native_default);
+    int small_dense_native_quant_default);
 BnTransformerGPUGenerateArgmaxPolicy
 bn_transformer_gpu_generate_argmax_policy(
     const BnGPUBackend *gpu,
@@ -1133,21 +1133,21 @@ int bn_transformer_gpu_cpu_fallback_layer_selected(
     int layer,
     int exact_layer,
     int from_layer);
-BnTransformerGPUSmallDenseExactNativeLayerPolicy
-bn_transformer_gpu_small_dense_exact_native_layer_policy(const BnConfig *c);
-BnTransformerGPUSmallDenseExactNativeDecodePolicy
-bn_transformer_gpu_small_dense_exact_native_decode_policy(
+BnTransformerGPUSmallDenseNativeQuantLayerPolicy
+bn_transformer_gpu_small_dense_native_quant_layer_policy(const BnConfig *c);
+BnTransformerGPUSmallDenseNativeQuantDecodePolicy
+bn_transformer_gpu_small_dense_native_quant_decode_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    const BnTransformerGPUSmallDenseExactNativeLayerPolicy *layer_policy);
-BnTransformerGPUSmallDenseExactNativeLayerUsePolicy
-bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+    const BnTransformerGPUSmallDenseNativeQuantLayerPolicy *layer_policy);
+BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy
+bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    const BnTransformerGPUSmallDenseExactNativeLayerPolicy *policy,
+    const BnTransformerGPUSmallDenseNativeQuantLayerPolicy *policy,
     int layer,
-    int small_dense_exact_native_default,
-    int small_dense_exact_native_to_layer);
+    int small_dense_native_quant_default,
+    int small_dense_native_quant_to_layer);
 BnTransformerGPUCachedDecodePolicy
 bn_transformer_gpu_cached_decode_policy(
     int cached_op_count,
@@ -1445,7 +1445,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int gate_rows,
     int up_rows,
     int cols,
-    int use_small_dense_exact_native,
+    int use_small_dense_native_quant,
     uint32_t flags);
 int bn_transformer_gpu_emit_context_moe_route_topk(
     BnTransformerGPUEmitContext *ctx,
@@ -1659,8 +1659,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     void *next_norm,
     int skip_down,
     int *down_input_buf,
-    int use_small_dense_exact_native,
-    int use_small_dense_exact_native_down);
+    int use_small_dense_native_quant,
+    int use_small_dense_native_quant_down);
 void bn_transformer_gpu_emit_context_attention(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -1678,7 +1678,7 @@ void bn_transformer_gpu_emit_context_attention(
     uint32_t kv_cache_off,
     int has_moe,
     uint32_t u_eps,
-    int use_small_dense_exact_native);
+    int use_small_dense_native_quant);
 void bn_transformer_gpu_emit_context_attention_gqa(
     BnTransformerGPUEmitContext *ctx,
     const BnConfig *c,
@@ -1703,7 +1703,7 @@ void bn_transformer_gpu_emit_context_attention_finish(
     int q_dim,
     int head_size,
     uint32_t u_eps,
-    int use_small_dense_exact_native);
+    int use_small_dense_native_quant);
 void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          const BnConfig *c,
                                          const BnLayerWeights *lw,
@@ -1717,7 +1717,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          int rope_dims,
                                          uint32_t kv_cache_off,
                                          uint32_t u_eps,
-                                         int use_small_dense_exact_native);
+                                         int use_small_dense_native_quant);
 void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                                          const BnConfig *c,
                                          const BnLayerWeights *lw,

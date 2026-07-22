@@ -183,12 +183,12 @@ int bn_transformer_gpu_shared_kquant_gateup_dot_eligible(int gate_type,
 int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     const BnGPUBackend *gpu,
     int tensor_type);
-int bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(
-    int use_small_dense_exact_native);
+int bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(
+    int use_small_dense_native_quant);
 int bn_transformer_gpu_gateup_split_enabled(void);
-int bn_transformer_gpu_small_dense_exact_native_down_enabled(
-    int use_small_dense_exact_native_down);
-int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_exact_native);
+int bn_transformer_gpu_small_dense_native_quant_down_enabled(
+    int use_small_dense_native_quant_down);
+int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_native_quant);
 int bn_transformer_gpu_qk_split_enabled(void);
 int bn_transformer_gpu_ssm_qkvz_split_enabled(void);
 int bn_transformer_gpu_ssm_ab_stack_enabled(void);

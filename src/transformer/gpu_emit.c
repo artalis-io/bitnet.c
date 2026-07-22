@@ -525,7 +525,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
     int gate_rows,
     int up_rows,
     int cols,
-    int use_small_dense_exact_native,
+    int use_small_dense_native_quant,
     uint32_t flags) {
     if (!ctx) return -1;
     int input = emit_context_add_value(
@@ -540,7 +540,7 @@ int bn_transformer_gpu_emit_context_fused_gateup_silu(
         ctx->graph, input, weight, gate_rows, up_rows, cols,
         BN_GPU_IR_ACTIVATION_SILU, "fused_gateup.out");
     if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0 &&
-        bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(use_small_dense_exact_native))
+        bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(use_small_dense_native_quant))
         ctx->graph->ops[ctx->graph->n_ops - 1].flags |= 1u;
     if (output != BN_GPU_IR_INVALID_VALUE && ctx->graph->n_ops > 0)
         ctx->graph->ops[ctx->graph->n_ops - 1].flags |= flags;
@@ -650,7 +650,7 @@ static int emit_context_matvec_split(BnTransformerGPUEmitContext *ctx,
                                      int split1,
                                      int output1_offset,
                                      int output2_offset,
-                                     int use_small_dense_exact_native) {
+                                     int use_small_dense_native_quant) {
     if (!ctx) return -1;
     int input = emit_context_add_value(
         ctx, BN_GPU_IR_VALUE_TRANSIENT, -1, 1, cols,
@@ -668,7 +668,7 @@ static int emit_context_matvec_split(BnTransformerGPUEmitContext *ctx,
         buf_out2 >= 0 ? "matvec_split.out2" : NULL);
     if (!op || emit_context_reserve_lowering(ctx, ctx->graph->n_values) != 0)
         return -1;
-    if (use_small_dense_exact_native)
+    if (use_small_dense_native_quant)
         op->flags |= 1u;
     emit_context_set_slot(ctx, op->outputs[0], buf_out0);
     emit_context_set_slot(ctx, op->outputs[1], buf_out1);
@@ -1041,8 +1041,8 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     void *next_norm,
     int skip_down,
     int *down_input_buf,
-    int use_small_dense_exact_native,
-    int use_small_dense_exact_native_down) {
+    int use_small_dense_native_quant,
+    int use_small_dense_native_quant_down) {
     int hidden_dim = ffn_plan->hidden_dim;
     void *gateup_stacked = res ? res->gateup_stacked : NULL;
     void *ffn_sub_norm = res ? res->ffn_sub_norm : NULL;
@@ -1063,7 +1063,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             bn_transformer_gpu_emit_context_fused_gateup_silu(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
-                lw->ffn.ffn_up.rows, lw->ffn.ffn_gate.cols, use_small_dense_exact_native,
+                lw->ffn.ffn_up.rows, lw->ffn.ffn_gate.cols, use_small_dense_native_quant,
                 silu_flags);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
@@ -1077,7 +1077,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, -1,
                 total_rows, lw->ffn.ffn_gate.cols, lw->ffn.ffn_gate.rows, 1,
-                0, 0, use_small_dense_exact_native);
+                0, 0, use_small_dense_native_quant);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
                    bn_transformer_gpu_can_stack_same_quant_format_gateup(
@@ -1088,7 +1088,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 ctx, lw->ffn.ffn_gate.type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
                 BN_GPU_VALUE_HB2, total_rows, lw->ffn.ffn_gate.cols,
-                lw->ffn.ffn_gate.rows, 0, 0, 0, use_small_dense_exact_native);
+                lw->ffn.ffn_gate.rows, 0, 0, 0, use_small_dense_native_quant);
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, hidden_dim, 0,
                 BN_GPU_IR_ACTIVATION_SILU, silu_flags);
@@ -1099,14 +1099,14 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
                 lw->ffn.ffn_gate.cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(
-                    lw->ffn.ffn_gate.type, use_small_dense_exact_native));
+                    lw->ffn.ffn_gate.type, use_small_dense_native_quant));
             emit_context_matvec_flags(
                 ctx, lw->ffn.ffn_up.type,
                 res ? res->ffn_up : NULL,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2, lw->ffn.ffn_up.rows,
                 lw->ffn.ffn_up.cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(
-                    lw->ffn.ffn_up.type, use_small_dense_exact_native));
+                    lw->ffn.ffn_up.type, use_small_dense_native_quant));
             BnGPUIRActivationKind act_kind =
                 bn_transformer_gpu_ffn_activation_kind(
                     ffn_plan->activation);
@@ -1121,7 +1121,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
             res ? res->ffn_up : NULL, BN_GPU_VALUE_XB,
             BN_GPU_VALUE_HB, lw->ffn.ffn_up.rows, lw->ffn.ffn_up.cols, 0,
             bn_transformer_gpu_matvec_kquant_dot_flags(lw->ffn.ffn_up.type,
-                                                     use_small_dense_exact_native));
+                                                     use_small_dense_native_quant));
         BnGPUIRActivationKind act_kind =
             bn_transformer_gpu_ffn_activation_kind(ffn_plan->activation);
         uint32_t silu_flags = bn_transformer_gpu_reference_silu_flags(
@@ -1151,7 +1151,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         BN_GPU_VALUE_XB2, lw->ffn.ffn_down.rows, lw->ffn.ffn_down.cols, 0,
         bn_transformer_gpu_matvec_kquant_dot_flags(
             lw->ffn.ffn_down.type,
-            bn_transformer_gpu_small_dense_exact_native_down_enabled(use_small_dense_exact_native_down)));
+            bn_transformer_gpu_small_dense_native_quant_down_enabled(use_small_dense_native_quant_down)));
 
     emit_context_residual_rmsnorm(
         ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB, dim, u_eps,
@@ -1173,7 +1173,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          int rope_dims,
                                          uint32_t kv_cache_off,
                                          uint32_t u_eps,
-                                         int use_small_dense_exact_native) {
+                                         int use_small_dense_native_quant) {
     void *q_bias = res ? res->q_bias : NULL;
     void *k_bias = res ? res->k_bias : NULL;
     void *v_bias = res ? res->v_bias : NULL;
@@ -1199,7 +1199,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
 
     int qkv_split_op_code = bn_transformer_gpu_matvec_split_op_code(
         lw->attn.wq.type);
-    int qkv_split_enabled = bn_transformer_gpu_qkv_split_enabled(use_small_dense_exact_native);
+    int qkv_split_enabled = bn_transformer_gpu_qkv_split_enabled(use_small_dense_native_quant);
     int qk_split_enabled = bn_transformer_gpu_qk_split_enabled();
     int use_split = qkv_split_enabled && !kv_cache_write_needs_staging &&
                     qkv_stacked && !q_gated &&
@@ -1246,7 +1246,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
             BN_GPU_VALUE_Q, BN_GPU_VALUE_KEY_CACHE,
             BN_GPU_VALUE_VALUE_CACHE, lw->ssm.wqkv.rows, lw->ssm.wqkv.cols,
             q_dim, q_dim + kv_dim, (int)kv_cache_off, (int)kv_cache_off,
-            use_small_dense_exact_native);
+            use_small_dense_native_quant);
     } else if (use_packed_qkv) {
         bn_transformer_gpu_emit_context_matvec(
             ctx, lw->ssm.wqkv.type,
@@ -1267,7 +1267,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
             BN_GPU_VALUE_Q, BN_GPU_VALUE_KEY_CACHE,
             BN_GPU_VALUE_VALUE_CACHE, total_rows, lw->attn.wq.cols,
             q_dim, q_dim + kv_dim, (int)kv_cache_off, (int)kv_cache_off,
-            use_small_dense_exact_native);
+            use_small_dense_native_quant);
     } else {
         if (q_gated) {
             emit_context_matvec_flags(
@@ -1275,7 +1275,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 res ? res->wq : NULL, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_QKV, lw->attn.wq.rows, lw->attn.wq.cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(lw->attn.wq.type,
-                                                         use_small_dense_exact_native));
+                                                         use_small_dense_native_quant));
             uint32_t deinterleave_params[8] = {
                 (uint32_t)q_dim, (uint32_t)head_size, 0, 0, 0, 0, 0, 0
             };
@@ -1292,14 +1292,14 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                     ctx, lw->attn.wq.type, qk_stacked, BN_GPU_VALUE_XB,
                     BN_GPU_VALUE_Q, k_split_buf, -1,
                     q_dim + kv_dim, lw->attn.wq.cols, q_dim, 0,
-                    k_split_offset, 0, use_small_dense_exact_native);
+                    k_split_offset, 0, use_small_dense_native_quant);
             } else {
                 emit_context_matvec_flags(
                     ctx, lw->attn.wq.type,
                     res ? res->wq : NULL, BN_GPU_VALUE_XB,
                     BN_GPU_VALUE_Q, lw->attn.wq.rows, lw->attn.wq.cols, 0,
                     bn_transformer_gpu_matvec_kquant_dot_flags(
-                        lw->attn.wq.type, use_small_dense_exact_native));
+                        lw->attn.wq.type, use_small_dense_native_quant));
             }
         }
         if (q_bias) {
@@ -1344,7 +1344,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 res ? res->wk : NULL, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_SCRATCH, lw->attn.wk.rows, lw->attn.wk.cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(lw->attn.wk.type,
-                                                         use_small_dense_exact_native));
+                                                         use_small_dense_native_quant));
             if (k_bias) {
                 uint32_t bias_params[8] = {
                     (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0
@@ -1375,7 +1375,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 BN_GPU_VALUE_KEY_CACHE, lw->attn.wk.rows, lw->attn.wk.cols,
                 (int)kv_cache_off,
                 bn_transformer_gpu_matvec_kquant_dot_flags(lw->attn.wk.type,
-                                                         use_small_dense_exact_native));
+                                                         use_small_dense_native_quant));
         }
 
         if (v_bias || kv_cache_write_needs_staging) {
@@ -1384,7 +1384,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 res ? res->wv : NULL, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_SCRATCH, lw->attn.wv.rows, lw->attn.wv.cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(lw->attn.wv.type,
-                                                         use_small_dense_exact_native));
+                                                         use_small_dense_native_quant));
             if (v_bias) {
                 uint32_t bias_params[8] = {
                     (uint32_t)kv_dim, 0, 0, 0, 0, 0, 0, 0
@@ -1403,7 +1403,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 BN_GPU_VALUE_VALUE_CACHE, lw->attn.wv.rows, lw->attn.wv.cols,
                 (int)kv_cache_off,
                 bn_transformer_gpu_matvec_kquant_dot_flags(lw->attn.wv.type,
-                                                         use_small_dense_exact_native));
+                                                         use_small_dense_native_quant));
         }
     }
 
@@ -1444,12 +1444,12 @@ void bn_transformer_gpu_emit_context_attention(
     uint32_t kv_cache_off,
     int has_moe,
     uint32_t u_eps,
-    int use_small_dense_exact_native) {
+    int use_small_dense_native_quant) {
     bn_transformer_gpu_emit_context_attention_gqa(
         ctx, c, lw, res, pos, q_dim, head_size, n_heads, kv_dim, rope_dims,
         n_kv, loff, kv_cache_off, has_moe);
     bn_transformer_gpu_emit_context_attention_finish(
-        ctx, c, lw, res, dim, q_dim, head_size, u_eps, use_small_dense_exact_native);
+        ctx, c, lw, res, dim, q_dim, head_size, u_eps, use_small_dense_native_quant);
 }
 
 void bn_transformer_gpu_emit_context_attention_gqa(
@@ -1510,7 +1510,7 @@ void bn_transformer_gpu_emit_context_attention_finish(
     int q_dim,
     int head_size,
     uint32_t u_eps,
-    int use_small_dense_exact_native) {
+    int use_small_dense_native_quant) {
     (void)c;
     void *attn_sub_norm = res ? res->attn_sub_norm : NULL;
     void *ffn_norm = res ? res->ffn_norm : NULL;
@@ -1534,7 +1534,7 @@ void bn_transformer_gpu_emit_context_attention_finish(
         ctx, lw->attn.wo.type, res ? res->wo : NULL,
         wo_in_buf, BN_GPU_VALUE_XB2, lw->attn.wo.rows, lw->attn.wo.cols, 0,
         bn_transformer_gpu_matvec_kquant_dot_flags(lw->attn.wo.type,
-                                                 use_small_dense_exact_native));
+                                                 use_small_dense_native_quant));
 
     emit_context_residual_rmsnorm(
         ctx, BN_GPU_VALUE_X, BN_GPU_VALUE_XB2, BN_GPU_VALUE_XB, dim, u_eps,

@@ -3398,7 +3398,7 @@ if awk '/^static int gpu_dense_ffn_resources_missing/{flag=1} /^static float \*b
     fail=1
 fi
 
-if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseExactNativeLayerUsePolicy/{flag=0} flag{print}' \
+if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy/{flag=0} flag{print}' \
     src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1 ||
    awk '/ffn_block:;/{flag=1} /BnGPUMoETemporaryBuffers moe_temporaries;/{flag=0} flag{print}' \
     src/transformer/gpu.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1; then
@@ -3619,6 +3619,11 @@ fi
 
 if grep -n 'bn_transformer_prefill_uses_exact_activation\|bn_transformer_ffn_uses_exact_scalar_activation\|scalar_exact_activation' include/transformer_plan_internal.h src/transformer/plan.c src/transformer/prefill.c src/transformer/cpu_policy.c src/transformer/cpu_backend.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer CPU/prefill activation policy must use reference behavior names"
+    fail=1
+fi
+
+if grep -n 'BnTransformerGPUSmallDenseExactNative\|bn_transformer_gpu_small_dense_exact_native\|use_small_dense_exact_native\|small_dense_exact_native_\(policy\|use\|decode\|path\)' include/transformer_plan_internal.h src/transformer/gpu_internal.h src/transformer/gpu_policy.c src/transformer/gpu_emit.c src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer small-dense GPU decode policy must use native-quant behavior names"
     fail=1
 fi
 

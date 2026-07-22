@@ -291,8 +291,8 @@ int bn_transformer_gpu_fused_gateup_silu_policy_allows(
     return bn_gpu_policy_fused_gateup_silu_allowed(gpu, tensor_type);
 }
 
-int bn_transformer_gpu_small_dense_exact_native_fused_gateup_enabled(int use_small_dense_exact_native) {
-    return use_small_dense_exact_native &&
+int bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(int use_small_dense_native_quant) {
+    return use_small_dense_native_quant &&
            bn_gpu_policy_small_dense_exact_native_fused_gateup_enabled();
 }
 
@@ -300,13 +300,13 @@ int bn_transformer_gpu_gateup_split_enabled(void) {
     return bn_gpu_policy_gateup_split_enabled();
 }
 
-int bn_transformer_gpu_small_dense_exact_native_down_enabled(int use_small_dense_exact_native_down) {
-    return use_small_dense_exact_native_down &&
+int bn_transformer_gpu_small_dense_native_quant_down_enabled(int use_small_dense_native_quant_down) {
+    return use_small_dense_native_quant_down &&
            bn_gpu_policy_small_dense_exact_native_ffn_down_enabled();
 }
 
-int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_exact_native) {
-    return !use_small_dense_exact_native && bn_gpu_policy_qkv_split_enabled();
+int bn_transformer_gpu_qkv_split_enabled(int use_small_dense_native_quant) {
+    return !use_small_dense_native_quant && bn_gpu_policy_qkv_split_enabled();
 }
 
 int bn_transformer_gpu_qk_split_enabled(void) {
@@ -876,26 +876,26 @@ int bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
                c, w);
 }
 
-int bn_transformer_gpu_small_dense_exact_native_default(
+int bn_transformer_gpu_small_dense_native_quant_default(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    int small_dense_exact_native_from_layer) {
-    return small_dense_exact_native_from_layer < 0 &&
+    int small_dense_native_quant_from_layer) {
+    return small_dense_native_quant_from_layer < 0 &&
            bn_gpu_policy_backend_small_dense_exact_native_supported(gpu) &&
            bn_model_config_allows_small_dense_exact_native(c) &&
            !bn_gpu_policy_small_dense_exact_native_disabled();
 }
 
-int bn_transformer_gpu_small_dense_exact_native_to_layer(
+int bn_transformer_gpu_small_dense_native_quant_to_layer(
     const BnConfig *c,
-    int small_dense_exact_native_default,
-    int small_dense_exact_native_to_layer) {
-    if (!small_dense_exact_native_default || small_dense_exact_native_to_layer >= 0)
-        return small_dense_exact_native_to_layer;
+    int small_dense_native_quant_default,
+    int small_dense_native_quant_to_layer) {
+    if (!small_dense_native_quant_default || small_dense_native_quant_to_layer >= 0)
+        return small_dense_native_quant_to_layer;
     return bn_model_config_small_dense_exact_native_to_layer(c);
 }
 
-int bn_transformer_gpu_small_dense_exact_native_ffn_down_enabled(
+int bn_transformer_gpu_small_dense_native_quant_ffn_down_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c) {
     return bn_gpu_policy_backend_small_dense_exact_native_supported(gpu) &&
@@ -1782,7 +1782,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnConfig *c,
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
-    int small_dense_exact_native_default) {
+    int small_dense_native_quant_default) {
     BnTransformerGPULogitsRefinePolicy p = {0};
     p.kquant_default =
         bn_transformer_gpu_all_active_two_kquant_moe_logits_refine_default(
@@ -1796,7 +1796,7 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
 
     int tensor_type = logits ? logits->type : -1;
     p.native_quant_default =
-        small_dense_exact_native_default &&
+        small_dense_native_quant_default &&
         bn_transformer_gpu_native_quant_logits_refine_enabled(
             gpu, c, tensor_type);
     p.native_quant_enabled =
@@ -2135,10 +2135,10 @@ int bn_transformer_gpu_cpu_fallback_layer_selected(
            (from_layer >= 0 && layer >= from_layer);
 }
 
-BnTransformerGPUSmallDenseExactNativeLayerPolicy
-bn_transformer_gpu_small_dense_exact_native_layer_policy(const BnConfig *c) {
+BnTransformerGPUSmallDenseNativeQuantLayerPolicy
+bn_transformer_gpu_small_dense_native_quant_layer_policy(const BnConfig *c) {
     int n_layers = c ? c->n_layers : 0;
-    BnTransformerGPUSmallDenseExactNativeLayerPolicy policy = {
+    BnTransformerGPUSmallDenseNativeQuantLayerPolicy policy = {
         .from_layer =
             bn_gpu_policy_small_dense_exact_native_from_layer_or_default(
                 n_layers),
@@ -2153,43 +2153,43 @@ bn_transformer_gpu_small_dense_exact_native_layer_policy(const BnConfig *c) {
     return policy;
 }
 
-BnTransformerGPUSmallDenseExactNativeDecodePolicy
-bn_transformer_gpu_small_dense_exact_native_decode_policy(
+BnTransformerGPUSmallDenseNativeQuantDecodePolicy
+bn_transformer_gpu_small_dense_native_quant_decode_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    const BnTransformerGPUSmallDenseExactNativeLayerPolicy *layer_policy) {
-    BnTransformerGPUSmallDenseExactNativeDecodePolicy policy = {0};
+    const BnTransformerGPUSmallDenseNativeQuantLayerPolicy *layer_policy) {
+    BnTransformerGPUSmallDenseNativeQuantDecodePolicy policy = {0};
     int from_layer = layer_policy ? layer_policy->from_layer : -1;
     int to_layer = layer_policy ? layer_policy->to_layer : -1;
-    policy.small_dense_exact_native_default =
-        bn_transformer_gpu_small_dense_exact_native_default(
+    policy.small_dense_native_quant_default =
+        bn_transformer_gpu_small_dense_native_quant_default(
             gpu, c, from_layer);
-    policy.small_dense_exact_native_to_layer =
-        bn_transformer_gpu_small_dense_exact_native_to_layer(
-            c, policy.small_dense_exact_native_default, to_layer);
+    policy.small_dense_native_quant_to_layer =
+        bn_transformer_gpu_small_dense_native_quant_to_layer(
+            c, policy.small_dense_native_quant_default, to_layer);
     return policy;
 }
 
-BnTransformerGPUSmallDenseExactNativeLayerUsePolicy
-bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
+BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy
+bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
     const BnGPUBackend *gpu,
     const BnConfig *c,
-    const BnTransformerGPUSmallDenseExactNativeLayerPolicy *policy,
+    const BnTransformerGPUSmallDenseNativeQuantLayerPolicy *policy,
     int layer,
-    int small_dense_exact_native_default,
-    int small_dense_exact_native_to_layer) {
-    BnTransformerGPUSmallDenseExactNativeLayerUsePolicy use = {0};
+    int small_dense_native_quant_default,
+    int small_dense_native_quant_to_layer) {
+    BnTransformerGPUSmallDenseNativeQuantLayerUsePolicy use = {0};
     if (!policy)
         return use;
 
     use.use_layer = policy->from_layer >= 0 &&
                     layer >= policy->from_layer &&
                     (policy->to_layer < 0 || layer <= policy->to_layer);
-    use.small_dense_exact_native_path =
-        small_dense_exact_native_default &&
-        (small_dense_exact_native_to_layer < 0 ||
-         layer <= small_dense_exact_native_to_layer);
-    if (use.small_dense_exact_native_path)
+    use.small_dense_native_quant_path =
+        small_dense_native_quant_default &&
+        (small_dense_native_quant_to_layer < 0 ||
+         layer <= small_dense_native_quant_to_layer);
+    if (use.small_dense_native_quant_path)
         use.use_layer = 1;
 
     int reference_attention =
@@ -2198,8 +2198,8 @@ bn_transformer_gpu_small_dense_exact_native_layer_use_policy(
         (use.use_layer || reference_attention) && !policy->ffn_only;
     use.use_ffn = use.use_layer && !policy->attn_only;
     use.use_ffn_down = use.use_ffn;
-    if (use.small_dense_exact_native_path &&
-        !bn_transformer_gpu_small_dense_exact_native_ffn_down_enabled(
+    if (use.small_dense_native_quant_path &&
+        !bn_transformer_gpu_small_dense_native_quant_ffn_down_enabled(
             gpu, c))
         use.use_ffn_down = 0;
     return use;
