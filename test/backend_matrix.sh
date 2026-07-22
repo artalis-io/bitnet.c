@@ -2116,6 +2116,11 @@ if grep -n '^[[:space:]]*setenv("BN_GPU_Q6_Q8K_REFINE_TOP"\|^[[:space:]]*setenv(
     fail=1
 fi
 
+if grep -n '^[[:space:]]*\(setenv\|unsetenv\)("BN_CUDA_[^"]*\(QWEN\|SMALL_QWEN\|ALL2_Q4Q6\|EXACT\|SMALL_DENSE_Q8\|Q8_MOE_CPU_ROUTE_RESIDENT\)"' test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer policy tests must use canonical behavior CUDA env vars; legacy aliases belong in GPU policy alias tests"
+    fail=1
+fi
+
 if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN' src/main.c >/dev/null 2>&1; then
     echo "CLI small-dense native-quant options must expose behavior-named env policy"
     fail=1
