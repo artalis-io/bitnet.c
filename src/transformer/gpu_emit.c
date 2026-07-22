@@ -1811,7 +1811,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 bn_transformer_gpu_exact_silu_active_flags(exact_silu));
         }
         uint32_t shared_down_flags =
-            bn_transformer_gpu_matvec_exact_kquant_flags(
+            bn_transformer_gpu_matvec_reference_kquant_flags(
                 shared_info.down_type, shared_gateup.use_kquant_dot);
         emit_context_matvec_flags(
             ctx, shared_info.down_type,

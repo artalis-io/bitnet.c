@@ -3582,6 +3582,11 @@ if grep -n 'bn_transformer_gpu_matvec_q8k_dot_flags\|bn_transformer_gpu_matvec_e
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_matvec_exact_kquant_flags' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer GPU reference K-quant matvec flag policy must use reference behavior names"
+    fail=1
+fi
+
 if grep -n 'BN_QUANT_GPU_MATVEC_FLAG_Q8K_DOT\|BN_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K\|BN_BACKEND_QUANT_GPU_MATVEC_FLAG_Q8K_DOT\|BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_Q6K' include/quant.h include/backend_quant.h src/quant/registry.c src/transformer/gpu_emit.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Quant GPU matvec flag macros must use behavior-named K-quant names"
     fail=1
