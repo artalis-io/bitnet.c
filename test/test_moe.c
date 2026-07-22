@@ -252,14 +252,14 @@ static void test_qwen2moe_arch_config(void) {
     assert(c.moe_norm_topk_prob == 0);
     assert(c.moe_exact_silu == 1);
     assert((c.policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU) != 0);
-    assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
-    assert(bn_moe_gateup_task_flags(&c) ==
+    assert(bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
+    assert(bn_moe_float_kquant_gateup_fallback_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     assert(bn_model_arch_moe_prefers_exact_gpu_attention(&c));
     assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
 
     BnConfig dense = {0};
-    assert(bn_moe_gateup_task_flags(&dense) == 0);
+    assert(bn_moe_float_kquant_gateup_fallback_task_flags(&dense) == 0);
 
     printf("PASSED\n");
 }

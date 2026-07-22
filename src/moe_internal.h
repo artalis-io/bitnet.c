@@ -75,7 +75,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *map,
                                     int expert_idx, int proj);
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
-uint32_t bn_moe_gateup_task_flags(const BnConfig *c);
+uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c);
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 int bn_moe_policy_exact_silu(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);

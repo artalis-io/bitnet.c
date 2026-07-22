@@ -403,7 +403,7 @@ bn_transformer_gpu_shared_expert_gateup_policy(
 }
 
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
-    return bn_moe_gateup_task_flags(c);
+    return bn_moe_float_kquant_gateup_fallback_task_flags(c);
 }
 
 int bn_transformer_gpu_prefill_quant_matmul_backend_available(

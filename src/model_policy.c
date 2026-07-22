@@ -168,9 +168,9 @@ int bn_model_config_shared_expert_hidden_dim(const BnConfig *config) {
     return config->shared_expert_intermediate_size;
 }
 
-int bn_model_config_moe_forces_float_kquant_gateup(
+int bn_model_config_moe_requires_float_kquant_gateup_fallback(
     const BnConfig *config) {
-    return bn_model_arch_moe_forces_float_kquant_gateup(config);
+    return bn_model_arch_moe_requires_float_kquant_gateup_fallback(config);
 }
 
 int bn_model_config_moe_uses_scaled_router_input(

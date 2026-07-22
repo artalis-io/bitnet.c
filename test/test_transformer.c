@@ -1419,7 +1419,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_GPU_PREFILL_MATMUL");
 
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) == 0);
-    c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP;
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK;
     assert(bn_transformer_gpu_moe_gateup_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
     c.policy_flags = 0;
@@ -3359,7 +3359,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
     assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_reference_activation(&c));
-    assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(bn_model_arch_moe_uses_dense_residual_branch(&c));
     assert(bn_model_arch_loads_extra_ffn_post_norms(&c));
@@ -3431,7 +3431,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_dense_attention_only(&c));
     assert(!bn_model_arch_uses_large_dense_shape(&c));
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
-    assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
     assert(!bn_model_arch_moe_uses_scaled_router_input(&c));
     assert(!bn_model_arch_moe_uses_dense_residual_branch(&c));
@@ -3529,7 +3529,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(!bn_model_arch_requires_float_kquant_fallback(&c));
-    assert(!bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(!bn_model_arch_moe_prefers_exact_gpu_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
            BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
@@ -3563,9 +3563,9 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     c.dim = 0;
 
-    c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK |
                       BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION;
-    assert(bn_model_arch_moe_forces_float_kquant_gateup(&c));
+    assert(bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_model_arch_moe_prefers_exact_gpu_attention(&c));
 
     char name[128];

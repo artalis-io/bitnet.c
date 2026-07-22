@@ -134,7 +134,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     int moe_hidden = route_policy.expert_hidden_dim;
     BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(c);
     int K = route_policy.active_experts;
-    uint32_t gateup_flags = bn_moe_gateup_task_flags(c);
+    uint32_t gateup_flags =
+        bn_moe_float_kquant_gateup_fallback_task_flags(c);
     double t0;
 
     // 1. RMSNorm input

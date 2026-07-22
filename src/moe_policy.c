@@ -2,8 +2,8 @@
 #include "backend_quant.h"
 #include "model_internal.h"
 
-uint32_t bn_moe_gateup_task_flags(const BnConfig *c) {
-    return bn_model_config_moe_forces_float_kquant_gateup(c)
+uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c) {
+    return bn_model_config_moe_requires_float_kquant_gateup_fallback(c)
         ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT
         : 0u;
 }

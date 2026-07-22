@@ -4202,7 +4202,7 @@ if awk '/^int bn_moe_can_batch_shared_gateup/{flag=1} /^void bn_moe_quant_matvec
     fail=1
 fi
 
-if grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_execute.c >/dev/null 2>&1; then
+if grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|bn_moe_gateup_task_flags\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE policy helpers for float K-quant gate/up task flags"
     fail=1
 fi
@@ -4217,7 +4217,22 @@ if awk '/^int bn_moe_policy_can_batch_loaded_shared_gateup/{flag=1} /^int bn_moe
     fail=1
 fi
 
-if ! grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_policy.c >/dev/null 2>&1; then
+if grep -n 'bn_model_arch_moe_forces_float_kquant_gateup\|bn_model_config_moe_forces_float_kquant_gateup\|bn_moe_gateup_task_flags\|BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP\([^_]\|$\)' \
+    include/model_arch.h \
+    include/model_internal.h \
+    src/model_arch.c \
+    src/model_policy.c \
+    src/moe_internal.h \
+    src/moe_policy.c \
+    src/moe_execute.c \
+    src/transformer/gpu_policy.c \
+    test/test_moe.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "MoE float K-quant gate/up fallback policy must use fallback behavior names"
+    fail=1
+fi
+
+if ! grep -n 'bn_model_arch_moe_requires_float_kquant_gateup_fallback\|BN_MATVEC_TASK_FORCE_FLOAT_KQUANT' src/moe_policy.c >/dev/null 2>&1; then
     echo "MoE float K-quant gate/up task flag policy must live in src/moe_policy.c"
     fail=1
 fi

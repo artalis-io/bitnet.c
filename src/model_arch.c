@@ -269,8 +269,9 @@ int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
     return bn_model_arch_prefill_uses_decode_for_parity(c);
 }
 
-int bn_model_arch_moe_forces_float_kquant_gateup(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP) != 0);
+int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK) != 0);
 }
 
 int bn_model_arch_moe_prefers_exact_gpu_attention(const BnConfig *c) {
@@ -807,7 +808,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
             BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU |
-            BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP |
+            BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK |
             BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
             BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK,
