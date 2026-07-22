@@ -114,6 +114,38 @@ static inline int bn_backend_quant_is_q3k(int type) {
     return bn_quant_format_is_q3k(type);
 }
 
+static inline int bn_backend_quant_uses_asymmetric_kquant(int type) {
+    return bn_quant_format_is_q4k(type);
+}
+
+static inline int bn_backend_quant_uses_deinterleaved_kquant(int type) {
+    return bn_quant_format_is_q5k(type);
+}
+
+static inline int bn_backend_quant_uses_down_kquant(int type) {
+    return bn_quant_format_is_q6k(type);
+}
+
+static inline int bn_backend_quant_uses_prepared_native_quant(int type) {
+    return bn_quant_format_is_q8k(type);
+}
+
+static inline int bn_backend_quant_uses_native_quant(int type) {
+    return bn_quant_format_is_q8_0(type);
+}
+
+static inline int bn_backend_quant_uses_legacy_block_quant(int type) {
+    return bn_quant_format_is_q5_0(type);
+}
+
+static inline int bn_backend_quant_uses_dense_bfloat(int type) {
+    return bn_quant_format_is_bf16(type);
+}
+
+static inline int bn_backend_quant_uses_compact_kquant(int type) {
+    return bn_quant_format_is_q3k(type);
+}
+
 static inline int bn_backend_quant_requires_float_kquant_fallback(int type) {
     return bn_quant_format_requires_float_kquant_fallback(type);
 }
@@ -314,21 +346,21 @@ static inline int bn_backend_quant_moe_routed_native_quant(int gate_type,
 }
 
 static inline int bn_backend_quant_moe_routed_op_uses_native_quant(int type) {
-    return bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int
 bn_backend_quant_moe_routed_op_uses_asymmetric_kquant(int type) {
-    return bn_backend_quant_is_q4k(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type);
 }
 
 static inline int bn_backend_quant_moe_down_uses_down_kquant(int down_type) {
-    return bn_quant_format_is_q6k(down_type);
+    return bn_backend_quant_uses_down_kquant(down_type);
 }
 
 static inline int bn_backend_quant_moe_down_uses_asymmetric_kquant(
     int down_type) {
-    return bn_quant_format_is_q4k(down_type);
+    return bn_backend_quant_uses_asymmetric_kquant(down_type);
 }
 
 static inline int bn_backend_quant_moe_down_uses_graph_kquant(int down_type) {
@@ -338,9 +370,9 @@ static inline int bn_backend_quant_moe_down_uses_graph_kquant(int down_type) {
 
 static inline int bn_backend_quant_gpu_graph_gateup_needs_prepared_input_scratch(
     int type) {
-    return bn_backend_quant_is_q4k(type) ||
-           bn_backend_quant_is_q5k(type) ||
-           bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type) ||
+           bn_backend_quant_uses_deinterleaved_kquant(type) ||
+           bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int bn_backend_quant_gpu_graph_matvec_needs_prepared_input_scratch(
@@ -355,36 +387,36 @@ static inline int bn_backend_quant_gpu_graph_matvec_down_kquant_needs_dot_scratc
 
 static inline int bn_backend_quant_gpu_graph_matvec_asymmetric_kquant_needs_dot_scratch(
     int type) {
-    return bn_backend_quant_is_q4k(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type);
 }
 
 static inline int bn_backend_quant_deinterleaved_kquant_pair_matvec(
     int first_type, int second_type) {
-    return bn_backend_quant_is_q5k(first_type) &&
-           bn_backend_quant_is_q5k(second_type);
+    return bn_backend_quant_uses_deinterleaved_kquant(first_type) &&
+           bn_backend_quant_uses_deinterleaved_kquant(second_type);
 }
 
 static inline int bn_backend_quant_asymmetric_kquant_pair_matvec(
     int first_type, int second_type) {
     return bn_backend_quant_moe_down_uses_down_kquant(first_type) &&
-           bn_backend_quant_is_q4k(second_type);
+           bn_backend_quant_uses_asymmetric_kquant(second_type);
 }
 
 static inline int bn_backend_quant_symmetric_kquant_pair_matvec(
     int first_type,
     int second_type) {
-    return bn_backend_quant_is_q4k(first_type) &&
-           bn_backend_quant_is_q4k(second_type);
+    return bn_backend_quant_uses_asymmetric_kquant(first_type) &&
+           bn_backend_quant_uses_asymmetric_kquant(second_type);
 }
 
 static inline int bn_backend_quant_supports_native_quant_small_state_matvec(
     int type) {
-    return bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int bn_backend_quant_supports_native_quant_f16_cache_matvec(
     int type) {
-    return bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int bn_backend_quant_supports_f16_float_cache_matvec(
@@ -394,7 +426,7 @@ static inline int bn_backend_quant_supports_f16_float_cache_matvec(
 
 static inline int bn_backend_quant_supports_packed_kquant_f16_cache_matvec(
     int type) {
-    return bn_backend_quant_is_q5k(type);
+    return bn_backend_quant_uses_deinterleaved_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_down_kquant_f16_cache_matvec(
@@ -408,7 +440,7 @@ static inline int bn_backend_quant_supports_kquant_logits_cache_matvec(
 }
 
 static inline int bn_backend_quant_supports_legacy_block_matvec(int type) {
-    return bn_quant_format_is_q5_0(type);
+    return bn_backend_quant_uses_legacy_block_quant(type);
 }
 
 static inline int bn_backend_quant_supports_down_kquant_dot_matvec(int type) {
@@ -420,40 +452,40 @@ static inline int bn_backend_quant_supports_down_kquant_warp_matvec(int type) {
 }
 
 static inline int bn_backend_quant_supports_asymmetric_kquant_dot_matvec(int type) {
-    return bn_backend_quant_is_q4k(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(int type) {
-    return bn_backend_quant_is_q4k(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(int type) {
-    return bn_backend_quant_is_q5k(type);
+    return bn_backend_quant_uses_deinterleaved_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_native_quant_prepared_input_matvec(int type) {
-    return bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int bn_backend_quant_supports_native_quant_warp_matvec(int type) {
-    return bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int
 bn_backend_quant_supports_prepared_native_quant_matvec(int type) {
-    return bn_backend_quant_is_q8k(type);
+    return bn_backend_quant_uses_prepared_native_quant(type);
 }
 
 static inline int bn_backend_quant_supports_asymmetric_kquant_dot_matmul(int type) {
-    return bn_backend_quant_is_q4k(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_asymmetric_kquant_prepared_input_matmul(int type) {
-    return bn_backend_quant_is_q4k(type);
+    return bn_backend_quant_uses_asymmetric_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matmul(int type) {
-    return bn_backend_quant_is_q5k(type);
+    return bn_backend_quant_uses_deinterleaved_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_down_kquant_dot_matmul(int type) {
@@ -461,11 +493,11 @@ static inline int bn_backend_quant_supports_down_kquant_dot_matmul(int type) {
 }
 
 static inline int bn_backend_quant_supports_native_quant_matmul(int type) {
-    return bn_backend_quant_is_q8_0(type);
+    return bn_backend_quant_uses_native_quant(type);
 }
 
 static inline int bn_backend_quant_supports_legacy_block_matmul(int type) {
-    return bn_quant_format_is_q5_0(type);
+    return bn_backend_quant_uses_legacy_block_quant(type);
 }
 
 static inline int bn_backend_quant_supports_legacy_block_fused_gateup(
@@ -581,7 +613,7 @@ static inline int bn_backend_quant_moe_all_active_two_kquant_routed_op(int op_ty
                                                            int down_type,
                                                            int hidden_dim,
                                                            int dim) {
-    return bn_backend_quant_is_q4k(op_type) &&
+    return bn_backend_quant_uses_asymmetric_kquant(op_type) &&
            bn_backend_quant_moe_all_active_two_kquant_shape(n_experts, k,
                                                             down_type,
                                                             hidden_dim, dim);
@@ -710,19 +742,19 @@ static inline BnBackendQuantAuxCacheDequant
 bn_backend_quant_aux_cache_dequant_route(int type,
                                          int force_asymmetric_kquant_f32,
                                          int down_kquant_f16_cache) {
-    if (bn_backend_quant_is_bf16(type))
+    if (bn_backend_quant_uses_dense_bfloat(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DENSE_BFLOAT_TO_F16;
-    if (bn_backend_quant_is_q8_0(type))
+    if (bn_backend_quant_uses_native_quant(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_NATIVE_QUANT_TO_F16;
-    if (bn_backend_quant_is_q5_0(type))
+    if (bn_backend_quant_uses_legacy_block_quant(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_LEGACY_BLOCK_TO_F16;
-    if (bn_backend_quant_is_q3k(type))
+    if (bn_backend_quant_uses_compact_kquant(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_COMPACT_KQUANT_TO_F16;
-    if (bn_backend_quant_is_q4k(type))
+    if (bn_backend_quant_uses_asymmetric_kquant(type))
         return force_asymmetric_kquant_f32
             ? BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_ASYMMETRIC_KQUANT_TO_F32
             : BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_ASYMMETRIC_KQUANT_TO_F16;
-    if (bn_backend_quant_is_q5k(type))
+    if (bn_backend_quant_uses_deinterleaved_kquant(type))
         return BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_DEINTERLEAVED_KQUANT_TO_F16;
     if (bn_backend_quant_moe_down_uses_down_kquant(type))
         return down_kquant_f16_cache
@@ -755,7 +787,7 @@ static inline int bn_backend_quant_avoids_quant_matmul_on_f16_input(
 static inline int
 bn_backend_quant_supports_requested_asymmetric_kquant_quant_matmul(
     int type) {
-    return bn_backend_quant_is_q4k(type) &&
+    return bn_backend_quant_uses_asymmetric_kquant(type) &&
            bn_quant_format_supports_requested_quant_matmul(type);
 }
 

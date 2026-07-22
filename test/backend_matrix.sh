@@ -3482,6 +3482,11 @@ if grep -n 'bn_backend_quant_moe_all2_q4q6\|bn_backend_quant_moe_all2_q4_or_q6\|
     fail=1
 fi
 
+if awk '/^static inline int bn_backend_quant_moe_route_native_quant/{flag=1} /^static inline int bn_backend_quant_eager_aux_cache_supported/{flag=0} flag{print}' include/backend_quant.h | grep -n 'bn_backend_quant_is_q8_0\|bn_backend_quant_is_q5_0\|bn_backend_quant_is_q4k\|bn_backend_quant_is_q5k\|bn_backend_quant_is_q8k\|bn_backend_quant_is_q3k\|bn_backend_quant_is_bf16\|bn_quant_format_is_q[0-9]\|bn_quant_format_is_bf16' >/dev/null 2>&1; then
+    echo "Backend quant behavior helpers must compose behavior-named format predicates, not exact-format shims"
+    fail=1
+fi
+
 if grep -n 'BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8\|BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE\|bn_model_arch_allows_small_dense_exact_q4_q8\|bn_model_arch_small_dense_exact_q4_q8_to_layer\|bn_model_arch_allows_small_dense_q8_logit_refine\|bn_model_arch_uses_small_dense_q8_native_shape\|bn_gpu_policy_backend_small_dense_exact_q4_q8_supported\|bn_gpu_policy_small_dense_exact_q4_q8_disabled\|bn_gpu_policy_q4_q8_fused_gateup_enabled\|bn_gpu_policy_q4_q8_attn_only_enabled\|bn_gpu_policy_q4_q8_ffn_only_enabled\|bn_gpu_policy_q4_q8_from_layer_or_default\|bn_gpu_policy_q4_q8_to_layer_or_default\|bn_gpu_policy_q4_q8_ffn_down_enabled\|bn_gpu_policy_q4_q8_prepared_layer_default_enabled' include/model_arch.h include/gpu_policy.h src/model_arch.c src/gpu_policy.c src/transformer/gpu_policy.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Small-dense exact-native policy must use behavior names, not Q4/Q8 internal helper names"
     fail=1
