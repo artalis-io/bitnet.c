@@ -20250,17 +20250,17 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             moe_all_active_two_fast_moe_ffn &&
                             !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled() &&
                             !bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled();
-                        int moe_all_active_two_exact_down_layer_selected =
-                            bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(
+                        int moe_all_active_two_f32_4row_layer_selected =
+                            bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(
                                 moe_layer);
-                        int moe_all_active_two_f32_exact_4row_down =
+                        int moe_all_active_two_f32_4row_down =
                             moe_all_active_two_kquant &&
                             moe_all_active_two_fast_moe_ffn &&
                             down->f32_data &&
-                            moe_all_active_two_exact_down_layer_selected &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled() &&
-                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled();
-                        if (moe_all_active_two_f32_exact_4row_down) {
+                            moe_all_active_two_f32_4row_layer_selected &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled() &&
+                            !bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled();
+                        if (moe_all_active_two_f32_4row_down) {
                             int row4_blocks = (dim + 3) / 4;
                             float skip_eps =
                                 bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(

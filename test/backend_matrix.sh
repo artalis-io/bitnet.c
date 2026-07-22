@@ -3540,6 +3540,11 @@ if grep -n 'bn_gpu_policy_all_active_two_kquant_q6k_pair_down_enabled\|bn_gpu_po
     fail=1
 fi
 
+if grep -n 'all_active_two_kquant_moe_down_f32_exact_4row\|bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row\|moe_all_active_two_f32_exact_4row_down\|moe_all_active_two_exact_down_layer_selected' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "All-active-two K-quant MoE F32 4-row policy helpers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_moe_all2_q4q6\|bn_backend_quant_moe_all2_q4_or_q6\|bn_backend_quant_moe_all_active_two_q4_or_q6_shape\|moe_all_active_two_q4_or_q6\|all_active_two_q4_or_q6' include/backend_quant.h include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Backend quant all-active-two MoE predicates must use behavior names, not Q4/Q6 shorthand"
     fail=1

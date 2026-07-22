@@ -3233,10 +3233,13 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_FLOAT_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_FLOAT_4ROW_DOWN");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN_LAYERS");
     unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_LAYERS");
     unsetenv("BN_CUDA_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_LAYERS");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL2_Q4Q6_Q6K_F32_EXACT_4ROW_DOWN");
     unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_DOWN_SKIP_EPS");
@@ -3612,9 +3615,9 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled());
     assert(!bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled());
     assert(!bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(4));
-    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled());
-    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(4));
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled());
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) ==
            0.25f);
     assert(!bn_gpu_policy_all_active_two_kquant_moe_cpu_attention_safe_disabled());
@@ -3708,11 +3711,11 @@ static void test_gpu_policy_helpers(void) {
            "1", 1);
     setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN", "1",
            1);
-    setenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_LAYERS",
+    setenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN_LAYERS",
            "6", 1);
-    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_DEFAULT",
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN_DEFAULT",
            "1", 1);
-    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN",
+    setenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN",
            "1", 1);
     setenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_DOWN_SKIP_EPS", "0.125", 1);
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_pair_path_enabled());
@@ -3727,10 +3730,10 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(6));
-    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(4));
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(6));
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(4));
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) >
            0.124f);
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) <
@@ -3746,8 +3749,11 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_F32_CACHE");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_FLOAT_4ROW_DOWN");
+    unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN_LAYERS");
     unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_LAYERS");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN_DEFAULT");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN_DEFAULT");
+    unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_4ROW_DOWN");
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_F32_EXACT_4ROW_DOWN");
     unsetenv("BN_CUDA_ALL_ACTIVE_TWO_KQUANT_DOWN_SKIP_EPS");
     setenv("BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_FAST_FFN", "1", 1);
@@ -3808,10 +3814,10 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(6));
-    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(4));
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(6));
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(4));
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) >
            0.124f);
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) <
@@ -3928,10 +3934,10 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_cache_enabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_default_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_float_4row_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(9));
-    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_layer_selected(7));
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_default_disabled());
-    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_exact_4row_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(9));
+    assert(!bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_layer_selected(7));
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_default_disabled());
+    assert(bn_gpu_policy_all_active_two_kquant_moe_down_f32_4row_disabled());
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) >
            0.062f);
     assert(bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(0.25f) <
