@@ -621,21 +621,21 @@ int main(int argc, char **argv) {
     if (args.small_dense_exact_native_to_layer >= 0) {
         char layer_env[32];
         snprintf(layer_env, sizeof(layer_env), "%d", args.small_dense_exact_native_to_layer);
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER", layer_env, 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER", layer_env, 1);
     }
     if (args.small_dense_exact_native_tail >= 0) {
         char tail_env[32];
         snprintf(tail_env, sizeof(tail_env), "%d", args.small_dense_exact_native_tail);
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", tail_env, 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE", tail_env, 1);
     }
     if (args.small_dense_exact_native_attn_only)
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY", "1", 1);
     if (args.small_dense_exact_native_ffn_only)
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY", "1", 1);
     if (args.small_dense_exact_native_disable_gateup)
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP", "1", 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP", "1", 1);
     if (args.small_dense_exact_native_disable_ffn_down)
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN", "1", 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN", "1", 1);
     if (args.gpu_flash_min_kv >= 0) {
         char min_kv_env[32];
         snprintf(min_kv_env, sizeof(min_kv_env), "%d", args.gpu_flash_min_kv);

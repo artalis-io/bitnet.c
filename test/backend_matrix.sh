@@ -2111,7 +2111,7 @@ if grep -n '^[[:space:]]*setenv("BN_GPU_Q6_Q8K_REFINE_TOP"\|^[[:space:]]*setenv(
     fail=1
 fi
 
-if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP\|BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN' src/main.c >/dev/null 2>&1; then
+if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN' src/main.c >/dev/null 2>&1; then
     echo "CLI small-dense exact-native options must expose behavior-named env policy"
     fail=1
 fi
@@ -2131,8 +2131,8 @@ if grep -n 'BITNET_ARGS+=(--q4-q8\|cmd.append("--q4-q8\|cmd += \["--q4-q8\|BITNE
     fail=1
 fi
 
-if ! grep -n 'BN_GPU_SMALL_DENSE_EXACT_NATIVE\|BN_GPU_Q4_Q8\|BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|BN_METAL_DISABLE_Q4_Q8_DEFAULT' src/gpu_policy.c >/dev/null 2>&1; then
-    echo "GPU small-dense exact-native policy must keep canonical env names with Q4/Q8 compatibility aliases"
+if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT\|BN_GPU_SMALL_DENSE_EXACT_NATIVE\|BN_GPU_Q4_Q8\|BN_METAL_DISABLE_SMALL_DENSE_NATIVE_QUANT_DEFAULT\|BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|BN_METAL_DISABLE_Q4_Q8_DEFAULT' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU small-dense native-quant policy must keep behavior-named canonical env names with legacy compatibility aliases"
     fail=1
 fi
 

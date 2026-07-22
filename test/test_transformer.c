@@ -836,13 +836,13 @@ static void test_gpu_capability_routing(void) {
         &gpu, BN_GGUF_TENSOR_Q5_K, 0));
     unsetenv("BN_CUDA_ENABLE_Q5K_FUSED_GATEUP");
 
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
     assert(!bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(0));
     assert(bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(1));
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP", "1", 1);
     assert(!bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(1));
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_GATEUP");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP");
     setenv("BN_GPU_Q4_Q8_DISABLE_GATEUP", "1", 1);
     assert(!bn_transformer_gpu_small_dense_native_quant_fused_gateup_enabled(1));
     unsetenv("BN_GPU_Q4_Q8_DISABLE_GATEUP");
@@ -853,13 +853,13 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_gateup_split_enabled());
     unsetenv("BN_GPU_DISABLE_GATEUP_SPLIT");
 
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN");
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
     assert(!bn_transformer_gpu_small_dense_native_quant_down_enabled(0));
     assert(bn_transformer_gpu_small_dense_native_quant_down_enabled(1));
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN", "1", 1);
     assert(!bn_transformer_gpu_small_dense_native_quant_down_enabled(1));
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_DISABLE_FFN_DOWN");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN");
     setenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN", "1", 1);
     assert(!bn_transformer_gpu_small_dense_native_quant_down_enabled(1));
     unsetenv("BN_GPU_Q4_Q8_DISABLE_FFN_DOWN");
@@ -2001,12 +2001,12 @@ static void test_gpu_policy_helpers(void) {
 
     memset(&c, 0, sizeof(c));
     c.n_layers = 40;
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FROM_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY");
     unsetenv("BN_GPU_Q4_Q8");
     unsetenv("BN_GPU_Q4_Q8_FROM_LAYER");
     unsetenv("BN_GPU_Q4_Q8_TO_LAYER");
@@ -2021,7 +2021,7 @@ static void test_gpu_policy_helpers(void) {
     assert(small_dense_native_quant_policy.to_layer == -1);
     assert(!small_dense_native_quant_policy.attn_only);
     assert(!small_dense_native_quant_policy.ffn_only);
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT", "1", 1);
     small_dense_native_quant_policy = bn_transformer_gpu_small_dense_native_quant_layer_policy(&c);
     assert(small_dense_native_quant_policy.from_layer == 39);
     assert(small_dense_native_quant_policy.to_layer == 6);
@@ -2030,27 +2030,27 @@ static void test_gpu_policy_helpers(void) {
     assert(small_dense_native_quant_policy.from_layer == 39);
     assert(small_dense_native_quant_policy.to_layer == -1);
     unsetenv("BN_METAL_NATIVE_QUANT_PREPARED");
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", "10", 1);
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER", "20", 1);
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FROM_LAYER", "10", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER", "20", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY", "1", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY", "1", 1);
     small_dense_native_quant_policy = bn_transformer_gpu_small_dense_native_quant_layer_policy(&c);
     assert(small_dense_native_quant_policy.from_layer == 10);
     assert(small_dense_native_quant_policy.to_layer == 20);
     assert(small_dense_native_quant_policy.attn_only);
     assert(small_dense_native_quant_policy.ffn_only);
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER");
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", "4", 1);
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER");
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE", "4", 1);
     small_dense_native_quant_policy = bn_transformer_gpu_small_dense_native_quant_layer_policy(&c);
     assert(small_dense_native_quant_policy.to_layer == 35);
-    setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", "100", 1);
+    setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE", "100", 1);
     small_dense_native_quant_policy = bn_transformer_gpu_small_dense_native_quant_layer_policy(&c);
     assert(small_dense_native_quant_policy.to_layer == -1);
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY");
-    unsetenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FROM_LAYER");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY");
+    unsetenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY");
     setenv("BN_GPU_Q4_Q8", "1", 1);
     setenv("BN_GPU_Q4_Q8_FROM_LAYER", "3", 1);
     small_dense_native_quant_policy = bn_transformer_gpu_small_dense_native_quant_layer_policy(&c);
@@ -2601,6 +2601,10 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_Q8_CPU_ATTN_SAFE");
+    setenv("BN_CUDA_DISABLE_SMALL_DENSE_NATIVE_QUANT", "1", 1);
+    assert(!bn_transformer_gpu_small_dense_native_quant_default(
+        &gpu, &c, -1));
+    unsetenv("BN_CUDA_DISABLE_SMALL_DENSE_NATIVE_QUANT");
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_EXACT_Q4_Q8", "1", 1);
     assert(!bn_transformer_gpu_small_dense_native_quant_default(
         &gpu, &c, -1));
@@ -2609,6 +2613,10 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_gpu_small_dense_native_quant_default(
         &gpu, &c, -1));
     unsetenv("BN_CUDA_DISABLE_SMALL_QWEN_EXACT_Q4_Q8");
+    setenv("BN_CUDA_ENABLE_SMALL_DENSE_NATIVE_QUANT_FFN_DOWN", "1", 1);
+    assert(bn_transformer_gpu_small_dense_native_quant_ffn_down_enabled(
+        &gpu, &c));
+    unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_NATIVE_QUANT_FFN_DOWN");
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN", "1", 1);
     assert(bn_transformer_gpu_small_dense_native_quant_ffn_down_enabled(
         &gpu, &c));
