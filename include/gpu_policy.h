@@ -537,15 +537,15 @@ int bn_gpu_policy_metal_shared_weights_enabled(void);
 int bn_gpu_policy_metal_specialized_native_quant_enabled(void);
 int bn_gpu_policy_specialized_native_quant_decode_path_enabled(void);
 int bn_gpu_policy_metal_native_quant_barriers_enabled(void);
-int bn_gpu_policy_metal_exact_native_matvec_supported(int tensor_type,
-                                               int exact_native_enabled,
+int bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(int tensor_type,
+                                               int small_dense_native_quant_enabled,
                                                int native_quant_prepared,
                                                int has_native_quant_pipeline,
-                                               int has_exact_native_pipeline,
+                                               int has_native_quant_pipeline_unprepared,
                                                int has_prepared_native_quant_pipeline);
-int bn_gpu_policy_metal_exact_native_graph_path_supported(
+int bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
     int tensor_type,
-    int exact_native_enabled,
+    int small_dense_native_quant_enabled,
     int native_quant_prepared,
     int prepared_path,
     int has_native_quant_pipeline,

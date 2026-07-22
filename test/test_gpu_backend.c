@@ -4487,35 +4487,35 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q8_0) == -1);
     assert(!bn_gpu_policy_metal_prepared_stacked_upload_blocked(
         BN_GGUF_TENSOR_Q4_0));
-    assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 0, 0, 1, 1, 0));
     bn_gpu_policy_metal_apply_small_dense_native_quant_default();
     assert(bn_gpu_policy_metal_small_dense_native_quant_enabled());
-    assert(bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 1, 0));
-    assert(bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 1));
-    assert(bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 1, 1));
-    assert(bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 1, 1));
-    assert(!bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 0, 1, 1));
-    assert(!bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q6_K, 1, 0, 0, 1, 1));
-    assert(!bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q4_0, 0, 0, 0, 1, 1));
-    assert(!bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 0, 1));
-    assert(!bn_gpu_policy_metal_exact_native_graph_path_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 1, 0));
-    assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q6_K, 1, 0, 1, 1, 0));
-    assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 0, 1, 0));
-    assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 0, 1, 0, 0));
-    assert(!bn_gpu_policy_metal_exact_native_matvec_supported(
+    assert(!bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
         BN_GGUF_TENSOR_Q4_0, 1, 1, 1, 0, 0));
     assert(getenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER") != NULL);
     assert(bn_gpu_policy_small_dense_native_quant_from_layer_or_default(40) ==

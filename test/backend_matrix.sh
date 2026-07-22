@@ -2233,7 +2233,7 @@ done
 if awk '
     /static int metal_matvec\(/ { in_fn=1 }
     in_fn && /type == BN_GGUF_TENSOR_/ { bad=1 }
-    in_fn && /bn_gpu_policy_metal_exact_native_matvec_supported/ { saw_q4=1 }
+    in_fn && /bn_gpu_policy_metal_small_dense_native_quant_matvec_supported/ { saw_q4=1 }
     in_fn && /bn_gpu_policy_metal_specialized_native_quant_matvec_supported/ { saw_q6=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
@@ -2246,7 +2246,7 @@ if awk '
     /static int metal_execute\(/ { in_fn=1 }
     in_fn && /^static / && !/static int metal_execute\(/ { in_fn=0 }
     in_fn && /op->type == BN_GGUF_TENSOR_/ { bad=1 }
-    in_fn && /metal_exact_native_graph_path_supported/ { saw_q4=1 }
+    in_fn && /metal_small_dense_native_quant_graph_path_supported/ { saw_q4=1 }
     in_fn && /bn_gpu_policy_metal_specialized_native_quant_matvec_supported/ { saw_q6=1 }
     END { exit (bad || !saw_q4 || !saw_q6) ? 0 : 1 }
 ' src/gpu_metal.m >/dev/null 2>&1; then
@@ -2255,12 +2255,17 @@ if awk '
 fi
 
 if awk '
-    /static int metal_exact_native_graph_path_supported\(/ { in_fn=1 }
-    in_fn && /^static / && !/static int metal_exact_native_graph_path_supported\(/ { in_fn=0 }
-    in_fn && /bn_gpu_policy_metal_exact_native_graph_path_supported/ { saw_policy=1 }
+    /static int metal_small_dense_native_quant_graph_path_supported\(/ { in_fn=1 }
+    in_fn && /^static / && !/static int metal_small_dense_native_quant_graph_path_supported\(/ { in_fn=0 }
+    in_fn && /bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported/ { saw_policy=1 }
     END { exit saw_policy ? 1 : 0 }
 ' src/gpu_metal.m >/dev/null 2>&1; then
-    echo "Metal graph exact-native wrapper must delegate to GPU policy"
+    echo "Metal graph small-dense native-quant wrapper must delegate to GPU policy"
+    fail=1
+fi
+
+if grep -n 'bn_gpu_policy_metal_exact_native_matvec_supported\|bn_gpu_policy_metal_exact_native_graph_path_supported' include/gpu_policy.h src/gpu_policy.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Metal small-dense native-quant policy must not expose exact-native policy helper names"
     fail=1
 fi
 

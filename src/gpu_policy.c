@@ -3887,31 +3887,31 @@ int bn_gpu_policy_metal_native_quant_barriers_enabled(void) {
                                          "BN_METAL_Q8_BARRIERS");
 }
 
-int bn_gpu_policy_metal_exact_native_matvec_supported(
+int bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
     int tensor_type,
-    int exact_native_enabled,
+    int small_dense_native_quant_enabled,
     int native_quant_prepared,
     int has_native_quant_pipeline,
-    int has_exact_native_pipeline,
+    int has_native_quant_pipeline_unprepared,
     int has_prepared_native_quant_pipeline) {
-    if (!exact_native_enabled ||
+    if (!small_dense_native_quant_enabled ||
         !bn_backend_quant_supports_direct_native_quant_matvec(tensor_type) ||
         !has_native_quant_pipeline)
         return 0;
     return native_quant_prepared
         ? has_prepared_native_quant_pipeline
-        : has_exact_native_pipeline;
+        : has_native_quant_pipeline_unprepared;
 }
 
-int bn_gpu_policy_metal_exact_native_graph_path_supported(
+int bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
     int tensor_type,
-    int exact_native_enabled,
+    int small_dense_native_quant_enabled,
     int native_quant_prepared,
     int prepared_path,
     int has_native_quant_pipeline,
     int has_pipeline) {
     return native_quant_prepared == prepared_path &&
-           exact_native_enabled &&
+           small_dense_native_quant_enabled &&
            bn_backend_quant_supports_direct_native_quant_matvec(tensor_type) &&
            has_native_quant_pipeline &&
            has_pipeline;

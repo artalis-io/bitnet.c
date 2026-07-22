@@ -48,7 +48,7 @@ typedef struct {
     id<MTLComputePipelineState> exact_native_gateup_pipeline;
     id<MTLComputePipelineState> cpu_order_rmsnorm_pipeline;
     id<MTLComputePipelineState> specialized_native_matvec_pipeline;
-    int exact_native_enabled;
+    int small_dense_native_quant_enabled;
     int native_quant_barriers_enabled;
     int cpu_order_rmsnorm_enabled;
 
@@ -1041,14 +1041,14 @@ static void metal_encode_specialized_native_quant(
     }
 }
 
-static int metal_exact_native_graph_path_supported(BnMetalCtx *ctx,
+static int metal_small_dense_native_quant_graph_path_supported(BnMetalCtx *ctx,
                                             int tensor_type,
                                             int native_quant_prepared,
                                             int prepared_path,
                                             id<MTLComputePipelineState> pipeline)
 {
-    return bn_gpu_policy_metal_exact_native_graph_path_supported(
-        tensor_type, ctx->exact_native_enabled, native_quant_prepared, prepared_path,
+    return bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
+        tensor_type, ctx->small_dense_native_quant_enabled, native_quant_prepared, prepared_path,
         ctx->native_quant_pipeline != nil, pipeline != nil);
 }
 
@@ -1063,12 +1063,12 @@ static int metal_matvec(void *vctx, float *out, void *W_buf, const float *x,
     size_t x_size = (size_t)cols * sizeof(float);
     size_t out_size = (size_t)rows * sizeof(float);
     if (ensure_scratch(ctx, x_size, out_size) != 0) return -1;
-    int use_prepared_exact_native = bn_gpu_policy_metal_exact_native_matvec_supported(
-        type, ctx->exact_native_enabled, wbuf->native_quant_prepared,
+    int use_prepared_exact_native = bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
+        type, ctx->small_dense_native_quant_enabled, wbuf->native_quant_prepared,
         ctx->native_quant_pipeline != nil, 0,
         ctx->prepared_exact_native_matvec_pipeline != nil);
-    int use_exact_native = bn_gpu_policy_metal_exact_native_matvec_supported(
-        type, ctx->exact_native_enabled, wbuf->native_quant_prepared,
+    int use_exact_native = bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
+        type, ctx->small_dense_native_quant_enabled, wbuf->native_quant_prepared,
         ctx->native_quant_pipeline != nil, ctx->exact_native_matvec_pipeline != nil, 0);
     int use_specialized_native_quant =
         bn_gpu_policy_metal_specialized_native_quant_matvec_supported(
@@ -1334,12 +1334,12 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             if (shader == BN_GPU_SHADER_MATVEC) {
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (op->p[6] && wbuf &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->prepared_exact_native_matvec_pipeline)) {
                     pipeline = ctx->prepared_exact_native_matvec_pipeline;
                 } else if (op->p[6] && wbuf &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->exact_native_matvec_pipeline)) {
                     pipeline = ctx->exact_native_matvec_pipeline;
@@ -1352,28 +1352,28 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 pipeline = ctx->cpu_order_rmsnorm_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                        op->p[6] && op->W_buf &&
-                       metal_exact_native_graph_path_supported(
+                       metal_small_dense_native_quant_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 1,
                            ctx->prepared_exact_native_gateup_pipeline)) {
                 pipeline = ctx->prepared_exact_native_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                        op->p[6] && op->W_buf &&
-                       metal_exact_native_graph_path_supported(
+                       metal_small_dense_native_quant_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 0,
                            ctx->exact_native_gateup_pipeline)) {
                 pipeline = ctx->exact_native_gateup_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        (op->flags & 1u) && op->W_buf &&
-                       metal_exact_native_graph_path_supported(
+                       metal_small_dense_native_quant_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 1,
                            ctx->prepared_exact_native_split_pipeline)) {
                 pipeline = ctx->prepared_exact_native_split_pipeline;
             } else if (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                        (op->flags & 1u) && op->W_buf &&
-                       metal_exact_native_graph_path_supported(
+                       metal_small_dense_native_quant_graph_path_supported(
                            ctx, op->type,
                            ((BnMetalBuf *)op->W_buf)->native_quant_prepared, 0,
                            ctx->exact_native_split_pipeline)) {
@@ -1446,26 +1446,26 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
             int native_quant_deferred_pso =
                 pre_wbuf &&
                 ((shader == BN_GPU_SHADER_MATVEC && op->p[6] &&
-                  (metal_exact_native_graph_path_supported(
+                  (metal_small_dense_native_quant_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 1,
                        ctx->prepared_exact_native_matvec_pipeline) ||
-                   metal_exact_native_graph_path_supported(
+                   metal_small_dense_native_quant_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 0,
                        ctx->exact_native_matvec_pipeline))) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
-                  (metal_exact_native_graph_path_supported(
+                  (metal_small_dense_native_quant_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 1,
                        ctx->prepared_exact_native_split_pipeline) ||
-                   metal_exact_native_graph_path_supported(
+                   metal_small_dense_native_quant_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 0,
                        ctx->exact_native_split_pipeline))) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
-                  (metal_exact_native_graph_path_supported(
+                  (metal_small_dense_native_quant_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 1,
                        ctx->prepared_exact_native_gateup_pipeline) ||
-                   metal_exact_native_graph_path_supported(
+                   metal_small_dense_native_quant_graph_path_supported(
                        ctx, op->type, pre_wbuf->native_quant_prepared, 0,
                        ctx->exact_native_gateup_pipeline))));
             /* Skip redundant PSO switch — avoids GPU instruction cache flush */
@@ -1489,7 +1489,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 BnMetalBuf *wbuf = (BnMetalBuf *)op->W_buf;
                 if (!wbuf) continue;
                 if (op->p[6] &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->prepared_exact_native_matvec_pipeline)) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
@@ -1514,7 +1514,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->p[6] &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->exact_native_matvec_pipeline)) {
                     uint32_t n_tokens = params[2] ? params[2] : 1;
@@ -1747,7 +1747,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (!wbuf) continue;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
                 if ((op->flags & 1u) &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->prepared_exact_native_split_pipeline)) {
                     if (ensure_native_quant_scratch(ctx, op->cols, 1) != 0)
@@ -1765,7 +1765,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->rows] offset:0 atIndex:5];
                     [enc setBytes:params length:sizeof(params) atIndex:6];
                 } else if ((op->flags & 1u) &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->exact_native_split_pipeline)) {
                     if (ensure_native_quant_scratch(ctx, op->cols, 1) != 0)
@@ -1814,7 +1814,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 if (!wbuf) continue;
                 if (wbuf->bias_offset > 0) params[4] = wbuf->bias_offset;
                 if (op->p[6] &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 1,
                         ctx->prepared_exact_native_gateup_pipeline)) {
                     if (ensure_native_quant_scratch(ctx, op->cols, 1) != 0)
@@ -1830,7 +1830,7 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                     [enc setBuffer:ctx->act_bufs[op->buf_out] offset:0 atIndex:3];
                     [enc setBytes:params length:sizeof(params) atIndex:4];
                 } else if (op->p[6] &&
-                    metal_exact_native_graph_path_supported(
+                    metal_small_dense_native_quant_graph_path_supported(
                         ctx, op->type, wbuf->native_quant_prepared, 0,
                         ctx->exact_native_gateup_pipeline)) {
                     if (ensure_native_quant_scratch(ctx, op->cols, 1) != 0)
@@ -1885,17 +1885,17 @@ static int metal_execute(void *vctx, const void *ops_raw, int n_ops,
                 grid_wbuf &&
                 ((shader == BN_GPU_SHADER_MATVEC &&
                   op->p[6] &&
-                  metal_exact_native_graph_path_supported(
+                  metal_small_dense_native_quant_graph_path_supported(
                       ctx, op->type, grid_wbuf->native_quant_prepared, 0,
                       ctx->exact_native_matvec_pipeline)) ||
                  (shader == BN_GPU_SHADER_MATVEC_SPLIT &&
                   (op->flags & 1u) &&
-                  metal_exact_native_graph_path_supported(
+                  metal_small_dense_native_quant_graph_path_supported(
                       ctx, op->type, grid_wbuf->native_quant_prepared, 0,
                       ctx->exact_native_split_pipeline)) ||
                  (shader == BN_GPU_SHADER_FUSED_GATEUP_SILU &&
                   op->p[6] &&
-                  metal_exact_native_graph_path_supported(
+                  metal_small_dense_native_quant_graph_path_supported(
                       ctx, op->type, grid_wbuf->native_quant_prepared, 0,
                       ctx->exact_native_gateup_pipeline)));
             if (native_quant_tile) {
@@ -2172,7 +2172,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 compiled, n_supported_types);
 
         bn_gpu_policy_metal_apply_small_dense_native_quant_default();
-        ctx->exact_native_enabled = bn_gpu_policy_metal_small_dense_native_quant_enabled();
+        ctx->small_dense_native_quant_enabled = bn_gpu_policy_metal_small_dense_native_quant_enabled();
         ctx->native_quant_barriers_enabled =
             bn_gpu_policy_metal_native_quant_barriers_enabled();
         ctx->cpu_order_rmsnorm_enabled =
@@ -2191,7 +2191,7 @@ BnGPUBackend *bn_gpu_metal_create(const char *shader_dir)
                 return NULL;
             }
         }
-        if (ctx->exact_native_enabled) {
+        if (ctx->small_dense_native_quant_enabled) {
             ctx->native_quant_pipeline = compile_shader(ctx, dir,
                 "q8_quantize.metal", "q8_quantize");
             ctx->exact_native_matvec_pipeline = compile_shader(ctx, dir,
