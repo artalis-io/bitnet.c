@@ -1480,28 +1480,28 @@ static void test_gpu_policy_helpers(void) {
     up_w.rows = 32;
     up_w.cols = 64;
     gpu.caps = BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT;
-    assert(bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         NULL, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, NULL, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, NULL, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, &up_w, 1, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q5K_MATVEC_SPLIT));
     up_w.rows = 16;
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     up_w.rows = 32;
     up_w.cols = 32;
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     up_w.cols = 64;
     gpu.caps = 0;
-    assert(!bn_transformer_gpu_dense_gateup_exact_split_supported(
+    assert(!bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
         &gpu, &gate_w, &up_w, 0, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
 
     BnQWeight q_w;

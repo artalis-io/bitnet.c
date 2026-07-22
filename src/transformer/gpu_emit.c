@@ -1067,7 +1067,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                 silu_flags);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
-                   bn_transformer_gpu_dense_gateup_exact_split_supported(
+                   bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
                        res ? res->gpu : NULL, &lw->ffn.ffn_gate,
                        &lw->ffn.ffn_up, ffn_plan->activation,
                        bn_transformer_gpu_matvec_split_op_code(

@@ -688,7 +688,7 @@ int bn_transformer_gpu_matvec_split_op_code(int tensor_type) {
     return bn_gpu_quant_split_op_code(tensor_type);
 }
 
-int bn_transformer_gpu_dense_gateup_exact_split_supported(
+int bn_transformer_gpu_dense_gateup_reference_activation_split_supported(
     const BnGPUBackend *gpu,
     const BnQWeight *gate,
     const BnQWeight *up,
