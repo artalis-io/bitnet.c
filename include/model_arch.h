@@ -44,7 +44,7 @@ typedef struct {
 
 typedef enum {
     BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER = 0,
-    BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER,
+    BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER,
 } BnModelArchRMSNormMode;
 
 typedef enum {
@@ -114,7 +114,6 @@ int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
 int bn_model_arch_rmsnorm_uses_reference_order(const BnConfig *c);
-int bn_model_arch_rmsnorm_requires_reference_scalar_order(const BnConfig *c);
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c);
 int bn_model_arch_uses_per_layer_embedding(const BnConfig *c);
 int bn_model_arch_uses_attention_post_norm(const BnConfig *c);

@@ -111,7 +111,7 @@ int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
     int up_type) {
     return !gpu &&
            ffn_plan &&
-           !ffn_plan->scalar_reference_activation &&
+           !ffn_plan->reference_activation &&
            bn_transformer_cpu_activation_uses_silu_path(
                ffn_plan->activation) &&
            dim % 32 == 0 &&

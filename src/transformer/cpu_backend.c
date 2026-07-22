@@ -343,7 +343,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
             for (int i = 0; i < hidden_dim; i++) {
                 float x = s->hb[i];
                 float g;
-                if (ffn_plan->scalar_reference_activation)
+                if (ffn_plan->reference_activation)
                     g = 0.5f * x *
                         (1.0f + tanhf(0.7978845608028654f * x *
                                       (1.0f + 0.044715f * x * x)));
@@ -354,7 +354,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
         } else {
             for (int i = 0; i < hidden_dim; i++) {
                 float g = s->hb[i];
-                if (ffn_plan->scalar_reference_activation)
+                if (ffn_plan->reference_activation)
                     s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
                 else
                     s->hb[i] = cpu_fast_silu_scalar(g) * s->hb2[i];
@@ -369,7 +369,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
         } else if (bn_transformer_cpu_activation_is_gelu(ffn_plan->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float x = s->hb[i];
-                if (ffn_plan->scalar_reference_activation)
+                if (ffn_plan->reference_activation)
                     s->hb[i] = 0.5f * x *
                                (1.0f + tanhf(0.7978845608028654f * x *
                                              (1.0f + 0.044715f * x * x)));
@@ -379,7 +379,7 @@ static void cpu_apply_ffn_activation_scalar(BnRunState *s,
         } else {
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i];
-                if (ffn_plan->scalar_reference_activation)
+                if (ffn_plan->reference_activation)
                     s->hb[i] = v / (1.0f + expf(-v));
                 else
                     s->hb[i] = cpu_fast_silu_scalar(v);
@@ -408,7 +408,7 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
                 vst1q_f32(s->hb + i,
                           vmulq_f32(bn_neon_fast_gelu_f32(g), u));
             }
-        } else if (ffn_plan->scalar_reference_activation) {
+        } else if (ffn_plan->reference_activation) {
             for (int i = 0; i < hidden_dim; i++) {
                 float g = s->hb[i];
                 s->hb[i] = (g / (1.0f + expf(-g))) * s->hb2[i];
@@ -432,7 +432,7 @@ static void cpu_apply_ffn_activation_neon(BnRunState *s,
                 float32x4_t v = vld1q_f32(s->hb + i);
                 vst1q_f32(s->hb + i, bn_neon_fast_gelu_f32(v));
             }
-        } else if (ffn_plan->scalar_reference_activation) {
+        } else if (ffn_plan->reference_activation) {
             for (int i = 0; i < hidden_dim; i++) {
                 float v = s->hb[i];
                 s->hb[i] = v / (1.0f + expf(-v));

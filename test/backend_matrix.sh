@@ -384,10 +384,8 @@ if rg -n 'BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU|BN_MODEL_ARCH_POLICY_CPU_FL
     fail=1
 fi
 
-if rg -n 'bn_model_arch_rmsnorm_requires_reference_scalar_order' \
-    src/transformer \
-    src/transformer.c \
-    src/gpu_policy.c >/dev/null 2>&1; then
+if rg -n 'bn_model_arch_rmsnorm_requires_reference_scalar_order|bn_transformer_rmsnorm_requires_reference_scalar_order' \
+    include src test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer/GPU policy must use backend-neutral RMSNorm order model_arch helpers"
     fail=1
 fi
@@ -4123,8 +4121,14 @@ if grep -n 'full_attn_interval' src/transformer/plan.c >/dev/null 2>&1; then
     fail=1
 fi
 
-if grep -n 'BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER' src/transformer/plan.c >/dev/null 2>&1; then
+if grep -n 'BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER' include/model_arch.h src/model_arch.c src/transformer/plan.c test/test_transformer.c >/dev/null 2>&1; then
     echo "src/transformer/plan.c must use behavior-named model_arch helpers for RMSNorm order policy"
+    fail=1
+fi
+
+if rg -n 'scalar_reference_activation|bn_transformer_ffn_uses_reference_scalar_activation' \
+    include src test/test_transformer.c >/dev/null 2>&1; then
+    echo "FFN reference activation policy must not expose CPU/scalar naming at plan level"
     fail=1
 fi
 

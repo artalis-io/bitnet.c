@@ -150,19 +150,14 @@ float bn_model_arch_attention_scale(const BnConfig *c, int head_size) {
 
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c) {
     if (c && (c->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER))
-        return BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER;
+        return BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER;
     return BN_MODEL_ARCH_RMSNORM_BACKEND_ORDER;
 }
 
 int bn_model_arch_rmsnorm_uses_reference_order(
     const BnConfig *c) {
     return bn_model_arch_rmsnorm_mode(c) ==
-           BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER;
-}
-
-int bn_model_arch_rmsnorm_requires_reference_scalar_order(
-    const BnConfig *c) {
-    return bn_model_arch_rmsnorm_uses_reference_order(c);
+           BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER;
 }
 
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c) {

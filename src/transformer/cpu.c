@@ -144,8 +144,8 @@ static int cpu_layer_output_scale_applies(const BnConfig *c,
     return policy.apply;
 }
 
-static void cpu_rmsnorm_reference_scalar_order(float *out, const float *x,
-                                           const float *w, int size, float eps) {
+static void cpu_rmsnorm_reference_order(float *out, const float *x,
+                                        const float *w, int size, float eps) {
     double ss = 0.0;
     for (int i = 0; i < size; i++)
         ss += (double)(x[i] * x[i]);
@@ -158,7 +158,7 @@ static inline void cpu_rmsnorm_model(const BnModel *m, float *out,
                                      const float *x, const float *w,
                                      int size, float eps) {
     if (m && bn_transformer_rmsnorm_uses_reference_order(&m->config)) {
-        cpu_rmsnorm_reference_scalar_order(out, x, w, size, eps);
+        cpu_rmsnorm_reference_order(out, x, w, size, eps);
         return;
     }
     cpu_backend_ops()->rmsnorm(out, x, w, size, eps);

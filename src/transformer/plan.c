@@ -205,11 +205,6 @@ int bn_transformer_rmsnorm_uses_reference_order(
     return bn_model_config_rmsnorm_uses_reference_order(c);
 }
 
-int bn_transformer_rmsnorm_requires_reference_scalar_order(
-    const BnConfig *c) {
-    return bn_transformer_rmsnorm_uses_reference_order(c);
-}
-
 float bn_transformer_attention_scale(
     const BnConfig *c,
     int head_size) {
@@ -410,7 +405,7 @@ int bn_transformer_prefill_uses_reference_activation(
     return bn_model_config_prefill_uses_exact_activation(c);
 }
 
-int bn_transformer_ffn_uses_reference_scalar_activation(
+int bn_transformer_ffn_uses_reference_activation(
     const BnConfig *c) {
     return bn_model_config_ffn_uses_reference_activation(c);
 }
@@ -474,8 +469,8 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->activation = c->act_type;
     p->has_gate = bn_transformer_ffn_has_gate(c);
     p->has_sub_norm = bn_transformer_ffn_has_sub_norm(lw);
-    p->scalar_reference_activation =
-        bn_transformer_ffn_uses_reference_scalar_activation(c);
+    p->reference_activation =
+        bn_transformer_ffn_uses_reference_activation(c);
 
     void *gateup_stacked = bn_transformer_backend_handle_or(backend, layer,
                                                             BN_BACKEND_HANDLE_GATEUP_STACKED);

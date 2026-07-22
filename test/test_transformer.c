@@ -3531,9 +3531,8 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(!bn_model_arch_moe_prefers_reference_gpu_attention(&c));
     assert(bn_model_arch_rmsnorm_mode(&c) ==
-           BN_MODEL_ARCH_RMSNORM_REFERENCE_SCALAR_ORDER);
+           BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER);
     assert(bn_model_arch_rmsnorm_uses_reference_order(&c));
-    assert(bn_model_arch_rmsnorm_requires_reference_scalar_order(&c));
     assert(bn_model_arch_uses_small_dense_shape(&c));
     assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 0));
@@ -4216,7 +4215,6 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_prefill_decode_for_parity_enabled(&c, 0));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER;
     assert(bn_transformer_rmsnorm_uses_reference_order(&c));
-    assert(bn_transformer_rmsnorm_requires_reference_scalar_order(&c));
 
     unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
     assert(bn_transformer_cpu_prepared_qweights_enabled());
@@ -4323,10 +4321,10 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
         &route_gpu, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0,
         BN_GGUF_TENSOR_Q4_0));
-    ffn_plan.scalar_reference_activation = 1;
+    ffn_plan.reference_activation = 1;
     assert(!bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
         NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
-    ffn_plan.scalar_reference_activation = 0;
+    ffn_plan.reference_activation = 0;
     ffn_plan.activation = 1;
     assert(!bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
         NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
@@ -4489,9 +4487,9 @@ static void test_block_planning(void) {
     c.policy_flags = 0;
     c.full_attn_interval = 0;
 
-    assert(!bn_transformer_ffn_uses_reference_scalar_activation(&c));
+    assert(!bn_transformer_ffn_uses_reference_activation(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
-    assert(bn_transformer_ffn_uses_reference_scalar_activation(&c));
+    assert(bn_transformer_ffn_uses_reference_activation(&c));
     c.policy_flags = 0;
 
     BnLayerWeights prefill_dense_lw = {0};
