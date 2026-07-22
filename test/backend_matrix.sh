@@ -3412,6 +3412,11 @@ if grep -n 'getenv("BN_GPU_DISABLE_FUSED_GATEUP")\|getenv("BN_GPU_Q4_Q8_DISABLE_
     fail=1
 fi
 
+if grep -n '^[[:space:]]*setenv("BN_GPU_Q4_Q8' test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer policy tests must use canonical small-dense native-quant env vars; legacy Q4/Q8 aliases belong in GPU policy alias tests"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DISABLE_QKV_SPLIT\|BN_GPU_DISABLE_SSM_QKVZ_SPLIT\|BN_GPU_DISABLE_SSM_AB_STACK\|BN_GPU_DEBUG_QKV_SPLIT\|BN_GPU_SPLIT_RESIDUAL_RMSNORM\|BN_GPU_DEBUG_FALLBACK' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for QKV/SSM split and debug compatibility env vars"
     fail=1
