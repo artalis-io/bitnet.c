@@ -2753,7 +2753,7 @@ int bn_gpu_policy_cuda_asymmetric_kquant_out_residual_rmsnorm_fuse_enabled(
 
 int bn_gpu_policy_cuda_asymmetric_kquant_qkv_mixed_fuse_enabled(
     int tensor_type) {
-    return !bn_backend_quant_asymmetric_kquant_prepared_input_split_candidate(
+    return !bn_backend_quant_supports_asymmetric_kquant_prepared_input_split(
                tensor_type) ||
            gpu_policy_asymmetric_kquant_qkv_mixed_fuse_requested();
 }
