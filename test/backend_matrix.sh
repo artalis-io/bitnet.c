@@ -2141,6 +2141,11 @@ if grep -n 'BITNET_ARGS+=(--q4-q8\|cmd.append("--q4-q8\|cmd += \["--q4-q8\|BITNE
     fail=1
 fi
 
+if grep -n 'setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE\|setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|int[[:space:]]\+small_dense_exact_native_\|int[[:space:]]\+metal_disable_small_dense_exact_native' test/test_coherence.c >/dev/null 2>&1; then
+    echo "Coherence harness must drive small-dense native-quant policy through behavior-named env vars"
+    fail=1
+fi
+
 if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT\|BN_GPU_SMALL_DENSE_EXACT_NATIVE\|BN_GPU_Q4_Q8\|BN_METAL_DISABLE_SMALL_DENSE_NATIVE_QUANT_DEFAULT\|BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|BN_METAL_DISABLE_Q4_Q8_DEFAULT' src/gpu_policy.c >/dev/null 2>&1; then
     echo "GPU small-dense native-quant policy must keep behavior-named canonical env names with legacy compatibility aliases"
     fail=1

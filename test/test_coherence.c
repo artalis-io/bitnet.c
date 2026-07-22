@@ -452,13 +452,13 @@ int main(int argc, char **argv) {
     int metal_native_quant_prepared = 0;
     int metal_full_barriers = 0;
     int metal_disable_barriers = 0;
-    int metal_disable_small_dense_exact_native = 0;
+    int metal_disable_small_dense_native_quant = 0;
     int metal_cpu_rmsnorm = 0;
-    int small_dense_exact_native_from_layer = -1;
-    int small_dense_exact_native_to_layer = -1;
-    int small_dense_exact_native_tail_native = -1;
-    int small_dense_exact_native_attn_only = 0;
-    int small_dense_exact_native_ffn_only = 0;
+    int small_dense_native_quant_from_layer = -1;
+    int small_dense_native_quant_to_layer = -1;
+    int small_dense_native_quant_tail_native = -1;
+    int small_dense_native_quant_attn_only = 0;
+    int small_dense_native_quant_ffn_only = 0;
     int use_flash = 0;
     int disable_qkv_split = 0;
     int disable_gateup_split = 0;
@@ -530,29 +530,35 @@ int main(int argc, char **argv) {
             metal_full_barriers = 1;
         } else if (strcmp(argv[i], "--metal-disable-barriers") == 0) {
             metal_disable_barriers = 1;
-        } else if (strcmp(argv[i], "--metal-disable-small-dense-exact-native") == 0 ||
+        } else if (strcmp(argv[i], "--metal-disable-small-dense-native-quant") == 0 ||
+                   strcmp(argv[i], "--metal-disable-small-dense-exact-native") == 0 ||
                    strcmp(argv[i], "--metal-disable-q4-q8") == 0) {
-            metal_disable_small_dense_exact_native = 1;
+            metal_disable_small_dense_native_quant = 1;
         } else if (strcmp(argv[i], "--metal-cpu-rmsnorm") == 0) {
             metal_cpu_rmsnorm = 1;
-        } else if ((strcmp(argv[i], "--small-dense-exact-native-from-layer") == 0 ||
+        } else if ((strcmp(argv[i], "--small-dense-native-quant-from-layer") == 0 ||
+                    strcmp(argv[i], "--small-dense-exact-native-from-layer") == 0 ||
                     strcmp(argv[i], "--q4-q8-from-layer") == 0) &&
                    i + 1 < argc) {
-            small_dense_exact_native_from_layer = atoi(argv[++i]);
-        } else if ((strcmp(argv[i], "--small-dense-exact-native-to-layer") == 0 ||
+            small_dense_native_quant_from_layer = atoi(argv[++i]);
+        } else if ((strcmp(argv[i], "--small-dense-native-quant-to-layer") == 0 ||
+                    strcmp(argv[i], "--small-dense-exact-native-to-layer") == 0 ||
                     strcmp(argv[i], "--q4-q8-to-layer") == 0) &&
                    i + 1 < argc) {
-            small_dense_exact_native_to_layer = atoi(argv[++i]);
-        } else if ((strcmp(argv[i], "--small-dense-exact-native-tail") == 0 ||
+            small_dense_native_quant_to_layer = atoi(argv[++i]);
+        } else if ((strcmp(argv[i], "--small-dense-native-quant-tail") == 0 ||
+                    strcmp(argv[i], "--small-dense-exact-native-tail") == 0 ||
                     strcmp(argv[i], "--q4-q8-tail-native") == 0) &&
                    i + 1 < argc) {
-            small_dense_exact_native_tail_native = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--small-dense-exact-native-attn-only") == 0 ||
+            small_dense_native_quant_tail_native = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--small-dense-native-quant-attn-only") == 0 ||
+                   strcmp(argv[i], "--small-dense-exact-native-attn-only") == 0 ||
                    strcmp(argv[i], "--q4-q8-attn-only") == 0) {
-            small_dense_exact_native_attn_only = 1;
-        } else if (strcmp(argv[i], "--small-dense-exact-native-ffn-only") == 0 ||
+            small_dense_native_quant_attn_only = 1;
+        } else if (strcmp(argv[i], "--small-dense-native-quant-ffn-only") == 0 ||
+                   strcmp(argv[i], "--small-dense-exact-native-ffn-only") == 0 ||
                    strcmp(argv[i], "--q4-q8-ffn-only") == 0) {
-            small_dense_exact_native_ffn_only = 1;
+            small_dense_native_quant_ffn_only = 1;
         } else if (strcmp(argv[i], "--flash") == 0) {
             use_flash = 1;
         } else if (strcmp(argv[i], "--kv16") == 0) {
@@ -662,26 +668,26 @@ int main(int argc, char **argv) {
         snprintf(pos_env, sizeof(pos_env), "%d", compare_ffn_state_pos);
         setenv("BN_GPU_COMPARE_FFN_STATE_POS", pos_env, 1);
     }
-    if (small_dense_exact_native_from_layer >= 0) {
+    if (small_dense_native_quant_from_layer >= 0) {
         char layer_env[32];
-        snprintf(layer_env, sizeof(layer_env), "%d", small_dense_exact_native_from_layer);
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE", "1", 1);
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FROM_LAYER", layer_env, 1);
+        snprintf(layer_env, sizeof(layer_env), "%d", small_dense_native_quant_from_layer);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT", "1", 1);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FROM_LAYER", layer_env, 1);
     }
-    if (small_dense_exact_native_to_layer >= 0) {
+    if (small_dense_native_quant_to_layer >= 0) {
         char layer_env[32];
-        snprintf(layer_env, sizeof(layer_env), "%d", small_dense_exact_native_to_layer);
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TO_LAYER", layer_env, 1);
+        snprintf(layer_env, sizeof(layer_env), "%d", small_dense_native_quant_to_layer);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER", layer_env, 1);
     }
-    if (small_dense_exact_native_tail_native >= 0) {
+    if (small_dense_native_quant_tail_native >= 0) {
         char tail_env[32];
-        snprintf(tail_env, sizeof(tail_env), "%d", small_dense_exact_native_tail_native);
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_TAIL_NATIVE", tail_env, 1);
+        snprintf(tail_env, sizeof(tail_env), "%d", small_dense_native_quant_tail_native);
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE", tail_env, 1);
     }
-    if (small_dense_exact_native_attn_only)
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_ATTN_ONLY", "1", 1);
-    if (small_dense_exact_native_ffn_only)
-        setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE_FFN_ONLY", "1", 1);
+    if (small_dense_native_quant_attn_only)
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY", "1", 1);
+    if (small_dense_native_quant_ffn_only)
+        setenv("BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY", "1", 1);
     if (disable_fused_gateup)
         setenv("BN_GPU_DISABLE_FUSED_GATEUP", "1", 1);
     if (disable_qkv_split)
@@ -700,8 +706,8 @@ int main(int argc, char **argv) {
         setenv("BN_METAL_FULL_BARRIERS", "1", 1);
     if (metal_disable_barriers)
         setenv("BN_METAL_DISABLE_BARRIERS", "1", 1);
-    if (metal_disable_small_dense_exact_native)
-        setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT", "1", 1);
+    if (metal_disable_small_dense_native_quant)
+        setenv("BN_METAL_DISABLE_SMALL_DENSE_NATIVE_QUANT_DEFAULT", "1", 1);
     if (metal_cpu_rmsnorm)
         setenv("BN_METAL_CPU_ORDER_RMSNORM", "1", 1);
 #if !defined(BN_ENABLE_WEBGPU) && !defined(BN_ENABLE_METAL) && !defined(BN_ENABLE_CUDA)
