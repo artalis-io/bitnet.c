@@ -98,7 +98,7 @@ if grep -n 'getenv("BN_CUDA_ENABLE_Q5K_DEINT_PAIR_MATVEC")\|getenv("BN_CUDA_ENAB
     fail=1
 fi
 
-if grep -n 'BN_GGUF_TENSOR_Q8_0 && xq' src/gpu_cuda.cu >/dev/null 2>&1; then
+if awk '/^static __device__ int cuda_backend_uses_prepared_native_quant_input/{flag=1} /^#define BN_CUDA_ARGMAX_PENALTY_SORT_MAX/{flag=0} flag{print}' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use CUDA backend helpers for prepared native-quant input policy"
     fail=1
 fi

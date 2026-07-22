@@ -91,11 +91,16 @@ static __host__ __device__ int cuda_activation_is_silu(int act_type) {
     return act_type == BN_MODEL_ACTIVATION_SILU;
 }
 
+static __host__ __device__ int cuda_backend_supports_prepared_native_quant_input(
+    int tensor_type) {
+    return tensor_type == BN_GGUF_TENSOR_Q8_0;
+}
+
 static __device__ int cuda_backend_uses_prepared_native_quant_input(
     int tensor_type,
     const BnCudaBlockQ8_1 *prepared_input,
     int cols) {
-    return tensor_type == BN_GGUF_TENSOR_Q8_0 &&
+    return cuda_backend_supports_prepared_native_quant_input(tensor_type) &&
            prepared_input && (cols & 31) == 0;
 }
 
