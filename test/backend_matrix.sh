@@ -2415,6 +2415,11 @@ if grep -n 'moe_down_prepared_native_quant_exact_2048\|bn_gpu_policy_cuda_moe_do
     fail=1
 fi
 
+if grep -n '\bexact_silu\b' include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU policy API must use reference-SiLU behavior names, not exact-SiLU inputs"
+    fail=1
+fi
+
 if grep -n '\bexact_down_kquant\b' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "CUDA down-K-quant matvec policy inputs must use reference-kquant behavior names"
     fail=1

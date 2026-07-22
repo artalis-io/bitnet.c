@@ -1987,10 +1987,10 @@ int bn_gpu_policy_cuda_moe_route_dot_prepared_input_enabled(
 int bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
     int dim,
     int all_active_two_kquant,
-    int exact_silu) {
+    int uses_reference_silu) {
     return (dim % 32) == 0 &&
            all_active_two_kquant &&
-           !exact_silu &&
+           !uses_reference_silu &&
            (bn_gpu_policy_all_active_two_kquant_route_block_prepared_input_enabled() ||
             cuda_moe_route_block_prepared_input_requested()) &&
            !gpu_policy_moe_dot_input_forced() &&

@@ -19850,12 +19850,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 bn_gpu_policy_cuda_moe_route_dot_prepared_input_enabled(
                     dim, next_moe_all_active_two_kquant);
             if (route_diff2) {
-                int next_exact_silu =
+                int next_uses_reference_silu =
                     next_moe_all_active_two_kquant &&
                     (next->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
                 int route_block_prepared_input =
                     bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
-                        dim, next_moe_all_active_two_kquant, next_exact_silu);
+                        dim, next_moe_all_active_two_kquant,
+                        next_uses_reference_silu);
                 int route_dot_prepared_input =
                     !route_block_prepared_input &&
                     moe_all_active_two_route_dot_prepared_input_default_enabled;
@@ -20056,7 +20057,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     int moe_all_active_two_fast_enabled =
                         bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
                             moe_all_active_two_graph_kquant);
-                    int exact_silu =
+                    int uses_reference_silu =
                         (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
                     int use_cublas_all_active_two_decode =
                         moe_all_active_two_kquant &&
@@ -20066,7 +20067,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     if (use_cublas_all_active_two_decode) {
                         if (cuda_moe_cublas_all_active_two_decode(
                                 ctx, out, gate, up, down, in, route, dim,
-                                hidden, exact_silu) == 0) {
+                                hidden, uses_reference_silu) == 0) {
                             break;
                         }
                         if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled()) {
@@ -20078,7 +20079,8 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     const BnGPUOp *prev = (i > 0) ? &ops[i - 1] : NULL;
                     int moe_all_active_two_route_block_prepared_input_enabled =
                         bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
-                            dim, moe_all_active_two_kquant, exact_silu);
+                            dim, moe_all_active_two_kquant,
+                            uses_reference_silu);
                     int moe_all_active_two_route_dot_prepared_input_default_enabled =
                         bn_gpu_policy_cuda_moe_route_dot_prepared_input_enabled(
                             dim, moe_all_active_two_kquant);
@@ -20145,14 +20147,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 gateup4_blocks, route_threads, 0,
                                 mid, (const BnBlockQ4K *)gate->data,
                                 (const BnBlockQ4K *)up->data, xq, route,
-                                hidden, dim, exact_silu);
+                                hidden, dim, uses_reference_silu);
                         } else if (bn_gpu_policy_cuda_moe_gateup_prepared_4row_disabled()) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                 moe_q4k_gateup_routed_mid_q8k_kernel,
                                 gateup_blocks, route_threads, 0,
                                 mid, (const BnBlockQ4K *)gate->data,
                                 (const BnBlockQ4K *)up->data, xq, route, hidden,
-                                dim, n_experts, k, exact_silu);
+                                dim, n_experts, k, uses_reference_silu);
                         } else {
                             int gateup4_tasks = (gateup_tasks + 3) / 4;
                             int gateup4_blocks =
@@ -20162,7 +20164,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 gateup4_blocks, route_threads, 0,
                                 mid, (const BnBlockQ4K *)gate->data,
                                 (const BnBlockQ4K *)up->data, xq, route, hidden,
-                                dim, n_experts, k, exact_silu);
+                                dim, n_experts, k, uses_reference_silu);
                         }
                     } else {
                         if (cuda_ensure_q8_1(ctx, dim) != 0) return -1;

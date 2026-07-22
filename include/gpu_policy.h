@@ -196,7 +196,7 @@ int bn_gpu_policy_cuda_moe_route_dot_prepared_input_enabled(
 int bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
     int dim,
     int all_active_two_kquant,
-    int exact_silu);
+    int uses_reference_silu);
 int bn_gpu_policy_cuda_moe_router_fused_topk_enabled(int n_experts,
                                                      int route_block);
 int bn_gpu_policy_cuda_moe_router_warp_disabled(int route_block);
