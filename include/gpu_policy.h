@@ -168,7 +168,7 @@ int bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
 int bn_gpu_policy_all_active_two_kquant_moe_down_fixed_enabled(
     int all_active_two_kquant);
 int bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled(void);
-int bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
+int bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
     int dim,
     int hidden_dim,
     int k);

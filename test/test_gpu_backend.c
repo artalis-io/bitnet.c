@@ -1702,6 +1702,7 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_DOWN_FIXED");
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_ALL2_FIXED");
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE");
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_SHAPE_2048_768");
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_EXACT_2048_768");
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768");
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_DOWN_ACCUM_4ROW");
@@ -1872,16 +1873,21 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE", "1", 1);
     assert(!bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled());
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE");
-    assert(bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
+    assert(bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
         2048, 768, 8));
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
         2048, 1024, 8));
-    setenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_EXACT_2048_768", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_SHAPE_2048_768", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
         2048, 768, 8));
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_SHAPE_2048_768");
+    setenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_EXACT_2048_768", "1", 1);
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
+        2048, 768, 8));
+    unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_SHAPE_2048_768");
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_EXACT_2048_768");
     setenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
         2048, 768, 8));
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768");
     assert(!bn_gpu_policy_all_active_two_kquant_moe_down_accum_4row_enabled());

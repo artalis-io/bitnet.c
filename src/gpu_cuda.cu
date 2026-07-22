@@ -11707,10 +11707,10 @@ static int cuda_use_moe_down_resid_rmsnorm_fuse(void) {
     return bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled();
 }
 
-static int cuda_use_moe_down_prepared_native_quant_exact_2048_768(int dim,
+static int cuda_use_moe_down_prepared_native_quant_shape_2048_768(int dim,
                                                        int hidden_dim,
                                                        int k) {
-    return bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
+    return bn_gpu_policy_cuda_moe_down_prepared_native_quant_shape_2048_768_enabled(
         dim, hidden_dim, k);
 }
 
@@ -20382,7 +20382,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     ? cuda_act(ctx, next->buf_out) : NULL;
                                 if (fuse_resid_norm && nw && nw->data &&
                                     resid && norm_out) {
-                                    if (cuda_use_moe_down_prepared_native_quant_exact_2048_768(
+                                    if (cuda_use_moe_down_prepared_native_quant_shape_2048_768(
                                             dim, hidden, k)) {
                                         BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                                             moe_q6k_down_routed_q8k_prepared_native_quant_4row_residual_sum_2048_768_kernel,

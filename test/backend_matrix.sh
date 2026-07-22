@@ -2400,6 +2400,11 @@ if grep -n 'bn_gpu_policy_cuda_q6k_moe_quant_down_preferred\|bn_gpu_policy_cuda_
     fail=1
 fi
 
+if grep -n 'moe_down_prepared_native_quant_exact_2048\|bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled\|cuda_use_moe_down_prepared_native_quant_exact_2048_768' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA MoE down prepared native-quant shape policy helpers must not use exact names"
+    fail=1
+fi
+
 if awk '/^int bn_gpu_policy_cuda_moe_down_quant_path_preferred/{flag=1} /^int bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
     echo "src/gpu_policy.c public MoE down policy helpers must compose local env policy helpers"
     fail=1
@@ -2529,7 +2534,7 @@ for fn in \
     cuda_use_moe_down_prepared_native_quant_4row_sum \
     cuda_use_moe_down_prepared_native_quant_8row_sum \
     cuda_use_moe_down_resid_rmsnorm_fuse \
-    cuda_use_moe_down_prepared_native_quant_exact_2048_768 \
+    cuda_use_moe_down_prepared_native_quant_shape_2048_768 \
     cuda_use_moe_down_prepared_pair_4row \
     cuda_use_moe_down_f32_cache \
     cuda_use_moe_down_f16_cache \
