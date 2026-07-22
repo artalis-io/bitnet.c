@@ -3065,7 +3065,7 @@ if grep -n 'bn_transformer_gpu_cuda_\(all2_moe_direct_route_enabled\|all_active_
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled\|\bexact_gpu_route\b' src/transformer/gpu_policy.c src/transformer/gpu_internal.h test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_all_active_two_kquant_moe_exact_gpu_route_enabled\|\bexact_gpu_route\b' src/transformer/gpu_policy.c src/transformer/gpu_internal.h src/gpu_policy.c include/gpu_policy.h test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "MoE route transformer GPU policy must use reference-route behavior names, not exact-route representation names"
     fail=1
 fi

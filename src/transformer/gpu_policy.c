@@ -2453,7 +2453,7 @@ int bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
     return all_active_two_kquant_moe &&
            route_layer_selected &&
            bn_gpu_policy_all_active_two_kquant_moe_fast_ffn_enabled() &&
-           !bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled();
+           !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled();
 }
 
 void *bn_transformer_gpu_all_active_two_kquant_moe_router(

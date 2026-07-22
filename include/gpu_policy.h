@@ -685,8 +685,8 @@ int bn_gpu_policy_all_active_two_kquant_moe_logits_refine_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_moe_safe_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_reference_attention_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_cpu_route_resident_disabled(void);
-int bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_requested(void);
-int bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled(void);
+int bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_requested(void);
+int bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled(void);
 int bn_gpu_policy_all_active_two_kquant_moe_route_selection_enabled(void);
 void bn_gpu_policy_all_active_two_kquant_moe_route_layer_range(int *from_layer,
                                                    int *to_layer);
