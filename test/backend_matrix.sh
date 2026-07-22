@@ -2136,6 +2136,16 @@ if ! grep -n -- '--small-dense-native-quant-tail\|--metal-native-quant-prepared'
     fail=1
 fi
 
+if awk '/Usage: %s <model\.gguf>/{print}' test/test_coherence.c | grep -n -- '--q4-q8\|--metal-q4-prepared\|--metal-disable-q4-q8' >/dev/null 2>&1; then
+    echo "Coherence test usage must document behavior-named small-dense native-quant flags"
+    fail=1
+fi
+
+if ! awk '/Usage: %s <model\.gguf>/{print}' test/test_coherence.c | grep -n -- '--small-dense-native-quant-tail\|--metal-native-quant-prepared' >/dev/null 2>&1; then
+    echo "Coherence test usage must expose behavior-named small-dense native-quant flags"
+    fail=1
+fi
+
 if grep -n 'BITNET_ARGS+=(--q4-q8\|cmd.append("--q4-q8\|cmd += \["--q4-q8\|BITNET_ARGS+=(--metal-disable-q4-q8\|cmd.append("--metal-q4-prepared\|cmd.append("--metal-disable-q4-q8' test/compare_llama.sh test/compare_llama_topk.py >/dev/null 2>&1; then
     echo "llama parity helpers must forward behavior-named small-dense native-quant flags"
     fail=1
