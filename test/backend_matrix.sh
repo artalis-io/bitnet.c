@@ -146,6 +146,11 @@ if grep -n 'bn_backend_quant_is_q4k' src/gpu_cuda.cu >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'static inline int bn_backend_quant_is_\(q4k\|q5k\|q8k\|q8_0\|q5_0\|bf16\|q3k\)' include/backend_quant.h >/dev/null 2>&1; then
+    echo "Backend quant must expose behavior predicates instead of exact-format shim predicates"
+    fail=1
+fi
+
 if sed -n '/bn_backend_quant_deinterleaved_kquant_pair_matvec/,/bn_gpu_policy_cuda_deinterleaved_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q5_K' >/dev/null 2>&1 ||
    sed -n '/bn_backend_quant_asymmetric_kquant_pair_matvec/,/bn_gpu_policy_cuda_asymmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q6_K\|BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1 ||
    sed -n '/bn_backend_quant_symmetric_kquant_pair_matvec/,/bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q4_K' >/dev/null 2>&1; then

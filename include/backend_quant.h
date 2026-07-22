@@ -86,34 +86,6 @@ static inline int bn_backend_quant_dense_graph_model_supported(
     return 1;
 }
 
-static inline int bn_backend_quant_is_q4k(int type) {
-    return bn_quant_format_is_q4k(type);
-}
-
-static inline int bn_backend_quant_is_q5k(int type) {
-    return bn_quant_format_is_q5k(type);
-}
-
-static inline int bn_backend_quant_is_q8k(int type) {
-    return bn_quant_format_is_q8k(type);
-}
-
-static inline int bn_backend_quant_is_q8_0(int type) {
-    return bn_quant_format_is_q8_0(type);
-}
-
-static inline int bn_backend_quant_is_q5_0(int type) {
-    return bn_quant_format_is_q5_0(type);
-}
-
-static inline int bn_backend_quant_is_bf16(int type) {
-    return bn_quant_format_is_bf16(type);
-}
-
-static inline int bn_backend_quant_is_q3k(int type) {
-    return bn_quant_format_is_q3k(type);
-}
-
 static inline int bn_backend_quant_uses_asymmetric_kquant(int type) {
     return bn_quant_format_is_q4k(type);
 }
