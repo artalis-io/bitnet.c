@@ -639,8 +639,8 @@ static inline int bn_backend_quant_moe_quant_only_after_cache(
         type, native_quant_f16_cache);
 }
 
-static inline int bn_backend_quant_lazy_moe_aux_cache_candidate(int type) {
-    return bn_quant_format_lazy_moe_aux_cache_candidate(type);
+static inline int bn_backend_quant_supports_lazy_moe_aux_cache(int type) {
+    return bn_quant_format_supports_lazy_moe_aux_cache(type);
 }
 
 static inline int bn_backend_quant_lazy_moe_aux_cache_dequant_block(

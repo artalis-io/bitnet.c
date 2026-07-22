@@ -5268,9 +5268,9 @@ static void test_quant_registry(void) {
     assert(bn_quant_format_gpu_matvec_exact_kquant_flag(BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_requires_float_kquant_fallback(BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
-    assert(bn_quant_format_lazy_moe_aux_cache_candidate(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_supports_lazy_moe_aux_cache(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_backend_quant_supports_lazy_moe_aux_cache(BN_GGUF_TENSOR_Q5_K));
+    assert(bn_quant_format_supports_lazy_moe_aux_cache(BN_GGUF_TENSOR_Q5_K));
     float lazy_aux_tmp[BN_QK_K];
     BnBlockIQ3XXS lazy_aux_iq3 = {0};
     assert(bn_backend_quant_lazy_moe_aux_cache_dequant_block(
@@ -5324,11 +5324,11 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0, 0));
     assert(bn_quant_format_moe_quant_only_after_cache(
         BN_GGUF_TENSOR_Q4_K, 1));
-    assert(bn_quant_format_lazy_moe_aux_cache_candidate(
+    assert(bn_quant_format_supports_lazy_moe_aux_cache(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_lazy_moe_aux_cache_candidate(
+    assert(bn_quant_format_supports_lazy_moe_aux_cache(
         BN_GGUF_TENSOR_IQ4_XS));
-    assert(!bn_quant_format_lazy_moe_aux_cache_candidate(
+    assert(!bn_quant_format_supports_lazy_moe_aux_cache(
         BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_moe_prefers_quant_only(
         BN_GGUF_TENSOR_Q8_0));

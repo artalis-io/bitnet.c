@@ -353,7 +353,7 @@ int bn_quant_format_moe_quant_only_after_cache(int type,
            !bn_quant_format_moe_prefers_quant_only(type);
 }
 
-int bn_quant_format_lazy_moe_aux_cache_candidate(int type) {
+int bn_quant_format_supports_lazy_moe_aux_cache(int type) {
     return bn_quant_format_has_cap(type,
                                    BN_QUANT_CAP_LAZY_MOE_AUX_CACHE_CANDIDATE);
 }

@@ -1693,7 +1693,7 @@ int bn_transformer_gpu_moe_quant_only_without_aux_cache(
     return bn_gpu_policy_backend_lazy_moe_aux_cache_supported(gpu) &&
            !allow_aux_cache &&
            !bn_transformer_gpu_moe_lazy_aux_cache_enabled() &&
-           bn_backend_quant_lazy_moe_aux_cache_candidate(tensor_type);
+           bn_backend_quant_supports_lazy_moe_aux_cache(tensor_type);
 }
 
 int bn_transformer_gpu_large_hybrid_prefill_disabled(void) {

@@ -11375,7 +11375,7 @@ static int cuda_buffer_create_iq_f16_cache(BnCudaBuffer *buf,
     if (!buf || !host_data || !buf->data || buf->rows <= 0 ||
         buf->cols <= 0 || (buf->cols % BN_QK_K) != 0)
         return 0;
-    if (!bn_backend_quant_lazy_moe_aux_cache_candidate(buf->type))
+    if (!bn_backend_quant_supports_lazy_moe_aux_cache(buf->type))
         return 0;
     if (!bn_gpu_policy_cuda_cublas_matmul_enabled())
         return 0;
@@ -11473,7 +11473,7 @@ static void *cuda_buffer_create_impl(void *vctx, const void *data, size_t size,
         return NULL;
     }
     if (create_aux_cache) {
-        if (bn_backend_quant_lazy_moe_aux_cache_candidate(type))
+        if (bn_backend_quant_supports_lazy_moe_aux_cache(type))
             cuda_buffer_create_iq_f16_cache(buf, data);
         else
             cuda_buffer_create_f16_cache(buf, create_aux_cache);

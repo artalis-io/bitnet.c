@@ -764,7 +764,7 @@ if awk '
     /int bn_quant_format_moe_down_cublas_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_down_small_kquant_f32_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_moe_quant_only_after_cache\(/ { in_fn=1 }
-    /int bn_quant_format_lazy_moe_aux_cache_candidate\(/ { in_fn=1 }
+    /int bn_quant_format_supports_lazy_moe_aux_cache\(/ { in_fn=1 }
     /int bn_quant_format_moe_prefers_quant_only\(/ { in_fn=1 }
     /int bn_quant_format_aux_cache_supported\(/ { in_fn=1 }
     /int bn_quant_format_aux_cache_can_use_f16\(/ { in_fn=1 }
@@ -3711,6 +3711,11 @@ done
 
 if grep -n 'bn_backend_quant_cuda_lazy_moe_aux_cache_candidate\|bn_backend_quant_cuda_lazy_moe_aux_cache_dequant_block\|bn_backend_quant_cuda_aux_cache_force_q4_f32\|bn_backend_quant_cuda_aux_cache_q6_can_use_f16\|bn_backend_quant_cuda_aux_cache_add_q6_f32\|bn_backend_quant_cuda_aux_cache_f32_storage\|bn_backend_quant_cuda_aux_cache_dequant_route\|BnBackendQuantCudaAuxCacheDequant\|BN_BACKEND_QUANT_CUDA_AUX_CACHE_DEQUANT_' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use neutral backend quant aux-cache helpers for quant-format policy"
+    fail=1
+fi
+
+if grep -n 'bn_quant_format_lazy_moe_aux_cache_candidate\|bn_backend_quant_lazy_moe_aux_cache_candidate' include/quant.h include/backend_quant.h src/quant/registry.c src/gpu_cuda.cu src/transformer/gpu_policy.c test/test_quant.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Lazy MoE aux-cache helpers must use supports names for quant-format policy"
     fail=1
 fi
 

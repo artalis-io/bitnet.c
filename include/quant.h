@@ -379,7 +379,7 @@ int      bn_quant_format_moe_down_cublas_cache_elem_bytes(
 int      bn_quant_format_moe_down_small_kquant_f32_cache_supported(int type);
 int      bn_quant_format_moe_quant_only_after_cache(int type,
                                                     int native_quant_f16_cache);
-int      bn_quant_format_lazy_moe_aux_cache_candidate(int type);
+int      bn_quant_format_supports_lazy_moe_aux_cache(int type);
 int      bn_quant_format_moe_prefers_quant_only(int type);
 int      bn_quant_format_aux_cache_supported(int type);
 int      bn_quant_format_aux_cache_can_use_f16(int type);
