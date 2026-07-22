@@ -2126,8 +2126,8 @@ if awk '/^static void usage/{flag=1} /^static int parse_int/{flag=0} flag{print}
     fail=1
 fi
 
-if ! grep -n -- '--small-dense-exact-native-tail\|--metal-native-quant-prepared' src/main.c >/dev/null 2>&1; then
-    echo "CLI help/parser must expose behavior-named small-dense exact-native flags"
+if ! grep -n -- '--small-dense-native-quant-tail\|--metal-native-quant-prepared' src/main.c >/dev/null 2>&1; then
+    echo "CLI help/parser must expose behavior-named small-dense native-quant flags"
     fail=1
 fi
 
@@ -3600,8 +3600,8 @@ if grep -En 'BnTransformerGPUSmallDenseExact($|[^N])|bn_(transformer_gpu|gpu_pol
     fail=1
 fi
 
-if grep -n 'args\.q4_q8_\|int[[:space:]]\+q4_q8_' src/main.c >/dev/null 2>&1; then
-    echo "CLI internal state for small-dense exact-native diagnostics must use behavior names"
+if grep -n 'args\.q4_q8_\|int[[:space:]]\+q4_q8_\|args\.small_dense_exact_native_\|int[[:space:]]\+small_dense_exact_native_\|args\.metal_disable_small_dense_exact_native\|int[[:space:]]\+metal_disable_small_dense_exact_native' src/main.c >/dev/null 2>&1; then
+    echo "CLI internal state for small-dense native-quant diagnostics must use behavior names"
     fail=1
 fi
 
