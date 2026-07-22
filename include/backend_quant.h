@@ -392,17 +392,17 @@ static inline int bn_backend_quant_supports_f16_float_cache_matvec(
     return bn_quant_format_supports_f16_float_cache_matvec(type);
 }
 
-static inline int bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
+static inline int bn_backend_quant_supports_packed_kquant_f16_cache_matvec(
     int type) {
     return bn_backend_quant_is_q5k(type);
 }
 
-static inline int bn_backend_quant_down_kquant_f16_cache_matvec_candidate(
+static inline int bn_backend_quant_supports_down_kquant_f16_cache_matvec(
     int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type);
 }
 
-static inline int bn_backend_quant_kquant_logits_cache_matvec_candidate(
+static inline int bn_backend_quant_supports_kquant_logits_cache_matvec(
     int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type);
 }

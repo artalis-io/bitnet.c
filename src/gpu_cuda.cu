@@ -18766,7 +18766,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     bn_gpu_policy_cuda_f16_native_quant_matvec_enabled()))) ||
                  bn_backend_quant_supports_f16_float_cache_matvec(
                      op->type) ||
-                 (bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
+                 (bn_backend_quant_supports_packed_kquant_f16_cache_matvec(
                       op->type) &&
                   bn_gpu_policy_cuda_f16_packed_kquant_matvec_enabled()))) {
                 int q_threads = 256;
@@ -18780,7 +18780,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (!is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_backend_quant_down_kquant_f16_cache_matvec_candidate(
+                bn_backend_quant_supports_down_kquant_f16_cache_matvec(
                     op->type) &&
                 use_f16_down_kquant_matvec) {
                 int q_threads = 256;
@@ -18803,7 +18803,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f32_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_backend_quant_kquant_logits_cache_matvec_candidate(
+                bn_backend_quant_supports_kquant_logits_cache_matvec(
                     op->type) &&
                 op->rows >= 65536 &&
                 bn_gpu_policy_cuda_f32_logits_matvec_enabled()) {
@@ -18817,7 +18817,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             }
             if (is_logits_op && w->f16_data && out_offset == 0 &&
                 bias == NULL && bias_idx < 0 &&
-                bn_backend_quant_kquant_logits_cache_matvec_candidate(
+                bn_backend_quant_supports_kquant_logits_cache_matvec(
                     op->type) &&
                 op->rows >= 65536 &&
                 bn_gpu_policy_cuda_f16_logits_matvec_enabled()) {

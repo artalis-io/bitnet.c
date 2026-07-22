@@ -3063,6 +3063,11 @@ if grep -n 'bn_quant_format_is_cuda_f16_float_cache_matvec_candidate\|bn_quant_f
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_packed_kquant_f16_cache_matvec_candidate\|bn_backend_quant_down_kquant_f16_cache_matvec_candidate\|bn_backend_quant_kquant_logits_cache_matvec_candidate' include/backend_quant.h src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Backend quant cache matvec helpers must use supports behavior names"
+    fail=1
+fi
+
 if awk '
     /int bn_transformer_gpu_batch_prefill_enabled\(/ { in_func = 1 }
     in_func && /return c->dim <= (8192|2560)/ { found = 1 }
