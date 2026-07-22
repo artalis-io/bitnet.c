@@ -2510,6 +2510,24 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         layer, cpu_fallback_ffn_layer, cpu_fallback_ffn_from_layer);
 }
 
+BnTransformerGPUMoEFFNFallbackPolicy
+bn_transformer_gpu_moe_ffn_fallback_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_kquant_down,
+    int layer,
+    const BnTransformerGPUCPUFallbackPolicy *cpu_fallback) {
+    BnTransformerGPUMoEFFNFallbackPolicy policy = {0};
+    int fallback_layer = cpu_fallback ? cpu_fallback->ffn_layer : -1;
+    int fallback_from_layer = cpu_fallback ? cpu_fallback->ffn_from_layer : -1;
+    policy.use_cpu = bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
+        gpu, c, map, dim, allow_kquant_down, layer, fallback_layer,
+        fallback_from_layer);
+    return policy;
+}
+
 int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
     const BnConfig *c) {
     return bn_gpu_policy_moe_routed_ffn_batch_allowed(

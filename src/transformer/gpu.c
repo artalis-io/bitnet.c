@@ -1133,11 +1133,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         // ---- FFN (MoE or dense) ----
         ffn_block:;
         if (layer_kind.uses_moe) {
-            int use_cpu_moe_fallback =
-                bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
+            BnTransformerGPUMoEFFNFallbackPolicy moe_ffn_fallback =
+                bn_transformer_gpu_moe_ffn_fallback_policy(
                     gpu, c, &lw->moe.expert_map, dim, 1, l,
-                    cpu_fallback.ffn_layer, cpu_fallback.ffn_from_layer);
-            if (use_cpu_moe_fallback) {
+                    &cpu_fallback);
+            if (moe_ffn_fallback.use_cpu) {
                 void *moe_next_norm = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);
                 if (bn_transformer_gpu_fallback_moe_layer(

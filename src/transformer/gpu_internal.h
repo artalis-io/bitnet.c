@@ -217,6 +217,10 @@ typedef struct {
 } BnTransformerGPUMoESharedCPUFallbackPolicy;
 
 typedef struct {
+    int use_cpu;
+} BnTransformerGPUMoEFFNFallbackPolicy;
+
+typedef struct {
     int enabled;
     void *router_diff;
 } BnTransformerGPUMoEDirectRoutePolicy;
@@ -1242,6 +1246,15 @@ int bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
     int layer,
     int cpu_fallback_ffn_layer,
     int cpu_fallback_ffn_from_layer);
+BnTransformerGPUMoEFFNFallbackPolicy
+bn_transformer_gpu_moe_ffn_fallback_policy(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim,
+    int allow_kquant_down,
+    int layer,
+    const BnTransformerGPUCPUFallbackPolicy *cpu_fallback);
 int bn_transformer_gpu_moe_routed_ffn_batch_allowed(
     const BnConfig *c);
 int bn_transformer_gpu_moe_ffn_disabled(void);

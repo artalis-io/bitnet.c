@@ -2262,16 +2262,34 @@ static void test_gpu_policy_helpers(void) {
     unsetenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_FFN");
     unsetenv("BN_CUDA_DISABLE_MOE_FFN");
+    fallback = (BnTransformerGPUCPUFallbackPolicy)
+        {-1, -1, -1, -1, -1, -1, -1};
+    BnTransformerGPUMoEFFNFallbackPolicy moe_ffn_fallback =
+        bn_transformer_gpu_moe_ffn_fallback_policy(
+            &gpu, &c, &map, c.dim, 1, 0, &fallback);
+    assert(moe_ffn_fallback.use_cpu);
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
     setenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_FFN", "1", 1);
     assert(bn_transformer_gpu_all_active_two_kquant_moe_reference_gpu_route_enabled(
         1, 1));
+    moe_ffn_fallback = bn_transformer_gpu_moe_ffn_fallback_policy(
+        &gpu, &c, &map, c.dim, 1, 0, &fallback);
+    assert(!moe_ffn_fallback.use_cpu);
     assert(!bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 0, -1, -1));
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_FFN");
+    fallback.ffn_layer = 3;
+    moe_ffn_fallback = bn_transformer_gpu_moe_ffn_fallback_policy(
+        &gpu, &c, &map, c.dim, 1, 3, &fallback);
+    assert(moe_ffn_fallback.use_cpu);
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 3, 3, -1));
+    fallback.ffn_layer = -1;
+    fallback.ffn_from_layer = 2;
+    moe_ffn_fallback = bn_transformer_gpu_moe_ffn_fallback_policy(
+        &gpu, &c, &map, c.dim, 1, 3, &fallback);
+    assert(moe_ffn_fallback.use_cpu);
     assert(bn_transformer_gpu_moe_ffn_cpu_fallback_enabled(
         &gpu, &c, &map, c.dim, 1, 3, -1, 2));
     setenv("BN_CUDA_DISABLE_MOE_FFN", "1", 1);
