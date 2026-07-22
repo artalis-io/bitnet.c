@@ -3918,10 +3918,10 @@ int bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
     int tensor_type,
     int small_dense_native_quant_enabled,
     int native_quant_prepared,
-    int prepared_path,
+    int native_quant_prepared_path,
     int has_native_quant_pipeline,
     int has_pipeline) {
-    return native_quant_prepared == prepared_path &&
+    return native_quant_prepared == native_quant_prepared_path &&
            small_dense_native_quant_enabled &&
            bn_backend_quant_supports_direct_native_quant_matvec(tensor_type) &&
            has_native_quant_pipeline &&

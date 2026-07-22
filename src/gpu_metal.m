@@ -1044,11 +1044,12 @@ static void metal_encode_specialized_native_quant(
 static int metal_small_dense_native_quant_graph_path_supported(BnMetalCtx *ctx,
                                             int tensor_type,
                                             int native_quant_prepared,
-                                            int prepared_path,
+                                            int native_quant_prepared_path,
                                             id<MTLComputePipelineState> pipeline)
 {
     return bn_gpu_policy_metal_small_dense_native_quant_graph_path_supported(
-        tensor_type, ctx->small_dense_native_quant_enabled, native_quant_prepared, prepared_path,
+        tensor_type, ctx->small_dense_native_quant_enabled, native_quant_prepared,
+        native_quant_prepared_path,
         ctx->native_quant_pipeline != nil, pipeline != nil);
 }
 

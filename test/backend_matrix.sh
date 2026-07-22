@@ -2274,6 +2274,11 @@ if grep -n 'bn_gpu_policy_metal_exact_native_matvec_supported\|bn_gpu_policy_met
     fail=1
 fi
 
+if grep -n 'int prepared_path' include/gpu_policy.h src/gpu_policy.c src/gpu_metal.m >/dev/null 2>&1; then
+    echo "Metal small-dense native-quant graph path policy must name native-quant prepared path behavior"
+    fail=1
+fi
+
 if grep -n 'static const char \*shader_name_for_type\|static const int supported_types' src/gpu_wgpu.c src/gpu_metal.m >/dev/null 2>&1; then
     echo "GPU backends must use quant format helpers for shader type-name and supported-type policy"
     fail=1
