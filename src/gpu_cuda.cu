@@ -19895,7 +19895,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                    !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled()) {
                 if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
                     BN_CUDA_EXEC_FAIL(
-                        "moe exact route dot prepared-input scratch alloc failed");
+                        "moe reference route dot prepared-input scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
                     moe_route_all_active_two_avx2_quantize_q8k_kernel,
