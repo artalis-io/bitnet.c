@@ -42,9 +42,9 @@ make BN_ENABLE_METAL=1 bench_llama_topk_server
 make BN_ENABLE_METAL=1 bench_kernels
 ./bench_kernels models/qwen2.5-3b-instruct-q4_0.gguf --metal --iters 20 --toks 8
 ./bench_kernels models/qwen2.5-3b-instruct-q4_0.gguf --metal \
-  --metal-disable-q4-q8 --iters 20 --toks 8
+  --metal-disable-small-dense-native-quant --iters 20 --toks 8
 ./bench_kernels models/qwen2.5-3b-instruct-q4_0.gguf --metal \
-  --metal-enable-q6-q8k --iters 20 --toks 8
+  --metal-specialized-native-quant --iters 20 --toks 8
 
 make fetch-wgpu
 make BN_ENABLE_WEBGPU=1 test_gpu_wgpu
@@ -121,10 +121,10 @@ Follow-up checks:
   `--metal-disable-barriers` matched top-1 on `8/8` prompts with mean top-10
   overlap 9.62, but measured 96.59 tok/s versus llama.cpp 117.34 tok/s
   (ratio 0.823), so explicit Metal barriers should stay enabled.
-  `--metal-q4-prepared` exposed the existing prepared Q4_0 Metal upload layout
+  `--metal-native-quant-prepared` exposed the existing prepared Q4_0 Metal upload layout
   to the main benchmark path, but it regressed the same 128-token direct run to
   77.04 tok/s, so the default packed Q4_0 layout remains the better gate path.
-  `--metal-disable-q4-q8` measured 91.53 tok/s, so the Q4_0 x Q8 activation
+  `--metal-disable-small-dense-native-quant` measured 91.53 tok/s, so the Q4_0 x Q8 activation
   path should stay enabled by default. `--gpu-split-residual-rmsnorm` measured
   89.18 tok/s, so the fused residual RMSNorm path should also stay enabled.
   `--gpu-cpu-logits` measured 85.45 tok/s, so the GPU Q6_K logits path remains
@@ -134,7 +134,7 @@ Follow-up checks:
   remains the better kernel variant on this setup. Q4_0 x Q8 threadgroup
   geometry sweeps also did not improve the gate: 32-row groups measured
   95.75 tok/s and 8-row groups measured 96.22 tok/s, so the current 16-row
-  geometry remains the best tested setting. The opt-in `--metal-enable-q6-q8k`
+  geometry remains the best tested setting. The opt-in `--metal-specialized-native-quant`
   logits path now uses a parallel Metal Q8_K activation quantizer and a
   vectorized Q6_K x Q8_K matvec shaped like the default Q6_K float-vector
   shader. The corrected llama-server gate improved to 72.04 tok/s versus
@@ -144,20 +144,20 @@ Follow-up checks:
   `-t 1` measured 91.62 tok/s, so the default thread setting remains better
   even for GPU decode. The default Q4_0 x Q8 activation policy applies to
   layers 0-2 on this 36-layer model; extending it to all layers with
-  `--q4-q8-to-layer 35` measured 84.57 tok/s, and extending it to layers 0-4
+  `--small-dense-native-quant-to-layer 35` measured 84.57 tok/s, and extending it to layers 0-4
   measured 94.42 tok/s, so the conservative first-three-layer policy remains
   the best tested setting. Restricting the same first-three-layer range to
   attention-only measured 94.73 tok/s, and FFN-only measured 92.19 tok/s, so
   applying Q4_0 x Q8 to both attention and FFN in those early layers remains
-  preferable. `--q4-q8-disable-gateup` uses the native Q4 fused gate/up shader
+  preferable. `--small-dense-native-quant-disable-gateup` uses the native Q4 fused gate/up shader
   while leaving Q4_0 x Q8 enabled elsewhere; it improved the direct
   `bench_kernels` fused row from 338.5 us/call to 303.2 us/call, but the strict
   llama-server gate remained essentially flat at 94.91 tok/s versus llama.cpp
   115.37 tok/s (ratio 0.823, top-1 `8/8`, mean top-10 overlap 9.75), so it is
-  diagnostic-only for now. `--q4-q8-disable-ffn-down` also stayed flat at
+  diagnostic-only for now. `--small-dense-native-quant-disable-ffn-down` also stayed flat at
   94.90 tok/s versus llama.cpp 115.72 tok/s (ratio 0.820, top-1 `8/8`, mean
-  top-10 overlap 9.88). Combining `--q4-q8-disable-gateup` with
-  `--q4-q8-disable-ffn-down` measured 95.76 tok/s versus llama.cpp 115.40 tok/s
+  top-10 overlap 9.88). Combining `--small-dense-native-quant-disable-gateup` with
+  `--small-dense-native-quant-disable-ffn-down` measured 95.76 tok/s versus llama.cpp 115.40 tok/s
   (ratio 0.830, top-1 `8/8`, mean top-10 overlap 10.00), so native-FFN policy
   toggles are not enough to close the Metal gap. The next Q4_0 FFN kernel
   direction should be row-grouped matvec/gateup work that reuses each activation
@@ -174,10 +174,10 @@ Follow-up checks:
 - `bench_kernels --metal` now uses GPU-resident weights for per-matrix matvec
   timing, including the quantized output/logits matrix, instead of accidentally
   measuring the CPU quant path. Use `./bench_kernels model.gguf --metal
-  --metal-enable-q6-q8k` when iterating on the opt-in Q6_K x Q8_K logits
+  --metal-specialized-native-quant` when iterating on the opt-in Q6_K x Q8_K logits
   diagnostic. A 20-iteration Qwen2.5 sample measured the default Metal Q6_K
   logits row at 1786.4 us/call for 151936 x 2048. The older scalar
-  `--metal-enable-q6-q8k` shader measured 11898.2 us/call; the vectorized
+  `--metal-specialized-native-quant` shader measured 11898.2 us/call; the vectorized
   Q6_K x Q8_K shader reduced that to 5178.5 us/call. That is a material
   improvement, but still about 2.9x slower than the default Q6_K Metal logits
   kernel, so it remains diagnostic-only. The same default sample measured

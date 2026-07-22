@@ -2156,6 +2156,11 @@ if grep -n 'BITNET_ARGS+=(--metal-\(enable\|disable\)-q6-q8k\|cmd.append("--meta
     fail=1
 fi
 
+if grep -n -- '--q4-q8\|--metal-q4-prepared\|--metal-\(enable\|disable\)-q6-q8k\|--small-dense-exact-native' docs/benchmarks.md docs/roadmap.md >/dev/null 2>&1; then
+    echo "Benchmark and roadmap docs must use behavior-named native-quant diagnostic flags"
+    fail=1
+fi
+
 if grep -n 'setenv("BN_GPU_SMALL_DENSE_EXACT_NATIVE\|setenv("BN_METAL_DISABLE_SMALL_DENSE_EXACT_NATIVE_DEFAULT\|int[[:space:]]\+small_dense_exact_native_\|int[[:space:]]\+metal_disable_small_dense_exact_native' test/test_coherence.c >/dev/null 2>&1; then
     echo "Coherence harness must drive small-dense native-quant policy through behavior-named env vars"
     fail=1
