@@ -2156,7 +2156,7 @@ if grep -n 'BITNET_ARGS+=(--metal-\(enable\|disable\)-q6-q8k\|cmd.append("--meta
     fail=1
 fi
 
-if grep -n -- '--q4-q8\|--metal-q4-prepared\|--metal-\(enable\|disable\)-q6-q8k\|--small-dense-exact-native\|default Q4/Q8' docs/benchmarks.md docs/roadmap.md >/dev/null 2>&1; then
+if grep -n -- '--q4-q8\|--metal-q4-prepared\|--metal-\(enable\|disable\)-q6-q8k\|--small-dense-exact-native\|default Q4/Q8\|Q4/Q8 repacking' docs/benchmarks.md docs/roadmap.md >/dev/null 2>&1; then
     echo "Benchmark and roadmap docs must use behavior-named native-quant diagnostic flags"
     fail=1
 fi
