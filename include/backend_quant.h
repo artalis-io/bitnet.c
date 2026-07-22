@@ -407,27 +407,27 @@ static inline int bn_backend_quant_supports_kquant_logits_cache_matvec(
     return bn_backend_quant_moe_down_uses_down_kquant(type);
 }
 
-static inline int bn_backend_quant_legacy_block_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_legacy_block_matvec(int type) {
     return bn_quant_format_is_q5_0(type);
 }
 
-static inline int bn_backend_quant_down_kquant_dot_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_down_kquant_dot_matvec(int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type);
 }
 
-static inline int bn_backend_quant_down_kquant_warp_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_down_kquant_warp_matvec(int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type);
 }
 
-static inline int bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_asymmetric_kquant_dot_matvec(int type) {
     return bn_backend_quant_is_q4k(type);
 }
 
-static inline int bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(int type) {
     return bn_backend_quant_is_q4k(type);
 }
 
-static inline int bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(int type) {
     return bn_backend_quant_is_q5k(type);
 }
 
@@ -480,17 +480,17 @@ static inline int bn_backend_quant_native_quant_fused_gateup_candidate(
 
 static inline int bn_backend_quant_asymmetric_kquant_dot_fused_gateup_candidate(
     int type) {
-    return bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(type);
+    return bn_backend_quant_supports_asymmetric_kquant_dot_matvec(type);
 }
 
 static inline int bn_backend_quant_asymmetric_kquant_prepared_input_fused_gateup_candidate(
     int type) {
-    return bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(type);
+    return bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(type);
 }
 
 static inline int bn_backend_quant_deinterleaved_kquant_prepared_input_fused_gateup_candidate(
     int type) {
-    return bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(type);
+    return bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(type);
 }
 
 static inline int bn_backend_quant_matvec_allows_fused_bias(int type) {
@@ -502,15 +502,15 @@ static inline int bn_backend_quant_split_allows_fused_bias(int type) {
 }
 
 static inline int bn_backend_quant_asymmetric_kquant_dot_split_candidate(int type) {
-    return bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(type);
+    return bn_backend_quant_supports_asymmetric_kquant_dot_matvec(type);
 }
 
 static inline int bn_backend_quant_asymmetric_kquant_prepared_input_split_candidate(int type) {
-    return bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(type);
+    return bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(type);
 }
 
 static inline int bn_backend_quant_deinterleaved_kquant_prepared_input_split_candidate(int type) {
-    return bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(type);
+    return bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(type);
 }
 
 static inline int bn_backend_quant_native_quant_split_candidate(int type) {
@@ -519,12 +519,12 @@ static inline int bn_backend_quant_native_quant_split_candidate(int type) {
 
 static inline int bn_backend_quant_split_value_4warp_dot_candidate(
     int type) {
-    return bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(type);
+    return bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(type);
 }
 
 static inline int bn_backend_quant_split_value_mmvq_candidate(
     int type) {
-    return bn_backend_quant_down_kquant_warp_matvec_candidate(type);
+    return bn_backend_quant_supports_down_kquant_warp_matvec(type);
 }
 
 static inline int bn_backend_quant_split_value_fuse_candidate(int type) {

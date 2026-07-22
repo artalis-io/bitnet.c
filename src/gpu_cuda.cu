@@ -12879,14 +12879,14 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         f16_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const __half *)w->f16_data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_legacy_block_matvec_candidate(type) &&
+    } else if (bn_backend_quant_supports_legacy_block_matvec(type) &&
                (cols & 31) == 0 &&
                bn_gpu_policy_cuda_legacy_block_matvec4_enabled()) {
         q5_0_matvec4_kernel<<<(rows + 3) / 4, threads,
             (size_t)threads * sizeof(float) * 4>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_legacy_block_matvec_candidate(type) &&
+    } else if (bn_backend_quant_supports_legacy_block_matvec(type) &&
                (cols & 31) == 0 &&
                bn_gpu_policy_cuda_legacy_block_warp_enabled()) {
         int warps = threads / 32;
@@ -12894,7 +12894,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         q5_0_matvec_warp_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ5_0 *)w->data, ctx->d_x, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(type) &&
+    } else if (bn_backend_quant_supports_asymmetric_kquant_dot_matvec(type) &&
                (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_kquant_dot_enabled()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
@@ -12906,7 +12906,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         q4k_q8k_dot_matvec_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ4K *)w->data, xq, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_down_kquant_dot_matvec_candidate(type) &&
+    } else if (bn_backend_quant_supports_down_kquant_dot_matvec(type) &&
                (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_down_kquant_dot_forced()) {
         if (cuda_ensure_q8_k(ctx, cols, 1) != 0) return -1;
@@ -12918,7 +12918,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
         q6k_dot_matvec_kernel<<<blocks, threads>>>(
             ctx->d_out, (const BnBlockQ6K *)w->data, xq, NULL,
             rows, cols, 0);
-    } else if (bn_backend_quant_down_kquant_warp_matvec_candidate(type) &&
+    } else if (bn_backend_quant_supports_down_kquant_warp_matvec(type) &&
                (cols % BN_QK_K) == 0 &&
                bn_gpu_policy_cuda_down_kquant_warp_enabled()) {
         int warps = threads / 32;
@@ -18863,14 +18863,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     break;
                 }
             }
-            if (bn_backend_quant_legacy_block_matvec_candidate(op->type) &&
+            if (bn_backend_quant_supports_legacy_block_matvec(op->type) &&
                 (op->cols & 31) == 0 && enable_legacy_block_matvec4) {
                 BN_CUDA_LAUNCH(ctx, q5_0_matvec4_kernel,
                     (op->rows + 3) / 4, threads,
                     (size_t)threads * sizeof(float) * 4,
                     out, (const BnBlockQ5_0 *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (bn_backend_quant_legacy_block_matvec_candidate(op->type) &&
+            } else if (bn_backend_quant_supports_legacy_block_matvec(op->type) &&
                        (op->cols & 31) == 0 && enable_legacy_block_warp) {
                 int q5_threads = 256;
                 int warps = q5_threads / 32;
@@ -18879,7 +18879,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     q5_threads, 0,
                     out, (const BnBlockQ5_0 *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (bn_backend_quant_down_kquant_dot_matvec_candidate(
+            } else if (bn_backend_quant_supports_down_kquant_dot_matvec(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 &&
                        (force_down_kquant_dot ||
@@ -19023,7 +19023,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ6K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if (bn_backend_quant_down_kquant_warp_matvec_candidate(
+            } else if (bn_backend_quant_supports_down_kquant_warp_matvec(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_down_kquant_warp) {
                 int q6_threads = 256;
@@ -19034,7 +19034,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     q6_threads, 0,
                     out, (const BnBlockQ6K *)w->data, in, bias,
                     op->rows, op->cols, out_offset);
-            } else if (bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(
+            } else if (bn_backend_quant_supports_asymmetric_kquant_dot_matvec(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
                        ((op->flags & BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT) ||
@@ -19073,7 +19073,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if (bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(
+            } else if (bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)
@@ -19130,7 +19130,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         out, (const BnBlockQ4K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
                 }
-            } else if (bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
+            } else if (bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(
                            op->type) &&
                        (op->cols % BN_QK_K) == 0 && enable_deinterleaved_kquant_dot) {
                 if (cuda_ensure_q8_1(ctx, op->cols) != 0)

@@ -1066,11 +1066,11 @@ int bn_gpu_policy_matvec_disabled(void) {
 static int gpu_policy_matvec_type_disabled(int tensor_type) {
     if (bn_backend_quant_supports_native_quant_small_state_matvec(tensor_type))
         return gpu_policy_native_quant_matvec_disabled();
-    if (bn_backend_quant_legacy_block_matvec_candidate(tensor_type))
+    if (bn_backend_quant_supports_legacy_block_matvec(tensor_type))
         return gpu_policy_legacy_5bit_matvec_disabled();
-    if (bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(tensor_type))
+    if (bn_backend_quant_supports_asymmetric_kquant_dot_matvec(tensor_type))
         return gpu_policy_asymmetric_kquant_matvec_disabled();
-    if (bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
+    if (bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(
             tensor_type))
         return gpu_policy_deinterleaved_kquant_matvec_disabled();
     if (bn_backend_quant_moe_down_uses_down_kquant(tensor_type))

@@ -258,7 +258,7 @@ if sed -n '/^static int cuda_prefill_ssm(/,/int ab_preactivated = 0/p' src/gpu_c
     fail=1
 fi
 
-if sed -n '/bn_backend_quant_legacy_block_matvec_candidate/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+if sed -n '/bn_backend_quant_supports_legacy_block_matvec/,/BN_CUDA_LAUNCH_STATIC(ctx, matvec_kernel/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q5_0\|op->type == BN_GGUF_TENSOR_Q6_K\|op->type == BN_GGUF_TENSOR_Q4_K\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA matvec dispatch quant predicates"
     fail=1
 fi
@@ -1869,6 +1869,11 @@ fi
 
 if grep -n 'bn_backend_quant_q8_small_ssm_matvec_candidate\|bn_backend_quant_f16_q8_matvec_candidate\|bn_backend_quant_f16_q5k_matvec_candidate\|bn_backend_quant_f16_q6k_matvec_candidate\|bn_backend_quant_logits_q6_matvec_candidate\|bn_backend_quant_q6_logits_argmax_candidate\|bn_backend_quant_q8_0_prepared_input_matvec_candidate\|bn_backend_quant_q8_0_warp_matvec_candidate\|bn_backend_quant_q8_0_split_candidate\|bn_backend_quant_q6k_q8k_matvec_candidate\|bn_backend_quant_q6k_warp_matvec_candidate\|bn_backend_quant_q4k_q8k_matvec_candidate\|bn_backend_quant_q4k_q8_1_matvec_candidate\|bn_backend_quant_q5k_q8_1_matvec_candidate\|bn_backend_quant_q5_0_matvec_candidate\|bn_backend_quant_native_quant_small_state_matvec_candidate\|bn_backend_quant_native_quant_f16_cache_matvec_candidate\|bn_backend_quant_native_quant_prepared_input_matvec_candidate\|bn_backend_quant_native_quant_warp_matvec_candidate\|bn_backend_quant_prepared_native_quant_matvec_candidate' include/backend_quant.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "backend quant matvec candidate helpers must use behavior names"
+    fail=1
+fi
+
+if grep -n 'bn_backend_quant_legacy_block_matvec_candidate\|bn_backend_quant_down_kquant_dot_matvec_candidate\|bn_backend_quant_down_kquant_warp_matvec_candidate\|bn_backend_quant_asymmetric_kquant_dot_matvec_candidate\|bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate\|bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate' include/backend_quant.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "backend quant matvec helpers must use supports behavior names"
     fail=1
 fi
 

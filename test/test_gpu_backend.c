@@ -5056,29 +5056,29 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q6_K));
     assert(!bn_backend_quant_supports_kquant_logits_cache_matvec(
         BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_legacy_block_matvec_candidate(
+    assert(bn_backend_quant_supports_legacy_block_matvec(
         BN_GGUF_TENSOR_Q5_0));
-    assert(!bn_backend_quant_legacy_block_matvec_candidate(
+    assert(!bn_backend_quant_supports_legacy_block_matvec(
         BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_down_kquant_dot_matvec_candidate(
+    assert(bn_backend_quant_supports_down_kquant_dot_matvec(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_down_kquant_dot_matvec_candidate(
+    assert(!bn_backend_quant_supports_down_kquant_dot_matvec(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_down_kquant_warp_matvec_candidate(
+    assert(bn_backend_quant_supports_down_kquant_warp_matvec(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_backend_quant_down_kquant_warp_matvec_candidate(
+    assert(!bn_backend_quant_supports_down_kquant_warp_matvec(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(
+    assert(bn_backend_quant_supports_asymmetric_kquant_dot_matvec(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_asymmetric_kquant_dot_matvec_candidate(
+    assert(!bn_backend_quant_supports_asymmetric_kquant_dot_matvec(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(
+    assert(bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q4_K));
-    assert(!bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate(
+    assert(!bn_backend_quant_supports_asymmetric_kquant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q6_K));
-    assert(bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
+    assert(bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q5_K));
-    assert(!bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
+    assert(!bn_backend_quant_supports_deinterleaved_kquant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_supports_native_quant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q8_0));
