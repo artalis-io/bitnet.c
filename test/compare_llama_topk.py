@@ -53,43 +53,61 @@ def parse_args():
     p.add_argument("--llama-server-url", default="http://127.0.0.1:8027")
     p.add_argument("--flash", action="store_true")
     p.add_argument("--small-dense-native-quant-tail",
-                   "--small-dense-exact-native-tail", "--q4-q8-tail-native",
                    dest="small_dense_native_quant_tail", type=int)
+    p.add_argument("--small-dense-exact-native-tail", "--q4-q8-tail-native",
+                   dest="small_dense_native_quant_tail", type=int,
+                   help=argparse.SUPPRESS)
     p.add_argument("--small-dense-native-quant-attn-only",
-                   "--small-dense-exact-native-attn-only", "--q4-q8-attn-only",
                    dest="small_dense_native_quant_attn_only",
                    action="store_true")
+    p.add_argument("--small-dense-exact-native-attn-only", "--q4-q8-attn-only",
+                   dest="small_dense_native_quant_attn_only",
+                   action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--small-dense-native-quant-ffn-only",
-                   "--small-dense-exact-native-ffn-only", "--q4-q8-ffn-only",
                    dest="small_dense_native_quant_ffn_only",
                    action="store_true")
+    p.add_argument("--small-dense-exact-native-ffn-only", "--q4-q8-ffn-only",
+                   dest="small_dense_native_quant_ffn_only",
+                   action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--small-dense-native-quant-disable-gateup",
-                   "--small-dense-exact-native-disable-gateup",
-                   "--q4-q8-disable-gateup",
                    dest="small_dense_native_quant_disable_gateup",
                    action="store_true")
+    p.add_argument("--small-dense-exact-native-disable-gateup",
+                   "--q4-q8-disable-gateup",
+                   dest="small_dense_native_quant_disable_gateup",
+                   action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--small-dense-native-quant-disable-ffn-down",
-                   "--small-dense-exact-native-disable-ffn-down",
-                   "--q4-q8-disable-ffn-down",
                    dest="small_dense_native_quant_disable_ffn_down",
                    action="store_true")
+    p.add_argument("--small-dense-exact-native-disable-ffn-down",
+                   "--q4-q8-disable-ffn-down",
+                   dest="small_dense_native_quant_disable_ffn_down",
+                   action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--gpu-flash-min-kv", type=int)
     p.add_argument("--gpu-max-storage-binding-mb", type=int)
     p.add_argument("--metal-disable-barriers", action="store_true")
     p.add_argument("--metal-disable-small-dense-native-quant",
-                   "--metal-disable-small-dense-exact-native",
-                   "--metal-disable-q4-q8",
                    dest="metal_disable_small_dense_native_quant",
                    action="store_true")
+    p.add_argument("--metal-disable-small-dense-exact-native",
+                   "--metal-disable-q4-q8",
+                   dest="metal_disable_small_dense_native_quant",
+                   action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--metal-specialized-native-quant", action="store_true")
     p.add_argument("--metal-enable-q6-q8k", action="store_true",
-                   dest="metal_specialized_native_quant")
+                   dest="metal_specialized_native_quant",
+                   help=argparse.SUPPRESS)
     p.add_argument("--metal-disable-specialized-native-quant",
-                   "--metal-disable-q6-q8k",
                    dest="metal_disable_specialized_native_quant",
                    action="store_true")
-    p.add_argument("--metal-native-quant-prepared", "--metal-q4-prepared",
+    p.add_argument("--metal-disable-q6-q8k",
+                   dest="metal_disable_specialized_native_quant",
+                   action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--metal-native-quant-prepared",
                    dest="metal_native_quant_prepared", action="store_true")
+    p.add_argument("--metal-q4-prepared",
+                   dest="metal_native_quant_prepared", action="store_true",
+                   help=argparse.SUPPRESS)
     p.add_argument("--benchmark", action="store_true")
     p.add_argument("--bench-tokens", type=int, default=128)
     p.add_argument("--bench-runs", type=int, default=1)
