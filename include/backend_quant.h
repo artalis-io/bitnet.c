@@ -115,7 +115,7 @@ static inline int bn_backend_quant_is_q3k(int type) {
 }
 
 static inline int bn_backend_quant_requires_float_kquant_fallback(int type) {
-    return bn_quant_format_is_float_kquant_fallback_candidate(type);
+    return bn_quant_format_requires_float_kquant_fallback(type);
 }
 
 static inline int bn_backend_quant_supports_prepared_kquant(int type) {

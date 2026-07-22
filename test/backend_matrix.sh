@@ -688,8 +688,8 @@ if grep -n 'bn_quant_format_tied_logits_uses_quant_path\|bn_quant_format_support
     fail=1
 fi
 
-if grep -n 'bn_quant_format_is_float_kquant_fallback_candidate' src/transformer/prefill.c >/dev/null 2>&1; then
-    echo "src/transformer/prefill.c must use prefill policy helpers for float K-quant fallback policy"
+if grep -n 'bn_quant_format_is_float_kquant_fallback_candidate' include/quant.h include/backend_quant.h src/quant/registry.c src/transformer/prefill.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "Float K-quant fallback helpers must use requires names for quant-format policy"
     fail=1
 fi
 

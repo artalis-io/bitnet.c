@@ -4916,7 +4916,7 @@ static void test_quant_registry(void) {
     assert(!bn_quant_format_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
     assert(bn_quant_format_supports_prepared_kquant(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_requires_float_kquant_fallback(BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_is_float_kquant_fallback_candidate(BN_GGUF_TENSOR_Q4_K));
+    assert(bn_quant_format_requires_float_kquant_fallback(BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_can_gpu_split(BN_GGUF_TENSOR_Q4_K));
     assert(bn_quant_format_gpu_split_cap(BN_GGUF_TENSOR_Q4_K) ==
            BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT);

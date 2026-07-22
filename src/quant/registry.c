@@ -145,7 +145,7 @@ int bn_quant_format_supports_gpu_dense_graph_native_quant(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_GPU_DENSE_GRAPH_NATIVE_QUANT);
 }
 
-int bn_quant_format_is_float_kquant_fallback_candidate(int type) {
+int bn_quant_format_requires_float_kquant_fallback(int type) {
     return bn_quant_format_has_cap(type, BN_QUANT_CAP_FLOAT_KQUANT_FALLBACK);
 }
 

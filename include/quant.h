@@ -321,7 +321,7 @@ int      bn_quant_format_gpu_supports_repacked_bias(int type);
 uint32_t bn_quant_format_gpu_dispatch_tile_rows(int type);
 int      bn_quant_format_supports_gpu_dense_graph(int type);
 int      bn_quant_format_supports_gpu_dense_graph_native_quant(int type);
-int      bn_quant_format_is_float_kquant_fallback_candidate(int type);
+int      bn_quant_format_requires_float_kquant_fallback(int type);
 int      bn_quant_format_supports_native_quant_logits_refine(int type);
 int      bn_quant_format_supports_kquant_logits_refine(int type);
 const char *bn_quant_format_gpu_shader_name(int type);
