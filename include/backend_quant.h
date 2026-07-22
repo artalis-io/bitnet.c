@@ -43,22 +43,28 @@ static inline int bn_backend_quant_dense_graph_native_quant_supported(int type) 
     return bn_quant_format_supports_gpu_dense_graph_native_quant(type);
 }
 
+static inline int bn_backend_quant_dense_graph_requirement_supported(
+    int type,
+    BnBackendQuantDenseGraphRequirement requirement) {
+    return requirement == BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT
+        ? bn_backend_quant_dense_graph_native_quant_supported(type)
+        : bn_backend_quant_dense_graph_supported(type);
+}
+
 static inline int bn_backend_quant_dense_graph_weight_supported(
     const BnQWeight *w,
     BnBackendQuantDenseGraphRequirement requirement) {
     if (!w || !w->data)
         return 1;
-    return requirement == BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT
-        ? bn_backend_quant_dense_graph_native_quant_supported(w->type)
-        : bn_backend_quant_dense_graph_supported(w->type);
+    return bn_backend_quant_dense_graph_requirement_supported(w->type,
+                                                             requirement);
 }
 
 static inline int bn_backend_quant_dense_graph_tensor_supported(
     int tensor_type,
     BnBackendQuantDenseGraphRequirement requirement) {
-    return requirement == BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT
-        ? bn_backend_quant_dense_graph_native_quant_supported(tensor_type)
-        : bn_backend_quant_dense_graph_supported(tensor_type);
+    return bn_backend_quant_dense_graph_requirement_supported(tensor_type,
+                                                             requirement);
 }
 
 static inline int bn_backend_quant_dense_graph_model_supported(

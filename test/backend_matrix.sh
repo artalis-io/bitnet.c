@@ -4336,6 +4336,11 @@ if rg -n 'bn_backend_quant_dense_graph_(weight|tensor|model)_supported\([^;]*(,|
     fail=1
 fi
 
+if awk '/^static inline int bn_backend_quant_dense_graph_weight_supported/{flag=1} /^static inline int bn_backend_quant_dense_graph_model_supported/{flag=0} flag{print}' include/backend_quant.h | grep -n 'BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT\|bn_backend_quant_dense_graph_native_quant_supported\|bn_backend_quant_dense_graph_supported' >/dev/null 2>&1; then
+    echo "Dense graph weight/tensor aggregation must use the requirement helper"
+    fail=1
+fi
+
 for file in \
     src/transformer/cpu_backend.c \
     src/transformer/prefill_backend.c \

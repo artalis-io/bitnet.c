@@ -4883,6 +4883,12 @@ static void test_quant_registry(void) {
     assert(bn_backend_quant_dense_graph_native_quant_supported(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_dense_graph_native_quant_supported(BN_GGUF_TENSOR_Q4_0));
     assert(bn_backend_quant_dense_graph_native_quant_supported(BN_GGUF_TENSOR_Q8_0));
+    assert(bn_backend_quant_dense_graph_requirement_supported(
+        BN_GGUF_TENSOR_Q4_0, BN_BACKEND_QUANT_DENSE_GRAPH_ANY));
+    assert(!bn_backend_quant_dense_graph_requirement_supported(
+        BN_GGUF_TENSOR_Q4_0, BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT));
+    assert(bn_backend_quant_dense_graph_requirement_supported(
+        BN_GGUF_TENSOR_Q8_0, BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT));
     assert(bn_backend_quant_supports_native_quant_logits_refine(
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_supports_native_quant_logits_refine(
