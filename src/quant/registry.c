@@ -267,9 +267,10 @@ uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled) {
         : 0u;
 }
 
-uint32_t bn_quant_format_gpu_matvec_exact_kquant_flag(int type, int enabled) {
+uint32_t bn_quant_format_gpu_matvec_reference_kquant_flag(int type,
+                                                          int enabled) {
     return enabled && type == BN_GGUF_TENSOR_Q6_K
-        ? BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT
+        ? BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT
         : 0u;
 }
 

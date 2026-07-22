@@ -8,7 +8,7 @@
 #include "quant.h"
 
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT
-#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT
+#define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT
 
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     return bn_quant_format_gpu_split_cap(type);
@@ -789,10 +789,10 @@ static inline uint32_t bn_backend_quant_gpu_matvec_kquant_dot_flag(
     return bn_quant_format_gpu_matvec_kquant_dot_flag(type, enabled);
 }
 
-static inline uint32_t bn_backend_quant_gpu_matvec_exact_kquant_flag(
+static inline uint32_t bn_backend_quant_gpu_matvec_reference_kquant_flag(
     int type,
     int enabled) {
-    return bn_quant_format_gpu_matvec_exact_kquant_flag(type, enabled);
+    return bn_quant_format_gpu_matvec_reference_kquant_flag(type, enabled);
 }
 
 void bn_backend_quant_matvec_gpu(float *out, const BnQWeight *W,

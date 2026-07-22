@@ -736,7 +736,7 @@ static void test_gpu_capability_routing(void) {
                BN_GGUF_TENSOR_F32) == 0);
     assert(bn_transformer_gpu_matvec_reference_kquant_flags(
                BN_GGUF_TENSOR_Q6_K, 1) ==
-           BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT);
+           BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT);
     assert(bn_transformer_gpu_matvec_reference_kquant_flags(
                BN_GGUF_TENSOR_Q6_K, 0) == 0);
     assert(bn_transformer_gpu_matvec_reference_kquant_flags(

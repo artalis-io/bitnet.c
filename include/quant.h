@@ -26,7 +26,7 @@ extern "C" {
 #define BN_I2S_BLOCK_ELEMS   128         // elements per I2S interleaved block
 #define BN_I2S_SUBROW_SIZE   32          // elements per sub-row
 #define BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT 1u
-#define BN_QUANT_GPU_MATVEC_FLAG_EXACT_KQUANT 8u
+#define BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT 8u
 
 // TQ1_0: base-3 ternary packing, 256 weights per block
 // qs packs 240 values (5 per byte in base-3), qh packs remaining 16 (4 per byte)
@@ -351,7 +351,8 @@ int      bn_quant_format_gpu_fused_gateup_requires_backend_opt_in(int type);
 int      bn_quant_format_gpu_allows_gateup_split_activation(int type,
                                                             int act_type);
 uint32_t bn_quant_format_gpu_matvec_kquant_dot_flag(int type, int enabled);
-uint32_t bn_quant_format_gpu_matvec_exact_kquant_flag(int type, int enabled);
+uint32_t bn_quant_format_gpu_matvec_reference_kquant_flag(int type,
+                                                          int enabled);
 int      bn_quant_format_supports_exact_native_quant_matvec(int type);
 int      bn_quant_format_supports_specialized_native_quant_matvec(int type);
 int      bn_quant_format_dense_f32_type(void);

@@ -18752,7 +18752,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             int use_f16_down_kquant_matvec =
                 bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(
                     op->rows, op->cols,
-                    (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT) != 0);
+                    (op->flags & BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0);
             int small_state_native_matvec =
                 bn_backend_quant_supports_native_quant_small_state_matvec(
                     op->type) &&
@@ -18895,7 +18895,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 int use_down_kquant_mmvq =
                     bn_gpu_policy_cuda_down_kquant_mmvq_enabled(
                         op->rows, op->cols, is_logits_op,
-                        (op->flags & BN_GPU_OP_FLAG_MATVEC_EXACT_KQUANT) != 0) &&
+                        (op->flags & BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT) != 0) &&
                     bias == NULL && bias_idx < 0;
                 if (use_down_kquant_mmvq) {
                     if (cuda_ensure_q8_1(ctx, op->cols) != 0)
