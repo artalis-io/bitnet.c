@@ -1079,7 +1079,7 @@ static void test_gpu_policy_helpers(void) {
         memset(&gpu, 0, sizeof(gpu));
     }
 
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION;
     assert(!bn_transformer_prefill_small_dense_chain_applicable(
@@ -1680,7 +1680,7 @@ static void test_gpu_policy_helpers(void) {
 
     memset(&c, 0, sizeof(c));
     c.dim = 2048;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     gpu.kind = BN_GPU_BACKEND_CUDA;
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE");
@@ -2111,7 +2111,7 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &c, &manual_small_dense_native_quant_policy, 0, 0, -1);
     assert(!small_dense_native_quant_use.use_attention);
     manual_small_dense_native_quant_policy.ffn_only = 0;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT;
     unsetenv("BN_CUDA_ENABLE_SMALL_DENSE_EXACT_FFN_DOWN");
     unsetenv("BN_CUDA_ENABLE_SMALL_QWEN_EXACT_FFN_DOWN");
     small_dense_native_quant_use = bn_transformer_gpu_small_dense_native_quant_layer_use_policy(
@@ -2539,7 +2539,7 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts_active = 0;
     c.moe_intermediate_size = 0;
     c.dim = 2048;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE;
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT;
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(!bn_transformer_gpu_small_dense_native_quant_cpu_attn_fallback_enabled(
         &gpu, &c, &dense_w));
@@ -3152,7 +3152,7 @@ static void test_logits_policy_helpers(void) {
         NULL, &c, &q8));
     gpu.kind = BN_GPU_BACKEND_METAL;
     c.dim = 2048;
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     setenv("BN_CUDA_ENABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_logits_native_quant_refine_enabled(
@@ -3167,7 +3167,7 @@ static void test_logits_policy_helpers(void) {
     c.policy_flags = 0;
     assert(!bn_transformer_logits_native_quant_refine_enabled(
         &gpu, &c, &q8));
-    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+    c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE;
     setenv("BN_CUDA_DISABLE_SMALL_DENSE_Q8_LOGITS_REFINE", "1", 1);
     assert(!bn_transformer_logits_native_quant_refine_enabled(
@@ -3419,7 +3419,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM |
                      BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION |
                      BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
@@ -3532,7 +3532,7 @@ static void test_model_arch_registry(void) {
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER |
                      BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK |
-                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
+                     BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_QUANT |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
                      BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(!bn_model_arch_requires_float_kquant_fallback(&c));
