@@ -743,13 +743,13 @@ static void test_gpu_capability_routing(void) {
                BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_transformer_gpu_float_buffer_type() == BN_GGUF_TENSOR_F32);
     assert(bn_transformer_gpu_reference_silu_flags(
-               BN_GGUF_TENSOR_Q8_0, 1) == BN_GPU_OP_FLAG_EXACT_SILU);
+               BN_GGUF_TENSOR_Q8_0, 1) == BN_GPU_OP_FLAG_REFERENCE_SILU);
     assert(bn_transformer_gpu_reference_silu_flags(
                BN_GGUF_TENSOR_Q8_0, 0) == 0);
     assert(bn_transformer_gpu_reference_silu_flags(
                BN_GGUF_TENSOR_Q4_0, 1) == 0);
     assert(bn_transformer_gpu_reference_silu_active_flags(1) ==
-           BN_GPU_OP_FLAG_EXACT_SILU);
+           BN_GPU_OP_FLAG_REFERENCE_SILU);
     assert(bn_transformer_gpu_reference_silu_active_flags(0) == 0);
     assert(bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));

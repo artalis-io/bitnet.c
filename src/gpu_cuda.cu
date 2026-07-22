@@ -8968,7 +8968,7 @@ static __global__ void activation_gate_kernel(float *x, const float *aux,
             x[i] = aux[i] * cuda_fast_sigmoid(v);
         }
     } else {
-        float silu = (flags & BN_GPU_OP_FLAG_EXACT_SILU)
+        float silu = (flags & BN_GPU_OP_FLAG_REFERENCE_SILU)
             ? cuda_silu_select(v, 1)
             : v * cuda_fast_sigmoid(v);
         x[i] = silu * aux[i];
@@ -8984,7 +8984,7 @@ static __global__ void activation_kernel(float *x, int n, int kind,
         float r = v > 0.0f ? v : 0.0f;
         x[i] = r * r;
     } else {
-        x[i] = (flags & BN_GPU_OP_FLAG_EXACT_SILU)
+        x[i] = (flags & BN_GPU_OP_FLAG_REFERENCE_SILU)
             ? cuda_silu_select(v, 1)
             : v * cuda_fast_sigmoid(v);
     }
@@ -19675,7 +19675,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 return -1;
             int stable_decode_gateup = graph_exec;
             int exact_silu =
-                (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
+                (op->flags & BN_GPU_OP_FLAG_REFERENCE_SILU) != 0;
             if (bn_backend_quant_supports_legacy_block_fused_gateup(op->type) &&
                 (cols & 31) == 0 &&
                 !disable_legacy_block_gateup_warp) {
@@ -19852,7 +19852,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
             if (route_diff2) {
                 int next_uses_reference_silu =
                     next_moe_all_active_two_kquant &&
-                    (next->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
+                    (next->flags & BN_GPU_OP_FLAG_REFERENCE_SILU) != 0;
                 int route_block_prepared_input =
                     bn_gpu_policy_cuda_moe_route_block_prepared_input_enabled(
                         dim, next_moe_all_active_two_kquant,
@@ -20058,7 +20058,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         bn_gpu_policy_cuda_moe_all_active_two_fast_enabled(
                             moe_all_active_two_graph_kquant);
                     int uses_reference_silu =
-                        (op->flags & BN_GPU_OP_FLAG_EXACT_SILU) != 0;
+                        (op->flags & BN_GPU_OP_FLAG_REFERENCE_SILU) != 0;
                     int use_cublas_all_active_two_decode =
                         moe_all_active_two_kquant &&
                         gate->f16_data && up->f16_data && down->f16_data &&

@@ -154,12 +154,12 @@ int bn_transformer_gpu_float_buffer_type(void) {
 uint32_t bn_transformer_gpu_reference_silu_flags(int tensor_type,
                                              int use_silu) {
     return use_silu && bn_backend_quant_gpu_requires_reference_silu(tensor_type)
-        ? BN_GPU_OP_FLAG_EXACT_SILU
+        ? BN_GPU_OP_FLAG_REFERENCE_SILU
         : 0u;
 }
 
 uint32_t bn_transformer_gpu_reference_silu_active_flags(int reference_silu) {
-    return reference_silu ? BN_GPU_OP_FLAG_EXACT_SILU : 0u;
+    return reference_silu ? BN_GPU_OP_FLAG_REFERENCE_SILU : 0u;
 }
 
 int bn_transformer_gpu_prefers_gateup_split(int tensor_type) {

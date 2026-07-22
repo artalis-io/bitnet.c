@@ -104,7 +104,7 @@ typedef struct BnGPUOp {
 #define BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT 1u
 #define BN_GPU_OP_FLAG_MOE_ROUTE_BLOCK 1u
 #define BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM 2u
-#define BN_GPU_OP_FLAG_EXACT_SILU 4u
+#define BN_GPU_OP_FLAG_REFERENCE_SILU 4u
 #define BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT 8u
 
 static inline int bn_gpu_op_code_is_matvec(int code) {

@@ -3683,8 +3683,8 @@ if ! grep -n 'bn_transformer_gpu_moe_route_raw_compare_matvec_flags' src/transfo
     fail=1
 fi
 
-if awk '/BN_GPU_OP_FLAG_EXACT_SILU/ && !/_Static_assert/' src/transformer/gpu_emit.c | grep -n . >/dev/null 2>&1; then
-    echo "Transformer GPU emission must use GPU policy helpers for exact-SiLU flags"
+if grep -n 'BN_GPU_OP_FLAG_EXACT_SILU' src/gpu_shader_ir_internal.h src/transformer/gpu_policy.c src/gpu_cuda.cu src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "GPU SiLU op flags must use reference behavior names"
     fail=1
 fi
 
