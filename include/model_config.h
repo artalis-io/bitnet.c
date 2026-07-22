@@ -38,7 +38,7 @@ typedef struct {
     int n_experts_active;       // top-K active per token
     int moe_intermediate_size;  // per-expert hidden dim
     int moe_norm_topk_prob;     // normalize selected expert weights to sum 1
-    int moe_exact_silu;         // use exact SiLU in MoE FFN for parity-sensitive archs
+    int moe_uses_reference_silu; // use reference SiLU in MoE FFN for parity-sensitive archs
     float moe_expert_weights_scale; // optional post-routing expert weight scale
     int has_shared_expert;      // 1 if shared expert exists
     int shared_expert_intermediate_size; // shared expert hidden dim

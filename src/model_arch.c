@@ -631,8 +631,8 @@ void bn_model_arch_load_moe_config(BnConfig *c,
         c->policy_flags |= ops->moe_policy_flags;
     c->moe_norm_topk_prob =
         (c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK) == 0;
-    c->moe_exact_silu =
-        (c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU) != 0;
+    c->moe_uses_reference_silu =
+        (c->policy_flags & BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU) != 0;
     snprintf(key, sizeof(key), "%s.expert_weights_scale", prefix);
     c->moe_expert_weights_scale = bn_gguf_get_f32(f, key);
 
@@ -807,7 +807,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
-            BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU |
+            BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU |
             BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK |
             BN_MODEL_ARCH_POLICY_MOE_EXACT_GPU_ATTENTION |
             BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY |

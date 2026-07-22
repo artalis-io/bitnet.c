@@ -250,8 +250,8 @@ static void test_qwen2moe_arch_config(void) {
     assert(c.n_experts_active == 2);
     assert(c.moe_intermediate_size == 8960);
     assert(c.moe_norm_topk_prob == 0);
-    assert(c.moe_exact_silu == 1);
-    assert((c.policy_flags & BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU) != 0);
+    assert(c.moe_uses_reference_silu == 1);
+    assert((c.policy_flags & BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU) != 0);
     assert(bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_moe_float_kquant_gateup_fallback_task_flags(&c) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
@@ -268,32 +268,32 @@ static void test_moe_execution_policy(void) {
     printf("test_moe_execution_policy... ");
 
     BnConfig c = {0};
-    c.moe_exact_silu = 1;
+    c.moe_uses_reference_silu = 1;
     BnMoEExecutionPolicy policy = bn_moe_execution_policy(&c);
     assert(!policy.uses_scaled_router_input);
     assert(!policy.uses_dense_residual_branch);
-    assert(policy.exact_silu == 1);
-    assert(bn_moe_policy_exact_silu(&c) == 1);
+    assert(policy.uses_reference_silu == 1);
+    assert(bn_moe_policy_uses_reference_silu(&c) == 1);
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT;
     policy = bn_moe_execution_policy(&c);
     assert(policy.uses_scaled_router_input);
     assert(!policy.uses_dense_residual_branch);
-    assert(policy.exact_silu == 1);
-    assert(bn_moe_policy_exact_silu(&c) == 1);
+    assert(policy.uses_reference_silu == 1);
+    assert(bn_moe_policy_uses_reference_silu(&c) == 1);
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH;
     policy = bn_moe_execution_policy(&c);
     assert(!policy.uses_scaled_router_input);
     assert(policy.uses_dense_residual_branch);
-    assert(policy.exact_silu == -1);
-    assert(bn_moe_policy_exact_silu(&c) == -1);
+    assert(policy.uses_reference_silu == -1);
+    assert(bn_moe_policy_uses_reference_silu(&c) == -1);
 
     policy = bn_moe_execution_policy(NULL);
     assert(!policy.uses_scaled_router_input);
     assert(!policy.uses_dense_residual_branch);
-    assert(policy.exact_silu == -1);
-    assert(bn_moe_policy_exact_silu(NULL) == -1);
+    assert(policy.uses_reference_silu == -1);
+    assert(bn_moe_policy_uses_reference_silu(NULL) == -1);
 
     printf("PASSED\n");
 }

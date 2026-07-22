@@ -24,7 +24,7 @@ BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols) {
 void bn_moe_swiglu_range(void *ctx, int start, int end) {
     BnSwiGLUCtx *c = (BnSwiGLUCtx *)ctx;
     int i = start;
-    if (c->exact_silu < 0) {
+    if (c->uses_reference_silu < 0) {
         for (; i < end; i++) {
             float g = c->gate[i];
             float gelu = 0.5f * g *
@@ -35,14 +35,14 @@ void bn_moe_swiglu_range(void *ctx, int start, int end) {
         return;
     }
     bn_moe_swiglu_silu(c->hb + i, c->gate + i, c->up + i, end - i,
-                       c->exact_silu);
+                       c->uses_reference_silu);
 }
 
 // Vectorized SwiGLU for pread path (single expert, no dispatch overhead)
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
-                   int exact_silu) {
+                   int uses_reference_silu) {
     int i = 0;
-    if (exact_silu < 0) {
+    if (uses_reference_silu < 0) {
         for (; i < n; i++) {
             float g = gate[i];
             float gelu = 0.5f * g *
@@ -52,7 +52,7 @@ void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
         }
         return;
     }
-    bn_moe_swiglu_silu(hb + i, gate + i, up + i, n - i, exact_silu);
+    bn_moe_swiglu_silu(hb + i, gate + i, up + i, n - i, uses_reference_silu);
 }
 
 // Compiler barrier to prevent reordering of timing calls around dispatches

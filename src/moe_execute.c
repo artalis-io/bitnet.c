@@ -64,7 +64,7 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     t0 = bn_moe_time_ms();
     bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
                   route_policy.expert_hidden_dim,
-                  bn_moe_policy_exact_silu(&m->config));
+                  bn_moe_policy_uses_reference_silu(&m->config));
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
@@ -236,7 +236,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->expert_hb_batch[k],
                     ms->expert_hb_batch[k],
                     ms->expert_hb2_batch[k],
-                    exec_policy.exact_silu
+                    exec_policy.uses_reference_silu
                 };
                 swiglu_tasks[k] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[k], moe_hidden };
             }
@@ -400,7 +400,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     ms->expert_hb_batch[h],
                     ms->expert_hb_batch[h],
                     ms->expert_hb2_batch[h],
-                    exec_policy.exact_silu
+                    exec_policy.uses_reference_silu
                 };
                 swiglu_tasks[h] = (BnTPTask){ bn_moe_swiglu_range, &swiglu_ctxs[h], moe_hidden };
             }
@@ -523,7 +523,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // SwiGLU
             t0 = bn_moe_time_ms();
             bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                          moe_hidden, exec_policy.exact_silu);
+                          moe_hidden, exec_policy.uses_reference_silu);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Wait for down I/O
@@ -591,7 +591,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // SwiGLU activation
             t0 = bn_moe_time_ms();
             bn_moe_swiglu(ms->expert_hb, ms->expert_hb, ms->expert_hb2,
-                          moe_hidden, exec_policy.exact_silu);
+                          moe_hidden, exec_policy.uses_reference_silu);
             ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
             // Down projection
@@ -628,7 +628,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                                           s->x_q, bn_model_pool(m));
         }
         bn_moe_swiglu(s->hb, s->hb, s->hb2, shared_hidden,
-                      exec_policy.exact_silu);
+                      exec_policy.uses_reference_silu);
         const BnQWeight *shared_down =
             bn_moe_shared_expert_down_weight(lw);
         if (shared_down)

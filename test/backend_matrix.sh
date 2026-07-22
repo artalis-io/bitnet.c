@@ -4119,16 +4119,20 @@ do
     fi
 done
 
-for file in \
-    src/transformer/gpu.c \
+if grep -n 'moe_exact_silu\|BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU\|bn_moe_policy_exact_silu\|\.exact_silu\b' \
+    include/model_config.h \
+    include/model_arch.h \
+    src/model_arch.c \
+    src/moe_internal.h \
+    src/moe_policy.c \
+    src/moe_math.c \
+    src/moe_cpu_kernels.c \
     src/moe_execute.c \
-    src/moe_prefill.c
-do
-    if grep -n 'moe_exact_silu' "$file" >/dev/null 2>&1; then
-        echo "$file must use MoE policy helpers for exact SwiGLU/SILU behavior"
-        fail=1
-    fi
-done
+    src/transformer/gpu.c \
+    test/test_moe.c >/dev/null 2>&1; then
+    echo "MoE reference SiLU policy must use reference behavior names, not exact-SiLU policy names"
+    fail=1
+fi
 
 if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|m->config\.moe_intermediate_size' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE policy helpers for routed expert shape and weighting"

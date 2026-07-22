@@ -14,13 +14,14 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
         bn_model_config_moe_uses_scaled_router_input(c);
     policy.uses_dense_residual_branch =
         bn_model_config_moe_uses_dense_residual_branch(c);
-    policy.exact_silu =
-        policy.uses_dense_residual_branch || !c ? -1 : c->moe_exact_silu;
+    policy.uses_reference_silu = policy.uses_dense_residual_branch || !c
+        ? -1
+        : c->moe_uses_reference_silu;
     return policy;
 }
 
-int bn_moe_policy_exact_silu(const BnConfig *c) {
-    return bn_moe_execution_policy(c).exact_silu;
+int bn_moe_policy_uses_reference_silu(const BnConfig *c) {
+    return bn_moe_execution_policy(c).uses_reference_silu;
 }
 
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {

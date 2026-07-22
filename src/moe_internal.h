@@ -28,13 +28,13 @@ typedef struct {
     float *hb;
     const float *gate;
     const float *up;
-    int exact_silu;
+    int uses_reference_silu;
 } BnSwiGLUCtx;
 
 typedef struct {
     int uses_scaled_router_input;
     int uses_dense_residual_branch;
-    int exact_silu;
+    int uses_reference_silu;
 } BnMoEExecutionPolicy;
 
 typedef struct {
@@ -77,7 +77,7 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
 uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c);
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
-int bn_moe_policy_exact_silu(const BnConfig *c);
+int bn_moe_policy_uses_reference_silu(const BnConfig *c);
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c);
 BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c);
 int bn_moe_policy_uses_expert_weights(const BnConfig *c);
@@ -165,7 +165,7 @@ void bn_moe_quant_matvec_down_gpu_buffer(float *out,
                                          BnGPUBackend *gpu);
 void bn_moe_swiglu_range(void *ctx, int start, int end);
 void bn_moe_swiglu(float *hb, const float *gate, const float *up, int n,
-                   int exact_silu);
+                   int uses_reference_silu);
 double bn_moe_time_ms(void);
 void bn_moe_rmsnorm(float *out, const float *x, const float *w,
                     int size, float eps);
@@ -176,7 +176,7 @@ float bn_moe_shared_expert_gate_weight(const BnLayerWeights *lw,
 int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
                      int dim, int start_expert);
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
-                        int n, int exact_silu);
+                        int n, int uses_reference_silu);
 int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
                                    int shared_gate_type, int shared_up_type);
 void bn_moe_weighted_add(float *dst, const float *src, float weight, int n);

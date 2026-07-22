@@ -11,7 +11,7 @@ typedef struct {
     int (*dot4_rows)(float *out, const float *router_w, const float *x,
                      int dim, int start_expert);
     void (*swiglu_silu)(float *hb, const float *gate, const float *up,
-                        int n, int exact_silu);
+                        int n, int uses_reference_silu);
     void (*weighted_add)(float *dst, const float *src, float weight, int n);
     void (*residual_add)(float *x, const float *r, int n);
     int supports_mixed_shared_gateup_batch;
@@ -150,8 +150,8 @@ static int moe_dot4_rows_avx2(float *out, const float *router_w,
 #endif
 
 static void moe_swiglu_silu_scalar(float *hb, const float *gate,
-                                   const float *up, int n, int exact_silu) {
-    (void)exact_silu;
+                                   const float *up, int n, int uses_reference_silu) {
+    (void)uses_reference_silu;
     for (int i = 0; i < n; i++) {
         float g = gate[i];
         hb[i] = (g / (1.0f + expf(-g))) * up[i];
@@ -160,9 +160,9 @@ static void moe_swiglu_silu_scalar(float *hb, const float *gate,
 
 #if BN_TRANSFORMER_CPU_HAS_AVX2
 static void moe_swiglu_silu_avx2(float *hb, const float *gate,
-                                 const float *up, int n, int exact_silu) {
-    if (exact_silu) {
-        moe_swiglu_silu_scalar(hb, gate, up, n, exact_silu);
+                                 const float *up, int n, int uses_reference_silu) {
+    if (uses_reference_silu) {
+        moe_swiglu_silu_scalar(hb, gate, up, n, uses_reference_silu);
         return;
     }
     int i = 0;
@@ -308,8 +308,8 @@ int bn_moe_dot4_rows(float *out, const float *router_w, const float *x,
 }
 
 void bn_moe_swiglu_silu(float *hb, const float *gate, const float *up,
-                        int n, int exact_silu) {
-    bn_moe_cpu_ops()->swiglu_silu(hb, gate, up, n, exact_silu);
+                        int n, int uses_reference_silu) {
+    bn_moe_cpu_ops()->swiglu_silu(hb, gate, up, n, uses_reference_silu);
 }
 
 int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
