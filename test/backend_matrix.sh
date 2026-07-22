@@ -2425,8 +2425,8 @@ if grep -n 'moe_down_prepared_native_quant_exact_2048\|bn_gpu_policy_cuda_moe_do
     fail=1
 fi
 
-if grep -n '\bexact_silu\b' include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
-    echo "GPU policy API must use reference-SiLU behavior names, not exact-SiLU inputs"
+if grep -n '\bexact_silu\b' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "GPU policy and CUDA SiLU routing must use reference-SiLU behavior names, not exact-SiLU inputs"
     fail=1
 fi
 

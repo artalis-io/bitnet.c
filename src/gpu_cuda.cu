@@ -501,8 +501,8 @@ static __device__ __forceinline__ float cuda_q6k_value(const BnBlockQ6K *blk,
                                                        int i);
 
 static __device__ __forceinline__ float cuda_silu_select(float x,
-                                                         int exact_silu) {
-    return exact_silu
+                                                         int uses_reference_silu) {
+    return uses_reference_silu
         ? x / (1.0f + expf(-x))
         : x / (1.0f + __expf(-x));
 }
@@ -2189,7 +2189,7 @@ static __global__ void q5k_dot_matvec_split_4warp_kernel(
 
 static __global__ void q4k_q8k_dot_fused_gateup_silu_kernel(
     float *out, const BnBlockQ4K *blocks, const BnBlockQ8K *xq,
-    int gate_rows, int up_rows, int cols, int exact_silu) {
+    int gate_rows, int up_rows, int cols, int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -2212,12 +2212,12 @@ static __global__ void q4k_q8k_dot_fused_gateup_silu_kernel(
         up += __shfl_down_sync(0xffffffffu, up, offset);
     }
     if (lane == 0)
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
 }
 
 static __global__ void q4k_q8k_dot_fused_gateup_silu_qwarp4_kernel(
     float *out, const BnBlockQ4K *blocks, const BnBlockQ8K *xq,
-    int gate_rows, int up_rows, int cols, int exact_silu) {
+    int gate_rows, int up_rows, int cols, int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -2245,12 +2245,12 @@ static __global__ void q4k_q8k_dot_fused_gateup_silu_qwarp4_kernel(
     gate += __shfl_down_sync(mask, gate, 1);
     up += __shfl_down_sync(mask, up, 1);
     if (sublane == 0)
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
 }
 
 static __global__ void q4k_dot_fused_gateup_silu_kernel(
     float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
-    int gate_rows, int up_rows, int cols, int exact_silu) {
+    int gate_rows, int up_rows, int cols, int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -2276,12 +2276,12 @@ static __global__ void q4k_dot_fused_gateup_silu_kernel(
         up += __shfl_down_sync(0xffffffffu, up, offset);
     }
     if (lane == 0)
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
 }
 
 static __global__ void q4k_dot_fused_gateup_silu_4warp_kernel(
     float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
-    int gate_rows, int up_rows, int cols, int exact_silu) {
+    int gate_rows, int up_rows, int cols, int uses_reference_silu) {
     __shared__ float gate_partial[4];
     __shared__ float up_partial[4];
     int lane = threadIdx.x & 31;
@@ -2318,13 +2318,13 @@ static __global__ void q4k_dot_fused_gateup_silu_4warp_kernel(
                gate_partial[2] + gate_partial[3];
         up = up_partial[0] + up_partial[1] +
              up_partial[2] + up_partial[3];
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
     }
 }
 
 static __global__ void q4k_dot_fused_gateup_silu_2warp_kernel(
     float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
-    int gate_rows, int up_rows, int cols, int exact_silu) {
+    int gate_rows, int up_rows, int cols, int uses_reference_silu) {
     __shared__ float gate_partial[2];
     __shared__ float up_partial[2];
     int lane = threadIdx.x & 31;
@@ -2359,13 +2359,13 @@ static __global__ void q4k_dot_fused_gateup_silu_2warp_kernel(
     if (warp == 0 && lane == 0) {
         gate = gate_partial[0] + gate_partial[1];
         up = up_partial[0] + up_partial[1];
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
     }
 }
 
 static __global__ void q4k_dot_fused_gateup_silu_5warp_kernel(
     float *out, const BnBlockQ4K *blocks, const BnCudaBlockQ8_1 *xq,
-    int gate_rows, int up_rows, int cols, int exact_silu) {
+    int gate_rows, int up_rows, int cols, int uses_reference_silu) {
     __shared__ float gate_partial[5];
     __shared__ float up_partial[5];
     int lane = threadIdx.x & 31;
@@ -2402,7 +2402,7 @@ static __global__ void q4k_dot_fused_gateup_silu_5warp_kernel(
                gate_partial[3] + gate_partial[4];
         up = up_partial[0] + up_partial[1] + up_partial[2] +
              up_partial[3] + up_partial[4];
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
     }
 }
 
@@ -4592,7 +4592,7 @@ static __global__ void q5_0_fused_gateup_silu_warp_kernel(
 
 static __global__ void q8_0_fused_gateup_silu_warp_kernel(
     float *out, const BnBlockQ8_0 *blocks, const float *x, int gate_rows,
-    int up_rows, int cols, int exact_silu) {
+    int up_rows, int cols, int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -4621,7 +4621,7 @@ static __global__ void q8_0_fused_gateup_silu_warp_kernel(
         up += __shfl_down_sync(0xffffffffu, up, offset);
     }
     if (lane == 0)
-        out[row] = cuda_silu_select(gate, exact_silu) * up;
+        out[row] = cuda_silu_select(gate, uses_reference_silu) * up;
 }
 
 static __global__ void rmsnorm_kernel(float *out, const float *x,
@@ -6421,7 +6421,7 @@ static __global__ void moe_q4k_gateup_routed_mid_batch_kernel(
 static __global__ void moe_q4k_gateup_routed_mid_q8k_kernel(
     float *mid, const BnBlockQ4K *gate, const BnBlockQ4K *up,
     const BnBlockQ8K *xq, const float *route, int hidden, int cols,
-    int n_experts, int k, int exact_silu) {
+    int n_experts, int k, int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -6449,7 +6449,7 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_kernel(
         up_sum += __shfl_down_sync(0xffffffffu, up_sum, offset);
     }
     if (lane == 0) {
-        float silu = cuda_silu_select(gate_sum, exact_silu);
+        float silu = cuda_silu_select(gate_sum, uses_reference_silu);
         mid[(size_t)slot * (size_t)hidden + (size_t)row] = silu * up_sum;
     }
 }
@@ -6457,7 +6457,7 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_kernel(
 static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_kernel(
     float *mid, const BnBlockQ4K *gate, const BnBlockQ4K *up,
     const BnBlockQ8K *xq, const float *route, int hidden, int cols,
-    int n_experts, int k, int exact_silu) {
+    int n_experts, int k, int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -6491,7 +6491,7 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_kernel(
     up_sum += __shfl_down_sync(mask, up_sum, 2);
     up_sum += __shfl_down_sync(mask, up_sum, 1);
     if (sublane == 0) {
-        float silu = cuda_silu_select(gate_sum, exact_silu);
+        float silu = cuda_silu_select(gate_sum, uses_reference_silu);
         mid[(size_t)slot * (size_t)hidden + (size_t)row] = silu * up_sum;
     }
 }
@@ -6504,7 +6504,7 @@ static __global__ void moe_q4k_gateup_all2_mid_q8k_4row_kernel(
     const float *route,
     int hidden,
     int cols,
-    int exact_silu) {
+    int uses_reference_silu) {
     int lane = threadIdx.x & 31;
     int warp = threadIdx.x >> 5;
     int warps_per_block = blockDim.x >> 5;
@@ -6544,7 +6544,7 @@ static __global__ void moe_q4k_gateup_all2_mid_q8k_4row_kernel(
     up_sum += __shfl_down_sync(mask, up_sum, 2);
     up_sum += __shfl_down_sync(mask, up_sum, 1);
     if (sublane == 0) {
-        float silu = cuda_silu_select(gate_sum, exact_silu);
+        float silu = cuda_silu_select(gate_sum, uses_reference_silu);
         mid[(size_t)slot * (size_t)hidden + (size_t)row] = silu * up_sum;
     }
 }
@@ -10532,13 +10532,13 @@ static __global__ void moe_all2_gateup_f16_to_f16_kernel(
 
 static __global__ void moe_all2_gateup_f16_to_f16_decode_kernel(
     __half *mid, const __half *gate, const __half *up,
-    int hidden, int exact_silu) {
+    int hidden, int uses_reference_silu) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = 2 * hidden;
     if (idx >= total) return;
     float gv = __half2float(gate[idx]);
     float uv = __half2float(up[idx]);
-    mid[idx] = __float2half_rn(cuda_silu_select(gv, exact_silu) * uv);
+    mid[idx] = __float2half_rn(cuda_silu_select(gv, uses_reference_silu) * uv);
 }
 
 static __global__ void moe_all2_scatter_route_kernel(
@@ -12028,7 +12028,7 @@ static int cuda_moe_cublas_all_active_two_decode(
     BnCudaCtx *ctx, float *out,
     const BnCudaBuffer *gate, const BnCudaBuffer *up,
     const BnCudaBuffer *down, const float *in, const float *route,
-    int dim, int hidden_dim, int exact_silu) {
+    int dim, int hidden_dim, int uses_reference_silu) {
     if (!ctx || !ctx->cublas || !out || !gate || !up || !down ||
         !gate->f16_data || !up->f16_data || !down->f16_data ||
         !in || !route || dim <= 0 || hidden_dim <= 0)
@@ -12123,7 +12123,7 @@ static int cuda_moe_cublas_all_active_two_decode(
     int act_total = (int)hidden_values;
     moe_all2_gateup_f16_to_f16_decode_kernel<<<
         (act_total + threads - 1) / threads, threads, 0, ctx->exec_stream>>>(
-        d_mid, d_gate_h, d_up_h, hidden_dim, exact_silu);
+        d_mid, d_gate_h, d_up_h, hidden_dim, uses_reference_silu);
     err = cudaGetLastError();
     if (err != cudaSuccess)
         return -1;
@@ -19674,7 +19674,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 cols <= 0 || gate_rows <= 0 || up_rows <= 0)
                 return -1;
             int stable_decode_gateup = graph_exec;
-            int exact_silu =
+            int uses_reference_silu =
                 (op->flags & BN_GPU_OP_FLAG_REFERENCE_SILU) != 0;
             if (bn_backend_quant_supports_legacy_block_fused_gateup(op->type) &&
                 (cols & 31) == 0 &&
@@ -19696,7 +19696,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 BN_CUDA_LAUNCH_STATIC(ctx, q8_0_fused_gateup_silu_warp_kernel,
                     blocks, q8_gateup_threads, 0,
                     out, (const BnBlockQ8_0 *)w->data, in, gate_rows,
-                    up_rows, cols, exact_silu);
+                    up_rows, cols, uses_reference_silu);
             } else if (bn_backend_quant_supports_asymmetric_kquant_dot_fused_gateup(
                            op->type) &&
                        (cols % BN_QK_K) == 0 && enable_symmetric_kquant_dot &&
@@ -19736,14 +19736,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         q4k_q8k_dot_fused_gateup_silu_qwarp4_kernel,
                         blocks, asymmetric_kquant_gateup_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
-                        up_rows, cols, exact_silu);
+                        up_rows, cols, uses_reference_silu);
                 } else {
                     int blocks = (gate_rows + warps - 1) / warps;
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_q8k_dot_fused_gateup_silu_kernel,
                         blocks, asymmetric_kquant_gateup_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
-                        up_rows, cols, exact_silu);
+                        up_rows, cols, uses_reference_silu);
                 }
             } else if (bn_backend_quant_supports_asymmetric_kquant_prepared_input_fused_gateup(
                            op->type) &&
@@ -19759,21 +19759,21 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         q4k_dot_fused_gateup_silu_5warp_kernel,
                         gate_rows, 160, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
-                        up_rows, cols, exact_silu);
+                        up_rows, cols, uses_reference_silu);
                 } else if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_2warp_enabled(
                                enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_2warp_kernel,
                         gate_rows, 64, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
-                        up_rows, cols, exact_silu);
+                        up_rows, cols, uses_reference_silu);
                 } else if (bn_gpu_policy_cuda_asymmetric_kquant_gateup_4warp_enabled(
                                enable_asymmetric_kquant_4warp, cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_gateup,
                         q4k_dot_fused_gateup_silu_4warp_kernel,
                         gate_rows, 128, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
-                        up_rows, cols, exact_silu);
+                        up_rows, cols, uses_reference_silu);
                 } else {
                     int asymmetric_kquant_gateup_threads = 256;
                     int warps = asymmetric_kquant_gateup_threads / 32;
@@ -19782,7 +19782,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         q4k_dot_fused_gateup_silu_kernel,
                         blocks, asymmetric_kquant_gateup_threads, 0,
                         out, (const BnBlockQ4K *)w->data, xq, gate_rows,
-                        up_rows, cols, exact_silu);
+                        up_rows, cols, uses_reference_silu);
                 }
             } else if (bn_backend_quant_supports_deinterleaved_kquant_prepared_input_fused_gateup(
                            op->type) &&
