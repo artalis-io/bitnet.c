@@ -519,7 +519,7 @@ the structure transformer GPU emission builds directly.
 - [x] **Move transformer GPU uncached MoE buffer cleanup out of orchestration** — uncached expert GPU handles are tracked in `BnGPUMoETemporaryBuffers` and released through the MoE bridge, so `gpu.c` no longer destroys MoE buffers directly.
 - [x] **Hide lowered shader command storage from transformer-facing APIs** — `BnTransformerGPUEmitContext` now stores lowered command state opaquely, backend-session command-buffer access returns `void *`, and the GPU backend `execute` vtable no longer exposes `BnGPUOp`.
 - [x] **Move shader lowering headers under `src/`** — graph lowering, quant-to-shader op selection, and the lowered shader command ABI now live outside public include space; `gpu.c` and CPU fallback helpers use semantic emit helpers instead of fixed shader slots.
-- [ ] **Move transformer GPU MoE fallback selection out of orchestration** — replace hard-coded CPU MoE fallback selection in `gpu.c` with a policy helper so MoE execution placement stays outside forward orchestration.
+- [x] **Move transformer GPU MoE fallback selection out of orchestration** — MoE FFN fallback placement now flows through `BnTransformerGPUMoEFFNFallbackPolicy`, with backend-matrix coverage preventing `gpu.c` from calling the raw CPU fallback predicate directly.
 
 ### Cohesion and Coupling Debt
 
