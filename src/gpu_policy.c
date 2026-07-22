@@ -1353,16 +1353,16 @@ int bn_gpu_policy_prepared_kquant_input_cache_enabled(void) {
     return !gpu_policy_prepared_kquant_input_cache_disabled();
 }
 
-int bn_gpu_policy_cuda_force_quant_matmul_for_type(
+int bn_gpu_policy_cuda_quant_matmul_preferred_for_type(
     int tensor_type,
     int f16_native_quant_matmul_enabled) {
     return (bn_backend_quant_avoids_quant_matmul_on_f16_input(
                 tensor_type) &&
            !f16_native_quant_matmul_enabled) ||
-           (bn_backend_quant_force_asymmetric_kquant_quant_matmul_candidate(
+           (bn_backend_quant_supports_requested_asymmetric_kquant_quant_matmul(
                 tensor_type) &&
             gpu_policy_force_asymmetric_kquant_quant_matmul_requested()) ||
-           (bn_backend_quant_force_down_kquant_quant_matmul_candidate(
+           (bn_backend_quant_supports_requested_down_kquant_quant_matmul(
                 tensor_type) &&
             gpu_policy_force_down_kquant_quant_matmul_requested());
 }

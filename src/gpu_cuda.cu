@@ -11564,8 +11564,8 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
                                   int rows, int cols, int n_tokens,
                                   int type);
 
-static int cuda_force_quant_matmul_for_type(int type) {
-    return bn_gpu_policy_cuda_force_quant_matmul_for_type(
+static int cuda_quant_matmul_preferred_for_type(int type) {
+    return bn_gpu_policy_cuda_quant_matmul_preferred_for_type(
         type, cuda_use_f16_native_quant_matmul());
 }
 
@@ -12690,7 +12690,7 @@ static int cuda_matmul_device_out_preconverted_f16(
         BnCudaCtx *ctx, float *d_dst, const BnCudaBuffer *w,
         const float *d_x, const void *d_x_f16,
         int rows, int cols, int n_tokens, int type) {
-    if (!cuda_force_quant_matmul_for_type(type) &&
+    if (!cuda_quant_matmul_preferred_for_type(type) &&
         w && w->f16_data && d_x_f16 &&
         cuda_cublas_matmul_f16_preconverted(ctx, d_dst, w, d_x_f16,
                                             rows, cols, n_tokens) == 0)
@@ -12710,7 +12710,7 @@ static int cuda_matmul_device_out(BnCudaCtx *ctx, float *d_dst,
     int threads = 256;
     int warps = threads / 32;
     cudaError_t err = cudaSuccess;
-    if (!cuda_force_quant_matmul_for_type(type) &&
+    if (!cuda_quant_matmul_preferred_for_type(type) &&
         (w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, d_dst, w, d_x, rows, cols,
                                n_tokens) == 0) {
@@ -12983,7 +12983,7 @@ static int cuda_matmul(void *vctx, float *out, void *W_buf, const float *X,
 
     int threads = 256;
     int warps = threads / 32;
-    if (!cuda_force_quant_matmul_for_type(type) &&
+    if (!cuda_quant_matmul_preferred_for_type(type) &&
         (w->f16_data || w->f32_data) && n_tokens > 1 &&
         cuda_cublas_matmul_f16(ctx, ctx->d_out, w, ctx->d_x, rows, cols,
                                n_tokens) == 0) {
@@ -13189,13 +13189,13 @@ static int cuda_matmul_batch(void *vctx, const BnGPUMatvecOp *ops, int n_ops,
         BnCudaBuffer *w = (BnCudaBuffer *)ops[i].W_buf;
         int rows = ops[i].rows;
         int type = ops[i].type;
-        if (!cuda_force_quant_matmul_for_type(type) &&
+        if (!cuda_quant_matmul_preferred_for_type(type) &&
             w->f16_data && x_f16_ready &&
             cuda_cublas_matmul_f16_preconverted(
                 ctx, ctx->d_out + out_offset, w, ctx->d_x_f16, rows,
                 x_cols, n_tokens) == 0) {
             err = cudaSuccess;
-        } else if (!cuda_force_quant_matmul_for_type(type) &&
+        } else if (!cuda_quant_matmul_preferred_for_type(type) &&
             (w->f16_data || w->f32_data) &&
             cuda_cublas_matmul_f16(ctx, ctx->d_out + out_offset, w,
                                    ctx->d_x, rows, x_cols,
@@ -17122,11 +17122,11 @@ static int cuda_prefill_ssm_layer(
         ctx->stream &&
         ctx->ssm_stream_entry_event &&
         ctx->ssm_stream_exit_event &&
-        !cuda_force_quant_matmul_for_type(wqkv_type) &&
-        !cuda_force_quant_matmul_for_type(wz_type) &&
-        !cuda_force_quant_matmul_for_type(alpha_type) &&
-        !cuda_force_quant_matmul_for_type(beta_type) &&
-        !cuda_force_quant_matmul_for_type(out_type) &&
+        !cuda_quant_matmul_preferred_for_type(wqkv_type) &&
+        !cuda_quant_matmul_preferred_for_type(wz_type) &&
+        !cuda_quant_matmul_preferred_for_type(alpha_type) &&
+        !cuda_quant_matmul_preferred_for_type(beta_type) &&
+        !cuda_quant_matmul_preferred_for_type(out_type) &&
         ((use_qkvz && qkvz->f16_data) ||
          (!use_qkvz && wqkv->f16_data && wz->f16_data)) &&
         ((bn_backend_quant_already_f32(alpha_type) &&
@@ -17135,11 +17135,11 @@ static int cuda_prefill_ssm_layer(
          (!use_ab && alpha->f16_data && beta->f16_data)) &&
         ssm_out->f16_data &&
         (!fuse_ffn ||
-         (!cuda_force_quant_matmul_for_type(ffn_gate_type) &&
-          !cuda_force_quant_matmul_for_type(ffn_down_type) &&
+         (!cuda_quant_matmul_preferred_for_type(ffn_gate_type) &&
+          !cuda_quant_matmul_preferred_for_type(ffn_down_type) &&
           ffn_gate->f16_data && ffn_down->f16_data &&
           (stacked_ffn_gateup ||
-           (!cuda_force_quant_matmul_for_type(ffn_up_type) &&
+           (!cuda_quant_matmul_preferred_for_type(ffn_up_type) &&
             ffn_up->f16_data))));
     BnCudaExecStreamScope ssm_stream_scope(
         ctx, ctx->stream, ssm_stream_safe);

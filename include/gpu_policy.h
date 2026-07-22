@@ -95,7 +95,7 @@ int bn_gpu_policy_cuda_native_quant_prepared_input_logits_disabled(void);
 int bn_gpu_policy_cuda_native_quant_prepared_input_logits_default_enabled(
     int prepared_input_logits_disabled);
 int bn_gpu_policy_prepared_kquant_input_cache_enabled(void);
-int bn_gpu_policy_cuda_force_quant_matmul_for_type(
+int bn_gpu_policy_cuda_quant_matmul_preferred_for_type(
     int tensor_type,
     int f16_native_quant_matmul_enabled);
 int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols);

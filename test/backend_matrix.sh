@@ -2434,13 +2434,13 @@ if grep -n 'bn_quant_format_logits_q6_f32_cache_supported\|bn_quant_format_moe_d
 fi
 
 if ! awk '
-    /static int cuda_force_quant_matmul_for_type/ { in_fn=1 }
-    in_fn && /bn_gpu_policy_cuda_force_quant_matmul_for_type/ { found=1 }
+    /static int cuda_quant_matmul_preferred_for_type/ { in_fn=1 }
+    in_fn && /bn_gpu_policy_cuda_quant_matmul_preferred_for_type/ { found=1 }
     in_fn && /BN_GGUF_TENSOR_/ { bad=1 }
     in_fn && /^}/ { in_fn=0 }
     END { exit(found && !bad ? 0 : 1) }
 ' src/gpu_cuda.cu; then
-    echo "CUDA forced quant matmul selection must delegate tensor/env policy"
+    echo "CUDA quant matmul preference selection must delegate tensor/env policy"
     fail=1
 fi
 
@@ -3724,7 +3724,7 @@ if grep -n 'BN_BACKEND_QUANT_AUX_CACHE_DEQUANT_\(BF16\|Q8_0\|Q5_0\|Q3K\|Q4K\|Q5K
     fail=1
 fi
 
-if grep -n 'bn_backend_quant_force_q4k_quant_matmul_candidate\|bn_backend_quant_force_q6k_quant_matmul_candidate' include/backend_quant.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1; then
+if grep -n 'bn_backend_quant_force_q4k_quant_matmul_candidate\|bn_backend_quant_force_q6k_quant_matmul_candidate\|bn_backend_quant_force_asymmetric_kquant_quant_matmul_candidate\|bn_backend_quant_force_down_kquant_quant_matmul_candidate\|bn_quant_format_force_quant_matmul_candidate\|bn_gpu_policy_cuda_force_quant_matmul_for_type\|cuda_force_quant_matmul_for_type' include/quant.h include/backend_quant.h include/gpu_policy.h src/quant/registry.c src/gpu_policy.c src/gpu_cuda.cu test/test_quant.c test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "Backend quant force-quant-matmul helpers must use behavior names, not raw tensor-format names"
     fail=1
 fi

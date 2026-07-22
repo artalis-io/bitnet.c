@@ -753,16 +753,16 @@ static inline int bn_backend_quant_avoids_quant_matmul_on_f16_input(
 }
 
 static inline int
-bn_backend_quant_force_asymmetric_kquant_quant_matmul_candidate(
+bn_backend_quant_supports_requested_asymmetric_kquant_quant_matmul(
     int type) {
     return bn_backend_quant_is_q4k(type) &&
-           bn_quant_format_force_quant_matmul_candidate(type);
+           bn_quant_format_supports_requested_quant_matmul(type);
 }
 
-static inline int bn_backend_quant_force_down_kquant_quant_matmul_candidate(
-    int type) {
+static inline int
+bn_backend_quant_supports_requested_down_kquant_quant_matmul(int type) {
     return bn_backend_quant_moe_down_uses_down_kquant(type) &&
-           bn_quant_format_force_quant_matmul_candidate(type);
+           bn_quant_format_supports_requested_quant_matmul(type);
 }
 
 static inline uint32_t bn_backend_quant_gpu_fused_gateup_silu_cap(int type) {

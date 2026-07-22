@@ -184,11 +184,11 @@ static void test_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_quant_format_avoids_quant_matmul_on_f16_input(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_force_quant_matmul_candidate(
+    assert(bn_quant_format_supports_requested_quant_matmul(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_quant_format_force_quant_matmul_candidate(
+    assert(bn_quant_format_supports_requested_quant_matmul(
         BN_GGUF_TENSOR_Q6_K));
-    assert(!bn_quant_format_force_quant_matmul_candidate(
+    assert(!bn_quant_format_supports_requested_quant_matmul(
         BN_GGUF_TENSOR_Q5_K));
     assert(bn_quant_format_supports_exact_native_quant_matvec(
         BN_GGUF_TENSOR_Q4_0));

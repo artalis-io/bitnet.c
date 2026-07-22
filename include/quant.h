@@ -389,7 +389,7 @@ int      bn_quant_format_aux_cache_prefers_large_budget(int type);
 int      bn_quant_format_eager_aux_cache_supported(int type);
 int      bn_quant_format_gpu_matvec_supported(int type);
 int      bn_quant_format_avoids_quant_matmul_on_f16_input(int type);
-int      bn_quant_format_force_quant_matmul_candidate(int type);
+int      bn_quant_format_supports_requested_quant_matmul(int type);
 int      bn_quant_format_uses_f16_logits_path(int type);
 int      bn_quant_format_tied_logits_uses_quant_path(int type);
 int      bn_quant_format_supports_logits_i8_cache(int type);
