@@ -474,9 +474,10 @@ static void debug_compare_native_quant_activation(const BnGPUBackend *gpu,
         return;
     }
     if (bn_transformer_gpu_read_activation_buf(
-            gpu, BN_GPU_DEBUG_BUF_Q8_ACT, gpu_q, (size_t)cols) != 0 ||
+            gpu, BN_GPU_DEBUG_BUF_NATIVE_QUANT_ACT, gpu_q,
+            (size_t)cols) != 0 ||
         bn_transformer_gpu_read_activation_buf(
-            gpu, BN_GPU_DEBUG_BUF_Q8_SCALE, gpu_scales,
+            gpu, BN_GPU_DEBUG_BUF_NATIVE_QUANT_SCALE, gpu_scales,
             (size_t)n_blocks * sizeof(float)) != 0) {
         free(cpu_q); free(gpu_q); free(cpu_scales); free(gpu_scales);
         return;

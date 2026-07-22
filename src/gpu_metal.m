@@ -910,12 +910,12 @@ static int metal_read_activation(void *vctx, int buf_idx, void *out,
 {
     BnMetalCtx *ctx = (BnMetalCtx *)vctx;
     if (!ctx || !out) return -1;
-    if (buf_idx == BN_GPU_DEBUG_BUF_Q8_ACT) {
+    if (buf_idx == BN_GPU_DEBUG_BUF_NATIVE_QUANT_ACT) {
         if (!ctx->native_quant_buf || offset + size > ctx->native_quant_buf_size) return -1;
         memcpy(out, (uint8_t *)[ctx->native_quant_buf contents] + offset, size);
         return 0;
     }
-    if (buf_idx == BN_GPU_DEBUG_BUF_Q8_SCALE) {
+    if (buf_idx == BN_GPU_DEBUG_BUF_NATIVE_QUANT_SCALE) {
         if (!ctx->native_quant_scales_buf ||
             offset + size > ctx->native_quant_scales_buf_size) return -1;
         memcpy(out, (uint8_t *)[ctx->native_quant_scales_buf contents] + offset, size);

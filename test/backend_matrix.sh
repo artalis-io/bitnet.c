@@ -3780,6 +3780,11 @@ if grep -n 'debug_compare_q8_activation' src/transformer/gpu_fallback.c >/dev/nu
     fail=1
 fi
 
+if grep -n 'BN_GPU_DEBUG_BUF_Q8_ACT\|BN_GPU_DEBUG_BUF_Q8_SCALE' src/gpu_shader.h src/gpu_metal.m src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "GPU native-quant activation debug buffers must use behavior names"
+    fail=1
+fi
+
 if grep -n 'q8_act_compare' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
     echo "Transformer GPU fallback native-quant activation diagnostics must use behavior names"
     fail=1
