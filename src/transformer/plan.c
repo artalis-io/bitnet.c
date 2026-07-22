@@ -346,7 +346,7 @@ BnLogitsKind bn_transformer_logits_kind(const BnWeights *w) {
         return BN_LOGITS_TIED_QUANT;
     if (w && bn_transformer_logits_tied_uses_f16_path(w->emb_type))
         return BN_LOGITS_TIED_F16;
-    return BN_LOGITS_TIED_F32;
+    return BN_LOGITS_TIED_DENSE_FLOAT;
 }
 
 int bn_transformer_logits_weight_type(const BnWeights *w) {
@@ -358,7 +358,7 @@ int bn_transformer_logits_weight_type(const BnWeights *w) {
         return w->emb_type;
     if (w && bn_transformer_logits_tied_uses_f16_path(w->emb_type))
         return bn_transformer_logits_tied_f16_weight_type();
-    return bn_transformer_logits_tied_f32_weight_type();
+    return bn_transformer_logits_tied_dense_float_weight_type();
 }
 
 int bn_transformer_per_layer_embedding_dim(

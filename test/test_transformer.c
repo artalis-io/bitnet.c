@@ -3116,7 +3116,7 @@ static void test_logits_policy_helpers(void) {
     assert(!bn_transformer_logits_tied_uses_f16_path(BN_GGUF_TENSOR_Q6_K));
     assert(bn_transformer_logits_tied_i8_weight_type() == BN_GGUF_TENSOR_Q8_0);
     assert(bn_transformer_logits_tied_f16_weight_type() == BN_GGUF_TENSOR_F16);
-    assert(bn_transformer_logits_tied_f32_weight_type() == BN_GGUF_TENSOR_F32);
+    assert(bn_transformer_logits_tied_dense_float_weight_type() == BN_GGUF_TENSOR_F32);
     assert(bn_transformer_logits_native_quant_task_flags(0) == 0);
     assert(bn_transformer_logits_native_quant_task_flags(1) ==
            BN_MATVEC_TASK_NATIVE_QUANT);
@@ -4125,10 +4125,10 @@ static void test_block_planning(void) {
 
     w.emb_type = BN_GGUF_TENSOR_F32;
     bn_transformer_plan_logits(&logits, &c, &w, NULL, 0);
-    assert(bn_transformer_logits_kind(&w) == BN_LOGITS_TIED_F32);
+    assert(bn_transformer_logits_kind(&w) == BN_LOGITS_TIED_DENSE_FLOAT);
     assert(bn_transformer_logits_weight_type(&w) ==
-           bn_transformer_logits_tied_f32_weight_type());
-    assert(logits.kind == BN_LOGITS_TIED_F32);
+           bn_transformer_logits_tied_dense_float_weight_type());
+    assert(logits.kind == BN_LOGITS_TIED_DENSE_FLOAT);
     assert(logits.weight_type == BN_GGUF_TENSOR_F32);
 
     gpu.kind = BN_GPU_BACKEND_WEBGPU;

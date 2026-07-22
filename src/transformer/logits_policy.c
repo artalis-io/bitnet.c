@@ -62,8 +62,8 @@ int bn_transformer_logits_tied_f16_weight_type(void) {
     return bn_backend_quant_tied_logits_f16_weight_type();
 }
 
-int bn_transformer_logits_tied_f32_weight_type(void) {
-    return bn_backend_quant_tied_logits_f32_weight_type();
+int bn_transformer_logits_tied_dense_float_weight_type(void) {
+    return bn_backend_quant_tied_logits_dense_float_weight_type();
 }
 
 float bn_transformer_logits_final_softcap(const BnConfig *c) {

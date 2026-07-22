@@ -688,6 +688,18 @@ if grep -n 'bn_quant_format_uses_f16_logits_path\|bn_quant_format_tied_logits_us
     fail=1
 fi
 
+if grep -n 'BN_LOGITS_TIED_F32\|bn_transformer_logits_tied_f32_weight_type\|bn_backend_quant_tied_logits_f32_weight_type' \
+    include/backend_quant.h \
+    include/transformer_logits_internal.h \
+    include/transformer_plan_internal.h \
+    src/transformer/logits.c \
+    src/transformer/logits_policy.c \
+    src/transformer/plan.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer tied dense logits policy must use dense-float behavior names, not exact F32 names"
+    fail=1
+fi
+
 if grep -n 'bn_quant_format_tied_logits_uses_quant_path\|bn_quant_format_supports_logits_i8_cache' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model policy helpers for logits quant-format policy"
     fail=1

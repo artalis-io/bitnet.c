@@ -209,7 +209,7 @@ static inline int bn_backend_quant_tied_logits_f16_weight_type(void) {
     return bn_quant_format_tied_logits_f16_weight_type();
 }
 
-static inline int bn_backend_quant_tied_logits_f32_weight_type(void) {
+static inline int bn_backend_quant_tied_logits_dense_float_weight_type(void) {
     return bn_quant_format_tied_logits_f32_weight_type();
 }
 

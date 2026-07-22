@@ -43,7 +43,7 @@ typedef enum {
 } BnFFNKind;
 
 typedef enum {
-    BN_LOGITS_TIED_F32 = 0,
+    BN_LOGITS_TIED_DENSE_FLOAT = 0,
     BN_LOGITS_TIED_F16 = 1,
     BN_LOGITS_TIED_I8 = 2,
     BN_LOGITS_TIED_QUANT = 3,

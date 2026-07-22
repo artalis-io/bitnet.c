@@ -297,7 +297,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
             logits_f16_dispatch(m, s, (const uint16_t *)w->token_embedding,
                                 c->vocab_size, dim);
         break;
-    case BN_LOGITS_TIED_F32: {
+    case BN_LOGITS_TIED_DENSE_FLOAT: {
         const float *emb = (const float *)w->token_embedding;
         BnLogitsCtx lctx = { s->logits, s->x, emb, dim };
         BnTPTask logits_task = { bn_transformer_logits_f32_range, &lctx, c->vocab_size };
