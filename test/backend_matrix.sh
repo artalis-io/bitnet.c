@@ -1343,7 +1343,7 @@ if grep -n 'getenv("BN_CUDA_[^"]*QWEN\|gpu_env_enabled("BN_CUDA_[^"]*QWEN\|gpu_e
 fi
 
 if grep -n 'BN_CUDA_[^"]*ALL2_Q4Q6\|BN_CUDA_[^"]*QWEN2MOE' src/transformer/gpu_policy.c >/dev/null 2>&1; then
-    echo "src/transformer/gpu_policy.c must use backend GPU policy helpers for all2 MoE compatibility env vars"
+    echo "src/transformer/gpu_policy.c must use backend GPU policy helpers for all-active-two MoE compatibility env vars"
     fail=1
 fi
 
