@@ -3904,13 +3904,13 @@ int bn_gpu_policy_metal_small_dense_native_quant_matvec_supported(
     int native_quant_prepared,
     int has_native_quant_pipeline,
     int has_native_quant_pipeline_unprepared,
-    int has_prepared_native_quant_pipeline) {
+    int has_native_quant_prepared_pipeline) {
     if (!small_dense_native_quant_enabled ||
         !bn_backend_quant_supports_direct_native_quant_matvec(tensor_type) ||
         !has_native_quant_pipeline)
         return 0;
     return native_quant_prepared
-        ? has_prepared_native_quant_pipeline
+        ? has_native_quant_prepared_pipeline
         : has_native_quant_pipeline_unprepared;
 }
 

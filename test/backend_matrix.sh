@@ -1930,6 +1930,11 @@ if grep -n 'bn_backend_quant_q8_small_ssm_matvec_candidate\|bn_backend_quant_f16
     fail=1
 fi
 
+if grep -n 'has_prepared_native_quant_pipeline' include/gpu_policy.h src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU native-quant prepared pipeline policy must use consistent behavior naming"
+    fail=1
+fi
+
 if grep -n 'bn_backend_quant_legacy_block_matvec_candidate\|bn_backend_quant_down_kquant_dot_matvec_candidate\|bn_backend_quant_down_kquant_warp_matvec_candidate\|bn_backend_quant_asymmetric_kquant_dot_matvec_candidate\|bn_backend_quant_asymmetric_kquant_prepared_input_matvec_candidate\|bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate' include/backend_quant.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
     echo "backend quant matvec helpers must use supports behavior names"
     fail=1
