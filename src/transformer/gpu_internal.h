@@ -1131,7 +1131,7 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
     const BnWeights *w);
 int bn_transformer_gpu_cpu_fallback_layer_selected(
     int layer,
-    int exact_layer,
+    int selected_layer,
     int from_layer);
 BnTransformerGPUSmallDenseNativeQuantLayerPolicy
 bn_transformer_gpu_small_dense_native_quant_layer_policy(const BnConfig *c);

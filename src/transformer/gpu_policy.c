@@ -2129,9 +2129,9 @@ bn_transformer_gpu_decode_cpu_attention_fallback_policy(
 
 int bn_transformer_gpu_cpu_fallback_layer_selected(
     int layer,
-    int exact_layer,
+    int selected_layer,
     int from_layer) {
-    return (exact_layer >= 0 && layer == exact_layer) ||
+    return (selected_layer >= 0 && layer == selected_layer) ||
            (from_layer >= 0 && layer >= from_layer);
 }
 

@@ -3637,6 +3637,11 @@ if grep -n 'BnTransformerGPUSmallDenseExactNative\|bn_transformer_gpu_small_dens
     fail=1
 fi
 
+if grep -n '\bexact_layer\b' src/transformer/gpu_internal.h src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU CPU fallback layer policy must use selected-layer behavior names, not exact-layer names"
+    fail=1
+fi
+
 if awk '/^bn_transformer_gpu_moe_decode_route_policy/{flag=1} /^BnTransformerGPUMoEDirectRoutePolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM' >/dev/null 2>&1; then
     echo "Transformer GPU MoE route decode policy must use route normalization flag helpers"
     fail=1
