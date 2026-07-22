@@ -10,6 +10,11 @@
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT BN_QUANT_GPU_MATVEC_FLAG_KQUANT_DOT
 #define BN_BACKEND_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT BN_QUANT_GPU_MATVEC_FLAG_REFERENCE_KQUANT
 
+typedef enum {
+    BN_BACKEND_QUANT_DENSE_GRAPH_ANY = 0,
+    BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT = 1,
+} BnBackendQuantDenseGraphRequirement;
+
 static inline uint32_t bn_backend_quant_gpu_split_cap(int type) {
     return bn_quant_format_gpu_split_cap(type);
 }
@@ -40,18 +45,18 @@ static inline int bn_backend_quant_dense_graph_native_quant_supported(int type) 
 
 static inline int bn_backend_quant_dense_graph_weight_supported(
     const BnQWeight *w,
-    int native_quant_only) {
+    BnBackendQuantDenseGraphRequirement requirement) {
     if (!w || !w->data)
         return 1;
-    return native_quant_only
+    return requirement == BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT
         ? bn_backend_quant_dense_graph_native_quant_supported(w->type)
         : bn_backend_quant_dense_graph_supported(w->type);
 }
 
 static inline int bn_backend_quant_dense_graph_tensor_supported(
     int tensor_type,
-    int native_quant_only) {
-    return native_quant_only
+    BnBackendQuantDenseGraphRequirement requirement) {
+    return requirement == BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT
         ? bn_backend_quant_dense_graph_native_quant_supported(tensor_type)
         : bn_backend_quant_dense_graph_supported(tensor_type);
 }
@@ -59,15 +64,15 @@ static inline int bn_backend_quant_dense_graph_tensor_supported(
 static inline int bn_backend_quant_dense_graph_model_supported(
     const BnWeights *w,
     const BnConfig *c,
-    int native_quant_only) {
+    BnBackendQuantDenseGraphRequirement requirement) {
     if (!w || !c)
         return 0;
     if (w->output_weight.data) {
         if (!bn_backend_quant_dense_graph_weight_supported(&w->output_weight,
-                                                           native_quant_only))
+                                                           requirement))
             return 0;
     } else if (!bn_backend_quant_dense_graph_tensor_supported(
-                   w->emb_type, native_quant_only)) {
+                   w->emb_type, requirement)) {
         return 0;
     }
     for (int l = 0; l < c->n_layers; l++) {
@@ -79,7 +84,7 @@ static inline int bn_backend_quant_dense_graph_model_supported(
         int n_weights = (int)(sizeof(weights) / sizeof(weights[0]));
         for (int i = 0; i < n_weights; i++) {
             if (!bn_backend_quant_dense_graph_weight_supported(
-                    weights[i], native_quant_only))
+                    weights[i], requirement))
                 return 0;
         }
     }

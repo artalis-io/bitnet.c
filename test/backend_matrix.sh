@@ -4331,6 +4331,11 @@ if grep -n 'small_dense_tensor_quant_supported\|small_dense_weight_quant_support
     fail=1
 fi
 
+if rg -n 'bn_backend_quant_dense_graph_(weight|tensor|model)_supported\([^;]*(,|\n)[[:space:]]*[01][[:space:]]*\)' include src test >/dev/null 2>&1; then
+    echo "Dense graph quant aggregation must pass named backend quant requirements, not raw booleans"
+    fail=1
+fi
+
 for file in \
     src/transformer/cpu_backend.c \
     src/transformer/prefill_backend.c \

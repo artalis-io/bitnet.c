@@ -833,7 +833,8 @@ static int small_dense_backend_native_by_default(
     const BnWeights *w) {
     if (!c || !w || !bn_transformer_gpu_uses_small_dense_shape(c))
         return 0;
-    return bn_backend_quant_dense_graph_model_supported(w, c, 0);
+    return bn_backend_quant_dense_graph_model_supported(
+        w, c, BN_BACKEND_QUANT_DENSE_GRAPH_ANY);
 }
 
 static int small_dense_backend_native_quant_by_default(
@@ -841,7 +842,8 @@ static int small_dense_backend_native_quant_by_default(
     const BnWeights *w) {
     if (!c || !w || !bn_transformer_gpu_uses_small_dense_shape(c))
         return 0;
-    return bn_backend_quant_dense_graph_model_supported(w, c, 1);
+    return bn_backend_quant_dense_graph_model_supported(
+        w, c, BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT);
 }
 
 int bn_transformer_gpu_all_active_two_kquant_moe_cpu_attn_safe_default(
@@ -984,7 +986,8 @@ int bn_transformer_gpu_backend_matvec_fallback_kept(
     if (!bn_transformer_gpu_uses_small_dense_native_quant_shape(c))
         return 1;
 
-    return bn_backend_quant_dense_graph_model_supported(&m->weights, c, 1);
+    return bn_backend_quant_dense_graph_model_supported(
+        &m->weights, c, BN_BACKEND_QUANT_DENSE_GRAPH_NATIVE_QUANT);
 }
 
 BnTransformerGPUMatvecFallbackPolicy
