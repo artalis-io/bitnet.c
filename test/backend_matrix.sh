@@ -3612,6 +3612,11 @@ if awk '/BN_GPU_OP_FLAG_EXACT_SILU/ && !/_Static_assert/' src/transformer/gpu_em
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_exact_silu_flags\|bn_transformer_gpu_exact_silu_active_flags\|\bexact_silu\b' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer GPU SiLU flag policy must use reference behavior names"
+    fail=1
+fi
+
 if awk '/^bn_transformer_gpu_moe_decode_route_policy/{flag=1} /^BnTransformerGPUMoEDirectRoutePolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM' >/dev/null 2>&1; then
     echo "Transformer GPU MoE route decode policy must use route normalization flag helpers"
     fail=1

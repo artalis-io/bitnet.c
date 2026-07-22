@@ -742,15 +742,15 @@ static void test_gpu_capability_routing(void) {
     assert(bn_transformer_gpu_matvec_reference_kquant_flags(
                BN_GGUF_TENSOR_Q4_K, 1) == 0);
     assert(bn_transformer_gpu_float_buffer_type() == BN_GGUF_TENSOR_F32);
-    assert(bn_transformer_gpu_exact_silu_flags(
+    assert(bn_transformer_gpu_reference_silu_flags(
                BN_GGUF_TENSOR_Q8_0, 1) == BN_GPU_OP_FLAG_EXACT_SILU);
-    assert(bn_transformer_gpu_exact_silu_flags(
+    assert(bn_transformer_gpu_reference_silu_flags(
                BN_GGUF_TENSOR_Q8_0, 0) == 0);
-    assert(bn_transformer_gpu_exact_silu_flags(
+    assert(bn_transformer_gpu_reference_silu_flags(
                BN_GGUF_TENSOR_Q4_0, 1) == 0);
-    assert(bn_transformer_gpu_exact_silu_active_flags(1) ==
+    assert(bn_transformer_gpu_reference_silu_active_flags(1) ==
            BN_GPU_OP_FLAG_EXACT_SILU);
-    assert(bn_transformer_gpu_exact_silu_active_flags(0) == 0);
+    assert(bn_transformer_gpu_reference_silu_active_flags(0) == 0);
     assert(bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q8_0));
     assert(!bn_transformer_gpu_prefers_gateup_split(BN_GGUF_TENSOR_Q4_0));
     assert(bn_transformer_gpu_same_quant_format_pair_stackable(

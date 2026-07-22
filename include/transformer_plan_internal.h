@@ -171,9 +171,9 @@ uint32_t bn_transformer_gpu_matvec_reference_kquant_flags(int tensor_type,
                                                          int enabled);
 uint32_t bn_transformer_gpu_moe_route_raw_compare_matvec_flags(int tensor_type);
 int bn_transformer_gpu_float_buffer_type(void);
-uint32_t bn_transformer_gpu_exact_silu_flags(int tensor_type,
+uint32_t bn_transformer_gpu_reference_silu_flags(int tensor_type,
                                              int use_silu);
-uint32_t bn_transformer_gpu_exact_silu_active_flags(int exact_silu);
+uint32_t bn_transformer_gpu_reference_silu_active_flags(int reference_silu);
 int bn_transformer_gpu_prefers_gateup_split(int tensor_type);
 int bn_transformer_gpu_same_quant_format_pair_stackable(int left_type,
                                                 int right_type);

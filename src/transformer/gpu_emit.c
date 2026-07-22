@@ -605,7 +605,7 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     int hidden,
     int n_experts,
     int k,
-    int exact_silu,
+    int reference_silu,
     int layer) {
     if (!ctx || !gate_all_buf || !up_all_buf || !down_all_buf ||
         dim <= 0 || hidden <= 0 || n_experts <= 0 || k <= 0)
@@ -627,7 +627,7 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     op->buf_aux = route_buf;
     op->rows = hidden;
     op->cols = dim;
-    op->flags |= bn_transformer_gpu_exact_silu_active_flags(exact_silu);
+    op->flags |= bn_transformer_gpu_reference_silu_active_flags(reference_silu);
     op->p[0] = (uint32_t)hidden;
     op->p[1] = (uint32_t)n_experts;
     op->p[2] = (uint32_t)k;
@@ -1048,7 +1048,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     void *ffn_sub_norm = res ? res->ffn_sub_norm : NULL;
 
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
-        uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
+        uint32_t silu_flags = bn_transformer_gpu_reference_silu_flags(
             lw->ffn.ffn_gate.type,
             bn_transformer_gpu_activation_uses_silu_path(
                 ffn_plan->activation));
@@ -1124,7 +1124,7 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                                                      use_small_dense_exact_native));
         BnGPUIRActivationKind act_kind =
             bn_transformer_gpu_ffn_activation_kind(ffn_plan->activation);
-        uint32_t silu_flags = bn_transformer_gpu_exact_silu_flags(
+        uint32_t silu_flags = bn_transformer_gpu_reference_silu_flags(
             lw->ffn.ffn_up.type, act_kind == BN_GPU_IR_ACTIVATION_SILU);
         emit_context_activation_flags(
             ctx, BN_GPU_VALUE_HB, -1, hidden_dim, 0, act_kind, silu_flags);
@@ -1685,7 +1685,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                                          int dim,
                                          uint32_t u_eps,
                                          void *next_norm,
-                                         int exact_silu) {
+                                         int reference_silu) {
     if (!ctx || !moe || !lw) return;
     const BnMoEExpertMap *em = moe->expert_map;
     int moe_hidden = moe->moe_hidden;
@@ -1704,7 +1704,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_MOE_HB, em->gate_rows, em->up_rows,
                 em->gate_cols, 0,
-                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
+                bn_transformer_gpu_reference_silu_active_flags(reference_silu));
         } else if (expert->buffers.use_gateup_split) {
             emit_context_matvec_split(
                 ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
@@ -1729,7 +1729,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2, moe_hidden, 0,
                 BN_GPU_IR_ACTIVATION_SILU,
-                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
+                bn_transformer_gpu_reference_silu_active_flags(reference_silu));
         }
         bn_transformer_gpu_emit_context_matvec(
             ctx, em->down_type, expert->buffers.down, BN_GPU_VALUE_MOE_HB,
@@ -1773,7 +1773,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB,
                 shared_info.gate_rows, shared_info.up_rows,
                 shared_info.gate_cols, shared_gateup.use_kquant_dot,
-                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
+                bn_transformer_gpu_reference_silu_active_flags(reference_silu));
         } else if (shared_gateup.use_gateup_split) {
             emit_context_matvec_split(
                 ctx, shared_info.gate_type,
@@ -1808,7 +1808,7 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
                 shared_info.gate_rows, 0, BN_GPU_IR_ACTIVATION_SILU,
-                bn_transformer_gpu_exact_silu_active_flags(exact_silu));
+                bn_transformer_gpu_reference_silu_active_flags(reference_silu));
         }
         uint32_t shared_down_flags =
             bn_transformer_gpu_matvec_reference_kquant_flags(
