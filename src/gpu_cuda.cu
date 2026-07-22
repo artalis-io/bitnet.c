@@ -14843,7 +14843,7 @@ static int cuda_moe_routed_ffn_batch(void *vctx, float *out,
         d_mid = ctx->d_out;
         if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled())
             fprintf(stderr,
-                    "[bn:gpu:cuda] all2 cublas moe decode failed; falling back\n");
+                    "[bn:gpu:cuda] all-active-two cublas moe decode failed; falling back\n");
     }
 
     int threads = 256;
@@ -15480,7 +15480,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         d_mid = ctx->d_out;
         if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled())
             fprintf(stderr,
-                    "[bn:gpu:cuda] all2 cublas moe decode failed; falling back\n");
+                    "[bn:gpu:cuda] all-active-two cublas moe decode failed; falling back\n");
     } else if (use_cublas_all_active_two_fixed) {
         if (cuda_moe_cublas_all_active_two_prefill(
                 ctx, d_full_out, gate, up, down, d_full_x, d_weights,
@@ -15494,7 +15494,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         }
         if (bn_gpu_policy_cuda_moe_cublas_grouped_debug_enabled())
             fprintf(stderr,
-                    "[bn:gpu:cuda] all2 cublas moe prefill failed; falling back\n");
+                    "[bn:gpu:cuda] all-active-two cublas moe prefill failed; falling back\n");
     } else if (use_cublas_grouped) {
         if (cuda_moe_cublas_grouped_prefill(
                 ctx, d_full_out, gate, up, down, d_full_x, d_weights,
@@ -20071,7 +20071,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         }
                         if (bn_gpu_policy_cuda_moe_cublas_decode_debug_enabled()) {
                             fprintf(stderr,
-                                    "[bn:gpu:cuda] all2 cublas moe decode "
+                                    "[bn:gpu:cuda] all-active-two cublas moe decode "
                                     "failed; falling back\n");
                         }
                     }
