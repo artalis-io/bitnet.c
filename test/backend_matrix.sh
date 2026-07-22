@@ -3560,7 +3560,7 @@ if ! grep -n 'BN_CUDA_DISABLE_SMALL_DENSE_PREFILL' test/test_gpu_backend.c >/dev
 fi
 
 if grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks' include/gpu_policy.h src/gpu_policy.c test/test_gpu_backend.c >/dev/null 2>&1 ||
-   grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks\|all2 cublas' src/gpu_cuda.cu | grep -v '_kernel' >/dev/null 2>&1; then
+   grep -n 'bn_gpu_policy_cuda_[a-z0-9_]*all2\|cuda_use_[a-z0-9_]*all2\|cuda_moe_cublas_all2\|moe_all2_\|use_moe_all2_\|use_q6k_all2_\|use_cublas_all2_\|all2_disable\|all2_f32\|use_all2_\|all2_fast_enabled\|all2_blocks\|all2 cublas' src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "CUDA all-active-two MoE policy and helper names must not use all2 shorthand"
     fail=1
 fi

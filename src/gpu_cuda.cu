@@ -6038,7 +6038,7 @@ static __device__ __forceinline__ float cuda_router_avx2_hsum16(
     return (h0 + h1) + (h2 + h3);
 }
 
-static __global__ void moe_route_all2_avx2_quantize_q8k_kernel(
+static __global__ void moe_route_all_active_two_avx2_quantize_q8k_kernel(
     float *route,
     BnBlockQ8K *xq,
     const float *router,
@@ -6308,7 +6308,7 @@ static __global__ void moe_q4k_gateup_routed_mid_kernel(
     }
 }
 
-static __global__ void moe_q4k_gateup_all2_mid_kernel(
+static __global__ void moe_q4k_gateup_all_active_two_mid_kernel(
     float *mid,
     const BnBlockQ4K *gate,
     const BnBlockQ4K *up,
@@ -6496,7 +6496,7 @@ static __global__ void moe_q4k_gateup_routed_mid_q8k_4row_kernel(
     }
 }
 
-static __global__ void moe_q4k_gateup_all2_mid_q8k_4row_kernel(
+static __global__ void moe_q4k_gateup_all_active_two_mid_q8k_4row_kernel(
     float *mid,
     const BnBlockQ4K *gate,
     const BnBlockQ4K *up,
@@ -7489,7 +7489,7 @@ static __global__ void moe_q6k_down_routed_q8k_prepared_native_quant_8row_sum_ke
     }
 }
 
-static __global__ void moe_q6k_down_all2_q8k_accum_2row_kernel(
+static __global__ void moe_q6k_down_all_active_two_q8k_accum_2row_kernel(
     float *out,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7538,7 +7538,7 @@ static __global__ void moe_q6k_down_all2_q8k_accum_2row_kernel(
         out[row] = pair0 + pair1;
 }
 
-static __global__ void moe_q6k_down_all2_q8k_accum_4row_kernel(
+static __global__ void moe_q6k_down_all_active_two_q8k_accum_4row_kernel(
     float *out,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7586,7 +7586,7 @@ static __global__ void moe_q6k_down_all2_q8k_accum_4row_kernel(
         out[row] = pair0 + pair1;
 }
 
-static __global__ void moe_q6k_down_all2_q8k_pair4_sum_kernel(
+static __global__ void moe_q6k_down_all_active_two_q8k_pair4_sum_kernel(
     float *out,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7631,7 +7631,7 @@ static __global__ void moe_q6k_down_all2_q8k_pair4_sum_kernel(
                    partial[warp + 4][lane_group];
 }
 
-static __global__ void moe_q6k_down_all2_q8k_pair4_sum_fixed_kernel(
+static __global__ void moe_q6k_down_all_active_two_q8k_pair4_sum_fixed_kernel(
     float *out,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7770,7 +7770,7 @@ static __global__ void moe_q6k_down_routed_float_accum_row_kernel(
         out[row] = partial[0];
 }
 
-static __global__ void moe_q6k_down_all2_float_accum_4row_kernel(
+static __global__ void moe_q6k_down_all_active_two_float_accum_4row_kernel(
     float *out,
     const BnBlockQ6K *down,
     const float *mid,
@@ -7850,7 +7850,7 @@ static __global__ void moe_q6k_down_routed_f32_cache_warp_kernel(
         out[row] = sum;
 }
 
-static __global__ void moe_q6k_down_all2_f32_cache_warp_kernel(
+static __global__ void moe_q6k_down_all_active_two_f32_cache_warp_kernel(
     float *out,
     const float *down,
     const float *mid,
@@ -7885,7 +7885,7 @@ static __global__ void moe_q6k_down_all2_f32_cache_warp_kernel(
         out[row] = sum;
 }
 
-static __global__ void moe_q6k_down_all2_f32_cache_pair2_sum_kernel(
+static __global__ void moe_q6k_down_all_active_two_f32_cache_pair2_sum_kernel(
     float *out,
     const float *down,
     const float *mid,
@@ -7922,7 +7922,7 @@ static __global__ void moe_q6k_down_all2_f32_cache_pair2_sum_kernel(
         out[row] = partial[row_in_pair] + partial[2 + row_in_pair];
 }
 
-static __global__ void moe_q6k_down_all2_f32_cache_4row_sum_kernel(
+static __global__ void moe_q6k_down_all_active_two_f32_cache_4row_sum_kernel(
     float *out,
     const float *down,
     const float *mid,
@@ -7959,7 +7959,7 @@ static __global__ void moe_q6k_down_all2_f32_cache_4row_sum_kernel(
         out[row] = partial[row_in_group] + partial[4 + row_in_group];
 }
 
-static __global__ void moe_q6k_down_all2_f32_cache_exact_4row_kernel(
+static __global__ void moe_q6k_down_all_active_two_f32_cache_reference_4row_kernel(
     float *out,
     const float *down,
     const float *mid,
@@ -10505,7 +10505,7 @@ static __global__ void moe_gateup_grouped_f16_to_f16_kernel(
     mid[off] = __float2half_rn(v);
 }
 
-static __global__ void moe_all2_gather_f16_kernel(
+static __global__ void moe_all_active_two_gather_f16_kernel(
     __half *dst, const float *src, int n_tokens, int dim) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = 2 * n_tokens * dim;
@@ -10516,7 +10516,7 @@ static __global__ void moe_all2_gather_f16_kernel(
                                    (size_t)col]);
 }
 
-static __global__ void moe_all2_gateup_f16_to_f16_kernel(
+static __global__ void moe_all_active_two_gateup_f16_to_f16_kernel(
     __half *mid, const __half *gate, const __half *up,
     int n_tokens, int hidden, int act_type) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -10530,7 +10530,7 @@ static __global__ void moe_all2_gateup_f16_to_f16_kernel(
     mid[idx] = __float2half_rn(v);
 }
 
-static __global__ void moe_all2_gateup_f16_to_f16_decode_kernel(
+static __global__ void moe_all_active_two_gateup_f16_to_f16_decode_kernel(
     __half *mid, const __half *gate, const __half *up,
     int hidden, int uses_reference_silu) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -10541,7 +10541,7 @@ static __global__ void moe_all2_gateup_f16_to_f16_decode_kernel(
     mid[idx] = __float2half_rn(cuda_silu_select(gv, uses_reference_silu) * uv);
 }
 
-static __global__ void moe_all2_scatter_route_kernel(
+static __global__ void moe_all_active_two_scatter_route_kernel(
     float *dst, const float *src, const float *route, int dim) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (col >= dim) return;
@@ -10558,7 +10558,7 @@ static __global__ void moe_all2_scatter_route_kernel(
     dst[col] = w0 * src[col] + w1 * src[(size_t)dim + (size_t)col];
 }
 
-static __global__ void moe_pack_all2_route_kernel(
+static __global__ void moe_pack_all_active_two_route_kernel(
     float *route, const int *indices, const float *weights) {
     route[0] = weights[0];
     route[1] = weights[1];
@@ -10566,7 +10566,7 @@ static __global__ void moe_pack_all2_route_kernel(
     route[3] = (float)indices[1];
 }
 
-static __global__ void moe_all2_scatter_kernel(
+static __global__ void moe_all_active_two_scatter_kernel(
     float *dst, const float *src, const int *indices, const float *weights,
     int n_tokens, int dim) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -11917,7 +11917,7 @@ static int cuda_moe_cublas_all_active_two_prefill(
 
     int threads = 256;
     int gather_total = (int)gather_values;
-    moe_all2_gather_f16_kernel<<<(gather_total + threads - 1) / threads,
+    moe_all_active_two_gather_f16_kernel<<<(gather_total + threads - 1) / threads,
                                  threads>>>(
         d_gather, d_full_x, n_tokens, dim);
     cudaError_t err = cudaGetLastError();
@@ -11998,7 +11998,7 @@ static int cuda_moe_cublas_all_active_two_prefill(
         return -1;
 
     int act_total = (int)hidden_values;
-    moe_all2_gateup_f16_to_f16_kernel<<<
+    moe_all_active_two_gateup_f16_to_f16_kernel<<<
         (act_total + threads - 1) / threads, threads>>>(
         d_mid, d_gate_h, d_up_h, n_tokens, hidden_dim, act_type);
     err = cudaGetLastError();
@@ -12017,7 +12017,7 @@ static int cuda_moe_cublas_all_active_two_prefill(
         return -1;
 
     int scatter_total = n_tokens * dim;
-    moe_all2_scatter_kernel<<<(scatter_total + threads - 1) / threads,
+    moe_all_active_two_scatter_kernel<<<(scatter_total + threads - 1) / threads,
                               threads>>>(
         d_full_out, d_down, d_indices, d_weights, n_tokens, dim);
     err = cudaGetLastError();
@@ -12121,7 +12121,7 @@ static int cuda_moe_cublas_all_active_two_decode(
 
     int threads = 256;
     int act_total = (int)hidden_values;
-    moe_all2_gateup_f16_to_f16_decode_kernel<<<
+    moe_all_active_two_gateup_f16_to_f16_decode_kernel<<<
         (act_total + threads - 1) / threads, threads, 0, ctx->exec_stream>>>(
         d_mid, d_gate_h, d_up_h, hidden_dim, uses_reference_silu);
     err = cudaGetLastError();
@@ -12139,7 +12139,7 @@ static int cuda_moe_cublas_all_active_two_decode(
     if (st != CUBLAS_STATUS_SUCCESS)
         return -1;
 
-    moe_all2_scatter_route_kernel<<<
+    moe_all_active_two_scatter_route_kernel<<<
         (dim + threads - 1) / threads, threads, 0, ctx->exec_stream>>>(
         out, d_down, route, dim);
     err = cudaGetLastError();
@@ -15463,7 +15463,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         bn_gpu_policy_cuda_moe_block_prepared_batch_enabled(routed_native_quant);
 
     if (use_cublas_all_active_two_decode) {
-        moe_pack_all2_route_kernel<<<1, 1>>>(d_decode_route, d_indices,
+        moe_pack_all_active_two_route_kernel<<<1, 1>>>(d_decode_route, d_indices,
                                              d_weights);
         err = cudaGetLastError();
         if (err == cudaSuccess &&
@@ -19898,7 +19898,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         "moe exact route dot prepared-input scratch alloc failed");
                 BnBlockQ8K *xq = (BnBlockQ8K *)ctx->d_q8_k;
                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                    moe_route_all2_avx2_quantize_q8k_kernel,
+                    moe_route_all_active_two_avx2_quantize_q8k_kernel,
                     dim / BN_QK_K + 1, BN_QK_K, 0, route, xq,
                     (const float *)w->data, in, dim,
                     expert_weights_scale,
@@ -20143,7 +20143,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             int gateup4_blocks =
                                 (gateup4_tasks + warps - 1) / warps;
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                moe_q4k_gateup_all2_mid_q8k_4row_kernel,
+                                moe_q4k_gateup_all_active_two_mid_q8k_4row_kernel,
                                 gateup4_blocks, route_threads, 0,
                                 mid, (const BnBlockQ4K *)gate->data,
                                 (const BnBlockQ4K *)up->data, xq, route,
@@ -20179,7 +20179,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                                    k) &&
                             moe_all_active_two_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                moe_q4k_gateup_all2_mid_kernel,
+                                moe_q4k_gateup_all_active_two_mid_kernel,
                                 gateup_blocks, route_threads, 0,
                                 mid, (const BnBlockQ4K *)gate->data,
                                 (const BnBlockQ4K *)up->data, xq, route,
@@ -20268,7 +20268,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                 bn_gpu_policy_all_active_two_kquant_down_skip_eps_or_default(
                                     1.0e-7f);
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                moe_q6k_down_all2_f32_cache_exact_4row_kernel,
+                                moe_q6k_down_all_active_two_f32_cache_reference_4row_kernel,
                                 row4_blocks, dim3(256, 4, 1), 0,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden, skip_eps);
@@ -20276,13 +20276,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             cuda_use_moe_down_f32_pair2(n_experts, k)) {
                             if (!cuda_use_moe_down_f32_pair2_4row()) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                    moe_q6k_down_all2_f32_cache_pair2_sum_kernel,
+                                    moe_q6k_down_all_active_two_f32_cache_pair2_sum_kernel,
                                     (dim + 1) / 2, dim3(32, 4, 1), 0,
                                     out, (const float *)down->f32_data, mid,
                                     route, dim, hidden);
                             } else {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                    moe_q6k_down_all2_f32_cache_4row_sum_kernel,
+                                    moe_q6k_down_all_active_two_f32_cache_4row_sum_kernel,
                                     (dim + 3) / 4, dim3(32, 8, 1), 0,
                                     out, (const float *)down->f32_data, mid,
                                     route, dim, hidden);
@@ -20292,7 +20292,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                                    k) &&
                             moe_all_active_two_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                moe_q6k_down_all2_f32_cache_warp_kernel,
+                                moe_q6k_down_all_active_two_f32_cache_warp_kernel,
                                 down_blocks, route_threads, 0,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden);
@@ -20347,7 +20347,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     int pair4_sum_blocks =
                                         ((dim + 15) / 16);
                                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                        moe_q6k_down_all2_q8k_pair4_sum_fixed_kernel,
+                                        moe_q6k_down_all_active_two_q8k_pair4_sum_fixed_kernel,
                                         pair4_sum_blocks, route_threads, 0,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
@@ -20355,7 +20355,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     int pair4_sum_blocks =
                                         ((dim + 15) / 16);
                                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                        moe_q6k_down_all2_q8k_pair4_sum_kernel,
+                                        moe_q6k_down_all_active_two_q8k_pair4_sum_kernel,
                                         pair4_sum_blocks, route_threads, 0,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
@@ -20423,7 +20423,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     int all_active_two_blocks =
                                         ((dim + 1) / 2 + warps - 1) / warps;
                                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                        moe_q6k_down_all2_q8k_accum_2row_kernel,
+                                        moe_q6k_down_all_active_two_q8k_accum_2row_kernel,
                                         all_active_two_blocks, route_threads, 0,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
@@ -20431,7 +20431,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     int all_active_two_blocks =
                                         ((dim + 3) / 4 + warps - 1) / warps;
                                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                        moe_q6k_down_all2_q8k_accum_4row_kernel,
+                                        moe_q6k_down_all_active_two_q8k_accum_4row_kernel,
                                         all_active_two_blocks, route_threads, 0,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
@@ -20485,7 +20485,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                    use_moe_down_float_path) {
                             int row4_blocks = (dim + 3) / 4;
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                moe_q6k_down_all2_float_accum_4row_kernel,
+                                moe_q6k_down_all_active_two_float_accum_4row_kernel,
                                 row4_blocks, dim3(256, 4, 1), 0,
                                 out, (const BnBlockQ6K *)down->data, mid,
                                 route, dim, hidden);
@@ -20514,7 +20514,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                                    k) &&
                             moe_all_active_two_fast_enabled) {
                             BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                moe_q6k_down_all2_f32_cache_4row_sum_kernel,
+                                moe_q6k_down_all_active_two_f32_cache_4row_sum_kernel,
                                 (dim + 3) / 4, dim3(32, 8, 1), 0,
                                 out, (const float *)down->f32_data, mid,
                                 route, dim, hidden);
