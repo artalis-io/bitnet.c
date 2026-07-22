@@ -19891,7 +19891,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                    w->rows >= 2 &&
                    (dim % 16) == 0 &&
                    moe_all_active_two_route_dot_prepared_input_default_enabled &&
-                   !bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled()) {
+                   !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled()) {
                 if (cuda_ensure_q8_k(ctx, dim, 1) != 0)
                     BN_CUDA_EXEC_FAIL(
                         "moe exact route dot prepared-input scratch alloc failed");
@@ -20091,7 +20091,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         (((BnCudaBuffer *)prev->W_buf)->rows == 1 ||
                          (((BnCudaBuffer *)prev->W_buf)->rows >= 2 &&
                           (dim % 16) == 0 &&
-                          !bn_gpu_policy_all_active_two_kquant_moe_exact_gpu_route_disabled())) &&
+                          !bn_gpu_policy_all_active_two_kquant_moe_reference_gpu_route_disabled())) &&
                         !moe_all_active_two_route_block_prepared_input_enabled &&
                         moe_all_active_two_route_dot_prepared_input_default_enabled;
                     int moe_all_active_two_x_block_prepared =
