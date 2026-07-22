@@ -2979,8 +2979,8 @@ int bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(int is_logits_op) {
 int bn_gpu_policy_cuda_down_kquant_mmvq_enabled(int rows,
                                                 int cols,
                                                 int is_logits_op,
-                                                int exact_down_kquant) {
-    return !exact_down_kquant &&
+                                                int uses_reference_kquant_matvec) {
+    return !uses_reference_kquant_matvec &&
            !gpu_policy_down_kquant_mmvq_disabled() &&
            ((cols >= 4096 && rows >= 5120) ||
             (cols >= 2048 && rows >= 50000) ||
@@ -3011,8 +3011,8 @@ int bn_gpu_policy_cuda_down_kquant_residual_rmsnorm_fuse_enabled(void) {
 
 int bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(int rows,
                                                       int cols,
-                                                      int exact_down_kquant) {
-    return !exact_down_kquant &&
+                                                      int uses_reference_kquant_matvec) {
+    return !uses_reference_kquant_matvec &&
            (gpu_policy_f16_down_kquant_matvec_requested() ||
             (!gpu_policy_f16_down_kquant_matvec_disabled() &&
              rows <= 2048 && cols >= 8192));

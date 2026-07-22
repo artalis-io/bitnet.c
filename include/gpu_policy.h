@@ -301,14 +301,14 @@ int bn_gpu_policy_cuda_down_kquant_prepared_dot_enabled(int is_logits_op);
 int bn_gpu_policy_cuda_down_kquant_mmvq_enabled(int rows,
                                                 int cols,
                                                 int is_logits_op,
-                                                int exact_down_kquant);
+                                                int uses_reference_kquant_matvec);
 int bn_gpu_policy_cuda_down_kquant_mmvq_2warp_logits_enabled(int rows,
                                                              int cols,
                                                              int is_logits_op);
 int bn_gpu_policy_cuda_down_kquant_residual_rmsnorm_fuse_enabled(void);
 int bn_gpu_policy_cuda_f16_down_kquant_matvec_enabled(int rows,
                                                       int cols,
-                                                      int exact_down_kquant);
+                                                      int uses_reference_kquant_matvec);
 int bn_gpu_policy_cuda_down_kquant_matmul8_enabled(void);
 int bn_gpu_policy_cuda_down_kquant_matmul4_enabled(void);
 int bn_gpu_policy_cuda_down_kquant_matvec4_enabled(void);

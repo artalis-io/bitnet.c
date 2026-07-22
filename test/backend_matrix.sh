@@ -2415,6 +2415,11 @@ if grep -n 'moe_down_prepared_native_quant_exact_2048\|bn_gpu_policy_cuda_moe_do
     fail=1
 fi
 
+if grep -n '\bexact_down_kquant\b' include/gpu_policy.h src/gpu_policy.c src/gpu_cuda.cu test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA down-K-quant matvec policy inputs must use reference-kquant behavior names"
+    fail=1
+fi
+
 if awk '/^int bn_gpu_policy_cuda_moe_down_quant_path_preferred/{flag=1} /^int bn_gpu_policy_cuda_moe_gateup_prepared_dot_enabled/{flag=0} flag{print}' src/gpu_policy.c | grep -n 'getenv(' >/dev/null 2>&1; then
     echo "src/gpu_policy.c public MoE down policy helpers must compose local env policy helpers"
     fail=1
