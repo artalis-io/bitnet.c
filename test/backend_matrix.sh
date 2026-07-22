@@ -1001,7 +1001,7 @@ if ! grep -n '#include "backend_quant.h"' src/transformer/gpu_policy.c >/dev/nul
 fi
 
 if grep -n 'BN_CUDA_QWEN2MOE_GPU_ROUTE_FROM_LAYER\|BN_CUDA_QWEN2MOE_GPU_ROUTE_TO_LAYER' src/transformer/gpu.c >/dev/null 2>&1; then
-    echo "src/transformer/gpu.c must use GPU policy helpers for Qwen2MoE route range compatibility env vars"
+    echo "src/transformer/gpu.c must use GPU policy helpers for all-active-two route range compatibility env vars"
     fail=1
 fi
 
