@@ -387,9 +387,9 @@ static inline int bn_backend_quant_supports_native_quant_f16_cache_matvec(
     return bn_backend_quant_is_q8_0(type);
 }
 
-static inline int bn_backend_quant_f16_float_cache_matvec_candidate(
+static inline int bn_backend_quant_supports_f16_float_cache_matvec(
     int type) {
-    return bn_quant_format_is_f16_float_cache_matvec_candidate(type);
+    return bn_quant_format_supports_f16_float_cache_matvec(type);
 }
 
 static inline int bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(

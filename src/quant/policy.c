@@ -128,7 +128,7 @@ int bn_quant_format_is_q5_0(int type) {
     return type == BN_GGUF_TENSOR_Q5_0;
 }
 
-int bn_quant_format_is_f16_float_cache_matvec_candidate(int type) {
+int bn_quant_format_supports_f16_float_cache_matvec(int type) {
     return type == BN_GGUF_TENSOR_Q3_K ||
            type == BN_GGUF_TENSOR_IQ3_XXS ||
            type == BN_GGUF_TENSOR_IQ4_XS;

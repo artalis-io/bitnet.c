@@ -12872,7 +12872,7 @@ static int cuda_matvec(void *vctx, float *out, void *W_buf, const float *x,
     }
 
     int threads = 256;
-    if (bn_backend_quant_f16_float_cache_matvec_candidate(type) &&
+    if (bn_backend_quant_supports_f16_float_cache_matvec(type) &&
         w->f16_data) {
         int warps = threads / 32;
         int blocks = (rows + warps - 1) / warps;
@@ -18764,7 +18764,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                     bn_gpu_policy_cuda_f16_native_quant_ssm_matvec_enabled()) ||
                    (op->cols <= 2048 &&
                     bn_gpu_policy_cuda_f16_native_quant_matvec_enabled()))) ||
-                 bn_backend_quant_f16_float_cache_matvec_candidate(
+                 bn_backend_quant_supports_f16_float_cache_matvec(
                      op->type) ||
                  (bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
                       op->type) &&

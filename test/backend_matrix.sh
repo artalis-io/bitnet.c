@@ -3058,8 +3058,8 @@ if grep -n 'BN_MODEL_ARCH_POLICY_.*CUDA\|bn_model_arch_.*cuda' include/model_arc
     fail=1
 fi
 
-if grep -n 'bn_quant_format_is_cuda_f16_float_cache_matvec_candidate' include/quant.h src/quant test/test_quant.c >/dev/null 2>&1; then
-    echo "quant format helpers must name F16 float-cache matvec capability without CUDA"
+if grep -n 'bn_quant_format_is_cuda_f16_float_cache_matvec_candidate\|bn_quant_format_is_f16_float_cache_matvec_candidate\|bn_backend_quant_f16_float_cache_matvec_candidate' include/quant.h include/backend_quant.h src/quant src/gpu_cuda.cu test/test_quant.c test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "quant format helpers must name F16 float-cache matvec capability with supports behavior names"
     fail=1
 fi
 

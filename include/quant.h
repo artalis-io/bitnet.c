@@ -365,7 +365,7 @@ int      bn_quant_format_is_q6k(int type);
 int      bn_quant_format_is_q8k(int type);
 int      bn_quant_format_is_q8_0(int type);
 int      bn_quant_format_is_q5_0(int type);
-int      bn_quant_format_is_f16_float_cache_matvec_candidate(int type);
+int      bn_quant_format_supports_f16_float_cache_matvec(int type);
 int      bn_quant_format_can_convert_dense_to_f32(int type);
 int      bn_quant_format_convert_dense_to_f32(int type, const void *src,
                                               float *dst, int n);

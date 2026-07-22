@@ -5036,13 +5036,13 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q8_0));
     assert(!bn_backend_quant_supports_native_quant_f16_cache_matvec(
         BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_f16_float_cache_matvec_candidate(
+    assert(bn_backend_quant_supports_f16_float_cache_matvec(
         BN_GGUF_TENSOR_Q3_K));
-    assert(bn_backend_quant_f16_float_cache_matvec_candidate(
+    assert(bn_backend_quant_supports_f16_float_cache_matvec(
         BN_GGUF_TENSOR_IQ3_XXS));
-    assert(bn_backend_quant_f16_float_cache_matvec_candidate(
+    assert(bn_backend_quant_supports_f16_float_cache_matvec(
         BN_GGUF_TENSOR_IQ4_XS));
-    assert(!bn_backend_quant_f16_float_cache_matvec_candidate(
+    assert(!bn_backend_quant_supports_f16_float_cache_matvec(
         BN_GGUF_TENSOR_Q8_0));
     assert(bn_backend_quant_packed_kquant_f16_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q5_K));
