@@ -377,6 +377,13 @@ if rg -n 'bn_model_arch_ffn_uses_exact_scalar_activation' \
     fail=1
 fi
 
+if rg -n 'BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU|BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT|BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY|BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION|bn_model_arch_cpu_force_float_kquant|bn_model_arch_cpu_prefill_uses_decode_for_parity|bn_model_arch_uses_scalar_hybrid_ssm_cpu|bn_model_arch_ffn_uses_exact_scalar_activation' \
+    include/model_arch.h \
+    src/model_arch.c >/dev/null 2>&1; then
+    echo "model_arch must expose backend-neutral behavior helpers, not CPU/scalar compatibility aliases"
+    fail=1
+fi
+
 if rg -n 'bn_model_arch_rmsnorm_requires_reference_scalar_order' \
     src/transformer \
     src/transformer.c \

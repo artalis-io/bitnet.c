@@ -142,10 +142,6 @@ int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c) {
                   BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK) != 0);
 }
 
-int bn_model_arch_cpu_force_float_kquant(const BnConfig *c) {
-    return bn_model_arch_requires_float_kquant_fallback(c);
-}
-
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size) {
     if (c && (c->policy_flags & BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE))
         return 1.0f;
@@ -193,10 +189,6 @@ int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c) {
     return c && ((c->policy_flags &
                   BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM) != 0) &&
            c->full_attn_interval > 0;
-}
-
-int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c) {
-    return bn_model_arch_uses_reference_hybrid_ssm(c);
 }
 
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c) {
@@ -263,10 +255,6 @@ int bn_model_arch_allows_small_dense_prefill_decode_fallback(
 int bn_model_arch_prefill_uses_decode_for_parity(const BnConfig *c) {
     return c && ((c->policy_flags &
                   BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY) != 0);
-}
-
-int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c) {
-    return bn_model_arch_prefill_uses_decode_for_parity(c);
 }
 
 int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c) {
@@ -529,10 +517,6 @@ int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {
 
 int bn_model_arch_ffn_uses_reference_activation(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION) != 0);
-}
-
-int bn_model_arch_ffn_uses_exact_scalar_activation(const BnConfig *c) {
-    return bn_model_arch_ffn_uses_reference_activation(c);
 }
 
 int bn_model_arch_rope_text_dims(int rope_dim_count,

@@ -3360,7 +3360,6 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_loads_per_layer_input_weights(&c));
     assert(bn_model_arch_divides_rope_freqs(&c, 0));
     assert(bn_model_arch_prefill_uses_decode_for_parity(&c));
-    assert(bn_model_arch_cpu_prefill_uses_decode_for_parity(&c));
     assert(!bn_model_arch_ffn_uses_reference_activation(&c));
     assert(!bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_model_arch_moe_uses_scaled_router_input(&c));
@@ -3417,7 +3416,6 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
                      BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(bn_model_arch_requires_float_kquant_fallback(&c));
-    assert(bn_model_arch_cpu_force_float_kquant(&c));
     assert(fabsf(bn_model_arch_attention_scale(&c, 128) -
                  (1.0f / sqrtf(128.0f))) < 1e-7f);
     assert(bn_model_arch_rmsnorm_mode(&c) ==
@@ -3455,11 +3453,9 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 7);
     assert(bn_model_arch_prefill_uses_exact_activation(&c));
     assert(bn_model_arch_ffn_uses_reference_activation(&c));
-    assert(bn_model_arch_ffn_uses_exact_scalar_activation(&c));
 
     c.full_attn_interval = 4;
     assert(bn_model_arch_uses_reference_hybrid_ssm(&c));
-    assert(bn_model_arch_uses_scalar_hybrid_ssm_cpu(&c));
     assert(bn_model_arch_uses_hybrid_layer_layout(&c));
     assert(!bn_model_arch_uses_hybrid_ssm(&c));
     assert(!bn_model_arch_uses_dense_attention_only(&c));

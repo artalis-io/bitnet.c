@@ -8,11 +8,7 @@
 #define BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE               (1u << 0)
 #define BN_MODEL_ARCH_POLICY_LARGE_GPU_GRAPH_FALLBACK           (1u << 1)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM               (1u << 2)
-#define BN_MODEL_ARCH_POLICY_SCALAR_HYBRID_SSM_CPU \
-    BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM
 #define BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK     (1u << 3)
-#define BN_MODEL_ARCH_POLICY_CPU_FLOAT_KQUANT \
-    BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK
 #define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_SILU                 (1u << 4)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_RMSNORM_ORDER            (1u << 5)
 #define BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY         (1u << 6)
@@ -21,8 +17,6 @@
 #define BN_MODEL_ARCH_POLICY_FFN_POST_NORM                      (1u << 9)
 #define BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE                 (1u << 10)
 #define BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY              (1u << 11)
-#define BN_MODEL_ARCH_POLICY_CPU_PREFILL_DECODE_PARITY \
-    BN_MODEL_ARCH_POLICY_PREFILL_DECODE_PARITY
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK (1u << 12)
 #define BN_MODEL_ARCH_POLICY_MOE_FLOAT_KQUANT_GATEUP_FALLBACK   (1u << 13)
 #define BN_MODEL_ARCH_POLICY_MOE_REFERENCE_GPU_ATTENTION        (1u << 14)
@@ -32,8 +26,6 @@
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE    (1u << 18)
 #define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION           (1u << 19)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION           (1u << 20)
-#define BN_MODEL_ARCH_POLICY_EXACT_SCALAR_FFN_ACTIVATION \
-    BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION
 #define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
 #define BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS                (1u << 22)
 
@@ -119,7 +111,6 @@ int bn_model_arch_tensor_scale_name_for(const BnModelArchOps *ops,
 void bn_model_arch_apply_config(BnConfig *c, const BnModelArchOps *ops);
 int bn_model_arch_requires_large_gpu_graph_fallback(const BnConfig *c);
 int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c);
-int bn_model_arch_cpu_force_float_kquant(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
 int bn_model_arch_rmsnorm_uses_reference_order(const BnConfig *c);
@@ -130,7 +121,6 @@ int bn_model_arch_uses_attention_post_norm(const BnConfig *c);
 int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
 int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c);
-int bn_model_arch_uses_scalar_hybrid_ssm_cpu(const BnConfig *c);
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_large_dense_hybrid_ssm(const BnConfig *c);
@@ -142,7 +132,6 @@ int bn_model_arch_per_layer_embedding_dim(const BnConfig *c);
 int bn_model_arch_allows_small_dense_prefill_decode_fallback(
     const BnConfig *c);
 int bn_model_arch_prefill_uses_decode_for_parity(const BnConfig *c);
-int bn_model_arch_cpu_prefill_uses_decode_for_parity(const BnConfig *c);
 int bn_model_arch_moe_requires_float_kquant_gateup_fallback(const BnConfig *c);
 int bn_model_arch_moe_prefers_reference_gpu_attention(const BnConfig *c);
 int bn_model_arch_moe_uses_scaled_router_input(const BnConfig *c);
@@ -189,7 +178,6 @@ int bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
                                                        int logits_cols);
 int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c);
 int bn_model_arch_ffn_uses_reference_activation(const BnConfig *c);
-int bn_model_arch_ffn_uses_exact_scalar_activation(const BnConfig *c);
 int bn_model_arch_rope_text_dims(int rope_dim_count,
                                  const int32_t *sections,
                                  uint64_t n_sections);
