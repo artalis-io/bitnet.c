@@ -402,7 +402,7 @@ int bn_transformer_ssm_uses_reference_ops(
 
 int bn_transformer_prefill_uses_reference_activation(
     const BnConfig *c) {
-    return bn_model_config_prefill_uses_exact_activation(c);
+    return bn_model_config_prefill_uses_reference_activation(c);
 }
 
 int bn_transformer_ffn_uses_reference_activation(

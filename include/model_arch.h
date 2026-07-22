@@ -24,7 +24,7 @@
 #define BN_MODEL_ARCH_POLICY_MOE_DENSE_RESIDUAL_BRANCH          (1u << 16)
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE           (1u << 17)
 #define BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE    (1u << 18)
-#define BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION           (1u << 19)
+#define BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION       (1u << 19)
 #define BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION           (1u << 20)
 #define BN_MODEL_ARCH_POLICY_MOE_UNNORMALIZED_TOPK              (1u << 21)
 #define BN_MODEL_ARCH_POLICY_FULL_ROPE_TEXT_DIMS                (1u << 22)
@@ -175,7 +175,7 @@ int bn_model_arch_dense_logits_argmax_shape_allowed(const BnConfig *c,
                                                     int logits_rows);
 int bn_model_arch_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
                                                        int logits_cols);
-int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c);
+int bn_model_arch_prefill_uses_reference_activation(const BnConfig *c);
 int bn_model_arch_ffn_uses_reference_activation(const BnConfig *c);
 int bn_model_arch_rope_text_dims(int rope_dim_count,
                                  const int32_t *sections,

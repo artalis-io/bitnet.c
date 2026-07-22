@@ -3637,6 +3637,12 @@ if grep -n 'bn_transformer_prefill_uses_exact_activation\|bn_transformer_ffn_use
     fail=1
 fi
 
+if rg -n 'BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION|bn_model_arch_prefill_uses_exact_activation|bn_model_config_prefill_uses_exact_activation' \
+    include src test/test_transformer.c >/dev/null 2>&1; then
+    echo "Model prefill activation policy must use reference behavior names"
+    fail=1
+fi
+
 if grep -n 'BnTransformerGPUSmallDenseExactNative\|bn_transformer_gpu_small_dense_exact_native\|use_small_dense_exact_native\|small_dense_exact_native_\(policy\|use\|decode\|path\)' include/transformer_plan_internal.h src/transformer/gpu_internal.h src/transformer/gpu_policy.c src/transformer/gpu_emit.c src/transformer/gpu.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer small-dense GPU decode policy must use native-quant behavior names"
     fail=1

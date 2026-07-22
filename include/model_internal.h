@@ -108,7 +108,7 @@ void bn_model_config_init_rope_frequencies(const BnConfig *config,
                                            float *freqs,
                                            int capacity_pairs);
 float bn_model_config_final_logit_softcap(const BnConfig *config);
-int bn_model_config_prefill_uses_exact_activation(const BnConfig *config);
+int bn_model_config_prefill_uses_reference_activation(const BnConfig *config);
 int bn_model_config_ffn_uses_reference_activation(const BnConfig *config);
 int bn_model_config_dense_batch_prefill_shape_allowed(
     const BnConfig *config,

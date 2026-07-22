@@ -1081,7 +1081,7 @@ static void test_gpu_policy_helpers(void) {
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
-                     BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
+                     BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION;
     assert(!bn_transformer_prefill_small_dense_chain_applicable(
         &gpu, &c));
     gpu.kind = BN_GPU_BACKEND_CUDA;
@@ -3413,7 +3413,7 @@ static void test_model_arch_registry(void) {
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
                      BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
-                     BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
+                     BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION |
                      BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
     assert(bn_model_arch_requires_float_kquant_fallback(&c));
     assert(fabsf(bn_model_arch_attention_scale(&c, 128) -
@@ -3451,7 +3451,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_allows_small_dense_native_quant(&c));
     assert(bn_model_arch_allows_small_dense_native_logit_refine(&c));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 7);
-    assert(bn_model_arch_prefill_uses_exact_activation(&c));
+    assert(bn_model_arch_prefill_uses_reference_activation(&c));
     assert(bn_model_arch_ffn_uses_reference_activation(&c));
 
     c.full_attn_interval = 4;
@@ -3539,7 +3539,7 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_dense_batch_prefill_shape_allowed(&c, 1));
     assert(bn_model_arch_small_dense_prefill_min_tokens(&c) == 2);
     assert(!bn_model_arch_uses_large_gpu_graph_fallback_shape(&c));
-    assert(!bn_model_arch_prefill_uses_exact_activation(&c));
+    assert(!bn_model_arch_prefill_uses_reference_activation(&c));
     assert(bn_model_arch_ffn_uses_reference_activation(&c));
     assert(bn_model_arch_dense_logits_argmax_shape_allowed(&c, 300000));
     assert(!bn_model_arch_dense_logits_argmax_shape_allowed(&c, 262144));
@@ -4147,7 +4147,7 @@ static void test_block_planning(void) {
            cpu_backend == BN_CPU_BACKEND_WASM_SIMD);
     memset(&c, 0, sizeof(c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK |
-                     BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION;
+                     BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION;
     assert(bn_transformer_cpu_float_kquant_task_flags(0) == 0);
     assert(bn_transformer_cpu_float_kquant_task_flags(1) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);

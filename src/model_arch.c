@@ -503,11 +503,12 @@ int bn_model_arch_allows_small_dense_native_logit_refine(const BnConfig *c) {
 int bn_model_arch_small_dense_prefill_min_tokens(const BnConfig *c) {
     if (!bn_model_arch_allows_small_dense_native_logit_refine(c))
         return 0;
-    return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) ? 7 : 2;
+    return (c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION) ? 7 : 2;
 }
 
-int bn_model_arch_prefill_uses_exact_activation(const BnConfig *c) {
-    return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION) != 0);
+int bn_model_arch_prefill_uses_reference_activation(const BnConfig *c) {
+    return c && ((c->policy_flags &
+                  BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION) != 0);
 }
 
 int bn_model_arch_ffn_uses_reference_activation(const BnConfig *c) {
@@ -749,7 +750,7 @@ const BnModelArchOps *bn_model_arch_registry(size_t *count) {
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_PREFILL_DECODE_FALLBACK |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE |
             BN_MODEL_ARCH_POLICY_SMALL_DENSE_NATIVE_LOGIT_REFINE |
-            BN_MODEL_ARCH_POLICY_PREFILL_EXACT_ACTIVATION |
+            BN_MODEL_ARCH_POLICY_PREFILL_REFERENCE_ACTIVATION |
             BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION,
             0,
             bn_model_arch_match_qwen3,
