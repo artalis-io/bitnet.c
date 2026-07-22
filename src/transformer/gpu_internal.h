@@ -1473,7 +1473,7 @@ int bn_transformer_gpu_emit_context_moe_routed_ffn(
     int hidden,
     int n_experts,
     int k,
-    int exact_silu,
+    int reference_silu,
     int layer);
 int bn_transformer_gpu_fallback_ssm_layer(
     BnTransformerGPUEmitContext *emit,
@@ -1732,6 +1732,6 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                                          int dim,
                                          uint32_t u_eps,
                                          void *next_norm,
-                                         int exact_silu);
+                                         int reference_silu);
 
 #endif // BN_TRANSFORMER_GPU_INTERNAL_H

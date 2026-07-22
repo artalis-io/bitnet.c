@@ -3617,7 +3617,7 @@ if awk '/BN_GPU_OP_FLAG_EXACT_SILU/ && !/_Static_assert/' src/transformer/gpu_em
     fail=1
 fi
 
-if grep -n 'bn_transformer_gpu_exact_silu_flags\|bn_transformer_gpu_exact_silu_active_flags\|\bexact_silu\b' include/transformer_plan_internal.h src/transformer/gpu_policy.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_gpu_exact_silu_flags\|bn_transformer_gpu_exact_silu_active_flags\|\bexact_silu\b' include/transformer_plan_internal.h src/transformer/gpu_internal.h src/transformer/gpu_policy.c src/transformer/gpu_emit.c test/test_transformer.c >/dev/null 2>&1; then
     echo "Transformer GPU SiLU flag policy must use reference behavior names"
     fail=1
 fi
