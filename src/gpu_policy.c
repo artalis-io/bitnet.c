@@ -676,13 +676,13 @@ BnGPUMoERouteShape bn_gpu_policy_moe_route_shape(const BnConfig *c) {
 }
 
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c) {
-    return bn_model_config_uses_all_active_two_expert_moe(c,
+    return bn_moe_policy_uses_all_active_two_expert_route(c,
                                                           c ? c->dim : 0);
 }
 
 static int gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c) {
-    return bn_model_config_uses_more_than_two_expert_moe(c) ||
-           bn_model_config_uses_two_expert_all_active_moe(c);
+    return bn_moe_policy_uses_grouped_expert_route(c) ||
+           bn_moe_policy_uses_all_active_two_expert_set(c);
 }
 
 int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c) {

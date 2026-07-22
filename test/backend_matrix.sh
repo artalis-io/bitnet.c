@@ -784,6 +784,11 @@ if grep -n 'bn_model_arch_uses_all_active_two_expert_moe\|bn_model_arch_uses_two
     fail=1
 fi
 
+if grep -n 'bn_model_config_uses_all_active_two_expert_moe\|bn_model_config_uses_two_expert_all_active_moe\|bn_model_config_uses_more_than_two_expert_moe' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c must use MoE policy helpers for MoE route-shape policy"
+    fail=1
+fi
+
 for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c
