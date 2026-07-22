@@ -7278,7 +7278,7 @@ static __global__ void moe_q6k_down_routed_q8k_pair_4row_kernel(
             route[slot] * sum;
 }
 
-static __global__ void moe_q6k_down_routed_q8k_k8_4row_sum_kernel(
+static __global__ void moe_q6k_down_routed_q8k_prepared_native_quant_4row_sum_kernel(
     float *out,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7333,7 +7333,7 @@ static __global__ void moe_q6k_down_routed_q8k_k8_4row_sum_kernel(
     }
 }
 
-static __global__ void moe_q6k_down_routed_q8k_k8_4row_residual_sum_kernel(
+static __global__ void moe_q6k_down_routed_q8k_prepared_native_quant_4row_residual_sum_kernel(
     float *residual,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7388,7 +7388,7 @@ static __global__ void moe_q6k_down_routed_q8k_k8_4row_residual_sum_kernel(
     }
 }
 
-static __global__ void moe_q6k_down_routed_q8k_k8_4row_residual_sum_2048_768_kernel(
+static __global__ void moe_q6k_down_routed_q8k_prepared_native_quant_4row_residual_sum_2048_768_kernel(
     float *residual,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -7435,7 +7435,7 @@ static __global__ void moe_q6k_down_routed_q8k_k8_4row_residual_sum_2048_768_ker
     }
 }
 
-static __global__ void moe_q6k_down_routed_q8k_k8_8row_sum_kernel(
+static __global__ void moe_q6k_down_routed_q8k_prepared_native_quant_8row_sum_kernel(
     float *out,
     const BnBlockQ6K *down,
     const BnBlockQ8K *mid_q,
@@ -11684,17 +11684,17 @@ static int cuda_use_all_active_two_kquant_moe_down_pair4_sum(int all_active_two_
         all_active_two_kquant);
 }
 
-static int cuda_use_moe_down_prepared_k8_4row_sum(int all_active_two_kquant,
+static int cuda_use_moe_down_prepared_native_quant_4row_sum(int all_active_two_kquant,
                                                  int k,
                                                  int hidden_dim) {
-    return bn_gpu_policy_cuda_moe_down_prepared_k8_4row_sum_enabled(
+    return bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
         all_active_two_kquant, k, hidden_dim);
 }
 
-static int cuda_use_moe_down_prepared_k8_8row_sum(int k8_4row_sum,
+static int cuda_use_moe_down_prepared_native_quant_8row_sum(int prepared_native_quant_4row_sum,
                                                  int hidden_dim) {
-    return bn_gpu_policy_cuda_moe_down_prepared_k8_8row_sum_enabled(
-        k8_4row_sum, hidden_dim);
+    return bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
+        prepared_native_quant_4row_sum, hidden_dim);
 }
 
 static int cuda_use_all_active_two_kquant_moe_down_fixed(
@@ -11707,10 +11707,10 @@ static int cuda_use_moe_down_resid_rmsnorm_fuse(void) {
     return bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled();
 }
 
-static int cuda_use_moe_down_prepared_k8_exact_2048_768(int dim,
+static int cuda_use_moe_down_prepared_native_quant_exact_2048_768(int dim,
                                                        int hidden_dim,
                                                        int k) {
-    return bn_gpu_policy_cuda_moe_down_prepared_k8_exact_2048_768_enabled(
+    return bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
         dim, hidden_dim, k);
 }
 
@@ -20307,12 +20307,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                             int use_moe_down_pair4_sum =
                                 cuda_use_all_active_two_kquant_moe_down_pair4_sum(
                                     moe_all_active_two_kquant);
-                            int use_moe_down_k8_4row_sum =
-                                cuda_use_moe_down_prepared_k8_4row_sum(
+                            int use_moe_down_prepared_native_quant_4row_sum =
+                                cuda_use_moe_down_prepared_native_quant_4row_sum(
                                     moe_all_active_two_kquant, k, hidden);
-                            int use_moe_down_k8_8row_sum =
-                                cuda_use_moe_down_prepared_k8_8row_sum(
-                                    use_moe_down_k8_4row_sum, hidden);
+                            int use_moe_down_prepared_native_quant_8row_sum =
+                                cuda_use_moe_down_prepared_native_quant_8row_sum(
+                                    use_moe_down_prepared_native_quant_4row_sum, hidden);
                             if (cuda_ensure_q8_k(ctx, hidden, k) != 0 ||
                                 cuda_ensure_prefill(ctx,
                                     (size_t)k * (size_t)dim) != 0)
@@ -20358,14 +20358,14 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden);
                                 }
-                            } else if (use_moe_down_k8_8row_sum) {
+                            } else if (use_moe_down_prepared_native_quant_8row_sum) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                    moe_q6k_down_routed_q8k_k8_8row_sum_kernel,
+                                    moe_q6k_down_routed_q8k_prepared_native_quant_8row_sum_kernel,
                                     (dim + 7) / 8, route_threads, 0,
                                     out, (const BnBlockQ6K *)down->data,
                                     mid_q, route, dim, hidden,
                                     n_experts, k);
-                            } else if (use_moe_down_k8_4row_sum) {
+                            } else if (use_moe_down_prepared_native_quant_4row_sum) {
                                 int fuse_resid_norm =
                                     cuda_use_moe_down_resid_rmsnorm_fuse() &&
                                     next &&
@@ -20382,17 +20382,17 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     ? cuda_act(ctx, next->buf_out) : NULL;
                                 if (fuse_resid_norm && nw && nw->data &&
                                     resid && norm_out) {
-                                    if (cuda_use_moe_down_prepared_k8_exact_2048_768(
+                                    if (cuda_use_moe_down_prepared_native_quant_exact_2048_768(
                                             dim, hidden, k)) {
                                         BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                            moe_q6k_down_routed_q8k_k8_4row_residual_sum_2048_768_kernel,
+                                            moe_q6k_down_routed_q8k_prepared_native_quant_4row_residual_sum_2048_768_kernel,
                                             dim / 4, route_threads, 0,
                                             resid,
                                             (const BnBlockQ6K *)down->data,
                                             mid_q, route, n_experts);
                                     } else {
                                         BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                            moe_q6k_down_routed_q8k_k8_4row_residual_sum_kernel,
+                                            moe_q6k_down_routed_q8k_prepared_native_quant_4row_residual_sum_kernel,
                                             (dim + 3) / 4, route_threads, 0,
                                             resid,
                                             (const BnBlockQ6K *)down->data,
@@ -20410,7 +20410,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     i++;
                                 } else {
                                     BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,
-                                        moe_q6k_down_routed_q8k_k8_4row_sum_kernel,
+                                        moe_q6k_down_routed_q8k_prepared_native_quant_4row_sum_kernel,
                                         (dim + 3) / 4, route_threads, 0,
                                         out, (const BnBlockQ6K *)down->data,
                                         mid_q, route, dim, hidden,
@@ -20458,7 +20458,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                     n_experts, k);
                             }
                             if (!use_moe_down_pair4_sum &&
-                                !use_moe_down_k8_4row_sum &&
+                                !use_moe_down_prepared_native_quant_4row_sum &&
                                 !use_all_active_two_down_accum &&
                                 !moe_all_active_two_ordered_quant_down) {
                                 BN_CUDA_LAUNCH_STABLE(ctx, graph_exec,

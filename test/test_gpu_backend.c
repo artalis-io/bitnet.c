@@ -1835,30 +1835,30 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR4_SUM", "1", 1);
     assert(!bn_gpu_policy_all_active_two_kquant_moe_down_pair4_sum_enabled(1));
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_PAIR4_SUM");
-    assert(bn_gpu_policy_cuda_moe_down_prepared_k8_4row_sum_enabled(
+    assert(bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
         0, 8, 1024));
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_4row_sum_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
         1, 8, 1024));
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_4row_sum_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
         0, 9, 1024));
     setenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_4ROW_SUM", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_4row_sum_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
         0, 8, 1024));
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_4ROW_SUM");
     setenv("BN_CUDA_DISABLE_MOE_Q6K_K8_4ROW_SUM", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_4row_sum_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_4row_sum_enabled(
         0, 8, 1024));
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_K8_4ROW_SUM");
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_8row_sum_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
         1, 1024));
     setenv("BN_CUDA_ENABLE_MOE_DOWN_KQUANT_K8_8ROW_SUM", "1", 1);
-    assert(bn_gpu_policy_cuda_moe_down_prepared_k8_8row_sum_enabled(
+    assert(bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
         1, 1024));
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_8row_sum_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
         0, 1024));
     unsetenv("BN_CUDA_ENABLE_MOE_DOWN_KQUANT_K8_8ROW_SUM");
     setenv("BN_CUDA_ENABLE_MOE_Q6K_K8_8ROW_SUM", "1", 1);
-    assert(bn_gpu_policy_cuda_moe_down_prepared_k8_8row_sum_enabled(
+    assert(bn_gpu_policy_cuda_moe_down_prepared_native_quant_8row_sum_enabled(
         1, 1024));
     unsetenv("BN_CUDA_ENABLE_MOE_Q6K_K8_8ROW_SUM");
     assert(bn_gpu_policy_all_active_two_kquant_moe_down_fixed_enabled(1));
@@ -1872,16 +1872,16 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE", "1", 1);
     assert(!bn_gpu_policy_cuda_moe_down_resid_rmsnorm_fuse_enabled());
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_RESID_RMSNORM_FUSE");
-    assert(bn_gpu_policy_cuda_moe_down_prepared_k8_exact_2048_768_enabled(
+    assert(bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
         2048, 768, 8));
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_exact_2048_768_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
         2048, 1024, 8));
     setenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_EXACT_2048_768", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_exact_2048_768_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
         2048, 768, 8));
     unsetenv("BN_CUDA_DISABLE_MOE_DOWN_KQUANT_K8_EXACT_2048_768");
     setenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768", "1", 1);
-    assert(!bn_gpu_policy_cuda_moe_down_prepared_k8_exact_2048_768_enabled(
+    assert(!bn_gpu_policy_cuda_moe_down_prepared_native_quant_exact_2048_768_enabled(
         2048, 768, 8));
     unsetenv("BN_CUDA_DISABLE_MOE_Q6K_K8_EXACT_2048_768");
     assert(!bn_gpu_policy_all_active_two_kquant_moe_down_accum_4row_enabled());
