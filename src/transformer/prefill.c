@@ -131,16 +131,23 @@ static float *prefill_decode_tokens_with_logits(BnModel *m, BnSession *sess,
 }
 
 static int prefill_uses_float_kquant_fallback(const BnModel *m) {
-    return m && bn_transformer_cpu_prefill_uses_float_kquant_fallback(
-        &m->config);
+    if (!m)
+        return 0;
+    BnTransformerPrefillFloatKQuantFallbackPolicy policy =
+        bn_transformer_prefill_float_kquant_fallback_policy(&m->config);
+    return policy.enabled;
 }
 
 static int prefill_qweight_uses_float_kquant_fallback(const BnQWeight *w) {
     return w && bn_transformer_prefill_uses_float_kquant_fallback(w->type);
 }
 
-static uint32_t prefill_float_kquant_fallback_task_flags(void) {
-    return bn_transformer_prefill_float_kquant_fallback_task_flags(1);
+static uint32_t prefill_float_kquant_fallback_task_flags(const BnModel *m) {
+    if (!m)
+        return 0u;
+    BnTransformerPrefillFloatKQuantFallbackPolicy policy =
+        bn_transformer_prefill_float_kquant_fallback_policy(&m->config);
+    return policy.task_flags;
 }
 
 static int prefill_all_weights_use_float_kquant_fallback(
@@ -167,7 +174,7 @@ static void prefill_quant_matmul_float_kquant_fallback(
                 out[i] + (size_t)t * W[i]->rows,
                 W[i],
                 bn_backend_model_prepared_qweight(backend, W[i]),
-                prefill_float_kquant_fallback_task_flags()
+                prefill_float_kquant_fallback_task_flags(m)
             };
         }
         bn_transformer_prefill_quant_matvec_batch(

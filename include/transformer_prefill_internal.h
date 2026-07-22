@@ -46,6 +46,11 @@ typedef struct {
 } BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy;
 
 typedef struct {
+    int enabled;
+    uint32_t task_flags;
+} BnTransformerPrefillFloatKQuantFallbackPolicy;
+
+typedef struct {
     int uses_hybrid_layer_layout;
     int uses_hybrid_ssm;
     int uses_large_dense_hybrid_ssm;
@@ -158,6 +163,8 @@ BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
 bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available);
+BnTransformerPrefillFloatKQuantFallbackPolicy
+bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_uses_hybrid_layer_layout(const BnConfig *c);

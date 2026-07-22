@@ -1418,6 +1418,15 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(0) == 0);
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(1) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
+    c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK;
+    BnTransformerPrefillFloatKQuantFallbackPolicy prefill_kquant_fallback =
+        bn_transformer_prefill_float_kquant_fallback_policy(&c);
+    assert(prefill_kquant_fallback.enabled ==
+           bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c));
+    assert(prefill_kquant_fallback.task_flags ==
+           bn_transformer_prefill_float_kquant_fallback_task_flags(
+               prefill_kquant_fallback.enabled));
+    c.policy_flags = 0;
 
     BnMoEExpertMap expert_map;
     memset(&expert_map, 0, sizeof(expert_map));

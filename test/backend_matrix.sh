@@ -409,6 +409,11 @@ if grep -n '\bprefill_force_float_kquant\|\bprefill_qweight_is_kquant\|\bprefill
     fail=1
 fi
 
+if grep -n 'bn_transformer_cpu_prefill_uses_float_kquant_fallback' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "src/transformer/prefill.c must use prefill float K-quant fallback policy, not CPU policy directly"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_cpu_prefill_force_float_kquant_enabled' \
     include/transformer_plan_internal.h \
     src/transformer/cpu_policy.c \

@@ -2,6 +2,7 @@
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
+#include "transformer_plan_internal.h"
 #include "../moe_internal.h"
 
 #include <stdlib.h>
@@ -35,6 +36,16 @@ bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
         bn_moe_policy_uses_all_active_two_expert_route(c, c->dim) &&
         bn_transformer_moe_has_shared_expert(c, NULL) &&
         !gpu_available;
+    return policy;
+}
+
+BnTransformerPrefillFloatKQuantFallbackPolicy
+bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c) {
+    BnTransformerPrefillFloatKQuantFallbackPolicy policy = {0};
+    policy.enabled =
+        bn_transformer_cpu_prefill_uses_float_kquant_fallback(c);
+    policy.task_flags =
+        bn_transformer_prefill_float_kquant_fallback_task_flags(policy.enabled);
     return policy;
 }
 
