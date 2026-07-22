@@ -185,6 +185,15 @@ if grep -n 'bn_gpu_policy_cuda_q6k_4warp_long_enabled\|bn_gpu_policy_cuda_q6k_5w
     fail=1
 fi
 
+if grep -n 'gpu_policy_down_kquant_[345]warp_exact\|bn_gpu_policy_cuda_down_kquant_[35]warp_exact_enabled\|cuda_use_down_kquant_[35]warp_exact' \
+    include/gpu_policy.h \
+    src/gpu_policy.c \
+    src/gpu_cuda.cu \
+    test/test_gpu_backend.c >/dev/null 2>&1; then
+    echo "CUDA down-K-quant shape policy helpers must not use exact names"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q6k_cublas_f16_cache_enabled\|bn_gpu_policy_cuda_q6k_q8_1_dot_enabled\|bn_gpu_policy_cuda_q6k_mmvq_enabled\|bn_gpu_policy_cuda_q6k_mmvq_2warp_logits_enabled\|bn_gpu_policy_cuda_q6k_down_residual_rmsnorm_fuse_enabled\|bn_gpu_policy_cuda_f16_q6k_matvec_enabled\|bn_gpu_policy_cuda_q6k_matmul8_enabled\|bn_gpu_policy_cuda_q6k_matmul4_enabled\|bn_gpu_policy_cuda_q6k_matvec4_enabled\|bn_gpu_policy_cuda_q6k_batch_warp_enabled\|bn_gpu_policy_cuda_q6k_f16_cache_adds_f32_down_cache\|use_f16_q6k_matvec\|use_q6k_q8_1\|use_q6k_mmvq' \
     include/gpu_policy.h \
     src/gpu_policy.c \
@@ -2500,8 +2509,8 @@ fi
 
 for fn in \
     cuda_use_down_kquant_4warp_long \
-    cuda_use_down_kquant_5warp_exact \
-    cuda_use_down_kquant_3warp_exact \
+    cuda_use_down_kquant_5warp_shape \
+    cuda_use_down_kquant_3warp_shape \
     cuda_use_down_kquant_2warp_long \
     cuda_disable_down_kquant_matvec4_shape \
     cuda_prefer_moe_down_quant_path \

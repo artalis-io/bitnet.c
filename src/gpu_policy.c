@@ -1235,7 +1235,7 @@ static int gpu_policy_down_kquant_4warp_long_disabled(void) {
         "BN_CUDA_DISABLE_Q6K_4WARP_LONG");
 }
 
-static int gpu_policy_down_kquant_4warp_exact_1536x8960_disabled(void) {
+static int gpu_policy_down_kquant_4warp_shape_1536x8960_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_DOWN_KQUANT_4WARP_1536_8960",
         "BN_CUDA_DISABLE_Q6K_4WARP_1536_8960");
@@ -1247,25 +1247,25 @@ static int gpu_policy_down_kquant_4warp_mid_cols_requested(void) {
         "BN_CUDA_ENABLE_Q6K_4WARP_5120");
 }
 
-static int gpu_policy_down_kquant_5warp_exact_1536x8960_disabled(void) {
+static int gpu_policy_down_kquant_5warp_shape_1536x8960_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_DOWN_KQUANT_5WARP_1536_8960",
         "BN_CUDA_DISABLE_Q6K_5WARP_1536_8960");
 }
 
-static int gpu_policy_down_kquant_5warp_exact_2560x9728_disabled(void) {
+static int gpu_policy_down_kquant_5warp_shape_2560x9728_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_DOWN_KQUANT_5WARP_2560_9728",
         "BN_CUDA_DISABLE_Q6K_5WARP_2560_9728");
 }
 
-static int gpu_policy_down_kquant_3warp_exact_1536x8960_disabled(void) {
+static int gpu_policy_down_kquant_3warp_shape_1536x8960_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_DOWN_KQUANT_3WARP_1536_8960",
         "BN_CUDA_DISABLE_Q6K_3WARP_1536_8960");
 }
 
-static int gpu_policy_down_kquant_3warp_exact_2560x9728_disabled(void) {
+static int gpu_policy_down_kquant_3warp_shape_2560x9728_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_DOWN_KQUANT_3WARP_2560_9728",
         "BN_CUDA_DISABLE_Q6K_3WARP_2560_9728");
@@ -1372,7 +1372,7 @@ int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols) {
     if (gpu_policy_down_kquant_4warp_long_disabled())
         return 0;
     if (rows == 1536 && cols == 8960 &&
-        !gpu_policy_down_kquant_4warp_exact_1536x8960_disabled())
+        !gpu_policy_down_kquant_4warp_shape_1536x8960_disabled())
         return 1;
     if (rows >= 2560 && cols >= 8192 && cols <= 16384)
         return 1;
@@ -1380,22 +1380,22 @@ int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols) {
            gpu_policy_down_kquant_4warp_mid_cols_requested();
 }
 
-int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_5warp_shape_enabled(int rows, int cols) {
     if (rows == 1536 && cols == 8960 &&
-        !gpu_policy_down_kquant_5warp_exact_1536x8960_disabled())
+        !gpu_policy_down_kquant_5warp_shape_1536x8960_disabled())
         return 1;
     if (rows == 2560 && cols == 9728 &&
-        !gpu_policy_down_kquant_5warp_exact_2560x9728_disabled())
+        !gpu_policy_down_kquant_5warp_shape_2560x9728_disabled())
         return 1;
     return 0;
 }
 
-int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols) {
+int bn_gpu_policy_cuda_down_kquant_3warp_shape_enabled(int rows, int cols) {
     if (rows == 1536 && cols == 8960 &&
-        !gpu_policy_down_kquant_3warp_exact_1536x8960_disabled())
+        !gpu_policy_down_kquant_3warp_shape_1536x8960_disabled())
         return 1;
     if (rows == 2560 && cols == 9728 &&
-        !gpu_policy_down_kquant_3warp_exact_2560x9728_disabled())
+        !gpu_policy_down_kquant_3warp_shape_2560x9728_disabled())
         return 1;
     return 0;
 }

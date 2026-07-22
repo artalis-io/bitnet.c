@@ -11578,12 +11578,12 @@ static int cuda_use_down_kquant_4warp_long(int rows, int cols) {
     return bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(rows, cols);
 }
 
-static int cuda_use_down_kquant_5warp_exact(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(rows, cols);
+static int cuda_use_down_kquant_5warp_shape(int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_5warp_shape_enabled(rows, cols);
 }
 
-static int cuda_use_down_kquant_3warp_exact(int rows, int cols) {
-    return bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(rows, cols);
+static int cuda_use_down_kquant_3warp_shape(int rows, int cols) {
+    return bn_gpu_policy_cuda_down_kquant_3warp_shape_enabled(rows, cols);
 }
 
 static int cuda_use_down_kquant_2warp_long(int rows, int cols) {
@@ -18693,13 +18693,13 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                         xq, in, op->cols, 1);
                     int pair_threads = 256;
                     int warps = pair_threads / 32;
-                    if (cuda_use_down_kquant_3warp_exact(op->rows, op->cols)) {
+                    if (cuda_use_down_kquant_3warp_shape(op->rows, op->cols)) {
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_3warp_kernel,
                             op->rows, 96, 0,
                             out, (const BnBlockQ6K *)w->data, xq,
                             (const float *)NULL,
                             op->rows, op->cols, out_offset);
-                    } else if (cuda_use_down_kquant_5warp_exact(op->rows, op->cols)) {
+                    } else if (cuda_use_down_kquant_5warp_shape(op->rows, op->cols)) {
                         BN_CUDA_LAUNCH(ctx, q6k_dot_matvec_5warp_kernel,
                             op->rows, 160, 0,
                             out, (const BnBlockQ6K *)w->data, xq,
@@ -18955,12 +18955,12 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                                                          op->cols, 1);
                 int q6_threads = 256;
                 int warps = q6_threads / 32;
-                if (cuda_use_down_kquant_3warp_exact(op->rows, op->cols)) {
+                if (cuda_use_down_kquant_3warp_shape(op->rows, op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec_3warp_kernel, op->rows, 96, 0,
                         out, (const BnBlockQ6K *)w->data, xq, bias,
                         op->rows, op->cols, out_offset);
-                } else if (cuda_use_down_kquant_5warp_exact(op->rows, op->cols)) {
+                } else if (cuda_use_down_kquant_5warp_shape(op->rows, op->cols)) {
                     BN_CUDA_LAUNCH_STABLE(ctx, stable_decode_matvec,
                         q6k_dot_matvec_5warp_kernel, op->rows, 160, 0,
                         out, (const BnBlockQ6K *)w->data, xq, bias,

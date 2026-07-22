@@ -99,8 +99,8 @@ int bn_gpu_policy_cuda_quant_matmul_preferred_for_type(
     int tensor_type,
     int f16_native_quant_matmul_enabled);
 int bn_gpu_policy_cuda_down_kquant_4warp_long_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_down_kquant_5warp_exact_enabled(int rows, int cols);
-int bn_gpu_policy_cuda_down_kquant_3warp_exact_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_5warp_shape_enabled(int rows, int cols);
+int bn_gpu_policy_cuda_down_kquant_3warp_shape_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_2warp_long_enabled(int rows, int cols);
 int bn_gpu_policy_cuda_down_kquant_matvec4_shape_disabled(int rows, int cols);
 int bn_gpu_policy_moe_route_all_active_two(int n_experts, int k);
