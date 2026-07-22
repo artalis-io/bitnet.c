@@ -137,7 +137,9 @@ static int gpu_debug_compute_moe_cpu_from_xb(
         return -1;
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
-    int uses_reference_silu = bn_moe_policy_uses_reference_silu(c);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(c);
+    int uses_reference_silu = activation_policy.uses_reference_silu;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int K = route_policy.active_experts;
     int moe_hidden = route_policy.expert_hidden_dim;
@@ -227,7 +229,9 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
         return -1;
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
-    int uses_reference_silu = bn_moe_policy_uses_reference_silu(c);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(c);
+    int uses_reference_silu = activation_policy.uses_reference_silu;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int K = route_policy.active_experts;
     int moe_hidden = route_policy.expert_hidden_dim;
@@ -304,7 +308,9 @@ static int gpu_compute_shared_expert_mid_cpu_from_xb(
         return -1;
     BnConfig *c = &m->config;
     int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
-    int uses_reference_silu = bn_moe_policy_uses_reference_silu(c);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(c);
+    int uses_reference_silu = activation_policy.uses_reference_silu;
     uint32_t gateup_flags = bn_transformer_gpu_moe_gateup_task_flags(c);
     if (shared_hidden <= 0)
         return -1;
@@ -380,7 +386,9 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
         return -1;
     BnMoEState *ms = sess->moe_state;
     BnConfig *c = &m->config;
-    int uses_reference_silu = bn_moe_policy_uses_reference_silu(c);
+    BnTransformerGPUMoEActivationPolicy activation_policy =
+        bn_transformer_gpu_moe_activation_policy(c);
+    int uses_reference_silu = activation_policy.uses_reference_silu;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int K = route_policy.active_experts;
     int moe_hidden = route_policy.expert_hidden_dim;
@@ -834,6 +842,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     int head_size = c->head_size;
     int n_heads = c->n_heads;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    BnTransformerGPUMoEActivationPolicy moe_activation =
+        bn_transformer_gpu_moe_activation_policy(c);
     int q_dim = n_heads * head_size;
     int rope_dims = bn_transformer_rope_dims_for_head(c, head_size);
     int half_rope = rope_dims / 2;
@@ -1171,7 +1181,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         gpu, backend, lw, l);
                 bn_transformer_gpu_emit_context_moe(
                     &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
-                    bn_moe_policy_uses_reference_silu(c));
+                    moe_activation.uses_reference_silu);
                 if (moe_temporaries.n_buffers > 0) {
                     if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
                         return bn_transformer_gpu_reject_forward(
@@ -1430,7 +1440,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         route_policy.expert_hidden_dim,
                         route_policy.total_experts,
                         route_policy.active_experts,
-                        bn_moe_policy_uses_reference_silu(c), l) != 0)
+                        moe_activation.uses_reference_silu, l) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu moe routed ffn emit failed");
                 if (moe_debug.compare_mid) {
@@ -1548,7 +1558,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     };
                     bn_transformer_gpu_emit_context_moe(
                         &emit, &shared_only, &moe_shared, lw, dim, u_eps,
-                        next_norm, bn_moe_policy_uses_reference_silu(c));
+                        next_norm, moe_activation.uses_reference_silu);
                 } else {
                     bn_transformer_gpu_emit_context_residual_rmsnorm(
                         &emit, BN_GPU_VALUE_X, BN_GPU_VALUE_MOE_OUT,
@@ -1797,7 +1807,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     gpu, backend, lw, l);
             bn_transformer_gpu_emit_context_moe(
                 &emit, &moe_res, &moe_shared, lw, dim, u_eps, next_norm,
-                bn_moe_policy_uses_reference_silu(c));
+                moe_activation.uses_reference_silu);
             if (moe_temporaries.n_buffers > 0 || moe_debug.compare_layer) {
                 if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0)
                     return bn_transformer_gpu_reject_forward(

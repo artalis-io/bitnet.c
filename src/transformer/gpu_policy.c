@@ -407,6 +407,13 @@ uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c) {
     return bn_moe_float_kquant_gateup_fallback_task_flags(c);
 }
 
+BnTransformerGPUMoEActivationPolicy
+bn_transformer_gpu_moe_activation_policy(const BnConfig *c) {
+    BnTransformerGPUMoEActivationPolicy policy = {0};
+    policy.uses_reference_silu = bn_moe_policy_uses_reference_silu(c);
+    return policy;
+}
+
 int bn_transformer_gpu_prefill_quant_matmul_backend_available(
     const BnGPUBackend *gpu) {
     return bn_gpu_backend_can_matmul(gpu);

@@ -188,6 +188,10 @@ typedef struct {
 } BnTransformerGPUMoERouteLayerPolicy;
 
 typedef struct {
+    int uses_reference_silu;
+} BnTransformerGPUMoEActivationPolicy;
+
+typedef struct {
     int all_active_two_kquant_moe;
     int route_layer_selected;
     int reference_gpu_route;
@@ -309,6 +313,8 @@ int bn_transformer_gpu_moe_logits_mmvq_argmax_shape_allowed(
 int bn_transformer_gpu_requires_layerwise_rope(const BnConfig *c,
                                                const BnWeights *w);
 uint32_t bn_transformer_gpu_moe_gateup_task_flags(const BnConfig *c);
+BnTransformerGPUMoEActivationPolicy
+bn_transformer_gpu_moe_activation_policy(const BnConfig *c);
 int bn_transformer_gpu_prefill_quant_matmul_backend_available(
     const BnGPUBackend *gpu);
 int bn_transformer_gpu_prefill_quant_matmul_batch_backend_available(

@@ -4360,6 +4360,11 @@ if grep -n 'moe_exact_silu\|BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU\|bn_moe_policy_e
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_uses_reference_silu' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu.c must use GPU MoE activation policy for reference-SiLU behavior"
+    fail=1
+fi
+
 if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|m->config\.moe_intermediate_size' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE policy helpers for routed expert shape and weighting"
     fail=1
