@@ -42,15 +42,15 @@ int bn_model_quant_uses_dense_float(int type) {
     return bn_backend_quant_uses_dense_float(type);
 }
 
-int bn_model_quant_can_convert_dense_to_f32(int type) {
-    return bn_backend_quant_can_convert_dense_to_f32(type);
+int bn_model_quant_can_convert_dense_to_float(int type) {
+    return bn_backend_quant_can_convert_dense_to_float(type);
 }
 
-int bn_model_quant_convert_dense_to_f32(int type,
-                                        const void *src,
-                                        float *dst,
-                                        int n) {
-    return bn_backend_quant_convert_dense_to_f32(type, src, dst, n);
+int bn_model_quant_convert_dense_to_float(int type,
+                                          const void *src,
+                                          float *dst,
+                                          int n) {
+    return bn_backend_quant_convert_dense_to_float(type, src, dst, n);
 }
 
 int bn_model_quant_dense_float_type(void) {

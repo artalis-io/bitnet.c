@@ -36,11 +36,11 @@ void bn_model_quant_prepare_logits_i8_cache(const uint16_t *src,
                                             int rows,
                                             int dim);
 int bn_model_quant_uses_dense_float(int type);
-int bn_model_quant_can_convert_dense_to_f32(int type);
-int bn_model_quant_convert_dense_to_f32(int type,
-                                        const void *src,
-                                        float *dst,
-                                        int n);
+int bn_model_quant_can_convert_dense_to_float(int type);
+int bn_model_quant_convert_dense_to_float(int type,
+                                          const void *src,
+                                          float *dst,
+                                          int n);
 int bn_model_quant_dense_float_type(void);
 int bn_model_quant_dequant_row(int type,
                                const void *data,

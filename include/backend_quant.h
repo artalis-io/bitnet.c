@@ -225,11 +225,11 @@ static inline int bn_backend_quant_uses_dense_float(int type) {
     return bn_quant_format_is_f32(type);
 }
 
-static inline int bn_backend_quant_can_convert_dense_to_f32(int type) {
+static inline int bn_backend_quant_can_convert_dense_to_float(int type) {
     return bn_quant_format_can_convert_dense_to_f32(type);
 }
 
-static inline int bn_backend_quant_convert_dense_to_f32(
+static inline int bn_backend_quant_convert_dense_to_float(
     int type, const void *src, float *dst, int n) {
     return bn_quant_format_convert_dense_to_f32(type, src, dst, n);
 }

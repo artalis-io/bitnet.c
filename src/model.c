@@ -1010,9 +1010,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     SH_LOG_ERROR("Failed to allocate shared expert gate");
                     goto fail_state;
                 }
-                if (!bn_model_quant_can_convert_dense_to_f32(
+                if (!bn_model_quant_can_convert_dense_to_float(
                         sh->shared_expert_gate_type) ||
-                    bn_model_quant_convert_dense_to_f32(
+                    bn_model_quant_convert_dense_to_float(
                         sh->shared_expert_gate_type,
                         sh->shared_expert_gate, dst, c->dim) != 0) {
                     SH_LOG_ERROR("Unsupported shared expert gate type");
