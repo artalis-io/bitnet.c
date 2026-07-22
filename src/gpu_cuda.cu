@@ -14427,7 +14427,7 @@ static int cuda_moe_ffn_batch(void *vctx, float *out,
             return -1;
         if (shared_gate_weight &&
             (!shared_gate_weight->data ||
-             !bn_backend_quant_already_f32(shared_gate_weight->type) ||
+             !bn_backend_quant_uses_dense_float(shared_gate_weight->type) ||
              shared_gate_weight->rows * shared_gate_weight->cols < dim))
             return -1;
     }
@@ -14682,7 +14682,7 @@ static int cuda_moe_route_batch(void *vctx, int *indices, float *weights,
         return -1;
     if (!ctx || !indices || !weights || !router || !router->data || !X ||
         n_tokens <= 0 || dim <= 0 || n_experts <= 0 || k <= 0 ||
-        k > BN_MAX_MOE_K || !bn_backend_quant_already_f32(router->type) ||
+        k > BN_MAX_MOE_K || !bn_backend_quant_uses_dense_float(router->type) ||
         router->rows < n_experts || router->cols < dim)
         return -1;
 
@@ -15130,7 +15130,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
         n_tokens <= 0 || dim <= 0 || hidden_dim <= 0 ||
         n_experts <= 0 || k <= 0 || k > BN_MAX_MOE_K ||
         !cuda_activation_is_silu(act_type) ||
-        !bn_backend_quant_already_f32(router->type) ||
+        !bn_backend_quant_uses_dense_float(router->type) ||
         router->rows < n_experts || router->cols < dim ||
         (!routed_asymmetric_kquant && !routed_native_quant) ||
         (dim % 32) != 0 || (hidden_dim % 32) != 0)
@@ -15159,7 +15159,7 @@ static int cuda_moe_route_routed_ffn_batch_impl(
             return -1;
         if (shared_gate_weight &&
             (!shared_gate_weight->data ||
-             !bn_backend_quant_already_f32(shared_gate_weight->type) ||
+             !bn_backend_quant_uses_dense_float(shared_gate_weight->type) ||
              shared_gate_weight->rows * shared_gate_weight->cols < dim))
             return -1;
     }
@@ -17134,8 +17134,8 @@ static int cuda_prefill_ssm_layer(
         !cuda_quant_matmul_preferred_for_type(out_type) &&
         ((use_qkvz && qkvz->f16_data) ||
          (!use_qkvz && wqkv->f16_data && wz->f16_data)) &&
-        ((bn_backend_quant_already_f32(alpha_type) &&
-          bn_backend_quant_already_f32(beta_type)) ||
+        ((bn_backend_quant_uses_dense_float(alpha_type) &&
+          bn_backend_quant_uses_dense_float(beta_type)) ||
          (use_ab && ab->f16_data) ||
          (!use_ab && alpha->f16_data && beta->f16_data)) &&
         ssm_out->f16_data &&
@@ -17284,8 +17284,8 @@ static int cuda_prefill_ssm_layer(
 
     int ab_preactivated = 0;
     if (bn_gpu_policy_cuda_prefill_ssm_f32_ab_enabled() &&
-        bn_backend_quant_already_f32(alpha_type) &&
-        bn_backend_quant_already_f32(beta_type)) {
+        bn_backend_quant_uses_dense_float(alpha_type) &&
+        bn_backend_quant_uses_dense_float(beta_type)) {
         ssm_prefill_alpha_beta_f32_kernel<<<dim3(num_v_heads, n_tokens, 1),
                                             threads, 16 * sizeof(float),
                                             ssm_stream>>>(
@@ -19832,7 +19832,7 @@ static int cuda_execute(void *vctx, const void *ops_raw, int n_ops,
                 w && w->rows == 1;
             if (!w || !w->data || !in || !route || !logits ||
                 n_experts <= 0 || k <= 0 || dim <= 0 ||
-                !bn_backend_quant_already_f32(w->type) ||
+                !bn_backend_quant_uses_dense_float(w->type) ||
                 (!route_diff2 && w->rows < n_experts) || w->cols < dim ||
                 ctx->act_sizes[op->buf_aux] <
                     (size_t)n_experts * sizeof(float) ||

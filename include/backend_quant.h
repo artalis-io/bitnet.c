@@ -213,7 +213,7 @@ static inline int bn_backend_quant_tied_logits_f32_weight_type(void) {
     return bn_quant_format_tied_logits_f32_weight_type();
 }
 
-static inline int bn_backend_quant_dense_f32_type(void) {
+static inline int bn_backend_quant_dense_float_type(void) {
     return bn_quant_format_dense_f32_type();
 }
 
@@ -221,7 +221,7 @@ static inline int bn_backend_quant_gpu_float_buffer_type(void) {
     return bn_quant_format_gpu_float_buffer_type();
 }
 
-static inline int bn_backend_quant_already_f32(int type) {
+static inline int bn_backend_quant_uses_dense_float(int type) {
     return bn_quant_format_is_f32(type);
 }
 

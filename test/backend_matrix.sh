@@ -3668,11 +3668,17 @@ for file in \
     src/transformer/gpu_emit.c \
     src/transformer/plan.c
 do
-    if grep -n 'bn_backend_quant_can_gpu_native\|bn_backend_quant_can_gpu_repack\|bn_backend_quant_gpu_float_buffer_type\|bn_backend_quant_dense_f32_type\|bn_backend_quant_already_f32\|bn_backend_quant_can_convert_dense_to_f32\|bn_backend_quant_convert_dense_to_f32' "$file" >/dev/null 2>&1; then
+    if grep -n 'bn_backend_quant_can_gpu_native\|bn_backend_quant_can_gpu_repack\|bn_backend_quant_gpu_float_buffer_type\|bn_backend_quant_dense_float_type\|bn_backend_quant_uses_dense_float\|bn_backend_quant_can_convert_dense_to_f32\|bn_backend_quant_convert_dense_to_f32' "$file" >/dev/null 2>&1; then
         echo "$file must use quant format dense/GPU type helpers for quant-format policy"
         fail=1
     fi
 done
+
+if grep -n 'bn_backend_quant_already_f32\|bn_backend_quant_dense_f32_type\|bn_model_quant_is_dense_f32\|bn_model_quant_dense_f32_type' \
+    include/backend_quant.h include/model_internal.h src/model_policy.c src/model.c src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "Dense float quant helpers must use behavior names, not exact F32 helper names"
+    fail=1
+fi
 
 for file in \
     include/backend_quant.h \

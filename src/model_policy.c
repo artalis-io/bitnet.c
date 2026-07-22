@@ -38,8 +38,8 @@ void bn_model_quant_prepare_logits_i8_cache(const uint16_t *src,
     bn_quant_f16_rows_to_i8_dispatch(src, dst, scales, rows, dim);
 }
 
-int bn_model_quant_is_dense_f32(int type) {
-    return bn_backend_quant_already_f32(type);
+int bn_model_quant_uses_dense_float(int type) {
+    return bn_backend_quant_uses_dense_float(type);
 }
 
 int bn_model_quant_can_convert_dense_to_f32(int type) {
@@ -53,8 +53,8 @@ int bn_model_quant_convert_dense_to_f32(int type,
     return bn_backend_quant_convert_dense_to_f32(type, src, dst, n);
 }
 
-int bn_model_quant_dense_f32_type(void) {
-    return bn_backend_quant_dense_f32_type();
+int bn_model_quant_dense_float_type(void) {
+    return bn_backend_quant_dense_float_type();
 }
 
 int bn_model_quant_dequant_row(int type,

@@ -956,7 +956,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         for (int i = 0; i < c->n_layers; i++) {
             BnSharedExpertWeights *sh = &w->layers[i].shared;
             if (sh->shared_expert_gate &&
-                !bn_model_quant_is_dense_f32(sh->shared_expert_gate_type))
+                !bn_model_quant_uses_dense_float(sh->shared_expert_gate_type))
                 shared_gate_float_bytes += (size_t)c->dim * sizeof(float);
         }
     }
@@ -1002,7 +1002,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             for (int i = 0; i < c->n_layers; i++) {
                 BnSharedExpertWeights *sh = &w->layers[i].shared;
                 if (!sh->shared_expert_gate ||
-                    bn_model_quant_is_dense_f32(sh->shared_expert_gate_type))
+                    bn_model_quant_uses_dense_float(sh->shared_expert_gate_type))
                     continue;
                 float *dst = (float *)sh_arena_alloc(
                     m->runtime->weight_arena, (size_t)c->dim * sizeof(float));
@@ -1020,7 +1020,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 }
                 sh->shared_expert_gate = dst;
                 sh->shared_expert_gate_type =
-                    bn_model_quant_dense_f32_type();
+                    bn_model_quant_dense_float_type();
             }
         }
 
