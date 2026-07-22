@@ -530,14 +530,16 @@ static int all_active_two_kquant_moe_cpu_route_resident_disabled(void) {
 }
 
 static int all_active_two_kquant_moe_reference_gpu_route_requested(void) {
-    return gpu_policy_compat_env_enabled2(
+    return gpu_policy_compat_env_enabled3(
+        "BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_GPU_ROUTE",
         "BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_EXACT_GPU_ROUTE",
         "BN_CUDA_ENABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
         "BN_CUDA_ENABLE_QWEN2MOE_EXACT_GPU_ROUTE");
 }
 
 static int all_active_two_kquant_moe_reference_gpu_route_disabled(void) {
-    return gpu_policy_compat_env_enabled2(
+    return gpu_policy_compat_env_enabled3(
+        "BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_GPU_ROUTE",
         "BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_EXACT_GPU_ROUTE",
         "BN_CUDA_DISABLE_ALL2_Q4Q6_MOE_EXACT_GPU_ROUTE",
         "BN_CUDA_DISABLE_QWEN2MOE_EXACT_GPU_ROUTE");

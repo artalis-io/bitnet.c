@@ -2146,6 +2146,18 @@ if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT\|BN_GPU_SMALL_DENSE_EXACT_NATIVE\|
     fail=1
 fi
 
+for env_name in \
+    BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_GPU_ROUTE \
+    BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_REFERENCE_GPU_ROUTE \
+    BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_EXACT_GPU_ROUTE \
+    BN_CUDA_DISABLE_ALL_ACTIVE_TWO_KQUANT_MOE_EXACT_GPU_ROUTE; do
+    if ! grep -n "$env_name" src/gpu_policy.c >/dev/null 2>&1; then
+        echo "GPU all-active-two MoE reference-route policy must keep behavior-named canonical env names with exact-route compatibility aliases"
+        fail=1
+    fi
+done
+
+
 if grep -n -- '->q4_q8_matvec_pipeline\|->q4_q8_split_pipeline\|->q4_q8_gateup_pipeline\|->q4_prepared_q8_matvec_pipeline\|->q4_prepared_q8_split_pipeline\|->q4_prepared_q8_gateup_pipeline\|\.q4_q8_matvec_pipeline\|\.q4_q8_split_pipeline\|\.q4_q8_gateup_pipeline\|\.q4_prepared_q8_matvec_pipeline\|\.q4_prepared_q8_split_pipeline\|\.q4_prepared_q8_gateup_pipeline' src/gpu_metal.m >/dev/null 2>&1; then
     echo "Metal native-quant pipeline state must use behavior names, not Q4/Q8 field names"
     fail=1
