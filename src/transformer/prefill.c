@@ -2515,7 +2515,7 @@ prefill_ssm_done:
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
                     Hb, Hb2, hidden_dim, c->act_type,
-                    bn_transformer_prefill_uses_exact_activation(c)
+                    bn_transformer_prefill_uses_reference_activation(c)
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
@@ -2529,7 +2529,7 @@ prefill_ssm_done:
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
                     Hb, NULL, hidden_dim, c->act_type,
-                    bn_transformer_prefill_uses_exact_activation(c)
+                    bn_transformer_prefill_uses_reference_activation(c)
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens

@@ -3617,6 +3617,11 @@ if grep -n 'bn_transformer_gpu_exact_silu_flags\|bn_transformer_gpu_exact_silu_a
     fail=1
 fi
 
+if grep -n 'bn_transformer_prefill_uses_exact_activation\|bn_transformer_ffn_uses_exact_scalar_activation\|scalar_exact_activation' include/transformer_plan_internal.h src/transformer/plan.c src/transformer/prefill.c src/transformer/cpu_policy.c src/transformer/cpu_backend.c test/test_transformer.c >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill activation policy must use reference behavior names"
+    fail=1
+fi
+
 if awk '/^bn_transformer_gpu_moe_decode_route_policy/{flag=1} /^BnTransformerGPUMoEDirectRoutePolicy/{flag=0} flag{print}' src/transformer/gpu_policy.c | grep -n 'BN_GPU_OP_FLAG_MOE_ROUTE_NO_NORM' >/dev/null 2>&1; then
     echo "Transformer GPU MoE route decode policy must use route normalization flag helpers"
     fail=1

@@ -100,7 +100,7 @@ typedef struct {
     int activation;
     int has_gate;
     int has_sub_norm;
-    int scalar_exact_activation;
+    int scalar_reference_activation;
     int use_fused_gateup_silu;
     int use_gateup_split;
     int needs_cpu_fallback;
@@ -360,9 +360,9 @@ int bn_transformer_rope_uses_base_frequency(
     int layer_head_size);
 int bn_transformer_cpu_uses_scalar_hybrid_ssm(
     const BnConfig *c);
-int bn_transformer_prefill_uses_exact_activation(
+int bn_transformer_prefill_uses_reference_activation(
     const BnConfig *c);
-int bn_transformer_ffn_uses_exact_scalar_activation(
+int bn_transformer_ffn_uses_reference_scalar_activation(
     const BnConfig *c);
 void bn_transformer_plan_attention(BnAttentionPlan *p,
                                    const BnConfig *c,

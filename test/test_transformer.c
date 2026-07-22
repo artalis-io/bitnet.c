@@ -4199,7 +4199,7 @@ static void test_block_planning(void) {
     assert(!bn_transformer_divides_rope_freqs(&c, 0));
     assert(bn_transformer_divides_rope_freqs(&c, 5));
     assert(!bn_transformer_cpu_uses_scalar_hybrid_ssm(&c));
-    assert(bn_transformer_prefill_uses_exact_activation(&c));
+    assert(bn_transformer_prefill_uses_reference_activation(&c));
     assert(!bn_transformer_rmsnorm_uses_reference_order(&c));
     int uses_float_kquant_fallback =
         bn_transformer_cpu_prefill_uses_float_kquant_fallback(&c);
@@ -4327,10 +4327,10 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
         &route_gpu, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0,
         BN_GGUF_TENSOR_Q4_0));
-    ffn_plan.scalar_exact_activation = 1;
+    ffn_plan.scalar_reference_activation = 1;
     assert(!bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
         NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
-    ffn_plan.scalar_exact_activation = 0;
+    ffn_plan.scalar_reference_activation = 0;
     ffn_plan.activation = 1;
     assert(!bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
         NULL, &ffn_plan, 32, BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0));
@@ -4493,9 +4493,9 @@ static void test_block_planning(void) {
     c.policy_flags = 0;
     c.full_attn_interval = 0;
 
-    assert(!bn_transformer_ffn_uses_exact_scalar_activation(&c));
+    assert(!bn_transformer_ffn_uses_reference_scalar_activation(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_FFN_ACTIVATION;
-    assert(bn_transformer_ffn_uses_exact_scalar_activation(&c));
+    assert(bn_transformer_ffn_uses_reference_scalar_activation(&c));
     c.policy_flags = 0;
 
     BnLayerWeights prefill_dense_lw = {0};
@@ -5266,7 +5266,7 @@ static void test_block_planning(void) {
     assert(bn_transformer_ffn_uses_post_norm(&c));
     assert(bn_transformer_uses_layer_output_scale(&c));
     assert(bn_transformer_per_layer_embedding_dim(&c) == 128);
-    assert(!bn_transformer_prefill_uses_exact_activation(&c));
+    assert(!bn_transformer_prefill_uses_reference_activation(&c));
     c.policy_flags = BN_MODEL_ARCH_POLICY_REFERENCE_HYBRID_SSM;
     c.per_layer_input_dim = 0;
     c.full_attn_interval = 4;
