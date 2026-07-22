@@ -3539,6 +3539,11 @@ if awk '/BnFFNPlan layer_ffn_plan;/{flag=1} /BnTransformerGPUSmallDenseNativeQua
     fail=1
 fi
 
+if grep -n 'bn_transformer_gpu_ssm_cpu_fallback_required' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU decode SSM fallback selection must use GPU SSM fallback policy"
+    fail=1
+fi
+
 if awk '/^int bn_transformer_gpu_fallback_ssm_layer/{flag=1} /^int bn_transformer_gpu_fallback_moe_layer/{flag=0} flag{print}' \
     src/transformer/gpu_fallback.c | grep -n 'lw->moe\.router_weight' >/dev/null 2>&1; then
     echo "GPU SSM fallback MoE/dense branching must use GPU layer-kind policy"

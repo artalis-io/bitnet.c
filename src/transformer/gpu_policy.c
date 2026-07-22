@@ -2060,6 +2060,14 @@ int bn_transformer_gpu_ssm_cpu_fallback_required(
            bn_gpu_policy_ssm_graph_disabled();
 }
 
+BnTransformerGPUSSMFallbackPolicy
+bn_transformer_gpu_ssm_fallback_policy(
+    const BnGPUBackend *gpu) {
+    BnTransformerGPUSSMFallbackPolicy policy = {0};
+    policy.use_cpu = bn_transformer_gpu_ssm_cpu_fallback_required(gpu);
+    return policy;
+}
+
 int bn_transformer_gpu_large_hybrid_argmax_blocked(
     const BnGPUBackend *gpu,
     const BnConfig *c,

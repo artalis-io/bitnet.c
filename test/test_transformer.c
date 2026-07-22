@@ -2663,11 +2663,18 @@ static void test_gpu_policy_helpers(void) {
     assert(fallback.attn_from_layer == 0);
     unsetenv("BN_CUDA_FORCE_LARGE_HYBRID_CPU_ATTN_SAFE");
     assert(!bn_transformer_gpu_ssm_cpu_fallback_required(&gpu));
+    BnTransformerGPUSSMFallbackPolicy ssm_fallback =
+        bn_transformer_gpu_ssm_fallback_policy(&gpu);
+    assert(!ssm_fallback.use_cpu);
     setenv("BN_CUDA_DISABLE_SSM_GRAPH", "1", 1);
     assert(bn_transformer_gpu_ssm_cpu_fallback_required(&gpu));
+    ssm_fallback = bn_transformer_gpu_ssm_fallback_policy(&gpu);
+    assert(ssm_fallback.use_cpu);
     unsetenv("BN_CUDA_DISABLE_SSM_GRAPH");
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_ssm_cpu_fallback_required(&gpu));
+    ssm_fallback = bn_transformer_gpu_ssm_fallback_policy(&gpu);
+    assert(ssm_fallback.use_cpu);
     gpu.kind = BN_GPU_BACKEND_CUDA;
     c.full_attn_interval = 0;
     c.ssm_inner_size = 0;

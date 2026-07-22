@@ -221,6 +221,10 @@ typedef struct {
 } BnTransformerGPUMoEFFNFallbackPolicy;
 
 typedef struct {
+    int use_cpu;
+} BnTransformerGPUSSMFallbackPolicy;
+
+typedef struct {
     int enabled;
     void *router_diff;
 } BnTransformerGPUMoEDirectRoutePolicy;
@@ -1118,6 +1122,9 @@ int bn_transformer_gpu_moe_reference_attention_enabled(
     const BnGPUBackend *gpu,
     const BnConfig *c);
 int bn_transformer_gpu_ssm_cpu_fallback_required(
+    const BnGPUBackend *gpu);
+BnTransformerGPUSSMFallbackPolicy
+bn_transformer_gpu_ssm_fallback_policy(
     const BnGPUBackend *gpu);
 BnTransformerGPUDecodeEntryPolicy
 bn_transformer_gpu_decode_entry_policy(

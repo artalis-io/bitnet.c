@@ -1010,9 +1010,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
         // ---- SSM layer ----
         if (!is_attn) {
-            int use_cpu_ssm_fallback =
-                bn_transformer_gpu_ssm_cpu_fallback_required(gpu);
-            if (use_cpu_ssm_fallback) {
+            BnTransformerGPUSSMFallbackPolicy ssm_fallback =
+                bn_transformer_gpu_ssm_fallback_policy(gpu);
+            if (ssm_fallback.use_cpu) {
                 void *nn = bn_transformer_gpu_resolve_next_norm(
                     backend, l, c->n_layers, output_norm);
                 if (bn_transformer_gpu_fallback_ssm_layer(
