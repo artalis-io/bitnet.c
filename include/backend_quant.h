@@ -109,7 +109,7 @@ static inline int bn_backend_quant_uses_down_kquant(int type) {
     return bn_quant_format_is_q6k(type);
 }
 
-static inline int bn_backend_quant_uses_prepared_native_quant(int type) {
+static inline int bn_backend_quant_uses_native_kquant(int type) {
     return bn_quant_format_is_q8k(type);
 }
 
@@ -454,9 +454,8 @@ static inline int bn_backend_quant_supports_native_quant_warp_matvec(int type) {
     return bn_backend_quant_uses_native_quant(type);
 }
 
-static inline int
-bn_backend_quant_supports_prepared_native_quant_matvec(int type) {
-    return bn_backend_quant_uses_prepared_native_quant(type);
+static inline int bn_backend_quant_supports_native_kquant_matvec(int type) {
+    return bn_backend_quant_uses_native_kquant(type);
 }
 
 static inline int bn_backend_quant_supports_asymmetric_kquant_dot_matmul(int type) {

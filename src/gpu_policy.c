@@ -1086,7 +1086,7 @@ static int gpu_policy_down_kquant_matvec_disabled_by_type(void) {
                                          "BN_CUDA_DISABLE_Q6_K");
 }
 
-static int gpu_policy_prepared_native_quant_matvec_disabled(void) {
+static int gpu_policy_native_kquant_matvec_disabled(void) {
     return gpu_policy_compat_env_enabled(
         "BN_CUDA_DISABLE_PREPARED_NATIVE_QUANT_MATVEC",
         "BN_CUDA_DISABLE_Q8_K");
@@ -1132,8 +1132,8 @@ static int gpu_policy_matvec_type_disabled(int tensor_type) {
         return gpu_policy_deinterleaved_kquant_matvec_disabled();
     if (bn_backend_quant_moe_down_uses_down_kquant(tensor_type))
         return gpu_policy_down_kquant_matvec_disabled_by_type();
-    if (bn_backend_quant_supports_prepared_native_quant_matvec(tensor_type))
-        return gpu_policy_prepared_native_quant_matvec_disabled();
+    if (bn_backend_quant_supports_native_kquant_matvec(tensor_type))
+        return gpu_policy_native_kquant_matvec_disabled();
     return 0;
 }
 
