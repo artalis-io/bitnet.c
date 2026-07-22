@@ -1064,7 +1064,7 @@ int bn_gpu_policy_matvec_disabled(void) {
 }
 
 static int gpu_policy_matvec_type_disabled(int tensor_type) {
-    if (bn_backend_quant_native_quant_small_state_matvec_candidate(tensor_type))
+    if (bn_backend_quant_supports_native_quant_small_state_matvec(tensor_type))
         return gpu_policy_native_quant_matvec_disabled();
     if (bn_backend_quant_legacy_block_matvec_candidate(tensor_type))
         return gpu_policy_legacy_5bit_matvec_disabled();
@@ -1075,7 +1075,7 @@ static int gpu_policy_matvec_type_disabled(int tensor_type) {
         return gpu_policy_deinterleaved_kquant_matvec_disabled();
     if (bn_backend_quant_moe_down_uses_down_kquant(tensor_type))
         return gpu_policy_down_kquant_matvec_disabled_by_type();
-    if (bn_backend_quant_prepared_native_quant_matvec_candidate(tensor_type))
+    if (bn_backend_quant_supports_prepared_native_quant_matvec(tensor_type))
         return gpu_policy_prepared_native_quant_matvec_disabled();
     return 0;
 }
@@ -2842,9 +2842,9 @@ int bn_gpu_policy_cuda_native_quant_mixed_prepared_input_enabled(int type_a,
                                                                 int type_b,
                                                                 int cols) {
     return cuda_native_quant_mixed_prepared_input_requested() &&
-           (bn_backend_quant_native_quant_prepared_input_matvec_candidate(
+           (bn_backend_quant_supports_native_quant_prepared_input_matvec(
                 type_a) ||
-            bn_backend_quant_native_quant_prepared_input_matvec_candidate(
+            bn_backend_quant_supports_native_quant_prepared_input_matvec(
                 type_b)) &&
            (cols & 31) == 0;
 }

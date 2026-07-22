@@ -5028,13 +5028,13 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_backend_quant_symmetric_kquant_pair_matvec(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
-    assert(bn_backend_quant_native_quant_small_state_matvec_candidate(
+    assert(bn_backend_quant_supports_native_quant_small_state_matvec(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_native_quant_small_state_matvec_candidate(
+    assert(!bn_backend_quant_supports_native_quant_small_state_matvec(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_native_quant_f16_cache_matvec_candidate(
+    assert(bn_backend_quant_supports_native_quant_f16_cache_matvec(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_native_quant_f16_cache_matvec_candidate(
+    assert(!bn_backend_quant_supports_native_quant_f16_cache_matvec(
         BN_GGUF_TENSOR_Q5_K));
     assert(bn_backend_quant_f16_float_cache_matvec_candidate(
         BN_GGUF_TENSOR_Q3_K));
@@ -5080,17 +5080,17 @@ static void test_quant_registry(void) {
         BN_GGUF_TENSOR_Q5_K));
     assert(!bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_candidate(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_native_quant_prepared_input_matvec_candidate(
+    assert(bn_backend_quant_supports_native_quant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_native_quant_prepared_input_matvec_candidate(
+    assert(!bn_backend_quant_supports_native_quant_prepared_input_matvec(
         BN_GGUF_TENSOR_Q4_K));
-    assert(bn_backend_quant_prepared_native_quant_matvec_candidate(
+    assert(bn_backend_quant_supports_prepared_native_quant_matvec(
         BN_GGUF_TENSOR_Q8_K));
-    assert(!bn_backend_quant_prepared_native_quant_matvec_candidate(
+    assert(!bn_backend_quant_supports_prepared_native_quant_matvec(
         BN_GGUF_TENSOR_Q8_0));
-    assert(bn_backend_quant_native_quant_warp_matvec_candidate(
+    assert(bn_backend_quant_supports_native_quant_warp_matvec(
         BN_GGUF_TENSOR_Q8_0));
-    assert(!bn_backend_quant_native_quant_warp_matvec_candidate(
+    assert(!bn_backend_quant_supports_native_quant_warp_matvec(
         BN_GGUF_TENSOR_Q4_K));
     assert(bn_backend_quant_asymmetric_kquant_dot_matmul_candidate(
         BN_GGUF_TENSOR_Q4_K));

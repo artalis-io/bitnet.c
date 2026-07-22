@@ -377,12 +377,12 @@ static inline int bn_backend_quant_symmetric_kquant_pair_matvec(
            bn_backend_quant_is_q4k(second_type);
 }
 
-static inline int bn_backend_quant_native_quant_small_state_matvec_candidate(
+static inline int bn_backend_quant_supports_native_quant_small_state_matvec(
     int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
-static inline int bn_backend_quant_native_quant_f16_cache_matvec_candidate(
+static inline int bn_backend_quant_supports_native_quant_f16_cache_matvec(
     int type) {
     return bn_backend_quant_is_q8_0(type);
 }
@@ -431,16 +431,16 @@ static inline int bn_backend_quant_deinterleaved_kquant_prepared_input_matvec_ca
     return bn_backend_quant_is_q5k(type);
 }
 
-static inline int bn_backend_quant_native_quant_prepared_input_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_native_quant_prepared_input_matvec(int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
-static inline int bn_backend_quant_native_quant_warp_matvec_candidate(int type) {
+static inline int bn_backend_quant_supports_native_quant_warp_matvec(int type) {
     return bn_backend_quant_is_q8_0(type);
 }
 
 static inline int
-bn_backend_quant_prepared_native_quant_matvec_candidate(int type) {
+bn_backend_quant_supports_prepared_native_quant_matvec(int type) {
     return bn_backend_quant_is_q8k(type);
 }
 
@@ -494,7 +494,7 @@ static inline int bn_backend_quant_deinterleaved_kquant_prepared_input_fused_gat
 }
 
 static inline int bn_backend_quant_matvec_allows_fused_bias(int type) {
-    return !bn_backend_quant_native_quant_warp_matvec_candidate(type);
+    return !bn_backend_quant_supports_native_quant_warp_matvec(type);
 }
 
 static inline int bn_backend_quant_split_allows_fused_bias(int type) {
@@ -514,7 +514,7 @@ static inline int bn_backend_quant_deinterleaved_kquant_prepared_input_split_can
 }
 
 static inline int bn_backend_quant_native_quant_split_candidate(int type) {
-    return bn_backend_quant_native_quant_warp_matvec_candidate(type);
+    return bn_backend_quant_supports_native_quant_warp_matvec(type);
 }
 
 static inline int bn_backend_quant_split_value_4warp_dot_candidate(
