@@ -151,7 +151,7 @@ typedef struct {
 const BnPrefillCPUOps *bn_transformer_prefill_cpu_ops(void);
 int bn_transformer_prefill_profile_enabled(void);
 int bn_transformer_prefill_hybrid_batch_allowed(void);
-int bn_transformer_prefill_force_token_attention_enabled(void);
+int bn_transformer_prefill_requires_token_attention(void);
 BnTransformerPrefillLayerKindPolicy
 bn_transformer_prefill_layer_kind_policy(const BnLayerWeights *lw);
 BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
@@ -206,7 +206,7 @@ int bn_transformer_prefill_hybrid_chain_debug_enabled(void);
 BnTransformerPrefillAttentionModePolicy
 bn_transformer_prefill_attention_mode_policy(
     int tq_state_available,
-    int force_token_attention_requested,
+    int requires_token_attention,
     int gpu_hybrid_prefill);
 BnTransformerPrefillDenseLayerBatchPolicy
 bn_transformer_prefill_dense_layer_batch_policy(

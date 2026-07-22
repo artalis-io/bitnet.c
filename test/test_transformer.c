@@ -5245,9 +5245,9 @@ static void test_block_planning(void) {
     unsetenv("BN_PREFILL_ALLOW_HYBRID_BATCH");
 
     unsetenv("BN_PREFILL_FORCE_TOKEN_ATTN");
-    assert(!bn_transformer_prefill_force_token_attention_enabled());
+    assert(!bn_transformer_prefill_requires_token_attention());
     setenv("BN_PREFILL_FORCE_TOKEN_ATTN", "1", 1);
-    assert(bn_transformer_prefill_force_token_attention_enabled());
+    assert(bn_transformer_prefill_requires_token_attention());
     unsetenv("BN_PREFILL_FORCE_TOKEN_ATTN");
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_UNIT_ATTENTION_SCALE |

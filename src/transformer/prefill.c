@@ -1982,7 +1982,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             BnTransformerPrefillAttentionModePolicy attention_mode =
                 bn_transformer_prefill_attention_mode_policy(
                     bn_model_tq_state(m) != NULL,
-                    bn_transformer_prefill_force_token_attention_enabled(),
+                    bn_transformer_prefill_requires_token_attention(),
                     gpu_hybrid_prefill);
             if (attention_mode.use_batched_attention) {
                 // Phase 1: prepare K/V (bias, norm, RoPE) and write to cache

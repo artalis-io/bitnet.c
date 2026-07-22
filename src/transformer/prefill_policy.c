@@ -14,7 +14,7 @@ int bn_transformer_prefill_hybrid_batch_allowed(void) {
     return getenv("BN_PREFILL_ALLOW_HYBRID_BATCH") != NULL;
 }
 
-int bn_transformer_prefill_force_token_attention_enabled(void) {
+int bn_transformer_prefill_requires_token_attention(void) {
     return getenv("BN_PREFILL_FORCE_TOKEN_ATTN") != NULL;
 }
 
@@ -164,12 +164,12 @@ int bn_transformer_prefill_hybrid_chain_debug_enabled(void) {
 BnTransformerPrefillAttentionModePolicy
 bn_transformer_prefill_attention_mode_policy(
     int tq_state_available,
-    int force_token_attention_requested,
+    int requires_token_attention,
     int gpu_hybrid_prefill) {
     BnTransformerPrefillAttentionModePolicy policy = {0};
     policy.use_batched_attention =
         !tq_state_available &&
-        !force_token_attention_requested &&
+        !requires_token_attention &&
         !gpu_hybrid_prefill;
     return policy;
 }

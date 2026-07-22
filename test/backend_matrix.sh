@@ -3243,6 +3243,15 @@ if ! grep -n 'BN_PREFILL_PROFILE\|BN_PREFILL_ALLOW_HYBRID_BATCH\|BN_PREFILL_FORC
     fail=1
 fi
 
+if grep -n 'bn_transformer_prefill_force_token_attention_enabled\|force_token_attention_requested' \
+    include/transformer_prefill_internal.h \
+    src/transformer/prefill_policy.c \
+    src/transformer/prefill.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "Prefill token-attention policy must use requires behavior names"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_DISABLE_FUSED_GATEUP\|BN_GPU_DISABLE_GATEUP_SPLIT\|BN_GPU_Q4_Q8_DISABLE_FFN_DOWN' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must use GPU policy helpers for fused gate-up and split compatibility env vars"
     fail=1
