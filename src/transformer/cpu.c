@@ -320,10 +320,10 @@ static void cpu_debug_dump_layer_input(const BnModel *m,
     cpu_debug_dump_vector(m, sess, "bitnet_inp", layer, pos);
 }
 
-static void cpu_apply_arch_per_layer_embedding(BnModel *m,
-                                               BnSession *sess,
-                                               BnLayerWeights *lw,
-                                               int layer) {
+static void cpu_apply_per_layer_input_projection(BnModel *m,
+                                                 BnSession *sess,
+                                                 BnLayerWeights *lw,
+                                                 int layer) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     int per_dim = bn_transformer_per_layer_embedding_dim(c);
@@ -813,7 +813,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         bn_transformer_cpu_forward_ffn_block(m, sess, lw, l, pos, &ffn_plan);
     }
 
-    cpu_apply_arch_per_layer_embedding(m, sess, lw, l);
+    cpu_apply_per_layer_input_projection(m, sess, lw, l);
 
     if (cpu_layer_output_scale_applies(c, lw->norm.layer_output_scale)) {
         float scale = lw->norm.layer_output_scale[0];

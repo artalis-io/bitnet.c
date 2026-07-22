@@ -20,8 +20,8 @@ static void rmsnorm_per_layer_slice(float *x, const float *w, int n, float eps) 
         x[i] *= ss * w[i];
 }
 
-static int prepare_arch_per_layer_input(BnModel *m, BnSession *sess,
-                                        int token) {
+static int prepare_per_layer_input_state(BnModel *m, BnSession *sess,
+                                         int token) {
     BnConfig *c = &m->config;
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
@@ -128,7 +128,7 @@ static int forward_layers(BnModel *m, BnSession *sess, int token, int pos) {
 
     // Embed the token
     bn_model_embed_token(m, s->x, token);
-    if (prepare_arch_per_layer_input(m, sess, token) != 0) {
+    if (prepare_per_layer_input_state(m, sess, token) != 0) {
         SH_LOG_ERROR("Per-layer input preparation failed");
         return -1;
     }
