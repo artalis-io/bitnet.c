@@ -74,7 +74,7 @@ int bn_model_config_moe_requires_float_kquant_gateup_fallback(
     const BnConfig *config);
 int bn_model_config_moe_uses_scaled_router_input(const BnConfig *config);
 int bn_model_config_moe_uses_dense_residual_branch(const BnConfig *config);
-int bn_model_config_moe_prefill_forces_matvec(const BnConfig *config);
+int bn_model_config_moe_prefill_requires_matvec(const BnConfig *config);
 int bn_model_config_uses_small_dense_shape(const BnConfig *config);
 int bn_model_config_uses_large_dense_shape(const BnConfig *config);
 int bn_model_config_uses_large_gpu_graph_fallback_shape(

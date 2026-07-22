@@ -38,7 +38,7 @@ typedef struct {
 } BnMoEExecutionPolicy;
 
 typedef struct {
-    int force_matvec_prefill;
+    int requires_matvec_prefill;
     int uses_grouped_expert_route;
 } BnMoEPrefillPolicy;
 

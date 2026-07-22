@@ -410,7 +410,7 @@ int bn_model_arch_uses_more_than_two_expert_moe(const BnConfig *c) {
     return c && c->n_experts > 2;
 }
 
-int bn_model_arch_moe_prefill_forces_matvec(const BnConfig *c) {
+int bn_model_arch_moe_prefill_requires_matvec(const BnConfig *c) {
     return bn_model_arch_uses_two_expert_all_active_moe(c) &&
            c->has_shared_expert;
 }

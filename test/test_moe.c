@@ -303,7 +303,7 @@ static void test_moe_prefill_policy(void) {
 
     BnConfig c = {0};
     BnMoEPrefillPolicy policy = bn_moe_prefill_policy(&c);
-    assert(!policy.force_matvec_prefill);
+    assert(!policy.requires_matvec_prefill);
     assert(!policy.uses_grouped_expert_route);
 
     c.n_experts = 4;
@@ -344,23 +344,23 @@ static void test_moe_prefill_policy(void) {
     assert(route_policy.expert_weights_scale == 0.0f);
     c.has_shared_expert = 1;
     policy = bn_moe_prefill_policy(&c);
-    assert(!policy.force_matvec_prefill);
+    assert(!policy.requires_matvec_prefill);
     assert(policy.uses_grouped_expert_route);
 
     c.n_experts = 2;
     c.n_experts_active = 2;
     c.has_shared_expert = 0;
     policy = bn_moe_prefill_policy(&c);
-    assert(!policy.force_matvec_prefill);
+    assert(!policy.requires_matvec_prefill);
     assert(!policy.uses_grouped_expert_route);
 
     c.has_shared_expert = 1;
     policy = bn_moe_prefill_policy(&c);
-    assert(policy.force_matvec_prefill);
+    assert(policy.requires_matvec_prefill);
     assert(!policy.uses_grouped_expert_route);
 
     policy = bn_moe_prefill_policy(NULL);
-    assert(!policy.force_matvec_prefill);
+    assert(!policy.requires_matvec_prefill);
     assert(!policy.uses_grouped_expert_route);
 
     assert(bn_moe_policy_uses_expert_weights(&c));

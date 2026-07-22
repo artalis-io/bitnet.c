@@ -552,7 +552,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             bn_moe_quant_matvec(down_buf, &wdown, gate_buf, x_q_scratch,
                                 bn_model_pool(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;
-        } else if (prefill_policy.force_matvec_prefill) {
+        } else if (prefill_policy.requires_matvec_prefill) {
             for (int i = 0; i < T; i++) {
                 float *x_t = gather_buf + (size_t)i * dim;
                 float *gate_t = gate_buf + (size_t)i * moe_hidden;
@@ -651,7 +651,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 }
             }
 
-            if (!used_gpu_shared && prefill_policy.force_matvec_prefill) {
+            if (!used_gpu_shared && prefill_policy.requires_matvec_prefill) {
                 for (int t = 0; t < n_tokens; t++) {
                     const float *x_t = Xb + (size_t)t * dim;
                     float *gate_t = sh_g + (size_t)t * shared_hidden;

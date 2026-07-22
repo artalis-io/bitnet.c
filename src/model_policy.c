@@ -183,8 +183,8 @@ int bn_model_config_moe_uses_dense_residual_branch(
     return bn_model_arch_moe_uses_dense_residual_branch(config);
 }
 
-int bn_model_config_moe_prefill_forces_matvec(const BnConfig *config) {
-    return bn_model_arch_moe_prefill_forces_matvec(config);
+int bn_model_config_moe_prefill_requires_matvec(const BnConfig *config) {
+    return bn_model_arch_moe_prefill_requires_matvec(config);
 }
 
 int bn_model_config_uses_small_dense_shape(const BnConfig *config) {

@@ -25,8 +25,8 @@ int bn_moe_policy_exact_silu(const BnConfig *c) {
 
 BnMoEPrefillPolicy bn_moe_prefill_policy(const BnConfig *c) {
     BnMoEPrefillPolicy policy = {0};
-    policy.force_matvec_prefill =
-        bn_model_config_moe_prefill_forces_matvec(c);
+    policy.requires_matvec_prefill =
+        bn_model_config_moe_prefill_requires_matvec(c);
     policy.uses_grouped_expert_route =
         bn_model_config_uses_more_than_two_expert_moe(c);
     return policy;

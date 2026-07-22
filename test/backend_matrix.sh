@@ -4243,6 +4243,20 @@ if ! grep -n 'bn_model_arch_moe_requires_float_kquant_gateup_fallback\|BN_MATVEC
     fail=1
 fi
 
+if grep -n 'bn_model_arch_moe_prefill_forces_matvec\|bn_model_config_moe_prefill_forces_matvec\|force_matvec_prefill' \
+    include/model_arch.h \
+    include/model_internal.h \
+    src/model_arch.c \
+    src/model_policy.c \
+    src/moe_internal.h \
+    src/moe_policy.c \
+    src/moe_prefill.c \
+    test/test_moe.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "MoE prefill matvec policy must use requires behavior names"
+    fail=1
+fi
+
 if grep -n 'c->has_shared_expert && lw->shared\.shared_gate\.data\|!lw->shared\.shared_gate\.data' src/moe_execute.c src/moe_prefill.c >/dev/null 2>&1; then
     echo "MoE execute/prefill code must use MoE policy helpers for loaded shared-expert decisions"
     fail=1

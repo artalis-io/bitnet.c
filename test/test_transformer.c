@@ -3439,7 +3439,7 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_non_hybrid_moe(&c));
     assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
-    assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
+    assert(!bn_model_arch_moe_prefill_requires_matvec(&c));
     assert(!bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     assert(bn_model_arch_uses_small_dense_shape(&c));
     assert(!bn_model_arch_uses_small_dense_native_quant_shape(&c));
@@ -3505,10 +3505,10 @@ static void test_model_arch_registry(void) {
     assert(!bn_model_arch_uses_hybrid_moe(&c));
     assert(bn_model_arch_uses_two_expert_all_active_moe(&c));
     assert(!bn_model_arch_uses_more_than_two_expert_moe(&c));
-    assert(!bn_model_arch_moe_prefill_forces_matvec(&c));
+    assert(!bn_model_arch_moe_prefill_requires_matvec(&c));
     assert(bn_model_arch_uses_all_active_two_expert_moe(&c, c.dim));
     c.has_shared_expert = 1;
-    assert(bn_model_arch_moe_prefill_forces_matvec(&c));
+    assert(bn_model_arch_moe_prefill_requires_matvec(&c));
     c.has_shared_expert = 0;
     c.n_experts_active = 1;
     assert(!bn_model_arch_uses_two_expert_all_active_moe(&c));
