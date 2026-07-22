@@ -2097,12 +2097,12 @@ if grep -n 'bn_gpu_policy_apply_q4_q8_prepared_override\|bn_gpu_policy_metal_q4_
 fi
 
 if grep -n 'bn_gpu_policy_apply_metal_q4_q8_default_disable_override\|bn_gpu_policy_metal_apply_q4_q8_default\|bn_gpu_policy_metal_q4_q8_enabled\|bn_gpu_policy_metal_q4_q8_matvec_supported\|bn_gpu_policy_metal_q4_q8_graph_path_supported\|metal_q4_q8_graph_path_supported\|\bq4_q8_enabled\b' include/gpu_policy.h src/gpu_policy.c src/main.c src/gpu_metal.m test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "Metal small-dense exact-native default policy must use behavior names, not Q4/Q8 default helper names"
+    echo "Metal small-dense native-quant default policy must use behavior names, not Q4/Q8 default helper names"
     fail=1
 fi
 
 if grep -n 'setenv("BN_GPU_Q4_Q8' src/main.c >/dev/null 2>&1; then
-    echo "CLI small-dense exact-native options must set behavior-named env vars, not Q4/Q8 compatibility aliases"
+    echo "CLI small-dense native-quant options must set behavior-named env vars, not Q4/Q8 compatibility aliases"
     fail=1
 fi
 
@@ -2117,12 +2117,12 @@ if grep -n '^[[:space:]]*setenv("BN_GPU_Q6_Q8K_REFINE_TOP"\|^[[:space:]]*setenv(
 fi
 
 if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT_TO_LAYER\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_TAIL_NATIVE\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_ATTN_ONLY\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_FFN_ONLY\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_GATEUP\|BN_GPU_SMALL_DENSE_NATIVE_QUANT_DISABLE_FFN_DOWN' src/main.c >/dev/null 2>&1; then
-    echo "CLI small-dense exact-native options must expose behavior-named env policy"
+    echo "CLI small-dense native-quant options must expose behavior-named env policy"
     fail=1
 fi
 
 if awk '/^static void usage/{flag=1} /^static int parse_int/{flag=0} flag{print}' src/main.c | grep -n -- '--q4-q8\|--metal-q4-prepared\|--metal-disable-q4-q8' >/dev/null 2>&1; then
-    echo "CLI help must document behavior-named small-dense exact-native flags, not Q4/Q8 compatibility spellings"
+    echo "CLI help must document behavior-named small-dense native-quant flags, not Q4/Q8 compatibility spellings"
     fail=1
 fi
 
@@ -2132,7 +2132,7 @@ if ! grep -n -- '--small-dense-native-quant-tail\|--metal-native-quant-prepared'
 fi
 
 if grep -n 'BITNET_ARGS+=(--q4-q8\|cmd.append("--q4-q8\|cmd += \["--q4-q8\|BITNET_ARGS+=(--metal-disable-q4-q8\|cmd.append("--metal-q4-prepared\|cmd.append("--metal-disable-q4-q8' test/compare_llama.sh test/compare_llama_topk.py >/dev/null 2>&1; then
-    echo "llama parity helpers must forward behavior-named small-dense exact-native flags"
+    echo "llama parity helpers must forward behavior-named small-dense native-quant flags"
     fail=1
 fi
 
@@ -2142,7 +2142,7 @@ if ! grep -n 'BN_GPU_SMALL_DENSE_NATIVE_QUANT\|BN_GPU_SMALL_DENSE_EXACT_NATIVE\|
 fi
 
 if grep -n -- '->q4_q8_matvec_pipeline\|->q4_q8_split_pipeline\|->q4_q8_gateup_pipeline\|->q4_prepared_q8_matvec_pipeline\|->q4_prepared_q8_split_pipeline\|->q4_prepared_q8_gateup_pipeline\|\.q4_q8_matvec_pipeline\|\.q4_q8_split_pipeline\|\.q4_q8_gateup_pipeline\|\.q4_prepared_q8_matvec_pipeline\|\.q4_prepared_q8_split_pipeline\|\.q4_prepared_q8_gateup_pipeline' src/gpu_metal.m >/dev/null 2>&1; then
-    echo "Metal exact-native pipeline state must use behavior names, not Q4/Q8 field names"
+    echo "Metal native-quant pipeline state must use behavior names, not Q4/Q8 field names"
     fail=1
 fi
 
@@ -3591,12 +3591,12 @@ if awk '/^static inline int bn_backend_quant_moe_route_native_quant/{flag=1} /^s
 fi
 
 if grep -n 'BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_Q4_Q8\|BN_MODEL_ARCH_POLICY_SMALL_DENSE_EXACT_NATIVE\|BN_MODEL_ARCH_POLICY_SMALL_DENSE_Q8_LOGIT_REFINE\|bn_model_arch_allows_small_dense_exact_q4_q8\|bn_model_arch_small_dense_exact_q4_q8_to_layer\|bn_model_arch_allows_small_dense_q8_logit_refine\|bn_model_arch_uses_small_dense_q8_native_shape\|bn_gpu_policy_backend_small_dense_exact_q4_q8_supported\|bn_gpu_policy_small_dense_exact_q4_q8_disabled\|bn_gpu_policy_q4_q8_fused_gateup_enabled\|bn_gpu_policy_q4_q8_attn_only_enabled\|bn_gpu_policy_q4_q8_ffn_only_enabled\|bn_gpu_policy_q4_q8_from_layer_or_default\|bn_gpu_policy_q4_q8_to_layer_or_default\|bn_gpu_policy_q4_q8_ffn_down_enabled\|bn_gpu_policy_q4_q8_prepared_layer_default_enabled' include/model_arch.h include/gpu_policy.h src/model_arch.c src/gpu_policy.c src/transformer/gpu_policy.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "Small-dense exact-native policy must use behavior names, not Q4/Q8 internal helper names"
+    echo "Small-dense native-quant policy must use behavior names, not Q4/Q8 internal helper names"
     fail=1
 fi
 
 if grep -En 'BnTransformerGPUSmallDenseExact($|[^N])|bn_(transformer_gpu|gpu_policy)_small_dense_exact($|_[^n])|small_dense_exact($|_[^n])' include/gpu_policy.h include/transformer_plan_internal.h src/gpu_policy.c src/transformer/gpu_internal.h src/transformer/gpu_policy.c src/transformer/gpu.c src/transformer/gpu_emit.c test/test_transformer.c test/test_gpu_backend.c >/dev/null 2>&1; then
-    echo "Small-dense exact-native policy names must include the native behavior qualifier"
+    echo "Small-dense native-quant policy names must include the native behavior qualifier"
     fail=1
 fi
 
