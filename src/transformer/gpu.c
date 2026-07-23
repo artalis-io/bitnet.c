@@ -845,15 +845,24 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
         return bn_transformer_gpu_reject_forward(&emit, reject_reason);
 
     int dim = c->dim;
-    int kv_dim = c->kv_dim;
-    int head_size = c->head_size;
-    int n_heads = c->n_heads;
+    int kv_cache_stride = c->kv_dim;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     BnTransformerGPUMoEActivationPolicy moe_activation =
         bn_transformer_gpu_moe_activation_policy(c);
-    int q_dim = n_heads * head_size;
-    int rope_dims = bn_transformer_rope_dims_for_head(c, head_size);
-    int half_rope = rope_dims / 2;
+    int max_rope_dims = bn_transformer_rope_dims_for_head(
+        c, bn_transformer_attention_head_size(c, NULL));
+    for (int l = 0; l < c->n_layers; l++) {
+        BnLayerShapePlan shape;
+        bn_transformer_plan_layer_shape(&shape, c, &w->layers[l], l,
+                                        bn_model_tq_state(m) != NULL);
+        if (!shape.is_attn)
+            continue;
+        int layer_rope_dims =
+            bn_transformer_rope_dims_for_head(c, shape.head_size);
+        if (layer_rope_dims > max_rope_dims)
+            max_rope_dims = layer_rope_dims;
+    }
+    int half_rope = max_rope_dims / 2;
     float rope_cos[half_rope], rope_sin[half_rope];
     for (int i = 0; i < half_rope; i++) {
         float angle = pos * s->rope_freq[i];
@@ -1052,21 +1061,27 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
 
         // KV cache addressing
         int attn_idx = plan.attn_idx;
-        size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
+        int layer_q_dim = plan.q_dim;
+        int layer_head_size = plan.head_size;
+        int layer_kv_dim = plan.kv_dim;
+        int layer_rope_dims =
+            bn_transformer_rope_dims_for_head(c, layer_head_size);
+        size_t loff = (size_t)attn_idx * c->seq_len * kv_cache_stride;
         int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
         if (bn_transformer_gpu_cpu_fallback_layer_selected(
                 l, cpu_fallback.layer, cpu_fallback.from_layer)) {
             void *next_norm = bn_transformer_gpu_resolve_next_norm(
                 backend, l, c->n_layers, output_norm);
             if (bn_transformer_gpu_fallback_cpu_layer(
-                    &emit, gpu, m, sess, l, pos, cache_pos, rope_dims,
+                    &emit, gpu, m, sess, l, pos, cache_pos, layer_rope_dims,
                     rope_cos, rope_sin, dim, u_eps, next_norm) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu cpu-layer fallback failed");
             continue;
         }
 
-        uint32_t kv_cache_off = (uint32_t)(loff + (size_t)cache_pos * kv_dim);
+        uint32_t kv_cache_off =
+            (uint32_t)(loff + (size_t)cache_pos * kv_cache_stride);
         BnTransformerGPUQKVResources qkv_res =
             bn_transformer_gpu_resolve_qkv_resources(gpu, backend, lw, l);
         BnTransformerGPUAttentionResources attn_res =
@@ -1079,7 +1094,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
             void *next_norm = bn_transformer_gpu_resolve_next_norm(
                 backend, l, c->n_layers, output_norm);
             if (bn_transformer_gpu_fallback_cpu_layer(
-                    &emit, gpu, m, sess, l, pos, cache_pos, rope_dims,
+                    &emit, gpu, m, sess, l, pos, cache_pos, layer_rope_dims,
                     rope_cos, rope_sin, dim, u_eps, next_norm) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu missing-qweight cpu-layer fallback failed");
@@ -1089,7 +1104,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 l, cpu_fallback.attn_layer, cpu_fallback.attn_from_layer)) {
             void *ffn_norm = attn_res.ffn_norm;
             if (bn_transformer_gpu_fallback_cpu_attention(
-                    &emit, gpu, m, sess, lw, l, pos, cache_pos, rope_dims,
+                    &emit, gpu, m, sess, lw, l, pos, cache_pos,
+                    layer_rope_dims,
                     rope_cos, rope_sin, dim, u_eps, ffn_norm) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu cpu-attention fallback failed");
@@ -1106,8 +1122,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, "gpu attention pre-compare snapshot failed");
             }
             bn_transformer_gpu_emit_context_qkv(
-                &emit, c, lw, &plan, &qkv_res, pos, q_dim,
-                head_size, n_heads, kv_dim, rope_dims, kv_cache_off, u_eps,
+                &emit, c, lw, &plan, &qkv_res, pos, layer_rope_dims,
+                kv_cache_off, u_eps,
                 small_dense_native_quant_use.use_attention);
             if (!emit_logits && l + 1 == c->n_layers) {
                 continue;
@@ -1116,34 +1132,35 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                 (compare_qkv_pos < 0 || compare_qkv_pos == pos)) {
                 if (bn_transformer_gpu_debug_compare_qkv(
                         &emit, gpu, m, sess, lw, l, pos, kv_cache_off,
-                        dim, q_dim, kv_dim) != 0)
+                        dim, layer_q_dim, layer_kv_dim) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu qkv compare failed");
             }
             if (compare_gqa) {
                 bn_transformer_gpu_emit_context_attention_gqa(
-                    &emit, c, lw, &attn_res, pos, q_dim,
-                    head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
+                    &emit, c, lw, &attn_res, &plan, pos, layer_rope_dims,
+                    n_kv, loff,
                     kv_cache_off, has_moe);
                 if (bn_transformer_gpu_debug_compare_gqa(
                         &emit, gpu, m, sess, lw, l, pos, cache_pos,
-                        rope_dims, rope_cos, rope_sin, dim) != 0)
+                        layer_rope_dims, rope_cos, rope_sin, dim) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu gqa compare failed");
                 bn_transformer_gpu_emit_context_attention_finish(
-                    &emit, c, lw, &attn_res, dim, q_dim, head_size, u_eps,
+                    &emit, c, lw, &attn_res, dim, layer_q_dim,
+                    layer_head_size, u_eps,
                     small_dense_native_quant_use.use_attention);
             } else {
                 bn_transformer_gpu_emit_context_attention(
-                    &emit, c, lw, &attn_res, pos, dim, q_dim,
-                    head_size, n_heads, kv_dim, rope_dims, n_kv, loff,
+                    &emit, c, lw, &attn_res, &plan, pos, dim,
+                    layer_rope_dims, n_kv, loff,
                     kv_cache_off, has_moe, u_eps,
                     small_dense_native_quant_use.use_attention);
             }
             if (compare_attention) {
                 if (bn_transformer_gpu_debug_compare_attention(
                         &emit, gpu, m, sess, lw, l, pos, cache_pos,
-                        rope_dims, rope_cos, rope_sin, dim) != 0)
+                        layer_rope_dims, rope_cos, rope_sin, dim) != 0)
                     return bn_transformer_gpu_reject_forward(
                         &emit, "gpu attention compare failed");
             }

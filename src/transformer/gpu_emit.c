@@ -1167,10 +1167,6 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                                          const BnLayerShapePlan *plan,
                                          const BnTransformerGPUQKVResources *res,
                                          int pos,
-                                         int q_dim,
-                                         int head_size,
-                                         int n_heads,
-                                         int kv_dim,
                                          int rope_dims,
                                          uint32_t kv_cache_off,
                                          uint32_t u_eps,
@@ -1182,6 +1178,11 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     void *k_norm = res ? res->k_norm : NULL;
     void *qkv_stacked = res ? res->qkv_stacked : NULL;
     void *qk_stacked = res ? res->qk_stacked : NULL;
+    int q_dim = plan->q_dim;
+    int head_size = plan->head_size;
+    int n_heads = plan->n_heads;
+    int kv_dim = plan->kv_dim;
+    int n_kv_heads = plan->n_kv_heads;
 
     int use_packed_qkv = res && res->packed_qkv &&
                          !q_bias && !k_bias && !v_bias &&
@@ -1331,10 +1332,10 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                     emit_context_utility(ctx,
                                          BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
                                          BN_GPU_VALUE_SCRATCH, -1, -1,
-                                         c->n_kv_heads, k_norm, ph_params);
+                                         n_kv_heads, k_norm, ph_params);
                 }
                 emit_context_rope(ctx, BN_GPU_VALUE_SCRATCH, -1,
-                                  c->n_kv_heads, head_size, pos, rope_dims,
+                                  n_kv_heads, head_size, pos, rope_dims,
                                   0, 0);
                 bn_transformer_gpu_emit_context_copy(
                     ctx, BN_GPU_VALUE_SCRATCH, BN_GPU_VALUE_KEY_CACHE, 0,
@@ -1364,9 +1365,9 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 emit_context_utility(ctx,
                                      BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
                                      BN_GPU_VALUE_SCRATCH, -1, -1,
-                                     c->n_kv_heads, k_norm, ph_params);
+                                     n_kv_heads, k_norm, ph_params);
             }
-            emit_context_rope(ctx, BN_GPU_VALUE_SCRATCH, -1, c->n_kv_heads,
+            emit_context_rope(ctx, BN_GPU_VALUE_SCRATCH, -1, n_kv_heads,
                               head_size, pos, rope_dims, 0, 0);
             bn_transformer_gpu_emit_context_copy(
                 ctx, BN_GPU_VALUE_SCRATCH, BN_GPU_VALUE_KEY_CACHE, 0,
@@ -1427,7 +1428,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
             kv_cache_off, 0, 0, 0, 0
         };
         emit_context_utility(ctx, BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
-                             BN_GPU_VALUE_KEY_CACHE, -1, -1, c->n_kv_heads,
+                             BN_GPU_VALUE_KEY_CACHE, -1, -1, n_kv_heads,
                              k_norm, ph_params);
     }
 }
@@ -1437,12 +1438,9 @@ void bn_transformer_gpu_emit_context_attention(
     const BnConfig *c,
     const BnLayerWeights *lw,
     const BnTransformerGPUAttentionResources *res,
+    const BnLayerShapePlan *plan,
     int pos,
     int dim,
-    int q_dim,
-    int head_size,
-    int n_heads,
-    int kv_dim,
     int rope_dims,
     int n_kv,
     size_t loff,
@@ -1451,10 +1449,11 @@ void bn_transformer_gpu_emit_context_attention(
     uint32_t u_eps,
     int use_small_dense_native_quant) {
     bn_transformer_gpu_emit_context_attention_gqa(
-        ctx, c, lw, res, pos, q_dim, head_size, n_heads, kv_dim, rope_dims,
+        ctx, c, lw, res, plan, pos, rope_dims,
         n_kv, loff, kv_cache_off, has_moe);
     bn_transformer_gpu_emit_context_attention_finish(
-        ctx, c, lw, res, dim, q_dim, head_size, u_eps, use_small_dense_native_quant);
+        ctx, c, lw, res, dim, plan->q_dim, plan->head_size, u_eps,
+        use_small_dense_native_quant);
 }
 
 void bn_transformer_gpu_emit_context_attention_gqa(
@@ -1462,11 +1461,8 @@ void bn_transformer_gpu_emit_context_attention_gqa(
     const BnConfig *c,
     const BnLayerWeights *lw,
     const BnTransformerGPUAttentionResources *res,
+    const BnLayerShapePlan *plan,
     int pos,
-    int q_dim,
-    int head_size,
-    int n_heads,
-    int kv_dim,
     int rope_dims,
     int n_kv,
     size_t loff,
@@ -1475,10 +1471,15 @@ void bn_transformer_gpu_emit_context_attention_gqa(
     void *k_bias = res ? res->k_bias : NULL;
     int kv_cache_write_needs_staging =
         bn_transformer_kv_requires_gpu_cache_write_staging(c);
+    int head_size = plan->head_size;
+    int n_heads = plan->n_heads;
+    int n_kv_heads = plan->n_kv_heads;
+    int kv_mul = plan->kv_mul;
+    int kv_dim = plan->kv_dim;
 
     if (!k_bias && !kv_cache_write_needs_staging) {
         emit_context_rope(ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_KEY_CACHE,
-                          n_heads, head_size, pos, rope_dims, c->n_kv_heads,
+                          n_heads, head_size, pos, rope_dims, n_kv_heads,
                           kv_cache_off);
     } else {
         emit_context_rope(ctx, BN_GPU_VALUE_Q, -1, n_heads, head_size, pos,
@@ -1494,17 +1495,16 @@ void bn_transformer_gpu_emit_context_attention_gqa(
                 has_moe, n_kv)) {
             emit_context_flash_attention(
                 ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_XB, n_heads,
-                head_size, n_kv, c->kv_mul, kv_dim, c->seq_len, loff,
+                head_size, n_kv, kv_mul, kv_dim, c->seq_len, loff,
                 u_inv_sqrt_hs);
         } else {
             emit_context_gqa_attention(
                 ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_XB, n_heads,
-                head_size, n_kv, c->kv_mul, kv_dim, c->seq_len, loff,
+                head_size, n_kv, kv_mul, kv_dim, c->seq_len, loff,
                 u_inv_sqrt_hs);
         }
     }
     (void)lw;
-    (void)q_dim;
 }
 
 void bn_transformer_gpu_emit_context_attention_finish(
