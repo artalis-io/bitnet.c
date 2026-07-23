@@ -92,13 +92,15 @@ static float moe_expert_weight_scale(const BnLayerWeights *lw, int expert_idx) {
 }
 
 static void moe_dense_residual_branch(BnModel *m, BnSession *sess,
-                                      BnLayerWeights *lw) {
+                                      BnLayerWeights *lw,
+                                      const BnMoEExecutionPolicy *policy) {
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     BnMoEState *ms = sess->moe_state;
     if (!lw->ffn.ffn_gate.data || !lw->ffn.ffn_up.data || !lw->ffn.ffn_down.data)
         return;
-    bn_moe_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, c->dim, c->norm_eps);
+    bn_moe_rmsnorm(s->xb, s->x, lw->norm.ffn_norm, c->dim,
+                   policy->norm_eps);
     BnMatvecTask gu[2] = {
         { s->hb,  &lw->ffn.ffn_gate, NULL, 0 },
         { s->hb2, &lw->ffn.ffn_up,   NULL, 0 },
@@ -108,7 +110,8 @@ static void moe_dense_residual_branch(BnModel *m, BnSession *sess,
     bn_moe_quant_matvec(s->xb2, &lw->ffn.ffn_down, s->hb, s->x_q,
                         bn_model_pool(m));
     if (lw->norm.ffn_post_norm_1)
-        bn_moe_rmsnorm(s->xb2, s->xb2, lw->norm.ffn_post_norm_1, c->dim, c->norm_eps);
+        bn_moe_rmsnorm(s->xb2, s->xb2, lw->norm.ffn_post_norm_1, c->dim,
+                       policy->norm_eps);
     bn_moe_weighted_add(ms->expert_out, s->xb2, 1.0f, c->dim);
 }
 
@@ -146,7 +149,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     const float *ffn_norm = lw->norm.ffn_norm;
     if (exec_policy.uses_dense_residual_branch && lw->norm.ffn_sub_norm)
         ffn_norm = lw->norm.ffn_sub_norm;
-    bn_moe_rmsnorm(s->xb, s->x, ffn_norm, dim, c->norm_eps);
+    bn_moe_rmsnorm(s->xb, s->x, ffn_norm, dim, exec_policy.norm_eps);
     ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
 
     // 2. Route: select top-K experts (SIMD + threaded)
@@ -154,7 +157,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     const float *router_x = s->xb;
     if (exec_policy.uses_scaled_router_input) {
         float inv_sqrt_dim = 1.0f / sqrtf((float)dim);
-        moe_rmsnorm_unit(s->xb2, s->x, dim, c->norm_eps);
+        moe_rmsnorm_unit(s->xb2, s->x, dim, exec_policy.norm_eps);
         for (int d = 0; d < dim; d++)
             s->xb2[d] *= inv_sqrt_dim *
                          (lw->moe.router_scale ? lw->moe.router_scale[d] : 1.0f);
@@ -647,11 +650,13 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     if (exec_policy.uses_dense_residual_branch) {
         if (lw->norm.ffn_post_norm_2)
             bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
-                           lw->norm.ffn_post_norm_2, dim, c->norm_eps);
-        moe_dense_residual_branch(m, sess, lw);
+                           lw->norm.ffn_post_norm_2, dim,
+                           exec_policy.norm_eps);
+        moe_dense_residual_branch(m, sess, lw, &exec_policy);
         if (lw->norm.ffn_post_norm)
             bn_moe_rmsnorm(ms->expert_out, ms->expert_out,
-                           lw->norm.ffn_post_norm, dim, c->norm_eps);
+                           lw->norm.ffn_post_norm, dim,
+                           exec_policy.norm_eps);
     }
 
     ms->stats.compute_time_ms += bn_moe_time_ms() - t_compute;

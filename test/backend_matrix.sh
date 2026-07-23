@@ -2839,8 +2839,8 @@ if grep -n 'n_experts == 2 && K == 2\|n_experts > 2' src/moe_prefill.c >/dev/nul
     fail=1
 fi
 
-if grep -n 'c->act_type' src/moe_prefill.c >/dev/null 2>&1; then
-    echo "src/moe_prefill.c must use model activation policy helpers"
+if grep -n 'c->act_type\|c->norm_eps' src/moe_prefill.c src/moe_execute.c >/dev/null 2>&1; then
+    echo "MoE execution files must use MoE execution policy for activation/norm config"
     fail=1
 fi
 

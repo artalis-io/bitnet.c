@@ -2,7 +2,6 @@
 #include "backend_model.h"
 #include "gpu_backend.h"
 #include "gpu_moe_bridge.h"
-#include "model_internal.h"
 #include "transformer/gpu_internal.h"
 
 typedef struct {
@@ -101,7 +100,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     BnConfig *c = &m->config;
     BnMoEState *ms = sess->moe_state;
     int dim = c->dim;
-    int activation = bn_model_config_activation(c);
+    BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(c);
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int moe_hidden = route_policy.expert_hidden_dim;
     int K = route_policy.active_experts;
@@ -140,10 +139,10 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         shared_gpu.gate_weight, norm, act, n_tokens, dim,
                         moe_hidden, n_experts, K,
                         map->gate_type, map->up_type, map->down_type,
-                        activation, shared_gpu.hidden_dim,
+                        exec_policy.activation, shared_gpu.hidden_dim,
                         shared_gpu.gate_type, shared_gpu.up_type,
                         shared_gpu.down_type,
-                        c->norm_eps, route_policy.norm_topk_prob,
+                        exec_policy.norm_eps, route_policy.norm_topk_prob,
                         route_policy.expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     ms->stats.compute_time_ms +=
@@ -157,7 +156,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         t0 = bn_moe_time_ms();
         for (int t = 0; t < n_tokens; t++)
             bn_moe_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
-                           lw->norm.ffn_norm, dim, c->norm_eps);
+                           lw->norm.ffn_norm, dim, exec_policy.norm_eps);
         ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
         did_input_norm = 1;
 
@@ -180,7 +179,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         gpu, moe_out, router, gate_all, up_all, down_all,
                         Xb, n_tokens, dim, moe_hidden, n_experts, K,
                         map->gate_type, map->up_type, map->down_type,
-                        activation, route_policy.norm_topk_prob,
+                        exec_policy.activation, route_policy.norm_topk_prob,
                         route_policy.expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     int shared_ok = 1;
@@ -202,7 +201,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                                     shared_gpu.gate_type,
                                     shared_gpu.up_type,
                                     shared_gpu.down_type,
-                                    activation) == 0) {
+                                    exec_policy.activation) == 0) {
                                 for (int t = 0; t < n_tokens; t++) {
                                     const float *x_t = Xb + (size_t)t * dim;
                                     float gate =
@@ -241,7 +240,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         t0 = bn_moe_time_ms();
         for (int t = 0; t < n_tokens; t++)
             bn_moe_rmsnorm(Xb + (size_t)t * dim, act + (size_t)t * dim,
-                           lw->norm.ffn_norm, dim, c->norm_eps);
+                           lw->norm.ffn_norm, dim, exec_policy.norm_eps);
         ms->stats.norm_time_ms += bn_moe_time_ms() - t0;
     }
 
@@ -406,7 +405,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     gpu_batch, moe_out, gate_all, up_all, down_all,
                     all_indices, all_weights, Xb, n_tokens, dim, moe_hidden,
                     n_experts, K, map->gate_type, map->up_type,
-                    map->down_type, activation) == 0) {
+                    map->down_type, exec_policy.activation) == 0) {
                 used_gpu_moe_batch = 1;
                 ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
             }
@@ -461,7 +460,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         expert_offsets, expert_counts, group_token_ids,
                         group_weights, Xb, n_tokens, dim, moe_hidden,
                         map->gate_type, map->up_type, map->down_type,
-                        activation, shared_gpu.gate, shared_gpu.up,
+                        exec_policy.activation, shared_gpu.gate, shared_gpu.up,
                         shared_gpu.down, shared_gpu.gate_weight,
                         shared_gpu.hidden_dim, shared_gpu.gate_type,
                         shared_gpu.up_type, shared_gpu.down_type) == 0) {
@@ -524,7 +523,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     expert_gpu.use_gateup_split ? NULL : expert_gpu.up,
                     expert_gpu.down, gather_buf, T, dim, moe_hidden,
                     map->gate_type, map->up_type, map->down_type,
-                    activation) == 0) {
+                    exec_policy.activation) == 0) {
                 used_gpu_expert = 1;
                 if (temps.n_buffers > 0)
                     bn_gpu_moe_bridge_release_temporaries(m, &temps);
@@ -650,7 +649,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         shared_gpu.down, Xb, n_tokens, dim, shared_hidden,
                         shared_gpu.gate_type, shared_gpu.up_type,
                         shared_gpu.down_type,
-                        activation) == 0) {
+                        exec_policy.activation) == 0) {
                     used_gpu_shared = 1;
                 }
             }

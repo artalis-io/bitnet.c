@@ -269,10 +269,14 @@ static void test_moe_execution_policy(void) {
 
     BnConfig c = {0};
     c.moe_uses_reference_silu = 1;
+    c.act_type = 2;
+    c.norm_eps = 1.0e-5f;
     BnMoEExecutionPolicy policy = bn_moe_execution_policy(&c);
     assert(!policy.uses_scaled_router_input);
     assert(!policy.uses_dense_residual_branch);
     assert(policy.uses_reference_silu == 1);
+    assert(policy.activation == 2);
+    assert(policy.norm_eps == 1.0e-5f);
     assert(bn_moe_policy_uses_reference_silu(&c) == 1);
 
     c.policy_flags = BN_MODEL_ARCH_POLICY_MOE_SCALED_ROUTER_INPUT;
@@ -293,6 +297,8 @@ static void test_moe_execution_policy(void) {
     assert(!policy.uses_scaled_router_input);
     assert(!policy.uses_dense_residual_branch);
     assert(policy.uses_reference_silu == -1);
+    assert(policy.activation == 0);
+    assert(policy.norm_eps == 0.0f);
     assert(bn_moe_policy_uses_reference_silu(NULL) == -1);
 
     printf("PASSED\n");

@@ -35,6 +35,8 @@ typedef struct {
     int uses_scaled_router_input;
     int uses_dense_residual_branch;
     int uses_reference_silu;
+    int activation;
+    float norm_eps;
 } BnMoEExecutionPolicy;
 
 typedef struct {

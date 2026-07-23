@@ -10,6 +10,9 @@ uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c) {
 
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
     BnMoEExecutionPolicy policy = {0};
+    policy.uses_reference_silu = -1;
+    if (!c)
+        return policy;
     policy.uses_scaled_router_input =
         bn_model_config_moe_uses_scaled_router_input(c);
     policy.uses_dense_residual_branch =
@@ -17,6 +20,8 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
     policy.uses_reference_silu = policy.uses_dense_residual_branch
         ? -1
         : bn_model_config_moe_uses_reference_silu(c);
+    policy.activation = bn_model_config_activation(c);
+    policy.norm_eps = c->norm_eps;
     return policy;
 }
 
