@@ -2896,6 +2896,16 @@ if awk '
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_has_shared_expert_gate_vector' src/moe_math.c src/model_gpu.c >/dev/null 2>&1; then
+    echo "MoE math/model GPU code must use the shared expert gate-vector accessor"
+    fail=1
+fi
+
+if grep -n 'lw->shared\.shared_expert_gate' src/moe_math.c src/model_gpu.c >/dev/null 2>&1; then
+    echo "MoE math/model GPU code must not read shared expert gate vectors directly"
+    fail=1
+fi
+
 if grep -n 'gpu->buffer_create' src/model_gpu.c >/dev/null 2>&1; then
     echo "src/model_gpu.c must use GPU backend helpers for model buffer uploads"
     fail=1

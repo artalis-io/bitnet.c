@@ -409,8 +409,11 @@ static void test_moe_prefill_policy(void) {
     c.shared_expert_intermediate_size = 256;
     assert(!bn_moe_policy_has_shared_expert(NULL, &lw));
     assert(!bn_moe_policy_has_shared_expert_gate_vector(&lw));
+    assert(!bn_moe_shared_expert_gate_vector(&lw));
     lw.shared.shared_expert_gate = (float *)1;
     assert(bn_moe_policy_has_shared_expert_gate_vector(&lw));
+    assert(bn_moe_shared_expert_gate_vector(&lw) ==
+           lw.shared.shared_expert_gate);
     lw.shared.shared_expert_gate = NULL;
     assert(fabsf(bn_moe_shared_expert_gate_weight(&lw, NULL, 0) -
                  1.0f) < 1e-6f);

@@ -67,10 +67,11 @@ double bn_moe_time_ms(void) {
 float bn_moe_shared_expert_gate_weight(const BnLayerWeights *lw,
                                        const float *x,
                                        int dim) {
-    if (!bn_moe_policy_has_shared_expert_gate_vector(lw) || !x || dim <= 0)
+    const float *gate_vector = bn_moe_shared_expert_gate_vector(lw);
+    if (!gate_vector || !x || dim <= 0)
         return 1.0f;
     float gate_dot = 0.0f;
     for (int d = 0; d < dim; d++)
-        gate_dot += x[d] * lw->shared.shared_expert_gate[d];
+        gate_dot += x[d] * gate_vector[d];
     return 1.0f / (1.0f + expf(-gate_dot));
 }

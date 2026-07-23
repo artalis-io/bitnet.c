@@ -81,6 +81,12 @@ int bn_moe_policy_has_shared_expert_gate_vector(
     return lw && lw->shared.shared_expert_gate;
 }
 
+const float *bn_moe_shared_expert_gate_vector(const BnLayerWeights *lw) {
+    return bn_moe_policy_has_shared_expert_gate_vector(lw)
+        ? lw->shared.shared_expert_gate
+        : NULL;
+}
+
 int bn_moe_policy_has_loaded_shared_gate_projection(
     const BnLayerWeights *lw) {
     return lw && lw->shared.shared_gate.data != NULL;
