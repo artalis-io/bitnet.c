@@ -327,6 +327,7 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw);
 int bn_transformer_moe_uses_configured_all_active_two_route(
     const BnConfig *c);
+int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c);
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);

@@ -302,6 +302,10 @@ int bn_transformer_moe_uses_configured_all_active_two_route(
     return c && bn_moe_policy_uses_all_active_two_expert_route(c, c->dim);
 }
 
+int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c) {
+    return bn_moe_policy_shared_expert_hidden_dim(c);
+}
+
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {
     return bn_moe_policy_layer_has_router(lw);
 }
@@ -539,7 +543,7 @@ void bn_transformer_plan_moe(BnMoEPlan *p,
     p->n_active = route_policy.active_experts;
     p->hidden_dim = route_policy.expert_hidden_dim;
     p->has_shared_expert = bn_transformer_moe_has_shared_expert(c, lw);
-    p->shared_hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
+    p->shared_hidden_dim = bn_transformer_moe_shared_expert_hidden_dim(c);
     if (bn_transformer_moe_requires_cpu_fallback(p->placement, lw)) {
         p->needs_cpu_fallback = 1;
         p->placement = BN_EXEC_CPU_FALLBACK;

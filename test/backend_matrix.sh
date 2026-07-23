@@ -4387,6 +4387,12 @@ if grep -n 'bn_moe_policy_shared_expert_hidden_dim' \
     fail=1
 fi
 
+if awk '/^void bn_transformer_plan_moe/{flag=1} /^void bn_transformer_plan_logits/{flag=0} flag{print}' \
+    src/transformer/plan.c | grep -n 'bn_moe_policy_shared_expert_hidden_dim' >/dev/null 2>&1; then
+    echo "Transformer MoE block planning must use transformer MoE shared-expert shape policy"
+    fail=1
+fi
+
 if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|m->config\.moe_intermediate_size' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE policy helpers for routed expert shape and weighting"
     fail=1

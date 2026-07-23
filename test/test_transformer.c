@@ -4044,6 +4044,7 @@ static void test_block_planning(void) {
     assert(moe.n_active == 8);
     assert(moe.hidden_dim == 1024);
     assert(moe.has_shared_expert);
+    assert(bn_transformer_moe_shared_expert_hidden_dim(&c) == 2048);
     assert(moe.shared_hidden_dim == 2048);
     assert(moe.needs_cpu_fallback);
     lw.moe.router_weight = NULL;
