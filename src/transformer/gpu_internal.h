@@ -1196,7 +1196,7 @@ BnTransformerGPUComparePolicy
 bn_transformer_gpu_compare_policy(void);
 int bn_transformer_gpu_flash_attention_enabled(
     const BnGPUBackend *gpu,
-    int config_flash_attn,
+    int flash_requested,
     int has_moe,
     int n_kv);
 int bn_transformer_gpu_moe_routed_kquant_down(const BnMoEExpertMap *map);

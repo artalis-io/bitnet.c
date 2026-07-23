@@ -1490,7 +1490,8 @@ void bn_transformer_gpu_emit_context_attention_gqa(
         uint32_t u_inv_sqrt_hs;
         memcpy(&u_inv_sqrt_hs, &inv_sqrt_hs, 4);
         if (bn_transformer_gpu_flash_attention_enabled(
-                res->gpu, c->flash_attn, has_moe, n_kv)) {
+                res->gpu, bn_transformer_attention_flash_requested(c),
+                has_moe, n_kv)) {
             emit_context_flash_attention(
                 ctx, BN_GPU_VALUE_Q, BN_GPU_VALUE_XB, n_heads,
                 head_size, n_kv, c->kv_mul, kv_dim, c->seq_len, loff,

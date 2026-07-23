@@ -2309,7 +2309,7 @@ bn_transformer_gpu_compare_policy(void) {
 
 int bn_transformer_gpu_flash_attention_enabled(
     const BnGPUBackend *gpu,
-    int config_flash_attn,
+    int flash_requested,
     int has_moe,
     int n_kv) {
     int flash_default = bn_gpu_policy_backend_flash_default_enabled(gpu);
@@ -2318,7 +2318,7 @@ int bn_transformer_gpu_flash_attention_enabled(
         bn_gpu_policy_backend_flash_max_kv_or_default(gpu, 0);
 
     return bn_transformer_gpu_can_flash_attn(gpu) &&
-           (has_moe || config_flash_attn || flash_default) &&
+           (has_moe || flash_requested || flash_default) &&
            n_kv >= flash_min_kv &&
            (flash_max_kv <= 0 || n_kv <= flash_max_kv);
 }
