@@ -347,7 +347,9 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
 BnTransformerGPUSharedExpertGatePolicy
 bn_transformer_gpu_shared_expert_gate_policy(const BnLayerWeights *lw) {
     BnTransformerGPUSharedExpertGatePolicy policy = {0};
-    policy.has_gate_vector = bn_moe_policy_has_shared_expert_gate_vector(lw);
+    BnTransformerMoESharedExpertGatePolicy gate_policy =
+        bn_transformer_moe_shared_expert_gate_policy(lw);
+    policy.has_gate_vector = gate_policy.has_gate_vector;
     return policy;
 }
 

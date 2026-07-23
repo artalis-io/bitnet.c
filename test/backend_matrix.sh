@@ -4415,6 +4415,11 @@ if awk '/^int bn_transformer_gpu_shared_expert_gate_available/{flag=1} /^BnTrans
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_has_shared_expert_gate_vector' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU shared-expert gate policy must compose transformer MoE gate policy"
+    fail=1
+fi
+
 if awk '/^void bn_transformer_plan_moe/{flag=1} /^void bn_transformer_plan_logits/{flag=0} flag{print}' \
     src/transformer/plan.c | grep -n 'bn_moe_policy_shared_expert_hidden_dim' >/dev/null 2>&1; then
     echo "Transformer MoE block planning must use transformer MoE shared-expert shape policy"

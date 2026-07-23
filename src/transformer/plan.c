@@ -316,6 +316,13 @@ bn_transformer_moe_shared_expert_shape_policy(const BnConfig *c,
     return policy;
 }
 
+BnTransformerMoESharedExpertGatePolicy
+bn_transformer_moe_shared_expert_gate_policy(const BnLayerWeights *lw) {
+    BnTransformerMoESharedExpertGatePolicy policy = {0};
+    policy.has_gate_vector = bn_moe_policy_has_shared_expert_gate_vector(lw);
+    return policy;
+}
+
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {
     return bn_moe_policy_layer_has_router(lw);
 }

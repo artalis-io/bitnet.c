@@ -4050,7 +4050,12 @@ static void test_block_planning(void) {
     assert(!bn_transformer_moe_has_shared_expert(&c, &lw));
     lw.shared.shared_expert_gate = (float *)1;
     assert(bn_transformer_moe_has_shared_expert(&c, &lw));
+    BnTransformerMoESharedExpertGatePolicy gate_policy =
+        bn_transformer_moe_shared_expert_gate_policy(&lw);
+    assert(gate_policy.has_gate_vector);
     lw.shared.shared_expert_gate = NULL;
+    gate_policy = bn_transformer_moe_shared_expert_gate_policy(&lw);
+    assert(!gate_policy.has_gate_vector);
     c.has_shared_expert = 1;
     assert(bn_transformer_moe_requires_cpu_fallback(BN_EXEC_GPU, &lw));
     assert(!bn_transformer_moe_requires_cpu_fallback(BN_EXEC_CPU, &lw));

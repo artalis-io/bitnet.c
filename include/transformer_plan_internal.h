@@ -140,6 +140,10 @@ typedef struct {
 } BnTransformerMoESharedExpertShapePolicy;
 
 typedef struct {
+    int has_gate_vector;
+} BnTransformerMoESharedExpertGatePolicy;
+
+typedef struct {
     BnLogitsKind kind;
     BnExecPlacement placement;
     BnBackendPlacement backend;
@@ -336,6 +340,8 @@ int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c);
 BnTransformerMoESharedExpertShapePolicy
 bn_transformer_moe_shared_expert_shape_policy(const BnConfig *c,
                                               const BnLayerWeights *lw);
+BnTransformerMoESharedExpertGatePolicy
+bn_transformer_moe_shared_expert_gate_policy(const BnLayerWeights *lw);
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);
