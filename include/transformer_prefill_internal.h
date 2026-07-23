@@ -17,9 +17,14 @@ typedef struct {
     float *hb;
     const float *hb2;
     int hidden_dim;
-    int act_type;
-    int fast_approx;
+    int activation;
+    int uses_reference_activation;
 } BnPrefillFFNActCtx;
+
+typedef struct {
+    int activation;
+    int uses_reference_activation;
+} BnTransformerPrefillActivationPolicy;
 
 typedef struct {
     const char *name;
@@ -498,6 +503,9 @@ int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
 int bn_transformer_prefill_activation_is_relu2(int activation);
 int bn_transformer_prefill_activation_is_gelu(int activation);
 int bn_transformer_prefill_activation_uses_silu_path(int activation);
+BnTransformerPrefillActivationPolicy
+bn_transformer_prefill_activation_policy(int activation,
+                                         int uses_reference_activation);
 int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
                                                const BnQWeight *k,
                                                int q_stride,

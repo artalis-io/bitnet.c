@@ -777,6 +777,16 @@ int bn_transformer_prefill_activation_uses_silu_path(int activation) {
     return bn_model_activation_uses_silu_path(activation);
 }
 
+BnTransformerPrefillActivationPolicy
+bn_transformer_prefill_activation_policy(int activation,
+                                         int uses_reference_activation) {
+    BnTransformerPrefillActivationPolicy policy = {
+        activation,
+        uses_reference_activation
+    };
+    return policy;
+}
+
 int bn_transformer_prefill_qk_stack_compatible(const BnQWeight *q,
                                                const BnQWeight *k,
                                                int q_stride,

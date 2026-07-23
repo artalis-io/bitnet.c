@@ -508,6 +508,11 @@ if grep -n 'm->config\.act_type\|c->act_type' src/transformer/prefill.c >/dev/nu
     fail=1
 fi
 
+if grep -n '\.act_type\|\.fast_approx\|->act_type\|->fast_approx' include/transformer_prefill_internal.h src/transformer/prefill_backend.c src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill activation context must use behavior-named activation policy fields"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/gpu.c \

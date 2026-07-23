@@ -22,12 +22,12 @@ static void prefill_ffn_activation_scalar_range(void *ctx, int start, int end) {
     for (int t = start; t < end; t++) {
         float *hb_t = c->hb + (size_t)t * hidden_dim;
         const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
-        if (bn_transformer_prefill_activation_is_relu2(c->act_type)) {
+        if (bn_transformer_prefill_activation_is_relu2(c->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float g = hb_t[i] > 0 ? hb_t[i] : 0;
                 hb_t[i] = hb2_t ? g * g * hb2_t[i] : g * g;
             }
-        } else if (bn_transformer_prefill_activation_is_gelu(c->act_type)) {
+        } else if (bn_transformer_prefill_activation_is_gelu(c->activation)) {
             for (int i = 0; i < hidden_dim; i++) {
                 float v = prefill_gelu(hb_t[i]);
                 hb_t[i] = hb2_t ? v * hb2_t[i] : v;
@@ -49,7 +49,7 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
         float *hb_t = c->hb + (size_t)t * hidden_dim;
         const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
         int i = 0;
-        if (bn_transformer_prefill_activation_is_relu2(c->act_type)) {
+        if (bn_transformer_prefill_activation_is_relu2(c->activation)) {
             float32x4_t zero_v = vdupq_n_f32(0.0f);
             for (; i + 3 < hidden_dim; i += 4) {
                 float32x4_t g = vmaxq_f32(vld1q_f32(hb_t + i), zero_v);
@@ -58,7 +58,8 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
                     v = vmulq_f32(v, vld1q_f32(hb2_t + i));
                 vst1q_f32(hb_t + i, v);
             }
-        } else if (bn_transformer_prefill_activation_is_gelu(c->act_type) && c->fast_approx) {
+        } else if (bn_transformer_prefill_activation_is_gelu(c->activation) &&
+                   c->uses_reference_activation) {
             for (; i + 3 < hidden_dim; i += 4) {
                 float32x4_t v =
                     bn_neon_fast_gelu_f32(vld1q_f32(hb_t + i));
@@ -66,7 +67,8 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
                     v = vmulq_f32(v, vld1q_f32(hb2_t + i));
                 vst1q_f32(hb_t + i, v);
             }
-        } else if (bn_transformer_prefill_activation_uses_silu_path(c->act_type) && c->fast_approx) {
+        } else if (bn_transformer_prefill_activation_uses_silu_path(c->activation) &&
+                   c->uses_reference_activation) {
             for (; i + 3 < hidden_dim; i += 4) {
                 float32x4_t v =
                     bn_neon_fast_silu_f32(vld1q_f32(hb_t + i));
@@ -77,7 +79,7 @@ static void prefill_ffn_activation_neon_range(void *ctx, int start, int end) {
         }
         BnPrefillFFNActCtx tail = {
             hb_t + i, hb2_t ? hb2_t + i : NULL,
-            hidden_dim - i, c->act_type, c->fast_approx
+            hidden_dim - i, c->activation, c->uses_reference_activation
         };
         prefill_ffn_activation_scalar_range(&tail, 0, 1);
     }
@@ -92,7 +94,7 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
         float *hb_t = c->hb + (size_t)t * hidden_dim;
         const float *hb2_t = c->hb2 ? c->hb2 + (size_t)t * hidden_dim : NULL;
         int i = 0;
-        if (bn_transformer_prefill_activation_is_relu2(c->act_type)) {
+        if (bn_transformer_prefill_activation_is_relu2(c->activation)) {
             __m256 zero_v = _mm256_setzero_ps();
             for (; i + 7 < hidden_dim; i += 8) {
                 __m256 g = _mm256_max_ps(_mm256_loadu_ps(hb_t + i), zero_v);
@@ -101,7 +103,8 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
                     v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
                 _mm256_storeu_ps(hb_t + i, v);
             }
-        } else if (bn_transformer_prefill_activation_is_gelu(c->act_type) && c->fast_approx) {
+        } else if (bn_transformer_prefill_activation_is_gelu(c->activation) &&
+                   c->uses_reference_activation) {
             for (; i + 7 < hidden_dim; i += 8) {
                 __m256 v =
                     bn_avx2_fast_gelu_ps(_mm256_loadu_ps(hb_t + i));
@@ -109,7 +112,8 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
                     v = _mm256_mul_ps(v, _mm256_loadu_ps(hb2_t + i));
                 _mm256_storeu_ps(hb_t + i, v);
             }
-        } else if (bn_transformer_prefill_activation_uses_silu_path(c->act_type) && c->fast_approx) {
+        } else if (bn_transformer_prefill_activation_uses_silu_path(c->activation) &&
+                   c->uses_reference_activation) {
             for (; i + 7 < hidden_dim; i += 8) {
                 __m256 v =
                     bn_avx2_fast_silu_ps(_mm256_loadu_ps(hb_t + i));
@@ -120,7 +124,7 @@ static void prefill_ffn_activation_avx2_range(void *ctx, int start, int end) {
         }
         BnPrefillFFNActCtx tail = {
             hb_t + i, hb2_t ? hb2_t + i : NULL,
-            hidden_dim - i, c->act_type, c->fast_approx
+            hidden_dim - i, c->activation, c->uses_reference_activation
         };
         prefill_ffn_activation_scalar_range(&tail, 0, 1);
     }

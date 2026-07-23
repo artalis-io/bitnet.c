@@ -4495,6 +4495,10 @@ static void test_block_planning(void) {
         BN_MODEL_ACTIVATION_SILU));
     assert(!bn_transformer_prefill_activation_uses_silu_path(
         BN_MODEL_ACTIVATION_RELU2));
+    BnTransformerPrefillActivationPolicy prefill_activation =
+        bn_transformer_prefill_activation_policy(BN_MODEL_ACTIVATION_GELU, 1);
+    assert(prefill_activation.activation == BN_MODEL_ACTIVATION_GELU);
+    assert(prefill_activation.uses_reference_activation);
 
     BnTransformerPrefillEntryPolicy prefill_entry =
         bn_transformer_prefill_entry_policy(0, 0, 2, 0, 0);

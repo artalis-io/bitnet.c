@@ -2541,9 +2541,14 @@ prefill_ssm_done:
                 prefill_profile_add(&prof.ffn_gateup_ms, t_ffn_step);
 
                 t_ffn_step = prefill_profile_now(&prof);
+                BnTransformerPrefillActivationPolicy activation_policy =
+                    bn_transformer_prefill_activation_policy(
+                        ffn_plan.activation,
+                        ffn_plan.reference_activation);
                 BnPrefillFFNActCtx act_ctx = {
-                    Hb, Hb2, ffn_plan.hidden_dim, ffn_plan.activation,
-                    ffn_plan.reference_activation
+                    Hb, Hb2, ffn_plan.hidden_dim,
+                    activation_policy.activation,
+                    activation_policy.uses_reference_activation
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
@@ -2555,9 +2560,14 @@ prefill_ssm_done:
                 prefill_quant_matmul_gpu(m, Hb, &lw->ffn.ffn_up, Xb, n_tokens, s->x_q);
                 prefill_profile_add(&prof.ffn_gateup_ms, t_ffn_step);
                 t_ffn_step = prefill_profile_now(&prof);
+                BnTransformerPrefillActivationPolicy activation_policy =
+                    bn_transformer_prefill_activation_policy(
+                        ffn_plan.activation,
+                        ffn_plan.reference_activation);
                 BnPrefillFFNActCtx act_ctx = {
-                    Hb, NULL, ffn_plan.hidden_dim, ffn_plan.activation,
-                    ffn_plan.reference_activation
+                    Hb, NULL, ffn_plan.hidden_dim,
+                    activation_policy.activation,
+                    activation_policy.uses_reference_activation
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
