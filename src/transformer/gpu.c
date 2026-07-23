@@ -307,7 +307,9 @@ static int gpu_compute_shared_expert_mid_cpu_from_xb(
         !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
         return -1;
     BnConfig *c = &m->config;
-    int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
+    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+        bn_transformer_gpu_moe_shared_expert_shape_policy(c);
+    int shared_hidden = shared_shape.hidden_dim;
     BnTransformerGPUMoEActivationPolicy activation_policy =
         bn_transformer_gpu_moe_activation_policy(c);
     int uses_reference_silu = activation_policy.uses_reference_silu;
@@ -343,7 +345,9 @@ static int gpu_compute_shared_expert_cpu_from_xb(
         !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
         return -1;
     BnConfig *c = &m->config;
-    int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
+    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+        bn_transformer_gpu_moe_shared_expert_shape_policy(c);
+    int shared_hidden = shared_shape.hidden_dim;
     if (shared_hidden <= 0)
         return -1;
     float *mid = (float *)malloc((size_t)shared_hidden * sizeof(float));
@@ -508,7 +512,9 @@ static int gpu_debug_compute_shared_down_cpu_from_xb(
         !bn_transformer_gpu_moe_has_loaded_shared_expert(&m->config, lw))
         return -1;
     BnConfig *c = &m->config;
-    int hidden = bn_moe_policy_shared_expert_hidden_dim(c);
+    BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+        bn_transformer_gpu_moe_shared_expert_shape_policy(c);
+    int hidden = shared_shape.hidden_dim;
     if (hidden <= 0)
         return -1;
     float *mid = (float *)malloc((size_t)hidden * sizeof(float));
@@ -1593,8 +1599,9 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     }
                     if (moe_debug.compare_shared_mid &&
                         bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
-                        int shared_hidden =
-                            bn_moe_policy_shared_expert_hidden_dim(c);
+                        BnTransformerGPUMoESharedExpertShapePolicy shared_shape =
+                            bn_transformer_gpu_moe_shared_expert_shape_policy(c);
+                        int shared_hidden = shared_shape.hidden_dim;
                         size_t shared_mid_bytes =
                             (size_t)shared_hidden * sizeof(float);
                         float *moe_cpu_shared_mid =

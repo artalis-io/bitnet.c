@@ -4375,6 +4375,13 @@ if grep -n 'bn_moe_policy_uses_reference_silu' src/moe_execute.c >/dev/null 2>&1
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_shared_expert_hidden_dim' \
+    src/transformer/gpu.c \
+    src/transformer/gpu_resources.c >/dev/null 2>&1; then
+    echo "Transformer GPU code must use GPU MoE shared-expert shape policy"
+    fail=1
+fi
+
 if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|m->config\.moe_intermediate_size' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE policy helpers for routed expert shape and weighting"
     fail=1

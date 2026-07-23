@@ -415,6 +415,13 @@ bn_transformer_gpu_moe_activation_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerGPUMoESharedExpertShapePolicy
+bn_transformer_gpu_moe_shared_expert_shape_policy(const BnConfig *c) {
+    BnTransformerGPUMoESharedExpertShapePolicy policy = {0};
+    policy.hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
+    return policy;
+}
+
 int bn_transformer_gpu_prefill_quant_matmul_backend_available(
     const BnGPUBackend *gpu) {
     return bn_gpu_backend_can_matmul(gpu);
