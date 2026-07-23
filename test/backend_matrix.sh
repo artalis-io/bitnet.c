@@ -503,6 +503,11 @@ if grep -n 'activation == [012]\|act_type == [012]\|activation != [12]\|act_type
     fail=1
 fi
 
+if grep -n 'm->config\.act_type\|c->act_type' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill execution must use model activation policy helpers, not raw config activation fields"
+    fail=1
+fi
+
 for file in \
     src/transformer.c \
     src/transformer/gpu.c \
