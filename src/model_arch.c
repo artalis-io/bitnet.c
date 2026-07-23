@@ -164,6 +164,15 @@ int bn_model_arch_attention_value_shares_key_config(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY) != 0);
 }
 
+int bn_model_arch_attention_qk_norm_stride(const BnConfig *c,
+                                           int head_size) {
+    return c && c->qk_norm_per_head ? head_size : 0;
+}
+
+int bn_model_arch_attention_uses_per_head_qk_norm(const BnConfig *c) {
+    return c ? c->qk_norm_per_head : 0;
+}
+
 int bn_model_arch_uses_per_layer_embedding(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT) != 0);
 }
@@ -178,6 +187,14 @@ int bn_model_arch_uses_ffn_post_norm(const BnConfig *c) {
 
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_LAYER_OUTPUT_SCALE) != 0);
+}
+
+int bn_model_arch_has_ffn_gate(const BnConfig *c) {
+    return c ? c->has_ffn_gate : 0;
+}
+
+int bn_model_arch_config_activation(const BnConfig *c) {
+    return c ? c->act_type : BN_MODEL_ACTIVATION_SILU;
 }
 
 int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c) {

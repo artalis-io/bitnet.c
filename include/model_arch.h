@@ -115,10 +115,15 @@ float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
 int bn_model_arch_rmsnorm_uses_reference_order(const BnConfig *c);
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c);
+int bn_model_arch_attention_qk_norm_stride(const BnConfig *c,
+                                           int head_size);
+int bn_model_arch_attention_uses_per_head_qk_norm(const BnConfig *c);
 int bn_model_arch_uses_per_layer_embedding(const BnConfig *c);
 int bn_model_arch_uses_attention_post_norm(const BnConfig *c);
 int bn_model_arch_uses_ffn_post_norm(const BnConfig *c);
 int bn_model_arch_uses_layer_output_scale(const BnConfig *c);
+int bn_model_arch_has_ffn_gate(const BnConfig *c);
+int bn_model_arch_config_activation(const BnConfig *c);
 int bn_model_arch_uses_reference_hybrid_ssm(const BnConfig *c);
 int bn_model_arch_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_model_arch_uses_hybrid_ssm(const BnConfig *c);

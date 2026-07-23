@@ -4173,6 +4173,11 @@ if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_
     fail=1
 fi
 
+if grep -n 'config->qk_norm_per_head\|config->has_ffn_gate\|config->act_type' src/model_policy.c >/dev/null 2>&1; then
+    echo "model config policy must delegate attention/FFN config semantics to model_arch helpers"
+    fail=1
+fi
+
 if grep -n 'bn_gguf_get_u32(f, key)' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model_arch helpers for arch-prefixed scalar GGUF metadata"
     fail=1

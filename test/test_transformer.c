@@ -3401,6 +3401,17 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_uses_attention_post_norm(&c));
     assert(bn_model_arch_uses_ffn_post_norm(&c));
     assert(bn_model_arch_uses_layer_output_scale(&c));
+    c.qk_norm_per_head = 1;
+    c.head_size = 128;
+    assert(bn_model_arch_attention_uses_per_head_qk_norm(&c));
+    assert(bn_model_arch_attention_qk_norm_stride(&c, c.head_size) == 128);
+    c.qk_norm_per_head = 0;
+    assert(!bn_model_arch_attention_uses_per_head_qk_norm(&c));
+    assert(bn_model_arch_attention_qk_norm_stride(&c, c.head_size) == 0);
+    c.has_ffn_gate = 1;
+    c.act_type = BN_MODEL_ACTIVATION_GELU;
+    assert(bn_model_arch_has_ffn_gate(&c));
+    assert(bn_model_arch_config_activation(&c) == BN_MODEL_ACTIVATION_GELU);
     assert(bn_model_arch_loads_extra_metadata(&c));
     c.per_layer_input_dim = 128;
     assert(bn_model_arch_loads_per_layer_input_weights(&c));

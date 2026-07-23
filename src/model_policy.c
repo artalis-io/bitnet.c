@@ -274,11 +274,11 @@ int bn_model_config_attention_value_shares_key(const BnConfig *config) {
 
 int bn_model_config_attention_qk_norm_stride(const BnConfig *config,
                                              int head_size) {
-    return config && config->qk_norm_per_head ? head_size : 0;
+    return bn_model_arch_attention_qk_norm_stride(config, head_size);
 }
 
 int bn_model_config_attention_uses_per_head_qk_norm(const BnConfig *config) {
-    return config ? config->qk_norm_per_head : 0;
+    return bn_model_arch_attention_uses_per_head_qk_norm(config);
 }
 
 int bn_model_config_uses_attention_post_norm(const BnConfig *config) {
@@ -298,11 +298,11 @@ int bn_model_config_per_layer_embedding_dim(const BnConfig *config) {
 }
 
 int bn_model_config_has_ffn_gate(const BnConfig *config) {
-    return config ? config->has_ffn_gate : 0;
+    return bn_model_arch_has_ffn_gate(config);
 }
 
 int bn_model_config_activation(const BnConfig *config) {
-    return config ? config->act_type : BN_MODEL_ACTIVATION_SILU;
+    return bn_model_arch_config_activation(config);
 }
 
 int bn_model_config_loads_extra_metadata(const BnConfig *config) {
