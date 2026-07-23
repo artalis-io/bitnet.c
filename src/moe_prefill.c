@@ -105,6 +105,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     int K = route_policy.active_experts;
     int n_experts = route_policy.total_experts;
     BnMoEPrefillPolicy prefill_policy = bn_moe_prefill_policy(c);
+    BnMoELoadedSharedExpertPolicy shared_policy =
+        bn_moe_loaded_shared_expert_policy(c, lw);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
 
     BnAllocator a = bn_allocator_default();
@@ -180,7 +182,7 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         route_policy.expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
                     int shared_ok = 1;
-                    if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
+                    if (shared_policy.has_loaded_path) {
                         shared_ok = 0;
                         size_t sz_shd = (size_t)n_tokens * dim * sizeof(float);
                         float *sh_d = (float *)bn_malloc(&a, sz_shd);
@@ -612,9 +614,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
 
     // 6. Shared expert (if present) — batch matmul across all tokens
     if (!used_gpu_shared_batch &&
-        bn_moe_policy_has_loaded_shared_expert(c, lw)) {
+        shared_policy.has_loaded_path) {
         t0 = bn_moe_time_ms();
-        int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
+        int shared_hidden = shared_policy.hidden_dim;
         float *sh_gate = gate_buf;  // reuse (T_max >= 1, shared_hidden <= moe_hidden usually)
         float *sh_up = up_buf;
         float *sh_down = down_buf;

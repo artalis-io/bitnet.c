@@ -104,6 +104,16 @@ int bn_moe_policy_shared_expert_hidden_dim(const BnConfig *c) {
     return bn_model_config_shared_expert_hidden_dim(c);
 }
 
+BnMoELoadedSharedExpertPolicy
+bn_moe_loaded_shared_expert_policy(const BnConfig *c,
+                                   const BnLayerWeights *lw) {
+    BnMoELoadedSharedExpertPolicy policy = {0};
+    policy.has_loaded_path = bn_moe_policy_has_loaded_shared_expert(c, lw);
+    if (policy.has_loaded_path)
+        policy.hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
+    return policy;
+}
+
 int bn_moe_policy_supports_resident_routed_ffn_shape(
     int dim,
     int expert_hidden_dim,

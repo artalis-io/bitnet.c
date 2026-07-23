@@ -56,6 +56,11 @@ typedef struct {
     const BnQWeight *down;
 } BnMoESharedExpertWeights;
 
+typedef struct {
+    int has_loaded_path;
+    int hidden_dim;
+} BnMoELoadedSharedExpertPolicy;
+
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
@@ -98,6 +103,9 @@ int bn_moe_policy_has_loaded_shared_expert_path(const BnConfig *c,
 int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
                                            const BnLayerWeights *lw);
 int bn_moe_policy_shared_expert_hidden_dim(const BnConfig *c);
+BnMoELoadedSharedExpertPolicy
+bn_moe_loaded_shared_expert_policy(const BnConfig *c,
+                                   const BnLayerWeights *lw);
 int bn_moe_policy_supports_resident_routed_ffn_shape(
     int dim,
     int expert_hidden_dim,

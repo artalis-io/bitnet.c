@@ -134,6 +134,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int moe_hidden = route_policy.expert_hidden_dim;
     BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(c);
+    BnMoELoadedSharedExpertPolicy shared_policy =
+        bn_moe_loaded_shared_expert_policy(c, lw);
     int K = route_policy.active_experts;
     uint32_t gateup_flags =
         bn_moe_float_kquant_gateup_fallback_task_flags(c);
@@ -216,7 +218,7 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb_batch[k],  &wgates[k], NULL, gateup_flags };
                 gu_tasks[n_gu++] = (BnMatvecTask){ ms->expert_hb2_batch[k], &wups[k]  , NULL, gateup_flags };
             }
-            if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
+            if (shared_policy.has_loaded_path) {
                 if (bn_moe_policy_can_batch_loaded_shared_gateup(
                         gu_tasks, n_gu, lw)) {
                     n_gu += bn_moe_shared_expert_gateup_tasks(
@@ -617,8 +619,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
     // 5. Shared expert (if present, always resident)
     t0 = bn_moe_time_ms();
-    if (bn_moe_policy_has_loaded_shared_expert(c, lw)) {
-        int shared_hidden = bn_moe_policy_shared_expert_hidden_dim(c);
+    if (shared_policy.has_loaded_path) {
+        int shared_hidden = shared_policy.hidden_dim;
 
         if (!shared_gu_ready) {
             BnMatvecTask shared_gu[2];
