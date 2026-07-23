@@ -2839,6 +2839,11 @@ if grep -n 'n_experts == 2 && K == 2\|n_experts > 2' src/moe_prefill.c >/dev/nul
     fail=1
 fi
 
+if grep -n 'c->act_type' src/moe_prefill.c >/dev/null 2>&1; then
+    echo "src/moe_prefill.c must use model activation policy helpers"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_prefill_min_tokens' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use GPU policy helpers for MoE prefill backend policy"
     fail=1
