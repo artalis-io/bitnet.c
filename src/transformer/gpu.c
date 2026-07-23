@@ -745,7 +745,7 @@ static int gpu_patch_cached_decode_ops(BnGPUOp *ops, int n_ops,
             op->p[2] = (uint32_t)n_kv;
         } else if (bn_gpu_op_code_is_per_head_rmsnorm(op->op_code)) {
             if (op->buf_in == BN_GPU_VALUE_KEY_CACHE &&
-                op->p[0] == (uint32_t)c->head_size && layer_span > 0) {
+                op->p[0] > 0 && layer_span > 0) {
                 uint32_t base = (op->p[3] / layer_span) * layer_span;
                 op->p[3] = base + cache_off;
             }

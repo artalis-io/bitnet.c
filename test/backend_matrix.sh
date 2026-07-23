@@ -4416,8 +4416,9 @@ fi
 
 if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
     src/transformer/prefill.c \
+    src/transformer/gpu.c \
     src/transformer/gpu_fallback.c >/dev/null 2>&1; then
-    echo "Transformer prefill/GPU fallback paths must use layer shape planning for attention dimensions"
+    echo "Transformer prefill/GPU paths must use layer shape planning for attention dimensions"
     fail=1
 fi
 
