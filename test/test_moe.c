@@ -291,6 +291,7 @@ static void test_moe_execution_policy(void) {
     assert(!policy.uses_scaled_router_input);
     assert(policy.uses_dense_residual_branch);
     assert(policy.uses_reference_silu == -1);
+    assert(policy.norm_eps == bn_model_config_norm_epsilon(&c));
     assert(bn_moe_policy_uses_reference_silu(&c) == -1);
 
     policy = bn_moe_execution_policy(NULL);
@@ -299,6 +300,7 @@ static void test_moe_execution_policy(void) {
     assert(policy.uses_reference_silu == -1);
     assert(policy.activation == 0);
     assert(policy.norm_eps == 0.0f);
+    assert(bn_model_config_norm_epsilon(NULL) == 0.0f);
     assert(bn_moe_policy_uses_reference_silu(NULL) == -1);
 
     printf("PASSED\n");

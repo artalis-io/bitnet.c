@@ -2849,6 +2849,11 @@ if grep -n 'c->act_type\|c->norm_eps' src/moe_prefill.c src/moe_execute.c >/dev/
     fail=1
 fi
 
+if grep -n 'c->norm_eps' src/moe_policy.c >/dev/null 2>&1; then
+    echo "MoE execution policy must use model norm policy helpers"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_BACKEND_CUDA\|kind == .*CUDA\|bn_transformer_gpu_cuda_moe_prefill_min_tokens' src/moe_prefill.c >/dev/null 2>&1; then
     echo "src/moe_prefill.c must use GPU policy helpers for MoE prefill backend policy"
     fail=1

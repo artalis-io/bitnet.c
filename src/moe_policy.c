@@ -21,7 +21,7 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
         ? -1
         : bn_model_config_moe_uses_reference_silu(c);
     policy.activation = bn_model_config_activation(c);
-    policy.norm_eps = c->norm_eps;
+    policy.norm_eps = bn_model_config_norm_epsilon(c);
     return policy;
 }
 

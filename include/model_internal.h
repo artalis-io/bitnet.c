@@ -94,6 +94,7 @@ int bn_model_config_uses_small_dense_native_quant_shape(
 int bn_model_config_requires_float_kquant_fallback(const BnConfig *config);
 int bn_model_config_prefill_uses_decode_for_parity(const BnConfig *config);
 int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config);
+float bn_model_config_norm_epsilon(const BnConfig *config);
 int bn_model_config_attention_flash_requested(const BnConfig *config);
 float bn_model_config_attention_scale(const BnConfig *config,
                                       int head_size);

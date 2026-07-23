@@ -255,6 +255,10 @@ int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config) {
     return bn_model_arch_rmsnorm_uses_reference_order(config);
 }
 
+float bn_model_config_norm_epsilon(const BnConfig *config) {
+    return config ? config->norm_eps : 0.0f;
+}
+
 int bn_model_config_attention_flash_requested(const BnConfig *config) {
     return config ? config->flash_attn : 0;
 }
