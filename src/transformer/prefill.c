@@ -2460,6 +2460,9 @@ prefill_ssm_done:
             t_prof = prefill_profile_now(&prof);
             BnGPUBackend *gpu_ffn = bn_model_gpu(m);
             const BnBackendModel *backend_ffn = bn_model_backend(m);
+            BnFFNPlan ffn_plan;
+            bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu_ffn, backend_ffn,
+                                    l, gpu_ffn != NULL);
             int dense_ffn_batch_min_tokens =
                 bn_transformer_prefill_dense_chain_min_tokens(c, gpu_ffn);
             int can_use_dense_ffn_batch =
@@ -2470,7 +2473,7 @@ prefill_ssm_done:
                     backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
             BnTransformerPrefillFFNBatchPolicy ffn_batch_policy =
                 bn_transformer_prefill_ffn_batch_policy(
-                    bn_model_config_has_ffn_gate(c),
+                    ffn_plan.has_gate,
                     can_use_dense_ffn_batch,
                     bn_transformer_prefill_dense_ffn_batch_norm_resid_gpu_available(
                         gpu_ffn),
@@ -2483,8 +2486,8 @@ prefill_ssm_done:
                     lw->norm.ffn_post_norm != NULL);
             if (ffn_batch_policy.fuses_norm_residual &&
                 prefill_dense_ffn_gpu_batch(m, act, lw, act, n_tokens,
-                                            dim, hidden_dim,
-                                            c->act_type, l, ffn_norm_buf,
+                                            dim, ffn_plan.hidden_dim,
+                                            ffn_plan.activation, l, ffn_norm_buf,
                                             c->norm_eps, 1) == 0) {
                 used_gpu_batch_ffn = 1;
                 used_ffn_residual = 1;
@@ -2502,11 +2505,11 @@ prefill_ssm_done:
                 t_prof = prefill_profile_now(&prof);
                 if (ffn_batch_policy.eligible &&
                     prefill_dense_ffn_gpu_batch(m, Xb, lw, Xb, n_tokens,
-                                                dim, hidden_dim,
-                                                c->act_type, l, NULL,
+                                                dim, ffn_plan.hidden_dim,
+                                                ffn_plan.activation, l, NULL,
                                                 0.0f, 0) == 0) {
                     used_gpu_batch_ffn = 1;
-                } else if (bn_model_config_has_ffn_gate(c)) {
+                } else if (ffn_plan.has_gate) {
                     double t_ffn_step = prefill_profile_now(&prof);
                     float *gu_out[2] = { Hb, Hb2 };
                     const BnQWeight *gu_w[2] = {
@@ -2524,8 +2527,8 @@ prefill_ssm_done:
 
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
-                    Hb, Hb2, hidden_dim, c->act_type,
-                    bn_transformer_prefill_uses_reference_activation(c)
+                    Hb, Hb2, ffn_plan.hidden_dim, ffn_plan.activation,
+                    ffn_plan.reference_activation
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens
@@ -2538,8 +2541,8 @@ prefill_ssm_done:
                 prefill_profile_add(&prof.ffn_gateup_ms, t_ffn_step);
                 t_ffn_step = prefill_profile_now(&prof);
                 BnPrefillFFNActCtx act_ctx = {
-                    Hb, NULL, hidden_dim, c->act_type,
-                    bn_transformer_prefill_uses_reference_activation(c)
+                    Hb, NULL, ffn_plan.hidden_dim, ffn_plan.activation,
+                    ffn_plan.reference_activation
                 };
                 BnTPTask act_task = {
                     prefill_cpu_ops()->ffn_activation, &act_ctx, n_tokens

@@ -4301,6 +4301,12 @@ if grep -n 'c->has_ffn_gate\|m->config\.has_ffn_gate' src/transformer/plan.c src
     fail=1
 fi
 
+if awk '/} else if \(lw->ffn\.ffn_up\.data\)/{flag=1} flag{print} /prefill_quant_matmul_gpu\(m, Xb, &lw->ffn\.ffn_down/{flag=0}' \
+    src/transformer/prefill.c | grep -n 'c->act_type\|m->config\.act_type\|bn_model_config_has_ffn_gate(c)' >/dev/null 2>&1; then
+    echo "Transformer dense FFN prefill must compose activation/gate policy through FFN planning"
+    fail=1
+fi
+
 if grep -n 'p->has_shared_expert = .*has_shared_expert.*shared_expert_gate' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer MoE planning must use shared-expert policy helpers"
     fail=1
