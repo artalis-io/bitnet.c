@@ -283,6 +283,10 @@ typedef struct {
     int use_gateup_split;
 } BnTransformerGPUSharedExpertGateupPolicy;
 
+typedef struct {
+    int has_gate_vector;
+} BnTransformerGPUSharedExpertGatePolicy;
+
 int bn_transformer_gpu_validate_forward(
     BnTransformerGPUForwardPolicy *out,
     const BnGPUBackend *gpu,
@@ -556,6 +560,8 @@ int bn_transformer_gpu_shared_expert_path_available(
 int bn_transformer_gpu_shared_expert_gate_available(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared);
+BnTransformerGPUSharedExpertGatePolicy
+bn_transformer_gpu_shared_expert_gate_policy(const BnLayerWeights *lw);
 BnTransformerGPUSharedExpertGateupPolicy
 bn_transformer_gpu_shared_expert_gateup_policy(
     const BnLayerWeights *lw,

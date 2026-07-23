@@ -922,6 +922,9 @@ static void test_gpu_capability_routing(void) {
     assert(!bn_transformer_gpu_shared_expert_gate_available(
         &shared_path_lw, &shared_resources));
     shared_path_lw.shared.shared_expert_gate = (float *)1;
+    BnTransformerGPUSharedExpertGatePolicy shared_gate_policy =
+        bn_transformer_gpu_shared_expert_gate_policy(&shared_path_lw);
+    assert(shared_gate_policy.has_gate_vector);
     assert(!bn_transformer_gpu_shared_expert_gate_available(
         &shared_path_lw, &shared_resources));
     shared_resources.shared_expert_gate = (void *)1;
@@ -935,6 +938,10 @@ static void test_gpu_capability_routing(void) {
         NULL, &shared_resources));
     assert(!bn_transformer_gpu_shared_expert_gate_available(
         &shared_path_lw, NULL));
+    shared_path_lw.shared.shared_expert_gate = NULL;
+    shared_gate_policy =
+        bn_transformer_gpu_shared_expert_gate_policy(&shared_path_lw);
+    assert(!shared_gate_policy.has_gate_vector);
 
     gpu.kind = BN_GPU_BACKEND_METAL;
     assert(bn_transformer_gpu_can_flash_attn(&gpu));

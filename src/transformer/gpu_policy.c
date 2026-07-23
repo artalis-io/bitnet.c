@@ -344,6 +344,13 @@ int bn_transformer_gpu_shared_expert_gate_enabled(int eligible) {
            bn_gpu_policy_shared_expert_gate_enabled();
 }
 
+BnTransformerGPUSharedExpertGatePolicy
+bn_transformer_gpu_shared_expert_gate_policy(const BnLayerWeights *lw) {
+    BnTransformerGPUSharedExpertGatePolicy policy = {0};
+    policy.has_gate_vector = bn_moe_policy_has_shared_expert_gate_vector(lw);
+    return policy;
+}
+
 int bn_transformer_gpu_shared_expert_path_available(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared) {
@@ -357,9 +364,11 @@ int bn_transformer_gpu_shared_expert_path_available(
 int bn_transformer_gpu_shared_expert_gate_available(
     const BnLayerWeights *lw,
     const BnTransformerGPUMoESharedResources *shared) {
+    BnTransformerGPUSharedExpertGatePolicy gate_policy =
+        bn_transformer_gpu_shared_expert_gate_policy(lw);
     return lw &&
            shared &&
-           bn_moe_policy_has_shared_expert_gate_vector(lw) &&
+           gate_policy.has_gate_vector &&
            shared->shared_expert_gate;
 }
 
