@@ -196,6 +196,7 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
         &lw->attn.wq, c->dim, p->q_dim);
     p->qk_stride = bn_transformer_attention_qk_stride(c, p->head_size);
     p->qk_norm_per_head = bn_transformer_attention_uses_per_head_qk_norm(c);
+    p->value_shares_key = bn_transformer_attention_value_shares_key(c);
     p->has_qk_norm = bn_transformer_attention_has_qk_norm(lw);
     p->has_bias = bn_transformer_attention_has_bias(lw);
     p->kv_mode = bn_transformer_kv_mode(c, tq_enabled);

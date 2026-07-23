@@ -78,6 +78,7 @@ typedef struct {
     int kv_mul;
     int qk_stride;
     int qk_norm_per_head;
+    int value_shares_key;
     int has_qk_norm;
     int has_bias;
 } BnLayerShapePlan;

@@ -2057,7 +2057,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                     lw->attn.k_norm + h * qk_stride,
                                     layer_head_size, norm_eps);
                         }
-                        if (bn_transformer_attention_value_shares_key(c))
+                        if (plan.value_shares_key)
                             prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                        layer_head_size, norm_eps);
                         bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
@@ -2202,7 +2202,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 lw->attn.k_norm + h * qk_stride,
                                 layer_head_size, norm_eps);
                     }
-                    if (bn_transformer_attention_value_shares_key(c))
+                    if (plan.value_shares_key)
                         prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
                                                    layer_head_size, norm_eps);
 

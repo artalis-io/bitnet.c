@@ -510,7 +510,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, norm_eps);
-            if (bn_transformer_attention_value_shares_key(c))
+            if (shape->value_shares_key)
                 cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -599,7 +599,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 for (int h = 0; h < n_kv_heads; h++)
                     cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                             lw->attn.k_norm + h*qk_stride, head_size, norm_eps);
-            if (has_kv && bn_transformer_attention_value_shares_key(c))
+            if (has_kv && shape->value_shares_key)
                 cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, norm_eps);
 
             bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -678,7 +678,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, norm_eps);
-                if (bn_transformer_attention_value_shares_key(c))
+                if (shape->value_shares_key)
                     cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -720,7 +720,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm_model(m, k_tmp + h*head_size, k_tmp + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, norm_eps);
-                if (bn_transformer_attention_value_shares_key(c))
+                if (shape->value_shares_key)
                     cpu_rmsnorm_unit_heads(v_tmp, n_kv_heads, head_size, norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
@@ -756,7 +756,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                     for (int h = 0; h < n_kv_heads; h++)
                         cpu_rmsnorm_model(m, key_cache_row + h*head_size, key_cache_row + h*head_size,
                                 lw->attn.k_norm + h*qk_stride, head_size, norm_eps);
-                if (bn_transformer_attention_value_shares_key(c))
+                if (shape->value_shares_key)
                     cpu_rmsnorm_unit_heads(value_cache_row, n_kv_heads, head_size, norm_eps);
 
                 bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,

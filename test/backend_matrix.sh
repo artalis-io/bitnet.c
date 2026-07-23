@@ -4421,6 +4421,11 @@ if grep -n 'bn_transformer_attention_uses_per_head_qk_norm(c)\|bn_transformer_at
     fail=1
 fi
 
+if grep -n 'bn_transformer_attention_value_shares_key(c)' src/transformer/cpu.c src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill attention execution must use planned value-cache sharing policy"
+    fail=1
+fi
+
 if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
     src/transformer/prefill.c \
     src/transformer/gpu.c \

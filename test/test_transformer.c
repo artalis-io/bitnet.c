@@ -3810,6 +3810,7 @@ static void test_layer_shape_planning(void) {
     assert(p.kv_mul == 4);
     assert(p.qk_stride == 128);
     assert(p.qk_norm_per_head == 1);
+    assert(!p.value_shares_key);
     assert(p.has_qk_norm);
     assert(p.has_bias);
     assert(p.kv_mode == BN_KV_FP32);
@@ -3863,6 +3864,10 @@ static void test_layer_shape_planning(void) {
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 1);
     assert(p.qk_stride == 0);
     assert(p.qk_norm_per_head == 0);
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY;
+    bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 1);
+    assert(p.value_shares_key);
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY;
     c.qk_norm_per_head = 1;
     lw.attn.q_norm = NULL;
     lw.attn.k_bias = NULL;
