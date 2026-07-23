@@ -3809,6 +3809,7 @@ static void test_layer_shape_planning(void) {
     assert(p.n_kv_heads == 4);
     assert(p.kv_mul == 4);
     assert(p.qk_stride == 128);
+    assert(p.qk_norm_per_head == 1);
     assert(p.has_qk_norm);
     assert(p.has_bias);
     assert(p.kv_mode == BN_KV_FP32);
@@ -3859,6 +3860,9 @@ static void test_layer_shape_planning(void) {
     assert(bn_transformer_attention_kv_dim(&c, &lw) == 768);
     c.qk_norm_per_head = 0;
     assert(bn_transformer_attention_qk_stride(&c, p.head_size) == 0);
+    bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 1);
+    assert(p.qk_stride == 0);
+    assert(p.qk_norm_per_head == 0);
     c.qk_norm_per_head = 1;
     lw.attn.q_norm = NULL;
     lw.attn.k_bias = NULL;

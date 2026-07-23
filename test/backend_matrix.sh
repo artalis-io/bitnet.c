@@ -4414,6 +4414,12 @@ if grep -n 'c->qk_norm_per_head\|m->config\.qk_norm_per_head' \
     fail=1
 fi
 
+if grep -n 'bn_transformer_attention_uses_per_head_qk_norm(c)' \
+    src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "Transformer GPU emit must use planned Q/K norm layout"
+    fail=1
+fi
+
 if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
     src/transformer/prefill.c \
     src/transformer/gpu.c \

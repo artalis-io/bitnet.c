@@ -1183,6 +1183,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     int n_heads = plan->n_heads;
     int kv_dim = plan->kv_dim;
     int n_kv_heads = plan->n_kv_heads;
+    int qk_norm_per_head = plan->qk_norm_per_head;
 
     int use_packed_qkv = res && res->packed_qkv &&
                          !q_bias && !k_bias && !v_bias &&
@@ -1326,7 +1327,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 if (k_norm) {
                     uint32_t ph_params[8] = {
                         (uint32_t)head_size, u_eps,
-                        (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+                        (uint32_t)qk_norm_per_head,
                         0, 0, 0, 0, 0
                     };
                     emit_context_utility(ctx,
@@ -1359,7 +1360,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
             if (k_norm) {
                 uint32_t ph_params[8] = {
                     (uint32_t)head_size, u_eps,
-                    (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+                    (uint32_t)qk_norm_per_head,
                     0, 0, 0, 0, 0
                 };
                 emit_context_utility(ctx,
@@ -1414,7 +1415,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     if (q_norm) {
         uint32_t ph_params[8] = {
             (uint32_t)head_size, u_eps,
-            (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+            (uint32_t)qk_norm_per_head,
             0, 0, 0, 0, 0
         };
         emit_context_utility(ctx, BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
@@ -1424,7 +1425,7 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     if (k_norm && !k_bias && !kv_cache_write_needs_staging) {
         uint32_t ph_params[8] = {
             (uint32_t)head_size, u_eps,
-            (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+            (uint32_t)qk_norm_per_head,
             kv_cache_off, 0, 0, 0, 0
         };
         emit_context_utility(ctx, BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
