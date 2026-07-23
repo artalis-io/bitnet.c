@@ -706,6 +706,10 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
         return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
+    int use_attn_post_norm =
+        bn_transformer_attention_uses_post_norm_layer(c, lw);
+    int use_ffn_post_norm =
+        bn_transformer_ffn_uses_post_norm_layer(c, lw);
     BnTransformerPrefillSSMMoEChainPolicy policy =
         bn_transformer_prefill_ssm_moe_chain_policy(
             bn_transformer_prefill_ssm_moe_chain_available(
@@ -714,7 +718,7 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
             layer_kind,
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
-            bn_transformer_attention_uses_post_norm(c),
+            use_attn_post_norm || use_ffn_post_norm,
             lw->norm.attn_post_norm != NULL,
             lw->norm.ffn_post_norm != NULL,
             c->ssm_time_step_rank,
@@ -792,6 +796,10 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     int has_packed_qkv =
         bn_transformer_weight_is_packed_qkv(&lw->ssm.wqkv, c->dim,
                                             q_dim, plan->kv_dim);
+    int use_attn_post_norm =
+        bn_transformer_attention_uses_post_norm_layer(c, lw);
+    int use_ffn_post_norm =
+        bn_transformer_ffn_uses_post_norm_layer(c, lw);
     BnTransformerPrefillDenseLayerChainPolicy policy =
         bn_transformer_prefill_dense_layer_chain_policy(
             gpu != NULL,
@@ -811,7 +819,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
             lw->norm.attn_sub_norm != NULL,
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
-            bn_transformer_attention_uses_post_norm(c),
+            use_attn_post_norm || use_ffn_post_norm,
             lw->norm.attn_post_norm != NULL,
             lw->norm.ffn_post_norm != NULL);
     if (!policy.enabled)
@@ -1076,6 +1084,10 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
+    int use_attn_post_norm =
+        bn_transformer_attention_uses_post_norm_layer(c, lw);
+    int use_ffn_post_norm =
+        bn_transformer_ffn_uses_post_norm_layer(c, lw);
     BnTransformerPrefillSSMChainPolicy policy =
         bn_transformer_prefill_ssm_chain_policy(
             bn_transformer_prefill_ssm_dense_chain_available(gpu, c,
@@ -1085,7 +1097,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
             lw->ffn.ffn_up.data != NULL,
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
-            bn_transformer_attention_uses_post_norm(c),
+            use_attn_post_norm || use_ffn_post_norm,
             lw->norm.attn_post_norm != NULL,
             lw->norm.ffn_post_norm != NULL,
             c->ssm_time_step_rank,
@@ -1792,6 +1804,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         BnLayerWeights *lw = &w->layers[l];
         BnLayerShapePlan plan;
         bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
+        BnAttentionPlan attn_plan;
+        bn_transformer_plan_attention(&attn_plan, c, lw, bn_model_gpu(m),
+                                      bn_model_backend(m), l,
+                                      bn_model_tq_state(m) != NULL,
+                                      bn_model_gpu(m) != NULL);
         BnFFNPlan ffn_plan;
         bn_transformer_plan_ffn(&ffn_plan, c, lw, bn_model_gpu(m),
                                 bn_model_backend(m), l,
@@ -1833,7 +1850,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     lw->norm.attn_sub_norm != NULL,
                     lw->norm.ffn_sub_norm != NULL,
                     lw->norm.layer_output_scale != NULL,
-                    bn_transformer_attention_uses_post_norm(c),
+                    attn_plan.use_post_norm || ffn_plan.use_post_norm,
                     lw->norm.attn_post_norm != NULL,
                     lw->norm.ffn_post_norm != NULL);
             if (dense_layer_batch.enabled) {
@@ -1896,7 +1913,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     lw->attn.k_bias != NULL,
                     lw->attn.v_bias != NULL,
                     lw->norm.attn_sub_norm != NULL,
-                    bn_transformer_attention_uses_post_norm(c),
+                    attn_plan.use_post_norm,
                     lw->norm.attn_post_norm != NULL);
             int attn_norm_ready = 0;
             if (!raw_attn_policy.fuses_input_norm) {
@@ -2131,7 +2148,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         n_tokens,
                         bn_transformer_prefill_attention_min_tokens(),
                         lw->norm.attn_sub_norm != NULL,
-                        bn_transformer_attention_uses_post_norm(c),
+                        attn_plan.use_post_norm,
                         lw->norm.attn_post_norm != NULL);
                 if (attn_batch_policy.eligible &&
                     prefill_prepare_q_for_gpu_attention(&bctx) == 0) {
@@ -2272,8 +2289,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                                  Q_buf, n_tokens, s->x_q);
                 }
                 if (!used_fused_attn_wo &&
-                    bn_transformer_attention_uses_post_norm(c) &&
-                    lw->norm.attn_post_norm)
+                    attn_plan.use_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_cpu_ops()->rmsnorm(Xb2 + (size_t)t * dim,
                                                    Xb2 + (size_t)t * dim,
@@ -2521,7 +2537,7 @@ prefill_ssm_done:
                     dense_ffn_batch_min_tokens,
                     sequence_policy.uses_hybrid_layer_layout,
                     lw->norm.ffn_sub_norm != NULL,
-                    bn_transformer_ffn_uses_post_norm(c),
+                    ffn_plan.use_post_norm,
                     lw->norm.ffn_post_norm != NULL);
             if (ffn_batch_policy.fuses_norm_residual &&
                 prefill_dense_ffn_gpu_batch(m, act, lw, act, n_tokens,
@@ -2613,8 +2629,7 @@ prefill_ssm_done:
                 prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb,
                                          n_tokens, s->x_q);
                 prefill_profile_add(&prof.ffn_down_ms, t_ffn_step);
-                if (bn_transformer_ffn_uses_post_norm(c) &&
-                    lw->norm.ffn_post_norm)
+                if (ffn_plan.use_post_norm)
                     for (int t = 0; t < n_tokens; t++)
                         prefill_cpu_ops()->rmsnorm(Xb + (size_t)t * dim,
                                                    Xb + (size_t)t * dim,

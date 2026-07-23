@@ -4436,6 +4436,11 @@ if grep -n 'cpu_attention_post_norm_applies(c' src/transformer/cpu.c >/dev/null 
     fail=1
 fi
 
+if grep -n 'bn_transformer_attention_uses_post_norm(c)\|bn_transformer_ffn_uses_post_norm(c)' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer prefill execution must use planned post-norm policy"
+    fail=1
+fi
+
 if grep -n 'cpu_layer_output_scale_applies(c\|bn_transformer_uses_layer_output_scale(c)' src/transformer/cpu.c src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer CPU/prefill layer tail must use planned layer output scale policy"
     fail=1
