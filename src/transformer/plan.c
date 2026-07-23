@@ -120,13 +120,18 @@ int bn_transformer_attention_requires_cpu_fallback(
     return shape && !shape->is_attn && placement == BN_EXEC_GPU;
 }
 
+int bn_transformer_attention_flash_requested(const BnConfig *c) {
+    return bn_model_config_attention_flash_requested(c);
+}
+
 int bn_transformer_attention_uses_cpu_flash(const BnConfig *c) {
-    return c && c->flash_attn;
+    return bn_transformer_attention_flash_requested(c);
 }
 
 int bn_transformer_attention_uses_flash(const BnConfig *c,
                                         const BnGPUBackend *gpu) {
-    return c && c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);
+    return bn_transformer_attention_flash_requested(c) &&
+           bn_transformer_gpu_can_flash_attn(gpu);
 }
 
 int bn_transformer_attention_uses_packed_qkv(

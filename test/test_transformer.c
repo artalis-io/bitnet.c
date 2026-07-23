@@ -3931,7 +3931,12 @@ static void test_block_planning(void) {
     bn_transformer_plan_layer_shape(&attn_shape, &c, &lw, 0, 0);
     assert(!bn_transformer_attention_requires_cpu_fallback(
         &attn_shape, BN_EXEC_GPU));
+    assert(bn_transformer_attention_flash_requested(&c));
     assert(bn_transformer_attention_uses_flash(&c, &gpu));
+    c.flash_attn = 0;
+    assert(!bn_transformer_attention_flash_requested(&c));
+    assert(!bn_transformer_attention_uses_flash(&c, &gpu));
+    c.flash_attn = 1;
     assert(bn_transformer_attention_uses_packed_qkv(
         &gpu, &attn_shape, &lw, (void *)1, (void *)2, (void *)3, (void *)4));
     assert(bn_transformer_attention_uses_qkv_split(

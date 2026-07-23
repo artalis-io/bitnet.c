@@ -255,6 +255,10 @@ int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config) {
     return bn_model_arch_rmsnorm_uses_reference_order(config);
 }
 
+int bn_model_config_attention_flash_requested(const BnConfig *config) {
+    return config ? config->flash_attn : 0;
+}
+
 float bn_model_config_attention_scale(const BnConfig *config,
                                       int head_size) {
     return bn_model_arch_attention_scale(config, head_size);
