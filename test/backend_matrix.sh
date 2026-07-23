@@ -4436,6 +4436,11 @@ if grep -n 'cpu_attention_post_norm_applies(c' src/transformer/cpu.c >/dev/null 
     fail=1
 fi
 
+if grep -n 'cpu_layer_output_scale_applies(c\|bn_transformer_uses_layer_output_scale(c)' src/transformer/cpu.c src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill layer tail must use planned layer output scale policy"
+    fail=1
+fi
+
 if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
     src/transformer/prefill.c \
     src/transformer/gpu.c \

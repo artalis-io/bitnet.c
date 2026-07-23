@@ -1792,6 +1792,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         BnLayerWeights *lw = &w->layers[l];
         BnLayerShapePlan plan;
         bn_transformer_plan_layer_shape(&plan, c, lw, l, bn_model_tq_state(m) != NULL);
+        BnFFNPlan ffn_plan;
+        bn_transformer_plan_ffn(&ffn_plan, c, lw, bn_model_gpu(m),
+                                bn_model_backend(m), l,
+                                bn_model_gpu(m) != NULL);
         int is_attn = plan.is_attn;
 
         if (is_attn && lw->attn.wq.data) {
@@ -2498,9 +2502,6 @@ prefill_ssm_done:
             t_prof = prefill_profile_now(&prof);
             BnGPUBackend *gpu_ffn = bn_model_gpu(m);
             const BnBackendModel *backend_ffn = bn_model_backend(m);
-            BnFFNPlan ffn_plan;
-            bn_transformer_plan_ffn(&ffn_plan, c, lw, gpu_ffn, backend_ffn,
-                                    l, gpu_ffn != NULL);
             int dense_ffn_batch_min_tokens =
                 bn_transformer_prefill_dense_chain_min_tokens(c, gpu_ffn);
             int can_use_dense_ffn_batch =
@@ -2632,7 +2633,7 @@ prefill_ssm_done:
             prefill_profile_add(&prof.residual_ms, t_prof);
         }
 
-        if (bn_transformer_uses_layer_output_scale(c) && lw->norm.layer_output_scale) {
+        if (ffn_plan.use_layer_output_scale) {
             float scale = lw->norm.layer_output_scale[0];
             for (int t = 0; t < n_tokens; t++)
                 for (int d = 0; d < dim; d++)

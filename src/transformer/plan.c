@@ -262,6 +262,15 @@ int bn_transformer_uses_layer_output_scale(
     return bn_model_config_uses_layer_output_scale(c);
 }
 
+int bn_transformer_uses_layer_output_scale_layer(const BnConfig *c,
+                                                 const BnLayerWeights *lw) {
+    BnTransformerCPULayerOutputScalePolicy policy =
+        bn_transformer_cpu_layer_output_scale_policy(
+            bn_transformer_uses_layer_output_scale(c),
+            lw && lw->norm.layer_output_scale);
+    return policy.apply;
+}
+
 BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
                                   const BnLayerWeights *lw) {
     if (lw && lw->ffn_kind == BN_LAYER_FFN_MOE)
@@ -581,6 +590,8 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->has_gate = bn_transformer_ffn_has_gate(c);
     p->has_sub_norm = bn_transformer_ffn_has_sub_norm(lw);
     p->use_post_norm = bn_transformer_ffn_uses_post_norm_layer(c, lw);
+    p->use_layer_output_scale =
+        bn_transformer_uses_layer_output_scale_layer(c, lw);
     p->reference_activation =
         bn_transformer_ffn_uses_reference_activation(c);
 

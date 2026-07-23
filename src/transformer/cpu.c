@@ -118,15 +118,6 @@ static const BnCPUBackendOps *cpu_backend_ops(void) {
     return bn_transformer_cpu_backend_ops();
 }
 
-static int cpu_layer_output_scale_applies(const BnConfig *c,
-                                          const float *layer_output_scale) {
-    BnTransformerCPULayerOutputScalePolicy policy =
-        bn_transformer_cpu_layer_output_scale_policy(
-            bn_transformer_uses_layer_output_scale(c),
-            layer_output_scale != NULL);
-    return policy.apply;
-}
-
 static void cpu_rmsnorm_reference_order(float *out, const float *x,
                                         const float *w, int size, float eps) {
     double ss = 0.0;
@@ -803,7 +794,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
     cpu_apply_per_layer_input_projection(m, sess, lw, l);
 
-    if (cpu_layer_output_scale_applies(c, lw->norm.layer_output_scale)) {
+    if (ffn_plan.use_layer_output_scale) {
         float scale = lw->norm.layer_output_scale[0];
         for (int i = 0; i < dim; i++)
             s->x[i] *= scale;

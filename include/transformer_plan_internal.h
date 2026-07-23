@@ -105,6 +105,7 @@ typedef struct {
     int has_gate;
     int has_sub_norm;
     int use_post_norm;
+    int use_layer_output_scale;
     int reference_activation;
     int use_fused_gateup_silu;
     int use_gateup_split;
@@ -322,6 +323,8 @@ int bn_transformer_ffn_uses_post_norm(
     const BnConfig *c);
 int bn_transformer_uses_layer_output_scale(
     const BnConfig *c);
+int bn_transformer_uses_layer_output_scale_layer(const BnConfig *c,
+                                                 const BnLayerWeights *lw);
 BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
                                   const BnLayerWeights *lw);
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
