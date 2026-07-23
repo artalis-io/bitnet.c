@@ -7,6 +7,7 @@
 #include "transformer_kv_internal.h"
 #include "transformer_plan_internal.h"
 #include "transformer_rmsnorm_internal.h"
+#include "model_internal.h"
 #include "moe.h"
 #include "platform.h"
 
@@ -201,7 +202,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
     float *value_cache_row =
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
+    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, bn_model_config_norm_epsilon(c));
     {
         BnMatvecTask qkv[3] = {
             { s->q, &lw->attn.wq, NULL, 0 },
@@ -226,14 +227,14 @@ int bn_transformer_gpu_fallback_cpu_attention(
             fallback_rmsnorm(s->q + (size_t)h * head_size,
                              s->q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * shape.qk_stride,
-                             head_size, c->norm_eps);
+                             head_size, bn_model_config_norm_epsilon(c));
     }
     if (lw->attn.k_norm) {
         for (int h = 0; h < n_kv_heads; h++)
             fallback_rmsnorm(key_cache_row + (size_t)h * head_size,
                              key_cache_row + (size_t)h * head_size,
                              lw->attn.k_norm + (size_t)h * shape.qk_stride,
-                             head_size, c->norm_eps);
+                             head_size, bn_model_config_norm_epsilon(c));
     }
 
     bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
@@ -292,12 +293,12 @@ static void fallback_cpu_forward_ffn_from_xb(BnModel *m,
     bn_transformer_cpu_apply_ffn_activation(s, ffn_plan, hidden_dim, 0);
     if (ffn_plan->has_sub_norm)
         fallback_rmsnorm(s->hb, s->hb, lw->norm.ffn_sub_norm,
-                         hidden_dim, m->config.norm_eps);
+                         hidden_dim, bn_model_config_norm_epsilon(&m->config));
     fallback_cpu_matvec(m, s->xb, &lw->ffn.ffn_down, s->hb, s->x_q);
     if (bn_transformer_ffn_uses_post_norm(&m->config) &&
         lw->norm.ffn_post_norm)
         fallback_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm,
-                         dim, m->config.norm_eps);
+                         dim, bn_model_config_norm_epsilon(&m->config));
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);
 }
 
@@ -621,7 +622,7 @@ int bn_transformer_gpu_debug_compare_ffn_state(
     fallback_cpu_forward_ffn_from_xb(m, sess, lw, ffn_plan, dim);
     memcpy(cpu_x, s->x, (size_t)dim * sizeof(float));
     if (next_norm)
-        fallback_rmsnorm(cpu_xb, cpu_x, next_norm, dim, m->config.norm_eps);
+        fallback_rmsnorm(cpu_xb, cpu_x, next_norm, dim, bn_model_config_norm_epsilon(&m->config));
 
     if ((hidden_dim > 0 &&
          bn_transformer_gpu_read_activation_buf(
@@ -734,7 +735,7 @@ int bn_transformer_gpu_debug_compare_attention(
     float *value_cache_row =
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
+    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, bn_model_config_norm_epsilon(c));
     fallback_cpu_matvec(m, s->q, &lw->attn.wq, s->xb, s->x_q);
     fallback_cpu_matvec(m, key_cache_row, &lw->attn.wk, s->xb, s->x_q);
     fallback_cpu_matvec(m, value_cache_row, &lw->attn.wv, s->xb, s->x_q);
@@ -754,14 +755,14 @@ int bn_transformer_gpu_debug_compare_attention(
             fallback_rmsnorm(s->q + (size_t)h * head_size,
                              s->q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * shape.qk_stride,
-                             head_size, c->norm_eps);
+                             head_size, bn_model_config_norm_epsilon(c));
     }
     if (lw->attn.k_norm) {
         for (int h = 0; h < n_kv_heads; h++)
             fallback_rmsnorm(key_cache_row + (size_t)h * head_size,
                              key_cache_row + (size_t)h * head_size,
                              lw->attn.k_norm + (size_t)h * shape.qk_stride,
-                             head_size, c->norm_eps);
+                             head_size, bn_model_config_norm_epsilon(c));
     }
 
     bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
@@ -871,7 +872,7 @@ int bn_transformer_gpu_debug_compare_gqa(
     float *value_cache_row =
         s->value_cache + loff + (size_t)cache_pos * c->kv_dim;
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, c->norm_eps);
+    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, bn_model_config_norm_epsilon(c));
     fallback_cpu_matvec(m, s->q, &lw->attn.wq, s->xb, s->x_q);
     fallback_cpu_matvec(m, key_cache_row, &lw->attn.wk, s->xb, s->x_q);
     fallback_cpu_matvec(m, value_cache_row, &lw->attn.wv, s->xb, s->x_q);
@@ -952,7 +953,7 @@ int bn_transformer_gpu_debug_compare_qkv(
         return -1;
     }
 
-    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, m->config.norm_eps);
+    fallback_rmsnorm(s->xb, s->x, lw->norm.attn_norm, dim, bn_model_config_norm_epsilon(&m->config));
     debug_compare_vec("attn_norm_compare", layer, pos, s->xb, gpu_xb, dim);
     debug_compare_native_quant_activation(gpu, layer, pos, s->xb, dim);
     debug_quant_matvec_prepared(m, cpu_q, &lw->attn.wq, s->xb, s->x_q);
@@ -975,7 +976,7 @@ int bn_transformer_gpu_debug_compare_qkv(
             fallback_rmsnorm(cpu_q + (size_t)h * head_size,
                              cpu_q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * qk_stride,
-                             head_size, m->config.norm_eps);
+                             head_size, bn_model_config_norm_epsilon(&m->config));
     }
     if (lw->attn.k_norm) {
         int head_size = m->config.head_size;
@@ -985,7 +986,7 @@ int bn_transformer_gpu_debug_compare_qkv(
             fallback_rmsnorm(cpu_k + (size_t)h * head_size,
                              cpu_k + (size_t)h * head_size,
                              lw->attn.k_norm + (size_t)h * qk_stride,
-                             head_size, m->config.norm_eps);
+                             head_size, bn_model_config_norm_epsilon(&m->config));
     }
     if (lw->attn.k_bias) {
         int head_size = m->config.head_size;
