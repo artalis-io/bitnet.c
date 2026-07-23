@@ -411,6 +411,46 @@ int bn_model_arch_uses_more_than_two_expert_moe(const BnConfig *c) {
     return c && c->n_experts > 2;
 }
 
+int bn_model_arch_moe_total_experts(const BnConfig *c) {
+    return c ? c->n_experts : 0;
+}
+
+int bn_model_arch_moe_active_experts(const BnConfig *c) {
+    return c ? c->n_experts_active : 0;
+}
+
+int bn_model_arch_moe_expert_hidden_dim(const BnConfig *c) {
+    return c ? c->moe_intermediate_size : 0;
+}
+
+int bn_model_arch_moe_route_shape_valid(const BnConfig *c) {
+    return bn_model_arch_moe_active_experts(c) > 0 &&
+           bn_model_arch_moe_expert_hidden_dim(c) > 0;
+}
+
+int bn_model_arch_moe_normalizes_topk_route_weights(const BnConfig *c) {
+    return c ? c->moe_norm_topk_prob : 0;
+}
+
+float bn_model_arch_moe_expert_weights_scale(const BnConfig *c) {
+    return c ? c->moe_expert_weights_scale : 0.0f;
+}
+
+int bn_model_arch_moe_uses_reference_silu(const BnConfig *c) {
+    return c ? c->moe_uses_reference_silu : -1;
+}
+
+int bn_model_arch_config_has_shared_expert(const BnConfig *c) {
+    return c ? c->has_shared_expert : 0;
+}
+
+int bn_model_arch_shared_expert_hidden_dim(const BnConfig *c) {
+    if (!bn_model_arch_config_has_shared_expert(c) ||
+        c->shared_expert_intermediate_size <= 0)
+        return 0;
+    return c->shared_expert_intermediate_size;
+}
+
 int bn_model_arch_moe_prefill_requires_matvec(const BnConfig *c) {
     return bn_model_arch_uses_two_expert_all_active_moe(c) &&
            c->has_shared_expert;

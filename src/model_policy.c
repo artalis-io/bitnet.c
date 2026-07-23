@@ -145,44 +145,40 @@ int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config) {
 }
 
 int bn_model_config_moe_total_experts(const BnConfig *config) {
-    return config ? config->n_experts : 0;
+    return bn_model_arch_moe_total_experts(config);
 }
 
 int bn_model_config_moe_active_experts(const BnConfig *config) {
-    return config ? config->n_experts_active : 0;
+    return bn_model_arch_moe_active_experts(config);
 }
 
 int bn_model_config_moe_expert_hidden_dim(const BnConfig *config) {
-    return config ? config->moe_intermediate_size : 0;
+    return bn_model_arch_moe_expert_hidden_dim(config);
 }
 
 int bn_model_config_moe_route_shape_valid(const BnConfig *config) {
-    return bn_model_config_moe_active_experts(config) > 0 &&
-           bn_model_config_moe_expert_hidden_dim(config) > 0;
+    return bn_model_arch_moe_route_shape_valid(config);
 }
 
 int bn_model_config_moe_normalizes_topk_route_weights(
     const BnConfig *config) {
-    return config ? config->moe_norm_topk_prob : 0;
+    return bn_model_arch_moe_normalizes_topk_route_weights(config);
 }
 
 float bn_model_config_moe_expert_weights_scale(const BnConfig *config) {
-    return config ? config->moe_expert_weights_scale : 0.0f;
+    return bn_model_arch_moe_expert_weights_scale(config);
 }
 
 int bn_model_config_moe_uses_reference_silu(const BnConfig *config) {
-    return config ? config->moe_uses_reference_silu : -1;
+    return bn_model_arch_moe_uses_reference_silu(config);
 }
 
 int bn_model_config_has_shared_expert(const BnConfig *config) {
-    return config ? config->has_shared_expert : 0;
+    return bn_model_arch_config_has_shared_expert(config);
 }
 
 int bn_model_config_shared_expert_hidden_dim(const BnConfig *config) {
-    if (!bn_model_config_has_shared_expert(config) ||
-        config->shared_expert_intermediate_size <= 0)
-        return 0;
-    return config->shared_expert_intermediate_size;
+    return bn_model_arch_shared_expert_hidden_dim(config);
 }
 
 int bn_model_config_moe_requires_float_kquant_gateup_fallback(

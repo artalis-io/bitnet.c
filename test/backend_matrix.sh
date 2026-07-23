@@ -229,6 +229,11 @@ if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts' \
     fail=1
 fi
 
+if grep -n 'config->n_experts\|config->n_experts_active\|config->moe_intermediate_size\|config->moe_norm_topk_prob\|config->moe_expert_weights_scale\|config->moe_uses_reference_silu\|config->has_shared_expert\|config->shared_expert_intermediate_size' src/model_policy.c >/dev/null 2>&1; then
+    echo "model config policy must delegate MoE config semantics to model_arch helpers"
+    fail=1
+fi
+
 if sed -n '/int small_state_native_matvec =/,/bn_gpu_policy_cuda_symmetric_kquant_pair_matvec_enabled/p' src/gpu_cuda.cu | grep -n 'op->type == BN_GGUF_TENSOR_Q8_0\|op->type == BN_GGUF_TENSOR_Q3_K\|op->type == BN_GGUF_TENSOR_IQ3_XXS\|op->type == BN_GGUF_TENSOR_IQ4_XS\|op->type == BN_GGUF_TENSOR_Q5_K\|op->type == BN_GGUF_TENSOR_Q6_K' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu must use backend quant helpers for CUDA f16/logits matvec quant predicates"
     fail=1

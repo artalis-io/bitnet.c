@@ -156,6 +156,15 @@ int bn_model_arch_uses_non_hybrid_moe(const BnConfig *c);
 int bn_model_arch_uses_hybrid_moe(const BnConfig *c);
 int bn_model_arch_uses_two_expert_all_active_moe(const BnConfig *c);
 int bn_model_arch_uses_more_than_two_expert_moe(const BnConfig *c);
+int bn_model_arch_moe_total_experts(const BnConfig *c);
+int bn_model_arch_moe_active_experts(const BnConfig *c);
+int bn_model_arch_moe_expert_hidden_dim(const BnConfig *c);
+int bn_model_arch_moe_route_shape_valid(const BnConfig *c);
+int bn_model_arch_moe_normalizes_topk_route_weights(const BnConfig *c);
+float bn_model_arch_moe_expert_weights_scale(const BnConfig *c);
+int bn_model_arch_moe_uses_reference_silu(const BnConfig *c);
+int bn_model_arch_config_has_shared_expert(const BnConfig *c);
+int bn_model_arch_shared_expert_hidden_dim(const BnConfig *c);
 int bn_model_arch_moe_prefill_requires_matvec(const BnConfig *c);
 int bn_model_arch_uses_all_active_two_expert_moe(const BnConfig *c,
                                                  int dim);
