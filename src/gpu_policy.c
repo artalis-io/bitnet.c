@@ -706,12 +706,9 @@ static int gpu_policy_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
     int down_type) {
-    return bn_backend_quant_moe_route_asymmetric_kquant_down(gate_type,
-                                                             up_type,
-                                                             down_type,
-                                                             1) ||
-           bn_backend_quant_moe_route_native_quant(gate_type, up_type,
-                                                   down_type);
+    return bn_backend_quant_moe_resident_routed_ffn_supported(gate_type,
+                                                              up_type,
+                                                              down_type);
 }
 
 int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(

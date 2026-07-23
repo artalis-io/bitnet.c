@@ -556,6 +556,11 @@ if grep -n 'bn_backend_quant_moe_route_q4_down\|bn_backend_quant_moe_routed_q4' 
     fail=1
 fi
 
+if grep -n 'bn_backend_quant_moe_route_asymmetric_kquant_down\|bn_backend_quant_moe_route_native_quant' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "GPU policy resident routed FFN eligibility must compose backend quant behavior helpers"
+    fail=1
+fi
+
 if awk '/^static inline int bn_backend_quant_moe_all_active_two_kquant_shape/{flag=1} /^static inline int bn_backend_quant_supports_kquant_logits_refine/{flag=0} flag{print}' include/backend_quant.h | grep -n 'n_experts == 2 && k == 2' >/dev/null 2>&1; then
     echo "Backend quant all-active-two K-quant shape helpers must use route-shape behavior helpers"
     fail=1

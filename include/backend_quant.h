@@ -328,6 +328,16 @@ static inline int bn_backend_quant_moe_routed_native_quant(int gate_type,
                                                    down_type);
 }
 
+static inline int bn_backend_quant_moe_resident_routed_ffn_supported(
+    int gate_type,
+    int up_type,
+    int down_type) {
+    return bn_backend_quant_moe_routed_asymmetric_kquant(gate_type, up_type,
+                                                         down_type) ||
+           bn_backend_quant_moe_routed_native_quant(gate_type, up_type,
+                                                    down_type);
+}
+
 static inline int bn_backend_quant_moe_routed_op_uses_native_quant(int type) {
     return bn_backend_quant_uses_native_quant(type);
 }

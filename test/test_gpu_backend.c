@@ -564,6 +564,12 @@ static void test_gpu_policy_helpers(void) {
     setenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN", "1", 1);
     assert(!bn_gpu_policy_moe_resident_routed_ffn_enabled(1));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTED_FFN");
+    assert(bn_backend_quant_moe_resident_routed_ffn_supported(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K));
+    assert(bn_backend_quant_moe_resident_routed_ffn_supported(
+        BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0));
+    assert(!bn_backend_quant_moe_resident_routed_ffn_supported(
+        BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32));
     assert(bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K));
     assert(bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
