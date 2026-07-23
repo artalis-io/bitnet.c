@@ -1132,6 +1132,11 @@ if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/gpu_fallback.c >/d
     fail=1
 fi
 
+if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer prefill execution must use model norm policy helpers"
+    fail=1
+fi
+
 if grep -n 'kv_tq_bits\|kv_f16' src/transformer/cpu.c >/dev/null 2>&1; then
     echo "src/transformer/cpu.c must use planned KV mode policy helpers instead of raw KV config checks"
     fail=1

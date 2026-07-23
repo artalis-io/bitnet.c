@@ -542,7 +542,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         lw->attn.wo.type, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
         lw->ffn.ffn_down.type, activation,
         bn_transformer_attention_uses_per_head_qk_norm(&m->config),
-        m->config.norm_eps, pos0, rope_dims,
+        bn_model_config_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
 }
 
@@ -635,7 +635,7 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         shared.hidden_dim, shared.gate_type, shared.up_type,
         shared.down_type,
         bn_transformer_attention_uses_per_head_qk_norm(&m->config),
-        m->config.norm_eps, pos0, rope_dims,
+        bn_model_config_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride,
         attention_scale, route_policy.norm_topk_prob,
         route_policy.expert_weights_scale);
@@ -688,7 +688,7 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
         lw->moe.expert_map.down_type, activation,
         shared.hidden_dim, shared.gate_type, shared.up_type,
-        shared.down_type, c->norm_eps, route_policy.norm_topk_prob,
+        shared.down_type, bn_model_config_norm_epsilon(c), route_policy.norm_topk_prob,
         route_policy.expert_weights_scale);
 }
 
@@ -1393,6 +1393,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     BnRunState *s = &sess->state;
     int dim = c->dim;
     int head_size = c->head_size;
+    float norm_eps = bn_model_config_norm_epsilon(c);
     BnPrefillProfile prof = {0};
     prof.enabled = bn_transformer_prefill_profile_enabled();
     double t_prof = prefill_profile_now(&prof);
@@ -1741,7 +1742,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             m, ssm_out, lw, layer_in, n_tokens, dim,
                             qkv_dim_ssm, value_dim, num_k_heads,
                             head_k_dim, num_v_heads, head_v_dim, kern_ssm,
-                            plan.ssm_idx, l, !r_is_moe, c->norm_eps,
+                            plan.ssm_idx, l, !r_is_moe, norm_eps,
                             &ssm_did_ffn) != 0 || (!r_is_moe && !ssm_did_ffn)) {
                         sh_arena_free(pf_arena);
                         return NULL;
@@ -1871,7 +1872,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     prefill_cpu_ops()->rmsnorm(Xb + t * dim,
                                                act + (size_t)t * dim,
                                                lw->norm.attn_norm, dim,
-                                               c->norm_eps);
+                                               norm_eps);
                 prefill_profile_add(&prof.attn_norm_ms, t_prof);
                 attn_norm_ready = 1;
             }
@@ -1908,7 +1909,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->attn.wv.type, lw->attn.wo.rows,
                         lw->attn.wo.cols, lw->attn.wo.type,
                         bn_transformer_attention_uses_per_head_qk_norm(c),
-                        c->norm_eps, pos0,
+                        norm_eps, pos0,
                         layer_rope_dims,
                         prefill_attention_scale(c, layer_head_size));
                     if (qkv_fused_rc == 0)
@@ -1918,7 +1919,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         for (int t = 0; t < n_tokens; t++)
                             prefill_cpu_ops()->rmsnorm(
                                 Xb + t * dim, act + (size_t)t * dim,
-                                lw->norm.attn_norm, dim, c->norm_eps);
+                                lw->norm.attn_norm, dim, norm_eps);
                         prefill_profile_add(&prof.attn_norm_ms, t_prof);
                         attn_norm_ready = 1;
                         t_prof = prefill_profile_now(&prof);
@@ -1936,7 +1937,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->attn.wv.type, lw->attn.wo.rows,
                         lw->attn.wo.cols, lw->attn.wo.type,
                         bn_transformer_attention_uses_per_head_qk_norm(c),
-                        c->norm_eps, pos0,
+                        norm_eps, pos0,
                         layer_rope_dims,
                         prefill_attention_scale(c, layer_head_size));
                 }
@@ -1953,7 +1954,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_cpu_ops()->rmsnorm(Xb + t * dim,
                                                    act + (size_t)t * dim,
                                                    lw->norm.attn_norm, dim,
-                                                   c->norm_eps);
+                                                   norm_eps);
                     prefill_profile_add(&prof.attn_norm_ms, t_prof);
                     attn_norm_ready = 1;
                 }
@@ -2027,11 +2028,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                     k_t + h * layer_head_size,
                                     k_t + h * layer_head_size,
                                     lw->attn.k_norm + h * qk_stride,
-                                    layer_head_size, c->norm_eps);
+                                    layer_head_size, norm_eps);
                         }
                         if (bn_transformer_attention_value_shares_key(c))
                             prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
-                                                       layer_head_size, c->norm_eps);
+                                                       layer_head_size, norm_eps);
                         bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
                                                             layer_head_size,
                                                             layer_rope_dims, rc, rs);
@@ -2078,7 +2079,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .v_bias = lw->attn.v_bias,
                     .qk_norm_per_head =
                         bn_transformer_attention_uses_per_head_qk_norm(c),
-                    .norm_eps = c->norm_eps,
+                    .norm_eps = norm_eps,
                     .q_gated = q_gated,
                     .wq_rows = lw->attn.wq.rows,
                     .q_row_stride = q_read_stride,
@@ -2166,7 +2167,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 s->q + h * layer_head_size,
                                 s->q + h * layer_head_size,
                                 lw->attn.q_norm + h * qk_stride,
-                                layer_head_size, c->norm_eps);
+                                layer_head_size, norm_eps);
                     }
                     if (lw->attn.k_norm) {
                         int qk_stride =
@@ -2177,11 +2178,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 k_t + h * layer_head_size,
                                 k_t + h * layer_head_size,
                                 lw->attn.k_norm + h * qk_stride,
-                                layer_head_size, c->norm_eps);
+                                layer_head_size, norm_eps);
                     }
                     if (bn_transformer_attention_value_shares_key(c))
                         prefill_rmsnorm_unit_heads(v_t, layer_n_kv_heads,
-                                                   layer_head_size, c->norm_eps);
+                                                   layer_head_size, norm_eps);
 
                     if (lw->attn.q_bias) for (int i = 0; i < layer_q_dim; i++) s->q[i] += lw->attn.q_bias[i];
                     if (lw->attn.k_bias) for (int i = 0; i < layer_kv_dim; i++) k_t[i] += lw->attn.k_bias[i];
@@ -2233,7 +2234,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_cpu_ops()->rmsnorm(
                             Q_buf + (size_t)t * wo_cols,
                             Q_buf + (size_t)t * wo_cols,
-                            lw->norm.attn_sub_norm, wo_cols, c->norm_eps);
+                            lw->norm.attn_sub_norm, wo_cols, norm_eps);
                 if (!used_fused_attn_wo) {
                     void *wo_buf = prefill_backend_role_or_qweight(
                         backend, l, BN_BACKEND_HANDLE_WO_PREFILL,
@@ -2251,7 +2252,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         prefill_cpu_ops()->rmsnorm(Xb2 + (size_t)t * dim,
                                                    Xb2 + (size_t)t * dim,
                                                    lw->norm.attn_post_norm,
-                                                   dim, c->norm_eps);
+                                                   dim, norm_eps);
                 prefill_profile_add(&prof.wo_ms, t_prof);
             }
 
@@ -2311,7 +2312,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 qkv_dim_ssm, value_dim, num_k_heads,
                                 head_k_dim, num_v_heads, head_v_dim,
                                 kern_ssm, rplan.ssm_idx, rl, !r_is_moe,
-                                c->norm_eps, &r_did_ffn) != 0 ||
+                                norm_eps, &r_did_ffn) != 0 ||
                             (!r_is_moe && !r_did_ffn)) {
                             sh_arena_free(pf_arena);
                             return NULL;
@@ -2345,7 +2346,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       n_tokens >=
                                           bn_transformer_prefill_moe_chain_min_tokens(
                                               c, bn_model_gpu(m)),
-                                      c->norm_eps, &ssm_did_ffn) == 0) {
+                                      norm_eps, &ssm_did_ffn) == 0) {
                 if (ssm_did_ffn)
                     goto prefill_layer_done;
                 goto prefill_ssm_done;
@@ -2355,7 +2356,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 prefill_cpu_ops()->rmsnorm(Xb + (size_t)t * dim,
                                            act + (size_t)t * dim,
                                            lw->norm.attn_norm, dim,
-                                           c->norm_eps);
+                                           norm_eps);
 
             if (q_buf_stride < qkv_dim_ssm) { sh_arena_free(pf_arena); return NULL; }
             float *QKV_all = Q_buf;
@@ -2401,7 +2402,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 float *k_raw = qkv_t + key_dim_ssm;
                 float *v_raw = qkv_t + 2 * key_dim_ssm;
 
-                BnSSML2NormCtx norm_ctx = { q_raw, k_raw, c->norm_eps, head_k_dim };
+                BnSSML2NormCtx norm_ctx = { q_raw, k_raw, norm_eps, head_k_dim };
                 BnTPTask norm_task = {
                     bn_transformer_prefill_ssm_l2norm_op(c, ssm_cpu_ops),
                     &norm_ctx, num_k_heads
@@ -2445,7 +2446,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
-                                          c->norm_eps, head_v_dim };
+                                          norm_eps, head_v_dim };
                 BnTPTask gate_task = {
                     bn_transformer_prefill_ssm_gate_op(c, ssm_cpu_ops),
                     &gate_ctx, num_v_heads
@@ -2503,7 +2504,7 @@ prefill_ssm_done:
                 prefill_dense_ffn_gpu_batch(m, act, lw, act, n_tokens,
                                             dim, ffn_plan.hidden_dim,
                                             ffn_plan.activation, l, ffn_norm_buf,
-                                            c->norm_eps, 1) == 0) {
+                                            norm_eps, 1) == 0) {
                 used_gpu_batch_ffn = 1;
                 used_ffn_residual = 1;
             }
@@ -2514,7 +2515,7 @@ prefill_ssm_done:
                     prefill_cpu_ops()->rmsnorm(Xb + t * dim,
                                                act + (size_t)t * dim,
                                                lw->norm.ffn_norm, dim,
-                                               c->norm_eps);
+                                               norm_eps);
                 prefill_profile_add(&prof.ffn_norm_ms, t_prof);
 
                 t_prof = prefill_profile_now(&prof);
@@ -2583,7 +2584,7 @@ prefill_ssm_done:
                         prefill_cpu_ops()->rmsnorm(
                             Hb + (size_t)t * hidden_dim,
                             Hb + (size_t)t * hidden_dim,
-                            lw->norm.ffn_sub_norm, hidden_dim, c->norm_eps);
+                            lw->norm.ffn_sub_norm, hidden_dim, norm_eps);
 
                 double t_ffn_step = prefill_profile_now(&prof);
                 prefill_quant_matmul_gpu(m, Xb, &lw->ffn.ffn_down, Hb,
@@ -2595,7 +2596,7 @@ prefill_ssm_done:
                         prefill_cpu_ops()->rmsnorm(Xb + (size_t)t * dim,
                                                    Xb + (size_t)t * dim,
                                                    lw->norm.ffn_post_norm,
-                                                   dim, c->norm_eps);
+                                                   dim, norm_eps);
             }
             prefill_profile_add(&prof.ffn_ms, t_prof);
 
