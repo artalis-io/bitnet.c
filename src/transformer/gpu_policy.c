@@ -439,7 +439,7 @@ BnTransformerGPUMoEGateupSplitLayoutPolicy
 bn_transformer_gpu_moe_gateup_split_layout_policy(
     const BnMoEExpertMap *map) {
     BnTransformerGPUMoEGateupSplitLayoutPolicy policy = {0};
-    policy.supported = bn_moe_policy_supports_gateup_split_layout(map);
+    policy.supported = bn_transformer_moe_supports_gateup_split_layout(map);
     return policy;
 }
 
@@ -2685,7 +2685,7 @@ int bn_transformer_gpu_moe_shared_cpu_fallback_enabled(int eligible) {
 int bn_transformer_gpu_moe_has_loaded_shared_expert(
     const BnConfig *c,
     const BnLayerWeights *lw) {
-    return bn_moe_policy_has_loaded_shared_expert_path(c, lw);
+    return bn_transformer_moe_has_loaded_shared_expert_path(c, lw);
 }
 
 BnTransformerGPUMoESharedCPUFallbackPolicy

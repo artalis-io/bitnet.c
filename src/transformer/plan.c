@@ -334,6 +334,11 @@ int bn_transformer_moe_supports_resident_routed_ffn_layout(
     return bn_moe_policy_supports_resident_routed_ffn_layout(c, map);
 }
 
+int bn_transformer_moe_supports_gateup_split_layout(
+    const BnMoEExpertMap *map) {
+    return bn_moe_policy_supports_gateup_split_layout(map);
+}
+
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c) {
     return bn_moe_policy_shared_expert_hidden_dim(c);
 }
@@ -353,6 +358,12 @@ bn_transformer_moe_shared_expert_gate_policy(const BnLayerWeights *lw) {
     BnTransformerMoESharedExpertGatePolicy policy = {0};
     policy.has_gate_vector = bn_moe_policy_has_shared_expert_gate_vector(lw);
     return policy;
+}
+
+int bn_transformer_moe_has_loaded_shared_expert_path(
+    const BnConfig *c,
+    const BnLayerWeights *lw) {
+    return bn_moe_policy_has_loaded_shared_expert_path(c, lw);
 }
 
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {

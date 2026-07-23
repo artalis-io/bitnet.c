@@ -3298,6 +3298,11 @@ if grep -n 'map->gate_rows == map->up_rows\|map->gate_cols == map->up_cols' src/
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_supports_gateup_split_layout' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose transformer MoE gate/up split-layout helpers"
+    fail=1
+fi
+
 if grep -n 'full_attn_interval\|c && c->n_experts > 0 && c->full_attn_interval > 0' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_emit.c must compose model_arch helpers for hybrid layout policy"
     fail=1
@@ -4427,6 +4432,11 @@ fi
 
 if grep -n 'bn_moe_policy_has_shared_expert_gate_vector' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "Transformer GPU shared-expert gate policy must compose transformer MoE gate policy"
+    fail=1
+fi
+
+if grep -n 'bn_moe_policy_has_loaded_shared_expert_path' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU loaded shared-expert policy must compose transformer MoE loaded path policy"
     fail=1
 fi
 

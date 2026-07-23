@@ -348,12 +348,17 @@ int bn_transformer_moe_supports_resident_routed_ffn_shape(
 int bn_transformer_moe_supports_resident_routed_ffn_layout(
     const BnConfig *c,
     const BnMoEExpertMap *map);
+int bn_transformer_moe_supports_gateup_split_layout(
+    const BnMoEExpertMap *map);
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c);
 BnTransformerMoESharedExpertShapePolicy
 bn_transformer_moe_shared_expert_shape_policy(const BnConfig *c,
                                               const BnLayerWeights *lw);
 BnTransformerMoESharedExpertGatePolicy
 bn_transformer_moe_shared_expert_gate_policy(const BnLayerWeights *lw);
+int bn_transformer_moe_has_loaded_shared_expert_path(
+    const BnConfig *c,
+    const BnLayerWeights *lw);
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);
