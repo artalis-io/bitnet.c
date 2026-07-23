@@ -503,6 +503,9 @@ int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
 int bn_transformer_prefill_activation_is_relu2(int activation);
 int bn_transformer_prefill_activation_is_gelu(int activation);
 int bn_transformer_prefill_activation_uses_silu_path(int activation);
+int bn_transformer_prefill_config_activation(const BnConfig *c);
+int bn_transformer_prefill_has_ffn_gate(const BnConfig *c);
+float bn_transformer_prefill_norm_epsilon(const BnConfig *c);
 BnTransformerPrefillActivationPolicy
 bn_transformer_prefill_activation_policy(int activation,
                                          int uses_reference_activation);

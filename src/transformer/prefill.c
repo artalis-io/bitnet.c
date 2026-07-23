@@ -468,7 +468,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
             lw->attn.wo.data != NULL, lw->ffn.ffn_gate.data != NULL,
             lw->ffn.ffn_up.data != NULL, lw->ffn.ffn_down.data != NULL))
         return -1;
-    int activation = bn_model_config_activation(&m->config);
+    int activation = bn_transformer_prefill_config_activation(&m->config);
 
     void *qk_buf = NULL;
     void *wv_buf = NULL;
@@ -542,7 +542,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         lw->attn.wo.type, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
         lw->ffn.ffn_down.type, activation,
         bn_transformer_attention_uses_per_head_qk_norm(&m->config),
-        bn_model_config_norm_epsilon(&m->config), pos0, rope_dims,
+        bn_transformer_prefill_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
 }
 
@@ -576,7 +576,7 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         !layer_kind.uses_moe || !lw->attn.wq.data ||
         !lw->attn.wk.data || !lw->attn.wv.data || !lw->attn.wo.data)
         return -1;
-    int activation = bn_model_config_activation(&m->config);
+    int activation = bn_transformer_prefill_config_activation(&m->config);
 
     void *qk_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
@@ -635,7 +635,7 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         shared.hidden_dim, shared.gate_type, shared.up_type,
         shared.down_type,
         bn_transformer_attention_uses_per_head_qk_norm(&m->config),
-        bn_model_config_norm_epsilon(&m->config), pos0, rope_dims,
+        bn_transformer_prefill_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride,
         attention_scale, route_policy.norm_topk_prob,
         route_policy.expert_weights_scale);
@@ -677,7 +677,7 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
     if (prefill_shared_expert_resources(&shared, c, lw, backend, layer) < 0)
         return -1;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
-    int activation = bn_model_config_activation(c);
+    int activation = bn_transformer_prefill_config_activation(c);
 
     return bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
         gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
@@ -688,7 +688,8 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
         lw->moe.expert_map.down_type, activation,
         shared.hidden_dim, shared.gate_type, shared.up_type,
-        shared.down_type, bn_model_config_norm_epsilon(c), route_policy.norm_topk_prob,
+        shared.down_type, bn_transformer_prefill_norm_epsilon(c),
+        route_policy.norm_topk_prob,
         route_policy.expert_weights_scale);
 }
 
@@ -802,7 +803,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
             prefill_base_rope_theta(c),
             plan->is_attn,
             layer_kind,
-            bn_model_config_has_ffn_gate(c),
+            bn_transformer_prefill_has_ffn_gate(c),
             lw->ffn.ffn_up.data != NULL,
             lw->norm.attn_sub_norm != NULL,
             lw->norm.ffn_sub_norm != NULL,
@@ -1012,7 +1013,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
             lw->ffn.ffn_gate.data != NULL,
             lw->ffn.ffn_up.data != NULL,
             lw->ffn.ffn_down.data != NULL,
-            bn_model_config_has_ffn_gate(&m->config),
+            bn_transformer_prefill_has_ffn_gate(&m->config),
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
             bn_transformer_ffn_uses_post_norm(&m->config),
@@ -1048,7 +1049,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         return -1;
     if (did_ffn)
         *did_ffn = 0;
-    int activation = bn_model_config_activation(&m->config);
+    int activation = bn_transformer_prefill_config_activation(&m->config);
     return bn_transformer_gpu_prefill_ssm_layer_backend_run(
         gpu, out, wqkv_buf, wz_buf, alpha_buf, beta_buf,
         qkvz_stacked_buf, ab_stacked_buf, out_buf, attn_norm_buf, conv1d_buf,
@@ -1077,7 +1078,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
             bn_transformer_prefill_ssm_dense_chain_available(gpu, c,
                                                              n_tokens),
             layer_kind,
-            bn_model_config_has_ffn_gate(c),
+            bn_transformer_prefill_has_ffn_gate(c),
             lw->ffn.ffn_up.data != NULL,
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
@@ -1393,7 +1394,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     BnRunState *s = &sess->state;
     int dim = c->dim;
     int head_size = c->head_size;
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_prefill_norm_epsilon(c);
     BnPrefillProfile prof = {0};
     prof.enabled = bn_transformer_prefill_profile_enabled();
     double t_prof = prefill_profile_now(&prof);
@@ -1795,7 +1796,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         c, bn_model_gpu(m)),
                     pos0, layer_rope_theta, prefill_base_rope_theta(c),
                     layer_kind,
-                    bn_model_config_has_ffn_gate(c), lw->ffn.ffn_up.data != NULL,
+                    bn_transformer_prefill_has_ffn_gate(c),
+                    lw->ffn.ffn_up.data != NULL,
                     lw->attn.q_bias != NULL, lw->attn.k_bias != NULL,
                     lw->attn.v_bias != NULL,
                     lw->norm.attn_sub_norm != NULL,

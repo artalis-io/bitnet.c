@@ -777,6 +777,18 @@ int bn_transformer_prefill_activation_uses_silu_path(int activation) {
     return bn_model_activation_uses_silu_path(activation);
 }
 
+int bn_transformer_prefill_config_activation(const BnConfig *c) {
+    return bn_model_config_activation(c);
+}
+
+int bn_transformer_prefill_has_ffn_gate(const BnConfig *c) {
+    return bn_model_config_has_ffn_gate(c);
+}
+
+float bn_transformer_prefill_norm_epsilon(const BnConfig *c) {
+    return bn_model_config_norm_epsilon(c);
+}
+
 BnTransformerPrefillActivationPolicy
 bn_transformer_prefill_activation_policy(int activation,
                                          int uses_reference_activation) {

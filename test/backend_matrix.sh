@@ -508,7 +508,7 @@ if grep -n 'activation == [012]\|act_type == [012]\|activation != [12]\|act_type
     fail=1
 fi
 
-if grep -n 'm->config\.act_type\|c->act_type' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'm->config\.act_type\|c->act_type\|bn_model_config_activation\|bn_model_config_norm_epsilon' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution must use model activation policy helpers, not raw config activation fields"
     fail=1
 fi
@@ -4401,6 +4401,11 @@ fi
 
 if grep -n 'c->has_ffn_gate\|m->config\.has_ffn_gate' src/transformer/plan.c src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer planning/prefill must use model-config helpers for dense FFN gate policy"
+    fail=1
+fi
+
+if grep -n 'bn_model_config_has_ffn_gate' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer prefill execution must compose dense FFN gate policy through prefill helpers"
     fail=1
 fi
 

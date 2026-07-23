@@ -4562,6 +4562,14 @@ static void test_block_planning(void) {
         bn_transformer_prefill_activation_policy(BN_MODEL_ACTIVATION_GELU, 1);
     assert(prefill_activation.activation == BN_MODEL_ACTIVATION_GELU);
     assert(prefill_activation.uses_reference_activation);
+    BnConfig prefill_config = {0};
+    prefill_config.act_type = BN_MODEL_ACTIVATION_GELU;
+    prefill_config.has_ffn_gate = 1;
+    prefill_config.norm_eps = 1.0e-5f;
+    assert(bn_transformer_prefill_config_activation(&prefill_config) ==
+           BN_MODEL_ACTIVATION_GELU);
+    assert(bn_transformer_prefill_has_ffn_gate(&prefill_config));
+    assert(bn_transformer_prefill_norm_epsilon(&prefill_config) == 1.0e-5f);
 
     BnTransformerPrefillEntryPolicy prefill_entry =
         bn_transformer_prefill_entry_policy(0, 0, 2, 0, 0);
