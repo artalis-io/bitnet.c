@@ -4365,6 +4365,11 @@ if grep -n 'bn_moe_policy_uses_reference_silu' src/transformer/gpu.c >/dev/null 
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_uses_reference_silu' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose MoE execution policy for reference-SiLU behavior"
+    fail=1
+fi
+
 if grep -n 'bn_moe_policy_uses_reference_silu' src/moe_execute.c >/dev/null 2>&1; then
     echo "src/moe_execute.c must use MoE execution policy for reference-SiLU behavior"
     fail=1
