@@ -911,7 +911,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     BnTransformerGPULogitResources *logit_res = &policy.logits;
     int has_moe = policy.has_moe;
 
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_gpu_norm_epsilon(c);
 
     // Precompute eps as uint32
     uint32_t u_eps;

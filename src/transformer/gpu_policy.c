@@ -95,6 +95,10 @@ BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind(int activation) {
         : BN_GPU_IR_ACTIVATION_SILU;
 }
 
+float bn_transformer_gpu_norm_epsilon(const BnConfig *c) {
+    return bn_model_config_norm_epsilon(c);
+}
+
 int bn_transformer_gpu_can_gateup_split_activation(const BnGPUBackend *gpu,
                                                    int tensor_type,
                                                    int act_type) {

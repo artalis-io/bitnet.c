@@ -3276,6 +3276,10 @@ static void test_gpu_op_kind_mapping(void) {
                BN_MODEL_ACTIVATION_RELU2) == BN_GPU_IR_ACTIVATION_RELU2);
     assert(bn_transformer_gpu_ffn_activation_kind(
                BN_MODEL_ACTIVATION_GELU) == BN_GPU_IR_ACTIVATION_SILU);
+    BnConfig gpu_norm_config = {0};
+    gpu_norm_config.norm_eps = 1.0e-5f;
+    assert(bn_transformer_gpu_norm_epsilon(&gpu_norm_config) == 1.0e-5f);
+    assert(bn_transformer_gpu_norm_epsilon(NULL) == 0.0f);
 
     BnGPUOp op;
     memset(&op, 0, sizeof(op));

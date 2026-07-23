@@ -132,6 +132,7 @@ typedef struct {
 int bn_transformer_gpu_activation_uses_silu_path(int activation);
 int bn_transformer_gpu_activation_is_relu2(int activation);
 BnGPUIRActivationKind bn_transformer_gpu_ffn_activation_kind(int activation);
+float bn_transformer_gpu_norm_epsilon(const BnConfig *c);
 
 typedef struct {
     int block_argmax;
