@@ -297,6 +297,11 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
     return bn_moe_policy_has_shared_expert(c, lw);
 }
 
+int bn_transformer_moe_uses_configured_all_active_two_route(
+    const BnConfig *c) {
+    return c && bn_moe_policy_uses_all_active_two_expert_route(c, c->dim);
+}
+
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw) {
     return bn_moe_policy_layer_has_router(lw);
 }

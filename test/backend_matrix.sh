@@ -414,6 +414,11 @@ if grep -n 'bn_transformer_cpu_prefill_uses_float_kquant_fallback' src/transform
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_uses_all_active_two_expert_route' src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Prefill shared all-active-two decode fallback must use transformer MoE behavior policy"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_cpu_prefill_force_float_kquant_enabled' \
     include/transformer_plan_internal.h \
     src/transformer/cpu_policy.c \

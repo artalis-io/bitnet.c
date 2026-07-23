@@ -32,8 +32,7 @@ bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     int gpu_available) {
     BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy = {0};
     policy.enabled =
-        c &&
-        bn_moe_policy_uses_all_active_two_expert_route(c, c->dim) &&
+        bn_transformer_moe_uses_configured_all_active_two_route(c) &&
         bn_transformer_moe_has_shared_expert(c, NULL) &&
         !gpu_available;
     return policy;

@@ -1428,6 +1428,24 @@ static void test_gpu_policy_helpers(void) {
     c.has_shared_expert = 0;
     assert(bn_transformer_gpu_moe_shared_expert_shape_policy(&c).hidden_dim ==
            0);
+    memset(&c, 0, sizeof(c));
+    c.dim = 2048;
+    c.n_experts = 2;
+    c.n_experts_active = 2;
+    c.moe_intermediate_size = 4096;
+    assert(bn_transformer_moe_uses_configured_all_active_two_route(&c));
+    assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+                &c, 0).enabled);
+    c.has_shared_expert = 1;
+    assert(bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+               &c, 0).enabled);
+    assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+                &c, 1).enabled);
+    c.dim = 2049;
+    assert(!bn_transformer_moe_uses_configured_all_active_two_route(&c));
+    assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+                &c, 0).enabled);
+    memset(&c, 0, sizeof(c));
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(0) == 0);
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(1) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);
