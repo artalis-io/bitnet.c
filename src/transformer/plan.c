@@ -93,6 +93,10 @@ int bn_transformer_attention_qk_stride(const BnConfig *c,
     return bn_model_config_attention_qk_norm_stride(c, head_size);
 }
 
+int bn_transformer_attention_uses_per_head_qk_norm(const BnConfig *c) {
+    return bn_model_config_attention_uses_per_head_qk_norm(c);
+}
+
 int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw) {
     return lw && (lw->attn.q_norm || lw->attn.k_norm);
 }

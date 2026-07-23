@@ -7,6 +7,7 @@
 #include "quant.h"
 #include "transformer_backend_internal.h"
 #include "transformer_kv_internal.h"
+#include "transformer_plan_internal.h"
 #include "session.h"
 #include <math.h>
 #include <stdint.h>
@@ -1324,7 +1325,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
                 if (k_norm) {
                     uint32_t ph_params[8] = {
                         (uint32_t)head_size, u_eps,
-                        (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0
+                        (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+                        0, 0, 0, 0, 0
                     };
                     emit_context_utility(ctx,
                                          BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
@@ -1356,7 +1358,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
             if (k_norm) {
                 uint32_t ph_params[8] = {
                     (uint32_t)head_size, u_eps,
-                    (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0
+                    (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+                    0, 0, 0, 0, 0
                 };
                 emit_context_utility(ctx,
                                      BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
@@ -1410,7 +1413,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     if (q_norm) {
         uint32_t ph_params[8] = {
             (uint32_t)head_size, u_eps,
-            (uint32_t)c->qk_norm_per_head, 0, 0, 0, 0, 0
+            (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+            0, 0, 0, 0, 0
         };
         emit_context_utility(ctx, BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
                              BN_GPU_VALUE_Q, -1, -1, n_heads, q_norm,
@@ -1419,7 +1423,8 @@ void bn_transformer_gpu_emit_context_qkv(BnTransformerGPUEmitContext *ctx,
     if (k_norm && !k_bias && !kv_cache_write_needs_staging) {
         uint32_t ph_params[8] = {
             (uint32_t)head_size, u_eps,
-            (uint32_t)c->qk_norm_per_head, kv_cache_off, 0, 0, 0, 0
+            (uint32_t)bn_transformer_attention_uses_per_head_qk_norm(c),
+            kv_cache_off, 0, 0, 0, 0
         };
         emit_context_utility(ctx, BN_GPU_IR_UTILITY_PER_HEAD_RMSNORM,
                              BN_GPU_VALUE_KEY_CACHE, -1, -1, c->n_kv_heads,

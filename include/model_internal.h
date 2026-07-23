@@ -99,6 +99,7 @@ float bn_model_config_attention_scale(const BnConfig *config,
 int bn_model_config_attention_value_shares_key(const BnConfig *config);
 int bn_model_config_attention_qk_norm_stride(const BnConfig *config,
                                              int head_size);
+int bn_model_config_attention_uses_per_head_qk_norm(const BnConfig *config);
 int bn_model_config_uses_attention_post_norm(const BnConfig *config);
 int bn_model_config_uses_ffn_post_norm(const BnConfig *config);
 int bn_model_config_uses_layer_output_scale(const BnConfig *config);

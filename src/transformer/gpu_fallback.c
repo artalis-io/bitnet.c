@@ -969,7 +969,8 @@ int bn_transformer_gpu_debug_compare_qkv(
     }
     if (lw->attn.q_norm) {
         int head_size = m->config.head_size;
-        int qk_stride = m->config.qk_norm_per_head ? head_size : 0;
+        int qk_stride =
+            bn_transformer_attention_qk_stride(&m->config, head_size);
         for (int h = 0; h < m->config.n_heads; h++)
             fallback_rmsnorm(cpu_q + (size_t)h * head_size,
                              cpu_q + (size_t)h * head_size,
@@ -978,7 +979,8 @@ int bn_transformer_gpu_debug_compare_qkv(
     }
     if (lw->attn.k_norm) {
         int head_size = m->config.head_size;
-        int qk_stride = m->config.qk_norm_per_head ? head_size : 0;
+        int qk_stride =
+            bn_transformer_attention_qk_stride(&m->config, head_size);
         for (int h = 0; h < m->config.n_kv_heads; h++)
             fallback_rmsnorm(cpu_k + (size_t)h * head_size,
                              cpu_k + (size_t)h * head_size,

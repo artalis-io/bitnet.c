@@ -540,7 +540,8 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         qk_type, wv_rows, wv_type, lw->attn.wo.rows, lw->attn.wo.cols,
         lw->attn.wo.type, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
         lw->ffn.ffn_down.type, m->config.act_type,
-        m->config.qk_norm_per_head, m->config.norm_eps, pos0, rope_dims,
+        bn_transformer_attention_uses_per_head_qk_norm(&m->config),
+        m->config.norm_eps, pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
 }
 
@@ -631,7 +632,8 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         lw->moe.expert_map.down_type, m->config.act_type,
         shared.hidden_dim, shared.gate_type, shared.up_type,
         shared.down_type,
-        m->config.qk_norm_per_head, m->config.norm_eps, pos0, rope_dims,
+        bn_transformer_attention_uses_per_head_qk_norm(&m->config),
+        m->config.norm_eps, pos0, rope_dims,
         kv_cache_off, kv_cache_stride,
         attention_scale, route_policy.norm_topk_prob,
         route_policy.expert_weights_scale);
@@ -1901,7 +1903,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->attn.wq.type, lw->attn.wv.rows,
                         lw->attn.wv.type, lw->attn.wo.rows,
                         lw->attn.wo.cols, lw->attn.wo.type,
-                        c->qk_norm_per_head, c->norm_eps, pos0,
+                        bn_transformer_attention_uses_per_head_qk_norm(c),
+                        c->norm_eps, pos0,
                         layer_rope_dims,
                         prefill_attention_scale(c, layer_head_size));
                     if (qkv_fused_rc == 0)
@@ -1928,7 +1931,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         lw->attn.wq.type, lw->attn.wv.rows,
                         lw->attn.wv.type, lw->attn.wo.rows,
                         lw->attn.wo.cols, lw->attn.wo.type,
-                        c->qk_norm_per_head, c->norm_eps, pos0,
+                        bn_transformer_attention_uses_per_head_qk_norm(c),
+                        c->norm_eps, pos0,
                         layer_rope_dims,
                         prefill_attention_scale(c, layer_head_size));
                 }
@@ -2011,7 +2015,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         if (lw->attn.v_bias)
                             for (int i = 0; i < layer_kv_dim; i++) v_t[i] += lw->attn.v_bias[i];
                         if (lw->attn.k_norm) {
-                            int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
+                            int qk_stride =
+                                bn_transformer_attention_qk_stride(
+                                    c, layer_head_size);
                             for (int h = 0; h < layer_n_kv_heads; h++)
                                 prefill_cpu_ops()->rmsnorm(
                                     k_t + h * layer_head_size,
@@ -2066,7 +2072,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .q_norm = lw->attn.q_norm, .k_norm = lw->attn.k_norm,
                     .q_bias = lw->attn.q_bias, .k_bias = lw->attn.k_bias,
                     .v_bias = lw->attn.v_bias,
-                    .qk_norm_per_head = c->qk_norm_per_head,
+                    .qk_norm_per_head =
+                        bn_transformer_attention_uses_per_head_qk_norm(c),
                     .norm_eps = c->norm_eps,
                     .q_gated = q_gated,
                     .wq_rows = lw->attn.wq.rows,
@@ -2147,7 +2154,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     }
 
                     if (lw->attn.q_norm) {
-                        int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
+                        int qk_stride =
+                            bn_transformer_attention_qk_stride(
+                                c, layer_head_size);
                         for (int h = 0; h < c->n_heads; h++)
                             prefill_cpu_ops()->rmsnorm(
                                 s->q + h * layer_head_size,
@@ -2156,7 +2165,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                 layer_head_size, c->norm_eps);
                     }
                     if (lw->attn.k_norm) {
-                        int qk_stride = c->qk_norm_per_head ? layer_head_size : 0;
+                        int qk_stride =
+                            bn_transformer_attention_qk_stride(
+                                c, layer_head_size);
                         for (int h = 0; h < layer_n_kv_heads; h++)
                             prefill_cpu_ops()->rmsnorm(
                                 k_t + h * layer_head_size,

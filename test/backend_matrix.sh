@@ -4301,6 +4301,14 @@ if grep -n 'c->act_type\|c->qk_norm_per_head' src/transformer/plan.c >/dev/null 
     fail=1
 fi
 
+if grep -n 'c->qk_norm_per_head\|m->config\.qk_norm_per_head' \
+    src/transformer/prefill.c \
+    src/transformer/gpu_emit.c \
+    src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "Transformer prefill/GPU paths must use attention Q/K norm layout policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->has_ffn_gate\|m->config\.has_ffn_gate' src/transformer/plan.c src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer planning/prefill must use model-config helpers for dense FFN gate policy"
     fail=1

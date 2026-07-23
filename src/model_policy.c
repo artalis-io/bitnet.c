@@ -269,6 +269,10 @@ int bn_model_config_attention_qk_norm_stride(const BnConfig *config,
     return config && config->qk_norm_per_head ? head_size : 0;
 }
 
+int bn_model_config_attention_uses_per_head_qk_norm(const BnConfig *config) {
+    return config ? config->qk_norm_per_head : 0;
+}
+
 int bn_model_config_uses_attention_post_norm(const BnConfig *config) {
     return bn_model_arch_uses_attention_post_norm(config);
 }
