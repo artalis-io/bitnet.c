@@ -13,6 +13,7 @@
 #include "gpu_policy.h"
 #include "gpu_shader.h"
 #include "model.h"
+#include "model_internal.h"
 #include "quant.h"
 #include "gguf.h"
 #include "webgpu.h"
@@ -1279,12 +1280,11 @@ static int wgpu_init_activations(void *vctx, const void *config_ptr)
 
     /* Upload precomputed RoPE frequencies */
     {
-        int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : c->head_size;
+        int rope_dims = bn_model_config_rope_dims_for_head(c, c->head_size);
         int half = rope_dims / 2;
         float *freq = malloc((size_t)half * sizeof(float));
         if (!freq) return -1;
-        for (int i = 0; i < half; i++)
-            freq[i] = 1.0f / powf(c->rope_theta, (float)(2 * i) / (float)rope_dims);
+        bn_model_config_init_rope_frequencies(c, freq, half);
         wgpuQueueWriteBuffer(ctx->queue, ctx->act_bufs[BN_GPU_BUF_ROPE_FREQ],
                               0, freq, (size_t)half * sizeof(float));
         free(freq);

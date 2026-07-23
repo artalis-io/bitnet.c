@@ -4,6 +4,7 @@
 
 #include "gguf.h"
 #include "model_config.h"
+#include "model_internal.h"
 #include "moe_types.h"
 #include "quant.h"
 #include "gpu_policy.h"
@@ -11110,7 +11111,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
         }
     }
 
-    int rope_dims = c->rope_dim_count > 0 ? c->rope_dim_count : c->head_size;
+    int rope_dims = bn_model_config_rope_dims_for_head(c, c->head_size);
     int half = rope_dims / 2;
     if (half > 0 && ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ]) {
         float *freq = (float *)malloc((size_t)half * sizeof(float));
@@ -11118,9 +11119,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
             cuda_free_activations(ctx);
             return -1;
         }
-        for (int i = 0; i < half; i++)
-            freq[i] = 1.0f / powf(c->rope_theta,
-                                  (float)(2 * i) / (float)rope_dims);
+        bn_model_config_init_rope_frequencies(c, freq, half);
         cudaError_t err = cudaMemcpy(ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ],
                                      freq, (size_t)half * sizeof(float),
                                      cudaMemcpyHostToDevice);
