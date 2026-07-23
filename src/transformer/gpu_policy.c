@@ -422,6 +422,14 @@ bn_transformer_gpu_moe_shared_expert_shape_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerGPUMoEGateupSplitLayoutPolicy
+bn_transformer_gpu_moe_gateup_split_layout_policy(
+    const BnMoEExpertMap *map) {
+    BnTransformerGPUMoEGateupSplitLayoutPolicy policy = {0};
+    policy.supported = bn_moe_policy_supports_gateup_split_layout(map);
+    return policy;
+}
+
 int bn_transformer_gpu_prefill_quant_matmul_backend_available(
     const BnGPUBackend *gpu) {
     return bn_gpu_backend_can_matmul(gpu);
@@ -694,10 +702,12 @@ int bn_transformer_gpu_moe_gateup_split_supported(
     int split_op_code) {
     if (!map || !bn_gpu_quant_split_op_is_asymmetric_kquant(split_op_code))
         return 0;
+    BnTransformerGPUMoEGateupSplitLayoutPolicy layout =
+        bn_transformer_gpu_moe_gateup_split_layout_policy(map);
     return bn_transformer_gpu_can_matvec_split(gpu, map->gate_type) &&
            bn_transformer_gpu_same_quant_format_pair_stackable(map->up_type,
                                                        map->gate_type) &&
-           bn_moe_policy_supports_gateup_split_layout(map);
+           layout.supported;
 }
 
 int bn_transformer_gpu_matvec_split_op_code(int tensor_type) {

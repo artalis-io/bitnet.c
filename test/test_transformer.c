@@ -1468,6 +1468,8 @@ static void test_gpu_policy_helpers(void) {
     expert_map.gate_cols = 64;
     expert_map.up_cols = 64;
     gpu.caps = BN_GPU_CAP_ASYMMETRIC_KQUANT_MATVEC_SPLIT;
+    assert(bn_transformer_gpu_moe_gateup_split_layout_policy(
+               &expert_map).supported);
     assert(bn_transformer_gpu_moe_gateup_split_supported(
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     assert(!bn_transformer_gpu_moe_gateup_split_supported(
@@ -1481,10 +1483,14 @@ static void test_gpu_policy_helpers(void) {
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     expert_map.up_type = BN_GGUF_TENSOR_Q4_K;
     expert_map.up_rows = 16;
+    assert(!bn_transformer_gpu_moe_gateup_split_layout_policy(
+                &expert_map).supported);
     assert(!bn_transformer_gpu_moe_gateup_split_supported(
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     expert_map.up_rows = 32;
     expert_map.up_cols = 32;
+    assert(!bn_transformer_gpu_moe_gateup_split_layout_policy(
+                &expert_map).supported);
     assert(!bn_transformer_gpu_moe_gateup_split_supported(
         &gpu, &expert_map, BN_GPU_CODE_Q4K_MATVEC_SPLIT));
     expert_map.up_cols = 64;

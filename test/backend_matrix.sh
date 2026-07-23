@@ -3735,6 +3735,12 @@ if awk '/^int bn_transformer_gpu_prefill_qkv_attention_wo_backend_available/{fla
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_moe_gateup_split_supported/{flag=1} /^int bn_transformer_gpu_matvec_split_op_code/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'bn_moe_policy_supports_gateup_split_layout' >/dev/null 2>&1; then
+    echo "Transformer GPU MoE gateup split support must compose split-layout policy"
+    fail=1
+fi
+
 if grep -n 'gpu->dense_ffn_batch' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer prefill execution must use GPU policy helpers for dense FFN batch backend calls"
     fail=1
