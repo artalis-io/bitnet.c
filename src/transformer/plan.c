@@ -120,6 +120,10 @@ int bn_transformer_attention_requires_cpu_fallback(
     return shape && !shape->is_attn && placement == BN_EXEC_GPU;
 }
 
+int bn_transformer_attention_uses_cpu_flash(const BnConfig *c) {
+    return c && c->flash_attn;
+}
+
 int bn_transformer_attention_uses_flash(const BnConfig *c,
                                         const BnGPUBackend *gpu) {
     return c && c->flash_attn && bn_transformer_gpu_can_flash_attn(gpu);

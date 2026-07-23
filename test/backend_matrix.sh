@@ -4286,6 +4286,11 @@ if grep -n 'p->needs_cpu_fallback = p->placement == BN_EXEC_GPU\|p->use_flash = 
     fail=1
 fi
 
+if grep -n 'm->config\.flash_attn' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "Transformer CPU execution must use attention flash policy helpers"
+    fail=1
+fi
+
 if grep -n 'p->hidden_dim = .*ffn\.ffn_up\.rows' src/transformer/plan.c >/dev/null 2>&1; then
     echo "Transformer FFN planning must use hidden-dim policy helpers"
     fail=1

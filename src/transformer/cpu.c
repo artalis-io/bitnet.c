@@ -187,7 +187,9 @@ void bn_transformer_cpu_gqa_dispatch(BnModel *m,
     if (gctx->attention_scale == 0.0f)
         gctx->attention_scale =
             bn_transformer_attention_scale(&m->config, gctx->head_size);
-    bn_tp_fn attn_fn = m->config.flash_attn ? ops->flash_gqa : ops->gqa;
+    bn_tp_fn attn_fn = bn_transformer_attention_uses_cpu_flash(&m->config)
+                           ? ops->flash_gqa
+                           : ops->gqa;
     BnTPTask gqa = { attn_fn, gctx, n_heads };
     bn_tp_dispatch(bn_model_pool(m), &gqa, 1);
 }
@@ -198,7 +200,7 @@ void bn_transformer_batched_attn_dispatch(BnModel *m,
     if (ctx->attention_scale == 0.0f)
         ctx->attention_scale =
             bn_transformer_attention_scale(&m->config, ctx->head_size);
-    bn_tp_fn fn = m->config.flash_attn
+    bn_tp_fn fn = bn_transformer_attention_uses_cpu_flash(&m->config)
         ? ((ctx->n_tokens > 1 && ops->batched_attn_flash_pair)
             ? ops->batched_attn_flash_pair
             : ops->batched_attn_flash)

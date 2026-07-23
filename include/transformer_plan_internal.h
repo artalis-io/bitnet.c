@@ -258,6 +258,7 @@ BnLayerKind bn_transformer_layer_kind(int is_attn,
 int bn_transformer_attention_requires_cpu_fallback(
     const BnLayerShapePlan *shape,
     BnExecPlacement placement);
+int bn_transformer_attention_uses_cpu_flash(const BnConfig *c);
 int bn_transformer_attention_uses_flash(const BnConfig *c,
                                         const BnGPUBackend *gpu);
 int bn_transformer_attention_uses_packed_qkv(
