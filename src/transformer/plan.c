@@ -235,8 +235,8 @@ BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
                                   const BnLayerWeights *lw) {
     if (lw && lw->ffn_kind == BN_LAYER_FFN_MOE)
         return BN_FFN_MOE;
-    return c && c->has_ffn_gate ? BN_FFN_DENSE_GATE_UP
-                                : BN_FFN_DENSE_UP;
+    return bn_model_config_has_ffn_gate(c) ? BN_FFN_DENSE_GATE_UP
+                                           : BN_FFN_DENSE_UP;
 }
 
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
@@ -246,7 +246,7 @@ int bn_transformer_ffn_hidden_dim(const BnConfig *c,
 }
 
 int bn_transformer_ffn_has_gate(const BnConfig *c) {
-    return c && c->has_ffn_gate;
+    return bn_model_config_has_ffn_gate(c);
 }
 
 int bn_transformer_ffn_has_sub_norm(const BnLayerWeights *lw) {

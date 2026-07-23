@@ -2,6 +2,7 @@
 #include "transformer_cpu_internal.h"
 #include "transformer_batched_attn_internal.h"
 #include "gpu_internal.h"
+#include "model_internal.h"
 #include "transformer_gqa_internal.h"
 #include "transformer_kv_internal.h"
 #include "transformer_prefill_internal.h"
@@ -796,7 +797,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
             prefill_base_rope_theta(c),
             plan->is_attn,
             layer_kind,
-            c->has_ffn_gate,
+            bn_model_config_has_ffn_gate(c),
             lw->ffn.ffn_up.data != NULL,
             lw->norm.attn_sub_norm != NULL,
             lw->norm.ffn_sub_norm != NULL,
@@ -1006,7 +1007,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
             lw->ffn.ffn_gate.data != NULL,
             lw->ffn.ffn_up.data != NULL,
             lw->ffn.ffn_down.data != NULL,
-            m->config.has_ffn_gate,
+            bn_model_config_has_ffn_gate(&m->config),
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
             bn_transformer_ffn_uses_post_norm(&m->config),
@@ -1070,7 +1071,7 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
             bn_transformer_prefill_ssm_dense_chain_available(gpu, c,
                                                              n_tokens),
             layer_kind,
-            c->has_ffn_gate,
+            bn_model_config_has_ffn_gate(c),
             lw->ffn.ffn_up.data != NULL,
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
@@ -1787,7 +1788,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         c, bn_model_gpu(m)),
                     pos0, layer_rope_theta, prefill_base_rope_theta(c),
                     layer_kind,
-                    c->has_ffn_gate, lw->ffn.ffn_up.data != NULL,
+                    bn_model_config_has_ffn_gate(c), lw->ffn.ffn_up.data != NULL,
                     lw->attn.q_bias != NULL, lw->attn.k_bias != NULL,
                     lw->attn.v_bias != NULL,
                     lw->norm.attn_sub_norm != NULL,
@@ -2469,7 +2470,7 @@ prefill_ssm_done:
                     backend_ffn, l, BN_BACKEND_HANDLE_FFN_NORM) : NULL;
             BnTransformerPrefillFFNBatchPolicy ffn_batch_policy =
                 bn_transformer_prefill_ffn_batch_policy(
-                    c->has_ffn_gate,
+                    bn_model_config_has_ffn_gate(c),
                     can_use_dense_ffn_batch,
                     bn_transformer_prefill_dense_ffn_batch_norm_resid_gpu_available(
                         gpu_ffn),
@@ -2505,7 +2506,7 @@ prefill_ssm_done:
                                                 c->act_type, l, NULL,
                                                 0.0f, 0) == 0) {
                     used_gpu_batch_ffn = 1;
-                } else if (c->has_ffn_gate) {
+                } else if (bn_model_config_has_ffn_gate(c)) {
                     double t_ffn_step = prefill_profile_now(&prof);
                     float *gu_out[2] = { Hb, Hb2 };
                     const BnQWeight *gu_w[2] = {

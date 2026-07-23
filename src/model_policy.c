@@ -280,6 +280,10 @@ int bn_model_config_per_layer_embedding_dim(const BnConfig *config) {
     return bn_model_arch_per_layer_embedding_dim(config);
 }
 
+int bn_model_config_has_ffn_gate(const BnConfig *config) {
+    return config ? config->has_ffn_gate : 0;
+}
+
 int bn_model_config_loads_extra_metadata(const BnConfig *config) {
     return bn_model_arch_loads_extra_metadata(config);
 }

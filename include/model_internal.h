@@ -101,6 +101,7 @@ int bn_model_config_uses_attention_post_norm(const BnConfig *config);
 int bn_model_config_uses_ffn_post_norm(const BnConfig *config);
 int bn_model_config_uses_layer_output_scale(const BnConfig *config);
 int bn_model_config_per_layer_embedding_dim(const BnConfig *config);
+int bn_model_config_has_ffn_gate(const BnConfig *config);
 int bn_model_config_loads_extra_metadata(const BnConfig *config);
 int bn_model_config_loads_per_layer_input_weights(const BnConfig *config);
 int bn_model_config_layer_reuses_kv(const BnConfig *config, int layer);
