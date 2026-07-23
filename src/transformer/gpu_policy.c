@@ -427,7 +427,9 @@ bn_transformer_gpu_moe_activation_policy(const BnConfig *c) {
 BnTransformerGPUMoESharedExpertShapePolicy
 bn_transformer_gpu_moe_shared_expert_shape_policy(const BnConfig *c) {
     BnTransformerGPUMoESharedExpertShapePolicy policy = {0};
-    policy.hidden_dim = bn_moe_policy_shared_expert_hidden_dim(c);
+    BnTransformerMoESharedExpertShapePolicy shared_policy =
+        bn_transformer_moe_shared_expert_shape_policy(c, NULL);
+    policy.hidden_dim = shared_policy.hidden_dim;
     return policy;
 }
 

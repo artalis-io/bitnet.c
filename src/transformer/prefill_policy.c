@@ -31,9 +31,11 @@ bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available) {
     BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy = {0};
+    BnTransformerMoESharedExpertShapePolicy shared_policy =
+        bn_transformer_moe_shared_expert_shape_policy(c, NULL);
     policy.enabled =
         bn_transformer_moe_uses_configured_all_active_two_route(c) &&
-        bn_transformer_moe_has_shared_expert(c, NULL) &&
+        shared_policy.has_shared_expert &&
         !gpu_available;
     return policy;
 }

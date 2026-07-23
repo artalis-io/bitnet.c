@@ -3042,6 +3042,11 @@ if grep -n 'c->has_shared_expert' src/transformer/prefill_policy.c >/dev/null 2>
     fail=1
 fi
 
+if grep -n 'bn_transformer_moe_has_shared_expert(c, NULL)' src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Transformer prefill shared fallback must compose shared expert shape policy"
+    fail=1
+fi
+
 if grep -n 'c->has_shared_expert' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must compose shared MoE expert policy helpers"
     fail=1
@@ -4398,6 +4403,7 @@ fi
 
 if grep -n 'bn_moe_policy_shared_expert_hidden_dim' \
     src/transformer/gpu.c \
+    src/transformer/gpu_policy.c \
     src/transformer/gpu_resources.c >/dev/null 2>&1; then
     echo "Transformer GPU code must use GPU MoE shared-expert shape policy"
     fail=1
