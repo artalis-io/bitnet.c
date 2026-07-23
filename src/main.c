@@ -471,8 +471,12 @@ static size_t choose_gpu_moe_cache_budget(const CLIArgs *args,
     int moe_layers = model_moe_layer_count(model);
     if (moe_layers <= 0 || !bn_gpu_policy_uses_moe(&model->config))
         return requested;
+    BnGPUMoERouteShape route_shape =
+        bn_gpu_policy_moe_route_shape(&model->config);
+    if (route_shape.total_experts <= 0)
+        return requested;
     size_t all_experts = entry_bytes * (size_t)moe_layers *
-                         (size_t)model->config.n_experts;
+                         (size_t)route_shape.total_experts;
     if (args->gpu_cache_mb_set && requested < all_experts)
         return requested;
     size_t free_bytes = 0;

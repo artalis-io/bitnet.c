@@ -3443,6 +3443,11 @@ if grep -n 'model\(\.config\|->config\)\.n_experts [<>!=]=\? 0' src/main.c >/dev
     fail=1
 fi
 
+if grep -n 'model->config\.n_experts' src/main.c >/dev/null 2>&1; then
+    echo "src/main.c must compose GPU MoE route shape through GPU policy helpers"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use loaded-model policy helpers instead of reaching into model_arch"
     fail=1
