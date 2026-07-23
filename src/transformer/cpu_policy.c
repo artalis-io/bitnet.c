@@ -136,6 +136,10 @@ int bn_transformer_cpu_activation_uses_silu_path(int activation) {
     return bn_model_activation_uses_silu_path(activation);
 }
 
+float bn_transformer_cpu_norm_epsilon(const BnConfig *c) {
+    return bn_model_config_norm_epsilon(c);
+}
+
 uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {
     return enabled ? BN_MATVEC_TASK_FORCE_FLOAT_KQUANT : 0u;
 }

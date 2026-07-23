@@ -4497,6 +4497,10 @@ static void test_block_planning(void) {
         BN_MODEL_ACTIVATION_SILU));
     assert(!bn_transformer_cpu_activation_uses_silu_path(
         BN_MODEL_ACTIVATION_RELU2));
+    BnConfig cpu_norm_config = {0};
+    cpu_norm_config.norm_eps = 1.0e-5f;
+    assert(bn_transformer_cpu_norm_epsilon(&cpu_norm_config) == 1.0e-5f);
+    assert(bn_transformer_cpu_norm_epsilon(NULL) == 0.0f);
 
     BnTransformerCPUPostNormPolicy cpu_post_norm =
         bn_transformer_cpu_attention_post_norm_policy(1, 1);

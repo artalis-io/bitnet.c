@@ -330,7 +330,7 @@ static void cpu_apply_per_layer_input_projection(BnModel *m,
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
     int per_dim = bn_transformer_per_layer_embedding_dim(c);
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_cpu_norm_epsilon(c);
     if (per_dim <= 0 ||
         !s->per_layer_input || !lw->per_layer.inp_gate.data ||
         !lw->per_layer.proj.data || !lw->per_layer.post_norm)
@@ -405,7 +405,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
     int layer_rope_dims = rope_dims > head_size ? head_size : rope_dims;
     int qk_stride = shape->qk_stride; // per-head norm offset
     int is_attn = shape->is_attn;
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_cpu_norm_epsilon(c);
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
 
     cpu_debug_dump_layer_input(m, sess, l, pos);
@@ -850,7 +850,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     int qkv_dim = key_dim * 2 + value_dim;
     int kern = c->ssm_conv_kernel;
     int ssm_idx = bn_transformer_ssm_index(c, layer);
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_cpu_norm_epsilon(c);
     size_t state_per_layer = (size_t)num_v_heads * head_k_dim * head_v_dim;
     float *state = s->ssm_state + (size_t)ssm_idx * state_per_layer;
     size_t conv_per_layer = (size_t)(kern - 1) * qkv_dim;
@@ -975,7 +975,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     }
     int dim = c->dim;
     int hidden_dim = ffn_plan->hidden_dim;
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_cpu_norm_epsilon(c);
     int ffn_activated = 0;
     int fused_gate_up = 0;
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
