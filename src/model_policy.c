@@ -161,6 +161,19 @@ int bn_model_config_moe_route_shape_valid(const BnConfig *config) {
            bn_model_config_moe_expert_hidden_dim(config) > 0;
 }
 
+int bn_model_config_moe_normalizes_topk_route_weights(
+    const BnConfig *config) {
+    return config ? config->moe_norm_topk_prob : 0;
+}
+
+float bn_model_config_moe_expert_weights_scale(const BnConfig *config) {
+    return config ? config->moe_expert_weights_scale : 0.0f;
+}
+
+int bn_model_config_moe_uses_reference_silu(const BnConfig *config) {
+    return config ? config->moe_uses_reference_silu : -1;
+}
+
 int bn_model_config_has_shared_expert(const BnConfig *config) {
     return config ? config->has_shared_expert : 0;
 }

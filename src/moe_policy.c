@@ -14,9 +14,9 @@ BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c) {
         bn_model_config_moe_uses_scaled_router_input(c);
     policy.uses_dense_residual_branch =
         bn_model_config_moe_uses_dense_residual_branch(c);
-    policy.uses_reference_silu = policy.uses_dense_residual_branch || !c
+    policy.uses_reference_silu = policy.uses_dense_residual_branch
         ? -1
-        : c->moe_uses_reference_silu;
+        : bn_model_config_moe_uses_reference_silu(c);
     return policy;
 }
 
@@ -37,11 +37,13 @@ BnMoERoutePolicy bn_moe_route_policy(const BnConfig *c) {
     BnMoERoutePolicy policy = {0};
     if (!c)
         return policy;
-    policy.total_experts = c->n_experts;
-    policy.active_experts = c->n_experts_active;
-    policy.expert_hidden_dim = c->moe_intermediate_size;
-    policy.norm_topk_prob = c->moe_norm_topk_prob;
-    policy.expert_weights_scale = c->moe_expert_weights_scale;
+    policy.total_experts = bn_model_config_moe_total_experts(c);
+    policy.active_experts = bn_model_config_moe_active_experts(c);
+    policy.expert_hidden_dim = bn_model_config_moe_expert_hidden_dim(c);
+    policy.norm_topk_prob =
+        bn_model_config_moe_normalizes_topk_route_weights(c);
+    policy.expert_weights_scale =
+        bn_model_config_moe_expert_weights_scale(c);
     return policy;
 }
 
@@ -63,7 +65,7 @@ int bn_moe_policy_uses_grouped_expert_route(const BnConfig *c) {
 }
 
 int bn_moe_policy_normalizes_topk_route_weights(const BnConfig *c) {
-    return c ? c->moe_norm_topk_prob : 0;
+    return bn_model_config_moe_normalizes_topk_route_weights(c);
 }
 
 int bn_moe_policy_layer_has_router(const BnLayerWeights *lw) {
@@ -72,7 +74,7 @@ int bn_moe_policy_layer_has_router(const BnLayerWeights *lw) {
 
 int bn_moe_policy_has_shared_expert(const BnConfig *c,
                                     const BnLayerWeights *lw) {
-    return (c && c->has_shared_expert) ||
+    return bn_model_config_has_shared_expert(c) ||
            (lw && lw->shared.shared_expert_gate);
 }
 
@@ -100,8 +102,7 @@ int bn_moe_policy_has_loaded_shared_expert_path(const BnConfig *c,
 
 int bn_moe_policy_has_loaded_shared_expert(const BnConfig *c,
                                            const BnLayerWeights *lw) {
-    return c &&
-           c->has_shared_expert &&
+    return bn_model_config_has_shared_expert(c) &&
            lw &&
            lw->shared.shared_gate.data != NULL;
 }

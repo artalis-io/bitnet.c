@@ -4728,6 +4728,11 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/moe_policy.c >/dev/null
     fail=1
 fi
 
+if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|c->moe_uses_reference_silu\|c->has_shared_expert' src/moe_policy.c >/dev/null 2>&1; then
+    echo "src/moe_policy.c must use model-config helpers for MoE config policy fields"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/tokenizer.c >/dev/null 2>&1; then
     echo "src/tokenizer.c must use tokenizer model-policy helpers instead of reaching into model_arch"
     fail=1
