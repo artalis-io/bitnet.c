@@ -924,7 +924,17 @@ int bn_transformer_gpu_debug_compare_qkv(
     int dim,
     int q_dim,
     int kv_dim) {
+    BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
+    BnLayerShapePlan shape;
+    bn_transformer_plan_layer_shape(&shape, c, lw, layer,
+                                    bn_model_tq_state(m) != NULL);
+    if (!shape.is_attn || shape.head_size <= 0 ||
+        q_dim % shape.head_size != 0)
+        return -1;
+    int head_size = shape.head_size;
+    int n_kv_heads = shape.n_kv_heads;
+    int qk_stride = shape.qk_stride;
     float *cpu_q = (float *)malloc((size_t)q_dim * sizeof(float));
     float *cpu_k = (float *)malloc((size_t)kv_dim * sizeof(float));
     float *cpu_v = (float *)malloc((size_t)kv_dim * sizeof(float));
@@ -975,33 +985,26 @@ int bn_transformer_gpu_debug_compare_qkv(
         for (int i = 0; i < kv_dim; i++) cpu_v[i] += lw->attn.v_bias[i];
     }
     if (lw->attn.q_norm) {
-        int head_size = m->config.head_size;
-        int qk_stride =
-            bn_transformer_attention_qk_stride(&m->config, head_size);
-        for (int h = 0; h < m->config.n_heads; h++)
+        int n_heads = q_dim / head_size;
+        for (int h = 0; h < n_heads; h++)
             fallback_rmsnorm(cpu_q + (size_t)h * head_size,
                              cpu_q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * qk_stride,
                              head_size,
-                             bn_transformer_gpu_norm_epsilon(&m->config));
+                             bn_transformer_gpu_norm_epsilon(c));
     }
     if (lw->attn.k_norm) {
-        int head_size = m->config.head_size;
-        int qk_stride =
-            bn_transformer_attention_qk_stride(&m->config, head_size);
-        for (int h = 0; h < m->config.n_kv_heads; h++)
+        for (int h = 0; h < n_kv_heads; h++)
             fallback_rmsnorm(cpu_k + (size_t)h * head_size,
                              cpu_k + (size_t)h * head_size,
                              lw->attn.k_norm + (size_t)h * qk_stride,
                              head_size,
-                             bn_transformer_gpu_norm_epsilon(&m->config));
+                             bn_transformer_gpu_norm_epsilon(c));
     }
     if (lw->attn.k_bias) {
-        int head_size = m->config.head_size;
-        int rope_dims = bn_transformer_rope_dims_for_head(&m->config,
-                                                          head_size);
+        int rope_dims = bn_transformer_rope_dims_for_head(c, head_size);
         int half = rope_dims / 2;
-        for (int h = 0; h < m->config.n_kv_heads; h++) {
+        for (int h = 0; h < n_kv_heads; h++) {
             float *kh = cpu_k + (size_t)h * head_size;
             for (int i = 0; i < half; i++) {
                 float angle = (float)pos * s->rope_freq[i];

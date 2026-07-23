@@ -4414,6 +4414,11 @@ if grep -n 'c->qk_norm_per_head\|m->config\.qk_norm_per_head' \
     fail=1
 fi
 
+if grep -n 'm->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "GPU fallback debug QKV must use layer shape planning for attention dimensions"
+    fail=1
+fi
+
 if grep -n 'c->has_ffn_gate\|m->config\.has_ffn_gate' src/transformer/plan.c src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer planning/prefill must use model-config helpers for dense FFN gate policy"
     fail=1
