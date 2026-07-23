@@ -783,7 +783,8 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     const BnConfig *c = &m->config;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
-    int q_dim = plan->q_dim > 0 ? plan->q_dim : c->n_heads * plan->head_size;
+    int q_dim = plan->q_dim > 0 ? plan->q_dim
+                                : plan->n_heads * plan->head_size;
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
     int has_packed_qkv =
@@ -1392,14 +1393,33 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     BnConfig *c = &m->config;
     BnRunState *s = &sess->state;
+    BnWeights *w = &m->weights;
     int dim = c->dim;
-    int head_size = c->head_size;
     float norm_eps = bn_transformer_prefill_norm_epsilon(c);
     BnPrefillProfile prof = {0};
     prof.enabled = bn_transformer_prefill_profile_enabled();
     double t_prof = prefill_profile_now(&prof);
 
-    if (head_size > BN_MAX_VLA_ELEMS || dim > BN_MAX_VLA_ELEMS) {
+    int max_head_size = bn_transformer_attention_head_size(c, NULL);
+    int max_n_heads = bn_transformer_attention_n_heads(c, NULL);
+    int max_q_dim = max_n_heads * max_head_size;
+    int max_rope_dims = prefill_layer_rope_dims(c, max_head_size);
+    for (int l = 0; l < c->n_layers; l++) {
+        BnLayerShapePlan plan;
+        bn_transformer_plan_layer_shape(&plan, c, &w->layers[l], l,
+                                        bn_model_tq_state(m) != NULL);
+        if (!plan.is_attn)
+            continue;
+        if (plan.head_size > max_head_size)
+            max_head_size = plan.head_size;
+        if (plan.q_dim > max_q_dim)
+            max_q_dim = plan.q_dim;
+        int layer_rope_dims = prefill_layer_rope_dims(c, plan.head_size);
+        if (layer_rope_dims > max_rope_dims)
+            max_rope_dims = layer_rope_dims;
+    }
+
+    if (max_head_size > BN_MAX_VLA_ELEMS || dim > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("Model dimensions too large for stack VLAs");
         return NULL;
     }
@@ -1447,8 +1467,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return NULL;
     }
 
-    int rope_dims = prefill_layer_rope_dims(c, head_size);
-    int half_rope = rope_dims / 2;
+    int half_rope = max_rope_dims / 2;
     if (half_rope > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("RoPE dimensions too large for stack VLAs");
         return NULL;
@@ -1456,8 +1475,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
     int kv_dim = c->kv_dim;
     int hidden_dim = c->hidden_dim;
-    int q_dim = c->n_heads * head_size;
-    int q_buf_stride = (q_dim > dim ? q_dim * 2 : dim);
+    int q_buf_stride = (max_q_dim > dim ? max_q_dim * 2 : dim);
     int xb2_stride = dim;
     int hb_stride = hidden_dim;
     int hb2_stride = hidden_dim;
@@ -1515,7 +1533,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     float *rope_sin_buf = (float *)sh_arena_alloc(pf_arena, nt * half_rope * sizeof(float));
     if (!rope_cos_buf || !rope_sin_buf) { sh_arena_free(pf_arena); return NULL; }
 
-    BnWeights *w = &m->weights;
     int rope_cache_dims = -1;
     float rope_cache_theta = 0.0f;
 
@@ -1555,6 +1572,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     &plan, c, lw, l, bn_model_tq_state(m) != NULL);
                 int layer_head_size = plan.head_size;
                 int layer_kv_dim = plan.kv_dim;
+                int layer_n_heads = plan.n_heads;
                 int layer_n_kv_heads = plan.n_kv_heads;
                 int layer_kv_mul = plan.kv_mul;
                 int layer_rope_dims =
@@ -1581,7 +1599,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                           m, layer_out, lw, layer_in,
                           chain_kv.write_host_kv ? K_new : NULL,
                           chain_kv.write_host_kv ? V_new : NULL,
-                          n_tokens, dim, c->n_heads, layer_n_kv_heads,
+                          n_tokens, dim, layer_n_heads, layer_n_kv_heads,
                           layer_head_size,
                           layer_kv_mul, layer_kv_dim, layer_rope_dims,
                           l, pos0, kv_cache_off, kv_dim,
@@ -1590,7 +1608,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                           m, layer_out, lw, layer_in,
                           chain_kv.write_host_kv ? K_new : NULL,
                           chain_kv.write_host_kv ? V_new : NULL, n_tokens,
-                          dim, hidden_dim, c->n_heads, layer_n_kv_heads,
+                          dim, hidden_dim, layer_n_heads, layer_n_kv_heads,
                           layer_head_size, layer_kv_mul, layer_kv_dim,
                           layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
                           prefill_attention_scale(c, layer_head_size));
@@ -1674,6 +1692,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 if (plan.is_attn) {
                     int layer_head_size = plan.head_size;
                     int layer_kv_dim = plan.kv_dim;
+                    int layer_n_heads = plan.n_heads;
                     int layer_n_kv_heads = plan.n_kv_heads;
                     int layer_kv_mul = plan.kv_mul;
                     int layer_rope_dims =
@@ -1689,7 +1708,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                               m, layer_out, lw, layer_in,
                               chain_kv.write_host_kv ? K_new : NULL,
                               chain_kv.write_host_kv ? V_new : NULL,
-                              n_tokens, dim, c->n_heads, layer_n_kv_heads,
+                              n_tokens, dim, layer_n_heads, layer_n_kv_heads,
                               layer_head_size,
                               layer_kv_mul, layer_kv_dim, layer_rope_dims, l,
                               pos0, kv_cache_off, kv_dim,
@@ -1699,7 +1718,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                               chain_kv.write_host_kv ? K_new : NULL,
                               chain_kv.write_host_kv ? V_new : NULL,
                               n_tokens,
-                              dim, hidden_dim, c->n_heads, layer_n_kv_heads,
+                              dim, hidden_dim, layer_n_heads, layer_n_kv_heads,
                               layer_head_size, layer_kv_mul, layer_kv_dim,
                               layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
                               prefill_attention_scale(c, layer_head_size));
@@ -1772,6 +1791,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         if (is_attn && lw->attn.wq.data) {
             int layer_head_size = plan.head_size;
             int layer_kv_dim = plan.kv_dim;
+            int layer_n_heads = plan.n_heads;
             int layer_n_kv_heads = plan.n_kv_heads;
             int layer_kv_mul = plan.kv_mul;
             int layer_q_dim = plan.q_dim;
@@ -1810,7 +1830,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 t_prof = prefill_profile_now(&prof);
                 if (prefill_dense_layer_gpu_batch(
                         m, act, lw, act, K_new, V_new, n_tokens, dim,
-                        hidden_dim, c->n_heads, layer_n_kv_heads,
+                        hidden_dim, layer_n_heads, layer_n_kv_heads,
                         layer_head_size, layer_kv_mul, layer_kv_dim,
                         layer_rope_dims, l, pos0,
                         (uint32_t)((size_t)plan.attn_idx * c->seq_len *
@@ -1904,7 +1924,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_run(
                         gpu, act, qk_buf, wv_buf, wo_buf, attn_norm_buf,
                         q_norm_buf, k_norm_buf, act, K_new,
-                        V_new, n_tokens, dim, c->n_heads,
+                        V_new, n_tokens, dim, layer_n_heads,
                         layer_n_kv_heads, layer_head_size, layer_kv_mul,
                         kv_dim, lw->attn.wq.rows + lw->attn.wk.rows,
                         lw->attn.wq.type, lw->attn.wv.rows,
@@ -1932,7 +1952,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         bn_transformer_gpu_prefill_qkv_attention_wo_backend_run(
                         gpu, Xb2, qk_buf, wv_buf, wo_buf,
                         q_norm_buf, k_norm_buf, Xb, K_new, V_new,
-                        n_tokens, dim, c->n_heads, layer_n_kv_heads,
+                        n_tokens, dim, layer_n_heads, layer_n_kv_heads,
                         layer_head_size, layer_kv_mul, kv_dim,
                         lw->attn.wq.rows + lw->attn.wk.rows,
                         lw->attn.wq.type, lw->attn.wv.rows,
@@ -2067,7 +2087,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .Q_buf = Q_buf, .K_new = K_new, .V_new = V_new,
                     .out = q_gated ? Xb2 : Q_buf,
                     .loff = loff, .pos0 = pos0, .n_tokens = n_tokens,
-                    .n_heads = c->n_heads, .n_kv_heads = layer_n_kv_heads,
+                    .n_heads = layer_n_heads, .n_kv_heads = layer_n_kv_heads,
                     .head_size = layer_head_size, .kv_dim = kv_dim,
                     .kv_mul = layer_kv_mul, .seq_len = c->seq_len,
                     .rope_dims = layer_rope_dims, .rope_freq = s->rope_freq,
@@ -2115,7 +2135,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             BN_TRANSFORMER_PREFILL_ATTENTION_BATCH_WO &&
                         bn_transformer_gpu_prefill_attention_wo_backend_run(
                             gpu, Xb2, attn_wo_buf, Q_buf, K_new, V_new,
-                            n_tokens, c->n_heads, layer_n_kv_heads,
+                            n_tokens, layer_n_heads, layer_n_kv_heads,
                             layer_head_size, layer_kv_mul, kv_dim,
                             lw->attn.wo.rows, lw->attn.wo.cols,
                             lw->attn.wo.type,
@@ -2124,7 +2144,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         used_fused_attn_wo = 1;
                     } else if (bn_transformer_gpu_prefill_attention_backend_run(
                             gpu, Q_buf, Q_buf, K_new, V_new, n_tokens,
-                            c->n_heads, layer_n_kv_heads, layer_head_size,
+                            layer_n_heads, layer_n_kv_heads, layer_head_size,
                             layer_kv_mul, kv_dim,
                             prefill_attention_scale(c, layer_head_size)) == 0) {
                         used_gpu_attn = 1;
@@ -2152,7 +2172,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     float *v_t = V_new + (size_t)t * layer_kv_dim;
 
                     if (q_gated) {
-                        for (int h = 0; h < c->n_heads; h++)
+                        for (int h = 0; h < layer_n_heads; h++)
                             memcpy(s->q + h * layer_head_size,
                                    q_t + h * 2 * layer_head_size,
                                    layer_head_size * sizeof(float));
@@ -2164,7 +2184,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         int qk_stride =
                             bn_transformer_attention_qk_stride(
                                 c, layer_head_size);
-                        for (int h = 0; h < c->n_heads; h++)
+                        for (int h = 0; h < layer_n_heads; h++)
                             prefill_cpu_ops()->rmsnorm(
                                 s->q + h * layer_head_size,
                                 s->q + h * layer_head_size,
@@ -2192,7 +2212,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
 
                     float *rc = rope_cos_buf + t * half_rope;
                     float *rs = rope_sin_buf + t * half_rope;
-                    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads,
+                    bn_transformer_cpu_apply_rope_heads(s->q, layer_n_heads,
                                                         layer_head_size,
                                                         layer_rope_dims, rc, rs);
                     bn_transformer_cpu_apply_rope_heads(k_t, layer_n_kv_heads,
@@ -2211,10 +2231,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                       layer_head_size, kv_dim, c->seq_len,
                                       prefill_attention_scale(c, layer_head_size),
                                       bn_transformer_kv_host_cache_uses_fp16_rows(c) };
-                    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, layer_kv_mul);
+                    bn_transformer_cpu_gqa_dispatch(m, &gctx, layer_n_heads, layer_kv_mul);
 
                     if (q_gated) {
-                        for (int h = 0; h < c->n_heads; h++) {
+                        for (int h = 0; h < layer_n_heads; h++) {
                             float *gate_h = q_t + h * 2 * layer_head_size + layer_head_size;
                             float *xb_h = s->xb + h * layer_head_size;
                             for (int d = 0; d < layer_head_size; d++)

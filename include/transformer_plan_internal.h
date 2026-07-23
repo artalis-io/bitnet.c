@@ -71,6 +71,7 @@ typedef struct {
     int q_dim;
     int q_gated;
     int q_wide;
+    int n_heads;
     int head_size;
     int kv_dim;
     int n_kv_heads;
@@ -241,6 +242,8 @@ int bn_transformer_attention_q_projection_is_wide(const BnQWeight *wq,
                                                   int q_dim);
 int bn_transformer_attention_head_size(const BnConfig *c,
                                        const BnLayerWeights *lw);
+int bn_transformer_attention_n_heads(const BnConfig *c,
+                                     const BnLayerWeights *lw);
 int bn_transformer_attention_kv_dim(const BnConfig *c,
                                     const BnLayerWeights *lw);
 int bn_transformer_attention_n_kv_heads(const BnConfig *c,

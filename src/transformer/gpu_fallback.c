@@ -192,6 +192,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
         return -1;
 
     int head_size = shape.head_size;
+    int n_heads = shape.n_heads;
     int kv_dim = shape.kv_dim;
     int n_kv_heads = shape.n_kv_heads;
     int kv_mul = shape.kv_mul;
@@ -224,7 +225,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
             value_cache_row[i] += lw->attn.v_bias[i];
     }
     if (lw->attn.q_norm) {
-        for (int h = 0; h < c->n_heads; h++)
+        for (int h = 0; h < n_heads; h++)
             fallback_rmsnorm(s->q + (size_t)h * head_size,
                              s->q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * shape.qk_stride,
@@ -238,7 +239,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
                              head_size, bn_transformer_gpu_norm_epsilon(c));
     }
 
-    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
+    bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                         layer_rope_dims, rope_cos, rope_sin);
     bn_transformer_cpu_apply_rope_heads(key_cache_row, n_kv_heads, head_size,
                                         layer_rope_dims, rope_cos, rope_sin);
@@ -249,7 +250,7 @@ int bn_transformer_gpu_fallback_cpu_attention(
         bn_transformer_attention_scale(c, head_size),
         bn_transformer_kv_host_cache_uses_fp16_rows(c)
     };
-    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
+    bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
 
     {
         BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
@@ -712,6 +713,7 @@ int bn_transformer_gpu_debug_compare_attention(
     }
 
     int head_size = shape.head_size;
+    int n_heads = shape.n_heads;
     int kv_dim = shape.kv_dim;
     int n_kv_heads = shape.n_kv_heads;
     int kv_mul = shape.kv_mul;
@@ -755,7 +757,7 @@ int bn_transformer_gpu_debug_compare_attention(
             value_cache_row[i] += lw->attn.v_bias[i];
     }
     if (lw->attn.q_norm) {
-        for (int h = 0; h < c->n_heads; h++)
+        for (int h = 0; h < n_heads; h++)
             fallback_rmsnorm(s->q + (size_t)h * head_size,
                              s->q + (size_t)h * head_size,
                              lw->attn.q_norm + (size_t)h * shape.qk_stride,
@@ -769,7 +771,7 @@ int bn_transformer_gpu_debug_compare_attention(
                              head_size, bn_transformer_gpu_norm_epsilon(c));
     }
 
-    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
+    bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                         layer_rope_dims, rope_cos, rope_sin);
     bn_transformer_cpu_apply_rope_heads(key_cache_row, n_kv_heads, head_size,
                                         layer_rope_dims, rope_cos, rope_sin);
@@ -779,7 +781,7 @@ int bn_transformer_gpu_debug_compare_attention(
         bn_transformer_attention_scale(c, head_size),
         bn_transformer_kv_host_cache_uses_fp16_rows(c)
     };
-    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
+    bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
 
     fallback_cpu_matvec(m, s->xb2, &lw->attn.wo, s->xb, s->x_q);
     bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
@@ -850,6 +852,7 @@ int bn_transformer_gpu_debug_compare_gqa(
     }
 
     int head_size = shape.head_size;
+    int n_heads = shape.n_heads;
     int kv_dim = shape.kv_dim;
     int n_kv_heads = shape.n_kv_heads;
     int kv_mul = shape.kv_mul;
@@ -893,7 +896,7 @@ int bn_transformer_gpu_debug_compare_gqa(
             value_cache_row[i] += lw->attn.v_bias[i];
     }
 
-    bn_transformer_cpu_apply_rope_heads(s->q, c->n_heads, head_size,
+    bn_transformer_cpu_apply_rope_heads(s->q, n_heads, head_size,
                                         layer_rope_dims, rope_cos, rope_sin);
     bn_transformer_cpu_apply_rope_heads(key_cache_row, n_kv_heads, head_size,
                                         layer_rope_dims, rope_cos, rope_sin);
@@ -903,7 +906,7 @@ int bn_transformer_gpu_debug_compare_gqa(
         bn_transformer_attention_scale(c, head_size),
         bn_transformer_kv_host_cache_uses_fp16_rows(c)
     };
-    bn_transformer_cpu_gqa_dispatch(m, &gctx, c->n_heads, kv_mul);
+    bn_transformer_cpu_gqa_dispatch(m, &gctx, n_heads, kv_mul);
 
     debug_compare_vec("gqa_compare", layer, pos, s->xb, gpu_xb, dim);
 

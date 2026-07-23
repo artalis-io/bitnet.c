@@ -3803,6 +3803,7 @@ static void test_layer_shape_planning(void) {
     assert(p.q_dim == 2048);
     assert(!p.q_gated);
     assert(!p.q_wide);
+    assert(p.n_heads == 16);
     assert(p.head_size == 128);
     assert(p.kv_dim == 512);
     assert(p.n_kv_heads == 4);
@@ -3812,6 +3813,7 @@ static void test_layer_shape_planning(void) {
     assert(p.has_bias);
     assert(p.kv_mode == BN_KV_FP32);
     assert(bn_transformer_attention_head_size(&c, &lw) == 128);
+    assert(bn_transformer_attention_n_heads(&c, &lw) == 16);
     assert(bn_transformer_attention_kv_dim(&c, &lw) == 512);
     assert(bn_transformer_attention_n_kv_heads(&c, &lw) == 4);
     assert(bn_transformer_attention_kv_mul(&c, &lw) == 4);
@@ -3848,6 +3850,7 @@ static void test_layer_shape_planning(void) {
     assert(bn_transformer_layer_kind(1, 1, 1) == BN_LAYER_ATTN_GATED_Q);
     assert(!p.q_gated);
     assert(p.q_wide);
+    assert(p.n_heads == 16);
     assert(p.q_dim == 3072);
     assert(p.head_size == 192);
     assert(p.kv_dim == 768);

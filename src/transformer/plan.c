@@ -70,6 +70,12 @@ int bn_transformer_attention_head_size(const BnConfig *c,
                                         : c->head_size;
 }
 
+int bn_transformer_attention_n_heads(const BnConfig *c,
+                                     const BnLayerWeights *lw) {
+    (void)lw;
+    return c->n_heads;
+}
+
 int bn_transformer_attention_kv_dim(const BnConfig *c,
                                     const BnLayerWeights *lw) {
     return lw && lw->attn.kv_dim > 0 ? lw->attn.kv_dim
@@ -180,9 +186,10 @@ void bn_transformer_plan_layer_shape(BnLayerShapePlan *p,
     p->ssm_idx = p->is_attn ? -1 : bn_transformer_ssm_index(c, layer);
     p->head_size = bn_transformer_attention_head_size(c, lw);
     p->kv_dim = bn_transformer_attention_kv_dim(c, lw);
+    p->n_heads = bn_transformer_attention_n_heads(c, lw);
     p->n_kv_heads = bn_transformer_attention_n_kv_heads(c, lw);
     p->kv_mul = bn_transformer_attention_kv_mul(c, lw);
-    p->q_dim = c->n_heads * p->head_size;
+    p->q_dim = p->n_heads * p->head_size;
     p->q_gated = bn_transformer_attention_q_projection_is_gated(
         &lw->attn.wq, p->q_dim);
     p->q_wide = bn_transformer_attention_q_projection_is_wide(

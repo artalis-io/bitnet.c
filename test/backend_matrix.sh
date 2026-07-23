@@ -4414,8 +4414,10 @@ if grep -n 'c->qk_norm_per_head\|m->config\.qk_norm_per_head' \
     fail=1
 fi
 
-if grep -n 'm->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
-    echo "GPU fallback debug QKV must use layer shape planning for attention dimensions"
+if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
+    src/transformer/prefill.c \
+    src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "Transformer prefill/GPU fallback paths must use layer shape planning for attention dimensions"
     fail=1
 fi
 
