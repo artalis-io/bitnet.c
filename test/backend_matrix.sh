@@ -3082,6 +3082,11 @@ if grep -n 'bn_transformer_moe_has_shared_expert(c, NULL)' src/transformer/prefi
     fail=1
 fi
 
+if grep -n 'bn_transformer_moe_has_shared_expert' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Transformer prefill execution must compose shared expert state through shape policy"
+    fail=1
+fi
+
 if grep -n 'c->has_shared_expert' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "src/transformer/prefill.c must compose shared MoE expert policy helpers"
     fail=1

@@ -874,6 +874,8 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
             n_tokens);
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
+    BnTransformerMoESharedExpertShapePolicy shared_policy =
+        bn_transformer_moe_shared_expert_shape_policy(c, lw);
     if (!moe_layer_chain_available ||
         !backend ||
         bn_model_tq_state(m) != NULL ||
@@ -892,7 +894,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
                     layer_rope_theta == prefill_base_rope_theta(c),
                     plan->is_attn,
                     layer_kind.uses_moe,
-                    bn_transformer_moe_has_shared_expert(c, lw),
+                    shared_policy.has_shared_expert,
                     lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias,
                     lw->norm.attn_sub_norm != NULL,
                     lw->norm.layer_output_scale != NULL);
