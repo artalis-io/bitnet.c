@@ -4103,6 +4103,11 @@ if grep -n 'c->n_experts > 0' src/model.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if awk '/^int bn_model_uses_moe/{flag=1} flag{print} flag && /^}/{flag=0}' src/model.c | grep -n 'bn_model_arch_uses_moe' >/dev/null 2>&1; then
+    echo "bn_model_uses_moe must compose through model-config policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model-config/MoE policy helpers for routed expert shape and weighting"
     fail=1
