@@ -2,6 +2,7 @@
 #include "transformer_cpu_backend_internal.h"
 #include "transformer_cpu_internal.h"
 #include "transformer/gpu_internal.h"
+#include "model_internal.h"
 #include "turboquant.h"
 #include "moe.h"
 #include "session.h"
@@ -28,6 +29,7 @@ static int prepare_per_layer_input_state(BnModel *m, BnSession *sess,
     int per_dim = bn_transformer_per_layer_embedding_dim(c);
     if (per_dim <= 0)
         return 0;
+    float norm_eps = bn_model_config_norm_epsilon(c);
     int total = per_dim * c->n_layers;
     if (!s->per_layer_input || !w->per_layer_model_proj.data ||
         !w->per_layer_token_embd.data || !w->per_layer_proj_norm)
@@ -42,7 +44,7 @@ static int prepare_per_layer_input_state(BnModel *m, BnSession *sess,
         s->per_layer_input[i] *= proj_scale;
     for (int l = 0; l < c->n_layers; l++)
         rmsnorm_per_layer_slice(s->per_layer_input + (size_t)l * per_dim,
-                                w->per_layer_proj_norm, per_dim, c->norm_eps);
+                                w->per_layer_proj_norm, per_dim, norm_eps);
 
     if (bn_model_dequant_qweight_row(&w->per_layer_token_embd,
                                      token, total, s->hb) != 0)
