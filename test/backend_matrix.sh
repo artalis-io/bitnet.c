@@ -4436,7 +4436,7 @@ if grep -n 'cpu_attention_post_norm_applies(c' src/transformer/cpu.c >/dev/null 
     fail=1
 fi
 
-if grep -n 'bn_transformer_attention_uses_post_norm(c)\|bn_transformer_ffn_uses_post_norm(c)' src/transformer/prefill.c >/dev/null 2>&1; then
+if grep -n 'bn_transformer_attention_uses_post_norm(\|bn_transformer_ffn_uses_post_norm(' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer prefill execution must use planned post-norm policy"
     fail=1
 fi

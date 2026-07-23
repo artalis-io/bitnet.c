@@ -1027,7 +1027,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
             bn_transformer_prefill_has_ffn_gate(&m->config),
             lw->norm.ffn_sub_norm != NULL,
             lw->norm.layer_output_scale != NULL,
-            bn_transformer_ffn_uses_post_norm(&m->config),
+            bn_transformer_ffn_uses_post_norm_layer(&m->config, lw),
             lw->norm.ffn_post_norm != NULL);
     if (ffn_fuse.enabled) {
         gateup_buf = bn_backend_model_handle(
