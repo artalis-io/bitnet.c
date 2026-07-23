@@ -576,6 +576,32 @@ static void test_gpu_policy_helpers(void) {
         BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0, BN_GGUF_TENSOR_Q8_0));
     assert(!bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
         BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32, BN_GGUF_TENSOR_F32));
+    BnConfig moe_route_c = {0};
+    moe_route_c.dim = 16;
+    moe_route_c.moe_intermediate_size = 32;
+    BnLayerWeights moe_route_lw;
+    memset(&moe_route_lw, 0, sizeof(moe_route_lw));
+    moe_route_lw.moe.router_weight = (float *)1;
+    moe_route_lw.moe.expert_map.gate_type = BN_GGUF_TENSOR_Q4_K;
+    moe_route_lw.moe.expert_map.up_type = BN_GGUF_TENSOR_Q4_K;
+    moe_route_lw.moe.expert_map.down_type = BN_GGUF_TENSOR_Q6_K;
+    moe_route_lw.moe.expert_map.gate_rows = 32;
+    moe_route_lw.moe.expert_map.up_rows = 32;
+    moe_route_lw.moe.expert_map.down_rows = 16;
+    moe_route_lw.moe.expert_map.gate_cols = 16;
+    moe_route_lw.moe.expert_map.up_cols = 16;
+    moe_route_lw.moe.expert_map.down_cols = 32;
+    assert(bn_gpu_policy_moe_layer_uses_router(&moe_route_lw));
+    assert(bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(
+        &moe_route_c, &moe_route_lw));
+    moe_route_lw.moe.router_weight = NULL;
+    assert(!bn_gpu_policy_moe_layer_uses_router(&moe_route_lw));
+    assert(!bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(
+        &moe_route_c, &moe_route_lw));
+    moe_route_lw.moe.router_weight = (float *)1;
+    moe_route_lw.moe.expert_map.down_cols = 31;
+    assert(!bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(
+        &moe_route_c, &moe_route_lw));
 
     unsetenv("BN_CUDA_ENABLE_MOE_ALL_F16_CACHE");
     unsetenv("BN_CUDA_DISABLE_MOE_ALL_F16_CACHE");

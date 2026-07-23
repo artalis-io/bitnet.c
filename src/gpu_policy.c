@@ -702,6 +702,10 @@ int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c) {
     return gpu_policy_moe_f16_aux_cache_auto_enabled(c);
 }
 
+int bn_gpu_policy_moe_layer_uses_router(const BnLayerWeights *lw) {
+    return bn_moe_policy_layer_has_router(lw);
+}
+
 static int gpu_policy_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
@@ -718,6 +722,17 @@ int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
     return gpu_policy_moe_resident_routed_ffn_quant_eligible(gate_type,
                                                              up_type,
                                                              down_type);
+}
+
+int bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(
+    const BnConfig *c,
+    const BnLayerWeights *lw) {
+    if (!c || !bn_gpu_policy_moe_layer_uses_router(lw))
+        return 0;
+    const BnMoEExpertMap *em = &lw->moe.expert_map;
+    return bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
+               em->gate_type, em->up_type, em->down_type) &&
+           bn_moe_policy_supports_resident_routed_ffn_layout(c, em);
 }
 
 static int gpu_policy_moe_all_f16_cache_requested(void) {

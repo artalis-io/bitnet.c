@@ -249,16 +249,13 @@ static void *upload_moe_all_proj(BnModel *model,
 static BnModelGPUMoELayerPolicy
 model_gpu_moe_layer_policy(const BnConfig *c, const BnLayerWeights *lw) {
     BnModelGPUMoELayerPolicy policy = {0};
-    policy.uses_moe = bn_moe_policy_layer_has_router(lw);
+    policy.uses_moe = bn_gpu_policy_moe_layer_uses_router(lw);
     if (!c || !policy.uses_moe)
         return policy;
-    const BnMoEExpertMap *em = &lw->moe.expert_map;
     policy.uploads_router_diff2 =
         bn_gpu_policy_moe_router_diff2_upload_enabled(c);
     policy.resident_routed_ffn_eligible =
-        bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
-            em->gate_type, em->up_type, em->down_type) &&
-        bn_moe_policy_supports_resident_routed_ffn_layout(c, em);
+        bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(c, lw);
     return policy;
 }
 

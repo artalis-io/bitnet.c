@@ -5,6 +5,7 @@
 #include "gguf.h"
 #include "gpu_backend.h"
 #include "model_config.h"
+#include "model_weights.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,10 +28,14 @@ int bn_gpu_policy_uses_moe(const BnConfig *c);
 BnGPUMoERouteShape bn_gpu_policy_moe_route_shape(const BnConfig *c);
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c);
 int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c);
+int bn_gpu_policy_moe_layer_uses_router(const BnLayerWeights *lw);
 int bn_gpu_policy_moe_resident_routed_ffn_quant_eligible(
     int gate_type,
     int up_type,
     int down_type);
+int bn_gpu_policy_moe_resident_routed_ffn_layer_eligible(
+    const BnConfig *c,
+    const BnLayerWeights *lw);
 int bn_gpu_policy_moe_all_f16_cache_forced(void);
 int bn_gpu_policy_moe_all_f16_cache_enabled_for_type(
     const BnGPUBackend *gpu,
