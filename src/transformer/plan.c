@@ -90,7 +90,7 @@ int bn_transformer_attention_kv_mul(const BnConfig *c,
 
 int bn_transformer_attention_qk_stride(const BnConfig *c,
                                        int head_size) {
-    return c && c->qk_norm_per_head ? head_size : 0;
+    return bn_model_config_attention_qk_norm_stride(c, head_size);
 }
 
 int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw) {
@@ -262,7 +262,8 @@ int bn_transformer_ffn_uses_fused_gateup_silu(
            bn_transformer_ffn_has_gate(c) &&
            lw &&
            bn_transformer_gpu_can_fused_gateup_silu_pair(
-               gpu, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type, c->act_type);
+               gpu, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
+               bn_model_config_activation(c));
 }
 
 int bn_transformer_ffn_uses_gateup_split(
@@ -278,7 +279,7 @@ int bn_transformer_ffn_uses_gateup_split(
            bn_transformer_gpu_can_stack_same_quant_format_gateup(&lw->ffn.ffn_gate,
                                                      &lw->ffn.ffn_up) &&
            bn_transformer_gpu_can_gateup_split_activation(
-               gpu, lw->ffn.ffn_gate.type, c->act_type);
+               gpu, lw->ffn.ffn_gate.type, bn_model_config_activation(c));
 }
 
 int bn_transformer_ffn_uses_residual_rmsnorm_fusion(
@@ -535,7 +536,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
     p->kind = bn_transformer_ffn_kind(c, lw);
     p->hidden_dim = bn_transformer_ffn_hidden_dim(c, lw);
-    p->activation = c->act_type;
+    p->activation = bn_model_config_activation(c);
     p->has_gate = bn_transformer_ffn_has_gate(c);
     p->has_sub_norm = bn_transformer_ffn_has_sub_norm(lw);
     p->reference_activation =
