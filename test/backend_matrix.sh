@@ -711,6 +711,11 @@ if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/logits.c >/dev/nul
     fail=1
 fi
 
+if grep -n 'c->norm_eps' src/transformer/logits_policy.c >/dev/null 2>&1; then
+    echo "Transformer logits execution policy must use model norm policy helpers"
+    fail=1
+fi
+
 if grep -n '#include "quant.h"\|bn_quant_' src/transformer/logits.c >/dev/null 2>&1; then
     echo "src/transformer/logits.c must use CPU backend/logits policy helpers, not quant internals directly"
     fail=1

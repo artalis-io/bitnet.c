@@ -71,7 +71,7 @@ BnLogitsExecutionPolicy bn_transformer_logits_execution_policy(
     BnLogitsExecutionPolicy policy = {0};
     if (!c)
         return policy;
-    policy.norm_eps = c->norm_eps;
+    policy.norm_eps = bn_model_config_norm_epsilon(c);
     policy.final_softcap = bn_transformer_logits_final_softcap(c);
     return policy;
 }

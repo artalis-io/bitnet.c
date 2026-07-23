@@ -12,6 +12,7 @@
 #include "transformer_plan_internal.h"
 #include "gpu_policy.h"
 #include "model_arch.h"
+#include "model_internal.h"
 #include "quant.h"
 #include "simd_helpers.h"
 #include <stdio.h>
@@ -3160,6 +3161,8 @@ static void test_logits_policy_helpers(void) {
     BnLogitsExecutionPolicy logits_exec =
         bn_transformer_logits_execution_policy(&softcap_config);
     assert(logits_exec.norm_eps == 1.0e-5f);
+    assert(logits_exec.norm_eps ==
+           bn_model_config_norm_epsilon(&softcap_config));
     assert(logits_exec.final_softcap == 0.0f);
     assert(bn_transformer_logits_final_softcap(&softcap_config) == 0.0f);
     softcap_config.final_logit_softcap = 30.0f;
@@ -3169,6 +3172,7 @@ static void test_logits_policy_helpers(void) {
     assert(logits_exec.final_softcap == 30.0f);
     logits_exec = bn_transformer_logits_execution_policy(NULL);
     assert(logits_exec.norm_eps == 0.0f);
+    assert(bn_model_config_norm_epsilon(NULL) == 0.0f);
     assert(logits_exec.final_softcap == 0.0f);
 
     unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
