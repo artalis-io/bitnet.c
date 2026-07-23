@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "backend_session.h"
+#include "model_internal.h"
 #include "platform.h"
 #include "session.h"
 #include "transformer_cpu_backend_internal.h"
@@ -910,9 +911,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     BnTransformerGPULogitResources *logit_res = &policy.logits;
     int has_moe = policy.has_moe;
 
+    float norm_eps = bn_model_config_norm_epsilon(c);
+
     // Precompute eps as uint32
     uint32_t u_eps;
-    { float eps = c->norm_eps; memcpy(&u_eps, &eps, 4); }
+    { float eps = norm_eps; memcpy(&u_eps, &eps, 4); }
 
     int max_ops = bn_transformer_gpu_graph_op_capacity(c);
 
@@ -1266,7 +1269,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         }
                         gpu_debug_rmsnorm_scalar_local(
                             moe_cpu_xb, s->x, lw->norm.ffn_norm, dim,
-                            c->norm_eps);
+                            norm_eps);
                         gpu_debug_compare_vec_local(
                             "moe_input_norm_compare", l, pos,
                             moe_cpu_xb, s->xb, dim);
@@ -1663,7 +1666,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                 for (int i = 0; i < dim; i++)
                                     ss += moe_cpu_x[i] * moe_cpu_x[i];
                                 float scale = 1.0f /
-                                    sqrtf(ss / (float)dim + c->norm_eps);
+                                    sqrtf(ss / (float)dim + norm_eps);
                                 for (int i = 0; i < dim; i++)
                                     moe_cpu_norm[i] =
                                         moe_cpu_x[i] * scale * nw[i];
@@ -1846,7 +1849,7 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                 for (int i = 0; i < dim; i++)
                                     ss += moe_cpu_x[i] * moe_cpu_x[i];
                                 float scale = 1.0f /
-                                    sqrtf(ss / (float)dim + c->norm_eps);
+                                    sqrtf(ss / (float)dim + norm_eps);
                                 for (int i = 0; i < dim; i++)
                                     moe_cpu_norm[i] =
                                         moe_cpu_x[i] * scale * nw[i];

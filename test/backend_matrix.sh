@@ -1132,6 +1132,11 @@ if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/gpu_fallback.c >/d
     fail=1
 fi
 
+if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU decode execution must use model norm policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer prefill execution must use model norm policy helpers"
     fail=1
