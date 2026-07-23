@@ -243,13 +243,16 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     BnWeights *w = &m->weights;
     BnRunState *s = &sess->state;
     int dim = c->dim;
+    BnLogitsExecutionPolicy exec_policy =
+        bn_transformer_logits_execution_policy(c);
 
     if (dim > BN_LOGITS_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("Model dim too large for stack VLAs");
         return NULL;
     }
 
-    logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim, c->norm_eps);
+    logits_rmsnorm_model(m, s->x, s->x, w->output_norm, dim,
+                         exec_policy.norm_eps);
 
     BnLogitsPlan plan;
     bn_transformer_plan_logits(&plan, c, w, bn_model_gpu(m),
@@ -307,7 +310,7 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
     }
 
     {
-        float cap = bn_transformer_logits_final_softcap(c);
+        float cap = exec_policy.final_softcap;
         if (cap != 0.0f) {
             float inv = 1.0f / cap;
             for (int i = 0; i < c->vocab_size; i++)

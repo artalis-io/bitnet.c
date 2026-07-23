@@ -66,6 +66,16 @@ int bn_transformer_logits_tied_dense_float_weight_type(void) {
     return bn_backend_quant_tied_logits_dense_float_weight_type();
 }
 
+BnLogitsExecutionPolicy bn_transformer_logits_execution_policy(
+    const BnConfig *c) {
+    BnLogitsExecutionPolicy policy = {0};
+    if (!c)
+        return policy;
+    policy.norm_eps = c->norm_eps;
+    policy.final_softcap = bn_transformer_logits_final_softcap(c);
+    return policy;
+}
+
 float bn_transformer_logits_final_softcap(const BnConfig *c) {
     return bn_model_config_final_logit_softcap(c);
 }

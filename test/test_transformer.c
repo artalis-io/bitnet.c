@@ -3156,9 +3156,20 @@ static void test_logits_policy_helpers(void) {
            BN_MATVEC_TASK_NATIVE_QUANT);
     assert(bn_transformer_logits_final_softcap(NULL) == 0.0f);
     BnConfig softcap_config = {0};
+    softcap_config.norm_eps = 1.0e-5f;
+    BnLogitsExecutionPolicy logits_exec =
+        bn_transformer_logits_execution_policy(&softcap_config);
+    assert(logits_exec.norm_eps == 1.0e-5f);
+    assert(logits_exec.final_softcap == 0.0f);
     assert(bn_transformer_logits_final_softcap(&softcap_config) == 0.0f);
     softcap_config.final_logit_softcap = 30.0f;
     assert(bn_transformer_logits_final_softcap(&softcap_config) == 30.0f);
+    logits_exec = bn_transformer_logits_execution_policy(&softcap_config);
+    assert(logits_exec.norm_eps == 1.0e-5f);
+    assert(logits_exec.final_softcap == 30.0f);
+    logits_exec = bn_transformer_logits_execution_policy(NULL);
+    assert(logits_exec.norm_eps == 0.0f);
+    assert(logits_exec.final_softcap == 0.0f);
 
     unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
