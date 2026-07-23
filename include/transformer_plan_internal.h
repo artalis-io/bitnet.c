@@ -103,6 +103,7 @@ typedef struct {
     int activation;
     int has_gate;
     int has_sub_norm;
+    int use_post_norm;
     int reference_activation;
     int use_fused_gateup_silu;
     int use_gateup_split;
@@ -324,6 +325,8 @@ int bn_transformer_ffn_hidden_dim(const BnConfig *c,
                                   const BnLayerWeights *lw);
 int bn_transformer_ffn_has_gate(const BnConfig *c);
 int bn_transformer_ffn_has_sub_norm(const BnLayerWeights *lw);
+int bn_transformer_ffn_uses_post_norm_layer(const BnConfig *c,
+                                            const BnLayerWeights *lw);
 int bn_transformer_ffn_uses_fused_gateup_silu(
     const BnGPUBackend *gpu,
     const BnConfig *c,

@@ -275,6 +275,15 @@ int bn_transformer_ffn_has_sub_norm(const BnLayerWeights *lw) {
     return lw && lw->norm.ffn_sub_norm;
 }
 
+int bn_transformer_ffn_uses_post_norm_layer(const BnConfig *c,
+                                            const BnLayerWeights *lw) {
+    BnTransformerCPUPostNormPolicy policy =
+        bn_transformer_cpu_ffn_post_norm_policy(
+            bn_transformer_ffn_uses_post_norm(c),
+            lw && lw->norm.ffn_post_norm);
+    return policy.apply;
+}
+
 int bn_transformer_ffn_uses_fused_gateup_silu(
     const BnGPUBackend *gpu,
     const BnConfig *c,
@@ -561,6 +570,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->activation = bn_model_config_activation(c);
     p->has_gate = bn_transformer_ffn_has_gate(c);
     p->has_sub_norm = bn_transformer_ffn_has_sub_norm(lw);
+    p->use_post_norm = bn_transformer_ffn_uses_post_norm_layer(c, lw);
     p->reference_activation =
         bn_transformer_ffn_uses_reference_activation(c);
 

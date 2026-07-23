@@ -298,8 +298,7 @@ static void fallback_cpu_forward_ffn_from_xb(BnModel *m,
                          hidden_dim,
                          bn_transformer_gpu_norm_epsilon(&m->config));
     fallback_cpu_matvec(m, s->xb, &lw->ffn.ffn_down, s->hb, s->x_q);
-    if (bn_transformer_ffn_uses_post_norm(&m->config) &&
-        lw->norm.ffn_post_norm)
+    if (ffn_plan->use_post_norm)
         fallback_rmsnorm(s->xb, s->xb, lw->norm.ffn_post_norm,
                          dim, bn_transformer_gpu_norm_epsilon(&m->config));
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);

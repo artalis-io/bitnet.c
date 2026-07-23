@@ -127,15 +127,6 @@ static int cpu_attention_post_norm_applies(const BnConfig *c,
     return policy.apply;
 }
 
-static int cpu_ffn_post_norm_applies(const BnConfig *c,
-                                     const float *ffn_post_norm) {
-    BnTransformerCPUPostNormPolicy policy =
-        bn_transformer_cpu_ffn_post_norm_policy(
-            bn_transformer_ffn_uses_post_norm(c),
-            ffn_post_norm != NULL);
-    return policy.apply;
-}
-
 static int cpu_layer_output_scale_applies(const BnConfig *c,
                                           const float *layer_output_scale) {
     BnTransformerCPULayerOutputScalePolicy policy =
@@ -993,7 +984,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                     dim, hidden_dim, lw->ffn.ffn_gate.type,
                     lw->ffn.ffn_up.type, lw->ffn.ffn_down.type,
                     ffn_plan->activation) == 0) {
-                if (cpu_ffn_post_norm_applies(c, lw->norm.ffn_post_norm))
+                if (ffn_plan->use_post_norm)
                     cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim,
                                 norm_eps);
                 bn_transformer_cpu_residual_add(s->x, s->xb, dim);
@@ -1068,7 +1059,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 
     BnMatvecTask down[1] = {{ s->xb, &lw->ffn.ffn_down, NULL, 0 }};
     cpu_quant_matvec_batch_prepared(m, down, 1, s->hb, s->x_q);
-    if (cpu_ffn_post_norm_applies(c, lw->norm.ffn_post_norm))
+    if (ffn_plan->use_post_norm)
         cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim, norm_eps);
     cpu_debug_dump_array(c, s->xb, "bitnet_ffn_out", layer, pos);
     bn_transformer_cpu_residual_add(s->x, s->xb, dim);

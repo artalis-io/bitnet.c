@@ -4114,6 +4114,17 @@ static void test_block_planning(void) {
     assert(ffn.backend == BN_BACKEND_METAL);
     assert(ffn.hidden_dim == 8192);
     assert(bn_transformer_ffn_hidden_dim(&c, &lw) == 8192);
+    assert(!ffn.use_post_norm);
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_FFN_POST_NORM;
+    lw.norm.ffn_post_norm = (float *)1;
+    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
+    assert(ffn.use_post_norm);
+    assert(bn_transformer_ffn_uses_post_norm_layer(&c, &lw));
+    lw.norm.ffn_post_norm = NULL;
+    bn_transformer_plan_ffn(&ffn, &c, &lw, &gpu, backend, 0, 1);
+    assert(!ffn.use_post_norm);
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_FFN_POST_NORM;
+    lw.norm.ffn_post_norm = NULL;
     lw.ffn.ffn_up.rows = 0;
     assert(bn_transformer_ffn_hidden_dim(&c, &lw) == c.hidden_dim);
     lw.ffn.ffn_up.rows = 8192;

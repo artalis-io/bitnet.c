@@ -4426,6 +4426,11 @@ if grep -n 'bn_transformer_attention_value_shares_key(c)' src/transformer/cpu.c 
     fail=1
 fi
 
+if grep -n 'bn_transformer_ffn_uses_post_norm(&m->config)\|cpu_ffn_post_norm_applies(c' src/transformer/cpu.c src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "Transformer CPU/GPU fallback FFN execution must use planned FFN post-norm policy"
+    fail=1
+fi
+
 if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
     src/transformer/prefill.c \
     src/transformer/gpu.c \
