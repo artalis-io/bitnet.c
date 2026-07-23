@@ -302,6 +302,10 @@ int bn_transformer_moe_uses_all_active_two_route(const BnConfig *c,
     return bn_moe_policy_uses_all_active_two_expert_route(c, dim);
 }
 
+int bn_transformer_moe_uses_all_active_two_expert_set(const BnConfig *c) {
+    return bn_moe_policy_uses_all_active_two_expert_set(c);
+}
+
 int bn_transformer_moe_uses_configured_all_active_two_route(
     const BnConfig *c) {
     return c && bn_transformer_moe_uses_all_active_two_route(c, c->dim);
@@ -313,6 +317,21 @@ int bn_transformer_moe_uses_grouped_route(const BnConfig *c) {
 
 int bn_transformer_moe_normalizes_topk_route_weights(const BnConfig *c) {
     return bn_moe_policy_normalizes_topk_route_weights(c);
+}
+
+int bn_transformer_moe_supports_resident_routed_ffn_shape(
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim) {
+    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
+    return bn_moe_policy_supports_resident_routed_ffn_shape(
+        dim, route_policy.expert_hidden_dim, map);
+}
+
+int bn_transformer_moe_supports_resident_routed_ffn_layout(
+    const BnConfig *c,
+    const BnMoEExpertMap *map) {
+    return bn_moe_policy_supports_resident_routed_ffn_layout(c, map);
 }
 
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c) {

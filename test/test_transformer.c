@@ -1442,9 +1442,26 @@ static void test_gpu_policy_helpers(void) {
     c.moe_intermediate_size = 4096;
     c.moe_norm_topk_prob = 1;
     assert(bn_transformer_moe_uses_all_active_two_route(&c, c.dim));
+    assert(bn_transformer_moe_uses_all_active_two_expert_set(&c));
     assert(bn_transformer_moe_uses_configured_all_active_two_route(&c));
     assert(!bn_transformer_moe_uses_grouped_route(&c));
     assert(bn_transformer_moe_normalizes_topk_route_weights(&c));
+    BnMoEExpertMap resident_map = {0};
+    resident_map.gate_rows = 4096;
+    resident_map.up_rows = 4096;
+    resident_map.gate_cols = 2048;
+    resident_map.up_cols = 2048;
+    resident_map.down_rows = 2048;
+    resident_map.down_cols = 4096;
+    assert(bn_transformer_moe_supports_resident_routed_ffn_shape(
+        &c, &resident_map, c.dim));
+    assert(bn_transformer_moe_supports_resident_routed_ffn_layout(
+        &c, &resident_map));
+    resident_map.down_cols = 4095;
+    assert(!bn_transformer_moe_supports_resident_routed_ffn_shape(
+        &c, &resident_map, c.dim));
+    assert(!bn_transformer_moe_supports_resident_routed_ffn_layout(
+        &c, &resident_map));
     c.moe_norm_topk_prob = 0;
     assert(!bn_transformer_moe_normalizes_topk_route_weights(&c));
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
@@ -1461,12 +1478,20 @@ static void test_gpu_policy_helpers(void) {
                 &c, 0).enabled);
     c.n_experts = 4;
     c.n_experts_active = 2;
+    assert(!bn_transformer_moe_uses_all_active_two_expert_set(&c));
     assert(bn_transformer_moe_uses_grouped_route(&c));
     memset(&c, 0, sizeof(c));
     assert(!bn_transformer_moe_uses_all_active_two_route(NULL, 0));
+    assert(!bn_transformer_moe_uses_all_active_two_expert_set(NULL));
     assert(!bn_transformer_moe_uses_configured_all_active_two_route(NULL));
     assert(!bn_transformer_moe_uses_grouped_route(NULL));
     assert(!bn_transformer_moe_normalizes_topk_route_weights(NULL));
+    assert(!bn_transformer_moe_supports_resident_routed_ffn_shape(
+        NULL, &resident_map, 0));
+    assert(!bn_transformer_moe_supports_resident_routed_ffn_layout(
+        NULL, &resident_map));
+    assert(!bn_transformer_moe_supports_resident_routed_ffn_layout(
+        &c, NULL));
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(0) == 0);
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(1) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);

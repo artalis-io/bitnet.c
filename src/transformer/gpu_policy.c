@@ -1517,7 +1517,7 @@ int bn_transformer_gpu_moe_prefill_prefers_cached_expert_batch(
     int gpu_moe_cache_available) {
     return gpu_moe_cache_available &&
            bn_transformer_gpu_moe_prefill_backend_available(gpu) &&
-           bn_moe_policy_uses_all_active_two_expert_set(c) &&
+           bn_transformer_moe_uses_all_active_two_expert_set(c) &&
            bn_transformer_gpu_moe_cache_prefill_enabled();
 }
 
@@ -1974,7 +1974,7 @@ int bn_transformer_gpu_moe_decode_cacheable(
             !bn_backend_model_handle(backend, l,
                                      BN_BACKEND_HANDLE_MOE_DOWN_ALL) ||
             (!routed_kquant_down && !routed_native_quant) ||
-            !bn_moe_policy_supports_resident_routed_ffn_layout(c, em))
+            !bn_transformer_moe_supports_resident_routed_ffn_layout(c, em))
             return 0;
     }
     return 1;
@@ -2383,9 +2383,7 @@ int bn_transformer_gpu_moe_routed_ffn_enabled(
          !bn_transformer_gpu_moe_routed_native_quant(map)) ||
         !bn_gpu_policy_moe_resident_routed_ffn_enabled(1))
         return 0;
-    BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
-    return bn_moe_policy_supports_resident_routed_ffn_shape(
-        dim, route_policy.expert_hidden_dim, map);
+    return bn_transformer_moe_supports_resident_routed_ffn_shape(c, map, dim);
 }
 
 uint32_t bn_transformer_gpu_moe_route_normalization_flags(const BnConfig *c) {

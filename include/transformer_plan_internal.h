@@ -336,10 +336,18 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw);
 int bn_transformer_moe_uses_all_active_two_route(const BnConfig *c,
                                                  int dim);
+int bn_transformer_moe_uses_all_active_two_expert_set(const BnConfig *c);
 int bn_transformer_moe_uses_configured_all_active_two_route(
     const BnConfig *c);
 int bn_transformer_moe_uses_grouped_route(const BnConfig *c);
 int bn_transformer_moe_normalizes_topk_route_weights(const BnConfig *c);
+int bn_transformer_moe_supports_resident_routed_ffn_shape(
+    const BnConfig *c,
+    const BnMoEExpertMap *map,
+    int dim);
+int bn_transformer_moe_supports_resident_routed_ffn_layout(
+    const BnConfig *c,
+    const BnMoEExpertMap *map);
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c);
 BnTransformerMoESharedExpertShapePolicy
 bn_transformer_moe_shared_expert_shape_policy(const BnConfig *c,

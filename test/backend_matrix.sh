@@ -3022,6 +3022,11 @@ if grep -n 'bn_moe_policy_uses_all_active_two_expert_route\|bn_moe_policy_uses_g
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_uses_all_active_two_expert_set\|bn_moe_policy_supports_resident_routed_ffn_shape\|bn_moe_policy_supports_resident_routed_ffn_layout' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose transformer MoE resident-route policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->has_shared_expert &&' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose loaded shared MoE expert policy helpers"
     fail=1
