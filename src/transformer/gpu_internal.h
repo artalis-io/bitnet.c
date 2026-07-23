@@ -1229,6 +1229,8 @@ bn_transformer_gpu_moe_direct_route_policy(
     const BnConfig *c,
     void *router_diff,
     void *moe_gate_all);
+int bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
+    const BnConfig *c);
 BnTransformerGPUMoEAllActiveTwoResourcePolicy
 bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c);
 int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(

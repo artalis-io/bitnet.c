@@ -419,6 +419,16 @@ if grep -n 'bn_moe_policy_uses_all_active_two_expert_route' src/transformer/pref
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_matvec_argmax_enabled/{flag=1} /^int bn_transformer_gpu_matvec_argmax_backend_run/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'bn_moe_policy_uses_all_active_two_expert_route' >/dev/null 2>&1 ||
+   awk '/^BnTransformerGPUMoEAllActiveTwoResourcePolicy/{flag=1} /^int bn_transformer_gpu_all_active_two_kquant_moe_route_layer_selected/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'bn_moe_policy_uses_all_active_two_expert_route' >/dev/null 2>&1 ||
+   awk '/^void \*bn_transformer_gpu_all_active_two_kquant_moe_router/{flag=1} /^int bn_transformer_gpu_all_active_two_kquant_moe_requires_opt_in/{flag=0} flag{print}' \
+    src/transformer/gpu_policy.c | grep -n 'bn_moe_policy_uses_all_active_two_expert_route' >/dev/null 2>&1; then
+    echo "GPU configured all-active-two route decisions must use GPU route behavior policy"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_cpu_prefill_force_float_kquant_enabled' \
     include/transformer_plan_internal.h \
     src/transformer/cpu_policy.c \

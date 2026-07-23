@@ -2984,6 +2984,8 @@ static void test_gpu_policy_helpers(void) {
     c.moe_intermediate_size = 4096;
     c.dim = 2048;
     c.moe_norm_topk_prob = 1;
+    assert(bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
+        &c));
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_GPU");
     unsetenv("BN_CUDA_DISABLE_MOE_ROUTER_DIFF2");
     setenv("BN_CUDA_ENABLE_MOE_ROUTER_GPU", "1", 1);
@@ -3027,6 +3029,8 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
     assert(all_active_two_resources.enabled);
     c.dim = 2049;
+    assert(!bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
+        &c));
     all_active_two_resources =
         bn_transformer_gpu_moe_all_active_two_resource_policy(&c);
     assert(!all_active_two_resources.enabled);

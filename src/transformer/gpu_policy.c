@@ -1899,7 +1899,7 @@ int bn_transformer_gpu_matvec_argmax_enabled(
                    c, logits->rows) ||
                bn_gpu_policy_dense_logits_argmax_enabled();
     }
-    if (bn_moe_policy_uses_all_active_two_expert_route(c, c->dim))
+    if (bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(c))
         return 1;
     if (bn_gpu_policy_moe_logits_mmvq_argmax_enabled())
         return 1;
@@ -2436,11 +2436,16 @@ bn_transformer_gpu_moe_direct_route_policy(
     return policy;
 }
 
+int bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
+    const BnConfig *c) {
+    return c && bn_moe_policy_uses_all_active_two_expert_route(c, c->dim);
+}
+
 BnTransformerGPUMoEAllActiveTwoResourcePolicy
 bn_transformer_gpu_moe_all_active_two_resource_policy(const BnConfig *c) {
     BnTransformerGPUMoEAllActiveTwoResourcePolicy policy = {0};
     policy.enabled =
-        bn_moe_policy_uses_all_active_two_expert_route(c, c ? c->dim : 0);
+        bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(c);
     return policy;
 }
 
@@ -2449,8 +2454,8 @@ int bn_transformer_gpu_all_active_two_kquant_moe_direct_route_enabled(
     void *router_diff,
     void *moe_gate_all) {
     return router_diff &&
-           bn_moe_policy_uses_all_active_two_expert_route(
-               c, c ? c->dim : 0) &&
+           bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(
+               c) &&
            bn_moe_policy_normalizes_topk_route_weights(c) &&
            !moe_gate_all &&
            bn_gpu_policy_moe_router_gpu_enabled();
@@ -2490,8 +2495,7 @@ void *bn_transformer_gpu_all_active_two_kquant_moe_router(
     int route_layer_selected,
     int reference_gpu_route) {
     if (router_diff &&
-        bn_moe_policy_uses_all_active_two_expert_route(
-            c, c ? c->dim : 0) &&
+        bn_transformer_gpu_uses_configured_all_active_two_kquant_moe_route(c) &&
         route_layer_selected &&
         bn_gpu_policy_moe_router_diff2_enabled() &&
         !reference_gpu_route)
