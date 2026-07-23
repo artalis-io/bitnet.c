@@ -135,6 +135,11 @@ typedef struct {
 } BnMoEPlan;
 
 typedef struct {
+    int has_shared_expert;
+    int hidden_dim;
+} BnTransformerMoESharedExpertShapePolicy;
+
+typedef struct {
     BnLogitsKind kind;
     BnExecPlacement placement;
     BnBackendPlacement backend;
@@ -328,6 +333,9 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
 int bn_transformer_moe_uses_configured_all_active_two_route(
     const BnConfig *c);
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c);
+BnTransformerMoESharedExpertShapePolicy
+bn_transformer_moe_shared_expert_shape_policy(const BnConfig *c,
+                                              const BnLayerWeights *lw);
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);

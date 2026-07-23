@@ -4062,8 +4062,17 @@ static void test_block_planning(void) {
     assert(moe.hidden_dim == 1024);
     assert(moe.has_shared_expert);
     assert(bn_transformer_moe_shared_expert_hidden_dim(&c) == 2048);
+    BnTransformerMoESharedExpertShapePolicy shared_policy =
+        bn_transformer_moe_shared_expert_shape_policy(&c, &lw);
+    assert(shared_policy.has_shared_expert);
+    assert(shared_policy.hidden_dim == 2048);
     assert(moe.shared_hidden_dim == 2048);
     assert(moe.needs_cpu_fallback);
+    c.has_shared_expert = 0;
+    shared_policy = bn_transformer_moe_shared_expert_shape_policy(&c, &lw);
+    assert(!shared_policy.has_shared_expert);
+    assert(shared_policy.hidden_dim == 0);
+    c.has_shared_expert = 1;
     lw.moe.router_weight = NULL;
     assert(!bn_transformer_moe_layer_has_router(&lw));
     assert(!bn_transformer_moe_layer_has_router(NULL));
