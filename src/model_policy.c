@@ -161,8 +161,12 @@ int bn_model_config_moe_route_shape_valid(const BnConfig *config) {
            bn_model_config_moe_expert_hidden_dim(config) > 0;
 }
 
+int bn_model_config_has_shared_expert(const BnConfig *config) {
+    return config ? config->has_shared_expert : 0;
+}
+
 int bn_model_config_shared_expert_hidden_dim(const BnConfig *config) {
-    if (!config || !config->has_shared_expert ||
+    if (!bn_model_config_has_shared_expert(config) ||
         config->shared_expert_intermediate_size <= 0)
         return 0;
     return config->shared_expert_intermediate_size;

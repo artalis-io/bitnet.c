@@ -4421,6 +4421,11 @@ do
     fi
 done
 
+if grep -n 'c->has_shared_expert' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must use model-policy helpers for shared expert loading and allocation"
+    fail=1
+fi
+
 if grep -n 'moe_exact_silu\|BN_MODEL_ARCH_POLICY_MOE_EXACT_SILU\|bn_moe_policy_exact_silu\|\.exact_silu\b' \
     include/model_config.h \
     include/model_arch.h \

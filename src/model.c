@@ -869,7 +869,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 goto fail_layers;
 
             // Shared expert (optional, always resident)
-            if (c->has_shared_expert) {
+            if (bn_model_config_has_shared_expert(c)) {
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_SHARED_FFN_GATE) != 0 ||
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
@@ -952,7 +952,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     size_t prepared_weight_bytes =
         bn_backend_layout_prepared_qweights_size(c, w, &prepared_stats);
     size_t shared_gate_float_bytes = 0;
-    if (c->has_shared_expert) {
+    if (bn_model_config_has_shared_expert(c)) {
         for (int i = 0; i < c->n_layers; i++) {
             BnSharedExpertWeights *sh = &w->layers[i].shared;
             if (sh->shared_expert_gate &&
