@@ -297,9 +297,22 @@ int bn_transformer_moe_has_shared_expert(const BnConfig *c,
     return bn_moe_policy_has_shared_expert(c, lw);
 }
 
+int bn_transformer_moe_uses_all_active_two_route(const BnConfig *c,
+                                                 int dim) {
+    return bn_moe_policy_uses_all_active_two_expert_route(c, dim);
+}
+
 int bn_transformer_moe_uses_configured_all_active_two_route(
     const BnConfig *c) {
-    return c && bn_moe_policy_uses_all_active_two_expert_route(c, c->dim);
+    return c && bn_transformer_moe_uses_all_active_two_route(c, c->dim);
+}
+
+int bn_transformer_moe_uses_grouped_route(const BnConfig *c) {
+    return bn_moe_policy_uses_grouped_expert_route(c);
+}
+
+int bn_transformer_moe_normalizes_topk_route_weights(const BnConfig *c) {
+    return bn_moe_policy_normalizes_topk_route_weights(c);
 }
 
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c) {

@@ -1440,7 +1440,13 @@ static void test_gpu_policy_helpers(void) {
     c.n_experts = 2;
     c.n_experts_active = 2;
     c.moe_intermediate_size = 4096;
+    c.moe_norm_topk_prob = 1;
+    assert(bn_transformer_moe_uses_all_active_two_route(&c, c.dim));
     assert(bn_transformer_moe_uses_configured_all_active_two_route(&c));
+    assert(!bn_transformer_moe_uses_grouped_route(&c));
+    assert(bn_transformer_moe_normalizes_topk_route_weights(&c));
+    c.moe_norm_topk_prob = 0;
+    assert(!bn_transformer_moe_normalizes_topk_route_weights(&c));
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &c, 0).enabled);
     c.has_shared_expert = 1;
@@ -1449,10 +1455,18 @@ static void test_gpu_policy_helpers(void) {
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &c, 1).enabled);
     c.dim = 2049;
+    assert(!bn_transformer_moe_uses_all_active_two_route(&c, c.dim));
     assert(!bn_transformer_moe_uses_configured_all_active_two_route(&c));
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &c, 0).enabled);
+    c.n_experts = 4;
+    c.n_experts_active = 2;
+    assert(bn_transformer_moe_uses_grouped_route(&c));
     memset(&c, 0, sizeof(c));
+    assert(!bn_transformer_moe_uses_all_active_two_route(NULL, 0));
+    assert(!bn_transformer_moe_uses_configured_all_active_two_route(NULL));
+    assert(!bn_transformer_moe_uses_grouped_route(NULL));
+    assert(!bn_transformer_moe_normalizes_topk_route_weights(NULL));
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(0) == 0);
     assert(bn_transformer_prefill_float_kquant_fallback_task_flags(1) ==
            BN_MATVEC_TASK_FORCE_FLOAT_KQUANT);

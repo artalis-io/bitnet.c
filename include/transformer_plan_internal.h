@@ -334,8 +334,12 @@ int bn_transformer_ffn_requires_cpu_fallback(
     BnExecPlacement placement);
 int bn_transformer_moe_has_shared_expert(const BnConfig *c,
                                          const BnLayerWeights *lw);
+int bn_transformer_moe_uses_all_active_two_route(const BnConfig *c,
+                                                 int dim);
 int bn_transformer_moe_uses_configured_all_active_two_route(
     const BnConfig *c);
+int bn_transformer_moe_uses_grouped_route(const BnConfig *c);
+int bn_transformer_moe_normalizes_topk_route_weights(const BnConfig *c);
 int bn_transformer_moe_shared_expert_hidden_dim(const BnConfig *c);
 BnTransformerMoESharedExpertShapePolicy
 bn_transformer_moe_shared_expert_shape_policy(const BnConfig *c,

@@ -3017,6 +3017,11 @@ if grep -n 'c->n_experts <= 0' src/transformer/gpu_policy.c >/dev/null 2>&1; the
     fail=1
 fi
 
+if grep -n 'bn_moe_policy_uses_all_active_two_expert_route\|bn_moe_policy_uses_grouped_expert_route\|bn_moe_policy_normalizes_topk_route_weights' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/transformer/gpu_policy.c must compose transformer MoE route policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->has_shared_expert &&' src/transformer/gpu_policy.c >/dev/null 2>&1; then
     echo "src/transformer/gpu_policy.c must compose loaded shared MoE expert policy helpers"
     fail=1
