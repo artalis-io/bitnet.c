@@ -1142,6 +1142,11 @@ if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/gpu_fallback.c >/d
     fail=1
 fi
 
+if grep -n 'bn_model_config_norm_epsilon' src/transformer/gpu_fallback.c >/dev/null 2>&1; then
+    echo "GPU fallback execution must compose norm policy through GPU policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/gpu.c >/dev/null 2>&1; then
     echo "GPU decode execution must use model norm policy helpers"
     fail=1
