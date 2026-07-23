@@ -4183,6 +4183,11 @@ if grep -n 'config->qk_norm_per_head\|config->has_ffn_gate\|config->act_type' sr
     fail=1
 fi
 
+if grep -n 'config->norm_eps\|config->final_logit_softcap' src/model_policy.c >/dev/null 2>&1; then
+    echo "model config policy must delegate norm/logit config semantics to model_arch helpers"
+    fail=1
+fi
+
 if grep -n 'bn_gguf_get_u32(f, key)' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model_arch helpers for arch-prefixed scalar GGUF metadata"
     fail=1

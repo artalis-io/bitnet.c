@@ -251,7 +251,7 @@ int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config) {
 }
 
 float bn_model_config_norm_epsilon(const BnConfig *config) {
-    return config ? config->norm_eps : 0.0f;
+    return bn_model_arch_norm_epsilon(config);
 }
 
 int bn_model_config_attention_flash_requested(const BnConfig *config) {
@@ -350,7 +350,7 @@ void bn_model_config_init_rope_frequencies(const BnConfig *config,
 }
 
 float bn_model_config_final_logit_softcap(const BnConfig *config) {
-    return config ? config->final_logit_softcap : 0.0f;
+    return bn_model_arch_final_logit_softcap(config);
 }
 
 int bn_model_config_prefill_uses_reference_activation(

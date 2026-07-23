@@ -114,6 +114,8 @@ int bn_model_arch_requires_float_kquant_fallback(const BnConfig *c);
 float bn_model_arch_attention_scale(const BnConfig *c, int head_size);
 BnModelArchRMSNormMode bn_model_arch_rmsnorm_mode(const BnConfig *c);
 int bn_model_arch_rmsnorm_uses_reference_order(const BnConfig *c);
+float bn_model_arch_norm_epsilon(const BnConfig *c);
+float bn_model_arch_final_logit_softcap(const BnConfig *c);
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c);
 int bn_model_arch_attention_qk_norm_stride(const BnConfig *c,
                                            int head_size);

@@ -160,6 +160,14 @@ int bn_model_arch_rmsnorm_uses_reference_order(
            BN_MODEL_ARCH_RMSNORM_REFERENCE_ORDER;
 }
 
+float bn_model_arch_norm_epsilon(const BnConfig *c) {
+    return c ? c->norm_eps : 0.0f;
+}
+
+float bn_model_arch_final_logit_softcap(const BnConfig *c) {
+    return c ? c->final_logit_softcap : 0.0f;
+}
+
 int bn_model_arch_attention_value_shares_key_config(const BnConfig *c) {
     return c && ((c->policy_flags & BN_MODEL_ARCH_POLICY_ATTENTION_VALUE_SHARES_KEY) != 0);
 }
