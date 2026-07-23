@@ -97,6 +97,11 @@ int bn_model_config_uses_attention_post_norm(const BnConfig *config);
 int bn_model_config_uses_ffn_post_norm(const BnConfig *config);
 int bn_model_config_uses_layer_output_scale(const BnConfig *config);
 int bn_model_config_per_layer_embedding_dim(const BnConfig *config);
+int bn_model_config_loads_extra_metadata(const BnConfig *config);
+int bn_model_config_loads_per_layer_input_weights(const BnConfig *config);
+int bn_model_config_layer_reuses_kv(const BnConfig *config, int layer);
+int bn_model_config_kv_reuse_layer(const BnConfig *config, int layer);
+int bn_model_config_loads_extra_ffn_post_norms(const BnConfig *config);
 int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer);
 int bn_model_config_rope_dims_for_head(const BnConfig *config,
                                        int layer_head_size);

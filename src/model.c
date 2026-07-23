@@ -361,7 +361,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     c->ssm_group_count = bn_model_arch_gguf_u32(f, "ssm.group_count");
 
-    if (bn_model_arch_loads_extra_metadata(c)) {
+    if (bn_model_config_loads_extra_metadata(c)) {
         int shared_kv_layers =
             bn_model_arch_gguf_u32(f, "attention.shared_kv_layers");
         c->kv_unique_layer_count = c->n_layers - shared_kv_layers;
@@ -380,7 +380,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     }
 
     // Validate SSM config when hybrid model
-    if (bn_model_arch_uses_hybrid_layer_layout(c)) {
+    if (bn_model_config_uses_hybrid_layer_layout(c)) {
         if (c->ssm_time_step_rank <= 0) {
             SH_LOG_ERROR("ssm_time_step_rank must be > 0 for hybrid models");
             return -1;
@@ -397,7 +397,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
 
     // MoE config
     bn_model_arch_load_moe_config(c, f, arch_ops, prefix);
-    if (bn_model_arch_uses_moe(c)) {
+    if (bn_model_config_uses_moe(c)) {
         int total_experts = bn_model_config_moe_total_experts(c);
         int active_experts = bn_model_config_moe_active_experts(c);
         int expert_hidden_dim = bn_model_config_moe_expert_hidden_dim(c);
@@ -436,7 +436,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         snprintf(vocab_s, sizeof(vocab_s), "%d", c->vocab_size);
         SH_LOG_DEBUG("Model config", "dim", dim_s, "layers", layers_s,
                      "heads", heads_s, "vocab", vocab_s);
-        if (bn_model_arch_uses_hybrid_layer_layout(c)) {
+        if (bn_model_config_uses_hybrid_layer_layout(c)) {
             char fai_s[16], ssm_s[16];
             snprintf(fai_s, sizeof(fai_s), "%d", c->full_attn_interval);
             snprintf(ssm_s, sizeof(ssm_s), "%d", c->ssm_inner_size);
@@ -515,7 +515,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         return -1;
     }
     w->rope_freqs = load_f32_tensor(f, "rope_freqs.weight");
-    if (bn_model_arch_loads_per_layer_input_weights(c)) {
+    if (bn_model_config_loads_per_layer_input_weights(c)) {
         if (load_qweight(&w->per_layer_model_proj, f,
                          "per_layer_model_proj.weight",
                          "per_layer_model_proj.scale") != 0)
@@ -545,7 +545,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         // Determine layer type for hybrid models
         int is_ssm = arch_ops->is_ssm_layer(c, i);
         lw->block_kind = is_ssm ? BN_LAYER_BLOCK_SSM : BN_LAYER_BLOCK_ATTENTION;
-        lw->ffn_kind = bn_model_arch_uses_moe(c) ? BN_LAYER_FFN_MOE : BN_LAYER_FFN_DENSE;
+        lw->ffn_kind = bn_model_config_uses_moe(c) ? BN_LAYER_FFN_MOE : BN_LAYER_FFN_DENSE;
 
         // #25: Attention norms — must exist
         if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
@@ -625,11 +625,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (load_qweight(&lw->ssm.ssm_out, f, wname, sname) != 0) goto fail_layers;
         } else {
             // --- Attention layer weights ---
-            int reuses_kv = bn_model_arch_layer_reuses_kv(c, i);
+            int reuses_kv = bn_model_config_layer_reuses_kv(c, i);
             lw->attn.has_kv = !reuses_kv;
             lw->attn.kv_reuse_layer = -1;
             if (reuses_kv)
-                lw->attn.kv_reuse_layer = bn_model_arch_kv_reuse_layer(c, i);
+                lw->attn.kv_reuse_layer = bn_model_config_kv_reuse_layer(c, i);
             if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                               BN_MODEL_TENSOR_ATTN_Q) != 0 ||
                 bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,
@@ -763,11 +763,11 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             goto fail_layers;
         lw->norm.ffn_post_norm = load_f32_tensor(f, wname);  // optional
         if (!lw->norm.ffn_post_norm &&
-            bn_model_arch_uses_ffn_post_norm(c)) {
+            bn_model_config_uses_ffn_post_norm(c)) {
             snprintf(wname, sizeof(wname), "blk.%d.post_ffw_norm.weight", i);
             lw->norm.ffn_post_norm = load_f32_tensor(f, wname);
         }
-        if (bn_model_arch_loads_extra_ffn_post_norms(c)) {
+        if (bn_model_config_loads_extra_ffn_post_norms(c)) {
             snprintf(wname, sizeof(wname), "blk.%d.post_ffw_norm_1.weight", i);
             lw->norm.ffn_post_norm_1 = load_f32_tensor(f, wname);
             snprintf(wname, sizeof(wname), "blk.%d.post_ffw_norm_2.weight", i);
@@ -779,7 +779,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             goto fail_layers;
         lw->norm.layer_output_scale = load_f32_tensor(f, wname);  // optional
 
-        if (bn_model_arch_loads_per_layer_input_weights(c)) {
+        if (bn_model_config_loads_per_layer_input_weights(c)) {
             snprintf(wname, sizeof(wname), "blk.%d.inp_gate.weight", i);
             snprintf(sname, sizeof(sname), "blk.%d.inp_gate.scale", i);
             if (load_qweight(&lw->per_layer.inp_gate, f, wname, sname) != 0)
@@ -797,7 +797,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
 
         // FFN weights: MoE or dense
-        if (bn_model_arch_uses_moe(c)) {
+        if (bn_model_config_uses_moe(c)) {
             // --- MoE layer: router + expert offsets + shared expert ---
 
             // Router weight: [n_experts, dim] F32 — always resident
@@ -809,14 +809,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 SH_LOG_ERROR("Router weight not found", "name", wname);
                 goto fail_layers;
             }
-            if (bn_model_arch_loads_moe_aux_weights(c)) {
+            if (bn_model_config_moe_uses_scaled_router_input(c)) {
                 snprintf(wname, sizeof(wname), "blk.%d.ffn_gate_inp.scale", i);
                 lw->moe.router_scale = load_f32_tensor(f, wname);
                 snprintf(wname, sizeof(wname), "blk.%d.ffn_down_exps.scale", i);
                 lw->moe.expert_down_scale = load_f32_tensor(f, wname);
             }
 
-            if (bn_model_arch_moe_uses_dense_residual_branch(c)) {
+            if (bn_model_config_moe_uses_dense_residual_branch(c)) {
                 if (bn_model_arch_tensor_name_for(arch_ops, wname, sizeof(wname), i,
                                                   BN_MODEL_TENSOR_FFN_GATE) != 0 ||
                     bn_model_arch_tensor_scale_name_for(arch_ops, sname, sizeof(sname), i,

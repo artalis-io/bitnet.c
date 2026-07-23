@@ -267,6 +267,26 @@ int bn_model_config_per_layer_embedding_dim(const BnConfig *config) {
     return bn_model_arch_per_layer_embedding_dim(config);
 }
 
+int bn_model_config_loads_extra_metadata(const BnConfig *config) {
+    return bn_model_arch_loads_extra_metadata(config);
+}
+
+int bn_model_config_loads_per_layer_input_weights(const BnConfig *config) {
+    return bn_model_arch_loads_per_layer_input_weights(config);
+}
+
+int bn_model_config_layer_reuses_kv(const BnConfig *config, int layer) {
+    return bn_model_arch_layer_reuses_kv(config, layer);
+}
+
+int bn_model_config_kv_reuse_layer(const BnConfig *config, int layer) {
+    return bn_model_arch_kv_reuse_layer(config, layer);
+}
+
+int bn_model_config_loads_extra_ffn_post_norms(const BnConfig *config) {
+    return bn_model_arch_loads_extra_ffn_post_norms(config);
+}
+
 int bn_model_config_divides_rope_freqs(const BnConfig *config, int layer) {
     return bn_model_arch_divides_rope_freqs(config, layer);
 }

@@ -4108,6 +4108,11 @@ if awk '/^int bn_model_uses_moe/{flag=1} flag{print} flag && /^}/{flag=0}' src/m
     fail=1
 fi
 
+if grep -n 'bn_model_arch_uses_hybrid_layer_layout\|bn_model_arch_uses_moe\|bn_model_arch_loads_extra_metadata\|bn_model_arch_loads_per_layer_input_weights\|bn_model_arch_layer_reuses_kv\|bn_model_arch_kv_reuse_layer\|bn_model_arch_uses_ffn_post_norm\|bn_model_arch_loads_extra_ffn_post_norms\|bn_model_arch_loads_moe_aux_weights\|bn_model_arch_moe_uses_dense_residual_branch' src/model.c >/dev/null 2>&1; then
+    echo "src/model.c must compose load-time architecture behavior through model-config policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model-config/MoE policy helpers for routed expert shape and weighting"
     fail=1
