@@ -393,7 +393,7 @@ typedef struct {
 static BnMainLoadedMoELayerPolicy
 main_loaded_moe_layer_policy(const BnLayerWeights *lw) {
     BnMainLoadedMoELayerPolicy policy = {0};
-    policy.uses_moe = bn_moe_policy_layer_has_router(lw);
+    policy.uses_moe = bn_gpu_policy_moe_layer_uses_router(lw);
     return policy;
 }
 
