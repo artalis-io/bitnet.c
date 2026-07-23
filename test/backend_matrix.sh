@@ -4431,6 +4431,11 @@ if grep -n 'bn_transformer_ffn_uses_post_norm(&m->config)\|cpu_ffn_post_norm_app
     fail=1
 fi
 
+if grep -n 'cpu_attention_post_norm_applies(c' src/transformer/cpu.c >/dev/null 2>&1; then
+    echo "Transformer CPU attention execution must use planned attention post-norm policy"
+    fail=1
+fi
+
 if grep -n 'c->head_size\|c->n_heads\|c->n_kv_heads\|m->config\.head_size\|m->config\.n_heads\|m->config\.n_kv_heads' \
     src/transformer/prefill.c \
     src/transformer/gpu.c \

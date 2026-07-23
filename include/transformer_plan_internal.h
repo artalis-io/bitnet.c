@@ -90,6 +90,7 @@ typedef struct {
     int use_flash;
     int use_packed_qkv;
     int use_qkv_split;
+    int use_post_norm;
     int needs_cpu_fallback;
     uint32_t fusion_flags;
 } BnAttentionPlan;
@@ -315,6 +316,8 @@ int bn_transformer_attention_value_shares_key(
     const BnConfig *c);
 int bn_transformer_attention_uses_post_norm(
     const BnConfig *c);
+int bn_transformer_attention_uses_post_norm_layer(const BnConfig *c,
+                                                  const BnLayerWeights *lw);
 int bn_transformer_ffn_uses_post_norm(
     const BnConfig *c);
 int bn_transformer_uses_layer_output_scale(

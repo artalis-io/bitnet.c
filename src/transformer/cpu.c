@@ -118,15 +118,6 @@ static const BnCPUBackendOps *cpu_backend_ops(void) {
     return bn_transformer_cpu_backend_ops();
 }
 
-static int cpu_attention_post_norm_applies(const BnConfig *c,
-                                           const float *attn_post_norm) {
-    BnTransformerCPUPostNormPolicy policy =
-        bn_transformer_cpu_attention_post_norm_policy(
-            bn_transformer_attention_uses_post_norm(c),
-            attn_post_norm != NULL);
-    return policy.apply;
-}
-
 static int cpu_layer_output_scale_applies(const BnConfig *c,
                                           const float *layer_output_scale) {
     BnTransformerCPULayerOutputScalePolicy policy =
@@ -545,7 +536,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
-            if (cpu_attention_post_norm_applies(c, lw->norm.attn_post_norm))
+            if (attn_plan.use_post_norm)
                 cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
@@ -632,7 +623,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
-            if (cpu_attention_post_norm_applies(c, lw->norm.attn_post_norm))
+            if (attn_plan.use_post_norm)
                 cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
 
@@ -786,7 +777,7 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
                 BnMatvecTask wo[1] = {{ s->xb2, &lw->attn.wo, NULL, 0 }};
                 cpu_quant_matvec_batch_prepared(m, wo, 1, s->xb, s->x_q);
             }
-            if (cpu_attention_post_norm_applies(c, lw->norm.attn_post_norm))
+            if (attn_plan.use_post_norm)
                 cpu_rmsnorm_model(m, s->xb2, s->xb2, lw->norm.attn_post_norm, dim, norm_eps);
             bn_transformer_cpu_residual_add(s->x, s->xb2, dim);
         }

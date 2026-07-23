@@ -4067,6 +4067,16 @@ static void test_block_planning(void) {
     assert(!attn.use_packed_qkv);
     assert(!attn.use_qkv_split);
     assert(!(attn.fusion_flags & BN_FUSION_QKV_SPLIT));
+    assert(!attn.use_post_norm);
+    c.policy_flags |= BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM;
+    lw.norm.attn_post_norm = (float *)1;
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
+    assert(attn.use_post_norm);
+    assert(bn_transformer_attention_uses_post_norm_layer(&c, &lw));
+    lw.norm.attn_post_norm = NULL;
+    bn_transformer_plan_attention(&attn, &c, &lw, &gpu, backend, 0, 0, 1);
+    assert(!attn.use_post_norm);
+    c.policy_flags &= ~BN_MODEL_ARCH_POLICY_ATTENTION_POST_NORM;
 
     c.full_attn_interval = 4;
     lw.block_kind = BN_LAYER_BLOCK_SSM;

@@ -243,6 +243,15 @@ int bn_transformer_attention_uses_post_norm(
     return bn_model_config_uses_attention_post_norm(c);
 }
 
+int bn_transformer_attention_uses_post_norm_layer(const BnConfig *c,
+                                                  const BnLayerWeights *lw) {
+    BnTransformerCPUPostNormPolicy policy =
+        bn_transformer_cpu_attention_post_norm_policy(
+            bn_transformer_attention_uses_post_norm(c),
+            lw && lw->norm.attn_post_norm);
+    return policy.apply;
+}
+
 int bn_transformer_ffn_uses_post_norm(
     const BnConfig *c) {
     return bn_model_config_uses_ffn_post_norm(c);
@@ -548,6 +557,7 @@ void bn_transformer_plan_attention(BnAttentionPlan *p,
         gpu, &p->shape, lw, qkv_stacked, q_bias, k_bias, v_bias);
     p->use_qkv_split = bn_transformer_attention_uses_qkv_split(
         gpu, &p->shape, lw, qkv_stacked);
+    p->use_post_norm = bn_transformer_attention_uses_post_norm_layer(c, lw);
     if (p->use_qkv_split) p->fusion_flags |= BN_FUSION_QKV_SPLIT;
     if (p->use_flash) p->fusion_flags |= BN_FUSION_FLASH_ATTN;
     if (bn_transformer_attention_uses_rope_qk_fusion(p->placement, k_bias))
