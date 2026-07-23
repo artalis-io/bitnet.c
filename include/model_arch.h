@@ -132,6 +132,17 @@ int bn_model_arch_uses_dense_attention_only(const BnConfig *c);
 int bn_model_arch_uses_large_dense_shape(const BnConfig *c);
 int bn_model_arch_uses_large_gpu_graph_fallback_shape(const BnConfig *c);
 int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer);
+int bn_model_arch_uses_swa_rope(const BnConfig *c, int layer_head_size);
+int bn_model_arch_rope_dims_for_head(const BnConfig *c,
+                                     int layer_head_size);
+float bn_model_arch_rope_theta_for_head(const BnConfig *c,
+                                        int layer_head_size);
+float bn_model_arch_rope_base_theta(const BnConfig *c);
+int bn_model_arch_rope_uses_base_frequency(const BnConfig *c,
+                                           int layer_head_size);
+void bn_model_arch_init_rope_frequencies(const BnConfig *c,
+                                         float *freqs,
+                                         int capacity_pairs);
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c);
 int bn_model_arch_allows_small_dense_prefill_decode_fallback(
     const BnConfig *c);

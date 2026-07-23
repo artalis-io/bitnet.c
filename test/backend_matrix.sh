@@ -4238,6 +4238,11 @@ if grep -n 'c->rope_dim_count\|c->rope_text_dims\|c->rope_theta\|m->config\.rope
     fail=1
 fi
 
+if grep -n 'config->rope_dim_count\|config->rope_dim_count_swa\|config->rope_text_dims\|config->rope_theta\|config->rope_theta_swa\|config->head_size' src/model_policy.c >/dev/null 2>&1; then
+    echo "model config policy must delegate RoPE config semantics to model_arch helpers"
+    fail=1
+fi
+
 for file in src/model_session.c src/model_embed.c
 do
     if grep -n '#include "model_arch.h"\|bn_model_arch_' "$file" >/dev/null 2>&1; then

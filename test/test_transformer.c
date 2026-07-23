@@ -3639,6 +3639,34 @@ static void test_model_arch_registry(void) {
     assert(bn_model_arch_moe_requires_float_kquant_gateup_fallback(&c));
     assert(bn_model_arch_moe_prefers_reference_gpu_attention(&c));
 
+    memset(&c, 0, sizeof(c));
+    c.head_size = 128;
+    c.rope_theta = 10000.0f;
+    assert(bn_model_arch_rope_dims_for_head(&c, 128) == 128);
+    assert(bn_model_arch_rope_theta_for_head(&c, 128) == 10000.0f);
+    assert(bn_model_arch_rope_base_theta(&c) == 10000.0f);
+    assert(bn_model_arch_rope_uses_base_frequency(&c, 128));
+    c.rope_dim_count = 64;
+    assert(bn_model_arch_rope_dims_for_head(&c, 128) == 64);
+    c.rope_text_dims = 32;
+    assert(bn_model_arch_rope_dims_for_head(&c, 128) == 32);
+    c.rope_theta_swa = 500000.0f;
+    c.rope_dim_count_swa = 16;
+    assert(bn_model_arch_uses_swa_rope(&c, 64));
+    assert(bn_model_arch_rope_dims_for_head(&c, 64) == 16);
+    assert(bn_model_arch_rope_theta_for_head(&c, 64) == 500000.0f);
+    assert(!bn_model_arch_rope_uses_base_frequency(&c, 64));
+    assert(bn_model_arch_rope_dims_for_head(&c, 8) == 8);
+    float freqs[4] = {0};
+    c.rope_theta_swa = 0.0f;
+    c.rope_dim_count = 8;
+    c.rope_text_dims = 4;
+    bn_model_arch_init_rope_frequencies(&c, freqs, 4);
+    assert(freqs[0] > 0.0f);
+    assert(freqs[1] > 0.0f);
+    assert(freqs[2] == 0.0f);
+    assert(freqs[3] == 0.0f);
+
     char name[128];
     char scale[128];
     assert(bn_model_arch_tensor_name_for(qwen, name, sizeof(name), 7,

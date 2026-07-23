@@ -250,6 +250,66 @@ int bn_model_arch_divides_rope_freqs(const BnConfig *c, int layer) {
     return model_arch_gemma4_divides_rope_freqs(c, layer);
 }
 
+int bn_model_arch_uses_swa_rope(const BnConfig *c, int layer_head_size) {
+    return c && c->rope_theta_swa > 0.0f &&
+           layer_head_size < c->head_size;
+}
+
+int bn_model_arch_rope_dims_for_head(const BnConfig *c,
+                                     int layer_head_size) {
+    if (!c || layer_head_size <= 0)
+        return 0;
+    int base_rope_dims = c->rope_text_dims > 0
+        ? c->rope_text_dims
+        : (c->rope_dim_count > 0 ? c->rope_dim_count : layer_head_size);
+    int rope_dims = bn_model_arch_uses_swa_rope(c, layer_head_size) &&
+                    c->rope_dim_count_swa > 0
+        ? c->rope_dim_count_swa
+        : base_rope_dims;
+    if (rope_dims > layer_head_size)
+        rope_dims = layer_head_size;
+    return rope_dims > 0 ? rope_dims : 0;
+}
+
+float bn_model_arch_rope_theta_for_head(const BnConfig *c,
+                                        int layer_head_size) {
+    if (!c)
+        return 0.0f;
+    return bn_model_arch_uses_swa_rope(c, layer_head_size)
+        ? c->rope_theta_swa : c->rope_theta;
+}
+
+float bn_model_arch_rope_base_theta(const BnConfig *c) {
+    return c ? c->rope_theta : 0.0f;
+}
+
+int bn_model_arch_rope_uses_base_frequency(const BnConfig *c,
+                                           int layer_head_size) {
+    return !bn_model_arch_uses_swa_rope(c, layer_head_size);
+}
+
+void bn_model_arch_init_rope_frequencies(const BnConfig *c,
+                                         float *freqs,
+                                         int capacity_pairs) {
+    if (!c || !freqs || capacity_pairs <= 0)
+        return;
+    int rope_dims = c->rope_dim_count > 0
+        ? c->rope_dim_count : c->head_size;
+    int half_rope = rope_dims / 2;
+    if (half_rope > capacity_pairs)
+        half_rope = capacity_pairs;
+    for (int i = 0; i < half_rope; i++)
+        freqs[i] = 1.0f / powf(c->rope_theta,
+                               (float)(2 * i) / (float)rope_dims);
+    if (c->rope_text_dims > 0) {
+        int text_pairs = c->rope_text_dims / 2;
+        if (text_pairs < 0)
+            text_pairs = 0;
+        for (int i = text_pairs; i < half_rope; i++)
+            freqs[i] = 0.0f;
+    }
+}
+
 int bn_model_arch_per_layer_embedding_dim(const BnConfig *c) {
     if (!bn_model_arch_uses_per_layer_embedding(c) ||
         c->per_layer_input_dim <= 0)
