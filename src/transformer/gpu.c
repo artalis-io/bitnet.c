@@ -1388,6 +1388,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                                 (int)(route_tmp[K + rk] + 0.5f));
                     }
                 }
+                BnMoERoutedExpertProjectionTypes routed_types;
+                if (!bn_moe_routed_expert_projection_types(
+                        &routed_types, &lw->moe.expert_map))
+                    return bn_transformer_gpu_reject_forward(
+                        &emit, "gpu moe routed projection types failed");
                 if (moe_debug.compare_raw &&
                     moe_gate_all && moe_up_all &&
                     moe_route.all_active_two_kquant_moe) {
@@ -1417,13 +1422,13 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         gpu_debug_compute_moe_raw_all_cpu_from_xb(
                             m, sess, lw, s->xb, cpu_gate, cpu_up) != 0 ||
                         bn_transformer_gpu_emit_context_matvec_flags(
-                            &emit, lw->moe.expert_map.gate_type,
+                            &emit, routed_types.gate_type,
                             moe_gate_all, BN_GPU_VALUE_XB,
                             BN_GPU_VALUE_MOE_HB,
                             n_experts * moe_hidden, dim, 0,
                             gate_raw_compare_flags) != 0 ||
                         bn_transformer_gpu_emit_context_matvec_flags(
-                            &emit, lw->moe.expert_map.up_type,
+                            &emit, routed_types.up_type,
                             moe_up_all, BN_GPU_VALUE_XB,
                             BN_GPU_VALUE_MOE_HB2,
                             n_experts * moe_hidden, dim, 0,
@@ -1471,8 +1476,8 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                         &emit, moe_gate_all, moe_up_all, moe_down_all,
                         BN_GPU_VALUE_XB, BN_GPU_VALUE_MOE_HB2,
                         BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_OUT,
-                        lw->moe.expert_map.gate_type,
-                        lw->moe.expert_map.down_type, dim,
+                        routed_types.gate_type,
+                        routed_types.down_type, dim,
                         route_policy.expert_hidden_dim,
                         route_policy.total_experts,
                         route_policy.active_experts,

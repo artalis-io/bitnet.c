@@ -620,6 +620,10 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         (lw->attn.k_bias && !k_bias_buf) ||
         (lw->attn.v_bias && !v_bias_buf))
         return -1;
+    BnMoERoutedExpertProjectionTypes routed_types;
+    if (!bn_moe_routed_expert_projection_types(
+            &routed_types, &lw->moe.expert_map))
+        return -1;
 
     return bn_transformer_gpu_prefill_moe_layer_backend_run(
         gpu, out, qk_buf, wv_buf, wo_buf, router_buf, gate_all_buf,
@@ -632,8 +636,8 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         lw->attn.wq.rows + lw->attn.wk.rows, lw->attn.wq.type,
         lw->attn.wv.rows, lw->attn.wv.type, lw->attn.wo.rows,
         lw->attn.wo.cols, lw->attn.wo.type,
-        lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
-        lw->moe.expert_map.down_type, activation,
+        routed_types.gate_type, routed_types.up_type,
+        routed_types.down_type, activation,
         shared.hidden_dim, shared.gate_type, shared.up_type,
         shared.down_type,
         qk_norm_per_head,
@@ -680,6 +684,10 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         return -1;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int activation = bn_transformer_prefill_config_activation(c);
+    BnMoERoutedExpertProjectionTypes routed_types;
+    if (!bn_moe_routed_expert_projection_types(
+            &routed_types, &lw->moe.expert_map))
+        return -1;
 
     return bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
         gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
@@ -687,8 +695,8 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         shared.gate_weight, ffn_norm_buf, X, n_tokens, dim,
         route_policy.expert_hidden_dim, route_policy.total_experts,
         route_policy.active_experts,
-        lw->moe.expert_map.gate_type, lw->moe.expert_map.up_type,
-        lw->moe.expert_map.down_type, activation,
+        routed_types.gate_type, routed_types.up_type,
+        routed_types.down_type, activation,
         shared.hidden_dim, shared.gate_type, shared.up_type,
         shared.down_type, bn_transformer_prefill_norm_epsilon(c),
         route_policy.norm_topk_prob,

@@ -109,6 +109,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
     BnMoELoadedSharedExpertPolicy shared_policy =
         bn_moe_loaded_shared_expert_policy(c, lw);
     const BnMoEExpertMap *map = &lw->moe.expert_map;
+    BnMoERoutedExpertProjectionTypes routed_types;
+    if (!bn_moe_routed_expert_projection_types(&routed_types, map))
+        return -1;
 
     BnAllocator a = bn_allocator_default();
     int did_input_norm = 0;
@@ -138,7 +141,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         shared_gpu.gate, shared_gpu.up, shared_gpu.down,
                         shared_gpu.gate_weight, norm, act, n_tokens, dim,
                         moe_hidden, n_experts, K,
-                        map->gate_type, map->up_type, map->down_type,
+                        routed_types.gate_type, routed_types.up_type,
+                        routed_types.down_type,
                         exec_policy.activation, shared_gpu.hidden_dim,
                         shared_gpu.gate_type, shared_gpu.up_type,
                         shared_gpu.down_type,
@@ -178,7 +182,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                 if (bn_transformer_gpu_moe_prefill_routed_ffn_batch_backend_run(
                         gpu, moe_out, router, gate_all, up_all, down_all,
                         Xb, n_tokens, dim, moe_hidden, n_experts, K,
-                        map->gate_type, map->up_type, map->down_type,
+                        routed_types.gate_type, routed_types.up_type,
+                        routed_types.down_type,
                         exec_policy.activation, route_policy.norm_topk_prob,
                         route_policy.expert_weights_scale) == 0) {
                     ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
@@ -404,8 +409,9 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
             if (bn_transformer_gpu_moe_prefill_resident_expert_batch_backend_run(
                     gpu_batch, moe_out, gate_all, up_all, down_all,
                     all_indices, all_weights, Xb, n_tokens, dim, moe_hidden,
-                    n_experts, K, map->gate_type, map->up_type,
-                    map->down_type, exec_policy.activation) == 0) {
+                    n_experts, K, routed_types.gate_type,
+                    routed_types.up_type, routed_types.down_type,
+                    exec_policy.activation) == 0) {
                 used_gpu_moe_batch = 1;
                 ms->stats.gate_up_time_ms += bn_moe_time_ms() - t0;
             }
@@ -459,7 +465,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                         gpu_batch, moe_out, gpu_experts, n_experts,
                         expert_offsets, expert_counts, group_token_ids,
                         group_weights, Xb, n_tokens, dim, moe_hidden,
-                        map->gate_type, map->up_type, map->down_type,
+                        routed_types.gate_type, routed_types.up_type,
+                        routed_types.down_type,
                         exec_policy.activation, shared_gpu.gate, shared_gpu.up,
                         shared_gpu.down, shared_gpu.gate_weight,
                         shared_gpu.hidden_dim, shared_gpu.gate_type,
@@ -521,7 +528,8 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
                     gpu, down_buf, expert_gpu.gate,
                     expert_gpu.use_gateup_split ? NULL : expert_gpu.up,
                     expert_gpu.down, gather_buf, T, dim, moe_hidden,
-                    map->gate_type, map->up_type, map->down_type,
+                    routed_types.gate_type, routed_types.up_type,
+                    routed_types.down_type,
                     exec_policy.activation) == 0) {
                 used_gpu_expert = 1;
                 if (temps.n_buffers > 0)

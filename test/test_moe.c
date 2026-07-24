@@ -570,6 +570,13 @@ static void test_moe_quant_policy_helpers(void) {
     assert(!bn_moe_expert_projection_weight(NULL, down_proj, &em, 2));
     assert(!bn_moe_expert_projection_weight(&expert_w, NULL, &em, 2));
     assert(!bn_moe_expert_projection_weight(&expert_w, down_proj, NULL, 2));
+    BnMoERoutedExpertProjectionTypes expert_types = {0};
+    assert(bn_moe_routed_expert_projection_types(&expert_types, &em));
+    assert(expert_types.gate_type == BN_GGUF_TENSOR_Q4_0);
+    assert(expert_types.up_type == BN_GGUF_TENSOR_Q5_0);
+    assert(expert_types.down_type == BN_GGUF_TENSOR_Q8_0);
+    assert(!bn_moe_routed_expert_projection_types(NULL, &em));
+    assert(!bn_moe_routed_expert_projection_types(&expert_types, NULL));
 
     printf("PASSED\n");
 }

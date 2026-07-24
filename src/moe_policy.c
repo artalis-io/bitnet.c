@@ -178,6 +178,17 @@ int bn_moe_expert_projection_weight(BnQWeight *out,
     }
 }
 
+int bn_moe_routed_expert_projection_types(
+    BnMoERoutedExpertProjectionTypes *out,
+    const BnMoEExpertMap *map) {
+    if (!out || !map)
+        return 0;
+    out->gate_type = map->gate_type;
+    out->up_type = map->up_type;
+    out->down_type = map->down_type;
+    return 1;
+}
+
 int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type) {
