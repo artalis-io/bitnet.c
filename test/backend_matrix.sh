@@ -5043,6 +5043,11 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/moe_policy.c >/dev/null
     fail=1
 fi
 
+if rg -n 'static (int|float) moe_(requires_float_kquant_gateup_fallback|uses_scaled_router_input|uses_dense_residual_branch|uses_reference_silu|config_activation|norm_epsilon|prefill_requires_matvec|uses_grouped_expert_route|total_experts|active_experts|expert_hidden_dim|normalizes_topk_route_weights|expert_weights_scale|uses_expert_weights|uses_all_active_two_expert_set|has_configured_shared_expert|shared_expert_hidden_dim)' src/moe_policy.c >/dev/null 2>&1; then
+    echo "src/moe_policy.c must compose MoE model-policy helpers directly"
+    fail=1
+fi
+
 if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale\|c->moe_uses_reference_silu\|c->has_shared_expert' src/moe_policy.c >/dev/null 2>&1; then
     echo "src/moe_policy.c must use model-config helpers for MoE config policy fields"
     fail=1
