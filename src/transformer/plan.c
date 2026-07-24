@@ -34,12 +34,20 @@ int bn_transformer_ssm_layer_count(const BnConfig *c) {
     return bn_model_config_ssm_layer_count(c);
 }
 
+int bn_transformer_uses_hybrid_layer_layout(const BnConfig *c) {
+    return bn_model_config_uses_hybrid_layer_layout(c);
+}
+
 int bn_transformer_uses_hybrid_ssm(const BnConfig *c) {
     return bn_model_config_uses_hybrid_ssm(c);
 }
 
 int bn_transformer_uses_hybrid_moe(const BnConfig *c) {
     return bn_model_config_uses_hybrid_moe(c);
+}
+
+int bn_transformer_uses_large_dense_hybrid_ssm(const BnConfig *c) {
+    return bn_model_config_uses_large_dense_hybrid_ssm(c);
 }
 
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,

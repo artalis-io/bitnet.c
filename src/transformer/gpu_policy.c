@@ -220,7 +220,7 @@ int bn_transformer_gpu_uses_hybrid_ssm(const BnConfig *c) {
 }
 
 int bn_transformer_gpu_uses_large_dense_hybrid_ssm(const BnConfig *c) {
-    return bn_model_config_uses_large_dense_hybrid_ssm(c);
+    return bn_transformer_uses_large_dense_hybrid_ssm(c);
 }
 
 int bn_transformer_gpu_uses_non_hybrid_moe(const BnConfig *c) {

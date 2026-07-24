@@ -234,8 +234,10 @@ int bn_transformer_attn_index(const BnConfig *c, int layer);
 int bn_transformer_ssm_index(const BnConfig *c, int layer);
 int bn_transformer_attention_layer_count(const BnConfig *c);
 int bn_transformer_ssm_layer_count(const BnConfig *c);
+int bn_transformer_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_transformer_uses_hybrid_ssm(const BnConfig *c);
 int bn_transformer_uses_hybrid_moe(const BnConfig *c);
+int bn_transformer_uses_large_dense_hybrid_ssm(const BnConfig *c);
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,
