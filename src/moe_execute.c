@@ -49,10 +49,12 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     double t0 = bn_moe_time_ms();
     BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
     BnMoEExecutionPolicy exec_policy = bn_moe_execution_policy(&m->config);
-    BnQWeight wgate = bn_moe_make_qweight(gate_data, map->gate_type,
-                                          map->gate_rows, map->gate_cols);
-    BnQWeight wup = bn_moe_make_qweight(up_data, map->up_type,
-                                        map->up_rows, map->up_cols);
+    BnQWeight wgate, wup;
+    if (!bn_moe_expert_projection_weight(&wgate, gate_data, map, 0) ||
+        !bn_moe_expert_projection_weight(&wup, up_data, map, 1)) {
+        bn_gpu_moe_bridge_release_temporaries(m, &temps);
+        return -1;
+    }
     BnMatvecTask gu[2] = {
         { ms->expert_hb,  &wgate, NULL, 0 },
         { ms->expert_hb2, &wup,   NULL, 0 },
@@ -69,8 +71,11 @@ static int moe_try_gpu_serial_expert(BnModel *m, BnSession *sess,
     ms->stats.swiglu_time_ms += bn_moe_time_ms() - t0;
 
     t0 = bn_moe_time_ms();
-    BnQWeight wdown = bn_moe_make_qweight(down_data, map->down_type,
-                                          map->down_rows, map->down_cols);
+    BnQWeight wdown;
+    if (!bn_moe_expert_projection_weight(&wdown, down_data, map, 2)) {
+        bn_gpu_moe_bridge_release_temporaries(m, &temps);
+        return -1;
+    }
     bn_moe_quant_matvec_down_gpu_buffer(s->xb2, &wdown, bufs.down,
                                         ms->expert_hb, s->x_q,
                                         bn_model_pool(m), gpu);
@@ -202,10 +207,13 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 SH_LOG_ERROR("Failed to load expert gate/up projection");
                 continue;
             }
-            wgates[valid_k] = bn_moe_make_qweight(gate_data, lw->moe.expert_map.gate_type,
-                                                lw->moe.expert_map.gate_rows, lw->moe.expert_map.gate_cols);
-            wups[valid_k]   = bn_moe_make_qweight(up_data, lw->moe.expert_map.up_type,
-                                                lw->moe.expert_map.up_rows, lw->moe.expert_map.up_cols);
+            if (!bn_moe_expert_projection_weight(&wgates[valid_k],
+                                                 gate_data,
+                                                 &lw->moe.expert_map, 0) ||
+                !bn_moe_expert_projection_weight(&wups[valid_k],
+                                                 up_data,
+                                                 &lw->moe.expert_map, 1))
+                continue;
             valid_indices[valid_k] = eidx;
             valid_weights[valid_k] = ms->expert_weights[k] *
                                      moe_expert_weight_scale(lw, eidx);
@@ -269,8 +277,11 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                     valid_weights[k] = 0.0f;
                     continue;
                 }
-                wdowns[k] = bn_moe_make_qweight(down_data, lw->moe.expert_map.down_type,
-                                              lw->moe.expert_map.down_rows, lw->moe.expert_map.down_cols);
+                if (!bn_moe_expert_projection_weight(&wdowns[k], down_data,
+                                                     &lw->moe.expert_map, 2)) {
+                    valid_weights[k] = 0.0f;
+                    continue;
+                }
             }
 
             // Batched down projection: K independent (W, x) pairs in one dispatch.
@@ -386,10 +397,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             BnMatvecTask gu_tasks[2 * BN_MAX_MOE_K];
             for (int h = 0; h < n_hits; h++) {
                 const uint8_t *cp = hit_ptrs[h];
-                wgates[h] = bn_moe_make_qweight(cp, map->gate_type,
-                                              map->gate_rows, map->gate_cols);
-                wups[h]   = bn_moe_make_qweight(cp + bn_moe_cache_gate_bytes(cache), map->up_type,
-                                              map->up_rows, map->up_cols);
+                bn_moe_expert_projection_weight(&wgates[h], cp, map, 0);
+                bn_moe_expert_projection_weight(
+                    &wups[h], cp + bn_moe_cache_gate_bytes(cache), map, 1);
                 gu_tasks[2*h]     = (BnMatvecTask){ ms->expert_hb_batch[h],  &wgates[h], NULL, gateup_flags };
                 gu_tasks[2*h + 1] = (BnMatvecTask){ ms->expert_hb2_batch[h], &wups[h]  , NULL, gateup_flags };
             }
@@ -417,8 +427,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             t0 = bn_moe_time_ms();
             for (int h = 0; h < n_hits; h++) {
                 const uint8_t *dp = hit_ptrs[h] + bn_moe_cache_gate_bytes(cache) + bn_moe_cache_up_bytes(cache);
-                BnQWeight wdown = bn_moe_make_qweight(dp, map->down_type,
-                                                    map->down_rows, map->down_cols);
+                BnQWeight wdown;
+                bn_moe_expert_projection_weight(&wdown, dp, map, 2);
                 bn_moe_quant_matvec(ms->expert_down_batch[h], &wdown,
                                     ms->expert_hb_batch[h], s->x_q,
                                     bn_model_pool(m));
@@ -513,10 +523,9 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
             // Gate+up matvec (down I/O may still be in flight)
             t0 = bn_moe_time_ms();
             {
-                BnQWeight wgate = bn_moe_make_qweight(gate_ptr, map->gate_type,
-                                                    map->gate_rows, map->gate_cols);
-                BnQWeight wup = bn_moe_make_qweight(up_ptr, map->up_type,
-                                                  map->up_rows, map->up_cols);
+                BnQWeight wgate, wup;
+                bn_moe_expert_projection_weight(&wgate, gate_ptr, map, 0);
+                bn_moe_expert_projection_weight(&wup, up_ptr, map, 1);
                 BnMatvecTask gu[2] = {
                      { ms->expert_hb,  &wgate, NULL, gateup_flags },
                      { ms->expert_hb2, &wup  , NULL, gateup_flags },
@@ -549,8 +558,8 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
 
             // Down matvec
             {
-                BnQWeight wdown = bn_moe_make_qweight(down_ptr, map->down_type,
-                                                    map->down_rows, map->down_cols);
+                BnQWeight wdown;
+                bn_moe_expert_projection_weight(&wdown, down_ptr, map, 2);
                 bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
                                     bn_model_pool(m));
             }
@@ -582,10 +591,12 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 SH_LOG_ERROR("Failed to load expert gate/up projection");
                 continue;
             }
-            BnQWeight wgate = bn_moe_make_qweight(gate_data, lw->moe.expert_map.gate_type,
-                                                lw->moe.expert_map.gate_rows, lw->moe.expert_map.gate_cols);
-            BnQWeight wup = bn_moe_make_qweight(up_data, lw->moe.expert_map.up_type,
-                                              lw->moe.expert_map.up_rows, lw->moe.expert_map.up_cols);
+            BnQWeight wgate, wup;
+            if (!bn_moe_expert_projection_weight(&wgate, gate_data,
+                                                 &lw->moe.expert_map, 0) ||
+                !bn_moe_expert_projection_weight(&wup, up_data,
+                                                 &lw->moe.expert_map, 1))
+                continue;
             BnMatvecTask gu[2] = {
                  { ms->expert_hb,  &wgate, NULL, gateup_flags },
                  { ms->expert_hb2, &wup  , NULL, gateup_flags },
@@ -607,8 +618,10 @@ void bn_moe_forward(struct BnModel *m, BnSession *sess,
                 SH_LOG_ERROR("Failed to load expert down projection");
                 continue;
             }
-            BnQWeight wdown = bn_moe_make_qweight(down_data, lw->moe.expert_map.down_type,
-                                                lw->moe.expert_map.down_rows, lw->moe.expert_map.down_cols);
+            BnQWeight wdown;
+            if (!bn_moe_expert_projection_weight(&wdown, down_data,
+                                                 &lw->moe.expert_map, 2))
+                continue;
             bn_moe_quant_matvec(s->xb2, &wdown, ms->expert_hb, s->x_q,
                                 bn_model_pool(m));
             ms->stats.down_time_ms += bn_moe_time_ms() - t0;

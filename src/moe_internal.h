@@ -82,6 +82,10 @@ const void *bn_moe_load_expert_proj(const BnMoEIO *io, BnMoEState *ms,
                                     const BnMoEExpertMap *map,
                                     int expert_idx, int proj);
 BnQWeight bn_moe_make_qweight(const void *data, int type, int rows, int cols);
+int bn_moe_expert_projection_weight(BnQWeight *out,
+                                    const void *data,
+                                    const BnMoEExpertMap *map,
+                                    int proj);
 uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c);
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);
 int bn_moe_policy_uses_reference_silu(const BnConfig *c);

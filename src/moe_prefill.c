@@ -498,12 +498,11 @@ int bn_moe_forward_batch(struct BnModel *m, BnSession *sess,
         const void *down_data = bn_moe_load_expert_proj(bn_model_moe_io(m), ms, map, e, 2);
         if (!gate_data || !up_data || !down_data) continue;
 
-        BnQWeight wgate = bn_moe_make_qweight(gate_data, map->gate_type,
-                                            map->gate_rows, map->gate_cols);
-        BnQWeight wup   = bn_moe_make_qweight(up_data, map->up_type,
-                                            map->up_rows, map->up_cols);
-        BnQWeight wdown = bn_moe_make_qweight(down_data, map->down_type,
-                                            map->down_rows, map->down_cols);
+        BnQWeight wgate, wup, wdown;
+        if (!bn_moe_expert_projection_weight(&wgate, gate_data, map, 0) ||
+            !bn_moe_expert_projection_weight(&wup, up_data, map, 1) ||
+            !bn_moe_expert_projection_weight(&wdown, down_data, map, 2))
+            continue;
 
         t0 = bn_moe_time_ms();
         int used_gpu_expert = 0;

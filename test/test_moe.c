@@ -533,6 +533,44 @@ static void test_moe_quant_policy_helpers(void) {
     assert(shared_weights.up == &lw.shared.shared_up);
     assert(shared_weights.down == &lw.shared.shared_down);
 
+    BnMoEExpertMap em = {0};
+    float gate_proj[8] = {0};
+    float up_proj[8] = {0};
+    float down_proj[8] = {0};
+    em.gate_type = BN_GGUF_TENSOR_Q4_0;
+    em.gate_rows = 2;
+    em.gate_cols = 4;
+    em.up_type = BN_GGUF_TENSOR_Q5_0;
+    em.up_rows = 3;
+    em.up_cols = 5;
+    em.down_type = BN_GGUF_TENSOR_Q8_0;
+    em.down_rows = 4;
+    em.down_cols = 6;
+    BnQWeight expert_w = {0};
+    assert(bn_moe_expert_projection_weight(&expert_w, gate_proj,
+                                           &em, 0));
+    assert(expert_w.data == gate_proj);
+    assert(expert_w.type == BN_GGUF_TENSOR_Q4_0);
+    assert(expert_w.rows == 2);
+    assert(expert_w.cols == 4);
+    assert(bn_moe_expert_projection_weight(&expert_w, up_proj,
+                                           &em, 1));
+    assert(expert_w.data == up_proj);
+    assert(expert_w.type == BN_GGUF_TENSOR_Q5_0);
+    assert(expert_w.rows == 3);
+    assert(expert_w.cols == 5);
+    assert(bn_moe_expert_projection_weight(&expert_w, down_proj,
+                                           &em, 2));
+    assert(expert_w.data == down_proj);
+    assert(expert_w.type == BN_GGUF_TENSOR_Q8_0);
+    assert(expert_w.rows == 4);
+    assert(expert_w.cols == 6);
+    assert(!bn_moe_expert_projection_weight(&expert_w, down_proj,
+                                            &em, 3));
+    assert(!bn_moe_expert_projection_weight(NULL, down_proj, &em, 2));
+    assert(!bn_moe_expert_projection_weight(&expert_w, NULL, &em, 2));
+    assert(!bn_moe_expert_projection_weight(&expert_w, down_proj, NULL, 2));
+
     printf("PASSED\n");
 }
 

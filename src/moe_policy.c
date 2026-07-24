@@ -154,6 +154,30 @@ int bn_moe_policy_supports_gateup_split_layout(const BnMoEExpertMap *em) {
            em->gate_cols == em->up_cols;
 }
 
+int bn_moe_expert_projection_weight(BnQWeight *out,
+                                    const void *data,
+                                    const BnMoEExpertMap *map,
+                                    int proj) {
+    if (!out || !data || !map)
+        return 0;
+    switch (proj) {
+    case 0:
+        *out = bn_moe_make_qweight(data, map->gate_type, map->gate_rows,
+                                   map->gate_cols);
+        return 1;
+    case 1:
+        *out = bn_moe_make_qweight(data, map->up_type, map->up_rows,
+                                   map->up_cols);
+        return 1;
+    case 2:
+        *out = bn_moe_make_qweight(data, map->down_type, map->down_rows,
+                                   map->down_cols);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type) {
