@@ -67,7 +67,7 @@ int bn_transformer_prefill_uses_hybrid_layer_layout(const BnConfig *c) {
 }
 
 int bn_transformer_prefill_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_ssm(c);
+    return bn_transformer_uses_hybrid_ssm(c);
 }
 
 int bn_transformer_prefill_uses_large_dense_hybrid_ssm(const BnConfig *c) {

@@ -2844,6 +2844,11 @@ if awk '/^bn_transformer_prefill_sequence_policy/{flag=1} flag{print} flag && /^
     fail=1
 fi
 
+if grep -n 'bn_model_config_uses_hybrid_ssm\|bn_model_config_uses_hybrid_moe' src/transformer/gpu_policy.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU/prefill policies must use transformer hybrid behavior helpers"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_prefill_layer_kind_policy(const void \*' include/transformer_prefill_internal.h src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill layer-kind policy must take layer weights, not raw MoE storage pointers"
     fail=1

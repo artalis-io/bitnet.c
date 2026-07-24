@@ -1,5 +1,6 @@
 #include "gpu_internal.h"
 #include "transformer_kv_internal.h"
+#include "transformer_plan_internal.h"
 #include "gpu_policy.h"
 #include "../gpu_shader_ir_internal.h"
 #include "../gpu_quant_lowering_internal.h"
@@ -174,7 +175,7 @@ int bn_transformer_gpu_dense_ffn_prefers_gateup_split(
     const BnConfig *c,
     int gate_type) {
     return bn_transformer_gpu_prefers_gateup_split(gate_type) &&
-           bn_model_config_uses_hybrid_moe(c);
+           bn_transformer_uses_hybrid_moe(c);
 }
 
 int bn_transformer_gpu_same_quant_format_pair_stackable(int left_type,
@@ -215,7 +216,7 @@ int bn_transformer_gpu_uses_per_layer_embedding(const BnConfig *c) {
 }
 
 int bn_transformer_gpu_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_ssm(c);
+    return bn_transformer_uses_hybrid_ssm(c);
 }
 
 int bn_transformer_gpu_uses_large_dense_hybrid_ssm(const BnConfig *c) {
