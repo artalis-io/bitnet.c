@@ -5026,8 +5026,9 @@ if grep -n 'bn_transformer_gpu_matvec_kquant_dot_flags(.*\(em->\(gate\|up\|down\
     fail=1
 fi
 
-if grep -n 'map->\(gate\|up\|down\)_type\|lw->moe\.expert_map\.\(gate\|up\|down\)_type\|expert_map\.\(gate\|up\|down\)_type' \
+if grep -n '\(map\|em\)->\(gate\|up\|down\)_type\|lw->moe\.expert_map\.\(gate\|up\|down\)_type\|expert_map\.\(gate\|up\|down\)_type' \
     src/moe_prefill.c \
+    src/transformer/gpu_emit.c \
     src/transformer/prefill.c \
     src/transformer/gpu.c >/dev/null 2>&1; then
     echo "GPU/MoE orchestration must use routed expert projection type helpers"

@@ -3,6 +3,7 @@
 #include "../gpu_shader_ir_internal.h"
 #include "gpu_moe_bridge.h"
 #include "gpu_moe_cache.h"
+#include "../moe_internal.h"
 #include "moe.h"
 #include "quant.h"
 #include "transformer_backend_internal.h"
@@ -1695,6 +1696,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                                          int reference_silu) {
     if (!ctx || !moe || !lw) return;
     const BnMoEExpertMap *em = moe->expert_map;
+    BnMoERoutedExpertProjectionTypes routed_types;
+    if (!bn_moe_routed_expert_projection_types(&routed_types, em))
+        return;
     int moe_hidden = moe->moe_hidden;
 
     for (int k = 0; moe->experts && k < moe->n_experts; k++) {
@@ -1705,16 +1709,16 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
         int use_fused_gateup =
             shared && expert->buffers.use_gateup_split &&
             bn_transformer_gpu_can_fused_gateup_silu(
-                shared->gpu, em->gate_type, 0);
+                shared->gpu, routed_types.gate_type, 0);
         if (use_fused_gateup) {
             bn_transformer_gpu_emit_context_fused_gateup_silu(
-                ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
-                BN_GPU_VALUE_MOE_HB, em->gate_rows, em->up_rows,
+                ctx, routed_types.gate_type, expert->buffers.gate,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_MOE_HB, em->gate_rows, em->up_rows,
                 em->gate_cols, 0,
                 bn_transformer_gpu_reference_silu_active_flags(reference_silu));
         } else if (expert->buffers.use_gateup_split) {
             emit_context_matvec_split(
-                ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
+                ctx, routed_types.gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_MOE_HB2, -1,
                 em->gate_rows + em->up_rows, em->gate_cols,
                 em->gate_rows, 0, 0, 0, 0);
@@ -1726,11 +1730,11 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 bn_transformer_gpu_moe_expert_projection_matvec_flags(
                     em, 1, 1);
             emit_context_matvec_flags(
-                ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
-                BN_GPU_VALUE_MOE_HB, em->gate_rows, em->gate_cols, 0,
-                gate_flags);
+                ctx, routed_types.gate_type, expert->buffers.gate,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_MOE_HB, em->gate_rows,
+                em->gate_cols, 0, gate_flags);
             emit_context_matvec_flags(
-                ctx, em->up_type, expert->buffers.up, BN_GPU_VALUE_XB,
+                ctx, routed_types.up_type, expert->buffers.up, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_MOE_HB2, em->up_rows, em->up_cols, 0,
                 up_flags);
         }
@@ -1741,8 +1745,9 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 bn_transformer_gpu_reference_silu_active_flags(reference_silu));
         }
         bn_transformer_gpu_emit_context_matvec(
-            ctx, em->down_type, expert->buffers.down, BN_GPU_VALUE_MOE_HB,
-            BN_GPU_VALUE_XB2, em->down_rows, em->down_cols, 0);
+            ctx, routed_types.down_type, expert->buffers.down,
+            BN_GPU_VALUE_MOE_HB, BN_GPU_VALUE_XB2, em->down_rows,
+            em->down_cols, 0);
         if (expert->route_gate) {
             uint32_t u_one;
             { float one = 1.0f; memcpy(&u_one, &one, 4); }
