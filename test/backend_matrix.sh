@@ -4279,6 +4279,11 @@ if rg -n 'bn_model_session_reset_' \
     fail=1
 fi
 
+if rg -n 'static (int|void) model_session_' src/model_session.c >/dev/null 2>&1; then
+    echo "src/model_session.c must compose session policy helpers directly"
+    fail=1
+fi
+
 if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model-config/MoE policy helpers for routed expert shape and weighting"
     fail=1
