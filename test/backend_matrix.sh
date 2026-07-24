@@ -4927,6 +4927,11 @@ if grep -n 'c->moe_intermediate_size\|c->n_experts_active\|c->n_experts\|c->moe_
     fail=1
 fi
 
+if awk '/^uint32_t bn_moe_float_kquant_gateup_fallback_task_flags/{flag=1} flag{print}' src/moe_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "Exported MoE policies must compose behavior-named MoE model-policy helpers"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/tokenizer.c >/dev/null 2>&1; then
     echo "src/tokenizer.c must use tokenizer model-policy helpers instead of reaching into model_arch"
     fail=1
