@@ -4,6 +4,7 @@
 #include "sampler.h"
 #include "tokenizer.h"
 #include "model.h"
+#include "model_arch.h"
 #include "session.h"
 #include "transformer.h"
 #include <stdio.h>
@@ -292,6 +293,12 @@ static void test_embed_token_oob(void) {
     // Valid token
     bn_model_embed_token(&m, out, 0);
     assert(out[0] == 1.0f);
+
+    m.config.policy_flags = BN_MODEL_ARCH_POLICY_PER_LAYER_INPUT;
+    bn_model_embed_token(&m, out, 0);
+    assert(out[0] == 2.0f);
+    assert(out[1] == 4.0f);
+    m.config.policy_flags = 0;
 
     // Negative token → should zero out
     bn_model_embed_token(&m, out, -1);

@@ -3533,6 +3533,11 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/gpu_policy.c >/dev/null
     fail=1
 fi
 
+if awk '/^void bn_model_embed_token/{flag=1} flag{print}' src/model_embed.c | grep -n 'bn_model_config_uses_per_layer_embedding' >/dev/null 2>&1; then
+    echo "src/model_embed.c public API must compose embedding model-policy helpers"
+    fail=1
+fi
+
 if grep -n 'general\.architecture\|context_length\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch/GPU policy helpers for arch-prefixed GGUF sequence metadata"
     fail=1
