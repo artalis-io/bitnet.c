@@ -195,11 +195,12 @@ int bn_transformer_attention_kv_mul(const BnConfig *c,
 
 int bn_transformer_attention_qk_stride(const BnConfig *c,
                                        int head_size) {
-    return bn_model_config_attention_qk_norm_stride(c, head_size);
+    return bn_model_transformer_policy_attention_qk_norm_stride(c,
+                                                               head_size);
 }
 
 int bn_transformer_attention_uses_per_head_qk_norm(const BnConfig *c) {
-    return bn_model_config_attention_uses_per_head_qk_norm(c);
+    return bn_model_transformer_policy_attention_uses_per_head_qk_norm(c);
 }
 
 int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw) {
@@ -577,41 +578,44 @@ int bn_transformer_logits_weight_type(const BnWeights *w) {
 
 int bn_transformer_per_layer_embedding_dim(
     const BnConfig *c) {
-    return bn_model_config_per_layer_embedding_dim(c);
+    return bn_model_transformer_policy_per_layer_embedding_dim(c);
 }
 
 int bn_transformer_uses_per_layer_embedding(
     const BnConfig *c) {
-    return bn_model_config_uses_per_layer_embedding(c);
+    return bn_model_transformer_policy_uses_per_layer_embedding(c);
 }
 
 int bn_transformer_divides_rope_freqs(
     const BnConfig *c,
     int layer) {
-    return bn_model_config_divides_rope_freqs(c, layer);
+    return bn_model_transformer_policy_divides_rope_freqs(c, layer);
 }
 
 int bn_transformer_rope_dims_for_head(
     const BnConfig *c,
     int layer_head_size) {
-    return bn_model_config_rope_dims_for_head(c, layer_head_size);
+    return bn_model_transformer_policy_rope_dims_for_head(c,
+                                                         layer_head_size);
 }
 
 float bn_transformer_rope_theta_for_head(
     const BnConfig *c,
     int layer_head_size) {
-    return bn_model_config_rope_theta_for_head(c, layer_head_size);
+    return bn_model_transformer_policy_rope_theta_for_head(c,
+                                                          layer_head_size);
 }
 
 float bn_transformer_rope_base_theta(
     const BnConfig *c) {
-    return bn_model_config_rope_base_theta(c);
+    return bn_model_transformer_policy_rope_base_theta(c);
 }
 
 int bn_transformer_rope_uses_base_frequency(
     const BnConfig *c,
     int layer_head_size) {
-    return bn_model_config_rope_uses_base_frequency(c, layer_head_size);
+    return bn_model_transformer_policy_rope_uses_base_frequency(
+        c, layer_head_size);
 }
 
 int bn_transformer_ssm_uses_reference_ops(

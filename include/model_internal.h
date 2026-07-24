@@ -162,6 +162,26 @@ void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
                                                    float *freqs,
                                                    int capacity_pairs);
 int bn_model_embed_scales_token_embedding(const BnConfig *config);
+int bn_model_transformer_policy_attention_qk_norm_stride(
+    const BnConfig *config,
+    int head_size);
+int bn_model_transformer_policy_attention_uses_per_head_qk_norm(
+    const BnConfig *config);
+int bn_model_transformer_policy_per_layer_embedding_dim(
+    const BnConfig *config);
+int bn_model_transformer_policy_uses_per_layer_embedding(
+    const BnConfig *config);
+int bn_model_transformer_policy_divides_rope_freqs(const BnConfig *config,
+                                                   int layer);
+int bn_model_transformer_policy_rope_dims_for_head(const BnConfig *config,
+                                                   int layer_head_size);
+float bn_model_transformer_policy_rope_theta_for_head(
+    const BnConfig *config,
+    int layer_head_size);
+float bn_model_transformer_policy_rope_base_theta(const BnConfig *config);
+int bn_model_transformer_policy_rope_uses_base_frequency(
+    const BnConfig *config,
+    int layer_head_size);
 int bn_model_gpu_policy_attention_layer_count(const BnConfig *config);
 int bn_model_gpu_policy_ssm_layer_count(const BnConfig *config);
 int bn_model_gpu_policy_uses_hybrid_ssm(const BnConfig *config);

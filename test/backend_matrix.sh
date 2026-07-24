@@ -4441,6 +4441,11 @@ if grep -n 'c->act_type\|c->qk_norm_per_head' src/transformer/plan.c >/dev/null 
     fail=1
 fi
 
+if grep -n 'bn_model_config_attention_qk_norm_stride\|bn_model_config_attention_uses_per_head_qk_norm\|bn_model_config_per_layer_embedding_dim\|bn_model_config_uses_per_layer_embedding\|bn_model_config_divides_rope_freqs\|bn_model_config_rope_dims_for_head\|bn_model_config_rope_theta_for_head\|bn_model_config_rope_base_theta\|bn_model_config_rope_uses_base_frequency' src/transformer/plan.c >/dev/null 2>&1; then
+    echo "Transformer planning must use model-transformer policy helpers for Q/K norm and RoPE policy"
+    fail=1
+fi
+
 if grep -n 'c->qk_norm_per_head\|m->config\.qk_norm_per_head' \
     src/transformer/prefill.c \
     src/transformer/gpu_emit.c \
