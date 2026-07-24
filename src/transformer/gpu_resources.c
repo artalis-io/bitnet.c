@@ -220,6 +220,30 @@ BnTransformerGPUSSMResources bn_transformer_gpu_resolve_ssm_resources(
     };
 }
 
+int bn_transformer_gpu_resolve_ssm_projection_layout(
+    BnTransformerGPUSSMProjectionLayout *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->qkv_type = lw->ssm.wqkv.type;
+    out->qkv_rows = lw->ssm.wqkv.rows;
+    out->qkv_cols = lw->ssm.wqkv.cols;
+    out->z_type = lw->ssm.wz.type;
+    out->z_rows = lw->ssm.wz.rows;
+    out->z_cols = lw->ssm.wz.cols;
+    out->alpha_type = lw->ssm.ssm_alpha.type;
+    out->alpha_rows = lw->ssm.ssm_alpha.rows;
+    out->alpha_cols = lw->ssm.ssm_alpha.cols;
+    out->beta_type = lw->ssm.ssm_beta.type;
+    out->beta_rows = lw->ssm.ssm_beta.rows;
+    out->beta_cols = lw->ssm.ssm_beta.cols;
+    out->out_type = lw->ssm.ssm_out.type;
+    out->out_rows = lw->ssm.ssm_out.rows;
+    out->out_cols = lw->ssm.ssm_out.cols;
+    return 1;
+}
+
 BnTransformerGPUMoESharedResources
 bn_transformer_gpu_resolve_moe_shared_resources(
     const BnGPUBackend *gpu,

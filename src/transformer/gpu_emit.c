@@ -1584,6 +1584,10 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
         float qs = 1.0f / sqrtf((float)head_k_dim);
         memcpy(&u_qscale, &qs, 4);
     }
+    BnTransformerGPUSSMProjectionLayout ssm_layout;
+    if (!bn_transformer_gpu_resolve_ssm_projection_layout(
+            &ssm_layout, lw))
+        return;
 
     void *ssm_qkvz_stacked = res ? res->ssm_qkvz_stacked : NULL;
     void *ssm_ab_stacked = res ? res->ssm_ab_stacked : NULL;
@@ -1597,21 +1601,21 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
         bn_transformer_gpu_ssm_qkvz_split_enabled() &&
         bn_transformer_gpu_ssm_qkvz_split_supported(
             res ? res->gpu : NULL, &lw->ssm.wqkv,
-            bn_transformer_gpu_matvec_split_op_code(lw->ssm.wqkv.type))) {
-        int total_rows = lw->ssm.wqkv.rows + lw->ssm.wz.rows;
+            bn_transformer_gpu_matvec_split_op_code(ssm_layout.qkv_type))) {
+        int total_rows = ssm_layout.qkv_rows + ssm_layout.z_rows;
         emit_context_matvec_split(
-            ctx, lw->ssm.wqkv.type, ssm_qkvz_stacked, BN_GPU_VALUE_XB,
+            ctx, ssm_layout.qkv_type, ssm_qkvz_stacked, BN_GPU_VALUE_XB,
             BN_GPU_VALUE_SSM_QKV, BN_GPU_VALUE_SSM_Z, BN_GPU_VALUE_SSM_Z,
-            total_rows, lw->ssm.wqkv.cols, lw->ssm.wqkv.rows, 0, 0, 0, 0);
+            total_rows, ssm_layout.qkv_cols, ssm_layout.qkv_rows, 0, 0, 0, 0);
     } else {
         bn_transformer_gpu_emit_context_matvec(
-            ctx, lw->ssm.wqkv.type,
+            ctx, ssm_layout.qkv_type,
             res ? res->wqkv : NULL, BN_GPU_VALUE_XB,
-            BN_GPU_VALUE_SSM_QKV, lw->ssm.wqkv.rows, lw->ssm.wqkv.cols, 0);
+            BN_GPU_VALUE_SSM_QKV, ssm_layout.qkv_rows, ssm_layout.qkv_cols, 0);
         bn_transformer_gpu_emit_context_matvec(
-            ctx, lw->ssm.wz.type, res ? res->wz : NULL,
-            BN_GPU_VALUE_XB, BN_GPU_VALUE_SSM_Z, lw->ssm.wz.rows,
-            lw->ssm.wz.cols, 0);
+            ctx, ssm_layout.z_type, res ? res->wz : NULL,
+            BN_GPU_VALUE_XB, BN_GPU_VALUE_SSM_Z, ssm_layout.z_rows,
+            ssm_layout.z_cols, 0);
     }
 
     uint32_t ssm_conv_params[8] = {
@@ -1631,14 +1635,14 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
         bn_transformer_gpu_ssm_ab_stack_enabled() &&
         bn_transformer_gpu_can_stack_same_quant_format_alpha_beta(
             &lw->ssm.ssm_alpha, &lw->ssm.ssm_beta)) {
-        int ab_rows = lw->ssm.ssm_alpha.rows + lw->ssm.ssm_beta.rows;
+        int ab_rows = ssm_layout.alpha_rows + ssm_layout.beta_rows;
         bn_transformer_gpu_emit_context_matvec(
-            ctx, lw->ssm.ssm_alpha.type, ssm_ab_stacked, BN_GPU_VALUE_XB,
-            BN_GPU_VALUE_SSM_V, ab_rows, lw->ssm.ssm_alpha.cols, 0);
+            ctx, ssm_layout.alpha_type, ssm_ab_stacked, BN_GPU_VALUE_XB,
+            BN_GPU_VALUE_SSM_V, ab_rows, ssm_layout.alpha_cols, 0);
         _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
         uintptr_t a_ptr = (uintptr_t)ssm_a_log;
         uint32_t alpha_beta_split_params[8] = {
-            (uint32_t)num_v_heads, (uint32_t)lw->ssm.ssm_alpha.rows,
+            (uint32_t)num_v_heads, (uint32_t)ssm_layout.alpha_rows,
             0, 0, 0, 0,
             (uint32_t)(a_ptr & 0xFFFFFFFF),
             (uint32_t)((uint64_t)a_ptr >> 32)
@@ -1648,15 +1652,15 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                          alpha_beta_split_params);
     } else {
         bn_transformer_gpu_emit_context_matvec(
-            ctx, lw->ssm.ssm_alpha.type,
+            ctx, ssm_layout.alpha_type,
             res ? res->ssm_alpha : NULL,
-            BN_GPU_VALUE_XB, BN_GPU_VALUE_SSM_ALPHA, lw->ssm.ssm_alpha.rows,
-            lw->ssm.ssm_alpha.cols, 0);
+            BN_GPU_VALUE_XB, BN_GPU_VALUE_SSM_ALPHA, ssm_layout.alpha_rows,
+            ssm_layout.alpha_cols, 0);
         bn_transformer_gpu_emit_context_matvec(
-            ctx, lw->ssm.ssm_beta.type,
+            ctx, ssm_layout.beta_type,
             res ? res->ssm_beta : NULL,
-            BN_GPU_VALUE_XB, BN_GPU_VALUE_SSM_BETA, lw->ssm.ssm_beta.rows,
-            lw->ssm.ssm_beta.cols, 0);
+            BN_GPU_VALUE_XB, BN_GPU_VALUE_SSM_BETA, ssm_layout.beta_rows,
+            ssm_layout.beta_cols, 0);
         _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
         uintptr_t a_ptr = (uintptr_t)ssm_a_log;
         uint32_t alpha_beta_params[8] = {
@@ -1685,9 +1689,9 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                      BN_GPU_VALUE_SSM_Z, -1, num_v_heads, ssm_norm,
                      ssm_gate_params);
     bn_transformer_gpu_emit_context_matvec(
-        ctx, lw->ssm.ssm_out.type,
+        ctx, ssm_layout.out_type,
         res ? res->ssm_out : NULL, BN_GPU_VALUE_XB2,
-        BN_GPU_VALUE_SCRATCH, lw->ssm.ssm_out.rows, lw->ssm.ssm_out.cols, 0);
+        BN_GPU_VALUE_SCRATCH, ssm_layout.out_rows, ssm_layout.out_cols, 0);
     uint32_t residual_norm_params[8] = {
         (uint32_t)dim, u_eps, 0, 0, 0, 0, 0, 0
     };

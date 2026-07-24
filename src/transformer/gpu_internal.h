@@ -106,6 +106,24 @@ typedef struct {
 } BnTransformerGPUSSMResources;
 
 typedef struct {
+    int qkv_type;
+    int qkv_rows;
+    int qkv_cols;
+    int z_type;
+    int z_rows;
+    int z_cols;
+    int alpha_type;
+    int alpha_rows;
+    int alpha_cols;
+    int beta_type;
+    int beta_rows;
+    int beta_cols;
+    int out_type;
+    int out_rows;
+    int out_cols;
+} BnTransformerGPUSSMProjectionLayout;
+
+typedef struct {
     const BnGPUBackend *gpu;
     void *shared_gate;
     void *shared_up;
@@ -1417,6 +1435,9 @@ BnTransformerGPUSSMResources bn_transformer_gpu_resolve_ssm_resources(
     const BnBackendModel *backend,
     const BnLayerWeights *lw,
     int layer);
+int bn_transformer_gpu_resolve_ssm_projection_layout(
+    BnTransformerGPUSSMProjectionLayout *out,
+    const BnLayerWeights *lw);
 BnTransformerGPUMoESharedResources
 bn_transformer_gpu_resolve_moe_shared_resources(
     const BnGPUBackend *gpu,

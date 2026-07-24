@@ -4253,6 +4253,42 @@ static void test_block_planning(void) {
     assert(bn_backend_model_register_handle(backend, 1,
                                             BN_BACKEND_HANDLE_SSM_AB_STACKED,
                                             (void *)7) == 0);
+    lw.ssm.wqkv.type = BN_GGUF_TENSOR_Q4_0;
+    lw.ssm.wqkv.rows = 8192;
+    lw.ssm.wqkv.cols = 2048;
+    lw.ssm.wz.type = BN_GGUF_TENSOR_Q4_0;
+    lw.ssm.wz.rows = 4096;
+    lw.ssm.wz.cols = 2048;
+    lw.ssm.ssm_alpha.type = BN_GGUF_TENSOR_Q8_0;
+    lw.ssm.ssm_alpha.rows = 4096;
+    lw.ssm.ssm_alpha.cols = 2048;
+    lw.ssm.ssm_beta.type = BN_GGUF_TENSOR_Q8_0;
+    lw.ssm.ssm_beta.rows = 4096;
+    lw.ssm.ssm_beta.cols = 2048;
+    lw.ssm.ssm_out.type = BN_GGUF_TENSOR_Q5_K;
+    lw.ssm.ssm_out.rows = 2048;
+    lw.ssm.ssm_out.cols = 4096;
+    BnTransformerGPUSSMProjectionLayout ssm_layout = {0};
+    assert(bn_transformer_gpu_resolve_ssm_projection_layout(
+        &ssm_layout, &lw));
+    assert(ssm_layout.qkv_type == BN_GGUF_TENSOR_Q4_0);
+    assert(ssm_layout.qkv_rows == 8192);
+    assert(ssm_layout.qkv_cols == 2048);
+    assert(ssm_layout.z_type == BN_GGUF_TENSOR_Q4_0);
+    assert(ssm_layout.z_rows == 4096);
+    assert(ssm_layout.z_cols == 2048);
+    assert(ssm_layout.alpha_type == BN_GGUF_TENSOR_Q8_0);
+    assert(ssm_layout.alpha_rows == 4096);
+    assert(ssm_layout.alpha_cols == 2048);
+    assert(ssm_layout.beta_type == BN_GGUF_TENSOR_Q8_0);
+    assert(ssm_layout.beta_rows == 4096);
+    assert(ssm_layout.beta_cols == 2048);
+    assert(ssm_layout.out_type == BN_GGUF_TENSOR_Q5_K);
+    assert(ssm_layout.out_rows == 2048);
+    assert(ssm_layout.out_cols == 4096);
+    assert(!bn_transformer_gpu_resolve_ssm_projection_layout(NULL, &lw));
+    assert(!bn_transformer_gpu_resolve_ssm_projection_layout(
+        &ssm_layout, NULL));
     bn_transformer_plan_ssm(&ssm, &c, &lw, 1, 1, &gpu, backend);
     assert(ssm.placement == BN_EXEC_GPU);
     assert(ssm.backend == BN_BACKEND_METAL);

@@ -3741,6 +3741,12 @@ if awk '/^void bn_transformer_gpu_emit_context_attention_finish/{flag=1} /^void 
     fail=1
 fi
 
+if awk '/^void bn_transformer_gpu_emit_context_ssm/{flag=1} /^void bn_transformer_gpu_emit_context_moe/{flag=0} flag{print}' \
+    src/transformer/gpu_emit.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\|ssm_out\)\.\(type\|rows\|cols\)' >/dev/null 2>&1; then
+    echo "SSM GPU emission must use resolved projection layout metadata"
+    fail=1
+fi
+
 if awk '/bn_transformer_gpu_shared_expert_path_available\(lw, shared\)/{flag=1} /bn_transformer_gpu_emit_context_residual_rmsnorm/{flag=0} flag{print}' \
     src/transformer/gpu_emit.c | grep -n 'bn_transformer_gpu_shared_kquant_gateup_dot_eligible\|bn_transformer_gpu_shared_kquant_dot_enabled\|bn_transformer_gpu_shared_expert_prefers_gateup_split\|bn_transformer_gpu_gateup_split_enabled\|bn_transformer_gpu_can_matvec_split\|bn_transformer_gpu_can_fused_gateup_silu' >/dev/null 2>&1; then
     echo "Shared expert GPU emission must use composed shared gate/up policy helpers"
