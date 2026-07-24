@@ -640,6 +640,26 @@ static int gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
     return eligible && !gpu_policy_cuda_moe_routed_ffn_disabled();
 }
 
+static int gpu_policy_attention_layer_count(const BnConfig *c) {
+    return bn_model_config_attention_layer_count(c);
+}
+
+static int gpu_policy_ssm_layer_count(const BnConfig *c) {
+    return bn_model_config_ssm_layer_count(c);
+}
+
+static int gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
+    return bn_model_config_uses_hybrid_ssm(c);
+}
+
+static int gpu_policy_uses_hybrid_moe(const BnConfig *c) {
+    return bn_model_config_uses_hybrid_moe(c);
+}
+
+static int gpu_policy_uses_moe(const BnConfig *c) {
+    return bn_model_config_uses_moe(c);
+}
+
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible) {
     return gpu_policy_cuda_moe_routed_ffn_enabled(eligible);
 }
@@ -659,23 +679,23 @@ int bn_gpu_policy_float_buffer_type(void) {
 }
 
 int bn_gpu_policy_attention_layer_count(const BnConfig *c) {
-    return bn_model_config_attention_layer_count(c);
+    return gpu_policy_attention_layer_count(c);
 }
 
 int bn_gpu_policy_ssm_layer_count(const BnConfig *c) {
-    return bn_model_config_ssm_layer_count(c);
+    return gpu_policy_ssm_layer_count(c);
 }
 
 int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_ssm(c);
+    return gpu_policy_uses_hybrid_ssm(c);
 }
 
 int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_moe(c);
+    return gpu_policy_uses_hybrid_moe(c);
 }
 
 int bn_gpu_policy_uses_moe(const BnConfig *c) {
-    return bn_model_config_uses_moe(c);
+    return gpu_policy_uses_moe(c);
 }
 
 BnGPUMoERouteShape bn_gpu_policy_moe_route_shape(const BnConfig *c) {

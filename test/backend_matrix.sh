@@ -3518,6 +3518,11 @@ if awk '/^int bn_gpu_policy_auto_caps_gguf_sequence/{flag=1} flag{print} flag &&
     fail=1
 fi
 
+if awk '/^int bn_gpu_policy_moe_resident_routed_ffn_enabled/{flag=1} flag{print}' src/gpu_policy.c | grep -n 'bn_model_config_attention_layer_count\|bn_model_config_ssm_layer_count\|bn_model_config_uses_hybrid_ssm\|bn_model_config_uses_hybrid_moe\|bn_model_config_uses_moe' >/dev/null 2>&1; then
+    echo "src/gpu_policy.c exported GPU policies must compose behavior-named model-policy helpers"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must use model-policy helpers instead of reaching into model_arch"
     fail=1
