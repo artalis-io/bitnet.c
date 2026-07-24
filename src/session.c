@@ -26,6 +26,14 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
     return checked_mul_size(tmp, d, out);
 }
 
+static int session_reset_attention_layer_count(const BnConfig *c) {
+    return bn_model_config_attention_layer_count(c);
+}
+
+static int session_reset_ssm_layer_count(const BnConfig *c) {
+    return bn_model_config_ssm_layer_count(c);
+}
+
 BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
     if (!model) return NULL;
     const BnConfig *c = &model->config;
@@ -97,7 +105,7 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
     BnRunState *rs = &s->state;
 
     // KV cache
-    int n_attn = bn_model_config_attention_layer_count(c);
+    int n_attn = session_reset_attention_layer_count(c);
     size_t kv_size = 0;
     if (n_attn < 0 ||
         checked_mul3_size((size_t)n_attn, (size_t)c->seq_len,
@@ -125,7 +133,7 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
 
     // SSM state
     if (rs->ssm_state && c->ssm_time_step_rank > 0) {
-        int n_ssm = bn_model_config_ssm_layer_count(c);
+        int n_ssm = session_reset_ssm_layer_count(c);
         int head_v_dim = c->ssm_inner_size / c->ssm_time_step_rank;
         size_t state_total = 0;
         if (n_ssm < 0 ||
@@ -137,7 +145,7 @@ void bn_session_reset(BnSession *s, const BnModel *model) {
         memset(rs->ssm_state, 0, state_total);
     }
     if (rs->ssm_conv_state) {
-        int n_ssm = bn_model_config_ssm_layer_count(c);
+        int n_ssm = session_reset_ssm_layer_count(c);
         int conv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
         size_t conv_total = 0;
         if (n_ssm < 0 ||
