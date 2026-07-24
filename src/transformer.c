@@ -29,7 +29,7 @@ static int prepare_per_layer_input_state(BnModel *m, BnSession *sess,
     int per_dim = bn_transformer_per_layer_embedding_dim(c);
     if (per_dim <= 0)
         return 0;
-    float norm_eps = bn_model_config_norm_epsilon(c);
+    float norm_eps = bn_transformer_norm_epsilon(c);
     int total = per_dim * c->n_layers;
     if (!s->per_layer_input || !w->per_layer_model_proj.data ||
         !w->per_layer_token_embd.data || !w->per_layer_proj_norm)
