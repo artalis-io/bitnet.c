@@ -44,11 +44,11 @@ static BnAllocator resolve_alloc(BnAllocator *a) {
 }
 
 static int prompt_cache_attention_layer_count(const BnConfig *c) {
-    return bn_model_config_attention_layer_count(c);
+    return bn_model_prompt_cache_attention_layer_count(c);
 }
 
 static int prompt_cache_model_supports_kv_snapshot(const BnConfig *cfg) {
-    return cfg && !bn_model_config_uses_hybrid_layer_layout(cfg);
+    return bn_model_prompt_cache_supports_kv_snapshot(cfg);
 }
 
 // Free a single entry's buffers

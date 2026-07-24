@@ -413,3 +413,11 @@ int bn_model_config_moe_prefers_reference_gpu_attention(
     const BnConfig *config) {
     return bn_model_arch_moe_prefers_reference_gpu_attention(config);
 }
+
+int bn_model_prompt_cache_attention_layer_count(const BnConfig *config) {
+    return bn_model_config_attention_layer_count(config);
+}
+
+int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config) {
+    return config && !bn_model_config_uses_hybrid_layer_layout(config);
+}
