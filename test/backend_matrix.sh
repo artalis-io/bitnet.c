@@ -4693,6 +4693,11 @@ if grep -n 'bn_model_config_attention_layer_count\|bn_model_config_uses_hybrid_l
     fail=1
 fi
 
+if rg -n 'static int prompt_cache_(attention_layer_count|model_supports_kv_snapshot)' src/prompt_cache.c >/dev/null 2>&1; then
+    echo "src/prompt_cache.c must compose prompt-cache model policy helpers directly"
+    fail=1
+fi
+
 if awk '/^int bn_prompt_cache_store/{flag=1} /^int bn_prompt_cache_restore/{flag=0} flag{print}' src/prompt_cache.c | grep -n 'bn_model_arch_uses_hybrid_layer_layout' >/dev/null 2>&1; then
     echo "prompt cache store must use prompt-cache model support policy"
     fail=1

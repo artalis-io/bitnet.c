@@ -43,14 +43,6 @@ static BnAllocator resolve_alloc(BnAllocator *a) {
     return bn_allocator_default();
 }
 
-static int prompt_cache_attention_layer_count(const BnConfig *c) {
-    return bn_model_prompt_cache_attention_layer_count(c);
-}
-
-static int prompt_cache_model_supports_kv_snapshot(const BnConfig *cfg) {
-    return bn_model_prompt_cache_supports_kv_snapshot(cfg);
-}
-
 // Free a single entry's buffers
 static void entry_free(BnPromptCacheEntry *e, BnAllocator *a) {
     if (e->tokens) {
@@ -119,7 +111,7 @@ void bn_prompt_cache_free(BnPromptCache *cache) {
 }
 
 int bn_prompt_cache_model_supported(const BnConfig *cfg) {
-    return prompt_cache_model_supports_kv_snapshot(cfg);
+    return bn_model_prompt_cache_supports_kv_snapshot(cfg);
 }
 
 int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
@@ -134,7 +126,7 @@ int bn_prompt_cache_store(BnPromptCache *cache, const BnModel *model,
     // Validate: n_tokens must not exceed session pos or seq_len
     if (n_tokens > session->pos || n_tokens > cfg->seq_len) return -2;
 
-    int n_attn = prompt_cache_attention_layer_count(cfg);
+    int n_attn = bn_model_prompt_cache_attention_layer_count(cfg);
     int kv_dim = cfg->kv_dim;
     int tq_bits = cfg->kv_tq_bits;
 
@@ -247,7 +239,7 @@ int bn_prompt_cache_restore(BnPromptCache *cache, const BnModel *model,
     // Reject hybrid models
     if (!bn_prompt_cache_model_supported(cfg)) return 0;
 
-    int n_attn = prompt_cache_attention_layer_count(cfg);
+    int n_attn = bn_model_prompt_cache_attention_layer_count(cfg);
     int kv_dim = cfg->kv_dim;
     int tq_bits = cfg->kv_tq_bits;
 
