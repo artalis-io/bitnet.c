@@ -32,33 +32,34 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
 }
 
 static int model_session_attention_layer_count(const BnConfig *c) {
-    return bn_model_config_attention_layer_count(c);
+    return bn_model_session_policy_attention_layer_count(c);
 }
 
 static int model_session_ssm_layer_count(const BnConfig *c) {
-    return bn_model_config_ssm_layer_count(c);
+    return bn_model_session_policy_ssm_layer_count(c);
 }
 
 static int model_session_uses_hybrid_layer_layout(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_layer_layout(c);
+    return bn_model_session_policy_uses_hybrid_layer_layout(c);
 }
 
 static int model_session_shared_expert_hidden_dim(const BnConfig *c) {
-    return bn_model_config_shared_expert_hidden_dim(c);
+    return bn_model_session_policy_shared_expert_hidden_dim(c);
 }
 
 static int model_session_uses_moe(const BnConfig *c) {
-    return bn_model_config_uses_moe(c);
+    return bn_model_session_policy_uses_moe(c);
 }
 
 static int model_session_per_layer_embedding_dim(const BnConfig *c) {
-    return bn_model_config_per_layer_embedding_dim(c);
+    return bn_model_session_policy_per_layer_embedding_dim(c);
 }
 
 static void model_session_init_rope_frequencies(const BnConfig *c,
                                                 float *freqs,
                                                 int capacity_pairs) {
-    bn_model_config_init_rope_frequencies(c, freqs, capacity_pairs);
+    bn_model_session_policy_init_rope_frequencies(c, freqs,
+                                                  capacity_pairs);
 }
 
 int bn_model_session_reset_attention_layer_count(const BnConfig *c) {

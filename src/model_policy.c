@@ -422,6 +422,39 @@ int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config) {
     return config && !bn_model_config_uses_hybrid_layer_layout(config);
 }
 
+int bn_model_session_policy_attention_layer_count(const BnConfig *config) {
+    return bn_model_config_attention_layer_count(config);
+}
+
+int bn_model_session_policy_ssm_layer_count(const BnConfig *config) {
+    return bn_model_config_ssm_layer_count(config);
+}
+
+int bn_model_session_policy_uses_hybrid_layer_layout(
+    const BnConfig *config) {
+    return bn_model_config_uses_hybrid_layer_layout(config);
+}
+
+int bn_model_session_policy_shared_expert_hidden_dim(
+    const BnConfig *config) {
+    return bn_model_config_shared_expert_hidden_dim(config);
+}
+
+int bn_model_session_policy_uses_moe(const BnConfig *config) {
+    return bn_model_config_uses_moe(config);
+}
+
+int bn_model_session_policy_per_layer_embedding_dim(
+    const BnConfig *config) {
+    return bn_model_config_per_layer_embedding_dim(config);
+}
+
+void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
+                                                   float *freqs,
+                                                   int capacity_pairs) {
+    bn_model_config_init_rope_frequencies(config, freqs, capacity_pairs);
+}
+
 int bn_model_embed_scales_token_embedding(const BnConfig *config) {
     return bn_model_config_uses_per_layer_embedding(config);
 }
