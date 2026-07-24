@@ -22,31 +22,6 @@ struct BnModelBackendState {
     BnBackendModel *backend;
 };
 
-int bn_model_quant_type_supported(int type);
-int bn_model_quant_uses_embedded_block_scale(int type);
-int bn_model_quant_uses_embedded_tensor_scale(int type);
-size_t bn_model_quant_embedded_tensor_scale_offset(int type,
-                                                   int rows,
-                                                   int cols);
-int bn_model_quant_tied_logits_uses_quant_path(int type);
-int bn_model_quant_logits_i8_cache_supported(int type);
-void bn_model_quant_prepare_logits_i8_cache(const uint16_t *src,
-                                            int8_t *dst,
-                                            float *scales,
-                                            int rows,
-                                            int dim);
-int bn_model_quant_uses_dense_float(int type);
-int bn_model_quant_can_convert_dense_to_float(int type);
-int bn_model_quant_convert_dense_to_float(int type,
-                                          const void *src,
-                                          float *dst,
-                                          int n);
-int bn_model_quant_dense_float_type(void);
-int bn_model_quant_dequant_row(int type,
-                               const void *data,
-                               int row,
-                               int n,
-                               float *out);
 int bn_model_activation_is_relu2(int activation);
 int bn_model_activation_is_gelu(int activation);
 int bn_model_activation_uses_silu_path(int activation);
@@ -73,6 +48,28 @@ int bn_model_load_policy_moe_uses_scaled_router_input(
 int bn_model_load_policy_moe_uses_dense_residual_branch(
     const BnConfig *config);
 int bn_model_load_policy_has_shared_expert(const BnConfig *config);
+int bn_model_load_policy_weight_type_supported(int type);
+int bn_model_load_policy_weight_uses_embedded_block_scale(int type);
+int bn_model_load_policy_weight_has_embedded_tensor_scale(int type);
+size_t bn_model_load_policy_weight_embedded_tensor_scale_offset(int type,
+                                                                int rows,
+                                                                int cols);
+int bn_model_load_policy_tied_logits_uses_quant_path(int type);
+int bn_model_load_policy_logits_i8_cache_supported(int type);
+void bn_model_load_policy_prepare_logits_i8_cache(const uint16_t *src,
+                                                  int8_t *dst,
+                                                  float *scales,
+                                                  int rows,
+                                                  int dim);
+int bn_model_load_policy_shared_expert_gate_uses_dense_float(int type);
+int bn_model_load_policy_can_convert_shared_expert_gate_to_dense_float(
+    int type);
+int bn_model_load_policy_convert_shared_expert_gate_to_dense_float(
+    int type,
+    const void *src,
+    float *dst,
+    int n);
+int bn_model_load_policy_dense_float_weight_type(void);
 int bn_model_prompt_cache_attention_layer_count(const BnConfig *config);
 int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config);
 int bn_model_session_reset_attention_layer_count(const BnConfig *config);
@@ -90,6 +87,11 @@ void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
                                                    float *freqs,
                                                    int capacity_pairs);
 int bn_model_embed_policy_scales_token_embedding(const BnConfig *config);
+int bn_model_embed_policy_dequant_row(int type,
+                                      const void *data,
+                                      int row,
+                                      int n,
+                                      float *out);
 int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
     const BnConfig *config);
 int bn_model_moe_policy_uses_scaled_router_input(const BnConfig *config);

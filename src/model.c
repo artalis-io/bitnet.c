@@ -146,11 +146,11 @@ void *bn_model_gpu_moe_cache(const BnModel *model) {
 // --- Helper: load a BnQWeight from GGUF tensor + scale tensor ---
 
 static int qweight_type_supported(int type) {
-    return bn_model_quant_type_supported(type);
+    return bn_model_load_policy_weight_type_supported(type);
 }
 
 static int qweight_type_uses_embedded_scale(int type) {
-    return bn_model_quant_uses_embedded_block_scale(type);
+    return bn_model_load_policy_weight_uses_embedded_block_scale(type);
 }
 
 static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, const char *scale_name) {
@@ -183,11 +183,11 @@ static int load_qweight(BnQWeight *w, BnGGUFFile *f, const char *weight_name, co
         return -1;
     }
 
-    if (bn_model_quant_uses_embedded_tensor_scale(w->type)) {
+    if (bn_model_load_policy_weight_has_embedded_tensor_scale(w->type)) {
         // I2_S: per-tensor scale stored at end of packed data (offset = nelements/4)
         const uint8_t *base = (const uint8_t *)w->data;
         memcpy(&w->scale,
-               base + bn_model_quant_embedded_tensor_scale_offset(
+               base + bn_model_load_policy_weight_embedded_tensor_scale_offset(
                           w->type, w->rows, w->cols),
                sizeof(float));
     } else if (qweight_type_uses_embedded_scale(w->type)) {
@@ -489,10 +489,10 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         w->output_weight.cols = (int)out_info->dims[0];
         if (qweight_type_uses_embedded_scale(ot)) {
             w->output_weight.scale = 1.0f;
-        } else if (bn_model_quant_uses_embedded_tensor_scale(ot)) {
+        } else if (bn_model_load_policy_weight_has_embedded_tensor_scale(ot)) {
             const uint8_t *base = (const uint8_t *)w->output_weight.data;
             memcpy(&w->output_weight.scale,
-                   base + bn_model_quant_embedded_tensor_scale_offset(
+                   base + bn_model_load_policy_weight_embedded_tensor_scale_offset(
                               ot, w->output_weight.rows,
                               w->output_weight.cols),
                    sizeof(float));
@@ -501,7 +501,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         }
     }
     if (!w->output_weight.data &&
-        bn_model_quant_tied_logits_uses_quant_path(w->emb_type)) {
+        bn_model_load_policy_tied_logits_uses_quant_path(w->emb_type)) {
         w->tied_embedding_weight.data = w->token_embedding;
         w->tied_embedding_weight.type = w->emb_type;
         w->tied_embedding_weight.rows = c->vocab_size;
@@ -938,14 +938,14 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
     size_t emb_i8_bytes = 0;
     size_t emb_i8_scales_bytes = 0;
     int want_i8_emb =
-        bn_model_quant_logits_i8_cache_supported(w->emb_type) ||
+        bn_model_load_policy_logits_i8_cache_supported(w->emb_type) ||
         (w->output_weight.data &&
-         bn_model_quant_logits_i8_cache_supported(w->output_weight.type));
+         bn_model_load_policy_logits_i8_cache_supported(w->output_weight.type));
     int i8_emb_rows = 0;
     if (want_i8_emb) {
         i8_emb_rows =
             (w->output_weight.data &&
-             bn_model_quant_logits_i8_cache_supported(w->output_weight.type))
+             bn_model_load_policy_logits_i8_cache_supported(w->output_weight.type))
                 ? w->output_weight.rows
                 : c->vocab_size;
         emb_i8_bytes = (size_t)i8_emb_rows * c->dim;
@@ -960,7 +960,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
         for (int i = 0; i < c->n_layers; i++) {
             BnSharedExpertWeights *sh = &w->layers[i].shared;
             if (sh->shared_expert_gate &&
-                !bn_model_quant_uses_dense_float(sh->shared_expert_gate_type))
+                !bn_model_load_policy_shared_expert_gate_uses_dense_float(
+                    sh->shared_expert_gate_type))
                 shared_gate_float_bytes += (size_t)c->dim * sizeof(float);
         }
     }
@@ -986,13 +987,13 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             if (w->emb_out_i8 && w->emb_out_scales) {
                 const uint16_t *src =
                     (w->output_weight.data &&
-                     bn_model_quant_logits_i8_cache_supported(
+                     bn_model_load_policy_logits_i8_cache_supported(
                          w->output_weight.type))
                         ? (const uint16_t *)w->output_weight.data
                         : (const uint16_t *)w->token_embedding;
-                bn_model_quant_prepare_logits_i8_cache(src, w->emb_out_i8,
-                                                       w->emb_out_scales,
-                                                       i8_emb_rows, c->dim);
+                bn_model_load_policy_prepare_logits_i8_cache(
+                    src, w->emb_out_i8, w->emb_out_scales, i8_emb_rows,
+                    c->dim);
                 char i8_mb[16]; snprintf(i8_mb, sizeof(i8_mb), "%.0f", (double)emb_i8_bytes / (1024*1024));
                 SH_LOG_INFO("INT8 output embeddings ready", "MB", i8_mb);
             } else {
@@ -1006,7 +1007,8 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
             for (int i = 0; i < c->n_layers; i++) {
                 BnSharedExpertWeights *sh = &w->layers[i].shared;
                 if (!sh->shared_expert_gate ||
-                    bn_model_quant_uses_dense_float(sh->shared_expert_gate_type))
+                    bn_model_load_policy_shared_expert_gate_uses_dense_float(
+                        sh->shared_expert_gate_type))
                     continue;
                 float *dst = (float *)sh_arena_alloc(
                     m->runtime->weight_arena, (size_t)c->dim * sizeof(float));
@@ -1014,9 +1016,9 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                     SH_LOG_ERROR("Failed to allocate shared expert gate");
                     goto fail_state;
                 }
-                if (!bn_model_quant_can_convert_dense_to_float(
+                if (!bn_model_load_policy_can_convert_shared_expert_gate_to_dense_float(
                         sh->shared_expert_gate_type) ||
-                    bn_model_quant_convert_dense_to_float(
+                    bn_model_load_policy_convert_shared_expert_gate_to_dense_float(
                         sh->shared_expert_gate_type,
                         sh->shared_expert_gate, dst, c->dim) != 0) {
                     SH_LOG_ERROR("Unsupported shared expert gate type");
@@ -1024,7 +1026,7 @@ int bn_model_load(BnModel *m, BnGGUFFile *f, int max_seq_len, int kv_f16, int kv
                 }
                 sh->shared_expert_gate = dst;
                 sh->shared_expert_gate_type =
-                    bn_model_quant_dense_float_type();
+                    bn_model_load_policy_dense_float_weight_type();
             }
         }
 

@@ -4077,6 +4077,12 @@ if grep -n 'bn_backend_quant_already_f32\|bn_backend_quant_dense_f32_type\|bn_ba
     fail=1
 fi
 
+if rg -n 'bn_model_quant_' \
+    include/model_internal.h src/model_policy.c src/model.c src/model_embed.c >/dev/null 2>&1; then
+    echo "Model load/embed code must use behavior-named quant policy helpers"
+    fail=1
+fi
+
 for file in \
     include/backend_quant.h \
     src/transformer/gpu.c \

@@ -3,74 +3,13 @@
 #include "model_arch.h"
 #include "quant.h"
 
-int bn_model_quant_type_supported(int type) {
-    return bn_quant_format_supported(type);
-}
-
-int bn_model_quant_uses_embedded_block_scale(int type) {
-    return bn_quant_format_uses_embedded_scale(type);
-}
-
-int bn_model_quant_uses_embedded_tensor_scale(int type) {
-    return bn_quant_format_has_embedded_tensor_scale(type);
-}
-
-size_t bn_model_quant_embedded_tensor_scale_offset(int type,
-                                                   int rows,
-                                                   int cols) {
-    return bn_quant_embedded_tensor_scale_offset(type, rows, cols);
-}
-
-int bn_model_quant_tied_logits_uses_quant_path(int type) {
-    return bn_backend_quant_tied_logits_uses_quant_path(type);
-}
-
-int bn_model_quant_logits_i8_cache_supported(int type) {
-    return bn_backend_quant_logits_i8_cache_supported(type);
-}
-
-void bn_model_quant_prepare_logits_i8_cache(const uint16_t *src,
-                                            int8_t *dst,
-                                            float *scales,
-                                            int rows,
-                                            int dim) {
-    bn_quant_f16_rows_to_i8_dispatch(src, dst, scales, rows, dim);
-}
-
-int bn_model_quant_uses_dense_float(int type) {
-    return bn_backend_quant_uses_dense_float(type);
-}
-
-int bn_model_quant_can_convert_dense_to_float(int type) {
-    return bn_backend_quant_can_convert_dense_to_float(type);
-}
-
-int bn_model_quant_convert_dense_to_float(int type,
-                                          const void *src,
-                                          float *dst,
-                                          int n) {
-    return bn_backend_quant_convert_dense_to_float(type, src, dst, n);
-}
-
-int bn_model_quant_dense_float_type(void) {
-    return bn_backend_quant_dense_float_type();
-}
-
-int bn_model_quant_dequant_row(int type,
-                               const void *data,
-                               int row,
-                               int n,
-                               float *out) {
-    return bn_quant_dequant_row(type, data, row, n, out);
-}
-
 int bn_model_dequant_qweight_row(const BnQWeight *weight,
                                  int row,
                                  int n,
                                  float *out) {
     if (!weight)
         return -1;
-    return bn_model_quant_dequant_row(weight->type, weight->data, row, n, out);
+    return bn_quant_dequant_row(weight->type, weight->data, row, n, out);
 }
 
 int bn_model_activation_is_relu2(int activation) {
@@ -160,6 +99,61 @@ int bn_model_load_policy_has_shared_expert(const BnConfig *config) {
     return bn_model_arch_config_has_shared_expert(config);
 }
 
+int bn_model_load_policy_weight_type_supported(int type) {
+    return bn_quant_format_supported(type);
+}
+
+int bn_model_load_policy_weight_uses_embedded_block_scale(int type) {
+    return bn_quant_format_uses_embedded_scale(type);
+}
+
+int bn_model_load_policy_weight_has_embedded_tensor_scale(int type) {
+    return bn_quant_format_has_embedded_tensor_scale(type);
+}
+
+size_t bn_model_load_policy_weight_embedded_tensor_scale_offset(int type,
+                                                                int rows,
+                                                                int cols) {
+    return bn_quant_embedded_tensor_scale_offset(type, rows, cols);
+}
+
+int bn_model_load_policy_tied_logits_uses_quant_path(int type) {
+    return bn_backend_quant_tied_logits_uses_quant_path(type);
+}
+
+int bn_model_load_policy_logits_i8_cache_supported(int type) {
+    return bn_backend_quant_logits_i8_cache_supported(type);
+}
+
+void bn_model_load_policy_prepare_logits_i8_cache(const uint16_t *src,
+                                                  int8_t *dst,
+                                                  float *scales,
+                                                  int rows,
+                                                  int dim) {
+    bn_quant_f16_rows_to_i8_dispatch(src, dst, scales, rows, dim);
+}
+
+int bn_model_load_policy_shared_expert_gate_uses_dense_float(int type) {
+    return bn_backend_quant_uses_dense_float(type);
+}
+
+int bn_model_load_policy_can_convert_shared_expert_gate_to_dense_float(
+    int type) {
+    return bn_backend_quant_can_convert_dense_to_float(type);
+}
+
+int bn_model_load_policy_convert_shared_expert_gate_to_dense_float(
+    int type,
+    const void *src,
+    float *dst,
+    int n) {
+    return bn_backend_quant_convert_dense_to_float(type, src, dst, n);
+}
+
+int bn_model_load_policy_dense_float_weight_type(void) {
+    return bn_backend_quant_dense_float_type();
+}
+
 int bn_model_prompt_cache_attention_layer_count(const BnConfig *config) {
     return bn_model_arch_attention_layer_count(config);
 }
@@ -203,6 +197,14 @@ void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
 
 int bn_model_embed_policy_scales_token_embedding(const BnConfig *config) {
     return bn_model_arch_uses_per_layer_embedding(config);
+}
+
+int bn_model_embed_policy_dequant_row(int type,
+                                      const void *data,
+                                      int row,
+                                      int n,
+                                      float *out) {
+    return bn_quant_dequant_row(type, data, row, n, out);
 }
 
 int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
