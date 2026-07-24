@@ -4228,6 +4228,36 @@ if awk '/^int bn_model_load_policy_/{flag=1} /^int bn_model_prompt_cache_attenti
     fail=1
 fi
 
+if awk '/^int bn_model_prompt_cache_/{flag=1} /^int bn_model_session_policy_/{flag=0} flag{print}' src/model_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "model prompt-cache policy helpers must compose model_arch semantics directly"
+    fail=1
+fi
+
+if awk '/^int bn_model_session_policy_/{flag=1} /^int bn_model_embed_policy_/{flag=0} flag{print}' src/model_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "model session policy helpers must compose model_arch semantics directly"
+    fail=1
+fi
+
+if awk '/^int bn_model_embed_policy_/{flag=1} /^int bn_model_moe_policy_/{flag=0} flag{print}' src/model_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "model embed policy helpers must compose model_arch semantics directly"
+    fail=1
+fi
+
+if awk '/^int bn_model_moe_policy_/{flag=1} /^int bn_model_transformer_policy_/{flag=0} flag{print}' src/model_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "model MoE policy helpers must compose model_arch semantics directly"
+    fail=1
+fi
+
+if awk '/^int bn_model_transformer_policy_/{flag=1} /^int bn_model_gpu_policy_/{flag=0} flag{print}' src/model_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "model transformer policy helpers must compose model_arch semantics directly"
+    fail=1
+fi
+
+if awk '/^int bn_model_gpu_policy_/{flag=1} flag{print}' src/model_policy.c | grep -n 'bn_model_config_' >/dev/null 2>&1; then
+    echo "model GPU policy helpers must compose model_arch semantics directly"
+    fail=1
+fi
+
 if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model-config/MoE policy helpers for routed expert shape and weighting"
     fail=1
