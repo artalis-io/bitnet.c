@@ -4258,6 +4258,15 @@ if awk '/^int bn_model_gpu_policy_/{flag=1} flag{print}' src/model_policy.c | gr
     fail=1
 fi
 
+if rg -n 'bn_model_config_(norm_epsilon|moe_total_experts|moe_active_experts|moe_expert_hidden_dim|moe_route_shape_valid)' \
+    include/model_internal.h \
+    src/model_policy.c \
+    test/test_moe.c \
+    test/test_transformer.c >/dev/null 2>&1; then
+    echo "unused generic model-config helpers must stay collapsed into behavior-owned policy helpers"
+    fail=1
+fi
+
 if grep -n 'c->n_experts\|c->n_experts_active\|c->moe_intermediate_size\|c->moe_norm_topk_prob\|c->moe_expert_weights_scale' src/model.c >/dev/null 2>&1; then
     echo "src/model.c must use model-config/MoE policy helpers for routed expert shape and weighting"
     fail=1

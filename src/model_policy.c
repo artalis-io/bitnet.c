@@ -143,22 +143,6 @@ int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config) {
     return bn_model_arch_uses_more_than_two_expert_moe(config);
 }
 
-int bn_model_config_moe_total_experts(const BnConfig *config) {
-    return bn_model_arch_moe_total_experts(config);
-}
-
-int bn_model_config_moe_active_experts(const BnConfig *config) {
-    return bn_model_arch_moe_active_experts(config);
-}
-
-int bn_model_config_moe_expert_hidden_dim(const BnConfig *config) {
-    return bn_model_arch_moe_expert_hidden_dim(config);
-}
-
-int bn_model_config_moe_route_shape_valid(const BnConfig *config) {
-    return bn_model_arch_moe_route_shape_valid(config);
-}
-
 int bn_model_config_moe_normalizes_topk_route_weights(
     const BnConfig *config) {
     return bn_model_arch_moe_normalizes_topk_route_weights(config);
@@ -248,10 +232,6 @@ int bn_model_config_prefill_uses_decode_for_parity(
 
 int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config) {
     return bn_model_arch_rmsnorm_uses_reference_order(config);
-}
-
-float bn_model_config_norm_epsilon(const BnConfig *config) {
-    return bn_model_arch_norm_epsilon(config);
 }
 
 int bn_model_config_attention_flash_requested(const BnConfig *config) {

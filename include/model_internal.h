@@ -65,10 +65,6 @@ int bn_model_config_uses_all_active_two_expert_moe(const BnConfig *config,
                                                    int dim);
 int bn_model_config_uses_two_expert_all_active_moe(const BnConfig *config);
 int bn_model_config_uses_more_than_two_expert_moe(const BnConfig *config);
-int bn_model_config_moe_total_experts(const BnConfig *config);
-int bn_model_config_moe_active_experts(const BnConfig *config);
-int bn_model_config_moe_expert_hidden_dim(const BnConfig *config);
-int bn_model_config_moe_route_shape_valid(const BnConfig *config);
 int bn_model_config_moe_normalizes_topk_route_weights(
     const BnConfig *config);
 float bn_model_config_moe_expert_weights_scale(const BnConfig *config);
@@ -94,7 +90,6 @@ int bn_model_config_uses_small_dense_native_quant_shape(
 int bn_model_config_requires_float_kquant_fallback(const BnConfig *config);
 int bn_model_config_prefill_uses_decode_for_parity(const BnConfig *config);
 int bn_model_config_rmsnorm_uses_reference_order(const BnConfig *config);
-float bn_model_config_norm_epsilon(const BnConfig *config);
 int bn_model_config_attention_flash_requested(const BnConfig *config);
 float bn_model_config_attention_scale(const BnConfig *config,
                                       int head_size);

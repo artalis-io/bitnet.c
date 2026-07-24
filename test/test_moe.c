@@ -291,7 +291,7 @@ static void test_moe_execution_policy(void) {
     assert(!policy.uses_scaled_router_input);
     assert(policy.uses_dense_residual_branch);
     assert(policy.uses_reference_silu == -1);
-    assert(policy.norm_eps == bn_model_config_norm_epsilon(&c));
+    assert(policy.norm_eps == bn_model_moe_policy_norm_epsilon(&c));
     assert(bn_moe_policy_uses_reference_silu(&c) == -1);
 
     policy = bn_moe_execution_policy(NULL);
@@ -300,7 +300,7 @@ static void test_moe_execution_policy(void) {
     assert(policy.uses_reference_silu == -1);
     assert(policy.activation == 0);
     assert(policy.norm_eps == 0.0f);
-    assert(bn_model_config_norm_epsilon(NULL) == 0.0f);
+    assert(bn_model_moe_policy_norm_epsilon(NULL) == 0.0f);
     assert(bn_moe_policy_uses_reference_silu(NULL) == -1);
 
     printf("PASSED\n");
@@ -330,19 +330,19 @@ static void test_moe_prefill_policy(void) {
     assert(!bn_moe_policy_normalizes_topk_route_weights(&c));
     c.moe_norm_topk_prob = 1;
     assert(!bn_moe_policy_normalizes_topk_route_weights(NULL));
-    assert(bn_model_config_moe_total_experts(&c) == 4);
-    assert(bn_model_config_moe_active_experts(&c) == 2);
-    assert(bn_model_config_moe_expert_hidden_dim(&c) == 128);
-    assert(bn_model_config_moe_route_shape_valid(&c));
-    assert(bn_model_config_moe_total_experts(NULL) == 0);
-    assert(bn_model_config_moe_active_experts(NULL) == 0);
-    assert(bn_model_config_moe_expert_hidden_dim(NULL) == 0);
-    assert(!bn_model_config_moe_route_shape_valid(NULL));
+    assert(bn_model_moe_policy_total_experts(&c) == 4);
+    assert(bn_model_moe_policy_active_experts(&c) == 2);
+    assert(bn_model_moe_policy_expert_hidden_dim(&c) == 128);
+    assert(bn_model_arch_moe_route_shape_valid(&c));
+    assert(bn_model_moe_policy_total_experts(NULL) == 0);
+    assert(bn_model_moe_policy_active_experts(NULL) == 0);
+    assert(bn_model_moe_policy_expert_hidden_dim(NULL) == 0);
+    assert(!bn_model_arch_moe_route_shape_valid(NULL));
     c.n_experts_active = 0;
-    assert(!bn_model_config_moe_route_shape_valid(&c));
+    assert(!bn_model_arch_moe_route_shape_valid(&c));
     c.n_experts_active = 2;
     c.moe_intermediate_size = 0;
-    assert(!bn_model_config_moe_route_shape_valid(&c));
+    assert(!bn_model_arch_moe_route_shape_valid(&c));
     c.moe_intermediate_size = 128;
     route_policy = bn_moe_route_policy(NULL);
     assert(route_policy.total_experts == 0);
