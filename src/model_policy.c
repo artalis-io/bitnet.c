@@ -414,6 +414,73 @@ int bn_model_config_moe_prefers_reference_gpu_attention(
     return bn_model_arch_moe_prefers_reference_gpu_attention(config);
 }
 
+int bn_model_load_policy_uses_moe(const BnConfig *config) {
+    return bn_model_config_uses_moe(config);
+}
+
+int bn_model_load_policy_loads_extra_metadata(const BnConfig *config) {
+    return bn_model_config_loads_extra_metadata(config);
+}
+
+int bn_model_load_policy_uses_hybrid_layer_layout(
+    const BnConfig *config) {
+    return bn_model_config_uses_hybrid_layer_layout(config);
+}
+
+int bn_model_load_policy_moe_total_experts(const BnConfig *config) {
+    return bn_model_config_moe_total_experts(config);
+}
+
+int bn_model_load_policy_moe_active_experts(const BnConfig *config) {
+    return bn_model_config_moe_active_experts(config);
+}
+
+int bn_model_load_policy_moe_expert_hidden_dim(const BnConfig *config) {
+    return bn_model_config_moe_expert_hidden_dim(config);
+}
+
+int bn_model_load_policy_moe_route_shape_valid(const BnConfig *config) {
+    return bn_model_config_moe_route_shape_valid(config);
+}
+
+int bn_model_load_policy_loads_per_layer_input_weights(
+    const BnConfig *config) {
+    return bn_model_config_loads_per_layer_input_weights(config);
+}
+
+int bn_model_load_policy_layer_reuses_kv(const BnConfig *config,
+                                         int layer) {
+    return bn_model_config_layer_reuses_kv(config, layer);
+}
+
+int bn_model_load_policy_kv_reuse_layer(const BnConfig *config,
+                                        int layer) {
+    return bn_model_config_kv_reuse_layer(config, layer);
+}
+
+int bn_model_load_policy_uses_ffn_post_norm(const BnConfig *config) {
+    return bn_model_config_uses_ffn_post_norm(config);
+}
+
+int bn_model_load_policy_loads_extra_ffn_post_norms(
+    const BnConfig *config) {
+    return bn_model_config_loads_extra_ffn_post_norms(config);
+}
+
+int bn_model_load_policy_moe_uses_scaled_router_input(
+    const BnConfig *config) {
+    return bn_model_config_moe_uses_scaled_router_input(config);
+}
+
+int bn_model_load_policy_moe_uses_dense_residual_branch(
+    const BnConfig *config) {
+    return bn_model_config_moe_uses_dense_residual_branch(config);
+}
+
+int bn_model_load_policy_has_shared_expert(const BnConfig *config) {
+    return bn_model_config_has_shared_expert(config);
+}
+
 int bn_model_prompt_cache_attention_layer_count(const BnConfig *config) {
     return bn_model_config_attention_layer_count(config);
 }
