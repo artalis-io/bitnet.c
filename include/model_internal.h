@@ -182,7 +182,7 @@ int bn_model_session_policy_per_layer_embedding_dim(
 void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
                                                    float *freqs,
                                                    int capacity_pairs);
-int bn_model_embed_scales_token_embedding(const BnConfig *config);
+int bn_model_embed_policy_scales_token_embedding(const BnConfig *config);
 int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
     const BnConfig *config);
 int bn_model_moe_policy_uses_scaled_router_input(const BnConfig *config);

@@ -522,7 +522,7 @@ void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
     bn_model_config_init_rope_frequencies(config, freqs, capacity_pairs);
 }
 
-int bn_model_embed_scales_token_embedding(const BnConfig *config) {
+int bn_model_embed_policy_scales_token_embedding(const BnConfig *config) {
     return bn_model_config_uses_per_layer_embedding(config);
 }
 

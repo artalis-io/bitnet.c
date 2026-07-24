@@ -3533,7 +3533,7 @@ if grep -n '#include "model_arch.h"\|bn_model_arch_' src/gpu_policy.c >/dev/null
     fail=1
 fi
 
-if grep -n 'bn_model_config_uses_per_layer_embedding' src/model_embed.c >/dev/null 2>&1; then
+if grep -n 'bn_model_config_uses_per_layer_embedding\|bn_model_embed_scales_token_embedding' src/model_embed.c >/dev/null 2>&1; then
     echo "src/model_embed.c public API must compose embedding model-policy helpers"
     fail=1
 fi
