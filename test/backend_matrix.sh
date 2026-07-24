@@ -4597,6 +4597,11 @@ if grep -n 'full_attn_interval' src/prompt_cache.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if awk '/^int bn_prompt_cache_model_supported/{flag=1} flag{print}' src/prompt_cache.c | grep -n 'bn_model_config_attention_layer_count\|bn_model_config_uses_hybrid_layer_layout' >/dev/null 2>&1; then
+    echo "src/prompt_cache.c public API must compose prompt-cache model policy helpers"
+    fail=1
+fi
+
 if awk '/^int bn_prompt_cache_store/{flag=1} /^int bn_prompt_cache_restore/{flag=0} flag{print}' src/prompt_cache.c | grep -n 'bn_model_arch_uses_hybrid_layer_layout' >/dev/null 2>&1; then
     echo "prompt cache store must use prompt-cache model support policy"
     fail=1
