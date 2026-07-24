@@ -422,6 +422,10 @@ int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config) {
     return config && !bn_model_config_uses_hybrid_layer_layout(config);
 }
 
+int bn_model_embed_scales_token_embedding(const BnConfig *config) {
+    return bn_model_config_uses_per_layer_embedding(config);
+}
+
 int bn_model_gpu_policy_attention_layer_count(const BnConfig *config) {
     return bn_model_config_attention_layer_count(config);
 }

@@ -4,7 +4,7 @@
 #include <string.h>
 
 static int model_embed_scales_token_embedding(const BnConfig *c) {
-    return bn_model_config_uses_per_layer_embedding(c);
+    return bn_model_embed_scales_token_embedding(c);
 }
 
 void bn_model_embed_token(const BnModel *m, float *out, int token) {
