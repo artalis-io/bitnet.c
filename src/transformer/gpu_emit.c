@@ -1046,26 +1046,30 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     int use_small_dense_native_quant,
     int use_small_dense_native_quant_down) {
     int hidden_dim = ffn_plan->hidden_dim;
+    BnTransformerGPUDenseFFNProjectionLayout ffn_layout;
+    if (!bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+            &ffn_layout, lw))
+        return;
     void *gateup_stacked = res ? res->gateup_stacked : NULL;
     void *ffn_sub_norm = res ? res->ffn_sub_norm : NULL;
 
     if (ffn_plan->has_gate && lw->ffn.ffn_gate.data) {
         uint32_t silu_flags = bn_transformer_gpu_reference_silu_flags(
-            lw->ffn.ffn_gate.type,
+            ffn_layout.gate_type,
             bn_transformer_gpu_activation_uses_silu_path(
                 ffn_plan->activation));
         int prefer_gateup_split =
             bn_transformer_gpu_dense_ffn_prefers_gateup_split(
-                c, lw->ffn.ffn_gate.type);
+                c, ffn_layout.gate_type);
         int use_fused_gateup = !prefer_gateup_split &&
                                gateup_stacked &&
-                               bn_transformer_gpu_can_fused_gateup_silu(res->gpu, lw->ffn.ffn_gate.type,
+                               bn_transformer_gpu_can_fused_gateup_silu(res->gpu, ffn_layout.gate_type,
                                                                          ffn_plan->activation);
         if (use_fused_gateup) {
             bn_transformer_gpu_emit_context_fused_gateup_silu(
-                ctx, lw->ffn.ffn_gate.type, gateup_stacked,
-                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
-                lw->ffn.ffn_up.rows, lw->ffn.ffn_gate.cols, use_small_dense_native_quant,
+                ctx, ffn_layout.gate_type, gateup_stacked,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, ffn_layout.gate_rows,
+                ffn_layout.up_rows, ffn_layout.gate_cols, use_small_dense_native_quant,
                 silu_flags);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
@@ -1073,42 +1077,42 @@ void bn_transformer_gpu_emit_context_dense_ffn(
                        res ? res->gpu : NULL, &lw->ffn.ffn_gate,
                        &lw->ffn.ffn_up, ffn_plan->activation,
                        bn_transformer_gpu_matvec_split_op_code(
-                           lw->ffn.ffn_gate.type))) {
-            int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
+                           ffn_layout.gate_type))) {
+            int total_rows = ffn_layout.gate_rows + ffn_layout.up_rows;
             emit_context_matvec_split(
-                ctx, lw->ffn.ffn_gate.type, gateup_stacked,
+                ctx, ffn_layout.gate_type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, -1,
-                total_rows, lw->ffn.ffn_gate.cols, lw->ffn.ffn_gate.rows, 1,
+                total_rows, ffn_layout.gate_cols, ffn_layout.gate_rows, 1,
                 0, 0, use_small_dense_native_quant);
         } else if (bn_transformer_gpu_gateup_split_enabled() &&
                    gateup_stacked &&
                    bn_transformer_gpu_can_stack_same_quant_format_gateup(
                        &lw->ffn.ffn_gate, &lw->ffn.ffn_up) &&
-                   bn_transformer_gpu_can_matvec_split(res->gpu, lw->ffn.ffn_gate.type)) {
-            int total_rows = lw->ffn.ffn_gate.rows + lw->ffn.ffn_up.rows;
+                   bn_transformer_gpu_can_matvec_split(res->gpu, ffn_layout.gate_type)) {
+            int total_rows = ffn_layout.gate_rows + ffn_layout.up_rows;
             emit_context_matvec_split(
-                ctx, lw->ffn.ffn_gate.type, gateup_stacked,
+                ctx, ffn_layout.gate_type, gateup_stacked,
                 BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2,
-                BN_GPU_VALUE_HB2, total_rows, lw->ffn.ffn_gate.cols,
-                lw->ffn.ffn_gate.rows, 0, 0, 0, use_small_dense_native_quant);
+                BN_GPU_VALUE_HB2, total_rows, ffn_layout.gate_cols,
+                ffn_layout.gate_rows, 0, 0, 0, use_small_dense_native_quant);
             emit_context_activation_flags(
                 ctx, BN_GPU_VALUE_HB, BN_GPU_VALUE_HB2, hidden_dim, 0,
                 BN_GPU_IR_ACTIVATION_SILU, silu_flags);
         } else {
             emit_context_matvec_flags(
-                ctx, lw->ffn.ffn_gate.type,
+                ctx, ffn_layout.gate_type,
                 res ? res->ffn_gate : NULL,
-                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, lw->ffn.ffn_gate.rows,
-                lw->ffn.ffn_gate.cols, 0,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB, ffn_layout.gate_rows,
+                ffn_layout.gate_cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(
-                    lw->ffn.ffn_gate.type, use_small_dense_native_quant));
+                    ffn_layout.gate_type, use_small_dense_native_quant));
             emit_context_matvec_flags(
-                ctx, lw->ffn.ffn_up.type,
+                ctx, ffn_layout.up_type,
                 res ? res->ffn_up : NULL,
-                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2, lw->ffn.ffn_up.rows,
-                lw->ffn.ffn_up.cols, 0,
+                BN_GPU_VALUE_XB, BN_GPU_VALUE_HB2, ffn_layout.up_rows,
+                ffn_layout.up_cols, 0,
                 bn_transformer_gpu_matvec_kquant_dot_flags(
-                    lw->ffn.ffn_up.type, use_small_dense_native_quant));
+                    ffn_layout.up_type, use_small_dense_native_quant));
             BnGPUIRActivationKind act_kind =
                 bn_transformer_gpu_ffn_activation_kind(
                     ffn_plan->activation);
@@ -1119,15 +1123,15 @@ void bn_transformer_gpu_emit_context_dense_ffn(
         }
     } else {
         emit_context_matvec_flags(
-            ctx, lw->ffn.ffn_up.type,
+            ctx, ffn_layout.up_type,
             res ? res->ffn_up : NULL, BN_GPU_VALUE_XB,
-            BN_GPU_VALUE_HB, lw->ffn.ffn_up.rows, lw->ffn.ffn_up.cols, 0,
-            bn_transformer_gpu_matvec_kquant_dot_flags(lw->ffn.ffn_up.type,
+            BN_GPU_VALUE_HB, ffn_layout.up_rows, ffn_layout.up_cols, 0,
+            bn_transformer_gpu_matvec_kquant_dot_flags(ffn_layout.up_type,
                                                      use_small_dense_native_quant));
         BnGPUIRActivationKind act_kind =
             bn_transformer_gpu_ffn_activation_kind(ffn_plan->activation);
         uint32_t silu_flags = bn_transformer_gpu_reference_silu_flags(
-            lw->ffn.ffn_up.type, act_kind == BN_GPU_IR_ACTIVATION_SILU);
+            ffn_layout.up_type, act_kind == BN_GPU_IR_ACTIVATION_SILU);
         emit_context_activation_flags(
             ctx, BN_GPU_VALUE_HB, -1, hidden_dim, 0, act_kind, silu_flags);
     }
@@ -1148,11 +1152,11 @@ void bn_transformer_gpu_emit_context_dense_ffn(
     }
 
     emit_context_matvec_flags(
-        ctx, lw->ffn.ffn_down.type,
+        ctx, ffn_layout.down_type,
         res ? res->ffn_down : NULL, down_in_buf,
-        BN_GPU_VALUE_XB2, lw->ffn.ffn_down.rows, lw->ffn.ffn_down.cols, 0,
+        BN_GPU_VALUE_XB2, ffn_layout.down_rows, ffn_layout.down_cols, 0,
         bn_transformer_gpu_matvec_kquant_dot_flags(
-            lw->ffn.ffn_down.type,
+            ffn_layout.down_type,
             bn_transformer_gpu_small_dense_native_quant_down_enabled(use_small_dense_native_quant_down)));
 
     emit_context_residual_rmsnorm(

@@ -4110,10 +4110,29 @@ static void test_block_planning(void) {
 
     lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_0;
     lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q4_0;
+    lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q8_0;
     lw.ffn.ffn_gate.rows = 8192;
     lw.ffn.ffn_up.rows = 8192;
+    lw.ffn.ffn_down.rows = 2048;
     lw.ffn.ffn_gate.cols = 2048;
     lw.ffn.ffn_up.cols = 2048;
+    lw.ffn.ffn_down.cols = 8192;
+    BnTransformerGPUDenseFFNProjectionLayout dense_ffn_layout = {0};
+    assert(bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+        &dense_ffn_layout, &lw));
+    assert(dense_ffn_layout.gate_type == BN_GGUF_TENSOR_Q4_0);
+    assert(dense_ffn_layout.gate_rows == 8192);
+    assert(dense_ffn_layout.gate_cols == 2048);
+    assert(dense_ffn_layout.up_type == BN_GGUF_TENSOR_Q4_0);
+    assert(dense_ffn_layout.up_rows == 8192);
+    assert(dense_ffn_layout.up_cols == 2048);
+    assert(dense_ffn_layout.down_type == BN_GGUF_TENSOR_Q8_0);
+    assert(dense_ffn_layout.down_rows == 2048);
+    assert(dense_ffn_layout.down_cols == 8192);
+    assert(!bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+        NULL, &lw));
+    assert(!bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+        &dense_ffn_layout, NULL));
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_GATEUP_STACKED,
                                             (void *)5) == 0);

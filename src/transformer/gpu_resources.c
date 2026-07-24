@@ -103,6 +103,24 @@ bn_transformer_gpu_resolve_dense_ffn_resources(
     };
 }
 
+int bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+    BnTransformerGPUDenseFFNProjectionLayout *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->gate_type = lw->ffn.ffn_gate.type;
+    out->gate_rows = lw->ffn.ffn_gate.rows;
+    out->gate_cols = lw->ffn.ffn_gate.cols;
+    out->up_type = lw->ffn.ffn_up.type;
+    out->up_rows = lw->ffn.ffn_up.rows;
+    out->up_cols = lw->ffn.ffn_up.cols;
+    out->down_type = lw->ffn.ffn_down.type;
+    out->down_rows = lw->ffn.ffn_down.rows;
+    out->down_cols = lw->ffn.ffn_down.cols;
+    return 1;
+}
+
 BnTransformerGPUQKVResources bn_transformer_gpu_resolve_qkv_resources(
     const BnGPUBackend *gpu,
     const BnBackendModel *backend,

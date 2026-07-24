@@ -34,6 +34,18 @@ typedef struct {
 } BnTransformerGPUDenseFFNResources;
 
 typedef struct {
+    int gate_type;
+    int gate_rows;
+    int gate_cols;
+    int up_type;
+    int up_rows;
+    int up_cols;
+    int down_type;
+    int down_rows;
+    int down_cols;
+} BnTransformerGPUDenseFFNProjectionLayout;
+
+typedef struct {
     const BnGPUBackend *gpu;
     void *q_bias;
     void *k_bias;
@@ -1359,6 +1371,9 @@ bn_transformer_gpu_resolve_dense_ffn_resources(
     const BnBackendModel *backend,
     const BnLayerWeights *lw,
     int layer);
+int bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+    BnTransformerGPUDenseFFNProjectionLayout *out,
+    const BnLayerWeights *lw);
 BnTransformerGPUQKVResources bn_transformer_gpu_resolve_qkv_resources(
     const BnGPUBackend *gpu,
     const BnBackendModel *backend,
