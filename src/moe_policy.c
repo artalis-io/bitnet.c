@@ -3,76 +3,76 @@
 #include "model_internal.h"
 
 static int moe_requires_float_kquant_gateup_fallback(const BnConfig *c) {
-    return bn_model_config_moe_requires_float_kquant_gateup_fallback(c);
+    return bn_model_moe_policy_requires_float_kquant_gateup_fallback(c);
 }
 
 static int moe_uses_scaled_router_input(const BnConfig *c) {
-    return bn_model_config_moe_uses_scaled_router_input(c);
+    return bn_model_moe_policy_uses_scaled_router_input(c);
 }
 
 static int moe_uses_dense_residual_branch(const BnConfig *c) {
-    return bn_model_config_moe_uses_dense_residual_branch(c);
+    return bn_model_moe_policy_uses_dense_residual_branch(c);
 }
 
 static int moe_uses_reference_silu(const BnConfig *c) {
-    return bn_model_config_moe_uses_reference_silu(c);
+    return bn_model_moe_policy_uses_reference_silu(c);
 }
 
 static int moe_config_activation(const BnConfig *c) {
-    return bn_model_config_activation(c);
+    return bn_model_moe_policy_activation(c);
 }
 
 static float moe_norm_epsilon(const BnConfig *c) {
-    return bn_model_config_norm_epsilon(c);
+    return bn_model_moe_policy_norm_epsilon(c);
 }
 
 static int moe_prefill_requires_matvec(const BnConfig *c) {
-    return bn_model_config_moe_prefill_requires_matvec(c);
+    return bn_model_moe_policy_prefill_requires_matvec(c);
 }
 
 static int moe_uses_grouped_expert_route(const BnConfig *c) {
-    return bn_model_config_uses_more_than_two_expert_moe(c);
+    return bn_model_moe_policy_uses_grouped_expert_route(c);
 }
 
 static int moe_total_experts(const BnConfig *c) {
-    return bn_model_config_moe_total_experts(c);
+    return bn_model_moe_policy_total_experts(c);
 }
 
 static int moe_active_experts(const BnConfig *c) {
-    return bn_model_config_moe_active_experts(c);
+    return bn_model_moe_policy_active_experts(c);
 }
 
 static int moe_expert_hidden_dim(const BnConfig *c) {
-    return bn_model_config_moe_expert_hidden_dim(c);
+    return bn_model_moe_policy_expert_hidden_dim(c);
 }
 
 static int moe_normalizes_topk_route_weights(const BnConfig *c) {
-    return bn_model_config_moe_normalizes_topk_route_weights(c);
+    return bn_model_moe_policy_normalizes_topk_route_weights(c);
 }
 
 static float moe_expert_weights_scale(const BnConfig *c) {
-    return bn_model_config_moe_expert_weights_scale(c);
+    return bn_model_moe_policy_expert_weights_scale(c);
 }
 
 static int moe_uses_expert_weights(const BnConfig *c) {
-    return bn_model_config_uses_moe(c);
+    return bn_model_moe_policy_uses_expert_weights(c);
 }
 
 static int moe_uses_all_active_two_expert_set(const BnConfig *c) {
-    return bn_model_config_uses_two_expert_all_active_moe(c);
+    return bn_model_moe_policy_uses_all_active_two_expert_set(c);
 }
 
 static int moe_uses_all_active_two_expert_route(const BnConfig *c,
                                                 int dim) {
-    return bn_model_config_uses_all_active_two_expert_moe(c, dim);
+    return bn_model_moe_policy_uses_all_active_two_expert_route(c, dim);
 }
 
 static int moe_has_configured_shared_expert(const BnConfig *c) {
-    return bn_model_config_has_shared_expert(c);
+    return bn_model_moe_policy_has_shared_expert(c);
 }
 
 static int moe_shared_expert_hidden_dim(const BnConfig *c) {
-    return bn_model_config_shared_expert_hidden_dim(c);
+    return bn_model_moe_policy_shared_expert_hidden_dim(c);
 }
 
 uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c) {

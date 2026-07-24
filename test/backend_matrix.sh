@@ -4972,6 +4972,11 @@ if awk '/^uint32_t bn_moe_float_kquant_gateup_fallback_task_flags/{flag=1} flag{
     fail=1
 fi
 
+if grep -n 'bn_model_config_' src/moe_policy.c >/dev/null 2>&1; then
+    echo "src/moe_policy.c must use MoE model-policy helpers instead of raw model-config helpers"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/tokenizer.c >/dev/null 2>&1; then
     echo "src/tokenizer.c must use tokenizer model-policy helpers instead of reaching into model_arch"
     fail=1

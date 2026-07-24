@@ -162,6 +162,30 @@ void bn_model_session_policy_init_rope_frequencies(const BnConfig *config,
                                                    float *freqs,
                                                    int capacity_pairs);
 int bn_model_embed_scales_token_embedding(const BnConfig *config);
+int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
+    const BnConfig *config);
+int bn_model_moe_policy_uses_scaled_router_input(const BnConfig *config);
+int bn_model_moe_policy_uses_dense_residual_branch(const BnConfig *config);
+int bn_model_moe_policy_uses_reference_silu(const BnConfig *config);
+int bn_model_moe_policy_activation(const BnConfig *config);
+float bn_model_moe_policy_norm_epsilon(const BnConfig *config);
+int bn_model_moe_policy_prefill_requires_matvec(const BnConfig *config);
+int bn_model_moe_policy_uses_grouped_expert_route(const BnConfig *config);
+int bn_model_moe_policy_total_experts(const BnConfig *config);
+int bn_model_moe_policy_active_experts(const BnConfig *config);
+int bn_model_moe_policy_expert_hidden_dim(const BnConfig *config);
+int bn_model_moe_policy_normalizes_topk_route_weights(
+    const BnConfig *config);
+float bn_model_moe_policy_expert_weights_scale(const BnConfig *config);
+int bn_model_moe_policy_uses_expert_weights(const BnConfig *config);
+int bn_model_moe_policy_uses_all_active_two_expert_set(
+    const BnConfig *config);
+int bn_model_moe_policy_uses_all_active_two_expert_route(
+    const BnConfig *config,
+    int dim);
+int bn_model_moe_policy_has_shared_expert(const BnConfig *config);
+int bn_model_moe_policy_shared_expert_hidden_dim(
+    const BnConfig *config);
 int bn_model_transformer_policy_is_attention_layer(const BnConfig *config,
                                                    int layer);
 int bn_model_transformer_policy_attention_layer_index(

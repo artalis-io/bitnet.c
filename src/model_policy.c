@@ -459,6 +459,87 @@ int bn_model_embed_scales_token_embedding(const BnConfig *config) {
     return bn_model_config_uses_per_layer_embedding(config);
 }
 
+int bn_model_moe_policy_requires_float_kquant_gateup_fallback(
+    const BnConfig *config) {
+    return bn_model_config_moe_requires_float_kquant_gateup_fallback(config);
+}
+
+int bn_model_moe_policy_uses_scaled_router_input(
+    const BnConfig *config) {
+    return bn_model_config_moe_uses_scaled_router_input(config);
+}
+
+int bn_model_moe_policy_uses_dense_residual_branch(
+    const BnConfig *config) {
+    return bn_model_config_moe_uses_dense_residual_branch(config);
+}
+
+int bn_model_moe_policy_uses_reference_silu(const BnConfig *config) {
+    return bn_model_config_moe_uses_reference_silu(config);
+}
+
+int bn_model_moe_policy_activation(const BnConfig *config) {
+    return bn_model_config_activation(config);
+}
+
+float bn_model_moe_policy_norm_epsilon(const BnConfig *config) {
+    return bn_model_config_norm_epsilon(config);
+}
+
+int bn_model_moe_policy_prefill_requires_matvec(const BnConfig *config) {
+    return bn_model_config_moe_prefill_requires_matvec(config);
+}
+
+int bn_model_moe_policy_uses_grouped_expert_route(
+    const BnConfig *config) {
+    return bn_model_config_uses_more_than_two_expert_moe(config);
+}
+
+int bn_model_moe_policy_total_experts(const BnConfig *config) {
+    return bn_model_config_moe_total_experts(config);
+}
+
+int bn_model_moe_policy_active_experts(const BnConfig *config) {
+    return bn_model_config_moe_active_experts(config);
+}
+
+int bn_model_moe_policy_expert_hidden_dim(const BnConfig *config) {
+    return bn_model_config_moe_expert_hidden_dim(config);
+}
+
+int bn_model_moe_policy_normalizes_topk_route_weights(
+    const BnConfig *config) {
+    return bn_model_config_moe_normalizes_topk_route_weights(config);
+}
+
+float bn_model_moe_policy_expert_weights_scale(const BnConfig *config) {
+    return bn_model_config_moe_expert_weights_scale(config);
+}
+
+int bn_model_moe_policy_uses_expert_weights(const BnConfig *config) {
+    return bn_model_config_uses_moe(config);
+}
+
+int bn_model_moe_policy_uses_all_active_two_expert_set(
+    const BnConfig *config) {
+    return bn_model_config_uses_two_expert_all_active_moe(config);
+}
+
+int bn_model_moe_policy_uses_all_active_two_expert_route(
+    const BnConfig *config,
+    int dim) {
+    return bn_model_config_uses_all_active_two_expert_moe(config, dim);
+}
+
+int bn_model_moe_policy_has_shared_expert(const BnConfig *config) {
+    return bn_model_config_has_shared_expert(config);
+}
+
+int bn_model_moe_policy_shared_expert_hidden_dim(
+    const BnConfig *config) {
+    return bn_model_config_shared_expert_hidden_dim(config);
+}
+
 int bn_model_transformer_policy_is_attention_layer(
     const BnConfig *config,
     int layer) {
