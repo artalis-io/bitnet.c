@@ -641,34 +641,34 @@ static int gpu_policy_cuda_moe_routed_ffn_enabled(int eligible) {
 }
 
 static int gpu_policy_attention_layer_count(const BnConfig *c) {
-    return bn_model_config_attention_layer_count(c);
+    return bn_model_gpu_policy_attention_layer_count(c);
 }
 
 static int gpu_policy_ssm_layer_count(const BnConfig *c) {
-    return bn_model_config_ssm_layer_count(c);
+    return bn_model_gpu_policy_ssm_layer_count(c);
 }
 
 static int gpu_policy_uses_hybrid_ssm(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_ssm(c);
+    return bn_model_gpu_policy_uses_hybrid_ssm(c);
 }
 
 static int gpu_policy_uses_hybrid_moe(const BnConfig *c) {
-    return bn_model_config_uses_hybrid_moe(c);
+    return bn_model_gpu_policy_uses_hybrid_moe(c);
 }
 
 static int gpu_policy_uses_moe(const BnConfig *c) {
-    return bn_model_config_uses_moe(c);
+    return bn_model_gpu_policy_uses_moe(c);
 }
 
 static int gpu_policy_rope_dims_for_head(const BnConfig *c,
                                          int layer_head_size) {
-    return bn_model_config_rope_dims_for_head(c, layer_head_size);
+    return bn_model_gpu_policy_rope_dims_for_head(c, layer_head_size);
 }
 
 static void gpu_policy_init_rope_frequencies(const BnConfig *c,
                                              float *freqs,
                                              int capacity_pairs) {
-    bn_model_config_init_rope_frequencies(c, freqs, capacity_pairs);
+    bn_model_gpu_policy_init_rope_frequencies(c, freqs, capacity_pairs);
 }
 
 int bn_gpu_policy_moe_resident_routed_ffn_enabled(int eligible) {

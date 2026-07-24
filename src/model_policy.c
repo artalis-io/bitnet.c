@@ -421,3 +421,34 @@ int bn_model_prompt_cache_attention_layer_count(const BnConfig *config) {
 int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config) {
     return config && !bn_model_config_uses_hybrid_layer_layout(config);
 }
+
+int bn_model_gpu_policy_attention_layer_count(const BnConfig *config) {
+    return bn_model_config_attention_layer_count(config);
+}
+
+int bn_model_gpu_policy_ssm_layer_count(const BnConfig *config) {
+    return bn_model_config_ssm_layer_count(config);
+}
+
+int bn_model_gpu_policy_uses_hybrid_ssm(const BnConfig *config) {
+    return bn_model_config_uses_hybrid_ssm(config);
+}
+
+int bn_model_gpu_policy_uses_hybrid_moe(const BnConfig *config) {
+    return bn_model_config_uses_hybrid_moe(config);
+}
+
+int bn_model_gpu_policy_uses_moe(const BnConfig *config) {
+    return bn_model_config_uses_moe(config);
+}
+
+int bn_model_gpu_policy_rope_dims_for_head(const BnConfig *config,
+                                           int layer_head_size) {
+    return bn_model_config_rope_dims_for_head(config, layer_head_size);
+}
+
+void bn_model_gpu_policy_init_rope_frequencies(const BnConfig *config,
+                                               float *freqs,
+                                               int capacity_pairs) {
+    bn_model_config_init_rope_frequencies(config, freqs, capacity_pairs);
+}

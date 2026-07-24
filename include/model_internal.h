@@ -149,5 +149,15 @@ int bn_model_prompt_cache_attention_layer_count(const BnConfig *config);
 int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config);
 int bn_model_session_reset_attention_layer_count(const BnConfig *config);
 int bn_model_session_reset_ssm_layer_count(const BnConfig *config);
+int bn_model_gpu_policy_attention_layer_count(const BnConfig *config);
+int bn_model_gpu_policy_ssm_layer_count(const BnConfig *config);
+int bn_model_gpu_policy_uses_hybrid_ssm(const BnConfig *config);
+int bn_model_gpu_policy_uses_hybrid_moe(const BnConfig *config);
+int bn_model_gpu_policy_uses_moe(const BnConfig *config);
+int bn_model_gpu_policy_rope_dims_for_head(const BnConfig *config,
+                                           int layer_head_size);
+void bn_model_gpu_policy_init_rope_frequencies(const BnConfig *config,
+                                               float *freqs,
+                                               int capacity_pairs);
 
 #endif // BN_MODEL_INTERNAL_H
