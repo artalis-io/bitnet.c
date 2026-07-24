@@ -1157,6 +1157,11 @@ if grep -n 'bn_model_config_norm_epsilon' src/transformer/gpu.c >/dev/null 2>&1;
     fail=1
 fi
 
+if grep -n 'bn_model_config_norm_epsilon\|bn_model_config_requires_float_kquant_fallback\|bn_model_config_uses_per_layer_embedding\|bn_model_config_allows_small_dense_native_quant\|bn_model_config_small_dense_native_quant_to_layer\|bn_model_config_allows_small_dense_prefill_decode_fallback\|bn_model_config_small_dense_prefill_min_tokens\|bn_model_config_dense_batch_prefill_shape_allowed\|bn_model_config_dense_logits_argmax_shape_allowed\|bn_model_config_moe_logits_mmvq_argmax_shape_allowed\|bn_model_config_allows_small_dense_native_logit_refine\|bn_model_config_moe_prefers_reference_gpu_attention' src/transformer/gpu_policy.c >/dev/null 2>&1; then
+    echo "Transformer GPU policy must use transformer behavior helpers for model-family semantics"
+    fail=1
+fi
+
 if grep -n 'c->norm_eps\|m->config\.norm_eps' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Transformer prefill execution must use model norm policy helpers"
     fail=1

@@ -245,6 +245,20 @@ int bn_transformer_uses_small_dense_shape(const BnConfig *c);
 int bn_transformer_uses_large_dense_shape(const BnConfig *c);
 int bn_transformer_uses_large_gpu_graph_fallback_shape(const BnConfig *c);
 int bn_transformer_uses_small_dense_native_quant_shape(const BnConfig *c);
+int bn_transformer_allows_small_dense_native_quant(const BnConfig *c);
+int bn_transformer_small_dense_native_quant_to_layer(const BnConfig *c);
+int bn_transformer_allows_small_dense_prefill_decode_fallback(
+    const BnConfig *c);
+int bn_transformer_small_dense_prefill_min_tokens(const BnConfig *c);
+int bn_transformer_dense_batch_prefill_shape_allowed(
+    const BnConfig *c,
+    int supports_large_dense_batch_prefill);
+int bn_transformer_dense_logits_argmax_shape_allowed(const BnConfig *c,
+                                                     int logits_rows);
+int bn_transformer_moe_logits_mmvq_argmax_shape_allowed(const BnConfig *c,
+                                                        int logits_cols);
+int bn_transformer_allows_small_dense_native_logit_refine(const BnConfig *c);
+int bn_transformer_moe_prefers_reference_gpu_attention(const BnConfig *c);
 float bn_transformer_norm_epsilon(const BnConfig *c);
 int bn_transformer_requires_float_kquant_fallback(const BnConfig *c);
 int bn_transformer_config_activation(const BnConfig *c);
