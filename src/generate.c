@@ -25,40 +25,6 @@ static BnAllocator *resolve_alloc(BnAllocator *a) {
     return &def;
 }
 
-static int prefill_uploads_ssm_state_after_gpu_batch(const BnModel *model,
-                                                     int gpu_attached) {
-    BnTransformerPrefillSSMStateUploadPolicy policy =
-        bn_transformer_prefill_ssm_state_upload_policy(
-            &model->config, gpu_attached);
-    return policy.upload;
-}
-
-static int prefill_uses_batch_path(const BnModel *model,
-                                   int no_prefill,
-                                   int parity_cpu,
-                                   int n_tokens,
-                                   int gpu_attached) {
-    int gpu_batch_prefill = 0;
-    if (model) {
-        BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
-        gpu_batch_prefill =
-            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
-    }
-    BnTransformerPrefillEntryPolicy policy =
-        bn_transformer_prefill_entry_policy(
-            no_prefill, parity_cpu, n_tokens, gpu_attached,
-            gpu_batch_prefill);
-    return policy.batch;
-}
-
-static int prefill_uploads_kv_cache_after_batch(BnSession *s,
-                                                int gpu_attached) {
-    BnTransformerPrefillKVUploadPolicy policy =
-        bn_transformer_prefill_kv_upload_policy(
-            gpu_attached, s->gpu_kv_direct_valid);
-    return policy.upload;
-}
-
 static int use_gpu_greedy_argmax(const BnGPUBackend *gpu,
                                  int top_logits,
                                  const BnSampler *sampler) {
@@ -408,21 +374,36 @@ float *bn_prefill(BnModel *model, BnSession *s, const int *tokens, int n_tokens,
     int parity_cpu =
         bn_transformer_cpu_prefill_decode_for_parity_enabled(
             &model->config, gpu_attached);
+    int gpu_batch_prefill = 0;
+    if (model) {
+        BnGPUBackend *gpu = bn_model_gpu(model);
+        gpu_batch_prefill =
+            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
+    }
+    BnTransformerPrefillEntryPolicy entry_policy =
+        bn_transformer_prefill_entry_policy(
+            no_prefill, parity_cpu, n_tokens, gpu_attached,
+            gpu_batch_prefill);
     /* GPU decode reads backend-resident KV buffers. For conservative small
      * dense models, batch prefill is followed by a CPU->GPU KV upload.
      */
-    if (prefill_uses_batch_path(model, no_prefill, parity_cpu, n_tokens,
-                                gpu_attached)) {
+    if (entry_policy.batch) {
         logits = bn_transformer_prefill(model, s, tokens, n_tokens, pos0);
-        if (logits &&
-            prefill_uploads_kv_cache_after_batch(s, gpu_attached) &&
-            bn_transformer_gpu_upload_kv_cache(model, s, pos0,
-                                               n_tokens) != 0)
-            return NULL;
-        if (logits &&
-            prefill_uploads_ssm_state_after_gpu_batch(model, gpu_attached) &&
-            bn_transformer_gpu_upload_ssm_state(model, s) != 0)
-            return NULL;
+        if (logits) {
+            BnTransformerPrefillKVUploadPolicy kv_policy =
+                bn_transformer_prefill_kv_upload_policy(
+                    gpu_attached, s->gpu_kv_direct_valid);
+            if (kv_policy.upload &&
+                bn_transformer_gpu_upload_kv_cache(model, s, pos0,
+                                                   n_tokens) != 0)
+                return NULL;
+            BnTransformerPrefillSSMStateUploadPolicy ssm_policy =
+                bn_transformer_prefill_ssm_state_upload_policy(
+                    &model->config, gpu_attached);
+            if (ssm_policy.upload &&
+                bn_transformer_gpu_upload_ssm_state(model, s) != 0)
+                return NULL;
+        }
     } else {
         for (int i = 0; i < n_tokens; i++) {
             if (i + 1 == n_tokens) {
@@ -442,16 +423,34 @@ int bn_prefill_no_logits(BnModel *model, BnSession *s, const int *tokens,
     int parity_cpu =
         bn_transformer_cpu_prefill_decode_for_parity_enabled(
             &model->config, gpu_attached);
-    if (prefill_uses_batch_path(model, no_prefill, parity_cpu, n_tokens,
-                                gpu_attached)) {
+    int gpu_batch_prefill = 0;
+    if (model) {
+        BnGPUBackend *gpu = bn_model_gpu(model);
+        gpu_batch_prefill =
+            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
+    }
+    BnTransformerPrefillEntryPolicy entry_policy =
+        bn_transformer_prefill_entry_policy(
+            no_prefill, parity_cpu, n_tokens, gpu_attached,
+            gpu_batch_prefill);
+    if (entry_policy.batch) {
         int rc = bn_transformer_prefill_no_logits(model, s, tokens,
                                                   n_tokens, pos0);
-        if (rc == 0 && prefill_uploads_kv_cache_after_batch(s, gpu_attached))
-            rc = bn_transformer_gpu_upload_kv_cache(model, s, pos0,
-                                                    n_tokens);
-        if (rc == 0 &&
-            prefill_uploads_ssm_state_after_gpu_batch(model, gpu_attached))
-            rc = bn_transformer_gpu_upload_ssm_state(model, s);
+        if (rc == 0) {
+            BnTransformerPrefillKVUploadPolicy kv_policy =
+                bn_transformer_prefill_kv_upload_policy(
+                    gpu_attached, s->gpu_kv_direct_valid);
+            if (kv_policy.upload)
+                rc = bn_transformer_gpu_upload_kv_cache(model, s, pos0,
+                                                        n_tokens);
+        }
+        if (rc == 0) {
+            BnTransformerPrefillSSMStateUploadPolicy ssm_policy =
+                bn_transformer_prefill_ssm_state_upload_policy(
+                    &model->config, gpu_attached);
+            if (ssm_policy.upload)
+                rc = bn_transformer_gpu_upload_ssm_state(model, s);
+        }
         return rc;
     }
     for (int i = 0; i < n_tokens; i++) {

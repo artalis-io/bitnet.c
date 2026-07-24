@@ -177,6 +177,11 @@ if grep -n 'static int use_gpu_batch_prefill' src/generate.c >/dev/null 2>&1; th
     fail=1
 fi
 
+if grep -n 'static int prefill_uploads_ssm_state_after_gpu_batch\|static int prefill_uses_batch_path\|static int prefill_uploads_kv_cache_after_batch' src/generate.c >/dev/null 2>&1; then
+    echo "Generate prefill entry/upload policies must be composed at the public prefill boundary"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q4k_dot_enabled\|bn_gpu_policy_cuda_q5k_dot_enabled\|bn_gpu_policy_cuda_q6k_dot_enabled\|bn_gpu_policy_cuda_q6k_dot_forced\|bn_gpu_policy_cuda_q6k_warp_enabled' \
     include/gpu_policy.h \
     src/gpu_policy.c \
