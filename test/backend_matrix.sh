@@ -3528,6 +3528,11 @@ if grep -n 'bn_model_config_attention_layer_count\|bn_model_config_ssm_layer_cou
     fail=1
 fi
 
+if grep -n 'static int gpu_policy_attention_layer_count\|static int gpu_policy_ssm_layer_count\|static int gpu_policy_uses_hybrid_ssm\|static int gpu_policy_uses_hybrid_moe\|static int gpu_policy_uses_moe\|static int gpu_policy_rope_dims_for_head\|static void gpu_policy_init_rope_frequencies' src/gpu_policy.c >/dev/null 2>&1; then
+    echo "src/gpu_policy.c exported model-shape policies must compose model-policy helpers directly"
+    fail=1
+fi
+
 if grep -n 'bn_model_config_rope_dims_for_head\|bn_model_config_init_rope_frequencies' src/gpu_wgpu.c src/gpu_metal.m src/gpu_cuda.cu >/dev/null 2>&1; then
     echo "GPU backends must use GPU policy helpers for RoPE frequency setup"
     fail=1
