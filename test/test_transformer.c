@@ -4579,9 +4579,22 @@ static void test_block_planning(void) {
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
     BnLayerWeights cpu_lw;
     memset(&cpu_lw, 0, sizeof(cpu_lw));
+    cpu_lw.attn.wq.type = BN_GGUF_TENSOR_Q4_K;
+    cpu_lw.attn.wk.type = BN_GGUF_TENSOR_Q5_K;
+    cpu_lw.attn.wv.type = BN_GGUF_TENSOR_Q6_K;
     cpu_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
     cpu_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
     cpu_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
+    BnTransformerCPUAttentionProjectionTypes cpu_attn_types = {0};
+    assert(bn_transformer_cpu_resolve_attention_projection_types(
+        &cpu_attn_types, &cpu_lw));
+    assert(cpu_attn_types.q_type == BN_GGUF_TENSOR_Q4_K);
+    assert(cpu_attn_types.k_type == BN_GGUF_TENSOR_Q5_K);
+    assert(cpu_attn_types.v_type == BN_GGUF_TENSOR_Q6_K);
+    assert(!bn_transformer_cpu_resolve_attention_projection_types(
+        NULL, &cpu_lw));
+    assert(!bn_transformer_cpu_resolve_attention_projection_types(
+        &cpu_attn_types, NULL));
     BnTransformerCPUFFNProjectionTypes cpu_ffn_types = {0};
     assert(bn_transformer_cpu_resolve_ffn_projection_types(
         &cpu_ffn_types, &cpu_lw));

@@ -403,12 +403,16 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
         int q_gated = shape->q_gated;
         int q_wide = shape->q_wide;
         BnKVMode kv_mode = shape->kv_mode;
+        BnTransformerCPUAttentionProjectionTypes attn_types;
+        if (!bn_transformer_cpu_resolve_attention_projection_types(
+                &attn_types, lw))
+            return -1;
 
         /* Prepared K-quant attn RMSNorm: quantize s->xb once, reuse for Q and K+V */
         int attn_prepared_kquant = 0;
         int attn_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_triple_enabled(
             cpu_ops, bn_model_gpu(m), dim,
-            lw->attn.wq.type, lw->attn.wk.type, lw->attn.wv.type);
+            attn_types.q_type, attn_types.k_type, attn_types.v_type);
         int n_sb_attn = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
         int n_attn_bsums =
             bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb_attn);

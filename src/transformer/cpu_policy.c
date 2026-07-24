@@ -125,6 +125,18 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     return bn_transformer_gpu_dense_ffn_fast_path_available(gpu, ffn_plan);
 }
 
+int bn_transformer_cpu_resolve_attention_projection_types(
+    BnTransformerCPUAttentionProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->q_type = lw->attn.wq.type;
+    out->k_type = lw->attn.wk.type;
+    out->v_type = lw->attn.wv.type;
+    return 1;
+}
+
 int bn_transformer_cpu_resolve_ffn_projection_types(
     BnTransformerCPUFFNProjectionTypes *out,
     const BnLayerWeights *lw) {

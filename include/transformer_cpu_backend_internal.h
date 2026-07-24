@@ -49,6 +49,12 @@ typedef struct {
 } BnTransformerCPULayerOutputScalePolicy;
 
 typedef struct {
+    int q_type;
+    int k_type;
+    int v_type;
+} BnTransformerCPUAttentionProjectionTypes;
+
+typedef struct {
     int gate_type;
     int up_type;
     int down_type;
@@ -92,6 +98,9 @@ int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan);
+int bn_transformer_cpu_resolve_attention_projection_types(
+    BnTransformerCPUAttentionProjectionTypes *out,
+    const BnLayerWeights *lw);
 int bn_transformer_cpu_resolve_ffn_projection_types(
     BnTransformerCPUFFNProjectionTypes *out,
     const BnLayerWeights *lw);

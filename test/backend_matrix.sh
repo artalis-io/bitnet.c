@@ -1690,6 +1690,12 @@ if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_
     fail=1
 fi
 
+if awk '/if \(is_attn\) \{/{flag=1} /\/\/ ---- FFN \/ MoE \/ SSM block ----/{flag=0} flag{print}' \
+    src/transformer/cpu.c | grep -n 'lw->attn\.w[[:alpha:]]\.type' >/dev/null 2>&1; then
+    echo "CPU attention execution must use resolved projection type metadata"
+    fail=1
+fi
+
 if awk '/^void bn_transformer_cpu_forward_ffn_block/{flag=1} /^void bn_transformer_cpu_forward_moe_block/{flag=0} flag{print}' \
     src/transformer/cpu.c | grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.type' >/dev/null 2>&1; then
     echo "CPU FFN execution must use resolved projection type metadata"
