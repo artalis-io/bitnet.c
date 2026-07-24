@@ -60,6 +60,11 @@ if grep -n 'BN_GPU_SHADER_' src/transformer/gpu_emit.c >/dev/null 2>&1; then
     fail=1
 fi
 
+if grep -n 'prefill_base_rope_theta\|prefill_layer_rope_dims\|prefill_layer_rope_theta\|prefill_attention_scale' src/transformer/prefill.c >/dev/null 2>&1; then
+    echo "Prefill must compose transformer RoPE/attention policy helpers directly"
+    fail=1
+fi
+
 if grep -n 'BN_GPU_CAP_Q8_MATVEC_SPLIT\|BN_GPU_CAP_Q5K_MATVEC_SPLIT\|BN_GPU_CAP_Q4_MATVEC_SPLIT\|BN_GPU_CAP_Q4_FUSED_GATEUP_SILU\|BN_GPU_CAP_Q4K_MATVEC_SPLIT\|BN_GPU_CAP_Q5_FUSED_GATEUP_SILU\|BN_GPU_CAP_Q5_MATVEC_SPLIT\|BN_GPU_CAP_Q8_FUSED_GATEUP_SILU\|BN_GPU_CAP_Q5K_FUSED_GATEUP_SILU' \
     include/gpu_backend.h \
     src/gpu_quant_lowering_internal.h \

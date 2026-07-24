@@ -774,10 +774,6 @@ static int prefill_ssm_moe_layer_chain_ready(const BnModel *m,
     return 1;
 }
 
-static float prefill_base_rope_theta(const BnConfig *c) {
-    return bn_transformer_rope_base_theta(c);
-}
-
 static int prefill_dense_layer_chain_ready(const BnModel *m,
                                            const BnLayerWeights *lw,
                                            const BnLayerShapePlan *plan,
@@ -811,7 +807,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
             n_tokens,
             bn_transformer_prefill_dense_chain_min_tokens(c, gpu),
             layer_rope_theta,
-            prefill_base_rope_theta(c),
+            bn_transformer_rope_base_theta(c),
             plan->is_attn,
             layer_kind,
             bn_transformer_prefill_has_ffn_gate(c),
@@ -897,7 +893,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
     if (!moe_layer_chain_available ||
         !backend ||
         bn_model_tq_state(m) != NULL ||
-        layer_rope_theta != prefill_base_rope_theta(c) ||
+        layer_rope_theta != bn_transformer_rope_base_theta(c) ||
         !plan->is_attn || !layer_kind.uses_moe ||
         lw->norm.attn_sub_norm ||
         lw->norm.layer_output_scale) {
@@ -909,7 +905,7 @@ static int prefill_moe_layer_chain_ready(const BnModel *m,
                     backend != NULL, bn_model_tq_state(m) != NULL,
                     n_tokens,
                     bn_transformer_prefill_moe_chain_min_tokens(c, gpu),
-                    layer_rope_theta == prefill_base_rope_theta(c),
+                    layer_rope_theta == bn_transformer_rope_base_theta(c),
                     plan->is_attn,
                     layer_kind.uses_moe,
                     shared_policy.has_shared_expert,
@@ -1313,18 +1309,6 @@ static int prefill_use_shared_all_active_two_decode_fallback(const BnModel *m) {
     return policy.enabled;
 }
 
-static int prefill_layer_rope_dims(const BnConfig *c, int layer_head_size) {
-    return bn_transformer_rope_dims_for_head(c, layer_head_size);
-}
-
-static float prefill_layer_rope_theta(const BnConfig *c, int layer_head_size) {
-    return bn_transformer_rope_theta_for_head(c, layer_head_size);
-}
-
-static float prefill_attention_scale(const BnConfig *c, int head_size) {
-    return bn_transformer_attention_scale(c, head_size);
-}
-
 static void prefill_rmsnorm_unit(float *out, const float *x, int size, float eps) {
     float ss = 0.0f;
     for (int i = 0; i < size; i++)
@@ -1417,7 +1401,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int max_head_size = bn_transformer_attention_head_size(c, NULL);
     int max_n_heads = bn_transformer_attention_n_heads(c, NULL);
     int max_q_dim = max_n_heads * max_head_size;
-    int max_rope_dims = prefill_layer_rope_dims(c, max_head_size);
+    int max_rope_dims = bn_transformer_rope_dims_for_head(c, max_head_size);
     for (int l = 0; l < c->n_layers; l++) {
         BnLayerShapePlan plan;
         bn_transformer_plan_layer_shape(&plan, c, &w->layers[l], l,
@@ -1428,7 +1412,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             max_head_size = plan.head_size;
         if (plan.q_dim > max_q_dim)
             max_q_dim = plan.q_dim;
-        int layer_rope_dims = prefill_layer_rope_dims(c, plan.head_size);
+        int layer_rope_dims = bn_transformer_rope_dims_for_head(c, plan.head_size);
         if (layer_rope_dims > max_rope_dims)
             max_rope_dims = layer_rope_dims;
     }
@@ -1563,7 +1547,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 &plan, c, lw, l, bn_model_tq_state(m) != NULL);
             int layer_head_size = plan.head_size;
             float layer_rope_theta =
-                prefill_layer_rope_theta(c, layer_head_size);
+                bn_transformer_rope_theta_for_head(c, layer_head_size);
             if (!prefill_moe_layer_chain_ready(
                     m, lw, &plan, l, n_tokens, layer_rope_theta) &&
                 !prefill_dense_layer_chain_ready(
@@ -1590,9 +1574,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 int layer_n_kv_heads = plan.n_kv_heads;
                 int layer_kv_mul = plan.kv_mul;
                 int layer_rope_dims =
-                    prefill_layer_rope_dims(c, layer_head_size);
+                    bn_transformer_rope_dims_for_head(c, layer_head_size);
                 float layer_rope_theta =
-                    prefill_layer_rope_theta(c, layer_head_size);
+                    bn_transformer_rope_theta_for_head(c, layer_head_size);
                 if (rope_cache_dims != layer_rope_dims ||
                     rope_cache_theta != layer_rope_theta) {
                     prefill_fill_rope(rope_cos_buf, rope_sin_buf, half_rope,
@@ -1618,7 +1602,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                           layer_kv_mul, layer_kv_dim, layer_rope_dims,
                           l, pos0, kv_cache_off, kv_dim,
                           plan.qk_norm_per_head,
-                          prefill_attention_scale(c, layer_head_size))
+                          bn_transformer_attention_scale(c, layer_head_size))
                     : prefill_dense_layer_gpu_batch(
                           m, layer_out, lw, layer_in,
                           chain_kv.write_host_kv ? K_new : NULL,
@@ -1627,7 +1611,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                           layer_head_size, layer_kv_mul, layer_kv_dim,
                           layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
                           plan.qk_norm_per_head,
-                          prefill_attention_scale(c, layer_head_size));
+                          bn_transformer_attention_scale(c, layer_head_size));
                 if (layer_rc != 0) {
                     sh_arena_free(pf_arena);
                     return NULL;
@@ -1669,7 +1653,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             if (plan.is_attn) {
                 int layer_head_size = plan.head_size;
                 float layer_rope_theta =
-                    prefill_layer_rope_theta(c, layer_head_size);
+                    bn_transformer_rope_theta_for_head(c, layer_head_size);
                 if (!prefill_moe_layer_chain_ready(
                         m, lw, &plan, l, n_tokens, layer_rope_theta) &&
                     !prefill_dense_layer_chain_ready(
@@ -1712,7 +1696,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int layer_n_kv_heads = plan.n_kv_heads;
                     int layer_kv_mul = plan.kv_mul;
                     int layer_rope_dims =
-                        prefill_layer_rope_dims(c, layer_head_size);
+                        bn_transformer_rope_dims_for_head(c, layer_head_size);
                     size_t loff =
                         (size_t)plan.attn_idx * c->seq_len * kv_dim;
                     uint32_t kv_cache_off =
@@ -1729,7 +1713,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                               layer_kv_mul, layer_kv_dim, layer_rope_dims, l,
                               pos0, kv_cache_off, kv_dim,
                               plan.qk_norm_per_head,
-                              prefill_attention_scale(c, layer_head_size))
+                              bn_transformer_attention_scale(c, layer_head_size))
                         : prefill_dense_layer_gpu_batch(
                               m, layer_out, lw, layer_in,
                               chain_kv.write_host_kv ? K_new : NULL,
@@ -1739,7 +1723,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                               layer_head_size, layer_kv_mul, layer_kv_dim,
                               layer_rope_dims, l, pos0, kv_cache_off, kv_dim,
                               plan.qk_norm_per_head,
-                              prefill_attention_scale(c, layer_head_size));
+                              bn_transformer_attention_scale(c, layer_head_size));
                     if (layer_rc != 0) {
                         sh_arena_free(pf_arena);
                         return NULL;
@@ -1822,8 +1806,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             int layer_n_kv_heads = plan.n_kv_heads;
             int layer_kv_mul = plan.kv_mul;
             int layer_q_dim = plan.q_dim;
-            int layer_rope_dims = prefill_layer_rope_dims(c, layer_head_size);
-            float layer_rope_theta = prefill_layer_rope_theta(c, layer_head_size);
+            int layer_rope_dims = bn_transformer_rope_dims_for_head(c, layer_head_size);
+            float layer_rope_theta = bn_transformer_rope_theta_for_head(c, layer_head_size);
             if (rope_cache_dims != layer_rope_dims ||
                 rope_cache_theta != layer_rope_theta) {
                 prefill_fill_rope(rope_cos_buf, rope_sin_buf, half_rope, n_tokens, pos0,
@@ -1841,7 +1825,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     n_tokens,
                     bn_transformer_prefill_dense_chain_min_tokens(
                         c, bn_model_gpu(m)),
-                    pos0, layer_rope_theta, prefill_base_rope_theta(c),
+                    pos0, layer_rope_theta, bn_transformer_rope_base_theta(c),
                     layer_kind,
                     bn_transformer_prefill_has_ffn_gate(c),
                     lw->ffn.ffn_up.data != NULL,
@@ -1864,7 +1848,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                    kv_dim + (size_t)pos0 * kv_dim),
                         kv_dim,
                         plan.qk_norm_per_head,
-                        prefill_attention_scale(c, layer_head_size)) == 0) {
+                        bn_transformer_attention_scale(c, layer_head_size)) == 0) {
                     prefill_profile_add(&prof.qkv_ms, t_prof);
                     int attn_idx = plan.attn_idx;
                     size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
@@ -1908,7 +1892,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     n_tokens,
                     bn_transformer_prefill_attention_min_tokens(),
                     layer_rope_theta,
-                    prefill_base_rope_theta(c),
+                    bn_transformer_rope_base_theta(c),
                     lw->attn.q_bias != NULL,
                     lw->attn.k_bias != NULL,
                     lw->attn.v_bias != NULL,
@@ -1961,7 +1945,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
                         layer_rope_dims,
-                        prefill_attention_scale(c, layer_head_size));
+                        bn_transformer_attention_scale(c, layer_head_size));
                     if (qkv_fused_rc == 0)
                         used_attn_residual = 1;
                     if (qkv_fused_rc != 0) {
@@ -1989,7 +1973,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
                         layer_rope_dims,
-                        prefill_attention_scale(c, layer_head_size));
+                        bn_transformer_attention_scale(c, layer_head_size));
                 }
                 if (qkv_fused_rc == 0) {
                     used_raw_prefill_attn_wo = 1;
@@ -2119,7 +2103,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .rope_dims = layer_rope_dims, .rope_freq = s->rope_freq,
                     .rope_cos = rope_cos_buf, .rope_sin = rope_sin_buf,
                     .rope_stride = half_rope,
-                    .attention_scale = prefill_attention_scale(c, layer_head_size),
+                    .attention_scale = bn_transformer_attention_scale(c, layer_head_size),
                     .kv_cache_uses_fp16_rows =
                         bn_transformer_kv_host_cache_uses_fp16_rows(c),
                     .q_norm = lw->attn.q_norm, .k_norm = lw->attn.k_norm,
@@ -2164,14 +2148,14 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             layer_head_size, layer_kv_mul, kv_dim,
                             lw->attn.wo.rows, lw->attn.wo.cols,
                             lw->attn.wo.type,
-                            prefill_attention_scale(c, layer_head_size)) == 0) {
+                            bn_transformer_attention_scale(c, layer_head_size)) == 0) {
                         used_gpu_attn = 1;
                         used_fused_attn_wo = 1;
                     } else if (bn_transformer_gpu_prefill_attention_backend_run(
                             gpu, Q_buf, Q_buf, K_new, V_new, n_tokens,
                             layer_n_heads, layer_n_kv_heads, layer_head_size,
                             layer_kv_mul, kv_dim,
-                            prefill_attention_scale(c, layer_head_size)) == 0) {
+                            bn_transformer_attention_scale(c, layer_head_size)) == 0) {
                         used_gpu_attn = 1;
                     } else {
                         sh_arena_free(pf_arena);
@@ -2250,7 +2234,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int n_kv = (pos + 1 < c->seq_len) ? pos + 1 : c->seq_len;
                     BnGQACtx gctx = { c, s, loff, pos, n_kv, layer_kv_mul,
                                       layer_head_size, kv_dim, c->seq_len,
-                                      prefill_attention_scale(c, layer_head_size),
+                                      bn_transformer_attention_scale(c, layer_head_size),
                                       bn_transformer_kv_host_cache_uses_fp16_rows(c) };
                     bn_transformer_cpu_gqa_dispatch(m, &gctx, layer_n_heads, layer_kv_mul);
 
