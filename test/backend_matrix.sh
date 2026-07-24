@@ -1690,6 +1690,12 @@ if grep -n 'bn_quant_format_supports_prepared_kquant\|bn_backend_quant_supports_
     fail=1
 fi
 
+if awk '/^void bn_transformer_cpu_forward_ffn_block/{flag=1} /^void bn_transformer_cpu_forward_moe_block/{flag=0} flag{print}' \
+    src/transformer/cpu.c | grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.type' >/dev/null 2>&1; then
+    echo "CPU FFN execution must use resolved projection type metadata"
+    fail=1
+fi
+
 if grep -n 'BN_QK_K' src/transformer/cpu.c src/transformer/prefill.c src/transformer/cpu_policy.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Transformer CPU/prefill prepared K-quant paths must use quant geometry helpers, not raw BN_QK_K checks"
     fail=1

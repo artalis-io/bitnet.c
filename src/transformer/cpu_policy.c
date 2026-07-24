@@ -3,6 +3,7 @@
 #include "model_internal.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 static int cpu_env_enabled(const char *name, const char *compat_name) {
     return getenv(name) != NULL ||
@@ -122,6 +123,18 @@ int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan) {
     return bn_transformer_gpu_dense_ffn_fast_path_available(gpu, ffn_plan);
+}
+
+int bn_transformer_cpu_resolve_ffn_projection_types(
+    BnTransformerCPUFFNProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->gate_type = lw->ffn.ffn_gate.type;
+    out->up_type = lw->ffn.ffn_up.type;
+    out->down_type = lw->ffn.ffn_down.type;
+    return 1;
 }
 
 int bn_transformer_cpu_activation_is_relu2(int activation) {

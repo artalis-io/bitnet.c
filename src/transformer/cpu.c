@@ -952,6 +952,9 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
     int ffn_activated = 0;
     int fused_gate_up = 0;
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
+    BnTransformerCPUFFNProjectionTypes ffn_types;
+    if (!bn_transformer_cpu_resolve_ffn_projection_types(&ffn_types, lw))
+        return;
 
     BnGPUBackend *gpu = bn_model_gpu(m);
     if (bn_transformer_cpu_gpu_dense_ffn_fast_path_available(gpu, ffn_plan)) {
@@ -963,8 +966,8 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
             cpu_rmsnorm_model(m, s->xb, s->x, lw->norm.ffn_norm, dim, norm_eps);
             if (bn_transformer_gpu_dense_ffn_fast_path_run(
                     gpu, s->xb, gate_buf, up_buf, down_buf, s->xb,
-                    dim, hidden_dim, lw->ffn.ffn_gate.type,
-                    lw->ffn.ffn_up.type, lw->ffn.ffn_down.type,
+                    dim, hidden_dim, ffn_types.gate_type,
+                    ffn_types.up_type, ffn_types.down_type,
                     ffn_plan->activation) == 0) {
                 if (ffn_plan->use_post_norm)
                     cpu_rmsnorm_model(m, s->xb, s->xb, lw->norm.ffn_post_norm, dim,
@@ -977,7 +980,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
 
     if (ffn_plan->has_gate &&
         bn_transformer_cpu_route_prepared_kquant_pair_enabled(
-            cpu_ops, gpu, dim, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
+            cpu_ops, gpu, dim, ffn_types.gate_type, ffn_types.up_type)) {
         int n_sb = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
         int n_bsums =
             bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb);
@@ -1008,7 +1011,7 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
                 cpu_qweight_prepared(bn_model_backend(m), &lw->ffn.ffn_up);
             if (bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
                     gpu, ffn_plan, dim,
-                    lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) &&
+                    ffn_types.gate_type, ffn_types.up_type) &&
                 bn_transformer_cpu_fused_kquant_gateup_silu(
                     s->hb, &lw->ffn.ffn_gate, gate_prepared,
                     &lw->ffn.ffn_up, up_prepared, s->xb, s->x_q,

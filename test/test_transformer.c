@@ -4577,6 +4577,21 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_can_prepared_kquant_triple(
         bn_transformer_cpu_backend_ops(), BN_GGUF_TENSOR_Q4_K,
         BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+    BnLayerWeights cpu_lw;
+    memset(&cpu_lw, 0, sizeof(cpu_lw));
+    cpu_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
+    cpu_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
+    cpu_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
+    BnTransformerCPUFFNProjectionTypes cpu_ffn_types = {0};
+    assert(bn_transformer_cpu_resolve_ffn_projection_types(
+        &cpu_ffn_types, &cpu_lw));
+    assert(cpu_ffn_types.gate_type == BN_GGUF_TENSOR_Q4_K);
+    assert(cpu_ffn_types.up_type == BN_GGUF_TENSOR_Q5_K);
+    assert(cpu_ffn_types.down_type == BN_GGUF_TENSOR_Q6_K);
+    assert(!bn_transformer_cpu_resolve_ffn_projection_types(
+        NULL, &cpu_lw));
+    assert(!bn_transformer_cpu_resolve_ffn_projection_types(
+        &cpu_ffn_types, NULL));
     BnGPUBackend route_gpu = {0};
     assert(bn_transformer_cpu_route_prepared_kquant_pair_enabled(
                bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,

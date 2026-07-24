@@ -48,6 +48,12 @@ typedef struct {
     int apply;
 } BnTransformerCPULayerOutputScalePolicy;
 
+typedef struct {
+    int gate_type;
+    int up_type;
+    int down_type;
+} BnTransformerCPUFFNProjectionTypes;
+
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
@@ -86,6 +92,9 @@ int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(
 int bn_transformer_cpu_gpu_dense_ffn_fast_path_available(
     const BnGPUBackend *gpu,
     const BnFFNPlan *ffn_plan);
+int bn_transformer_cpu_resolve_ffn_projection_types(
+    BnTransformerCPUFFNProjectionTypes *out,
+    const BnLayerWeights *lw);
 int bn_transformer_cpu_activation_is_relu2(int activation);
 int bn_transformer_cpu_activation_is_gelu(int activation);
 int bn_transformer_cpu_activation_uses_silu_path(int activation);
