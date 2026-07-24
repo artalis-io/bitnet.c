@@ -5521,6 +5521,21 @@ static void test_block_planning(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q4_K));
     assert(!bn_transformer_prefill_same_quant_format_pair_stackable(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
+    BnLayerWeights prefill_lw;
+    memset(&prefill_lw, 0, sizeof(prefill_lw));
+    prefill_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
+    BnTransformerPrefillFFNProjectionTypes prefill_ffn_types = {0};
+    assert(bn_transformer_prefill_resolve_ffn_projection_types(
+        &prefill_ffn_types, &prefill_lw));
+    assert(prefill_ffn_types.gate_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_ffn_types.up_type == BN_GGUF_TENSOR_Q5_K);
+    assert(prefill_ffn_types.down_type == BN_GGUF_TENSOR_Q6_K);
+    assert(!bn_transformer_prefill_resolve_ffn_projection_types(
+        NULL, &prefill_lw));
+    assert(!bn_transformer_prefill_resolve_ffn_projection_types(
+        &prefill_ffn_types, NULL));
 
     const BnPrefillCPUOps *prefill_ops = bn_transformer_prefill_cpu_ops();
     c.policy_flags = 0;

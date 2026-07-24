@@ -6,6 +6,7 @@
 #include "../moe_internal.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 int bn_transformer_prefill_profile_enabled(void) {
     return getenv("BN_PREFILL_PROFILE") != NULL;
@@ -763,6 +764,18 @@ int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                             int right_type) {
     return bn_backend_quant_same_quant_format_pair_stackable(left_type,
                                                             right_type);
+}
+
+int bn_transformer_prefill_resolve_ffn_projection_types(
+    BnTransformerPrefillFFNProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->gate_type = lw->ffn.ffn_gate.type;
+    out->up_type = lw->ffn.ffn_up.type;
+    out->down_type = lw->ffn.ffn_down.type;
+    return 1;
 }
 
 int bn_transformer_prefill_activation_is_relu2(int activation) {

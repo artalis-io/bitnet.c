@@ -383,6 +383,9 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
                                        int add_residual) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
+    BnTransformerPrefillFFNProjectionTypes ffn_types;
+    if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
+        return -1;
     if (!bn_transformer_prefill_dense_ffn_batch_gpu_available(
             gpu, backend != NULL, lw->ffn.ffn_gate.data != NULL,
             lw->ffn.ffn_up.data != NULL, lw->ffn.ffn_down.data != NULL))
@@ -394,7 +397,7 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
     void *up_buf = NULL;
     if (gateup_buf &&
         bn_transformer_prefill_same_quant_format_pair_stackable(
-            lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
+            ffn_types.gate_type, ffn_types.up_type)) {
         gate_buf = gateup_buf;
     } else {
         gate_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_gate);
@@ -417,22 +420,22 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
     if (call_policy.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM_RESID) {
         return bn_transformer_gpu_prefill_dense_ffn_batch_norm_resid_backend_run(
             gpu, out, gate_buf, up_buf, down_buf, norm_buf, X,
-            n_tokens, dim, hidden_dim, lw->ffn.ffn_gate.type,
-            lw->ffn.ffn_up.type, lw->ffn.ffn_down.type, act_type,
+            n_tokens, dim, hidden_dim, ffn_types.gate_type,
+            ffn_types.up_type, ffn_types.down_type, act_type,
             norm_eps);
     }
     if (call_policy.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM) {
         return bn_transformer_gpu_prefill_dense_ffn_batch_norm_backend_run(
             gpu, out, gate_buf, up_buf, down_buf, norm_buf, X,
-            n_tokens, dim, hidden_dim, lw->ffn.ffn_gate.type,
-            lw->ffn.ffn_up.type, lw->ffn.ffn_down.type, act_type,
+            n_tokens, dim, hidden_dim, ffn_types.gate_type,
+            ffn_types.up_type, ffn_types.down_type, act_type,
             norm_eps);
     }
 
     return bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
         gpu, out, gate_buf, up_buf, down_buf, X, n_tokens,
-        dim, hidden_dim, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
-        lw->ffn.ffn_down.type, act_type);
+        dim, hidden_dim, ffn_types.gate_type, ffn_types.up_type,
+        ffn_types.down_type, act_type);
 }
 
 static int prefill_dense_layer_gpu_batch(const BnModel *m,
@@ -458,6 +461,9 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
                                          float attention_scale) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
+    BnTransformerPrefillFFNProjectionTypes ffn_types;
+    if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
+        return -1;
     int q_dim = n_heads * head_size;
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
@@ -503,7 +509,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     void *up_buf = NULL;
     if (gateup_buf &&
         bn_transformer_prefill_same_quant_format_pair_stackable(
-            lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
+            ffn_types.gate_type, ffn_types.up_type)) {
         gate_buf = gateup_buf;
     } else {
         gate_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_gate);
@@ -540,8 +546,8 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
         hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
         qk_type, wv_rows, wv_type, lw->attn.wo.rows, lw->attn.wo.cols,
-        lw->attn.wo.type, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
-        lw->ffn.ffn_down.type, activation,
+        lw->attn.wo.type, ffn_types.gate_type, ffn_types.up_type,
+        ffn_types.down_type, activation,
         qk_norm_per_head,
         bn_transformer_prefill_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
@@ -657,6 +663,8 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
+    if (!lw)
+        return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
     if (!bn_transformer_prefill_moe_ffn_batch_available(
@@ -791,6 +799,11 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
+    if (!lw)
+        return 0;
+    BnTransformerPrefillFFNProjectionTypes ffn_types;
+    if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
+        return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
     int q_dim = plan->q_dim > 0 ? plan->q_dim
@@ -847,13 +860,13 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
     void *gate_buf = gateup_buf &&
                      bn_transformer_prefill_same_quant_format_pair_stackable(
-                         lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
+                         ffn_types.gate_type, ffn_types.up_type)
                          ? gateup_buf
                          : prefill_qweight_backend_buf(backend,
                                                        &lw->ffn.ffn_gate);
     void *up_buf = gateup_buf &&
                    bn_transformer_prefill_same_quant_format_pair_stackable(
-                       lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
+                       ffn_types.gate_type, ffn_types.up_type)
                        ? NULL
                        : prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
     void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
@@ -989,6 +1002,9 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
                                  int *did_ffn) {
     BnGPUBackend *gpu = bn_model_gpu(m);
     const BnBackendModel *backend = bn_model_backend(m);
+    BnTransformerPrefillFFNProjectionTypes ffn_types;
+    if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
+        return -1;
     if (!bn_transformer_prefill_ssm_layer_backend_available(gpu) ||
         !backend || !lw ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
@@ -1038,7 +1054,7 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
             backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
         if (gateup_buf &&
             bn_transformer_prefill_same_quant_format_pair_stackable(
-                lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)) {
+                ffn_types.gate_type, ffn_types.up_type)) {
             gate_buf = gateup_buf;
         } else {
             gate_buf = prefill_qweight_backend_buf(backend,
@@ -1073,8 +1089,8 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         num_k_heads, head_k_dim, num_v_heads, head_v_dim,
         conv_kernel, ssm_idx, lw->ssm.wqkv.type, lw->ssm.wz.type,
         lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type, lw->ssm.ssm_out.type,
-        lw->ffn.ffn_down.cols, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
-        lw->ffn.ffn_down.type, activation, norm_eps, did_ffn);
+        lw->ffn.ffn_down.cols, ffn_types.gate_type, ffn_types.up_type,
+        ffn_types.down_type, activation, norm_eps, did_ffn);
 }
 
 static int prefill_ssm_layer_chain_ready(const BnModel *m,
@@ -1085,6 +1101,9 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
     const BnBackendModel *backend = bn_model_backend(m);
     const BnConfig *c = &m->config;
     if (!lw)
+        return 0;
+    BnTransformerPrefillFFNProjectionTypes ffn_types;
+    if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
         return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
@@ -1139,13 +1158,13 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
     void *gate_buf = gateup_buf &&
                      bn_transformer_prefill_same_quant_format_pair_stackable(
-                         lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
+                         ffn_types.gate_type, ffn_types.up_type)
                          ? gateup_buf
                          : prefill_qweight_backend_buf(backend,
                                                        &lw->ffn.ffn_gate);
     void *up_buf = gateup_buf &&
                    bn_transformer_prefill_same_quant_format_pair_stackable(
-                       lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type)
+                       ffn_types.gate_type, ffn_types.up_type)
                        ? NULL
                        : prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
     void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
@@ -2505,6 +2524,12 @@ prefill_ssm_done:
                 return NULL;
             }
         } else if (lw->ffn.ffn_up.data) {
+            BnTransformerPrefillFFNProjectionTypes ffn_types;
+            if (!bn_transformer_prefill_resolve_ffn_projection_types(
+                    &ffn_types, lw)) {
+                sh_arena_free(pf_arena);
+                return NULL;
+            }
             int used_gpu_batch_ffn = 0;
             int used_ffn_residual = 0;
             t_prof = prefill_profile_now(&prof);
@@ -2565,7 +2590,7 @@ prefill_ssm_done:
                     if (!bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                             prefill_cpu_ops(), bn_model_gpu(m),
                             prefill_uses_float_kquant_fallback(m), dim,
-                            lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type) ||
+                            ffn_types.gate_type, ffn_types.up_type) ||
                         !prefill_try_prepared_kquant_multi(m, &prepared_kquant, gu_out, gu_w,
                                                   2, Xb, dim, n_tokens))
                         prefill_quant_matmul_multi(m, gu_out, gu_w, 2, Xb,

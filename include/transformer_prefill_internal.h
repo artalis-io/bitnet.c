@@ -27,6 +27,12 @@ typedef struct {
 } BnTransformerPrefillActivationPolicy;
 
 typedef struct {
+    int gate_type;
+    int up_type;
+    int down_type;
+} BnTransformerPrefillFFNProjectionTypes;
+
+typedef struct {
     const char *name;
     void (*rmsnorm)(float *out, const float *x, const float *w,
                     int size, float eps);
@@ -500,6 +506,9 @@ bn_tp_fn bn_transformer_prefill_ssm_gate_op(
     const BnPrefillCPUOps *ops);
 int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                     int right_type);
+int bn_transformer_prefill_resolve_ffn_projection_types(
+    BnTransformerPrefillFFNProjectionTypes *out,
+    const BnLayerWeights *lw);
 int bn_transformer_prefill_activation_is_relu2(int activation);
 int bn_transformer_prefill_activation_is_gelu(int activation);
 int bn_transformer_prefill_activation_uses_silu_path(int activation);
