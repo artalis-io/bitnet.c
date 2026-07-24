@@ -78,6 +78,26 @@ int bn_transformer_uses_small_dense_native_quant_shape(const BnConfig *c) {
     return bn_model_config_uses_small_dense_native_quant_shape(c);
 }
 
+float bn_transformer_norm_epsilon(const BnConfig *c) {
+    return bn_model_config_norm_epsilon(c);
+}
+
+int bn_transformer_requires_float_kquant_fallback(const BnConfig *c) {
+    return bn_model_config_requires_float_kquant_fallback(c);
+}
+
+int bn_transformer_config_activation(const BnConfig *c) {
+    return bn_model_config_activation(c);
+}
+
+int bn_transformer_has_ffn_gate(const BnConfig *c) {
+    return bn_model_config_has_ffn_gate(c);
+}
+
+float bn_transformer_final_logit_softcap(const BnConfig *c) {
+    return bn_model_config_final_logit_softcap(c);
+}
+
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,
@@ -311,8 +331,8 @@ BnFFNKind bn_transformer_ffn_kind(const BnConfig *c,
                                   const BnLayerWeights *lw) {
     if (lw && lw->ffn_kind == BN_LAYER_FFN_MOE)
         return BN_FFN_MOE;
-    return bn_model_config_has_ffn_gate(c) ? BN_FFN_DENSE_GATE_UP
-                                           : BN_FFN_DENSE_UP;
+    return bn_transformer_has_ffn_gate(c) ? BN_FFN_DENSE_GATE_UP
+                                          : BN_FFN_DENSE_UP;
 }
 
 int bn_transformer_ffn_hidden_dim(const BnConfig *c,
@@ -322,7 +342,7 @@ int bn_transformer_ffn_hidden_dim(const BnConfig *c,
 }
 
 int bn_transformer_ffn_has_gate(const BnConfig *c) {
-    return bn_model_config_has_ffn_gate(c);
+    return bn_transformer_has_ffn_gate(c);
 }
 
 int bn_transformer_ffn_has_sub_norm(const BnLayerWeights *lw) {
@@ -348,7 +368,7 @@ int bn_transformer_ffn_uses_fused_gateup_silu(
            lw &&
            bn_transformer_gpu_can_fused_gateup_silu_pair(
                gpu, lw->ffn.ffn_gate.type, lw->ffn.ffn_up.type,
-               bn_model_config_activation(c));
+               bn_transformer_config_activation(c));
 }
 
 int bn_transformer_ffn_uses_gateup_split(
@@ -364,7 +384,8 @@ int bn_transformer_ffn_uses_gateup_split(
            bn_transformer_gpu_can_stack_same_quant_format_gateup(&lw->ffn.ffn_gate,
                                                      &lw->ffn.ffn_up) &&
            bn_transformer_gpu_can_gateup_split_activation(
-               gpu, lw->ffn.ffn_gate.type, bn_model_config_activation(c));
+               gpu, lw->ffn.ffn_gate.type,
+               bn_transformer_config_activation(c));
 }
 
 int bn_transformer_ffn_uses_residual_rmsnorm_fusion(
@@ -622,7 +643,7 @@ void bn_transformer_plan_ffn(BnFFNPlan *p,
     p->backend = bn_transformer_backend_placement(gpu, p->placement);
     p->kind = bn_transformer_ffn_kind(c, lw);
     p->hidden_dim = bn_transformer_ffn_hidden_dim(c, lw);
-    p->activation = bn_model_config_activation(c);
+    p->activation = bn_transformer_config_activation(c);
     p->has_gate = bn_transformer_ffn_has_gate(c);
     p->has_sub_norm = bn_transformer_ffn_has_sub_norm(lw);
     p->use_post_norm = bn_transformer_ffn_uses_post_norm_layer(c, lw);

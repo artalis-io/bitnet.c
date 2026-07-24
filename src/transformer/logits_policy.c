@@ -1,4 +1,5 @@
 #include "transformer_logits_internal.h"
+#include "transformer_plan_internal.h"
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
@@ -71,13 +72,13 @@ BnLogitsExecutionPolicy bn_transformer_logits_execution_policy(
     BnLogitsExecutionPolicy policy = {0};
     if (!c)
         return policy;
-    policy.norm_eps = bn_model_config_norm_epsilon(c);
+    policy.norm_eps = bn_transformer_norm_epsilon(c);
     policy.final_softcap = bn_transformer_logits_final_softcap(c);
     return policy;
 }
 
 float bn_transformer_logits_final_softcap(const BnConfig *c) {
-    return bn_model_config_final_logit_softcap(c);
+    return bn_transformer_final_logit_softcap(c);
 }
 
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled) {

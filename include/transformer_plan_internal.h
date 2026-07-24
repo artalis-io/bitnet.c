@@ -245,6 +245,11 @@ int bn_transformer_uses_small_dense_shape(const BnConfig *c);
 int bn_transformer_uses_large_dense_shape(const BnConfig *c);
 int bn_transformer_uses_large_gpu_graph_fallback_shape(const BnConfig *c);
 int bn_transformer_uses_small_dense_native_quant_shape(const BnConfig *c);
+float bn_transformer_norm_epsilon(const BnConfig *c);
+int bn_transformer_requires_float_kquant_fallback(const BnConfig *c);
+int bn_transformer_config_activation(const BnConfig *c);
+int bn_transformer_has_ffn_gate(const BnConfig *c);
+float bn_transformer_final_logit_softcap(const BnConfig *c);
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,

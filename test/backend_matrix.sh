@@ -2849,6 +2849,11 @@ if grep -n 'bn_model_config_uses_hybrid_layer_layout\|bn_model_config_uses_hybri
     fail=1
 fi
 
+if grep -n 'bn_model_config_norm_epsilon\|bn_model_config_requires_float_kquant_fallback\|bn_model_config_activation\|bn_model_config_has_ffn_gate\|bn_model_config_final_logit_softcap' src/transformer/cpu_policy.c src/transformer/prefill_policy.c src/transformer/logits_policy.c >/dev/null 2>&1; then
+    echo "Transformer CPU/prefill/logits policies must use transformer scalar behavior helpers"
+    fail=1
+fi
+
 if grep -n 'bn_transformer_prefill_layer_kind_policy(const void \*' include/transformer_prefill_internal.h src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Prefill layer-kind policy must take layer weights, not raw MoE storage pointers"
     fail=1

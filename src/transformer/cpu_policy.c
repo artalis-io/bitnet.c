@@ -137,7 +137,7 @@ int bn_transformer_cpu_activation_uses_silu_path(int activation) {
 }
 
 float bn_transformer_cpu_norm_epsilon(const BnConfig *c) {
-    return bn_model_config_norm_epsilon(c);
+    return bn_transformer_norm_epsilon(c);
 }
 
 uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {
@@ -147,12 +147,12 @@ uint32_t bn_transformer_cpu_float_kquant_task_flags(int enabled) {
 uint32_t bn_transformer_cpu_float_kquant_fallback_task_flags(
     const BnConfig *c) {
     return bn_transformer_cpu_float_kquant_task_flags(
-        bn_model_config_requires_float_kquant_fallback(c));
+        bn_transformer_requires_float_kquant_fallback(c));
 }
 
 int bn_transformer_cpu_prefill_uses_float_kquant_fallback(
     const BnConfig *c) {
-    return bn_model_config_requires_float_kquant_fallback(c) &&
+    return bn_transformer_requires_float_kquant_fallback(c) &&
            bn_transformer_cpu_backend_supports_float_kquant_prefill();
 }
 
