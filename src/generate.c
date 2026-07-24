@@ -25,12 +25,6 @@ static BnAllocator *resolve_alloc(BnAllocator *a) {
     return &def;
 }
 
-static int use_gpu_batch_prefill(const BnModel *model) {
-    if (!model) return 0;
-    BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
-    return bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
-}
-
 static int prefill_uploads_ssm_state_after_gpu_batch(const BnModel *model,
                                                      int gpu_attached) {
     BnTransformerPrefillSSMStateUploadPolicy policy =
@@ -44,10 +38,16 @@ static int prefill_uses_batch_path(const BnModel *model,
                                    int parity_cpu,
                                    int n_tokens,
                                    int gpu_attached) {
+    int gpu_batch_prefill = 0;
+    if (model) {
+        BnGPUBackend *gpu = bn_model_gpu((BnModel *)model);
+        gpu_batch_prefill =
+            bn_transformer_gpu_batch_prefill_enabled(gpu, &model->config);
+    }
     BnTransformerPrefillEntryPolicy policy =
         bn_transformer_prefill_entry_policy(
             no_prefill, parity_cpu, n_tokens, gpu_attached,
-            use_gpu_batch_prefill(model));
+            gpu_batch_prefill);
     return policy.batch;
 }
 

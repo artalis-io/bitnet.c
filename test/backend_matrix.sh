@@ -172,6 +172,11 @@ if grep -n 'bn_gpu_policy_cuda_q5k_deint_pair_matvec_enabled\|bn_gpu_policy_cuda
     fail=1
 fi
 
+if grep -n 'static int use_gpu_batch_prefill' src/generate.c >/dev/null 2>&1; then
+    echo "Generate prefill entry policy must compose GPU batch-prefill policy directly"
+    fail=1
+fi
+
 if grep -n 'bn_gpu_policy_cuda_q4k_dot_enabled\|bn_gpu_policy_cuda_q5k_dot_enabled\|bn_gpu_policy_cuda_q6k_dot_enabled\|bn_gpu_policy_cuda_q6k_dot_forced\|bn_gpu_policy_cuda_q6k_warp_enabled' \
     include/gpu_policy.h \
     src/gpu_policy.c \
