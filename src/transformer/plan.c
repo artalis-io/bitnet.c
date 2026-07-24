@@ -50,6 +50,34 @@ int bn_transformer_uses_large_dense_hybrid_ssm(const BnConfig *c) {
     return bn_model_config_uses_large_dense_hybrid_ssm(c);
 }
 
+int bn_transformer_uses_non_hybrid_moe(const BnConfig *c) {
+    return bn_model_config_uses_non_hybrid_moe(c);
+}
+
+int bn_transformer_uses_moe(const BnConfig *c) {
+    return bn_model_config_uses_moe(c);
+}
+
+int bn_transformer_uses_dense_attention_only(const BnConfig *c) {
+    return bn_model_config_uses_dense_attention_only(c);
+}
+
+int bn_transformer_uses_small_dense_shape(const BnConfig *c) {
+    return bn_model_config_uses_small_dense_shape(c);
+}
+
+int bn_transformer_uses_large_dense_shape(const BnConfig *c) {
+    return bn_model_config_uses_large_dense_shape(c);
+}
+
+int bn_transformer_uses_large_gpu_graph_fallback_shape(const BnConfig *c) {
+    return bn_model_config_uses_large_gpu_graph_fallback_shape(c);
+}
+
+int bn_transformer_uses_small_dense_native_quant_shape(const BnConfig *c) {
+    return bn_model_config_uses_small_dense_native_quant_shape(c);
+}
+
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,

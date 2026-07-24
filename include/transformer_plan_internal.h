@@ -238,6 +238,13 @@ int bn_transformer_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_transformer_uses_hybrid_ssm(const BnConfig *c);
 int bn_transformer_uses_hybrid_moe(const BnConfig *c);
 int bn_transformer_uses_large_dense_hybrid_ssm(const BnConfig *c);
+int bn_transformer_uses_non_hybrid_moe(const BnConfig *c);
+int bn_transformer_uses_moe(const BnConfig *c);
+int bn_transformer_uses_dense_attention_only(const BnConfig *c);
+int bn_transformer_uses_small_dense_shape(const BnConfig *c);
+int bn_transformer_uses_large_dense_shape(const BnConfig *c);
+int bn_transformer_uses_large_gpu_graph_fallback_shape(const BnConfig *c);
+int bn_transformer_uses_small_dense_native_quant_shape(const BnConfig *c);
 int bn_transformer_weight_is_packed_qkv(const BnQWeight *qkv,
                                         int input_dim,
                                         int q_dim,
