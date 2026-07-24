@@ -147,5 +147,7 @@ int bn_model_config_allows_small_dense_native_logit_refine(
 int bn_model_config_moe_prefers_reference_gpu_attention(const BnConfig *config);
 int bn_model_prompt_cache_attention_layer_count(const BnConfig *config);
 int bn_model_prompt_cache_supports_kv_snapshot(const BnConfig *config);
+int bn_model_session_reset_attention_layer_count(const BnConfig *config);
+int bn_model_session_reset_ssm_layer_count(const BnConfig *config);
 
 #endif // BN_MODEL_INTERNAL_H

@@ -4637,8 +4637,8 @@ if grep -n 'full_attn_interval\|c->n_layers - n_attn' src/session.c >/dev/null 2
     fail=1
 fi
 
-if awk '/^BnSession \*bn_session_create/{flag=1} flag{print}' src/session.c | grep -n 'bn_model_config_attention_layer_count\|bn_model_config_ssm_layer_count' >/dev/null 2>&1; then
-    echo "src/session.c public API must compose session reset model-policy helpers"
+if grep -n 'bn_model_config_attention_layer_count\|bn_model_config_ssm_layer_count' src/session.c >/dev/null 2>&1; then
+    echo "src/session.c must compose session reset model-policy helpers"
     fail=1
 fi
 

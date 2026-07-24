@@ -61,6 +61,14 @@ static void model_session_init_rope_frequencies(const BnConfig *c,
     bn_model_config_init_rope_frequencies(c, freqs, capacity_pairs);
 }
 
+int bn_model_session_reset_attention_layer_count(const BnConfig *c) {
+    return model_session_attention_layer_count(c);
+}
+
+int bn_model_session_reset_ssm_layer_count(const BnConfig *c) {
+    return model_session_ssm_layer_count(c);
+}
+
 size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     if (!c || c->dim <= 0 || c->n_layers <= 0 || c->n_heads <= 0 ||
         c->seq_len <= 0 || c->kv_dim <= 0 || c->head_size <= 0 ||

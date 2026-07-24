@@ -27,11 +27,11 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
 }
 
 static int session_reset_attention_layer_count(const BnConfig *c) {
-    return bn_model_config_attention_layer_count(c);
+    return bn_model_session_reset_attention_layer_count(c);
 }
 
 static int session_reset_ssm_layer_count(const BnConfig *c) {
-    return bn_model_config_ssm_layer_count(c);
+    return bn_model_session_reset_ssm_layer_count(c);
 }
 
 BnSession *bn_session_create(const BnModel *model, BnAllocator *alloc) {
