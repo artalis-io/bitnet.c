@@ -3538,6 +3538,11 @@ if grep -n 'bn_model_config_uses_per_layer_embedding\|bn_model_embed_scales_toke
     fail=1
 fi
 
+if rg -n 'static int model_embed_scales_token_embedding' src/model_embed.c >/dev/null 2>&1; then
+    echo "src/model_embed.c must compose embedding model-policy helpers directly"
+    fail=1
+fi
+
 if grep -n 'general\.architecture\|context_length\|bn_gguf_get_u32' src/main.c >/dev/null 2>&1; then
     echo "src/main.c must use model_arch/GPU policy helpers for arch-prefixed GGUF sequence metadata"
     fail=1

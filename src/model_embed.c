@@ -3,10 +3,6 @@
 #include <math.h>
 #include <string.h>
 
-static int model_embed_scales_token_embedding(const BnConfig *c) {
-    return bn_model_embed_policy_scales_token_embedding(c);
-}
-
 void bn_model_embed_token(const BnModel *m, float *out, int token) {
     int dim = m->config.dim;
 
@@ -24,7 +20,7 @@ void bn_model_embed_token(const BnModel *m, float *out, int token) {
         return;
     }
 
-    if (model_embed_scales_token_embedding(&m->config)) {
+    if (bn_model_embed_policy_scales_token_embedding(&m->config)) {
         float scale = sqrtf((float)dim);
         for (int i = 0; i < dim; i++)
             out[i] *= scale;
