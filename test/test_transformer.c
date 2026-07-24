@@ -4005,9 +4005,20 @@ static void test_block_planning(void) {
     lw.ffn_kind = BN_LAYER_FFN_DENSE;
     lw.attn.wq.data = (void *)1;
     lw.attn.wq.rows = 2048;
+    lw.attn.wq.cols = 2048;
     lw.attn.wq.type = BN_GGUF_TENSOR_Q4_0;
     lw.attn.wk.type = BN_GGUF_TENSOR_Q4_0;
+    lw.attn.wk.rows = 512;
+    lw.attn.wk.cols = 2048;
     lw.attn.wv.type = BN_GGUF_TENSOR_Q4_0;
+    lw.attn.wv.rows = 512;
+    lw.attn.wv.cols = 2048;
+    lw.attn.wo.type = BN_GGUF_TENSOR_Q8_0;
+    lw.attn.wo.rows = 2048;
+    lw.attn.wo.cols = 2048;
+    lw.ssm.wqkv.type = BN_GGUF_TENSOR_Q5_K;
+    lw.ssm.wqkv.rows = 3072;
+    lw.ssm.wqkv.cols = 2048;
 
     BnBackendModel *backend = bn_backend_model_create();
     assert(backend != NULL);
@@ -4052,6 +4063,35 @@ static void test_block_planning(void) {
     assert(attn.fusion_flags & BN_FUSION_FLASH_ATTN);
     assert(!(attn.fusion_flags & BN_FUSION_ROPE_QK));
     assert(!attn.needs_cpu_fallback);
+    BnTransformerGPUQKVProjectionLayout qkv_layout = {0};
+    assert(bn_transformer_gpu_resolve_qkv_projection_layout(
+        &qkv_layout, &lw));
+    assert(qkv_layout.packed_type == BN_GGUF_TENSOR_Q5_K);
+    assert(qkv_layout.packed_rows == 3072);
+    assert(qkv_layout.packed_cols == 2048);
+    assert(qkv_layout.q_type == BN_GGUF_TENSOR_Q4_0);
+    assert(qkv_layout.q_rows == 2048);
+    assert(qkv_layout.q_cols == 2048);
+    assert(qkv_layout.k_type == BN_GGUF_TENSOR_Q4_0);
+    assert(qkv_layout.k_rows == 512);
+    assert(qkv_layout.k_cols == 2048);
+    assert(qkv_layout.v_type == BN_GGUF_TENSOR_Q4_0);
+    assert(qkv_layout.v_rows == 512);
+    assert(qkv_layout.v_cols == 2048);
+    assert(!bn_transformer_gpu_resolve_qkv_projection_layout(
+        NULL, &lw));
+    assert(!bn_transformer_gpu_resolve_qkv_projection_layout(
+        &qkv_layout, NULL));
+    BnTransformerGPUAttentionOutputProjectionLayout out_layout = {0};
+    assert(bn_transformer_gpu_resolve_attention_output_projection_layout(
+        &out_layout, &lw));
+    assert(out_layout.out_type == BN_GGUF_TENSOR_Q8_0);
+    assert(out_layout.out_rows == 2048);
+    assert(out_layout.out_cols == 2048);
+    assert(!bn_transformer_gpu_resolve_attention_output_projection_layout(
+        NULL, &lw));
+    assert(!bn_transformer_gpu_resolve_attention_output_projection_layout(
+        &out_layout, NULL));
 
     assert(bn_backend_model_register_handle(backend, 0,
                                             BN_BACKEND_HANDLE_K_BIAS,

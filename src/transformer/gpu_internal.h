@@ -61,12 +61,33 @@ typedef struct {
 } BnTransformerGPUQKVResources;
 
 typedef struct {
+    int packed_type;
+    int packed_rows;
+    int packed_cols;
+    int q_type;
+    int q_rows;
+    int q_cols;
+    int k_type;
+    int k_rows;
+    int k_cols;
+    int v_type;
+    int v_rows;
+    int v_cols;
+} BnTransformerGPUQKVProjectionLayout;
+
+typedef struct {
     const BnGPUBackend *gpu;
     void *k_bias;
     void *attn_sub_norm;
     void *ffn_norm;
     void *wo;
 } BnTransformerGPUAttentionResources;
+
+typedef struct {
+    int out_type;
+    int out_rows;
+    int out_cols;
+} BnTransformerGPUAttentionOutputProjectionLayout;
 
 typedef struct {
     const BnGPUBackend *gpu;
@@ -1379,12 +1400,18 @@ BnTransformerGPUQKVResources bn_transformer_gpu_resolve_qkv_resources(
     const BnBackendModel *backend,
     const BnLayerWeights *lw,
     int layer);
+int bn_transformer_gpu_resolve_qkv_projection_layout(
+    BnTransformerGPUQKVProjectionLayout *out,
+    const BnLayerWeights *lw);
 BnTransformerGPUAttentionResources
 bn_transformer_gpu_resolve_attention_resources(
     const BnGPUBackend *gpu,
     const BnBackendModel *backend,
     const BnLayerWeights *lw,
     int layer);
+int bn_transformer_gpu_resolve_attention_output_projection_layout(
+    BnTransformerGPUAttentionOutputProjectionLayout *out,
+    const BnLayerWeights *lw);
 BnTransformerGPUSSMResources bn_transformer_gpu_resolve_ssm_resources(
     const BnGPUBackend *gpu,
     const BnBackendModel *backend,

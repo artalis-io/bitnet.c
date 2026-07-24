@@ -144,6 +144,27 @@ BnTransformerGPUQKVResources bn_transformer_gpu_resolve_qkv_resources(
     };
 }
 
+int bn_transformer_gpu_resolve_qkv_projection_layout(
+    BnTransformerGPUQKVProjectionLayout *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->packed_type = lw->ssm.wqkv.type;
+    out->packed_rows = lw->ssm.wqkv.rows;
+    out->packed_cols = lw->ssm.wqkv.cols;
+    out->q_type = lw->attn.wq.type;
+    out->q_rows = lw->attn.wq.rows;
+    out->q_cols = lw->attn.wq.cols;
+    out->k_type = lw->attn.wk.type;
+    out->k_rows = lw->attn.wk.rows;
+    out->k_cols = lw->attn.wk.cols;
+    out->v_type = lw->attn.wv.type;
+    out->v_rows = lw->attn.wv.rows;
+    out->v_cols = lw->attn.wv.cols;
+    return 1;
+}
+
 BnTransformerGPUAttentionResources
 bn_transformer_gpu_resolve_attention_resources(
     const BnGPUBackend *gpu,
@@ -158,6 +179,18 @@ bn_transformer_gpu_resolve_attention_resources(
         .ffn_norm = backend_handle_or(backend, layer, BN_BACKEND_HANDLE_FFN_NORM),
         .wo = qweight_backend_buf(backend, &lw->attn.wo),
     };
+}
+
+int bn_transformer_gpu_resolve_attention_output_projection_layout(
+    BnTransformerGPUAttentionOutputProjectionLayout *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->out_type = lw->attn.wo.type;
+    out->out_rows = lw->attn.wo.rows;
+    out->out_cols = lw->attn.wo.cols;
+    return 1;
 }
 
 BnTransformerGPUSSMResources bn_transformer_gpu_resolve_ssm_resources(
