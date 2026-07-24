@@ -5554,6 +5554,11 @@ static void test_block_planning(void) {
     prefill_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
     prefill_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
     prefill_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_lw.ssm.wqkv.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_lw.ssm.wz.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_lw.ssm.ssm_alpha.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_lw.ssm.ssm_beta.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_lw.ssm.ssm_out.type = BN_GGUF_TENSOR_Q5_K;
     BnTransformerPrefillFFNProjectionTypes prefill_ffn_types = {0};
     assert(bn_transformer_prefill_resolve_ffn_projection_types(
         &prefill_ffn_types, &prefill_lw));
@@ -5564,6 +5569,18 @@ static void test_block_planning(void) {
         NULL, &prefill_lw));
     assert(!bn_transformer_prefill_resolve_ffn_projection_types(
         &prefill_ffn_types, NULL));
+    BnTransformerPrefillSSMProjectionTypes prefill_ssm_types = {0};
+    assert(bn_transformer_prefill_resolve_ssm_projection_types(
+        &prefill_ssm_types, &prefill_lw));
+    assert(prefill_ssm_types.qkv_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_ssm_types.z_type == BN_GGUF_TENSOR_Q5_K);
+    assert(prefill_ssm_types.alpha_type == BN_GGUF_TENSOR_Q6_K);
+    assert(prefill_ssm_types.beta_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_ssm_types.out_type == BN_GGUF_TENSOR_Q5_K);
+    assert(!bn_transformer_prefill_resolve_ssm_projection_types(
+        NULL, &prefill_lw));
+    assert(!bn_transformer_prefill_resolve_ssm_projection_types(
+        &prefill_ssm_types, NULL));
 
     const BnPrefillCPUOps *prefill_ops = bn_transformer_prefill_cpu_ops();
     c.policy_flags = 0;

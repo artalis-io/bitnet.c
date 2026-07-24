@@ -1713,6 +1713,14 @@ if grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.type' src/transformer/prefill.c >/d
     fail=1
 fi
 
+if awk '/^static int prefill_ssm_layer_gpu/{flag=1} /^static int prefill_ssm_layer_chain_ready/{flag=0} flag{print}' \
+    src/transformer/prefill.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\|ssm_out\)\.type' >/dev/null 2>&1 ||
+   awk '/float \*QKV_all = Q_buf/{flag=1} /prefill_ssm_done:/{flag=0} flag{print}' \
+    src/transformer/prefill.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\)\.type' >/dev/null 2>&1; then
+    echo "Prefill SSM execution must use resolved projection type metadata"
+    fail=1
+fi
+
 if grep -n 'BN_QK_K' src/transformer/cpu.c src/transformer/prefill.c src/transformer/cpu_policy.c src/transformer/prefill_policy.c >/dev/null 2>&1; then
     echo "Transformer CPU/prefill prepared K-quant paths must use quant geometry helpers, not raw BN_QK_K checks"
     fail=1

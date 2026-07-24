@@ -33,6 +33,14 @@ typedef struct {
 } BnTransformerPrefillFFNProjectionTypes;
 
 typedef struct {
+    int qkv_type;
+    int z_type;
+    int alpha_type;
+    int beta_type;
+    int out_type;
+} BnTransformerPrefillSSMProjectionTypes;
+
+typedef struct {
     const char *name;
     void (*rmsnorm)(float *out, const float *x, const float *w,
                     int size, float eps);
@@ -508,6 +516,9 @@ int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                     int right_type);
 int bn_transformer_prefill_resolve_ffn_projection_types(
     BnTransformerPrefillFFNProjectionTypes *out,
+    const BnLayerWeights *lw);
+int bn_transformer_prefill_resolve_ssm_projection_types(
+    BnTransformerPrefillSSMProjectionTypes *out,
     const BnLayerWeights *lw);
 int bn_transformer_prefill_activation_is_relu2(int activation);
 int bn_transformer_prefill_activation_is_gelu(int activation);

@@ -1005,6 +1005,9 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
     BnTransformerPrefillFFNProjectionTypes ffn_types;
     if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
         return -1;
+    BnTransformerPrefillSSMProjectionTypes ssm_types;
+    if (!bn_transformer_prefill_resolve_ssm_projection_types(&ssm_types, lw))
+        return -1;
     if (!bn_transformer_prefill_ssm_layer_backend_available(gpu) ||
         !backend || !lw ||
         !lw->ssm.wqkv.data || !lw->ssm.wz.data ||
@@ -1087,8 +1090,8 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         dt_bias_buf, a_log_buf, ssm_norm_buf, gate_buf, up_buf, down_buf,
         ffn_norm_buf, X, n_tokens, dim, qkv_dim, inner_dim,
         num_k_heads, head_k_dim, num_v_heads, head_v_dim,
-        conv_kernel, ssm_idx, lw->ssm.wqkv.type, lw->ssm.wz.type,
-        lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type, lw->ssm.ssm_out.type,
+        conv_kernel, ssm_idx, ssm_types.qkv_type, ssm_types.z_type,
+        ssm_types.alpha_type, ssm_types.beta_type, ssm_types.out_type,
         lw->ffn.ffn_down.cols, ffn_types.gate_type, ffn_types.up_type,
         ffn_types.down_type, activation, norm_eps, did_ffn);
 }
@@ -2416,6 +2419,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             float *Z_all = Xb2;
             float *Out_all = Hb;
             const BnPrefillCPUOps *ssm_cpu_ops = prefill_cpu_ops();
+            BnTransformerPrefillSSMProjectionTypes ssm_types;
+            if (!bn_transformer_prefill_resolve_ssm_projection_types(
+                    &ssm_types, lw)) {
+                sh_arena_free(pf_arena);
+                return NULL;
+            }
 
             int ssm_prepared_kquant = 0;
             {
@@ -2425,7 +2434,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                         prefill_cpu_ops(), bn_model_gpu(m),
                         prefill_uses_float_kquant_fallback(m), dim,
-                        lw->ssm.wqkv.type, lw->ssm.wz.type) &&
+                        ssm_types.qkv_type, ssm_types.z_type) &&
                     prefill_try_prepared_kquant_multi(
                         m, &prepared_kquant, qz_out, qz_w, 2, Xb, dim,
                         n_tokens);
@@ -2473,7 +2482,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     !bn_transformer_prefill_route_prepared_kquant_pair_enabled(
                         prefill_cpu_ops(), bn_model_gpu(m),
                         prefill_uses_float_kquant_fallback(m), dim,
-                        lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type) ||
+                        ssm_types.alpha_type, ssm_types.beta_type) ||
                     !prefill_try_prepared_kquant_matvec_batch(
                         m, &prepared_kquant, ab, 2, xb_t, dim, t)) {
                     bn_transformer_prefill_quant_matvec_batch(
