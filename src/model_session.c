@@ -31,6 +31,36 @@ static int checked_mul4_size(size_t a, size_t b, size_t c, size_t d, size_t *out
     return checked_mul_size(tmp, d, out);
 }
 
+static int model_session_attention_layer_count(const BnConfig *c) {
+    return bn_model_config_attention_layer_count(c);
+}
+
+static int model_session_ssm_layer_count(const BnConfig *c) {
+    return bn_model_config_ssm_layer_count(c);
+}
+
+static int model_session_uses_hybrid_layer_layout(const BnConfig *c) {
+    return bn_model_config_uses_hybrid_layer_layout(c);
+}
+
+static int model_session_shared_expert_hidden_dim(const BnConfig *c) {
+    return bn_model_config_shared_expert_hidden_dim(c);
+}
+
+static int model_session_uses_moe(const BnConfig *c) {
+    return bn_model_config_uses_moe(c);
+}
+
+static int model_session_per_layer_embedding_dim(const BnConfig *c) {
+    return bn_model_config_per_layer_embedding_dim(c);
+}
+
+static void model_session_init_rope_frequencies(const BnConfig *c,
+                                                float *freqs,
+                                                int capacity_pairs) {
+    bn_model_config_init_rope_frequencies(c, freqs, capacity_pairs);
+}
+
 size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     if (!c || c->dim <= 0 || c->n_layers <= 0 || c->n_heads <= 0 ||
         c->seq_len <= 0 || c->kv_dim <= 0 || c->head_size <= 0 ||
@@ -39,8 +69,8 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     size_t att_size = 0;
     if (checked_mul_size((size_t)c->n_heads, (size_t)c->seq_len, &att_size) != 0)
         return 0;
-    int n_attn_layers = bn_model_config_attention_layer_count(c);
-    int n_ssm_layers = bn_model_config_ssm_layer_count(c);
+    int n_attn_layers = model_session_attention_layer_count(c);
+    int n_ssm_layers = model_session_ssm_layer_count(c);
     if (n_attn_layers < 0 || n_ssm_layers < 0) return 0;
     size_t kv_cache_size = 0;
     if (checked_mul3_size((size_t)n_attn_layers, (size_t)c->seq_len,
@@ -64,7 +94,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     if (attn_tmp > hb_size) hb_size = attn_tmp;
     int kv_pair_tmp = 2 * c->kv_dim;
     if (kv_pair_tmp > hb2_size) hb2_size = kv_pair_tmp;
-    if (bn_model_config_uses_hybrid_layer_layout(c)) {
+    if (model_session_uses_hybrid_layer_layout(c)) {
         size_t qkv_tmp = 0;
         if (checked_mul3_size((size_t)c->ssm_group_count,
                               (size_t)c->ssm_state_size, 2, &qkv_tmp) != 0 ||
@@ -78,16 +108,16 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
         int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
-    int shared_expert_hidden = bn_model_config_shared_expert_hidden_dim(c);
+    int shared_expert_hidden = model_session_shared_expert_hidden_dim(c);
     if (shared_expert_hidden > hb_size)
         hb_size = shared_expert_hidden;
     if (shared_expert_hidden > hb2_size)
         hb2_size = shared_expert_hidden;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
-    if (bn_model_config_uses_moe(c) &&
+    if (model_session_uses_moe(c) &&
         route_policy.expert_hidden_dim > x_q_size)
         x_q_size = route_policy.expert_hidden_dim;
-    int per_layer_dim = bn_model_config_per_layer_embedding_dim(c);
+    int per_layer_dim = model_session_per_layer_embedding_dim(c);
     if (per_layer_dim > 0) {
         size_t per_layer_total = 0;
         if (checked_mul_size((size_t)c->n_layers, (size_t)per_layer_dim,
@@ -129,7 +159,7 @@ size_t bn_model_session_arena_size(const BnConfig *c, const BnWeights *w) {
     }
 
     size_t moe_arena_bytes = 0;
-    if (bn_model_config_uses_moe(c) && c->n_layers > 0) {
+    if (model_session_uses_moe(c) && c->n_layers > 0) {
         size_t moe_expert_buf_size = 0;
         if (w && w->layers) {
             BnMoEExpertMap *em0 = &w->layers[0].moe.expert_map;
@@ -265,8 +295,8 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (checked_mul_size((size_t)c->n_heads, (size_t)c->seq_len, &att_size) != 0)
         return -1;
 
-    int n_attn_layers = bn_model_config_attention_layer_count(c);
-    int n_ssm_layers = bn_model_config_ssm_layer_count(c);
+    int n_attn_layers = model_session_attention_layer_count(c);
+    int n_ssm_layers = model_session_ssm_layer_count(c);
     if (n_attn_layers < 0 || n_ssm_layers < 0) return -1;
     size_t kv_cache_size = 0;
     if (checked_mul3_size((size_t)n_attn_layers, (size_t)c->seq_len,
@@ -290,7 +320,7 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (attn_tmp > hb_size) hb_size = attn_tmp;
     int kv_pair_tmp = 2 * c->kv_dim;
     if (kv_pair_tmp > hb2_size) hb2_size = kv_pair_tmp;
-    if (bn_model_config_uses_hybrid_layer_layout(c)) {
+    if (model_session_uses_hybrid_layer_layout(c)) {
         int qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 + c->ssm_inner_size;
         if (qkv_dim > hb_size) hb_size = qkv_dim;
         if (c->ssm_inner_size > hb2_size) hb2_size = c->ssm_inner_size;
@@ -299,16 +329,16 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
         int gq = 2 * q_dim;
         if (gq > hb_size) hb_size = gq;
     }
-    int shared_expert_hidden = bn_model_config_shared_expert_hidden_dim(c);
+    int shared_expert_hidden = model_session_shared_expert_hidden_dim(c);
     if (shared_expert_hidden > hb_size)
         hb_size = shared_expert_hidden;
     if (shared_expert_hidden > hb2_size)
         hb2_size = shared_expert_hidden;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
-    if (bn_model_config_uses_moe(c) &&
+    if (model_session_uses_moe(c) &&
         route_policy.expert_hidden_dim > x_q_size)
         x_q_size = route_policy.expert_hidden_dim;
-    int per_layer_dim = bn_model_config_per_layer_embedding_dim(c);
+    int per_layer_dim = model_session_per_layer_embedding_dim(c);
     if (per_layer_dim > 0) {
         size_t per_layer_total = 0;
         if (checked_mul_size((size_t)c->n_layers, (size_t)per_layer_dim,
@@ -404,10 +434,10 @@ int bn_model_alloc_session_buffers(const BnConfig *c, const BnWeights *w,
     if (ssm_state_size_total > 0 && (!s->ssm_state || !s->ssm_conv_state))
         return -1;
 
-    bn_model_config_init_rope_frequencies(c, s->rope_freq, half_head);
+    model_session_init_rope_frequencies(c, s->rope_freq, half_head);
 
     *moe_out = NULL;
-    if (bn_model_config_uses_moe(c)) {
+    if (model_session_uses_moe(c)) {
         BnMoEState *ms = (BnMoEState *)sh_arena_calloc(arena, 1, sizeof(BnMoEState));
         if (!ms) return -1;
 

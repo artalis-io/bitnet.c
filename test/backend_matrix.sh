@@ -4627,6 +4627,11 @@ if awk '/^BnSession \*bn_session_create/{flag=1} flag{print}' src/session.c | gr
     fail=1
 fi
 
+if awk '/^size_t bn_model_session_arena_size/{flag=1} flag{print}' src/model_session.c | grep -n 'bn_model_config_attention_layer_count\|bn_model_config_ssm_layer_count\|bn_model_config_uses_hybrid_layer_layout\|bn_model_config_shared_expert_hidden_dim\|bn_model_config_uses_moe\|bn_model_config_per_layer_embedding_dim\|bn_model_config_init_rope_frequencies' >/dev/null 2>&1; then
+    echo "src/model_session.c public API must compose model-session policy helpers"
+    fail=1
+fi
+
 for file in \
     src/transformer/plan.c \
     src/transformer/gpu.c \
