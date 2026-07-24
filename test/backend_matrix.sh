@@ -3523,6 +3523,11 @@ if awk '/^int bn_gpu_policy_moe_resident_routed_ffn_enabled/{flag=1} flag{print}
     fail=1
 fi
 
+if grep -n 'bn_model_config_rope_dims_for_head\|bn_model_config_init_rope_frequencies' src/gpu_wgpu.c src/gpu_metal.m src/gpu_cuda.cu >/dev/null 2>&1; then
+    echo "GPU backends must use GPU policy helpers for RoPE frequency setup"
+    fail=1
+fi
+
 if grep -n '#include "model_arch.h"\|bn_model_arch_' src/gpu_policy.c >/dev/null 2>&1; then
     echo "src/gpu_policy.c must use model-policy helpers instead of reaching into model_arch"
     fail=1

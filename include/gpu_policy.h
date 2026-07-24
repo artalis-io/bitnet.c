@@ -25,6 +25,10 @@ int bn_gpu_policy_ssm_layer_count(const BnConfig *c);
 int bn_gpu_policy_uses_hybrid_ssm(const BnConfig *c);
 int bn_gpu_policy_uses_hybrid_moe(const BnConfig *c);
 int bn_gpu_policy_uses_moe(const BnConfig *c);
+int bn_gpu_policy_rope_dims_for_head(const BnConfig *c, int layer_head_size);
+void bn_gpu_policy_init_rope_frequencies(const BnConfig *c,
+                                         float *freqs,
+                                         int capacity_pairs);
 BnGPUMoERouteShape bn_gpu_policy_moe_route_shape(const BnConfig *c);
 int bn_gpu_policy_moe_router_diff2_upload_enabled(const BnConfig *c);
 int bn_gpu_policy_moe_f16_aux_cache_auto_enabled(const BnConfig *c);

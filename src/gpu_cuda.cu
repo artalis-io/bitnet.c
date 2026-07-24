@@ -11111,7 +11111,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
         }
     }
 
-    int rope_dims = bn_model_config_rope_dims_for_head(c, c->head_size);
+    int rope_dims = bn_gpu_policy_rope_dims_for_head(c, c->head_size);
     int half = rope_dims / 2;
     if (half > 0 && ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ]) {
         float *freq = (float *)malloc((size_t)half * sizeof(float));
@@ -11119,7 +11119,7 @@ static int cuda_init_activations(void *vctx, const void *config_ptr) {
             cuda_free_activations(ctx);
             return -1;
         }
-        bn_model_config_init_rope_frequencies(c, freq, half);
+        bn_gpu_policy_init_rope_frequencies(c, freq, half);
         cudaError_t err = cudaMemcpy(ctx->act_bufs[BN_GPU_VALUE_ROPE_FREQ],
                                      freq, (size_t)half * sizeof(float),
                                      cudaMemcpyHostToDevice);
