@@ -189,6 +189,23 @@ int bn_moe_routed_expert_projection_types(
     return 1;
 }
 
+int bn_moe_routed_expert_projection_layout(
+    BnMoERoutedExpertProjectionLayout *out,
+    const BnMoEExpertMap *map) {
+    if (!out || !map)
+        return 0;
+    out->gate_type = map->gate_type;
+    out->gate_rows = map->gate_rows;
+    out->gate_cols = map->gate_cols;
+    out->up_type = map->up_type;
+    out->up_rows = map->up_rows;
+    out->up_cols = map->up_cols;
+    out->down_type = map->down_type;
+    out->down_rows = map->down_rows;
+    out->down_cols = map->down_cols;
+    return 1;
+}
+
 int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type) {

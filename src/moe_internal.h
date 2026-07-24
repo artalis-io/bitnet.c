@@ -69,6 +69,18 @@ typedef struct {
     int down_type;
 } BnMoERoutedExpertProjectionTypes;
 
+typedef struct {
+    int gate_type;
+    int gate_rows;
+    int gate_cols;
+    int up_type;
+    int up_rows;
+    int up_cols;
+    int down_type;
+    int down_rows;
+    int down_cols;
+} BnMoERoutedExpertProjectionLayout;
+
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
@@ -94,6 +106,9 @@ int bn_moe_expert_projection_weight(BnQWeight *out,
                                     int proj);
 int bn_moe_routed_expert_projection_types(
     BnMoERoutedExpertProjectionTypes *out,
+    const BnMoEExpertMap *map);
+int bn_moe_routed_expert_projection_layout(
+    BnMoERoutedExpertProjectionLayout *out,
     const BnMoEExpertMap *map);
 uint32_t bn_moe_float_kquant_gateup_fallback_task_flags(const BnConfig *c);
 BnMoEExecutionPolicy bn_moe_execution_policy(const BnConfig *c);

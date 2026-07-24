@@ -5026,7 +5026,7 @@ if grep -n 'bn_transformer_gpu_matvec_kquant_dot_flags(.*\(em->\(gate\|up\|down\
     fail=1
 fi
 
-if grep -n '\(map\|em\)->\(gate\|up\|down\)_type\|lw->moe\.expert_map\.\(gate\|up\|down\)_type\|expert_map\.\(gate\|up\|down\)_type' \
+if grep -n '\(map\|em\)->\(gate\|up\|down\)_\(type\|rows\|cols\)\|lw->moe\.expert_map\.\(gate\|up\|down\)_\(type\|rows\|cols\)\|expert_map\.\(gate\|up\|down\)_\(type\|rows\|cols\)' \
     src/moe_prefill.c \
     src/transformer/gpu_emit.c \
     src/transformer/prefill.c \
