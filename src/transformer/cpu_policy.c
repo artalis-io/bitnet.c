@@ -149,6 +149,19 @@ int bn_transformer_cpu_resolve_ffn_projection_types(
     return 1;
 }
 
+int bn_transformer_cpu_resolve_ssm_projection_types(
+    BnTransformerCPUSSMProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->qkv_type = lw->ssm.wqkv.type;
+    out->z_type = lw->ssm.wz.type;
+    out->alpha_type = lw->ssm.ssm_alpha.type;
+    out->beta_type = lw->ssm.ssm_beta.type;
+    return 1;
+}
+
 int bn_transformer_cpu_activation_is_relu2(int activation) {
     return bn_model_activation_is_relu2(activation);
 }

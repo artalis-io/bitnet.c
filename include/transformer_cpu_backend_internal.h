@@ -60,6 +60,13 @@ typedef struct {
     int down_type;
 } BnTransformerCPUFFNProjectionTypes;
 
+typedef struct {
+    int qkv_type;
+    int z_type;
+    int alpha_type;
+    int beta_type;
+} BnTransformerCPUSSMProjectionTypes;
+
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
@@ -103,6 +110,9 @@ int bn_transformer_cpu_resolve_attention_projection_types(
     const BnLayerWeights *lw);
 int bn_transformer_cpu_resolve_ffn_projection_types(
     BnTransformerCPUFFNProjectionTypes *out,
+    const BnLayerWeights *lw);
+int bn_transformer_cpu_resolve_ssm_projection_types(
+    BnTransformerCPUSSMProjectionTypes *out,
     const BnLayerWeights *lw);
 int bn_transformer_cpu_activation_is_relu2(int activation);
 int bn_transformer_cpu_activation_is_gelu(int activation);

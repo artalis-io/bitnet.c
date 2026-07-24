@@ -1702,6 +1702,12 @@ if awk '/^void bn_transformer_cpu_forward_ffn_block/{flag=1} /^void bn_transform
     fail=1
 fi
 
+if awk '/^void bn_transformer_cpu_forward_ssm_block/{flag=1} /^void bn_transformer_cpu_forward_ffn_block/{flag=0} flag{print}' \
+    src/transformer/cpu.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\)\.type' >/dev/null 2>&1; then
+    echo "CPU SSM execution must use resolved projection type metadata"
+    fail=1
+fi
+
 if grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.type' src/transformer/prefill.c >/dev/null 2>&1; then
     echo "Prefill execution must use resolved FFN projection type metadata"
     fail=1

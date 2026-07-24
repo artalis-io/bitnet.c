@@ -4585,6 +4585,10 @@ static void test_block_planning(void) {
     cpu_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
     cpu_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
     cpu_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
+    cpu_lw.ssm.wqkv.type = BN_GGUF_TENSOR_Q4_K;
+    cpu_lw.ssm.wz.type = BN_GGUF_TENSOR_Q5_K;
+    cpu_lw.ssm.ssm_alpha.type = BN_GGUF_TENSOR_Q6_K;
+    cpu_lw.ssm.ssm_beta.type = BN_GGUF_TENSOR_Q4_K;
     BnTransformerCPUAttentionProjectionTypes cpu_attn_types = {0};
     assert(bn_transformer_cpu_resolve_attention_projection_types(
         &cpu_attn_types, &cpu_lw));
@@ -4605,6 +4609,17 @@ static void test_block_planning(void) {
         NULL, &cpu_lw));
     assert(!bn_transformer_cpu_resolve_ffn_projection_types(
         &cpu_ffn_types, NULL));
+    BnTransformerCPUSSMProjectionTypes cpu_ssm_types = {0};
+    assert(bn_transformer_cpu_resolve_ssm_projection_types(
+        &cpu_ssm_types, &cpu_lw));
+    assert(cpu_ssm_types.qkv_type == BN_GGUF_TENSOR_Q4_K);
+    assert(cpu_ssm_types.z_type == BN_GGUF_TENSOR_Q5_K);
+    assert(cpu_ssm_types.alpha_type == BN_GGUF_TENSOR_Q6_K);
+    assert(cpu_ssm_types.beta_type == BN_GGUF_TENSOR_Q4_K);
+    assert(!bn_transformer_cpu_resolve_ssm_projection_types(
+        NULL, &cpu_lw));
+    assert(!bn_transformer_cpu_resolve_ssm_projection_types(
+        &cpu_ssm_types, NULL));
     BnGPUBackend route_gpu = {0};
     assert(bn_transformer_cpu_route_prepared_kquant_pair_enabled(
                bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,

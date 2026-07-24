@@ -833,6 +833,9 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     size_t conv_per_layer = (size_t)(kern - 1) * qkv_dim;
     float *conv_state = s->ssm_conv_state + (size_t)ssm_idx * conv_per_layer;
     const BnCPUBackendOps *cpu_ops = cpu_backend_ops();
+    BnTransformerCPUSSMProjectionTypes ssm_types;
+    if (!bn_transformer_cpu_resolve_ssm_projection_types(&ssm_types, lw))
+        return;
 
     int ssm_prepared_kquant = 0;
     int n_sb_ssm = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
@@ -842,7 +845,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     int16_t ssm_prepared_kquant_block_sums[
         n_ssm_bsums > 0 ? n_ssm_bsums : 1];
     int ssm_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_pair_enabled(
-        cpu_ops, bn_model_gpu(m), dim, lw->ssm.wqkv.type, lw->ssm.wz.type);
+        cpu_ops, bn_model_gpu(m), dim, ssm_types.qkv_type, ssm_types.z_type);
     if (ssm_prepared_kquant_route) {
         cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, norm_eps,
                              s->xb, s->x_q, ssm_prepared_kquant_scales,
@@ -896,7 +899,7 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     };
     if (ssm_prepared_kquant &&
         bn_transformer_cpu_can_prepared_kquant_pair(
-            cpu_ops, lw->ssm.ssm_alpha.type, lw->ssm.ssm_beta.type)) {
+            cpu_ops, ssm_types.alpha_type, ssm_types.beta_type)) {
         cpu_quant_matvec_batch_prepared_kquant(m, ab, 2, s->x_q,
                                                ssm_prepared_kquant_scales,
                                                ssm_prepared_kquant_block_sums,
