@@ -1720,9 +1720,11 @@ void bn_transformer_gpu_emit_context_moe(BnTransformerGPUEmitContext *ctx,
                 em->gate_rows, 0, 0, 0, 0);
         } else {
             uint32_t gate_flags =
-                bn_transformer_gpu_matvec_kquant_dot_flags(em->gate_type, 1);
+                bn_transformer_gpu_moe_expert_projection_matvec_flags(
+                    em, 0, 1);
             uint32_t up_flags =
-                bn_transformer_gpu_matvec_kquant_dot_flags(em->up_type, 1);
+                bn_transformer_gpu_moe_expert_projection_matvec_flags(
+                    em, 1, 1);
             emit_context_matvec_flags(
                 ctx, em->gate_type, expert->buffers.gate, BN_GPU_VALUE_XB,
                 BN_GPU_VALUE_MOE_HB, em->gate_rows, em->gate_cols, 0,

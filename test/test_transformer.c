@@ -735,6 +735,25 @@ static void test_gpu_capability_routing(void) {
            BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
     assert(bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
                BN_GGUF_TENSOR_F32) == 0);
+    BnMoEExpertMap routed_projection_flags;
+    memset(&routed_projection_flags, 0, sizeof(routed_projection_flags));
+    routed_projection_flags.gate_type = BN_GGUF_TENSOR_Q4_K;
+    routed_projection_flags.up_type = BN_GGUF_TENSOR_Q8_0;
+    routed_projection_flags.down_type = BN_GGUF_TENSOR_Q4_K;
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
+               &routed_projection_flags, 0, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
+               &routed_projection_flags, 1, 1) == 0);
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
+               &routed_projection_flags, 2, 1) ==
+           BN_GPU_OP_FLAG_MATVEC_KQUANT_DOT);
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
+               &routed_projection_flags, 0, 0) == 0);
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
+               &routed_projection_flags, 3, 1) == 0);
+    assert(bn_transformer_gpu_moe_expert_projection_matvec_flags(
+               NULL, 0, 1) == 0);
     assert(bn_transformer_gpu_matvec_reference_kquant_flags(
                BN_GGUF_TENSOR_Q6_K, 1) ==
            BN_GPU_OP_FLAG_MATVEC_REFERENCE_KQUANT);

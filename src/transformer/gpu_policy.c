@@ -152,6 +152,27 @@ uint32_t bn_transformer_gpu_moe_route_raw_compare_matvec_flags(int tensor_type) 
     return bn_transformer_gpu_matvec_kquant_dot_flags(tensor_type, 1);
 }
 
+uint32_t bn_transformer_gpu_moe_expert_projection_matvec_flags(
+    const BnMoEExpertMap *map,
+    int proj,
+    int use_kquant_dot) {
+    if (!map)
+        return 0;
+    switch (proj) {
+    case 0:
+        return bn_transformer_gpu_matvec_kquant_dot_flags(map->gate_type,
+                                                          use_kquant_dot);
+    case 1:
+        return bn_transformer_gpu_matvec_kquant_dot_flags(map->up_type,
+                                                          use_kquant_dot);
+    case 2:
+        return bn_transformer_gpu_matvec_kquant_dot_flags(map->down_type,
+                                                          use_kquant_dot);
+    default:
+        return 0;
+    }
+}
+
 int bn_transformer_gpu_float_buffer_type(void) {
     return bn_backend_quant_gpu_float_buffer_type();
 }

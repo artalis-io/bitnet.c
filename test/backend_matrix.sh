@@ -5008,6 +5008,24 @@ if awk '
     fail=1
 fi
 
+if awk '
+    /bn_moe_make_qweight/ { window = $0; n = 4; next }
+    n > 0 { window = window " " $0; n-- }
+    window ~ /bn_moe_make_qweight/ &&
+    window ~ /(expert_map|em->(gate|up|down)_(type|rows|cols))/ { found = 1 }
+    END { exit found ? 0 : 1 }
+' src/transformer/gpu.c >/dev/null 2>&1; then
+    echo "GPU orchestration must compose routed expert projection weights through MoE policy helpers"
+    fail=1
+fi
+
+if grep -n 'bn_transformer_gpu_matvec_kquant_dot_flags(.*\(em->\(gate\|up\|down\)_type\|expert_map\.\(gate\|up\|down\)_type\)' \
+    src/transformer/gpu.c \
+    src/transformer/gpu_emit.c >/dev/null 2>&1; then
+    echo "GPU routed expert projection matvec flags must use MoE projection policy helpers"
+    fail=1
+fi
+
 if awk '/^int bn_moe_policy_can_batch_loaded_shared_gateup/{flag=1} /^int bn_moe_shared_expert_gateup_tasks/{flag=0} flag{print}' src/moe_policy.c | grep -n 'lw->shared\.shared_gate\.type\|lw->shared\.shared_up\.type' >/dev/null 2>&1; then
     echo "MoE shared gateup batching policy must use shared expert projection accessors"
     fail=1

@@ -175,12 +175,16 @@ static int gpu_debug_compute_moe_cpu_from_xb(
             free(down);
             return -1;
         }
-        BnQWeight wgate = bn_moe_make_qweight(
-            gate_data, em->gate_type, em->gate_rows, em->gate_cols);
-        BnQWeight wup = bn_moe_make_qweight(
-            up_data, em->up_type, em->up_rows, em->up_cols);
-        BnQWeight wdown = bn_moe_make_qweight(
-            down_data, em->down_type, em->down_rows, em->down_cols);
+        BnQWeight wgate, wup, wdown;
+        if (!bn_moe_expert_projection_weight(&wgate, gate_data, em, 0) ||
+            !bn_moe_expert_projection_weight(&wup, up_data, em, 1) ||
+            !bn_moe_expert_projection_weight(&wdown, down_data, em, 2)) {
+            free(expert_out);
+            free(hb);
+            free(hb2);
+            free(down);
+            return -1;
+        }
         BnMatvecTask gu_tasks[2] = {
             { hb,  &wgate, NULL, gateup_flags },
             { hb2, &wup,   NULL, gateup_flags },
@@ -266,12 +270,15 @@ static int gpu_debug_compute_moe_parts_cpu_from_xb(
             free(down);
             return -1;
         }
-        BnQWeight wgate = bn_moe_make_qweight(
-            gate_data, em->gate_type, em->gate_rows, em->gate_cols);
-        BnQWeight wup = bn_moe_make_qweight(
-            up_data, em->up_type, em->up_rows, em->up_cols);
-        BnQWeight wdown = bn_moe_make_qweight(
-            down_data, em->down_type, em->down_rows, em->down_cols);
+        BnQWeight wgate, wup, wdown;
+        if (!bn_moe_expert_projection_weight(&wgate, gate_data, em, 0) ||
+            !bn_moe_expert_projection_weight(&wup, up_data, em, 1) ||
+            !bn_moe_expert_projection_weight(&wdown, down_data, em, 2)) {
+            free(hb);
+            free(hb2);
+            free(down);
+            return -1;
+        }
         BnMatvecTask gu_tasks[2] = {
             { hb,  &wgate, NULL, gateup_flags },
             { hb2, &wup,   NULL, gateup_flags },
@@ -423,10 +430,13 @@ static int gpu_debug_compute_moe_mid_cpu_from_xb(
             free(hb2);
             return -1;
         }
-        BnQWeight wgate = bn_moe_make_qweight(
-            gate_data, em->gate_type, em->gate_rows, em->gate_cols);
-        BnQWeight wup = bn_moe_make_qweight(
-            up_data, em->up_type, em->up_rows, em->up_cols);
+        BnQWeight wgate, wup;
+        if (!bn_moe_expert_projection_weight(&wgate, gate_data, em, 0) ||
+            !bn_moe_expert_projection_weight(&wup, up_data, em, 1)) {
+            free(hb);
+            free(hb2);
+            return -1;
+        }
         BnMatvecTask gu_tasks[2] = {
             { hb,  &wgate, NULL, gateup_flags },
             { hb2, &wup,   NULL, gateup_flags },
@@ -469,10 +479,10 @@ static int gpu_debug_compute_moe_raw_all_cpu_from_xb(
             bn_model_moe_io(m), ms, em, eidx, 1);
         if (!gate_data || !up_data)
             return -1;
-        BnQWeight wgate = bn_moe_make_qweight(
-            gate_data, em->gate_type, em->gate_rows, em->gate_cols);
-        BnQWeight wup = bn_moe_make_qweight(
-            up_data, em->up_type, em->up_rows, em->up_cols);
+        BnQWeight wgate, wup;
+        if (!bn_moe_expert_projection_weight(&wgate, gate_data, em, 0) ||
+            !bn_moe_expert_projection_weight(&wup, up_data, em, 1))
+            return -1;
         BnMatvecTask gu_tasks[2] = {
             {
                 gate_out + (size_t)eidx * (size_t)moe_hidden,
@@ -1393,11 +1403,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     float *gpu_up = (float *)malloc(raw_bytes);
                     float route_save[BN_MAX_MOE_K * 2];
                     uint32_t gate_raw_compare_flags =
-                        bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
-                            lw->moe.expert_map.gate_type);
+                        bn_transformer_gpu_moe_expert_projection_matvec_flags(
+                            &lw->moe.expert_map, 0, 1);
                     uint32_t up_raw_compare_flags =
-                        bn_transformer_gpu_moe_route_raw_compare_matvec_flags(
-                            lw->moe.expert_map.up_type);
+                        bn_transformer_gpu_moe_expert_projection_matvec_flags(
+                            &lw->moe.expert_map, 1, 1);
                     if (!cpu_gate || !cpu_up || !gpu_gate || !gpu_up ||
                         K > BN_MAX_MOE_K ||
                         bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||

@@ -185,6 +185,10 @@ uint32_t bn_transformer_gpu_matvec_kquant_dot_flags(int tensor_type,
 uint32_t bn_transformer_gpu_matvec_reference_kquant_flags(int tensor_type,
                                                          int enabled);
 uint32_t bn_transformer_gpu_moe_route_raw_compare_matvec_flags(int tensor_type);
+uint32_t bn_transformer_gpu_moe_expert_projection_matvec_flags(
+    const BnMoEExpertMap *map,
+    int proj,
+    int use_kquant_dot);
 int bn_transformer_gpu_float_buffer_type(void);
 uint32_t bn_transformer_gpu_reference_silu_flags(int tensor_type,
                                              int use_silu);
