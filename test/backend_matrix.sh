@@ -108,6 +108,11 @@ if awk '/^static __device__ int cuda_backend_uses_prepared_native_quant_input/{f
     fail=1
 fi
 
+if sed -n '/^static __host__ __device__ int cuda_backend_supports_prepared_native_quant_input/,/^static __device__ int cuda_backend_uses_prepared_native_quant_input/p' src/gpu_cuda.cu | grep -n 'BN_GGUF_TENSOR_Q8_0' >/dev/null 2>&1; then
+    echo "src/gpu_cuda.cu must use backend quant helpers for prepared native-quant input support"
+    fail=1
+fi
+
 if awk '/^static __global__ void matvec_kernel/{flag=1} /^static __global__ void q8_0_matvec4_warp_kernel/{flag=0} flag{print}' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_' >/dev/null 2>&1 ||
    awk '/^static __global__ void matvec_batch_kernel/{flag=1} /^static __global__ void ffn_activation_kernel/{flag=0} flag{print}' src/gpu_cuda.cu | grep -n 'type == BN_GGUF_TENSOR_' >/dev/null 2>&1; then
     echo "src/gpu_cuda.cu matvec kernels must use cuda_dot_row for backend-private quant dispatch"

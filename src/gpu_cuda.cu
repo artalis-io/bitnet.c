@@ -2,6 +2,7 @@
 
 #ifdef BN_ENABLE_CUDA
 
+#include "backend_quant.h"
 #include "gguf.h"
 #include "model_config.h"
 #include "model_internal.h"
@@ -94,7 +95,7 @@ static __host__ __device__ int cuda_activation_is_silu(int act_type) {
 
 static __host__ __device__ int cuda_backend_supports_prepared_native_quant_input(
     int tensor_type) {
-    return tensor_type == BN_GGUF_TENSOR_Q8_0;
+    return tensor_type == BN_BACKEND_QUANT_NATIVE_QUANT_TENSOR_TYPE;
 }
 
 static __device__ int cuda_backend_uses_prepared_native_quant_input(
