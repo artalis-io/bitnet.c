@@ -150,16 +150,18 @@ static uint32_t prefill_float_kquant_fallback_task_flags(const BnModel *m) {
 static void prefill_quant_matmul_float_kquant_fallback(
         const BnModel *m, float **out, const BnQWeight **W, int n,
         const float *X, int n_tokens, int8_t *quantized_buf) {
-    const BnBackendModel *backend = bn_model_backend(m);
-    BnMatvecTask tasks[4];
-    if (n > 4)
+    BnTransformerPrefillQuantMatmulResourcePolicy resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            bn_model_backend(m), W, n, 4);
+    if (!resources.valid)
         return;
+    BnMatvecTask tasks[4];
     for (int t = 0; t < n_tokens; t++) {
         for (int i = 0; i < n; i++) {
             tasks[i] = (BnMatvecTask){
                 out[i] + (size_t)t * W[i]->rows,
                 W[i],
-                bn_backend_model_prepared_qweight(backend, W[i]),
+                resources.prepared[i],
                 prefill_float_kquant_fallback_task_flags(m)
             };
         }
@@ -191,9 +193,13 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
     }
     case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE:
     case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI: {
-        const BnBackendModel *backend = bn_model_backend(m);
+        BnTransformerPrefillQuantMatmulResourcePolicy resources =
+            bn_transformer_prefill_quant_matmul_resource_policy(
+                bn_model_backend(m), weights, 1, 1);
+        if (!resources.valid)
+            return;
         bn_transformer_prefill_quant_matmul_prepared(
-            out, W, bn_backend_model_prepared_qweight(backend, W),
+            out, W, resources.prepared[0],
             X, n_tokens, quantized_buf, bn_model_pool(m));
         return;
     }
@@ -240,45 +246,45 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                 m, out, W, n, X, n_tokens, quantized_buf);
             return;
         }
-        const BnBackendModel *backend = bn_model_backend(m);
-        const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
         if (dispatch.path == BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE) {
             for (int i = 0; i < n; i++)
                 prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens,
                                          quantized_buf);
             return;
         }
-        for (int i = 0; i < n; i++)
-            prepared[i] = bn_backend_model_prepared_qweight(backend, W[i]);
+        BnTransformerPrefillQuantMatmulResourcePolicy resources =
+            bn_transformer_prefill_quant_matmul_resource_policy(
+                bn_model_backend(m), W, n, 4);
+        if (!resources.valid)
+            return;
         bn_transformer_prefill_quant_matmul_prepared_multi(
-            out, W, prepared, n, X, n_tokens, quantized_buf,
+            out, W, resources.prepared, n, X, n_tokens, quantized_buf,
             bn_model_pool(m));
         return;
     }
     const BnBackendModel *backend = bn_model_backend(m);
+    BnTransformerPrefillQuantMatmulResourcePolicy resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            backend, W, n, 16);
     BnMatvecTask tasks[16];
     const void *bufs[16];
-    int all_bufs = backend != NULL;
     int gpu_batch_available =
         bn_transformer_prefill_quant_matmul_batch_gpu_available(
             bn_model_gpu(m), n, 1, 1, 1, 1);
-    if (n <= 16) {
+    if (resources.valid) {
         for (int i = 0; i < n; i++) {
             tasks[i] = (BnMatvecTask){ out[i], W[i], NULL, 0 };
-            bufs[i] =
-                backend ? prefill_qweight_backend_buf(backend, W[i]) : NULL;
-            if (!bufs[i])
-                all_bufs = 0;
+            bufs[i] = resources.gpu_buffers[i];
         }
-    } else {
-        all_bufs = 0;
     }
     BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
         bn_transformer_prefill_quant_matmul_dispatch_policy_for(
-            &m->config, W, n, 4, 1, gpu_batch_available, all_bufs);
+            &m->config, W, n, 4, 1, gpu_batch_available,
+            resources.all_gpu_buffers_available);
     if (!dispatch.valid)
         return;
-    if (dispatch.path == BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH) {
+    if (dispatch.path == BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH &&
+        resources.valid) {
         bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
             tasks, bufs, n, X, n_tokens, W[0]->cols, quantized_buf,
             bn_model_pool(m), bn_model_gpu(m));

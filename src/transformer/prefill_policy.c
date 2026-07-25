@@ -1,4 +1,5 @@
 #include "transformer_prefill_internal.h"
+#include "backend_model.h"
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
@@ -151,6 +152,37 @@ bn_transformer_prefill_quant_matmul_dispatch_policy_for(
         n_tasks, max_cpu_batch_tasks, gpu_available, gpu_batch_available,
         all_gpu_buffers_available, fallback_policy.enabled,
         prefill_all_weights_use_float_kquant_fallback(weights, n_tasks));
+}
+
+BnTransformerPrefillQuantMatmulResourcePolicy
+bn_transformer_prefill_quant_matmul_resource_policy(
+    const BnBackendModel *backend,
+    const BnQWeight *const *weights,
+    int n_tasks,
+    int max_tasks) {
+    BnTransformerPrefillQuantMatmulResourcePolicy policy = {0};
+    if (!weights || n_tasks <= 0 || max_tasks <= 0 ||
+        n_tasks > max_tasks ||
+        n_tasks > BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES)
+        return policy;
+
+    policy.valid = 1;
+    policy.n_tasks = n_tasks;
+    policy.all_gpu_buffers_available = backend != NULL;
+    for (int i = 0; i < n_tasks; i++) {
+        if (!weights[i]) {
+            policy.valid = 0;
+            policy.all_gpu_buffers_available = 0;
+            return policy;
+        }
+        policy.prepared[i] =
+            bn_backend_model_prepared_qweight(backend, weights[i]);
+        policy.gpu_buffers[i] =
+            bn_backend_model_qweight_buf(backend, weights[i]);
+        if (!policy.gpu_buffers[i])
+            policy.all_gpu_buffers_available = 0;
+    }
+    return policy;
 }
 
 BnTransformerPrefillSequencePolicy

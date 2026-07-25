@@ -1578,6 +1578,11 @@ static void test_gpu_policy_helpers(void) {
     assert(matmul_dispatch.valid);
     assert(matmul_dispatch.path ==
            BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_SINGLE);
+
+    BnTransformerPrefillQuantMatmulResourcePolicy matmul_resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            NULL, NULL, 1, 4);
+    assert(!matmul_resources.valid);
     BnQWeight q4k_weight = {0};
     q4k_weight.type = BN_GGUF_TENSOR_Q4_K;
     BnQWeight f32_weight = {0};
@@ -1586,6 +1591,42 @@ static void test_gpu_policy_helpers(void) {
         &q4k_weight,
         &q4k_weight
     };
+    matmul_resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            NULL, prefill_weights, 2, 4);
+    assert(matmul_resources.valid);
+    assert(matmul_resources.n_tasks == 2);
+    assert(matmul_resources.prepared[0] == NULL);
+    assert(matmul_resources.gpu_buffers[0] == NULL);
+    assert(!matmul_resources.all_gpu_buffers_available);
+
+    BnBackendModel *prefill_backend = bn_backend_model_create();
+    assert(prefill_backend);
+    BnPreparedWeight prefill_prepared = {0};
+    prefill_prepared.kind = BN_PREPARED_WEIGHT_Q4_K_SCALES;
+    int q4k_gpu_buf;
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &q4k_weight, &q4k_gpu_buf) == 0);
+    assert(bn_backend_model_register_prepared_qweight(
+               prefill_backend, &q4k_weight, &prefill_prepared) == 0);
+    matmul_resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            prefill_backend, prefill_weights, 2, 4);
+    assert(matmul_resources.valid);
+    assert(matmul_resources.n_tasks == 2);
+    assert(matmul_resources.prepared[0] != NULL);
+    assert(matmul_resources.prepared[0]->kind == prefill_prepared.kind);
+    assert(matmul_resources.gpu_buffers[0] == &q4k_gpu_buf);
+    assert(matmul_resources.all_gpu_buffers_available);
+    prefill_weights[1] = &f32_weight;
+    matmul_resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            prefill_backend, prefill_weights, 2, 4);
+    assert(matmul_resources.valid);
+    assert(!matmul_resources.all_gpu_buffers_available);
+    bn_backend_model_free(prefill_backend);
+
+    prefill_weights[1] = &q4k_weight;
     c.policy_flags = BN_MODEL_ARCH_POLICY_REQUIRES_FLOAT_KQUANT_FALLBACK;
     matmul_dispatch =
         bn_transformer_prefill_quant_matmul_dispatch_policy_for(

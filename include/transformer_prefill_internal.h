@@ -14,6 +14,9 @@
 #define BN_GPU_BACKEND_DECLARED
 typedef struct BnGPUBackend BnGPUBackend;
 #endif
+typedef struct BnBackendModel BnBackendModel;
+
+#define BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES 16
 
 typedef struct {
     float *hb;
@@ -132,6 +135,16 @@ typedef struct {
     int valid;
     BnTransformerPrefillQuantMatmulPath path;
 } BnTransformerPrefillQuantMatmulDispatchPolicy;
+
+typedef struct {
+    int valid;
+    int n_tasks;
+    const BnPreparedWeight *prepared[
+        BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES];
+    const void *gpu_buffers[
+        BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES];
+    int all_gpu_buffers_available;
+} BnTransformerPrefillQuantMatmulResourcePolicy;
 
 typedef struct {
     int enabled;
@@ -286,6 +299,12 @@ bn_transformer_prefill_quant_matmul_dispatch_policy_for(
     int gpu_available,
     int gpu_batch_available,
     int all_gpu_buffers_available);
+BnTransformerPrefillQuantMatmulResourcePolicy
+bn_transformer_prefill_quant_matmul_resource_policy(
+    const BnBackendModel *backend,
+    const BnQWeight *const *weights,
+    int n_tasks,
+    int max_tasks);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(
