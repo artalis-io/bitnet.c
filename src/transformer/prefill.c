@@ -1798,36 +1798,32 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 attn_norm_ready = 1;
             }
             if (raw_attn_policy.eligible) {
-                void *qk_buf = backend ? bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_QK_STACKED) : NULL;
-                void *wv_buf = backend ? bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_WV_PREFILL) : NULL;
-                if (!wv_buf)
-                    wv_buf = prefill_qweight_backend_buf(backend,
-                                                         &lw->attn.wv);
-                void *wo_buf = prefill_backend_role_or_qweight(
-                    backend, l, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
-                void *q_norm_buf = backend ? bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_Q_NORM) : NULL;
-                void *k_norm_buf = backend ? bn_backend_model_handle(
-                    backend, l, BN_BACKEND_HANDLE_K_NORM) : NULL;
+                BnTransformerPrefillRawAttentionGPUResourcePolicy
+                    raw_attn_resources =
+                        bn_transformer_prefill_raw_attention_gpu_resource_policy(
+                            backend, l, lw, attn_types);
                 t_prof = prefill_profile_now(&prof);
                 int qkv_fused_rc = -1;
                 BnTransformerPrefillRawAttentionCallPolicy raw_attn_call =
                     bn_transformer_prefill_raw_attention_call_policy(
                         raw_attn_policy);
-                if (qk_buf && wv_buf && wo_buf &&
+                if (raw_attn_resources.valid &&
                     raw_attn_call.preferred_kind ==
                         BN_TRANSFORMER_PREFILL_RAW_ATTENTION_NORM_RESID) {
                     qkv_fused_rc =
                         bn_transformer_gpu_prefill_qkv_attention_wo_norm_resid_backend_run(
-                        gpu, act, qk_buf, wv_buf, wo_buf, attn_norm_buf,
-                        q_norm_buf, k_norm_buf, act, K_new,
+                        gpu, act, (void *)raw_attn_resources.qk,
+                        (void *)raw_attn_resources.wv,
+                        (void *)raw_attn_resources.wo,
+                        (void *)raw_attn_resources.attn_norm,
+                        (void *)raw_attn_resources.q_norm,
+                        (void *)raw_attn_resources.k_norm, act, K_new,
                         V_new, n_tokens, dim, layer_n_heads,
                         layer_n_kv_heads, layer_head_size, layer_kv_mul,
-                        kv_dim, attn_types.q_rows + attn_types.k_rows,
-                        attn_types.q_type, attn_types.v_rows,
-                        attn_types.v_type, attn_types.out_rows,
+                        kv_dim, raw_attn_resources.qk_rows,
+                        raw_attn_resources.qk_type,
+                        raw_attn_resources.wv_rows,
+                        raw_attn_resources.wv_type, attn_types.out_rows,
                         attn_types.out_cols, attn_types.out_type,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
@@ -1846,16 +1842,20 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         t_prof = prefill_profile_now(&prof);
                     }
                 }
-                if (qkv_fused_rc != 0 && qk_buf && wv_buf && wo_buf) {
+                if (qkv_fused_rc != 0 && raw_attn_resources.valid) {
                     qkv_fused_rc =
                         bn_transformer_gpu_prefill_qkv_attention_wo_backend_run(
-                        gpu, Xb2, qk_buf, wv_buf, wo_buf,
-                        q_norm_buf, k_norm_buf, Xb, K_new, V_new,
+                        gpu, Xb2, (void *)raw_attn_resources.qk,
+                        (void *)raw_attn_resources.wv,
+                        (void *)raw_attn_resources.wo,
+                        (void *)raw_attn_resources.q_norm,
+                        (void *)raw_attn_resources.k_norm, Xb, K_new, V_new,
                         n_tokens, dim, layer_n_heads, layer_n_kv_heads,
                         layer_head_size, layer_kv_mul, kv_dim,
-                        attn_types.q_rows + attn_types.k_rows,
-                        attn_types.q_type, attn_types.v_rows,
-                        attn_types.v_type, attn_types.out_rows,
+                        raw_attn_resources.qk_rows,
+                        raw_attn_resources.qk_type,
+                        raw_attn_resources.wv_rows,
+                        raw_attn_resources.wv_type, attn_types.out_rows,
                         attn_types.out_cols, attn_types.out_type,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,

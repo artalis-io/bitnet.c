@@ -253,6 +253,40 @@ bn_transformer_prefill_attention_gpu_resource_policy(
     return policy;
 }
 
+BnTransformerPrefillRawAttentionGPUResourcePolicy
+bn_transformer_prefill_raw_attention_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    BnTransformerPrefillAttentionProjectionTypes attn_types) {
+    BnTransformerPrefillRawAttentionGPUResourcePolicy policy = {0};
+    BnTransformerPrefillSSMProjectionTypes unused_ssm_types = {0};
+    BnTransformerPrefillAttentionGPUResourcePolicy attn =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            backend, layer, lw, 0, attn_types, unused_ssm_types);
+    policy.qk = attn.qk;
+    policy.wv = attn.wv;
+    policy.wo = attn.wo;
+    policy.qk_rows = attn.qk_rows;
+    policy.qk_type = attn.qk_type;
+    policy.wv_rows = attn.wv_rows;
+    policy.wv_type = attn.wv_type;
+    policy.attn_norm =
+        backend ? bn_backend_model_handle(
+                      backend, layer, BN_BACKEND_HANDLE_ATTN_NORM)
+                : NULL;
+    policy.q_norm =
+        backend ? bn_backend_model_handle(
+                      backend, layer, BN_BACKEND_HANDLE_Q_NORM)
+                : NULL;
+    policy.k_norm =
+        backend ? bn_backend_model_handle(
+                      backend, layer, BN_BACKEND_HANDLE_K_NORM)
+                : NULL;
+    policy.valid = attn.valid;
+    return policy;
+}
+
 BnTransformerPrefillDenseFFNGPUResourcePolicy
 bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnBackendModel *backend,

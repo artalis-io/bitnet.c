@@ -59,6 +59,20 @@ typedef struct {
 } BnTransformerPrefillAttentionGPUResourcePolicy;
 
 typedef struct {
+    int valid;
+    const void *qk;
+    const void *wv;
+    const void *wo;
+    const void *attn_norm;
+    const void *q_norm;
+    const void *k_norm;
+    int qk_rows;
+    int qk_type;
+    int wv_rows;
+    int wv_type;
+} BnTransformerPrefillRawAttentionGPUResourcePolicy;
+
+typedef struct {
     int gate_type;
     int gate_rows;
     int gate_cols;
@@ -392,6 +406,12 @@ bn_transformer_prefill_attention_gpu_resource_policy(
     int has_packed_qkv,
     BnTransformerPrefillAttentionProjectionTypes attn_types,
     BnTransformerPrefillSSMProjectionTypes ssm_types);
+BnTransformerPrefillRawAttentionGPUResourcePolicy
+bn_transformer_prefill_raw_attention_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    BnTransformerPrefillAttentionProjectionTypes attn_types);
 BnTransformerPrefillDenseFFNGPUResourcePolicy
 bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnBackendModel *backend,
