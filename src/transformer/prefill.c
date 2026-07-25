@@ -622,22 +622,10 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         !layer_kind.uses_moe || n_tokens <= 0 || dim <= 0)
         return -1;
 
-    void *router_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
-    void *gate_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    void *up_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    void *down_all_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    void *ffn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-    if (!router_buf || !gate_all_buf || !up_all_buf || !down_all_buf ||
-        !ffn_norm_buf)
-        return -1;
-
-    BnTransformerGPUMoESharedFFNResources shared;
-    if (prefill_shared_expert_resources(&shared, c, lw, backend, layer) < 0)
+    BnTransformerPrefillMoEFFNGPUResourcePolicy resources =
+        bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+            backend, c, layer, lw);
+    if (!resources.valid)
         return -1;
     BnMoERoutePolicy route_policy = bn_moe_route_policy(c);
     int activation = bn_transformer_prefill_config_activation(c);
@@ -647,15 +635,17 @@ static int prefill_moe_ffn_gpu_batch(const BnModel *m,
         return -1;
 
     return bn_transformer_gpu_prefill_moe_ffn_batch_backend_run(
-        gpu, out, router_buf, gate_all_buf, up_all_buf, down_all_buf,
-        shared.gate, shared.up, shared.down,
-        shared.gate_weight, ffn_norm_buf, X, n_tokens, dim,
+        gpu, out, (void *)resources.router, (void *)resources.gate_all,
+        (void *)resources.up_all, (void *)resources.down_all,
+        (void *)resources.shared_gate, (void *)resources.shared_up,
+        (void *)resources.shared_down, (void *)resources.shared_gate_weight,
+        (void *)resources.ffn_norm, X, n_tokens, dim,
         route_policy.expert_hidden_dim, route_policy.total_experts,
         route_policy.active_experts,
         routed_types.gate_type, routed_types.up_type,
-        routed_types.down_type, activation,
-        shared.hidden_dim, shared.gate_type, shared.up_type,
-        shared.down_type, bn_transformer_prefill_norm_epsilon(c),
+        routed_types.down_type, activation, resources.shared_hidden_dim,
+        resources.shared_gate_type, resources.shared_up_type,
+        resources.shared_down_type, bn_transformer_prefill_norm_epsilon(c),
         route_policy.norm_topk_prob,
         route_policy.expert_weights_scale);
 }

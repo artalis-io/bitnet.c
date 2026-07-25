@@ -1942,6 +1942,23 @@ static void test_gpu_policy_helpers(void) {
     assert(prefill_moe_resources.wv_rows == 16);
     assert(prefill_moe_resources.wv_type == BN_GGUF_TENSOR_Q6_K);
 
+    BnTransformerPrefillMoEFFNGPUResourcePolicy prefill_moe_ffn_resources =
+        bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+            prefill_backend, &c, 3, &prefill_attn_lw);
+    assert(prefill_moe_ffn_resources.valid);
+    assert(prefill_moe_ffn_resources.router == &prefill_moe_router_handle);
+    assert(prefill_moe_ffn_resources.gate_all ==
+           &prefill_moe_gate_all_handle);
+    assert(prefill_moe_ffn_resources.up_all == &prefill_moe_up_all_handle);
+    assert(prefill_moe_ffn_resources.down_all ==
+           &prefill_moe_down_all_handle);
+    assert(prefill_moe_ffn_resources.ffn_norm ==
+           &prefill_moe_ffn_norm_handle);
+    assert(prefill_moe_ffn_resources.shared_gate == NULL);
+    assert(prefill_moe_ffn_resources.shared_up == NULL);
+    assert(prefill_moe_ffn_resources.shared_down == NULL);
+    assert(prefill_moe_ffn_resources.shared_gate_weight == NULL);
+
     assert(bn_backend_model_register_handle(
                prefill_backend, 4, BN_BACKEND_HANDLE_QK_STACKED,
                &prefill_moe_qk_handle) == 0);
@@ -1987,6 +2004,14 @@ static void test_gpu_policy_helpers(void) {
             prefill_backend, &c, 5, &prefill_attn_lw,
             prefill_attn_resource_types);
     assert(!prefill_moe_resources.valid);
+    prefill_moe_ffn_resources =
+        bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+            prefill_backend, &c, 5, &prefill_attn_lw);
+    assert(!prefill_moe_ffn_resources.valid);
+    prefill_moe_ffn_resources =
+        bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+            prefill_backend, &c, 3, NULL);
+    assert(!prefill_moe_ffn_resources.valid);
     prefill_moe_resources =
         bn_transformer_prefill_moe_layer_gpu_resource_policy(
             prefill_backend, &c, 3, NULL, prefill_attn_resource_types);

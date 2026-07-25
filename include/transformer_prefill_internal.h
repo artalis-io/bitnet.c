@@ -144,6 +144,23 @@ typedef struct {
 } BnTransformerPrefillMoELayerGPUResourcePolicy;
 
 typedef struct {
+    int valid;
+    const void *router;
+    const void *gate_all;
+    const void *up_all;
+    const void *down_all;
+    const void *shared_gate;
+    const void *shared_up;
+    const void *shared_down;
+    const void *shared_gate_weight;
+    const void *ffn_norm;
+    int shared_hidden_dim;
+    int shared_gate_type;
+    int shared_up_type;
+    int shared_down_type;
+} BnTransformerPrefillMoEFFNGPUResourcePolicy;
+
+typedef struct {
     int qkv_type;
     int qkv_rows;
     int qkv_cols;
@@ -457,6 +474,12 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
     int layer,
     const BnLayerWeights *lw,
     BnTransformerPrefillAttentionProjectionTypes attn_types);
+BnTransformerPrefillMoEFFNGPUResourcePolicy
+bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+    const BnBackendModel *backend,
+    const BnConfig *c,
+    int layer,
+    const BnLayerWeights *lw);
 BnTransformerPrefillSSMGPUResourcePolicy
 bn_transformer_prefill_ssm_gpu_resource_policy(
     const BnBackendModel *backend,

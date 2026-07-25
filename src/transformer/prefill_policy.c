@@ -462,6 +462,52 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
     return policy;
 }
 
+BnTransformerPrefillMoEFFNGPUResourcePolicy
+bn_transformer_prefill_moe_ffn_gpu_resource_policy(
+    const BnBackendModel *backend,
+    const BnConfig *c,
+    int layer,
+    const BnLayerWeights *lw) {
+    BnTransformerPrefillMoEFFNGPUResourcePolicy policy = {0};
+    if (!backend || !lw)
+        return policy;
+
+    policy.router =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    policy.gate_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    policy.up_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    policy.down_all =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    policy.ffn_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+
+    if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
+        BnTransformerGPUMoESharedFFNResources shared;
+        memset(&shared, 0, sizeof(shared));
+        if (!bn_transformer_gpu_resolve_moe_shared_ffn_resources(
+                &shared, backend, c, lw, layer, 0))
+            return policy;
+        policy.shared_gate = shared.gate;
+        policy.shared_up = shared.up;
+        policy.shared_down = shared.down;
+        policy.shared_gate_weight = shared.gate_weight;
+        policy.shared_hidden_dim = shared.hidden_dim;
+        policy.shared_gate_type = shared.gate_type;
+        policy.shared_up_type = shared.up_type;
+        policy.shared_down_type = shared.down_type;
+    }
+
+    policy.valid =
+        policy.router &&
+        policy.gate_all &&
+        policy.up_all &&
+        policy.down_all &&
+        policy.ffn_norm;
+    return policy;
+}
+
 BnTransformerPrefillSSMGPUResourcePolicy
 bn_transformer_prefill_ssm_gpu_resource_policy(
     const BnBackendModel *backend,
