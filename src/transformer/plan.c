@@ -572,6 +572,30 @@ int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
     return placement == BN_EXEC_GPU && layer_kind.uses_moe;
 }
 
+int bn_transformer_ssm_shape_policy(BnTransformerSSMShapePolicy *p,
+                                    const BnConfig *c) {
+    if (!p)
+        return 0;
+    memset(p, 0, sizeof(*p));
+    if (!c)
+        return 0;
+
+    p->num_k_heads = c->ssm_group_count;
+    p->head_k_dim = c->ssm_state_size;
+    p->num_v_heads = c->ssm_time_step_rank;
+    p->head_v_dim = c->ssm_inner_size /
+                    (p->num_v_heads > 0 ? p->num_v_heads : 1);
+    p->key_dim = p->num_k_heads * p->head_k_dim;
+    p->value_dim = c->ssm_inner_size;
+    p->qkv_dim = p->key_dim * 2 + p->value_dim;
+    p->conv_kernel = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
+
+    return p->num_k_heads > 0 && p->head_k_dim > 0 &&
+           p->num_v_heads > 0 && p->head_v_dim > 0 &&
+           p->value_dim > 0 && p->qkv_dim > 0 &&
+           p->conv_kernel > 1;
+}
+
 int bn_transformer_ssm_uses_qkvz_stack(
     BnExecPlacement placement,
     const void *qkvz_stacked) {

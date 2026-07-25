@@ -1008,25 +1008,22 @@ int bn_transformer_gpu_upload_ssm_state(BnModel *m, BnSession *sess) {
     if (!s->ssm_state || !s->ssm_conv_state) return -1;
 
     int n_ssm = bn_transformer_ssm_layer_count(c);
-    int num_v_heads = c->ssm_time_step_rank;
-    int head_k_dim = c->ssm_state_size;
-    if (n_ssm <= 0 || num_v_heads <= 0 || head_k_dim <= 0)
-        return -1;
-    int head_v_dim = c->ssm_inner_size / num_v_heads;
-    int qkv_dim = c->ssm_group_count * head_k_dim * 2 + c->ssm_inner_size;
-    int kern = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
-    if (head_v_dim <= 0 || qkv_dim <= 0 || kern <= 1)
+    BnTransformerSSMShapePolicy ssm_shape;
+    if (n_ssm <= 0 || !bn_transformer_ssm_shape_policy(&ssm_shape, c))
         return -1;
 
-    size_t state_values = (size_t)n_ssm * (size_t)num_v_heads *
-                          (size_t)head_k_dim * (size_t)head_v_dim;
+    size_t state_values = (size_t)n_ssm *
+                          (size_t)ssm_shape.num_v_heads *
+                          (size_t)ssm_shape.head_k_dim *
+                          (size_t)ssm_shape.head_v_dim;
     int rc = bn_gpu_backend_write_activation(
         gpu, BN_GPU_VALUE_SSM_STATE, s->ssm_state,
         state_values * sizeof(float), 0);
     if (rc != 0) return -1;
 
-    size_t conv_values = (size_t)n_ssm * (size_t)(kern - 1) *
-                         (size_t)qkv_dim;
+    size_t conv_values = (size_t)n_ssm *
+                         (size_t)(ssm_shape.conv_kernel - 1) *
+                         (size_t)ssm_shape.qkv_dim;
     return bn_gpu_backend_write_activation(
         gpu, BN_GPU_VALUE_SSM_CONV_STATE, s->ssm_conv_state,
         conv_values * sizeof(float), 0);
@@ -1568,20 +1565,19 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
                                          int dim,
                                          uint32_t u_eps) {
     int ssm_idx = plan->ssm_idx;
-    int num_k_heads = c->ssm_group_count;
-    int head_k_dim = c->ssm_state_size;
-    int num_v_heads = c->ssm_time_step_rank;
-    int head_v_dim = c->ssm_inner_size / (num_v_heads > 0 ? num_v_heads : 1);
-    int key_dim = num_k_heads * head_k_dim;
-    int value_dim = c->ssm_inner_size;
-    int qkv_dim_ssm = key_dim * 2 + value_dim;
-    int kern = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
-    size_t conv_off = (size_t)ssm_idx * (kern - 1) * qkv_dim_ssm;
-    size_t state_per = (size_t)num_v_heads * head_k_dim * head_v_dim;
+    BnTransformerSSMShapePolicy ssm_shape;
+    if (!bn_transformer_ssm_shape_policy(&ssm_shape, c))
+        return;
+    size_t conv_off = (size_t)ssm_idx *
+                      (size_t)(ssm_shape.conv_kernel - 1) *
+                      (size_t)ssm_shape.qkv_dim;
+    size_t state_per = (size_t)ssm_shape.num_v_heads *
+                       (size_t)ssm_shape.head_k_dim *
+                       (size_t)ssm_shape.head_v_dim;
     size_t state_off = (size_t)ssm_idx * state_per;
     uint32_t u_qscale;
     {
-        float qs = 1.0f / sqrtf((float)head_k_dim);
+        float qs = 1.0f / sqrtf((float)ssm_shape.head_k_dim);
         memcpy(&u_qscale, &qs, 4);
     }
     BnTransformerGPUSSMProjectionLayout ssm_layout;
@@ -1619,16 +1615,19 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
     }
 
     uint32_t ssm_conv_params[8] = {
-        (uint32_t)qkv_dim_ssm, (uint32_t)kern, (uint32_t)conv_off,
-        (uint32_t)((kern - 1) * qkv_dim_ssm), 0, 0, 0, 0
+        (uint32_t)ssm_shape.qkv_dim, (uint32_t)ssm_shape.conv_kernel,
+        (uint32_t)conv_off,
+        (uint32_t)((ssm_shape.conv_kernel - 1) * ssm_shape.qkv_dim),
+        0, 0, 0, 0
     };
     emit_context_ssm(ctx, BN_GPU_IR_SSM_CONV_SILU, BN_GPU_VALUE_SSM_QKV,
                      -1, -1, 0, ssm_conv1d, ssm_conv_params);
     uint32_t ssm_l2_params[8] = {
-        (uint32_t)head_k_dim, 0, (uint32_t)key_dim, 0, 0, 0, 0, 0
+        (uint32_t)ssm_shape.head_k_dim, 0, (uint32_t)ssm_shape.key_dim,
+        0, 0, 0, 0, 0
     };
     emit_context_ssm(ctx, BN_GPU_IR_SSM_L2NORM, BN_GPU_VALUE_SSM_QKV,
-                     BN_GPU_VALUE_SSM_QKV, -1, num_k_heads, NULL,
+                     BN_GPU_VALUE_SSM_QKV, -1, ssm_shape.num_k_heads, NULL,
                      ssm_l2_params);
 
     if (ssm_ab_stacked &&
@@ -1642,7 +1641,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
         _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
         uintptr_t a_ptr = (uintptr_t)ssm_a_log;
         uint32_t alpha_beta_split_params[8] = {
-            (uint32_t)num_v_heads, (uint32_t)ssm_layout.alpha_rows,
+            (uint32_t)ssm_shape.num_v_heads, (uint32_t)ssm_layout.alpha_rows,
             0, 0, 0, 0,
             (uint32_t)(a_ptr & 0xFFFFFFFF),
             (uint32_t)((uint64_t)a_ptr >> 32)
@@ -1664,7 +1663,7 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
         _Static_assert(sizeof(void*) <= 8, "pointer must fit in 2 x uint32_t");
         uintptr_t a_ptr = (uintptr_t)ssm_a_log;
         uint32_t alpha_beta_params[8] = {
-            (uint32_t)num_v_heads, 0, 0, 0, 0, 0,
+            (uint32_t)ssm_shape.num_v_heads, 0, 0, 0, 0, 0,
             (uint32_t)(a_ptr & 0xFFFFFFFF),
             (uint32_t)((uint64_t)a_ptr >> 32)
         };
@@ -1674,19 +1673,20 @@ void bn_transformer_gpu_emit_context_ssm(BnTransformerGPUEmitContext *ctx,
     }
 
     uint32_t ssm_delta_params[8] = {
-        (uint32_t)head_k_dim, (uint32_t)head_v_dim,
-        (uint32_t)num_k_heads, u_qscale,
+        (uint32_t)ssm_shape.head_k_dim, (uint32_t)ssm_shape.head_v_dim,
+        (uint32_t)ssm_shape.num_k_heads, u_qscale,
         (uint32_t)(state_off * sizeof(float)),
-        (uint32_t)(state_per * sizeof(float)), 0, (uint32_t)key_dim
+        (uint32_t)(state_per * sizeof(float)), 0,
+        (uint32_t)ssm_shape.key_dim
     };
     emit_context_ssm(ctx, BN_GPU_IR_SSM_DELTA, BN_GPU_VALUE_SSM_QKV,
-                     BN_GPU_VALUE_SSM_QKV, BN_GPU_VALUE_XB2, num_v_heads,
-                     NULL, ssm_delta_params);
+                     BN_GPU_VALUE_SSM_QKV, BN_GPU_VALUE_XB2,
+                     ssm_shape.num_v_heads, NULL, ssm_delta_params);
     uint32_t ssm_gate_params[8] = {
-        (uint32_t)head_v_dim, u_eps, 0, 0, 0, 0, 0, 0
+        (uint32_t)ssm_shape.head_v_dim, u_eps, 0, 0, 0, 0, 0, 0
     };
     emit_context_ssm(ctx, BN_GPU_IR_SSM_GATE, BN_GPU_VALUE_XB2,
-                     BN_GPU_VALUE_SSM_Z, -1, num_v_heads, ssm_norm,
+                     BN_GPU_VALUE_SSM_Z, -1, ssm_shape.num_v_heads, ssm_norm,
                      ssm_gate_params);
     bn_transformer_gpu_emit_context_matvec(
         ctx, ssm_layout.out_type,

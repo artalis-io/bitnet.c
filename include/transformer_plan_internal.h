@@ -129,6 +129,17 @@ typedef struct {
 } BnSSMPlan;
 
 typedef struct {
+    int num_k_heads;
+    int head_k_dim;
+    int num_v_heads;
+    int head_v_dim;
+    int key_dim;
+    int value_dim;
+    int qkv_dim;
+    int conv_kernel;
+} BnTransformerSSMShapePolicy;
+
+typedef struct {
     int layer;
     BnExecPlacement placement;
     BnBackendPlacement backend;
@@ -430,6 +441,8 @@ int bn_transformer_moe_has_loaded_shared_expert_path(
 int bn_transformer_moe_layer_has_router(const BnLayerWeights *lw);
 int bn_transformer_moe_requires_cpu_fallback(BnExecPlacement placement,
                                              const BnLayerWeights *lw);
+int bn_transformer_ssm_shape_policy(BnTransformerSSMShapePolicy *p,
+                                    const BnConfig *c);
 int bn_transformer_ssm_uses_qkvz_stack(
     BnExecPlacement placement,
     const void *qkvz_stacked);

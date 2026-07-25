@@ -1527,16 +1527,17 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
     int hb_stride = hidden_dim;
     int hb2_stride = hidden_dim;
     if (sequence_policy.uses_hybrid_ssm) {
-        int ssm_qkv_dim = c->ssm_group_count * c->ssm_state_size * 2 +
-                          c->ssm_inner_size;
-        if (ssm_qkv_dim > q_buf_stride)
-            q_buf_stride = ssm_qkv_dim;
-        if (c->ssm_inner_size > xb2_stride)
-            xb2_stride = c->ssm_inner_size;
-        if (c->ssm_inner_size > hb_stride)
-            hb_stride = c->ssm_inner_size;
-        if (c->ssm_inner_size > hb2_stride)
-            hb2_stride = c->ssm_inner_size;
+        BnTransformerSSMShapePolicy ssm_shape;
+        if (bn_transformer_ssm_shape_policy(&ssm_shape, c)) {
+            if (ssm_shape.qkv_dim > q_buf_stride)
+                q_buf_stride = ssm_shape.qkv_dim;
+            if (ssm_shape.value_dim > xb2_stride)
+                xb2_stride = ssm_shape.value_dim;
+            if (ssm_shape.value_dim > hb_stride)
+                hb_stride = ssm_shape.value_dim;
+            if (ssm_shape.value_dim > hb2_stride)
+                hb2_stride = ssm_shape.value_dim;
+        }
     }
     size_t nt = (size_t)n_tokens;
 
@@ -1792,17 +1793,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         }
                     }
                 } else {
-                    int num_k_heads = c->ssm_group_count;
-                    int head_k_dim = c->ssm_state_size;
-                    int num_v_heads = c->ssm_time_step_rank;
-                    int head_v_dim =
-                        c->ssm_inner_size /
-                        (num_v_heads > 0 ? num_v_heads : 1);
-                    int key_dim_ssm = num_k_heads * head_k_dim;
-                    int value_dim = c->ssm_inner_size;
-                    int qkv_dim_ssm = key_dim_ssm * 2 + value_dim;
-                    int kern_ssm =
-                        c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
+                    BnTransformerSSMShapePolicy ssm_shape;
+                    if (!bn_transformer_ssm_shape_policy(&ssm_shape, c)) {
+                        sh_arena_free(pf_arena);
+                        return NULL;
+                    }
                     BnTransformerPrefillLayerKindPolicy layer_kind =
                         bn_transformer_prefill_layer_kind_policy(lw);
                     int r_is_moe = layer_kind.uses_moe;
@@ -1811,9 +1806,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     int ssm_did_ffn = 0;
                     if (prefill_ssm_layer_gpu(
                             m, ssm_out, lw, layer_in, n_tokens, dim,
-                            qkv_dim_ssm, value_dim, num_k_heads,
-                            head_k_dim, num_v_heads, head_v_dim, kern_ssm,
-                            plan.ssm_idx, l, !r_is_moe, norm_eps,
+                            ssm_shape.qkv_dim, ssm_shape.value_dim,
+                            ssm_shape.num_k_heads, ssm_shape.head_k_dim,
+                            ssm_shape.num_v_heads, ssm_shape.head_v_dim,
+                            ssm_shape.conv_kernel, plan.ssm_idx, l,
+                            !r_is_moe, norm_eps,
                             &ssm_did_ffn) != 0 || (!r_is_moe && !ssm_did_ffn)) {
                         sh_arena_free(pf_arena);
                         return NULL;
@@ -2345,14 +2342,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             prefill_profile_add(&prof.residual_ms, t_prof);
 
         } else if (!is_attn) {
-            int num_k_heads = c->ssm_group_count;
-            int head_k_dim = c->ssm_state_size;
-            int num_v_heads = c->ssm_time_step_rank;
-            int head_v_dim = c->ssm_inner_size / (num_v_heads > 0 ? num_v_heads : 1);
-            int key_dim_ssm = num_k_heads * head_k_dim;
-            int value_dim = c->ssm_inner_size;
-            int qkv_dim_ssm = key_dim_ssm * 2 + value_dim;
-            int kern_ssm = c->ssm_conv_kernel > 0 ? c->ssm_conv_kernel : 4;
+            BnTransformerSSMShapePolicy ssm_shape;
+            if (!bn_transformer_ssm_shape_policy(&ssm_shape, c)) {
+                sh_arena_free(pf_arena);
+                return NULL;
+            }
             int ssm_idx = plan.ssm_idx;
 
             if (bn_transformer_prefill_ssm_run_chain_enabled() &&
@@ -2390,10 +2384,11 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         const float *layer_in = (rl == l) ? act : NULL;
                         if (prefill_ssm_layer_gpu(
                                 m, layer_out, rlw, layer_in, n_tokens, dim,
-                                qkv_dim_ssm, value_dim, num_k_heads,
-                                head_k_dim, num_v_heads, head_v_dim,
-                                kern_ssm, rplan.ssm_idx, rl, !r_is_moe,
-                                norm_eps, &r_did_ffn) != 0 ||
+                                ssm_shape.qkv_dim, ssm_shape.value_dim,
+                                ssm_shape.num_k_heads, ssm_shape.head_k_dim,
+                                ssm_shape.num_v_heads, ssm_shape.head_v_dim,
+                                ssm_shape.conv_kernel, rplan.ssm_idx, rl,
+                                !r_is_moe, norm_eps, &r_did_ffn) != 0 ||
                             (!r_is_moe && !r_did_ffn)) {
                             sh_arena_free(pf_arena);
                             return NULL;
@@ -2414,16 +2409,22 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
             }
 
-            size_t state_per_layer = (size_t)num_v_heads * head_k_dim * head_v_dim;
+            size_t state_per_layer = (size_t)ssm_shape.num_v_heads *
+                                     ssm_shape.head_k_dim *
+                                     ssm_shape.head_v_dim;
             float *ssm_state = s->ssm_state + (size_t)ssm_idx * state_per_layer;
-            size_t conv_per_layer = (size_t)(kern_ssm - 1) * qkv_dim_ssm;
+            size_t conv_per_layer =
+                (size_t)(ssm_shape.conv_kernel - 1) * ssm_shape.qkv_dim;
             float *conv_state = s->ssm_conv_state + (size_t)ssm_idx * conv_per_layer;
 
             int ssm_did_ffn = 0;
             if (prefill_ssm_layer_gpu(m, act, lw, act, n_tokens, dim,
-                                      qkv_dim_ssm, value_dim, num_k_heads,
-                                      head_k_dim, num_v_heads, head_v_dim,
-                                      kern_ssm, ssm_idx, l,
+                                      ssm_shape.qkv_dim, ssm_shape.value_dim,
+                                      ssm_shape.num_k_heads,
+                                      ssm_shape.head_k_dim,
+                                      ssm_shape.num_v_heads,
+                                      ssm_shape.head_v_dim,
+                                      ssm_shape.conv_kernel, ssm_idx, l,
                                       n_tokens >=
                                           bn_transformer_prefill_moe_chain_min_tokens(
                                               c, bn_model_gpu(m)),
@@ -2439,7 +2440,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                                            lw->norm.attn_norm, dim,
                                            norm_eps);
 
-            if (q_buf_stride < qkv_dim_ssm) { sh_arena_free(pf_arena); return NULL; }
+            if (q_buf_stride < ssm_shape.qkv_dim) { sh_arena_free(pf_arena); return NULL; }
             float *QKV_all = Q_buf;
             float *Z_all = Xb2;
             float *Out_all = Hb;
@@ -2474,31 +2475,34 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
             for (int t = 0; t < n_tokens; t++) {
                 float *qkv_t = QKV_all + (size_t)t * ssm_types.qkv_rows;
                 float *z_t = Z_all + (size_t)t * ssm_types.z_rows;
-                float *out_t = Out_all + (size_t)t * value_dim;
+                float *out_t = Out_all + (size_t)t * ssm_shape.value_dim;
                 float *xb_t = Xb + (size_t)t * dim;
 
                 BnSSMConvCtx conv_ctx = { qkv_t, conv_state, lw->ssm.ssm_conv1d,
-                                          qkv_dim_ssm, kern_ssm };
+                                          ssm_shape.qkv_dim,
+                                          ssm_shape.conv_kernel };
                 BnTPTask conv_task = {
                     bn_transformer_prefill_ssm_conv_silu_op(c, ssm_cpu_ops),
-                    &conv_ctx, qkv_dim_ssm
+                    &conv_ctx, ssm_shape.qkv_dim
                 };
                 bn_tp_dispatch(bn_model_pool(m), &conv_task, 1);
 
                 float *q_raw = qkv_t;
-                float *k_raw = qkv_t + key_dim_ssm;
-                float *v_raw = qkv_t + 2 * key_dim_ssm;
+                float *k_raw = qkv_t + ssm_shape.key_dim;
+                float *v_raw = qkv_t + 2 * ssm_shape.key_dim;
 
-                BnSSML2NormCtx norm_ctx = { q_raw, k_raw, norm_eps, head_k_dim };
+                BnSSML2NormCtx norm_ctx = {
+                    q_raw, k_raw, norm_eps, ssm_shape.head_k_dim
+                };
                 BnTPTask norm_task = {
                     bn_transformer_prefill_ssm_l2norm_op(c, ssm_cpu_ops),
-                    &norm_ctx, num_k_heads
+                    &norm_ctx, ssm_shape.num_k_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &norm_task, 1);
 
-                if (num_v_heads > BN_MAX_VLA_ELEMS) continue;
-                float alpha_arr[num_v_heads > 0 ? num_v_heads : 1];
-                float beta_arr[num_v_heads > 0 ? num_v_heads : 1];
+                if (ssm_shape.num_v_heads > BN_MAX_VLA_ELEMS) continue;
+                float alpha_arr[ssm_shape.num_v_heads];
+                float beta_arr[ssm_shape.num_v_heads];
                 BnMatvecTask ab[2] = {
                     { alpha_arr, &lw->ssm.ssm_alpha, NULL, 0 },
                     { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
@@ -2513,30 +2517,31 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     bn_transformer_prefill_quant_matvec_batch(
                         ab, 2, xb_t, s->x_q, bn_model_pool(m));
                 }
-                for (int h = 0; h < num_v_heads; h++) {
+                for (int h = 0; h < ssm_shape.num_v_heads; h++) {
                     float dt = alpha_arr[h] + lw->ssm.ssm_dt_bias[h];
                     float dt_sp = (dt > 20.0f) ? dt : logf(1.0f + expf(dt));
                     alpha_arr[h] = expf(dt_sp * lw->ssm.ssm_a[h]);
                     beta_arr[h] = 1.0f / (1.0f + expf(-beta_arr[h]));
                 }
 
-                float q_scale = 1.0f / sqrtf((float)head_k_dim);
+                float q_scale = 1.0f / sqrtf((float)ssm_shape.head_k_dim);
                 BnSSMDeltaCtx delta_ctx = {
                     ssm_state, out_t, q_raw, k_raw, v_raw,
                     alpha_arr, beta_arr,
-                    num_k_heads, head_k_dim, head_v_dim, q_scale
+                    ssm_shape.num_k_heads, ssm_shape.head_k_dim,
+                    ssm_shape.head_v_dim, q_scale
                 };
                 BnTPTask delta_task = {
                     bn_transformer_prefill_ssm_delta_op(c, ssm_cpu_ops),
-                    &delta_ctx, num_v_heads
+                    &delta_ctx, ssm_shape.num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &delta_task, 1);
 
                 BnSSMGateCtx gate_ctx = { out_t, z_t, lw->ssm.ssm_norm,
-                                          norm_eps, head_v_dim };
+                                          norm_eps, ssm_shape.head_v_dim };
                 BnTPTask gate_task = {
                     bn_transformer_prefill_ssm_gate_op(c, ssm_cpu_ops),
-                    &gate_ctx, num_v_heads
+                    &gate_ctx, ssm_shape.num_v_heads
                 };
                 bn_tp_dispatch(bn_model_pool(m), &gate_task, 1);
             }
