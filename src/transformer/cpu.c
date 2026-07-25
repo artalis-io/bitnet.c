@@ -411,16 +411,20 @@ int bn_transformer_cpu_forward_layer(BnModel *m, BnSession *sess, int l, int pos
 
         /* Prepared K-quant attn RMSNorm: quantize s->xb once, reuse for Q and K+V */
         int attn_prepared_kquant = 0;
-        int attn_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_triple_enabled(
-            cpu_ops, bn_model_gpu(m), dim,
-            attn_types.q_type, attn_types.k_type, attn_types.v_type);
+        int attn_prepared_kquant_types[3] = {
+            attn_types.q_type, attn_types.k_type, attn_types.v_type
+        };
+        BnTransformerCPUPreparedKQuantRoutePolicy attn_prepared_kquant_route =
+            bn_transformer_cpu_prepared_kquant_route_policy(
+                cpu_ops, bn_model_gpu(m), dim,
+                attn_prepared_kquant_types, 3, 3);
         int n_sb_attn = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
         int n_attn_bsums =
             bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb_attn);
         float attn_prepared_kquant_scales[n_sb_attn > 0 ? n_sb_attn : 1];
         int16_t attn_prepared_kquant_block_sums[
             n_attn_bsums > 0 ? n_attn_bsums : 1];
-        if (attn_prepared_kquant_route) {
+        if (attn_prepared_kquant_route.enabled) {
             cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, norm_eps,
                                  s->xb, s->x_q, attn_prepared_kquant_scales,
                                  attn_prepared_kquant_block_sums);
@@ -843,9 +847,13 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
     float ssm_prepared_kquant_scales[n_sb_ssm > 0 ? n_sb_ssm : 1];
     int16_t ssm_prepared_kquant_block_sums[
         n_ssm_bsums > 0 ? n_ssm_bsums : 1];
-    int ssm_prepared_kquant_route = bn_transformer_cpu_route_prepared_kquant_pair_enabled(
-        cpu_ops, bn_model_gpu(m), dim, ssm_types.qkv_type, ssm_types.z_type);
-    if (ssm_prepared_kquant_route) {
+    int ssm_qz_prepared_kquant_types[2] = {
+        ssm_types.qkv_type, ssm_types.z_type
+    };
+    BnTransformerCPUPreparedKQuantRoutePolicy ssm_qz_prepared_kquant_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            cpu_ops, bn_model_gpu(m), dim, ssm_qz_prepared_kquant_types, 2, 2);
+    if (ssm_qz_prepared_kquant_route.enabled) {
         cpu_ops->rmsnorm_prepared_kquant(s->x, lw->norm.attn_norm, dim, norm_eps,
                              s->xb, s->x_q, ssm_prepared_kquant_scales,
                              ssm_prepared_kquant_block_sums);
@@ -902,9 +910,13 @@ void bn_transformer_cpu_forward_ssm_block(BnModel *m,
          { alpha_arr, &lw->ssm.ssm_alpha, NULL, 0 },
         { beta_arr,  &lw->ssm.ssm_beta, NULL, 0 },
     };
-    if (ssm_prepared_kquant &&
-        bn_transformer_cpu_can_prepared_kquant_pair(
-            cpu_ops, ssm_types.alpha_type, ssm_types.beta_type)) {
+    int ssm_ab_prepared_kquant_types[2] = {
+        ssm_types.alpha_type, ssm_types.beta_type
+    };
+    BnTransformerCPUPreparedKQuantRoutePolicy ssm_ab_prepared_kquant_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            cpu_ops, bn_model_gpu(m), dim, ssm_ab_prepared_kquant_types, 2, 2);
+    if (ssm_prepared_kquant && ssm_ab_prepared_kquant_route.enabled) {
         cpu_quant_matvec_batch_prepared_kquant(m, ab, 2, s->x_q,
                                                ssm_prepared_kquant_scales,
                                                ssm_prepared_kquant_block_sums,
@@ -993,9 +1005,13 @@ void bn_transformer_cpu_forward_ffn_block(BnModel *m,
         }
     }
 
-    if (ffn_plan->has_gate &&
-        bn_transformer_cpu_route_prepared_kquant_pair_enabled(
-            cpu_ops, gpu, dim, ffn_types.gate_type, ffn_types.up_type)) {
+    int ffn_prepared_kquant_types[2] = {
+        ffn_types.gate_type, ffn_types.up_type
+    };
+    BnTransformerCPUPreparedKQuantRoutePolicy ffn_prepared_kquant_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            cpu_ops, gpu, dim, ffn_prepared_kquant_types, 2, 2);
+    if (ffn_plan->has_gate && ffn_prepared_kquant_route.enabled) {
         int n_sb = bn_transformer_cpu_prepared_kquant_blocks_per_row(dim);
         int n_bsums =
             bn_transformer_cpu_prepared_kquant_block_sums_per_row(n_sb);

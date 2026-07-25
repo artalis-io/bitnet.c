@@ -67,6 +67,10 @@ typedef struct {
     int beta_type;
 } BnTransformerCPUSSMProjectionTypes;
 
+typedef struct {
+    int enabled;
+} BnTransformerCPUPreparedKQuantRoutePolicy;
+
 const BnCPUBackendOps *bn_transformer_cpu_backend_ops(void);
 int bn_transformer_cpu_prepared_qweights_enabled(void);
 const char *bn_transformer_cpu_debug_dump_path(void);
@@ -81,6 +85,14 @@ int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
                                          int first_type,
                                          int second_type,
                                          int third_type);
+BnTransformerCPUPreparedKQuantRoutePolicy
+bn_transformer_cpu_prepared_kquant_route_policy(
+    const BnCPUBackendOps *ops,
+    const BnGPUBackend *gpu,
+    int dim,
+    const int *tensor_types,
+    int n_types,
+    int max_types);
 int bn_transformer_cpu_prepared_kquant_blocks_per_row(int dim);
 int bn_transformer_cpu_prepared_kquant_block_sums_per_row(int blocks_per_row);
 int bn_transformer_cpu_route_prepared_kquant_pair_enabled(

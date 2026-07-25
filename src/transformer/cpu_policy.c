@@ -72,6 +72,28 @@ int bn_transformer_cpu_can_prepared_kquant_triple(const BnCPUBackendOps *ops,
            bn_backend_quant_supports_prepared_kquant(third_type);
 }
 
+BnTransformerCPUPreparedKQuantRoutePolicy
+bn_transformer_cpu_prepared_kquant_route_policy(
+    const BnCPUBackendOps *ops,
+    const BnGPUBackend *gpu,
+    int dim,
+    const int *tensor_types,
+    int n_types,
+    int max_types) {
+    BnTransformerCPUPreparedKQuantRoutePolicy policy = {0};
+    if (!ops || !ops->supports_prepared_kquant || gpu || !tensor_types ||
+        n_types <= 0 || max_types <= 0 || n_types > max_types ||
+        bn_transformer_cpu_prepared_kquant_blocks_per_row(dim) <= 0)
+        return policy;
+
+    for (int i = 0; i < n_types; i++) {
+        if (!bn_backend_quant_supports_prepared_kquant(tensor_types[i]))
+            return policy;
+    }
+    policy.enabled = 1;
+    return policy;
+}
+
 int bn_transformer_cpu_prepared_kquant_blocks_per_row(int dim) {
     return bn_backend_quant_prepared_kquant_blocks_per_row(dim);
 }
@@ -86,9 +108,9 @@ int bn_transformer_cpu_route_prepared_kquant_pair_enabled(
     int dim,
     int left_type,
     int right_type) {
-    return !gpu &&
-           bn_transformer_cpu_prepared_kquant_blocks_per_row(dim) > 0 &&
-           bn_transformer_cpu_can_prepared_kquant_pair(ops, left_type, right_type);
+    int tensor_types[2] = { left_type, right_type };
+    return bn_transformer_cpu_prepared_kquant_route_policy(
+               ops, gpu, dim, tensor_types, 2, 2).enabled;
 }
 
 int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
@@ -98,10 +120,9 @@ int bn_transformer_cpu_route_prepared_kquant_triple_enabled(
     int first_type,
     int second_type,
     int third_type) {
-    return !gpu &&
-           bn_transformer_cpu_prepared_kquant_blocks_per_row(dim) > 0 &&
-           bn_transformer_cpu_can_prepared_kquant_triple(ops, first_type, second_type,
-                                                third_type);
+    int tensor_types[3] = { first_type, second_type, third_type };
+    return bn_transformer_cpu_prepared_kquant_route_policy(
+               ops, gpu, dim, tensor_types, 3, 3).enabled;
 }
 
 int bn_transformer_cpu_route_fused_kquant_gateup_silu_enabled(

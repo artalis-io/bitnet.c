@@ -4747,6 +4747,35 @@ static void test_block_planning(void) {
     assert(!bn_transformer_cpu_route_prepared_kquant_triple_enabled(
         bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q8_0));
+    int cpu_prepared_group[3] = {
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K, BN_GGUF_TENSOR_Q6_K
+    };
+    BnTransformerCPUPreparedKQuantRoutePolicy cpu_prepared_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
+            cpu_prepared_group, 3, 4);
+    assert(cpu_prepared_route.enabled == supports_prepared_kquant);
+    cpu_prepared_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            bn_transformer_cpu_backend_ops(), &route_gpu, BN_QK_K,
+            cpu_prepared_group, 3, 4);
+    assert(!cpu_prepared_route.enabled);
+    cpu_prepared_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            bn_transformer_cpu_backend_ops(), NULL, BN_QK_K - 1,
+            cpu_prepared_group, 3, 4);
+    assert(!cpu_prepared_route.enabled);
+    cpu_prepared_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
+            cpu_prepared_group, 5, 4);
+    assert(!cpu_prepared_route.enabled);
+    cpu_prepared_group[2] = BN_GGUF_TENSOR_Q8_0;
+    cpu_prepared_route =
+        bn_transformer_cpu_prepared_kquant_route_policy(
+            bn_transformer_cpu_backend_ops(), NULL, BN_QK_K,
+            cpu_prepared_group, 3, 4);
+    assert(!cpu_prepared_route.enabled);
 
     BnFFNPlan ffn_plan = {0};
     ffn_plan.activation = 0;
