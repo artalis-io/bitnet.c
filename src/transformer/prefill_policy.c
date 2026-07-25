@@ -204,6 +204,55 @@ const void *bn_transformer_prefill_backend_role_or_qweight_policy(
                                                                   weight);
 }
 
+BnTransformerPrefillAttentionGPUResourcePolicy
+bn_transformer_prefill_attention_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    int has_packed_qkv,
+    BnTransformerPrefillAttentionProjectionTypes attn_types,
+    BnTransformerPrefillSSMProjectionTypes ssm_types) {
+    BnTransformerPrefillAttentionGPUResourcePolicy policy = {0};
+    if (!lw)
+        return policy;
+
+    policy.uses_packed_qkv = has_packed_qkv;
+    if (has_packed_qkv) {
+        policy.qk =
+            bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
+                                                             &lw->ssm.wqkv);
+        policy.qk_rows = ssm_types.qkv_rows;
+        policy.qk_type = ssm_types.qkv_type;
+        policy.wv_rows = 0;
+        policy.wv_type = policy.qk_type;
+    } else {
+        policy.qk = backend
+                        ? bn_backend_model_handle(
+                              backend, layer,
+                              BN_BACKEND_HANDLE_QK_STACKED)
+                        : NULL;
+        policy.wv = backend
+                        ? bn_backend_model_handle(
+                              backend, layer,
+                              BN_BACKEND_HANDLE_WV_PREFILL)
+                        : NULL;
+        if (!policy.wv)
+            policy.wv =
+                bn_transformer_prefill_qweight_gpu_buffer_policy(
+                    backend, &lw->attn.wv);
+        policy.qk_rows = attn_types.q_rows + attn_types.k_rows;
+        policy.qk_type = attn_types.q_type;
+        policy.wv_rows = attn_types.v_rows;
+        policy.wv_type = attn_types.v_type;
+    }
+
+    policy.wo = bn_transformer_prefill_backend_role_or_qweight_policy(
+        backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
+    policy.valid = policy.qk && policy.wo &&
+                   (policy.uses_packed_qkv || policy.wv);
+    return policy;
+}
+
 BnTransformerPrefillDenseFFNGPUResourcePolicy
 bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnBackendModel *backend,

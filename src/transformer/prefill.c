@@ -503,32 +503,9 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         return -1;
     int activation = bn_transformer_prefill_config_activation(&m->config);
 
-    void *qk_buf = NULL;
-    void *wv_buf = NULL;
-    int qk_rows = 0;
-    int qk_type = 0;
-    int wv_rows = 0;
-    int wv_type = 0;
-    if (has_packed_qkv) {
-        qk_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
-        qk_rows = ssm_types.qkv_rows;
-        qk_type = ssm_types.qkv_type;
-        wv_rows = 0;
-        wv_type = qk_type;
-    } else {
-        qk_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-        wv_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-        if (!wv_buf)
-            wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
-        qk_rows = attn_types.q_rows + attn_types.k_rows;
-        qk_type = attn_types.q_type;
-        wv_rows = attn_types.v_rows;
-        wv_type = attn_types.v_type;
-    }
-    void *wo_buf = prefill_backend_role_or_qweight(
-        backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
+    BnTransformerPrefillAttentionGPUResourcePolicy attn_resources =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            backend, layer, lw, has_packed_qkv, attn_types, ssm_types);
     BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
         bn_transformer_prefill_dense_ffn_gpu_resource_policy(
             backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
@@ -547,8 +524,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_K_BIAS);
     void *v_bias_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_V_BIAS);
-    if (!qk_buf || (!has_packed_qkv && !wv_buf) || !wo_buf ||
-        !ffn_resources.valid ||
+    if (!attn_resources.valid || !ffn_resources.valid ||
         !attn_norm_buf || !ffn_norm_buf ||
         (lw->attn.q_bias && !q_bias_buf) ||
         (lw->attn.k_bias && !k_bias_buf) ||
@@ -556,14 +532,16 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         return -1;
 
     return bn_transformer_gpu_prefill_dense_layer_backend_run(
-        gpu, out, qk_buf, wv_buf, wo_buf, (void *)ffn_resources.gate,
+        gpu, out, (void *)attn_resources.qk, (void *)attn_resources.wv,
+        (void *)attn_resources.wo, (void *)ffn_resources.gate,
         (void *)ffn_resources.up, (void *)ffn_resources.down,
         attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf,
         q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
-        hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
-        qk_type, wv_rows, wv_type, attn_types.out_rows, attn_types.out_cols,
-        attn_types.out_type, ffn_types.gate_type, ffn_types.up_type,
-        ffn_types.down_type, activation,
+        hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim,
+        attn_resources.qk_rows, attn_resources.qk_type,
+        attn_resources.wv_rows, attn_resources.wv_type, attn_types.out_rows,
+        attn_types.out_cols, attn_types.out_type, ffn_types.gate_type,
+        ffn_types.up_type, ffn_types.down_type, activation,
         qk_norm_per_head,
         bn_transformer_prefill_norm_epsilon(&m->config), pos0, rope_dims,
         kv_cache_off, kv_cache_stride, attention_scale);
@@ -824,6 +802,13 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     BnTransformerPrefillFFNProjectionTypes ffn_types;
     if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
         return 0;
+    BnTransformerPrefillAttentionProjectionTypes attn_types;
+    if (!bn_transformer_prefill_resolve_attention_projection_types(
+            &attn_types, lw))
+        return 0;
+    BnTransformerPrefillSSMProjectionTypes ssm_types;
+    if (!bn_transformer_prefill_resolve_ssm_projection_types(&ssm_types, lw))
+        return 0;
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
     int q_dim = plan->q_dim > 0 ? plan->q_dim
@@ -862,20 +847,9 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     if (!policy.enabled)
         return 0;
 
-    void *qk_buf = NULL;
-    void *wv_buf = NULL;
-    if (has_packed_qkv) {
-        qk_buf = prefill_qweight_backend_buf(backend, &lw->ssm.wqkv);
-    } else {
-        qk_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-        wv_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
-        if (!wv_buf)
-            wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
-    }
-    void *wo_buf = prefill_backend_role_or_qweight(
-        backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
+    BnTransformerPrefillAttentionGPUResourcePolicy attn_resources =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            backend, layer, lw, has_packed_qkv, attn_types, ssm_types);
     BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
         bn_transformer_prefill_dense_ffn_gpu_resource_policy(
             backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
@@ -890,8 +864,8 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_K_BIAS);
     void *v_bias_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_V_BIAS);
-    return qk_buf && (has_packed_qkv || wv_buf) && wo_buf &&
-           ffn_resources.valid && attn_norm_buf && ffn_norm_buf &&
+    return attn_resources.valid && ffn_resources.valid &&
+           attn_norm_buf && ffn_norm_buf &&
            (!lw->attn.q_bias || q_bias_buf) &&
            (!lw->attn.k_bias || k_bias_buf) &&
            (!lw->attn.v_bias || v_bias_buf);

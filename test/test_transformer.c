@@ -1630,6 +1630,85 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_prefill_backend_role_or_qweight_policy(
                prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
                &q4k_weight) == &prefill_role_buf);
+    BnLayerWeights prefill_attn_lw = {0};
+    BnQWeight prefill_wv_weight = {0};
+    BnQWeight prefill_wo_weight = {0};
+    BnQWeight prefill_wqkv_weight = {0};
+    prefill_wv_weight.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_wo_weight.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_wqkv_weight.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_attn_lw.attn.wv = prefill_wv_weight;
+    prefill_attn_lw.attn.wo = prefill_wo_weight;
+    prefill_attn_lw.ssm.wqkv = prefill_wqkv_weight;
+    int prefill_qk_handle;
+    int prefill_wv_handle;
+    int prefill_wv_buf;
+    int prefill_wo_buf;
+    int prefill_wqkv_buf;
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 1, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_qk_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 1, BN_BACKEND_HANDLE_WV_PREFILL,
+               &prefill_wv_handle) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_attn_lw.attn.wv,
+               &prefill_wv_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_attn_lw.attn.wo,
+               &prefill_wo_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_attn_lw.ssm.wqkv,
+               &prefill_wqkv_buf) == 0);
+    BnTransformerPrefillAttentionProjectionTypes prefill_attn_resource_types =
+        {0};
+    prefill_attn_resource_types.q_type = BN_GGUF_TENSOR_Q4_K;
+    prefill_attn_resource_types.q_rows = 64;
+    prefill_attn_resource_types.k_rows = 16;
+    prefill_attn_resource_types.v_type = BN_GGUF_TENSOR_Q6_K;
+    prefill_attn_resource_types.v_rows = 16;
+    BnTransformerPrefillSSMProjectionTypes prefill_ssm_resource_types = {0};
+    prefill_ssm_resource_types.qkv_type = BN_GGUF_TENSOR_Q5_K;
+    prefill_ssm_resource_types.qkv_rows = 80;
+    BnTransformerPrefillAttentionGPUResourcePolicy prefill_attn_resources =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            prefill_backend, 1, &prefill_attn_lw, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types);
+    assert(prefill_attn_resources.valid);
+    assert(!prefill_attn_resources.uses_packed_qkv);
+    assert(prefill_attn_resources.qk == &prefill_qk_handle);
+    assert(prefill_attn_resources.wv == &prefill_wv_handle);
+    assert(prefill_attn_resources.wo == &prefill_wo_buf);
+    assert(prefill_attn_resources.qk_rows == 80);
+    assert(prefill_attn_resources.qk_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_attn_resources.wv_rows == 16);
+    assert(prefill_attn_resources.wv_type == BN_GGUF_TENSOR_Q6_K);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 2, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_qk_handle) == 0);
+    prefill_attn_resources =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            prefill_backend, 2, &prefill_attn_lw, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types);
+    assert(prefill_attn_resources.valid);
+    assert(prefill_attn_resources.wv == &prefill_wv_buf);
+    prefill_attn_resources =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            prefill_backend, 2, &prefill_attn_lw, 1,
+            prefill_attn_resource_types, prefill_ssm_resource_types);
+    assert(prefill_attn_resources.valid);
+    assert(prefill_attn_resources.uses_packed_qkv);
+    assert(prefill_attn_resources.qk == &prefill_wqkv_buf);
+    assert(prefill_attn_resources.wv == NULL);
+    assert(prefill_attn_resources.qk_rows == 80);
+    assert(prefill_attn_resources.qk_type == BN_GGUF_TENSOR_Q5_K);
+    assert(prefill_attn_resources.wv_rows == 0);
+    assert(prefill_attn_resources.wv_type == BN_GGUF_TENSOR_Q5_K);
+    prefill_attn_resources =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            prefill_backend, 2, NULL, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types);
+    assert(!prefill_attn_resources.valid);
     BnQWeight prefill_ffn_gate = {0};
     BnQWeight prefill_ffn_up = {0};
     BnQWeight prefill_ffn_down = {0};
