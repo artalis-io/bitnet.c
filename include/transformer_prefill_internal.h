@@ -97,6 +97,24 @@ typedef struct {
     int enabled;
 } BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy;
 
+typedef enum {
+    BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS = 0,
+    BN_TRANSFORMER_PREFILL_REQUEST_NO_LOGITS,
+    BN_TRANSFORMER_PREFILL_REQUEST_ALL_LOGITS
+} BnTransformerPrefillRequestKind;
+
+typedef enum {
+    BN_TRANSFORMER_PREFILL_ENTRY_BATCH = 0,
+    BN_TRANSFORMER_PREFILL_ENTRY_DECODE_LAST_LOGITS,
+    BN_TRANSFORMER_PREFILL_ENTRY_DECODE_NO_LOGITS,
+    BN_TRANSFORMER_PREFILL_ENTRY_DECODE_ALL_LOGITS
+} BnTransformerPrefillEntryPath;
+
+typedef struct {
+    BnTransformerPrefillEntryPath path;
+    int uses_decode_fallback;
+} BnTransformerPrefillEntryDispatchPolicy;
+
 typedef struct {
     int enabled;
     uint32_t task_flags;
@@ -243,6 +261,11 @@ BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy
 bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     const BnConfig *c,
     int gpu_available);
+BnTransformerPrefillEntryDispatchPolicy
+bn_transformer_prefill_entry_dispatch_policy(
+    const BnConfig *c,
+    int gpu_available,
+    BnTransformerPrefillRequestKind request);
 BnTransformerPrefillFloatKQuantFallbackPolicy
 bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c);
 BnTransformerPrefillQuantMatmulDispatchPolicy

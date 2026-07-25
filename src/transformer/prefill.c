@@ -1374,13 +1374,16 @@ static float *prefill_logits(BnModel *m, BnSession *sess) {
     return bn_transformer_forward_logits(m, sess);
 }
 
-static int prefill_use_shared_all_active_two_decode_fallback(const BnModel *m) {
+static BnTransformerPrefillEntryDispatchPolicy
+prefill_entry_dispatch_policy(
+        const BnModel *m,
+        BnTransformerPrefillRequestKind request) {
+    BnTransformerPrefillEntryDispatchPolicy policy = {
+        BN_TRANSFORMER_PREFILL_ENTRY_BATCH, 0};
     if (!m)
-        return 0;
-    BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy policy =
-        bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
-            &m->config, bn_model_gpu(m) != NULL);
-    return policy.enabled;
+        return policy;
+    return bn_transformer_prefill_entry_dispatch_policy(
+        &m->config, bn_model_gpu(m) != NULL, request);
 }
 
 static void prefill_rmsnorm_unit(float *out, const float *x, int size, float eps) {
@@ -2755,7 +2758,10 @@ prefill_layers_done:
 
 float *bn_transformer_prefill(BnModel *m, BnSession *s, const int *tokens,
                               int n_tokens, int pos0) {
-    if (prefill_use_shared_all_active_two_decode_fallback(m)) {
+    BnTransformerPrefillEntryDispatchPolicy dispatch =
+        prefill_entry_dispatch_policy(
+            m, BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS);
+    if (dispatch.path == BN_TRANSFORMER_PREFILL_ENTRY_DECODE_LAST_LOGITS) {
         for (int i = 0; i + 1 < n_tokens; i++)
             if (bn_transformer_forward_no_logits(m, s, tokens[i], pos0 + i) != 0)
                 return NULL;
@@ -2769,7 +2775,10 @@ float *bn_transformer_prefill(BnModel *m, BnSession *s, const int *tokens,
 
 int bn_transformer_prefill_no_logits(BnModel *m, BnSession *s, const int *tokens,
                                      int n_tokens, int pos0) {
-    if (prefill_use_shared_all_active_two_decode_fallback(m)) {
+    BnTransformerPrefillEntryDispatchPolicy dispatch =
+        prefill_entry_dispatch_policy(
+            m, BN_TRANSFORMER_PREFILL_REQUEST_NO_LOGITS);
+    if (dispatch.path == BN_TRANSFORMER_PREFILL_ENTRY_DECODE_NO_LOGITS) {
         for (int i = 0; i < n_tokens; i++)
             if (bn_transformer_forward_no_logits(m, s, tokens[i], pos0 + i) != 0)
                 return -1;
@@ -2782,7 +2791,10 @@ int bn_transformer_prefill_all(BnModel *m, BnSession *s, const int *tokens,
                                int n_tokens, int pos0, float *all_logits) {
     if (!all_logits || n_tokens <= 0) return -1;
 
-    if (prefill_use_shared_all_active_two_decode_fallback(m)) {
+    BnTransformerPrefillEntryDispatchPolicy dispatch =
+        prefill_entry_dispatch_policy(
+            m, BN_TRANSFORMER_PREFILL_REQUEST_ALL_LOGITS);
+    if (dispatch.path == BN_TRANSFORMER_PREFILL_ENTRY_DECODE_ALL_LOGITS) {
         size_t row_bytes = (size_t)m->config.vocab_size * sizeof(float);
         for (int i = 0; i < n_tokens; i++) {
             float *logits = bn_transformer_forward(m, s, tokens[i], pos0 + i);

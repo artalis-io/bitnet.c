@@ -1491,6 +1491,30 @@ static void test_gpu_policy_helpers(void) {
                &c, 0).enabled);
     assert(!bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
                 &c, 1).enabled);
+    BnTransformerPrefillEntryDispatchPolicy prefill_entry =
+        bn_transformer_prefill_entry_dispatch_policy(
+            &c, 0, BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS);
+    assert(prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path ==
+           BN_TRANSFORMER_PREFILL_ENTRY_DECODE_LAST_LOGITS);
+    prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
+        &c, 0, BN_TRANSFORMER_PREFILL_REQUEST_NO_LOGITS);
+    assert(prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path ==
+           BN_TRANSFORMER_PREFILL_ENTRY_DECODE_NO_LOGITS);
+    prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
+        &c, 0, BN_TRANSFORMER_PREFILL_REQUEST_ALL_LOGITS);
+    assert(prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path ==
+           BN_TRANSFORMER_PREFILL_ENTRY_DECODE_ALL_LOGITS);
+    prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
+        &c, 1, BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS);
+    assert(!prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path == BN_TRANSFORMER_PREFILL_ENTRY_BATCH);
+    prefill_entry = bn_transformer_prefill_entry_dispatch_policy(
+        NULL, 0, BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS);
+    assert(!prefill_entry.uses_decode_fallback);
+    assert(prefill_entry.path == BN_TRANSFORMER_PREFILL_ENTRY_BATCH);
     c.dim = 2049;
     assert(!bn_transformer_moe_uses_all_active_two_route(&c, c.dim));
     assert(!bn_transformer_moe_uses_configured_all_active_two_route(&c));

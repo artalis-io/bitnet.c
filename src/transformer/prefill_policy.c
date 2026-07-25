@@ -42,6 +42,35 @@ bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     return policy;
 }
 
+BnTransformerPrefillEntryDispatchPolicy
+bn_transformer_prefill_entry_dispatch_policy(
+    const BnConfig *c,
+    int gpu_available,
+    BnTransformerPrefillRequestKind request) {
+    BnTransformerPrefillEntryDispatchPolicy policy = {
+        BN_TRANSFORMER_PREFILL_ENTRY_BATCH, 0};
+    BnTransformerPrefillSharedAllActiveTwoDecodeFallbackPolicy fallback =
+        bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
+            c, gpu_available);
+    if (!fallback.enabled)
+        return policy;
+
+    policy.uses_decode_fallback = 1;
+    switch (request) {
+    case BN_TRANSFORMER_PREFILL_REQUEST_NO_LOGITS:
+        policy.path = BN_TRANSFORMER_PREFILL_ENTRY_DECODE_NO_LOGITS;
+        break;
+    case BN_TRANSFORMER_PREFILL_REQUEST_ALL_LOGITS:
+        policy.path = BN_TRANSFORMER_PREFILL_ENTRY_DECODE_ALL_LOGITS;
+        break;
+    case BN_TRANSFORMER_PREFILL_REQUEST_LAST_LOGITS:
+    default:
+        policy.path = BN_TRANSFORMER_PREFILL_ENTRY_DECODE_LAST_LOGITS;
+        break;
+    }
+    return policy;
+}
+
 BnTransformerPrefillFloatKQuantFallbackPolicy
 bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c) {
     BnTransformerPrefillFloatKQuantFallbackPolicy policy = {0};
