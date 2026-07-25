@@ -312,6 +312,11 @@ typedef struct {
 } BnTransformerGPULogitsRefinePolicy;
 
 typedef struct {
+    int snapshot_before_logits;
+    int snapshot_satisfies_kquant_refine;
+} BnTransformerGPULogitsRefineSnapshotPolicy;
+
+typedef struct {
     int enabled;
 } BnTransformerGPUGenerateArgmaxPolicy;
 
@@ -1120,6 +1125,11 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
     const BnWeights *w,
     const BnTransformerGPULogitResources *logits,
     int small_dense_native_quant_default);
+BnTransformerGPULogitsRefineSnapshotPolicy
+bn_transformer_gpu_logits_refine_snapshot_policy(
+    int need_logits,
+    int want_argmax,
+    const BnTransformerGPULogitsRefinePolicy *logits_refine);
 BnTransformerGPUGenerateArgmaxPolicy
 bn_transformer_gpu_generate_argmax_policy(
     const BnGPUBackend *gpu,

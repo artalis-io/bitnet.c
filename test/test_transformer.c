@@ -1900,6 +1900,28 @@ static void test_gpu_policy_helpers(void) {
     assert(refine_policy.kquant_captures_xb);
     assert(!refine_policy.native_quant_default);
     assert(!refine_policy.native_quant_captures_xb);
+    BnTransformerGPULogitsRefineSnapshotPolicy snapshot_policy =
+        bn_transformer_gpu_logits_refine_snapshot_policy(
+            1, 0, &refine_policy);
+    assert(snapshot_policy.snapshot_before_logits);
+    assert(snapshot_policy.snapshot_satisfies_kquant_refine);
+    snapshot_policy = bn_transformer_gpu_logits_refine_snapshot_policy(
+        0, 0, &refine_policy);
+    assert(!snapshot_policy.snapshot_before_logits);
+    assert(!snapshot_policy.snapshot_satisfies_kquant_refine);
+    snapshot_policy = bn_transformer_gpu_logits_refine_snapshot_policy(
+        1, 1, &refine_policy);
+    assert(!snapshot_policy.snapshot_before_logits);
+    assert(!snapshot_policy.snapshot_satisfies_kquant_refine);
+    refine_policy.kquant_captures_xb = 0;
+    snapshot_policy = bn_transformer_gpu_logits_refine_snapshot_policy(
+        1, 0, &refine_policy);
+    assert(!snapshot_policy.snapshot_before_logits);
+    assert(!snapshot_policy.snapshot_satisfies_kquant_refine);
+    snapshot_policy = bn_transformer_gpu_logits_refine_snapshot_policy(
+        1, 0, NULL);
+    assert(!snapshot_policy.snapshot_before_logits);
+    assert(!snapshot_policy.snapshot_satisfies_kquant_refine);
     unsetenv("BN_CUDA_ENABLE_ALL_ACTIVE_TWO_KQUANT_MOE_FAST_FFN");
 
     unsetenv("BN_CUDA_DISABLE_SSM_FFN_FUSE");

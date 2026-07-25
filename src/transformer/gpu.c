@@ -1966,7 +1966,11 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
     }
 
     // ---- Logits matvec: xb -> logits (xb is already normalized) ----
-    int kquant_logits_refine_has_xb_snapshot = 0;
+    BnTransformerGPULogitsRefineSnapshotPolicy logits_refine_snapshot =
+        bn_transformer_gpu_logits_refine_snapshot_policy(
+            need_logits, argmax_token != NULL, &logits_refine);
+    int kquant_logits_refine_has_xb_snapshot =
+        logits_refine_snapshot.snapshot_satisfies_kquant_refine;
     if (emit_logits && !use_matvec_argmax) {
         if (bn_transformer_gpu_cpu_logits_enabled(gpu_logits_need_cpu)) {
             if (argmax_token)
@@ -1978,13 +1982,12 @@ static float *bn_transformer_gpu_forward_impl(BnModel *m, BnSession *sess,
                     &emit, "gpu logits cpu fallback failed");
             return s->logits;
         }
-        if (need_logits && !argmax_token && logits_refine.kquant_captures_xb) {
+        if (logits_refine_snapshot.snapshot_before_logits) {
             if (bn_transformer_gpu_emit_context_flush(&emit, gpu) != 0 ||
                 bn_transformer_gpu_read_xb(gpu, s->xb,
                                            (size_t)dim * sizeof(float)) != 0)
                 return bn_transformer_gpu_reject_forward(
                     &emit, "gpu logits pre-refine snapshot failed");
-            kquant_logits_refine_has_xb_snapshot = 1;
         }
         if (bn_transformer_gpu_emit_context_logits(
                 &emit, logit_res->gpu_buf, logit_res->type,

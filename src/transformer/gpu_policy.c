@@ -1874,8 +1874,24 @@ BnTransformerGPULogitsRefinePolicy bn_transformer_gpu_logits_refine_policy(
             logits, p.native_quant_enabled);
     p.native_quant_refine_top =
         bn_transformer_gpu_native_quant_logits_refine_top(
-            p.native_quant_default);
+        p.native_quant_default);
     return p;
+}
+
+BnTransformerGPULogitsRefineSnapshotPolicy
+bn_transformer_gpu_logits_refine_snapshot_policy(
+    int need_logits,
+    int want_argmax,
+    const BnTransformerGPULogitsRefinePolicy *logits_refine) {
+    BnTransformerGPULogitsRefineSnapshotPolicy policy = {0};
+    policy.snapshot_before_logits =
+        need_logits &&
+        !want_argmax &&
+        logits_refine &&
+        logits_refine->kquant_captures_xb;
+    policy.snapshot_satisfies_kquant_refine =
+        policy.snapshot_before_logits;
+    return policy;
 }
 
 int bn_transformer_gpu_cpu_logits_enabled(int gpu_logits_need_cpu) {
