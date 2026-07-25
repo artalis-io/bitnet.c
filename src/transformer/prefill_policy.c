@@ -328,6 +328,64 @@ bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     return policy;
 }
 
+BnTransformerPrefillDenseLayerGPUResourcePolicy
+bn_transformer_prefill_dense_layer_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    int has_packed_qkv,
+    BnTransformerPrefillAttentionProjectionTypes attn_types,
+    BnTransformerPrefillSSMProjectionTypes ssm_types,
+    BnTransformerPrefillFFNProjectionTypes ffn_types) {
+    BnTransformerPrefillDenseLayerGPUResourcePolicy policy = {0};
+    if (!backend || !lw)
+        return policy;
+
+    BnTransformerPrefillAttentionGPUResourcePolicy attn =
+        bn_transformer_prefill_attention_gpu_resource_policy(
+            backend, layer, lw, has_packed_qkv, attn_types, ssm_types);
+    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+            &lw->ffn.ffn_down, ffn_types);
+
+    policy.qk = attn.qk;
+    policy.wv = attn.wv;
+    policy.wo = attn.wo;
+    policy.qk_rows = attn.qk_rows;
+    policy.qk_type = attn.qk_type;
+    policy.wv_rows = attn.wv_rows;
+    policy.wv_type = attn.wv_type;
+    policy.gate = ffn.gate;
+    policy.up = ffn.up;
+    policy.down = ffn.down;
+
+    policy.attn_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
+    policy.ffn_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    policy.q_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_NORM);
+    policy.k_norm =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_NORM);
+    policy.q_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
+    policy.k_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_K_BIAS);
+    policy.v_bias =
+        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_V_BIAS);
+
+    policy.valid =
+        attn.valid &&
+        ffn.valid &&
+        policy.attn_norm &&
+        policy.ffn_norm &&
+        (!lw->attn.q_bias || policy.q_bias) &&
+        (!lw->attn.k_bias || policy.k_bias) &&
+        (!lw->attn.v_bias || policy.v_bias);
+    return policy;
+}
+
 BnTransformerPrefillMoELayerGPUResourcePolicy
 bn_transformer_prefill_moe_layer_gpu_resource_policy(
     const BnBackendModel *backend,

@@ -1748,6 +1748,128 @@ static void test_gpu_policy_helpers(void) {
             prefill_backend, 2, NULL, prefill_attn_resource_types);
     assert(!raw_attn_resources.valid);
 
+    BnQWeight prefill_dense_gate = {0};
+    BnQWeight prefill_dense_up = {0};
+    BnQWeight prefill_dense_down = {0};
+    prefill_dense_gate.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_dense_up.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_dense_down.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_attn_lw.ffn.ffn_gate = prefill_dense_gate;
+    prefill_attn_lw.ffn.ffn_up = prefill_dense_up;
+    prefill_attn_lw.ffn.ffn_down = prefill_dense_down;
+    int prefill_dense_gate_buf;
+    int prefill_dense_up_buf;
+    int prefill_dense_down_buf;
+    int prefill_dense_gateup_handle;
+    int prefill_dense_qk_handle;
+    int prefill_dense_attn_norm_handle;
+    int prefill_dense_ffn_norm_handle;
+    int prefill_dense_q_norm_handle;
+    int prefill_dense_k_norm_handle;
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_attn_lw.ffn.ffn_gate,
+               &prefill_dense_gate_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_attn_lw.ffn.ffn_up,
+               &prefill_dense_up_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_attn_lw.ffn.ffn_down,
+               &prefill_dense_down_buf) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_QK_STACKED,
+               &prefill_dense_qk_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_GATEUP_STACKED,
+               &prefill_dense_gateup_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_ATTN_NORM,
+               &prefill_dense_attn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_FFN_NORM,
+               &prefill_dense_ffn_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_Q_NORM,
+               &prefill_dense_q_norm_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_K_NORM,
+               &prefill_dense_k_norm_handle) == 0);
+    BnTransformerPrefillFFNProjectionTypes prefill_dense_ffn_types = {0};
+    prefill_dense_ffn_types.gate_type = BN_GGUF_TENSOR_Q4_K;
+    prefill_dense_ffn_types.up_type = BN_GGUF_TENSOR_Q4_K;
+    prefill_dense_ffn_types.down_type = BN_GGUF_TENSOR_Q6_K;
+    BnTransformerPrefillDenseLayerGPUResourcePolicy dense_layer_resources =
+        bn_transformer_prefill_dense_layer_gpu_resource_policy(
+            prefill_backend, 7, &prefill_attn_lw, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types,
+            prefill_dense_ffn_types);
+    assert(dense_layer_resources.valid);
+    assert(dense_layer_resources.qk == &prefill_dense_qk_handle);
+    assert(dense_layer_resources.wv == &prefill_wv_buf);
+    assert(dense_layer_resources.wo == &prefill_wo_buf);
+    assert(dense_layer_resources.gate == &prefill_dense_gateup_handle);
+    assert(dense_layer_resources.up == NULL);
+    assert(dense_layer_resources.down == &prefill_dense_down_buf);
+    assert(dense_layer_resources.attn_norm ==
+           &prefill_dense_attn_norm_handle);
+    assert(dense_layer_resources.ffn_norm == &prefill_dense_ffn_norm_handle);
+    assert(dense_layer_resources.q_norm == &prefill_dense_q_norm_handle);
+    assert(dense_layer_resources.k_norm == &prefill_dense_k_norm_handle);
+    assert(dense_layer_resources.q_bias == NULL);
+    assert(dense_layer_resources.k_bias == NULL);
+    assert(dense_layer_resources.v_bias == NULL);
+    assert(dense_layer_resources.qk_rows == 80);
+    assert(dense_layer_resources.qk_type == BN_GGUF_TENSOR_Q4_K);
+    assert(dense_layer_resources.wv_rows == 16);
+    assert(dense_layer_resources.wv_type == BN_GGUF_TENSOR_Q6_K);
+
+    int prefill_dense_q_bias_handle;
+    int prefill_dense_k_bias_handle;
+    int prefill_dense_v_bias_handle;
+    float prefill_dense_q_bias_weight;
+    float prefill_dense_k_bias_weight;
+    float prefill_dense_v_bias_weight;
+    prefill_attn_lw.attn.q_bias = &prefill_dense_q_bias_weight;
+    prefill_attn_lw.attn.k_bias = &prefill_dense_k_bias_weight;
+    prefill_attn_lw.attn.v_bias = &prefill_dense_v_bias_weight;
+    dense_layer_resources =
+        bn_transformer_prefill_dense_layer_gpu_resource_policy(
+            prefill_backend, 7, &prefill_attn_lw, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types,
+            prefill_dense_ffn_types);
+    assert(!dense_layer_resources.valid);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_Q_BIAS,
+               &prefill_dense_q_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_K_BIAS,
+               &prefill_dense_k_bias_handle) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 7, BN_BACKEND_HANDLE_V_BIAS,
+               &prefill_dense_v_bias_handle) == 0);
+    dense_layer_resources =
+        bn_transformer_prefill_dense_layer_gpu_resource_policy(
+            prefill_backend, 7, &prefill_attn_lw, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types,
+            prefill_dense_ffn_types);
+    assert(dense_layer_resources.valid);
+    assert(dense_layer_resources.q_bias == &prefill_dense_q_bias_handle);
+    assert(dense_layer_resources.k_bias == &prefill_dense_k_bias_handle);
+    assert(dense_layer_resources.v_bias == &prefill_dense_v_bias_handle);
+    dense_layer_resources =
+        bn_transformer_prefill_dense_layer_gpu_resource_policy(
+            prefill_backend, 8, &prefill_attn_lw, 0,
+            prefill_attn_resource_types, prefill_ssm_resource_types,
+            prefill_dense_ffn_types);
+    assert(!dense_layer_resources.valid);
+    dense_layer_resources =
+        bn_transformer_prefill_dense_layer_gpu_resource_policy(
+            prefill_backend, 7, NULL, 0, prefill_attn_resource_types,
+            prefill_ssm_resource_types, prefill_dense_ffn_types);
+    assert(!dense_layer_resources.valid);
+    prefill_attn_lw.attn.q_bias = NULL;
+    prefill_attn_lw.attn.k_bias = NULL;
+    prefill_attn_lw.attn.v_bias = NULL;
+
     int prefill_moe_qk_handle;
     int prefill_moe_wv_handle;
     int prefill_moe_router_handle;

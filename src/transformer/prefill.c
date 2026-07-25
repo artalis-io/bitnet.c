@@ -503,43 +503,24 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         return -1;
     int activation = bn_transformer_prefill_config_activation(&m->config);
 
-    BnTransformerPrefillAttentionGPUResourcePolicy attn_resources =
-        bn_transformer_prefill_attention_gpu_resource_policy(
-            backend, layer, lw, has_packed_qkv, attn_types, ssm_types);
-    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
-        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
-            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
-            &lw->ffn.ffn_down, ffn_types);
-    void *attn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    void *ffn_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-    void *q_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_Q_NORM);
-    void *k_norm_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_K_NORM);
-    void *q_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_Q_BIAS);
-    void *k_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_K_BIAS);
-    void *v_bias_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_V_BIAS);
-    if (!attn_resources.valid || !ffn_resources.valid ||
-        !attn_norm_buf || !ffn_norm_buf ||
-        (lw->attn.q_bias && !q_bias_buf) ||
-        (lw->attn.k_bias && !k_bias_buf) ||
-        (lw->attn.v_bias && !v_bias_buf))
+    BnTransformerPrefillDenseLayerGPUResourcePolicy resources =
+        bn_transformer_prefill_dense_layer_gpu_resource_policy(
+            backend, layer, lw, has_packed_qkv, attn_types, ssm_types,
+            ffn_types);
+    if (!resources.valid)
         return -1;
 
     return bn_transformer_gpu_prefill_dense_layer_backend_run(
-        gpu, out, (void *)attn_resources.qk, (void *)attn_resources.wv,
-        (void *)attn_resources.wo, (void *)ffn_resources.gate,
-        (void *)ffn_resources.up, (void *)ffn_resources.down,
-        attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf,
-        q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
+        gpu, out, (void *)resources.qk, (void *)resources.wv,
+        (void *)resources.wo, (void *)resources.gate,
+        (void *)resources.up, (void *)resources.down,
+        (void *)resources.attn_norm, (void *)resources.ffn_norm,
+        (void *)resources.q_norm, (void *)resources.k_norm,
+        (void *)resources.q_bias, (void *)resources.k_bias,
+        (void *)resources.v_bias, X, K_out, V_out, n_tokens, dim,
         hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim,
-        attn_resources.qk_rows, attn_resources.qk_type,
-        attn_resources.wv_rows, attn_resources.wv_type, attn_types.out_rows,
+        resources.qk_rows, resources.qk_type,
+        resources.wv_rows, resources.wv_type, attn_types.out_rows,
         attn_types.out_cols, attn_types.out_type, ffn_types.gate_type,
         ffn_types.up_type, ffn_types.down_type, activation,
         qk_norm_per_head,

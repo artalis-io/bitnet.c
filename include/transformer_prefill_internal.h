@@ -97,6 +97,27 @@ typedef struct {
     const void *qk;
     const void *wv;
     const void *wo;
+    const void *gate;
+    const void *up;
+    const void *down;
+    const void *attn_norm;
+    const void *ffn_norm;
+    const void *q_norm;
+    const void *k_norm;
+    const void *q_bias;
+    const void *k_bias;
+    const void *v_bias;
+    int qk_rows;
+    int qk_type;
+    int wv_rows;
+    int wv_type;
+} BnTransformerPrefillDenseLayerGPUResourcePolicy;
+
+typedef struct {
+    int valid;
+    const void *qk;
+    const void *wv;
+    const void *wo;
     const void *router;
     const void *gate_all;
     const void *up_all;
@@ -420,6 +441,15 @@ bn_transformer_prefill_dense_ffn_gpu_resource_policy(
     const BnQWeight *up,
     const BnQWeight *down,
     BnTransformerPrefillFFNProjectionTypes types);
+BnTransformerPrefillDenseLayerGPUResourcePolicy
+bn_transformer_prefill_dense_layer_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnLayerWeights *lw,
+    int has_packed_qkv,
+    BnTransformerPrefillAttentionProjectionTypes attn_types,
+    BnTransformerPrefillSSMProjectionTypes ssm_types,
+    BnTransformerPrefillFFNProjectionTypes ffn_types);
 BnTransformerPrefillMoELayerGPUResourcePolicy
 bn_transformer_prefill_moe_layer_gpu_resource_policy(
     const BnBackendModel *backend,
