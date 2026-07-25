@@ -1,6 +1,7 @@
 #ifndef BN_TRANSFORMER_PREFILL_INTERNAL_H
 #define BN_TRANSFORMER_PREFILL_INTERNAL_H
 
+#include "backend_model.h"
 #include "model_config.h"
 #include "model_weights.h"
 #include "moe_types.h"
@@ -14,7 +15,6 @@
 #define BN_GPU_BACKEND_DECLARED
 typedef struct BnGPUBackend BnGPUBackend;
 #endif
-typedef struct BnBackendModel BnBackendModel;
 
 #define BN_TRANSFORMER_PREFILL_MAX_QUANT_MATMUL_RESOURCES 16
 
@@ -305,6 +305,14 @@ bn_transformer_prefill_quant_matmul_resource_policy(
     const BnQWeight *const *weights,
     int n_tasks,
     int max_tasks);
+const void *bn_transformer_prefill_qweight_gpu_buffer_policy(
+    const BnBackendModel *backend,
+    const BnQWeight *weight);
+const void *bn_transformer_prefill_backend_role_or_qweight_policy(
+    const BnBackendModel *backend,
+    int layer,
+    BnBackendHandleRole role,
+    const BnQWeight *weight);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(

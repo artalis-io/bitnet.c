@@ -1618,6 +1618,27 @@ static void test_gpu_policy_helpers(void) {
     assert(matmul_resources.prepared[0]->kind == prefill_prepared.kind);
     assert(matmul_resources.gpu_buffers[0] == &q4k_gpu_buf);
     assert(matmul_resources.all_gpu_buffers_available);
+    assert(bn_transformer_prefill_qweight_gpu_buffer_policy(
+               prefill_backend, &q4k_weight) == &q4k_gpu_buf);
+    assert(bn_transformer_prefill_backend_role_or_qweight_policy(
+               prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
+               &q4k_weight) == &q4k_gpu_buf);
+    int prefill_role_buf;
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
+               &prefill_role_buf) == 0);
+    assert(bn_transformer_prefill_backend_role_or_qweight_policy(
+               prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
+               &q4k_weight) == &prefill_role_buf);
+    setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
+    matmul_resources =
+        bn_transformer_prefill_quant_matmul_resource_policy(
+            prefill_backend, prefill_weights, 2, 4);
+    assert(matmul_resources.valid);
+    assert(matmul_resources.prepared[0] == NULL);
+    assert(matmul_resources.gpu_buffers[0] == &q4k_gpu_buf);
+    assert(matmul_resources.all_gpu_buffers_available);
+    unsetenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS");
     prefill_weights[1] = &f32_weight;
     matmul_resources =
         bn_transformer_prefill_quant_matmul_resource_policy(

@@ -3,6 +3,7 @@
 #include "backend_quant.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
+#include "transformer_cpu_backend_internal.h"
 #include "transformer_plan_internal.h"
 #include "../moe_internal.h"
 
@@ -175,14 +176,32 @@ bn_transformer_prefill_quant_matmul_resource_policy(
             policy.all_gpu_buffers_available = 0;
             return policy;
         }
-        policy.prepared[i] =
-            bn_backend_model_prepared_qweight(backend, weights[i]);
+        if (bn_transformer_cpu_prepared_qweights_enabled())
+            policy.prepared[i] =
+                bn_backend_model_prepared_qweight(backend, weights[i]);
         policy.gpu_buffers[i] =
             bn_backend_model_qweight_buf(backend, weights[i]);
         if (!policy.gpu_buffers[i])
             policy.all_gpu_buffers_available = 0;
     }
     return policy;
+}
+
+const void *bn_transformer_prefill_qweight_gpu_buffer_policy(
+    const BnBackendModel *backend,
+    const BnQWeight *weight) {
+    return bn_backend_model_qweight_buf(backend, weight);
+}
+
+const void *bn_transformer_prefill_backend_role_or_qweight_policy(
+    const BnBackendModel *backend,
+    int layer,
+    BnBackendHandleRole role,
+    const BnQWeight *weight) {
+    void *buf = backend ? bn_backend_model_handle(backend, layer, role) : NULL;
+    return buf ? buf :
+                 bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
+                                                                  weight);
 }
 
 BnTransformerPrefillSequencePolicy

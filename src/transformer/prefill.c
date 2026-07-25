@@ -48,14 +48,15 @@ static inline void prefill_profile_add(double *dst, double start) {
 
 static inline void *prefill_qweight_backend_buf(const BnBackendModel *backend,
                                                 const BnQWeight *w) {
-    return bn_backend_model_qweight_buf(backend, w);
+    return (void *)bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
+                                                                    w);
 }
 
 static inline void *prefill_backend_role_or_qweight(
         const BnBackendModel *backend, int layer, BnBackendHandleRole role,
         const BnQWeight *w) {
-    void *buf = backend ? bn_backend_model_handle(backend, layer, role) : NULL;
-    return buf ? buf : prefill_qweight_backend_buf(backend, w);
+    return (void *)bn_transformer_prefill_backend_role_or_qweight_policy(
+        backend, layer, role, w);
 }
 
 static int prefill_shared_expert_resources(
