@@ -101,6 +101,19 @@ bn_transformer_logits_tied_quant_dispatch_policy(
     return policy;
 }
 
+BnLogitsTiedQuantDispatchPolicy
+bn_transformer_logits_tied_quant_dispatch_policy_for(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnQWeight *W) {
+    return bn_transformer_logits_tied_quant_dispatch_policy(
+        bn_transformer_logits_cpu_native_tied_quant_enabled(),
+        bn_transformer_logits_tied_kquant_refine_supported(W),
+        bn_transformer_logits_cpu_tied_kquant_hybrid_top(),
+        bn_transformer_logits_cpu_tied_kquant_refine_top(),
+        bn_transformer_logits_native_quant_refine_enabled(gpu, c, W));
+}
+
 float bn_transformer_logits_final_softcap(const BnConfig *c) {
     return bn_transformer_final_logit_softcap(c);
 }

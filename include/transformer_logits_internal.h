@@ -94,6 +94,11 @@ bn_transformer_logits_tied_quant_dispatch_policy(
     int tied_kquant_hybrid_top,
     int tied_kquant_refine_top,
     int native_quant_refine_enabled);
+BnLogitsTiedQuantDispatchPolicy
+bn_transformer_logits_tied_quant_dispatch_policy_for(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnQWeight *W);
 float bn_transformer_logits_final_softcap(const BnConfig *c);
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled);
 void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(

@@ -275,13 +275,8 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         const BnPreparedWeight *prepared =
             bn_backend_model_prepared_qweight(backend, tied);
         BnLogitsTiedQuantDispatchPolicy dispatch =
-            bn_transformer_logits_tied_quant_dispatch_policy(
-                bn_transformer_logits_cpu_native_tied_quant_enabled(),
-                bn_transformer_logits_tied_kquant_refine_supported(tied),
-                bn_transformer_logits_cpu_tied_kquant_hybrid_top(),
-                bn_transformer_logits_cpu_tied_kquant_refine_top(),
-                bn_transformer_logits_native_quant_refine_enabled(
-                    bn_model_gpu(m), &m->config, tied));
+            bn_transformer_logits_tied_quant_dispatch_policy_for(
+                bn_model_gpu(m), &m->config, tied);
         if (!dispatch.valid)
             return NULL;
         if (dispatch.matvec_path == BN_LOGITS_TIED_QUANT_CPU_NATIVE) {
