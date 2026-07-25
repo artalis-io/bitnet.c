@@ -3840,6 +3840,10 @@ static void test_layer_shape_planning(void) {
     assert(bn_transformer_attention_qk_stride(&c, p.head_size) == 128);
     assert(bn_transformer_attention_has_qk_norm(&lw));
     assert(bn_transformer_attention_has_bias(&lw));
+    assert(!bn_transformer_layer_has_attention_ssm_qkv(&lw));
+    lw.ssm.wqkv.data = (void *)1;
+    assert(bn_transformer_layer_has_attention_ssm_qkv(&lw));
+    lw.ssm.wqkv.data = NULL;
 
     lw.attn.wq.rows = 4096;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
@@ -3916,6 +3920,9 @@ static void test_layer_shape_planning(void) {
     assert(bn_transformer_attn_index(&c, 7) == 1);
     assert(bn_transformer_ssm_index(&c, 4) == 3);
     lw.block_kind = BN_LAYER_BLOCK_SSM;
+    lw.ssm.wqkv.data = (void *)1;
+    assert(!bn_transformer_layer_has_attention_ssm_qkv(&lw));
+    lw.ssm.wqkv.data = NULL;
     bn_transformer_plan_layer_shape(&p, &c, &lw, 0, 0);
     assert(!p.is_attn);
     assert(p.kind == BN_LAYER_SSM);

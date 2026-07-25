@@ -983,7 +983,7 @@ int bn_transformer_gpu_large_hybrid_cpu_attn_safe_default(
         return 1;
     for (int l = 0; l < c->n_layers; l++) {
         const BnLayerWeights *lw = &w->layers[l];
-        if (lw->block_kind == BN_LAYER_BLOCK_ATTENTION && lw->ssm.wqkv.data)
+        if (bn_transformer_layer_has_attention_ssm_qkv(lw))
             return 1;
     }
     return 0;

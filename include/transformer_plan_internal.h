@@ -310,6 +310,7 @@ int bn_transformer_attention_qk_stride(const BnConfig *c,
 int bn_transformer_attention_uses_per_head_qk_norm(const BnConfig *c);
 int bn_transformer_attention_has_qk_norm(const BnLayerWeights *lw);
 int bn_transformer_attention_has_bias(const BnLayerWeights *lw);
+int bn_transformer_layer_has_attention_ssm_qkv(const BnLayerWeights *lw);
 BnLayerKind bn_transformer_layer_kind(int is_attn,
                                       int q_gated,
                                       int q_wide);

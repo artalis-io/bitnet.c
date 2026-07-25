@@ -214,6 +214,11 @@ int bn_transformer_attention_has_bias(const BnLayerWeights *lw) {
     return lw && (lw->attn.q_bias || lw->attn.k_bias || lw->attn.v_bias);
 }
 
+int bn_transformer_layer_has_attention_ssm_qkv(const BnLayerWeights *lw) {
+    return lw && lw->block_kind == BN_LAYER_BLOCK_ATTENTION &&
+           lw->ssm.wqkv.data;
+}
+
 BnLayerKind bn_transformer_layer_kind(int is_attn,
                                       int q_gated,
                                       int q_wide) {
