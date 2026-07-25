@@ -489,6 +489,23 @@ static void test_moe_quant_policy_helpers(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K, 0));
     assert(bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K, BN_GGUF_TENSOR_Q5_K, 1));
+    BnMoESharedGateupBatchPolicy shared_batch_policy =
+        bn_moe_shared_gateup_batch_policy(
+            BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q4_0,
+            BN_GGUF_TENSOR_Q4_0, 0);
+    assert(shared_batch_policy.can_batch);
+    shared_batch_policy = bn_moe_shared_gateup_batch_policy(
+        BN_GGUF_TENSOR_Q4_0, BN_GGUF_TENSOR_Q8_0,
+        BN_GGUF_TENSOR_Q4_0, 1);
+    assert(!shared_batch_policy.can_batch);
+    shared_batch_policy = bn_moe_shared_gateup_batch_policy(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K,
+        BN_GGUF_TENSOR_Q5_K, 0);
+    assert(!shared_batch_policy.can_batch);
+    shared_batch_policy = bn_moe_shared_gateup_batch_policy(
+        BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q6_K,
+        BN_GGUF_TENSOR_Q5_K, 1);
+    assert(shared_batch_policy.can_batch);
 
     BnLayerWeights lw = {0};
     float shared_gate_data[4] = {0};

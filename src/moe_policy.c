@@ -218,15 +218,30 @@ int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
     int shared_up_type,
     int batch_type,
     int mixed_shared_gateup_supported) {
+    return bn_moe_shared_gateup_batch_policy(
+               shared_gate_type, shared_up_type, batch_type,
+               mixed_shared_gateup_supported).can_batch;
+}
+
+BnMoESharedGateupBatchPolicy bn_moe_shared_gateup_batch_policy(
+    int shared_gate_type,
+    int shared_up_type,
+    int batch_type,
+    int mixed_shared_gateup_supported) {
+    BnMoESharedGateupBatchPolicy policy = {0};
     if (!bn_moe_policy_supports_shared_gateup_batch_type(
             shared_gate_type, shared_up_type, batch_type))
-        return 0;
-    if (mixed_shared_gateup_supported)
-        return 1;
-    return bn_backend_quant_same_quant_format_pair_stackable(shared_gate_type,
-                                                     batch_type) &&
-           bn_backend_quant_same_quant_format_pair_stackable(shared_up_type,
-                                                     batch_type);
+        return policy;
+    if (mixed_shared_gateup_supported) {
+        policy.can_batch = 1;
+        return policy;
+    }
+    policy.can_batch =
+        bn_backend_quant_same_quant_format_pair_stackable(shared_gate_type,
+                                                          batch_type) &&
+        bn_backend_quant_same_quant_format_pair_stackable(shared_up_type,
+                                                          batch_type);
+    return policy;
 }
 
 int bn_moe_policy_can_batch_loaded_shared_gateup(

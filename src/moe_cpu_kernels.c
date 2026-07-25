@@ -319,14 +319,15 @@ int bn_moe_can_batch_shared_gateup(const BnMatvecTask *tasks, int n_tasks,
     int mixed_shared_gateup_supported =
         bn_moe_cpu_ops()->supports_mixed_shared_gateup_batch;
     int batch_type = tasks[0].W->type;
-    int can_batch = bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
-        shared_gate_type, shared_up_type, batch_type,
-        mixed_shared_gateup_supported);
-    for (int i = 1; can_batch && i < n_tasks; i++)
-        can_batch = bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
+    BnMoESharedGateupBatchPolicy batch_policy =
+        bn_moe_shared_gateup_batch_policy(
+            shared_gate_type, shared_up_type, batch_type,
+            mixed_shared_gateup_supported);
+    for (int i = 1; batch_policy.can_batch && i < n_tasks; i++)
+        batch_policy = bn_moe_shared_gateup_batch_policy(
             shared_gate_type, shared_up_type, tasks[i].W->type,
             mixed_shared_gateup_supported);
-    return can_batch;
+    return batch_policy.can_batch;
 }
 
 void bn_moe_quant_matvec(float *out,

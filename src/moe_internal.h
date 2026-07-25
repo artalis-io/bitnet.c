@@ -81,6 +81,10 @@ typedef struct {
     int down_cols;
 } BnMoERoutedExpertProjectionLayout;
 
+typedef struct {
+    int can_batch;
+} BnMoESharedGateupBatchPolicy;
+
 int bn_moe_checked_mul_size(size_t a, size_t b, size_t *out);
 int bn_moe_proj_info(const BnMoEExpertMap *map, int expert_idx, int proj,
                      size_t *offset, size_t *proj_bytes);
@@ -149,6 +153,11 @@ int bn_moe_policy_supports_shared_gateup_batch_type(int shared_gate_type,
                                                     int shared_up_type,
                                                     int batch_type);
 int bn_moe_policy_supports_shared_gateup_batch_type_on_cpu(
+    int shared_gate_type,
+    int shared_up_type,
+    int batch_type,
+    int mixed_shared_gateup_supported);
+BnMoESharedGateupBatchPolicy bn_moe_shared_gateup_batch_policy(
     int shared_gate_type,
     int shared_up_type,
     int batch_type,
