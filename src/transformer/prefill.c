@@ -190,24 +190,38 @@ static void prefill_quant_matmul_gpu(const BnModel *m,
                                      const float *X,
                                      int n_tokens,
                                      int8_t *quantized_buf) {
-    if (!bn_model_gpu(m)) {
-        if (prefill_uses_float_kquant_fallback(m) &&
-            prefill_qweight_uses_float_kquant_fallback(W)) {
-            float *outs[1] = { out };
-            const BnQWeight *weights[1] = { W };
-            prefill_quant_matmul_float_kquant_fallback(
-                m, outs, weights, 1, X, n_tokens, quantized_buf);
-            return;
-        }
+    BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
+        bn_transformer_prefill_quant_matmul_dispatch_policy(
+            1, 4, bn_model_gpu(m) != NULL, 0, 0,
+            prefill_uses_float_kquant_fallback(m),
+            prefill_qweight_uses_float_kquant_fallback(W));
+    if (!dispatch.valid)
+        return;
+
+    switch (dispatch.path) {
+    case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK: {
+        float *outs[1] = { out };
+        const BnQWeight *weights[1] = { W };
+        prefill_quant_matmul_float_kquant_fallback(
+            m, outs, weights, 1, X, n_tokens, quantized_buf);
+        return;
+    }
+    case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE:
+    case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI: {
         const BnBackendModel *backend = bn_model_backend(m);
         bn_transformer_prefill_quant_matmul_prepared(
             out, W, bn_backend_model_prepared_qweight(backend, W),
             X, n_tokens, quantized_buf, bn_model_pool(m));
         return;
     }
-    bn_transformer_prefill_quant_matmul_gpu_buffer(
-        out, W, prefill_qweight_backend_buf(bn_model_backend(m), W), X,
-        n_tokens, quantized_buf, bn_model_pool(m), bn_model_gpu(m));
+    case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_SINGLE:
+        bn_transformer_prefill_quant_matmul_gpu_buffer(
+            out, W, prefill_qweight_backend_buf(bn_model_backend(m), W), X,
+            n_tokens, quantized_buf, bn_model_pool(m), bn_model_gpu(m));
+        return;
+    case BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH:
+        return;
+    }
 }
 
 static int prefill_quant_matmul_gpu_buf(const BnModel *m,
@@ -232,15 +246,21 @@ static void prefill_quant_matmul_multi(const BnModel *m,
                                        int n_tokens,
                                        int8_t *quantized_buf) {
     if (!bn_model_gpu(m)) {
-        if (n <= 4 && prefill_uses_float_kquant_fallback(m) &&
-            prefill_all_weights_use_float_kquant_fallback(W, n)) {
+        BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
+            bn_transformer_prefill_quant_matmul_dispatch_policy(
+                n, 4, 0, 0, 0, prefill_uses_float_kquant_fallback(m),
+                prefill_all_weights_use_float_kquant_fallback(W, n));
+        if (!dispatch.valid)
+            return;
+        if (dispatch.path ==
+            BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK) {
             prefill_quant_matmul_float_kquant_fallback(
                 m, out, W, n, X, n_tokens, quantized_buf);
             return;
         }
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared[4] = { NULL, NULL, NULL, NULL };
-        if (n > 4) {
+        if (dispatch.path == BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE) {
             for (int i = 0; i < n; i++)
                 prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens,
                                          quantized_buf);
@@ -253,23 +273,34 @@ static void prefill_quant_matmul_multi(const BnModel *m,
             bn_model_pool(m));
         return;
     }
-    if (bn_transformer_prefill_quant_matmul_batch_gpu_available(
-            bn_model_gpu(m), n, 1, 1, 1, 1)) {
-        const BnBackendModel *backend = bn_model_backend(m);
-        BnMatvecTask tasks[16];
-        const void *bufs[16];
-        int all_bufs = backend != NULL;
+    const BnBackendModel *backend = bn_model_backend(m);
+    BnMatvecTask tasks[16];
+    const void *bufs[16];
+    int all_bufs = backend != NULL;
+    int gpu_batch_available =
+        bn_transformer_prefill_quant_matmul_batch_gpu_available(
+            bn_model_gpu(m), n, 1, 1, 1, 1);
+    if (n <= 16) {
         for (int i = 0; i < n; i++) {
             tasks[i] = (BnMatvecTask){ out[i], W[i], NULL, 0 };
-            bufs[i] = backend ? prefill_qweight_backend_buf(backend, W[i]) : NULL;
-            if (!bufs[i]) all_bufs = 0;
+            bufs[i] =
+                backend ? prefill_qweight_backend_buf(backend, W[i]) : NULL;
+            if (!bufs[i])
+                all_bufs = 0;
         }
-        if (all_bufs) {
-            bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
-                tasks, bufs, n, X, n_tokens, W[0]->cols, quantized_buf,
-                bn_model_pool(m), bn_model_gpu(m));
-            return;
-        }
+    } else {
+        all_bufs = 0;
+    }
+    BnTransformerPrefillQuantMatmulDispatchPolicy dispatch =
+        bn_transformer_prefill_quant_matmul_dispatch_policy(
+            n, 4, 1, gpu_batch_available, all_bufs, 0, 0);
+    if (!dispatch.valid)
+        return;
+    if (dispatch.path == BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH) {
+        bn_transformer_prefill_quant_matmul_batch_gpu_buffers(
+            tasks, bufs, n, X, n_tokens, W[0]->cols, quantized_buf,
+            bn_model_pool(m), bn_model_gpu(m));
+        return;
     }
     for (int i = 0; i < n; i++)
         prefill_quant_matmul_gpu(m, out[i], W[i], X, n_tokens, quantized_buf);

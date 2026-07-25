@@ -52,6 +52,45 @@ bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c) {
     return policy;
 }
 
+BnTransformerPrefillQuantMatmulDispatchPolicy
+bn_transformer_prefill_quant_matmul_dispatch_policy(
+    int n_tasks,
+    int max_cpu_batch_tasks,
+    int gpu_available,
+    int gpu_batch_available,
+    int all_gpu_buffers_available,
+    int float_kquant_fallback_enabled,
+    int all_weights_float_kquant_fallback) {
+    BnTransformerPrefillQuantMatmulDispatchPolicy policy = {0};
+    if (n_tasks <= 0 || max_cpu_batch_tasks <= 0)
+        return policy;
+
+    policy.valid = 1;
+    if (gpu_available) {
+        policy.path =
+            n_tasks > 1 &&
+            gpu_batch_available &&
+            all_gpu_buffers_available
+                ? BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH
+                : BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_SINGLE;
+        return policy;
+    }
+
+    if (n_tasks <= max_cpu_batch_tasks &&
+        float_kquant_fallback_enabled &&
+        all_weights_float_kquant_fallback) {
+        policy.path =
+            BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK;
+        return policy;
+    }
+
+    policy.path =
+        n_tasks <= max_cpu_batch_tasks
+            ? BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI
+            : BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE;
+    return policy;
+}
+
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     BnTransformerPrefillSequencePolicy policy = {0};

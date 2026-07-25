@@ -1525,6 +1525,36 @@ static void test_gpu_policy_helpers(void) {
                prefill_kquant_fallback.enabled));
     c.policy_flags = 0;
 
+    BnTransformerPrefillQuantMatmulDispatchPolicy matmul_dispatch =
+        bn_transformer_prefill_quant_matmul_dispatch_policy(
+            0, 4, 0, 0, 0, 0, 0);
+    assert(!matmul_dispatch.valid);
+    matmul_dispatch = bn_transformer_prefill_quant_matmul_dispatch_policy(
+        2, 4, 0, 0, 0, 1, 1);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK);
+    matmul_dispatch = bn_transformer_prefill_quant_matmul_dispatch_policy(
+        2, 4, 0, 0, 0, 1, 0);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI);
+    matmul_dispatch = bn_transformer_prefill_quant_matmul_dispatch_policy(
+        5, 4, 0, 0, 0, 1, 1);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE);
+    matmul_dispatch = bn_transformer_prefill_quant_matmul_dispatch_policy(
+        3, 4, 1, 1, 1, 1, 1);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH);
+    matmul_dispatch = bn_transformer_prefill_quant_matmul_dispatch_policy(
+        3, 4, 1, 1, 0, 1, 1);
+    assert(matmul_dispatch.valid);
+    assert(matmul_dispatch.path ==
+           BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_SINGLE);
+
     BnMoEExpertMap expert_map;
     memset(&expert_map, 0, sizeof(expert_map));
     expert_map.gate_type = BN_GGUF_TENSOR_Q4_K;

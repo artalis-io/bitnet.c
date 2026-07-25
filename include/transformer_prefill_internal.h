@@ -102,6 +102,19 @@ typedef struct {
     uint32_t task_flags;
 } BnTransformerPrefillFloatKQuantFallbackPolicy;
 
+typedef enum {
+    BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_SINGLE = 0,
+    BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_PREPARED_MULTI,
+    BN_TRANSFORMER_PREFILL_QUANT_MATMUL_CPU_FLOAT_KQUANT_FALLBACK,
+    BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_SINGLE,
+    BN_TRANSFORMER_PREFILL_QUANT_MATMUL_GPU_BATCH
+} BnTransformerPrefillQuantMatmulPath;
+
+typedef struct {
+    int valid;
+    BnTransformerPrefillQuantMatmulPath path;
+} BnTransformerPrefillQuantMatmulDispatchPolicy;
+
 typedef struct {
     int uses_hybrid_layer_layout;
     int uses_hybrid_ssm;
@@ -228,6 +241,15 @@ bn_transformer_prefill_shared_all_active_two_decode_fallback_policy(
     int gpu_available);
 BnTransformerPrefillFloatKQuantFallbackPolicy
 bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c);
+BnTransformerPrefillQuantMatmulDispatchPolicy
+bn_transformer_prefill_quant_matmul_dispatch_policy(
+    int n_tasks,
+    int max_cpu_batch_tasks,
+    int gpu_available,
+    int gpu_batch_available,
+    int all_gpu_buffers_available,
+    int float_kquant_fallback_enabled,
+    int all_weights_float_kquant_fallback);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(
