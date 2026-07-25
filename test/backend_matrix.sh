@@ -1702,6 +1702,14 @@ if awk '/^void bn_transformer_cpu_forward_ffn_block/{flag=1} /^void bn_transform
     fail=1
 fi
 
+if awk '/^static int prefill_qk_stacked_gpu/{flag=1} /^static int prefill_moe_ffn_gpu_batch/{flag=0} flag{print}' \
+    src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.type' >/dev/null 2>&1 ||
+   awk '/BnTransformerPrefillRawAttentionPolicy raw_attn_policy/{flag=1} /BnTransformerPrefillAttentionModePolicy attention_mode/{flag=0} flag{print}' \
+    src/transformer/prefill.c | grep -n 'lw->attn\.w[oqkv]\.type' >/dev/null 2>&1; then
+    echo "Prefill attention execution must use resolved projection type metadata"
+    fail=1
+fi
+
 if awk '/^void bn_transformer_cpu_forward_ssm_block/{flag=1} /^void bn_transformer_cpu_forward_ffn_block/{flag=0} flag{print}' \
     src/transformer/cpu.c | grep -n 'lw->ssm\.\(wqkv\|wz\|ssm_alpha\|ssm_beta\)\.type' >/dev/null 2>&1; then
     echo "CPU SSM execution must use resolved projection type metadata"

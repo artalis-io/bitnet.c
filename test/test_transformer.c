@@ -5551,6 +5551,10 @@ static void test_block_planning(void) {
         BN_GGUF_TENSOR_Q4_K, BN_GGUF_TENSOR_Q5_K));
     BnLayerWeights prefill_lw;
     memset(&prefill_lw, 0, sizeof(prefill_lw));
+    prefill_lw.attn.wq.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_lw.attn.wk.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_lw.attn.wv.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_lw.attn.wo.type = BN_GGUF_TENSOR_Q4_K;
     prefill_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
     prefill_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
     prefill_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
@@ -5559,6 +5563,17 @@ static void test_block_planning(void) {
     prefill_lw.ssm.ssm_alpha.type = BN_GGUF_TENSOR_Q6_K;
     prefill_lw.ssm.ssm_beta.type = BN_GGUF_TENSOR_Q4_K;
     prefill_lw.ssm.ssm_out.type = BN_GGUF_TENSOR_Q5_K;
+    BnTransformerPrefillAttentionProjectionTypes prefill_attn_types = {0};
+    assert(bn_transformer_prefill_resolve_attention_projection_types(
+        &prefill_attn_types, &prefill_lw));
+    assert(prefill_attn_types.q_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_attn_types.k_type == BN_GGUF_TENSOR_Q5_K);
+    assert(prefill_attn_types.v_type == BN_GGUF_TENSOR_Q6_K);
+    assert(prefill_attn_types.out_type == BN_GGUF_TENSOR_Q4_K);
+    assert(!bn_transformer_prefill_resolve_attention_projection_types(
+        NULL, &prefill_lw));
+    assert(!bn_transformer_prefill_resolve_attention_projection_types(
+        &prefill_attn_types, NULL));
     BnTransformerPrefillFFNProjectionTypes prefill_ffn_types = {0};
     assert(bn_transformer_prefill_resolve_ffn_projection_types(
         &prefill_ffn_types, &prefill_lw));

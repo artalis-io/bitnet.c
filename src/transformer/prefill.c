@@ -293,13 +293,17 @@ static int prefill_qk_stacked_gpu(const BnModel *m,
     if (!bn_transformer_prefill_qk_stack_compatible(
             &lw->attn.wq, &lw->attn.wk, q_stride, dim))
         return -1;
+    BnTransformerPrefillAttentionProjectionTypes attn_types;
+    if (!bn_transformer_prefill_resolve_attention_projection_types(
+            &attn_types, lw))
+        return -1;
     void *qk_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
     if (!qk_buf) return -1;
     int rows = lw->attn.wq.rows + lw->attn.wk.rows;
     if (bn_transformer_gpu_prefill_quant_matmul_backend_run(
             gpu, q_tmp, qk_buf, X, rows, dim, n_tokens,
-            lw->attn.wq.type) != 0)
+            attn_types.q_type) != 0)
         return -1;
     for (int t = n_tokens - 1; t >= 0; t--) {
         float *src = q_tmp + (size_t)t * rows;
@@ -331,6 +335,10 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
     if (!bn_transformer_prefill_qkv_stack_batch_compatible(
             &lw->attn.wq, &lw->attn.wk, &lw->attn.wv, q_stride, dim))
         return -1;
+    BnTransformerPrefillAttentionProjectionTypes attn_types;
+    if (!bn_transformer_prefill_resolve_attention_projection_types(
+            &attn_types, lw))
+        return -1;
     void *qk_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
     void *wv_buf = bn_backend_model_handle(
@@ -344,14 +352,14 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
             .W_buf = qk_buf,
             .rows = qk_rows,
             .cols = dim,
-            .type = lw->attn.wq.type,
+            .type = attn_types.q_type,
         },
         {
             .out = v_out,
             .W_buf = wv_buf,
             .rows = lw->attn.wv.rows,
             .cols = dim,
-            .type = lw->attn.wv.type,
+            .type = attn_types.v_type,
         },
     };
     if (bn_transformer_gpu_prefill_quant_matmul_batch_backend_run(
@@ -464,6 +472,10 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     BnTransformerPrefillFFNProjectionTypes ffn_types;
     if (!bn_transformer_prefill_resolve_ffn_projection_types(&ffn_types, lw))
         return -1;
+    BnTransformerPrefillAttentionProjectionTypes attn_types;
+    if (!bn_transformer_prefill_resolve_attention_projection_types(
+            &attn_types, lw))
+        return -1;
     int q_dim = n_heads * head_size;
     int has_split_qkv =
         lw->attn.wq.data && lw->attn.wk.data && lw->attn.wv.data;
@@ -497,9 +509,9 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         if (!wv_buf)
             wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
         qk_rows = lw->attn.wq.rows + lw->attn.wk.rows;
-        qk_type = lw->attn.wq.type;
+        qk_type = attn_types.q_type;
         wv_rows = lw->attn.wv.rows;
-        wv_type = lw->attn.wv.type;
+        wv_type = attn_types.v_type;
     }
     void *wo_buf = prefill_backend_role_or_qweight(
         backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
@@ -546,7 +558,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
         hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
         qk_type, wv_rows, wv_type, lw->attn.wo.rows, lw->attn.wo.cols,
-        lw->attn.wo.type, ffn_types.gate_type, ffn_types.up_type,
+        attn_types.out_type, ffn_types.gate_type, ffn_types.up_type,
         ffn_types.down_type, activation,
         qk_norm_per_head,
         bn_transformer_prefill_norm_epsilon(&m->config), pos0, rope_dims,
@@ -578,6 +590,10 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
     BnMoERoutePolicy route_policy = bn_moe_route_policy(&m->config);
     BnTransformerPrefillLayerKindPolicy layer_kind =
         bn_transformer_prefill_layer_kind_policy(lw);
+    BnTransformerPrefillAttentionProjectionTypes attn_types;
+    if (!bn_transformer_prefill_resolve_attention_projection_types(
+            &attn_types, lw))
+        return -1;
     if (!bn_transformer_prefill_moe_layer_backend_available(
             gpu, &m->config, &lw->moe.expert_map, dim, 0) ||
         !backend ||
@@ -639,9 +655,9 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         X, K_out, V_out, n_tokens, dim, route_policy.expert_hidden_dim,
         route_policy.total_experts, route_policy.active_experts, n_heads,
         n_kv_heads, head_size, kv_mul, kv_dim,
-        lw->attn.wq.rows + lw->attn.wk.rows, lw->attn.wq.type,
-        lw->attn.wv.rows, lw->attn.wv.type, lw->attn.wo.rows,
-        lw->attn.wo.cols, lw->attn.wo.type,
+        lw->attn.wq.rows + lw->attn.wk.rows, attn_types.q_type,
+        lw->attn.wv.rows, attn_types.v_type, lw->attn.wo.rows,
+        lw->attn.wo.cols, attn_types.out_type,
         routed_types.gate_type, routed_types.up_type,
         routed_types.down_type, activation,
         shared.hidden_dim, shared.gate_type, shared.up_type,
@@ -1929,6 +1945,12 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     lw->norm.attn_sub_norm != NULL,
                     attn_plan.use_post_norm,
                     lw->norm.attn_post_norm != NULL);
+            BnTransformerPrefillAttentionProjectionTypes attn_types;
+            if (!bn_transformer_prefill_resolve_attention_projection_types(
+                    &attn_types, lw)) {
+                sh_arena_free(pf_arena);
+                return NULL;
+            }
             int attn_norm_ready = 0;
             if (!raw_attn_policy.fuses_input_norm) {
                 t_prof = prefill_profile_now(&prof);
@@ -1969,9 +1991,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         V_new, n_tokens, dim, layer_n_heads,
                         layer_n_kv_heads, layer_head_size, layer_kv_mul,
                         kv_dim, lw->attn.wq.rows + lw->attn.wk.rows,
-                        lw->attn.wq.type, lw->attn.wv.rows,
-                        lw->attn.wv.type, lw->attn.wo.rows,
-                        lw->attn.wo.cols, lw->attn.wo.type,
+                        attn_types.q_type, lw->attn.wv.rows,
+                        attn_types.v_type, lw->attn.wo.rows,
+                        lw->attn.wo.cols, attn_types.out_type,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
                         layer_rope_dims,
@@ -1997,9 +2019,9 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         n_tokens, dim, layer_n_heads, layer_n_kv_heads,
                         layer_head_size, layer_kv_mul, kv_dim,
                         lw->attn.wq.rows + lw->attn.wk.rows,
-                        lw->attn.wq.type, lw->attn.wv.rows,
-                        lw->attn.wv.type, lw->attn.wo.rows,
-                        lw->attn.wo.cols, lw->attn.wo.type,
+                        attn_types.q_type, lw->attn.wv.rows,
+                        attn_types.v_type, lw->attn.wo.rows,
+                        lw->attn.wo.cols, attn_types.out_type,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
                         layer_rope_dims,
@@ -2032,8 +2054,8 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     bn_transformer_prefill_route_prepared_kquant_triple_enabled(
                         prefill_cpu_ops(), bn_model_gpu(m),
                         prefill_uses_float_kquant_fallback(m), dim,
-                        lw->attn.wq.type, lw->attn.wk.type,
-                        lw->attn.wv.type) &&
+                        attn_types.q_type, attn_types.k_type,
+                        attn_types.v_type) &&
                     prefill_try_prepared_kquant_multi(
                         m, &prepared_kquant, qkv_out, qkv_w, 3, Xb, dim,
                         n_tokens);
@@ -2177,7 +2199,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             n_tokens, layer_n_heads, layer_n_kv_heads,
                             layer_head_size, layer_kv_mul, kv_dim,
                             lw->attn.wo.rows, lw->attn.wo.cols,
-                            lw->attn.wo.type,
+                            attn_types.out_type,
                             bn_transformer_attention_scale(c, layer_head_size)) == 0) {
                         used_gpu_attn = 1;
                         used_fused_attn_wo = 1;

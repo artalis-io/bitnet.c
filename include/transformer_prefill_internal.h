@@ -27,6 +27,13 @@ typedef struct {
 } BnTransformerPrefillActivationPolicy;
 
 typedef struct {
+    int q_type;
+    int k_type;
+    int v_type;
+    int out_type;
+} BnTransformerPrefillAttentionProjectionTypes;
+
+typedef struct {
     int gate_type;
     int up_type;
     int down_type;
@@ -514,6 +521,9 @@ bn_tp_fn bn_transformer_prefill_ssm_gate_op(
     const BnPrefillCPUOps *ops);
 int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                     int right_type);
+int bn_transformer_prefill_resolve_attention_projection_types(
+    BnTransformerPrefillAttentionProjectionTypes *out,
+    const BnLayerWeights *lw);
 int bn_transformer_prefill_resolve_ffn_projection_types(
     BnTransformerPrefillFFNProjectionTypes *out,
     const BnLayerWeights *lw);

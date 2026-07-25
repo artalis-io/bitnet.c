@@ -766,6 +766,19 @@ int bn_transformer_prefill_same_quant_format_pair_stackable(int left_type,
                                                             right_type);
 }
 
+int bn_transformer_prefill_resolve_attention_projection_types(
+    BnTransformerPrefillAttentionProjectionTypes *out,
+    const BnLayerWeights *lw) {
+    if (!out || !lw)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->q_type = lw->attn.wq.type;
+    out->k_type = lw->attn.wk.type;
+    out->v_type = lw->attn.wv.type;
+    out->out_type = lw->attn.wo.type;
+    return 1;
+}
+
 int bn_transformer_prefill_resolve_ffn_projection_types(
     BnTransformerPrefillFFNProjectionTypes *out,
     const BnLayerWeights *lw) {
