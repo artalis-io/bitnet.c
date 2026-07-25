@@ -12,6 +12,7 @@
 #define BN_GPU_BACKEND_DECLARED
 typedef struct BnGPUBackend BnGPUBackend;
 #endif
+typedef struct BnBackendModel BnBackendModel;
 
 typedef struct {
     void (*rmsnorm)(float *out, const float *x, const float *w,
@@ -57,6 +58,14 @@ typedef struct {
     int run_native_quant_refine;
 } BnLogitsTiedQuantDispatchPolicy;
 
+typedef struct {
+    int valid;
+    const BnQWeight *weight;
+    const BnPreparedWeight *prepared;
+    void *backend_handle;
+    BnLogitsTiedQuantDispatchPolicy dispatch;
+} BnLogitsTiedQuantExecutionPolicy;
+
 void bn_transformer_logits_i8_neon_range(void *ctx, int start, int end);
 void bn_transformer_logits_i8_avx2_range(void *ctx, int start, int end);
 void bn_transformer_logits_i8_scalar_range(void *ctx, int start, int end);
@@ -98,6 +107,12 @@ BnLogitsTiedQuantDispatchPolicy
 bn_transformer_logits_tied_quant_dispatch_policy_for(
     const BnGPUBackend *gpu,
     const BnConfig *c,
+    const BnQWeight *W);
+BnLogitsTiedQuantExecutionPolicy
+bn_transformer_logits_tied_quant_execution_policy_for(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnBackendModel *backend,
     const BnQWeight *W);
 float bn_transformer_logits_final_softcap(const BnConfig *c);
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled);

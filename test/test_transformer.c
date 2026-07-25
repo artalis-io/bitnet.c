@@ -3425,6 +3425,46 @@ static void test_logits_policy_helpers(void) {
     unsetenv("BN_CPU_TIED_KQUANT_HYBRID_TOP");
     unsetenv("BN_CPU_TIED_KQUANT_REFINE_TOP");
 
+    BnLogitsTiedQuantExecutionPolicy tied_quant_exec =
+        bn_transformer_logits_tied_quant_execution_policy_for(
+            NULL, NULL, NULL, NULL);
+    assert(!tied_quant_exec.valid);
+    assert(tied_quant_exec.weight == NULL);
+    assert(tied_quant_exec.prepared == NULL);
+    assert(tied_quant_exec.backend_handle == NULL);
+
+    tied_quant_exec =
+        bn_transformer_logits_tied_quant_execution_policy_for(
+            NULL, NULL, NULL, &tied_q6);
+    assert(tied_quant_exec.valid);
+    assert(tied_quant_exec.weight == &tied_q6);
+    assert(tied_quant_exec.prepared == NULL);
+    assert(tied_quant_exec.backend_handle == NULL);
+    assert(tied_quant_exec.dispatch.valid);
+    assert(tied_quant_exec.dispatch.matvec_path ==
+           BN_LOGITS_TIED_QUANT_BACKEND_PREPARED);
+
+    BnBackendModel *backend = bn_backend_model_create();
+    assert(backend);
+    BnPreparedWeight prepared = {0};
+    prepared.kind = BN_PREPARED_WEIGHT_Q6_K_EXPANDED;
+    assert(bn_backend_model_register_prepared_qweight(
+               backend, &tied_q6, &prepared) == 0);
+    int tied_handle;
+    assert(bn_backend_model_register_handle(
+               backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING,
+               &tied_handle) == 0);
+    tied_quant_exec =
+        bn_transformer_logits_tied_quant_execution_policy_for(
+            NULL, NULL, backend, &tied_q6);
+    assert(tied_quant_exec.valid);
+    assert(tied_quant_exec.weight == &tied_q6);
+    assert(tied_quant_exec.prepared != NULL);
+    assert(tied_quant_exec.prepared->kind == prepared.kind);
+    assert(tied_quant_exec.backend_handle == &tied_handle);
+    assert(tied_quant_exec.dispatch.valid);
+    bn_backend_model_free(backend);
+
     unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
     assert(bn_transformer_logits_native_quant_refine_top() == 16);

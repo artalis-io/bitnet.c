@@ -1,6 +1,7 @@
 #include "transformer_logits_internal.h"
 #include "transformer_plan_internal.h"
 #include "backend_quant.h"
+#include "transformer_backend_internal.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
 
@@ -112,6 +113,25 @@ bn_transformer_logits_tied_quant_dispatch_policy_for(
         bn_transformer_logits_cpu_tied_kquant_hybrid_top(),
         bn_transformer_logits_cpu_tied_kquant_refine_top(),
         bn_transformer_logits_native_quant_refine_enabled(gpu, c, W));
+}
+
+BnLogitsTiedQuantExecutionPolicy
+bn_transformer_logits_tied_quant_execution_policy_for(
+    const BnGPUBackend *gpu,
+    const BnConfig *c,
+    const BnBackendModel *backend,
+    const BnQWeight *W) {
+    BnLogitsTiedQuantExecutionPolicy policy = {0};
+    if (!W)
+        return policy;
+    policy.valid = 1;
+    policy.weight = W;
+    policy.prepared = bn_backend_model_prepared_qweight(backend, W);
+    policy.backend_handle = bn_transformer_backend_handle_or(
+        backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING);
+    policy.dispatch =
+        bn_transformer_logits_tied_quant_dispatch_policy_for(gpu, c, W);
+    return policy;
 }
 
 float bn_transformer_logits_final_softcap(const BnConfig *c) {

@@ -270,32 +270,29 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         logits_refine_native_quant(m, s, &w->output_weight);
         break;
     case BN_LOGITS_TIED_QUANT: {
-        const BnQWeight *tied = &w->tied_embedding_weight;
-        const BnBackendModel *backend = bn_model_backend(m);
-        const BnPreparedWeight *prepared =
-            bn_backend_model_prepared_qweight(backend, tied);
-        BnLogitsTiedQuantDispatchPolicy dispatch =
-            bn_transformer_logits_tied_quant_dispatch_policy_for(
-                bn_model_gpu(m), &m->config, tied);
-        if (!dispatch.valid)
+        BnLogitsTiedQuantExecutionPolicy policy =
+            bn_transformer_logits_tied_quant_execution_policy_for(
+                bn_model_gpu(m), &m->config, bn_model_backend(m),
+                &w->tied_embedding_weight);
+        if (!policy.valid || !policy.dispatch.valid)
             return NULL;
-        if (dispatch.matvec_path == BN_LOGITS_TIED_QUANT_CPU_NATIVE) {
+        if (policy.dispatch.matvec_path == BN_LOGITS_TIED_QUANT_CPU_NATIVE) {
             bn_transformer_cpu_quant_matvec_prepared_flags(
-                s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
+                s->logits, policy.weight, policy.prepared, s->x, s->x_q,
+                bn_model_pool(m),
                 bn_transformer_logits_native_quant_task_flags(1));
         } else {
             bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
-                s->logits, tied, prepared,
-                bn_transformer_backend_handle_or(bn_model_backend(m), -1,
-                                                 BN_BACKEND_HANDLE_TIED_EMBEDDING),
+                s->logits, policy.weight, policy.prepared,
+                policy.backend_handle,
                 s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
-            if (dispatch.run_tied_kquant_hybrid_refine)
-                logits_hybrid_tied_kquant_top(m, s, tied);
-            if (dispatch.run_tied_kquant_refine)
-                logits_refine_tied_kquant_top(m, s, tied);
+            if (policy.dispatch.run_tied_kquant_hybrid_refine)
+                logits_hybrid_tied_kquant_top(m, s, policy.weight);
+            if (policy.dispatch.run_tied_kquant_refine)
+                logits_refine_tied_kquant_top(m, s, policy.weight);
         }
-        if (dispatch.run_native_quant_refine)
-            logits_refine_native_quant(m, s, tied);
+        if (policy.dispatch.run_native_quant_refine)
+            logits_refine_native_quant(m, s, policy.weight);
         break;
     }
     case BN_LOGITS_TIED_F16:
