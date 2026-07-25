@@ -85,6 +85,11 @@ void bn_transformer_gpu_resolve_logit_resources(
     }
 }
 
+void *bn_transformer_gpu_resolve_tied_embedding(
+    const BnBackendModel *backend) {
+    return backend_handle_or(backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING);
+}
+
 BnTransformerGPUDenseFFNResources
 bn_transformer_gpu_resolve_dense_ffn_resources(
     const BnGPUBackend *gpu,

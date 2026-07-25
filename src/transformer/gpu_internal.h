@@ -1474,6 +1474,8 @@ void bn_transformer_gpu_resolve_logit_resources(
     const BnBackendModel *backend,
     const BnConfig *c,
     const BnWeights *w);
+void *bn_transformer_gpu_resolve_tied_embedding(
+    const BnBackendModel *backend);
 BnTransformerGPUDenseFFNResources
 bn_transformer_gpu_resolve_dense_ffn_resources(
     const BnGPUBackend *gpu,

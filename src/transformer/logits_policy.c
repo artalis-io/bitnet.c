@@ -1,7 +1,6 @@
 #include "transformer_logits_internal.h"
 #include "transformer_plan_internal.h"
 #include "backend_quant.h"
-#include "transformer_backend_internal.h"
 #include "gpu_internal.h"
 #include "model_internal.h"
 
@@ -127,8 +126,8 @@ bn_transformer_logits_tied_quant_execution_policy_for(
     policy.valid = 1;
     policy.weight = W;
     policy.prepared = bn_backend_model_prepared_qweight(backend, W);
-    policy.backend_handle = bn_transformer_backend_handle_or(
-        backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING);
+    policy.backend_handle =
+        bn_transformer_gpu_resolve_tied_embedding(backend);
     policy.dispatch =
         bn_transformer_logits_tied_quant_dispatch_policy_for(gpu, c, W);
     return policy;

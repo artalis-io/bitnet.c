@@ -4239,6 +4239,8 @@ static void test_logits_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                backend, -1, BN_BACKEND_HANDLE_TIED_EMBEDDING,
                &tied_handle) == 0);
+    assert(bn_transformer_gpu_resolve_tied_embedding(backend) ==
+           &tied_handle);
     tied_quant_exec =
         bn_transformer_logits_tied_quant_execution_policy_for(
             NULL, NULL, backend, &tied_q6);
