@@ -3227,6 +3227,37 @@ static void test_logits_policy_helpers(void) {
     assert(bn_model_arch_final_logit_softcap(NULL) == 0.0f);
     assert(logits_exec.final_softcap == 0.0f);
 
+    BnLogitsTiedQuantDispatchPolicy tied_quant_dispatch =
+        bn_transformer_logits_tied_quant_dispatch_policy(0, 1, 8, 5, 1);
+    assert(tied_quant_dispatch.valid);
+    assert(tied_quant_dispatch.matvec_path ==
+           BN_LOGITS_TIED_QUANT_BACKEND_PREPARED);
+    assert(tied_quant_dispatch.run_tied_kquant_hybrid_refine);
+    assert(tied_quant_dispatch.run_tied_kquant_refine);
+    assert(tied_quant_dispatch.run_native_quant_refine);
+    tied_quant_dispatch =
+        bn_transformer_logits_tied_quant_dispatch_policy(1, 1, 8, 5, 1);
+    assert(tied_quant_dispatch.valid);
+    assert(tied_quant_dispatch.matvec_path ==
+           BN_LOGITS_TIED_QUANT_CPU_NATIVE);
+    assert(!tied_quant_dispatch.run_tied_kquant_hybrid_refine);
+    assert(!tied_quant_dispatch.run_tied_kquant_refine);
+    assert(tied_quant_dispatch.run_native_quant_refine);
+    tied_quant_dispatch =
+        bn_transformer_logits_tied_quant_dispatch_policy(0, 1, 1, 0, 0);
+    assert(tied_quant_dispatch.valid);
+    assert(tied_quant_dispatch.matvec_path ==
+           BN_LOGITS_TIED_QUANT_BACKEND_PREPARED);
+    assert(!tied_quant_dispatch.run_tied_kquant_hybrid_refine);
+    assert(!tied_quant_dispatch.run_tied_kquant_refine);
+    assert(!tied_quant_dispatch.run_native_quant_refine);
+    tied_quant_dispatch =
+        bn_transformer_logits_tied_quant_dispatch_policy(0, 0, 8, 5, 1);
+    assert(tied_quant_dispatch.valid);
+    assert(!tied_quant_dispatch.run_tied_kquant_hybrid_refine);
+    assert(!tied_quant_dispatch.run_tied_kquant_refine);
+    assert(tied_quant_dispatch.run_native_quant_refine);
+
     unsetenv("BN_GPU_NATIVE_QUANT_LOGITS_REFINE_TOP");
     unsetenv("BN_GPU_Q8_REFINE_TOP");
     assert(bn_transformer_logits_native_quant_refine_top() == 16);

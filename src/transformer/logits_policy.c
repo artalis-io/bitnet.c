@@ -77,6 +77,30 @@ BnLogitsExecutionPolicy bn_transformer_logits_execution_policy(
     return policy;
 }
 
+BnLogitsTiedQuantDispatchPolicy
+bn_transformer_logits_tied_quant_dispatch_policy(
+    int cpu_native_tied_quant_enabled,
+    int tied_kquant_refine_supported,
+    int tied_kquant_hybrid_top,
+    int tied_kquant_refine_top,
+    int native_quant_refine_enabled) {
+    BnLogitsTiedQuantDispatchPolicy policy = {0};
+    policy.valid = 1;
+    policy.matvec_path = cpu_native_tied_quant_enabled
+        ? BN_LOGITS_TIED_QUANT_CPU_NATIVE
+        : BN_LOGITS_TIED_QUANT_BACKEND_PREPARED;
+    policy.run_tied_kquant_hybrid_refine =
+        !cpu_native_tied_quant_enabled &&
+        tied_kquant_refine_supported &&
+        tied_kquant_hybrid_top > 1;
+    policy.run_tied_kquant_refine =
+        !cpu_native_tied_quant_enabled &&
+        tied_kquant_refine_supported &&
+        tied_kquant_refine_top > 0;
+    policy.run_native_quant_refine = native_quant_refine_enabled;
+    return policy;
+}
+
 float bn_transformer_logits_final_softcap(const BnConfig *c) {
     return bn_transformer_final_logit_softcap(c);
 }

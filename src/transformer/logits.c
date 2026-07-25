@@ -274,7 +274,17 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
         const BnBackendModel *backend = bn_model_backend(m);
         const BnPreparedWeight *prepared =
             bn_backend_model_prepared_qweight(backend, tied);
-        if (bn_transformer_logits_cpu_native_tied_quant_enabled()) {
+        BnLogitsTiedQuantDispatchPolicy dispatch =
+            bn_transformer_logits_tied_quant_dispatch_policy(
+                bn_transformer_logits_cpu_native_tied_quant_enabled(),
+                bn_transformer_logits_tied_kquant_refine_supported(tied),
+                bn_transformer_logits_cpu_tied_kquant_hybrid_top(),
+                bn_transformer_logits_cpu_tied_kquant_refine_top(),
+                bn_transformer_logits_native_quant_refine_enabled(
+                    bn_model_gpu(m), &m->config, tied));
+        if (!dispatch.valid)
+            return NULL;
+        if (dispatch.matvec_path == BN_LOGITS_TIED_QUANT_CPU_NATIVE) {
             bn_transformer_cpu_quant_matvec_prepared_flags(
                 s->logits, tied, prepared, s->x, s->x_q, bn_model_pool(m),
                 bn_transformer_logits_native_quant_task_flags(1));
@@ -284,10 +294,13 @@ float *bn_transformer_forward_logits(BnModel *m, BnSession *sess) {
                 bn_transformer_backend_handle_or(bn_model_backend(m), -1,
                                                  BN_BACKEND_HANDLE_TIED_EMBEDDING),
                 s->x, s->x_q, bn_model_pool(m), bn_model_gpu(m));
-            logits_hybrid_tied_kquant_top(m, s, tied);
-            logits_refine_tied_kquant_top(m, s, tied);
+            if (dispatch.run_tied_kquant_hybrid_refine)
+                logits_hybrid_tied_kquant_top(m, s, tied);
+            if (dispatch.run_tied_kquant_refine)
+                logits_refine_tied_kquant_top(m, s, tied);
         }
-        logits_refine_native_quant(m, s, tied);
+        if (dispatch.run_native_quant_refine)
+            logits_refine_native_quant(m, s, tied);
         break;
     }
     case BN_LOGITS_TIED_F16:

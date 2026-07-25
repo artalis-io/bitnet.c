@@ -44,6 +44,19 @@ typedef struct {
     float final_softcap;
 } BnLogitsExecutionPolicy;
 
+typedef enum {
+    BN_LOGITS_TIED_QUANT_BACKEND_PREPARED = 0,
+    BN_LOGITS_TIED_QUANT_CPU_NATIVE
+} BnLogitsTiedQuantMatvecPath;
+
+typedef struct {
+    int valid;
+    BnLogitsTiedQuantMatvecPath matvec_path;
+    int run_tied_kquant_hybrid_refine;
+    int run_tied_kquant_refine;
+    int run_native_quant_refine;
+} BnLogitsTiedQuantDispatchPolicy;
+
 void bn_transformer_logits_i8_neon_range(void *ctx, int start, int end);
 void bn_transformer_logits_i8_avx2_range(void *ctx, int start, int end);
 void bn_transformer_logits_i8_scalar_range(void *ctx, int start, int end);
@@ -74,6 +87,13 @@ int bn_transformer_logits_tied_f16_weight_type(void);
 int bn_transformer_logits_tied_dense_float_weight_type(void);
 BnLogitsExecutionPolicy bn_transformer_logits_execution_policy(
     const BnConfig *c);
+BnLogitsTiedQuantDispatchPolicy
+bn_transformer_logits_tied_quant_dispatch_policy(
+    int cpu_native_tied_quant_enabled,
+    int tied_kquant_refine_supported,
+    int tied_kquant_hybrid_top,
+    int tied_kquant_refine_top,
+    int native_quant_refine_enabled);
 float bn_transformer_logits_final_softcap(const BnConfig *c);
 uint32_t bn_transformer_logits_native_quant_task_flags(int enabled);
 void bn_transformer_logits_quant_matvec_gpu_buffer_prepared(
