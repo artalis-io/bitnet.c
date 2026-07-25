@@ -1620,16 +1620,25 @@ static void test_gpu_policy_helpers(void) {
     assert(matmul_resources.all_gpu_buffers_available);
     assert(bn_transformer_prefill_qweight_gpu_buffer_policy(
                prefill_backend, &q4k_weight) == &q4k_gpu_buf);
-    assert(bn_transformer_prefill_backend_role_or_qweight_policy(
-               prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
-               &q4k_weight) == &q4k_gpu_buf);
     int prefill_role_buf;
+    BnLayerWeights prefill_role_lw = {0};
+    prefill_role_lw.attn.wo = q4k_weight;
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_role_lw.attn.wo,
+               &q4k_gpu_buf) == 0);
+    BnTransformerGPUAttentionResources prefill_role_attn_res =
+        bn_transformer_gpu_resolve_attention_resources(NULL, prefill_backend,
+                                                       &prefill_role_lw, 0);
+    assert(prefill_role_attn_res.wo_prefill == NULL);
+    assert(prefill_role_attn_res.wo == &q4k_gpu_buf);
     assert(bn_backend_model_register_handle(
                prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
                &prefill_role_buf) == 0);
-    assert(bn_transformer_prefill_backend_role_or_qweight_policy(
-               prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
-               &q4k_weight) == &prefill_role_buf);
+    prefill_role_attn_res =
+        bn_transformer_gpu_resolve_attention_resources(NULL, prefill_backend,
+                                                       &prefill_role_lw, 0);
+    assert(prefill_role_attn_res.wo_prefill == &prefill_role_buf);
+    assert(prefill_role_attn_res.wo == &q4k_gpu_buf);
     BnLayerWeights prefill_attn_lw = {0};
     BnQWeight prefill_wv_weight = {0};
     BnQWeight prefill_wo_weight = {0};
@@ -1660,6 +1669,14 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_qweight(
                prefill_backend, &prefill_attn_lw.ssm.wqkv,
                &prefill_wqkv_buf) == 0);
+    BnTransformerGPUAttentionResources prefill_attn_resolved =
+        bn_transformer_gpu_resolve_attention_resources(NULL, prefill_backend,
+                                                       &prefill_attn_lw, 1);
+    assert(prefill_attn_resolved.qk_stacked == &prefill_qk_handle);
+    assert(prefill_attn_resolved.wv_prefill == &prefill_wv_handle);
+    assert(prefill_attn_resolved.wv == &prefill_wv_buf);
+    assert(prefill_attn_resolved.wo_prefill == NULL);
+    assert(prefill_attn_resolved.wo == &prefill_wo_buf);
     BnTransformerPrefillAttentionProjectionTypes prefill_attn_resource_types =
         {0};
     prefill_attn_resource_types.q_type = BN_GGUF_TENSOR_Q4_K;

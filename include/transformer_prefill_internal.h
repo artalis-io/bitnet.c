@@ -443,11 +443,6 @@ bn_transformer_prefill_quant_matmul_resource_policy(
 const void *bn_transformer_prefill_qweight_gpu_buffer_policy(
     const BnBackendModel *backend,
     const BnQWeight *weight);
-const void *bn_transformer_prefill_backend_role_or_qweight_policy(
-    const BnBackendModel *backend,
-    int layer,
-    BnBackendHandleRole role,
-    const BnQWeight *weight);
 BnTransformerPrefillAttentionGPUResourcePolicy
 bn_transformer_prefill_attention_gpu_resource_policy(
     const BnBackendModel *backend,

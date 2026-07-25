@@ -81,6 +81,10 @@ typedef struct {
     void *k_bias;
     void *attn_sub_norm;
     void *ffn_norm;
+    void *qk_stacked;
+    void *wv_prefill;
+    void *wv;
+    void *wo_prefill;
     void *wo;
 } BnTransformerGPUAttentionResources;
 

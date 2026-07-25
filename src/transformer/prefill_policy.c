@@ -193,17 +193,6 @@ const void *bn_transformer_prefill_qweight_gpu_buffer_policy(
     return bn_backend_model_qweight_buf(backend, weight);
 }
 
-const void *bn_transformer_prefill_backend_role_or_qweight_policy(
-    const BnBackendModel *backend,
-    int layer,
-    BnBackendHandleRole role,
-    const BnQWeight *weight) {
-    void *buf = backend ? bn_backend_model_handle(backend, layer, role) : NULL;
-    return buf ? buf :
-                 bn_transformer_prefill_qweight_gpu_buffer_policy(backend,
-                                                                  weight);
-}
-
 BnTransformerPrefillAttentionGPUResourcePolicy
 bn_transformer_prefill_attention_gpu_resource_policy(
     const BnBackendModel *backend,
@@ -216,6 +205,10 @@ bn_transformer_prefill_attention_gpu_resource_policy(
     if (!lw)
         return policy;
 
+    BnTransformerGPUAttentionResources attn_res =
+        bn_transformer_gpu_resolve_attention_resources(NULL, backend, lw,
+                                                       layer);
+
     policy.uses_packed_qkv = has_packed_qkv;
     if (has_packed_qkv) {
         policy.qk =
@@ -226,28 +219,17 @@ bn_transformer_prefill_attention_gpu_resource_policy(
         policy.wv_rows = 0;
         policy.wv_type = policy.qk_type;
     } else {
-        policy.qk = backend
-                        ? bn_backend_model_handle(
-                              backend, layer,
-                              BN_BACKEND_HANDLE_QK_STACKED)
-                        : NULL;
-        policy.wv = backend
-                        ? bn_backend_model_handle(
-                              backend, layer,
-                              BN_BACKEND_HANDLE_WV_PREFILL)
-                        : NULL;
+        policy.qk = attn_res.qk_stacked;
+        policy.wv = attn_res.wv_prefill;
         if (!policy.wv)
-            policy.wv =
-                bn_transformer_prefill_qweight_gpu_buffer_policy(
-                    backend, &lw->attn.wv);
+            policy.wv = attn_res.wv;
         policy.qk_rows = attn_types.q_rows + attn_types.k_rows;
         policy.qk_type = attn_types.q_type;
         policy.wv_rows = attn_types.v_rows;
         policy.wv_type = attn_types.v_type;
     }
 
-    policy.wo = bn_transformer_prefill_backend_role_or_qweight_policy(
-        backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
+    policy.wo = attn_res.wo_prefill ? attn_res.wo_prefill : attn_res.wo;
     policy.valid = policy.qk && policy.wo &&
                    (policy.uses_packed_qkv || policy.wv);
     return policy;
@@ -262,10 +244,13 @@ bn_transformer_prefill_stacked_attention_gpu_resource_policy(
     if (!backend)
         return policy;
 
-    policy.qk =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
-    policy.wv =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
+    BnLayerWeights lw = {0};
+    BnTransformerGPUAttentionResources attn_res =
+        bn_transformer_gpu_resolve_attention_resources(NULL, backend, &lw,
+                                                       layer);
+
+    policy.qk = attn_res.qk_stacked;
+    policy.wv = attn_res.wv_prefill;
     policy.qk_rows = attn_types.q_rows + attn_types.k_rows;
     policy.qk_type = attn_types.q_type;
     policy.wv_rows = attn_types.v_rows;

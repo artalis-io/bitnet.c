@@ -179,6 +179,13 @@ bn_transformer_gpu_resolve_attention_resources(
         .attn_sub_norm = backend_handle_or(
             backend, layer, BN_BACKEND_HANDLE_ATTN_SUB_NORM),
         .ffn_norm = backend_handle_or(backend, layer, BN_BACKEND_HANDLE_FFN_NORM),
+        .qk_stacked = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_QK_STACKED),
+        .wv_prefill = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_WV_PREFILL),
+        .wv = qweight_backend_buf(backend, &lw->attn.wv),
+        .wo_prefill = backend_handle_or(
+            backend, layer, BN_BACKEND_HANDLE_WO_PREFILL),
         .wo = qweight_backend_buf(backend, &lw->attn.wo),
     };
 }
