@@ -383,6 +383,10 @@ int bn_transformer_gpu_debug_compare_ffn_down(
                                     (size_t)dim * sizeof(float)) != 0)
         return -1;
 
+    BnTransformerGPUDenseFFNProjectionLayout ffn_layout;
+    if (!bn_transformer_gpu_resolve_dense_ffn_projection_layout(
+            &ffn_layout, lw))
+        return -1;
     fallback_cpu_matvec(m, s->xb, &lw->ffn.ffn_down, s->hb, s->x_q);
 
     double sum_abs = 0.0;
@@ -402,8 +406,8 @@ int bn_transformer_gpu_debug_compare_ffn_down(
             "[bn:gpu:debug] ffn_down_compare layer=%d pos=%d type=%d "
             "rows=%d cols=%d max_abs=%.9g max_i=%d cpu=%.9g gpu=%.9g "
             "mean_abs=%.9g rms=%.9g\n",
-            layer, pos, lw->ffn.ffn_down.type, lw->ffn.ffn_down.rows,
-            lw->ffn.ffn_down.cols, max_abs, max_i, s->xb[max_i],
+            layer, pos, ffn_layout.down_type, ffn_layout.down_rows,
+            ffn_layout.down_cols, max_abs, max_i, s->xb[max_i],
             s->xb2[max_i], sum_abs / (double)dim,
             sqrt(sum_sq / (double)dim));
     return 0;

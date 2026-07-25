@@ -3770,6 +3770,12 @@ if awk '/^void bn_transformer_gpu_emit_context_dense_ffn/{flag=1} /^void bn_tran
     fail=1
 fi
 
+if awk '/^int bn_transformer_gpu_debug_compare_ffn_down/{flag=1} /^static void debug_compare_vec/{flag=0} flag{print}' \
+    src/transformer/gpu_fallback.c | grep -n 'lw->ffn\.ffn_\(gate\|up\|down\)\.\(type\|rows\|cols\)' >/dev/null 2>&1; then
+    echo "GPU fallback debug compare must use resolved projection layout metadata"
+    fail=1
+fi
+
 if awk '/^void bn_transformer_gpu_emit_context_qkv/{flag=1} /^void bn_transformer_gpu_emit_context_attention\(/{flag=0} flag{print}' \
     src/transformer/gpu_emit.c | grep -n 'lw->\(attn\.\(wq\|wk\|wv\)\|ssm\.wqkv\)\.\(type\|rows\|cols\)' >/dev/null 2>&1; then
     echo "Attention QKV GPU emission must use resolved projection layout metadata"
