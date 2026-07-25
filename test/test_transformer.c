@@ -1630,6 +1630,66 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_transformer_prefill_backend_role_or_qweight_policy(
                prefill_backend, 0, BN_BACKEND_HANDLE_WO_PREFILL,
                &q4k_weight) == &prefill_role_buf);
+    BnQWeight prefill_ffn_gate = {0};
+    BnQWeight prefill_ffn_up = {0};
+    BnQWeight prefill_ffn_down = {0};
+    BnQWeight prefill_ffn_down_fallback = {0};
+    prefill_ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_ffn_up.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_ffn_down.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_ffn_down_fallback.type = BN_GGUF_TENSOR_Q6_K;
+    int prefill_gate_buf;
+    int prefill_up_buf;
+    int prefill_down_buf;
+    int prefill_gateup_buf;
+    int prefill_down_handle;
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ffn_gate,
+               &prefill_gate_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ffn_up, &prefill_up_buf) == 0);
+    assert(bn_backend_model_register_qweight(
+               prefill_backend, &prefill_ffn_down,
+               &prefill_down_buf) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 0, BN_BACKEND_HANDLE_GATEUP_STACKED,
+               &prefill_gateup_buf) == 0);
+    assert(bn_backend_model_register_handle(
+               prefill_backend, 0, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL,
+               &prefill_down_handle) == 0);
+    BnTransformerPrefillFFNProjectionTypes prefill_resource_types = {0};
+    prefill_resource_types.gate_type = BN_GGUF_TENSOR_Q4_K;
+    prefill_resource_types.up_type = BN_GGUF_TENSOR_Q4_K;
+    BnTransformerPrefillDenseFFNGPUResourcePolicy prefill_ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            prefill_backend, 0, &prefill_ffn_gate, &prefill_ffn_up,
+            &prefill_ffn_down, prefill_resource_types);
+    assert(prefill_ffn_resources.valid);
+    assert(prefill_ffn_resources.uses_stacked_gateup);
+    assert(prefill_ffn_resources.gate == &prefill_gateup_buf);
+    assert(prefill_ffn_resources.up == NULL);
+    assert(prefill_ffn_resources.down == &prefill_down_buf);
+    prefill_resource_types.up_type = BN_GGUF_TENSOR_Q5_K;
+    prefill_ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            prefill_backend, 0, &prefill_ffn_gate, &prefill_ffn_up,
+            &prefill_ffn_down, prefill_resource_types);
+    assert(prefill_ffn_resources.valid);
+    assert(!prefill_ffn_resources.uses_stacked_gateup);
+    assert(prefill_ffn_resources.gate == &prefill_gate_buf);
+    assert(prefill_ffn_resources.up == &prefill_up_buf);
+    assert(prefill_ffn_resources.down == &prefill_down_buf);
+    prefill_ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            prefill_backend, 0, &prefill_ffn_gate, &prefill_ffn_up,
+            &prefill_ffn_down_fallback, prefill_resource_types);
+    assert(prefill_ffn_resources.valid);
+    assert(prefill_ffn_resources.down == &prefill_down_handle);
+    prefill_ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            prefill_backend, 0, NULL, &prefill_ffn_up,
+            &prefill_ffn_down, prefill_resource_types);
+    assert(!prefill_ffn_resources.valid);
     setenv("BN_CPU_DISABLE_PREPARED_QWEIGHTS", "1", 1);
     matmul_resources =
         bn_transformer_prefill_quant_matmul_resource_policy(

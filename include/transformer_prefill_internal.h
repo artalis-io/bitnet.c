@@ -59,6 +59,14 @@ typedef struct {
 } BnTransformerPrefillFFNProjectionTypes;
 
 typedef struct {
+    int valid;
+    const void *gate;
+    const void *up;
+    const void *down;
+    int uses_stacked_gateup;
+} BnTransformerPrefillDenseFFNGPUResourcePolicy;
+
+typedef struct {
     int qkv_type;
     int qkv_rows;
     int qkv_cols;
@@ -313,6 +321,14 @@ const void *bn_transformer_prefill_backend_role_or_qweight_policy(
     int layer,
     BnBackendHandleRole role,
     const BnQWeight *weight);
+BnTransformerPrefillDenseFFNGPUResourcePolicy
+bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnQWeight *gate,
+    const BnQWeight *up,
+    const BnQWeight *down,
+    BnTransformerPrefillFFNProjectionTypes types);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
 int bn_transformer_prefill_buffer_shape_policy(

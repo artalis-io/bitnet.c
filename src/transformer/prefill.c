@@ -419,23 +419,11 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
             lw->ffn.ffn_up.data != NULL, lw->ffn.ffn_down.data != NULL))
         return -1;
 
-    void *gateup_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
-    void *gate_buf = NULL;
-    void *up_buf = NULL;
-    if (gateup_buf &&
-        bn_transformer_prefill_same_quant_format_pair_stackable(
-            ffn_types.gate_type, ffn_types.up_type)) {
-        gate_buf = gateup_buf;
-    } else {
-        gate_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_gate);
-        up_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
-    }
-    void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
-    if (!down_buf)
-        down_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
-    if (!gate_buf || !down_buf)
+    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+            &lw->ffn.ffn_down, ffn_types);
+    if (!ffn_resources.valid)
         return -1;
 
     BnTransformerPrefillFFNBatchCallPolicy call_policy =
@@ -447,23 +435,26 @@ static int prefill_dense_ffn_gpu_batch(const BnModel *m,
                 gpu));
     if (call_policy.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM_RESID) {
         return bn_transformer_gpu_prefill_dense_ffn_batch_norm_resid_backend_run(
-            gpu, out, gate_buf, up_buf, down_buf, norm_buf, X,
-            n_tokens, dim, hidden_dim, ffn_types.gate_type,
+            gpu, out, (void *)ffn_resources.gate,
+            (void *)ffn_resources.up, (void *)ffn_resources.down,
+            norm_buf, X, n_tokens, dim, hidden_dim, ffn_types.gate_type,
             ffn_types.up_type, ffn_types.down_type, act_type,
             norm_eps);
     }
     if (call_policy.kind == BN_TRANSFORMER_PREFILL_FFN_BATCH_NORM) {
         return bn_transformer_gpu_prefill_dense_ffn_batch_norm_backend_run(
-            gpu, out, gate_buf, up_buf, down_buf, norm_buf, X,
-            n_tokens, dim, hidden_dim, ffn_types.gate_type,
+            gpu, out, (void *)ffn_resources.gate,
+            (void *)ffn_resources.up, (void *)ffn_resources.down,
+            norm_buf, X, n_tokens, dim, hidden_dim, ffn_types.gate_type,
             ffn_types.up_type, ffn_types.down_type, act_type,
             norm_eps);
     }
 
     return bn_transformer_gpu_prefill_dense_ffn_batch_backend_run(
-        gpu, out, gate_buf, up_buf, down_buf, X, n_tokens,
-        dim, hidden_dim, ffn_types.gate_type, ffn_types.up_type,
-        ffn_types.down_type, act_type);
+        gpu, out, (void *)ffn_resources.gate, (void *)ffn_resources.up,
+        (void *)ffn_resources.down, X, n_tokens, dim, hidden_dim,
+        ffn_types.gate_type, ffn_types.up_type, ffn_types.down_type,
+        act_type);
 }
 
 static int prefill_dense_layer_gpu_batch(const BnModel *m,
@@ -538,22 +529,10 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
     }
     void *wo_buf = prefill_backend_role_or_qweight(
         backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
-    void *gateup_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
-    void *gate_buf = NULL;
-    void *up_buf = NULL;
-    if (gateup_buf &&
-        bn_transformer_prefill_same_quant_format_pair_stackable(
-            ffn_types.gate_type, ffn_types.up_type)) {
-        gate_buf = gateup_buf;
-    } else {
-        gate_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_gate);
-        up_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
-    }
-    void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
-    if (!down_buf)
-        down_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
+    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+            &lw->ffn.ffn_down, ffn_types);
     void *attn_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
     void *ffn_norm_buf = bn_backend_model_handle(
@@ -568,7 +547,8 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_K_BIAS);
     void *v_bias_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_V_BIAS);
-    if (!qk_buf || (!has_packed_qkv && !wv_buf) || !wo_buf || !gate_buf || !down_buf ||
+    if (!qk_buf || (!has_packed_qkv && !wv_buf) || !wo_buf ||
+        !ffn_resources.valid ||
         !attn_norm_buf || !ffn_norm_buf ||
         (lw->attn.q_bias && !q_bias_buf) ||
         (lw->attn.k_bias && !k_bias_buf) ||
@@ -576,7 +556,8 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         return -1;
 
     return bn_transformer_gpu_prefill_dense_layer_backend_run(
-        gpu, out, qk_buf, wv_buf, wo_buf, gate_buf, up_buf, down_buf,
+        gpu, out, qk_buf, wv_buf, wo_buf, (void *)ffn_resources.gate,
+        (void *)ffn_resources.up, (void *)ffn_resources.down,
         attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf,
         q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
         hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
@@ -895,23 +876,10 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     }
     void *wo_buf = prefill_backend_role_or_qweight(
         backend, layer, BN_BACKEND_HANDLE_WO_PREFILL, &lw->attn.wo);
-    void *gateup_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
-    void *gate_buf = gateup_buf &&
-                     bn_transformer_prefill_same_quant_format_pair_stackable(
-                         ffn_types.gate_type, ffn_types.up_type)
-                         ? gateup_buf
-                         : prefill_qweight_backend_buf(backend,
-                                                       &lw->ffn.ffn_gate);
-    void *up_buf = gateup_buf &&
-                   bn_transformer_prefill_same_quant_format_pair_stackable(
-                       ffn_types.gate_type, ffn_types.up_type)
-                       ? NULL
-                       : prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
-    void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
-    if (!down_buf)
-        down_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
+    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+            &lw->ffn.ffn_down, ffn_types);
     void *attn_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
     void *ffn_norm_buf = bn_backend_model_handle(
@@ -923,8 +891,7 @@ static int prefill_dense_layer_chain_ready(const BnModel *m,
     void *v_bias_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_V_BIAS);
     return qk_buf && (has_packed_qkv || wv_buf) && wo_buf &&
-           gate_buf && (gateup_buf || up_buf) &&
-           down_buf && attn_norm_buf && ffn_norm_buf &&
+           ffn_resources.valid && attn_norm_buf && ffn_norm_buf &&
            (!lw->attn.q_bias || q_bias_buf) &&
            (!lw->attn.k_bias || k_bias_buf) &&
            (!lw->attn.v_bias || v_bias_buf);
@@ -1074,7 +1041,6 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
     void *ssm_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
-    void *gateup_buf = NULL;
     void *gate_buf = NULL;
     void *up_buf = NULL;
     void *down_buf = NULL;
@@ -1092,27 +1058,17 @@ static int prefill_ssm_layer_gpu(const BnModel *m,
             bn_transformer_ffn_uses_post_norm_layer(&m->config, lw),
             lw->norm.ffn_post_norm != NULL);
     if (ffn_fuse.enabled) {
-        gateup_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
-        if (gateup_buf &&
-            bn_transformer_prefill_same_quant_format_pair_stackable(
-                ffn_types.gate_type, ffn_types.up_type)) {
-            gate_buf = gateup_buf;
-        } else {
-            gate_buf = prefill_qweight_backend_buf(backend,
-                                                   &lw->ffn.ffn_gate);
-            up_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
-        }
-        down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
-        if (!down_buf)
-            down_buf = bn_backend_model_handle(
-                backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
+        BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
+            bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+                backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+                &lw->ffn.ffn_down, ffn_types);
         ffn_norm_buf = bn_backend_model_handle(
             backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
-        if (!gate_buf || !down_buf || !ffn_norm_buf) {
-            gate_buf = NULL;
-            up_buf = NULL;
-            down_buf = NULL;
+        if (ffn_resources.valid && ffn_norm_buf) {
+            gate_buf = (void *)ffn_resources.gate;
+            up_buf = (void *)ffn_resources.up;
+            down_buf = (void *)ffn_resources.down;
+        } else {
             ffn_norm_buf = NULL;
         }
     }
@@ -1196,30 +1152,16 @@ static int prefill_ssm_layer_chain_ready(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_SSM_A_LOG);
     void *ssm_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_SSM_NORM);
-    void *gateup_buf = bn_backend_model_handle(
-        backend, layer, BN_BACKEND_HANDLE_GATEUP_STACKED);
-    void *gate_buf = gateup_buf &&
-                     bn_transformer_prefill_same_quant_format_pair_stackable(
-                         ffn_types.gate_type, ffn_types.up_type)
-                         ? gateup_buf
-                         : prefill_qweight_backend_buf(backend,
-                                                       &lw->ffn.ffn_gate);
-    void *up_buf = gateup_buf &&
-                   bn_transformer_prefill_same_quant_format_pair_stackable(
-                       ffn_types.gate_type, ffn_types.up_type)
-                       ? NULL
-                       : prefill_qweight_backend_buf(backend, &lw->ffn.ffn_up);
-    void *down_buf = prefill_qweight_backend_buf(backend, &lw->ffn.ffn_down);
-    if (!down_buf)
-        down_buf = bn_backend_model_handle(
-            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
+    BnTransformerPrefillDenseFFNGPUResourcePolicy ffn_resources =
+        bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+            backend, layer, &lw->ffn.ffn_gate, &lw->ffn.ffn_up,
+            &lw->ffn.ffn_down, ffn_types);
     void *ffn_norm_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
 
     return wqkv_buf && wz_buf && alpha_buf && beta_buf && out_buf &&
            attn_norm_buf && conv1d_buf && dt_bias_buf && a_log_buf &&
-           ssm_norm_buf && gate_buf && (gateup_buf || up_buf) &&
-           down_buf && ffn_norm_buf;
+           ssm_norm_buf && ffn_resources.valid && ffn_norm_buf;
 }
 
 static void prefill_quant_matmul_prepared_kquant_multi(const BnModel *m,

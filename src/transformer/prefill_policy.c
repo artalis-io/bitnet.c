@@ -204,6 +204,47 @@ const void *bn_transformer_prefill_backend_role_or_qweight_policy(
                                                                   weight);
 }
 
+BnTransformerPrefillDenseFFNGPUResourcePolicy
+bn_transformer_prefill_dense_ffn_gpu_resource_policy(
+    const BnBackendModel *backend,
+    int layer,
+    const BnQWeight *gate,
+    const BnQWeight *up,
+    const BnQWeight *down,
+    BnTransformerPrefillFFNProjectionTypes types) {
+    BnTransformerPrefillDenseFFNGPUResourcePolicy policy = {0};
+    if (!gate || !up || !down)
+        return policy;
+
+    void *gateup_buf = backend
+                           ? bn_backend_model_handle(
+                                 backend, layer,
+                                 BN_BACKEND_HANDLE_GATEUP_STACKED)
+                           : NULL;
+    if (gateup_buf &&
+        bn_transformer_prefill_same_quant_format_pair_stackable(
+            types.gate_type, types.up_type)) {
+        policy.gate = gateup_buf;
+        policy.uses_stacked_gateup = 1;
+    } else {
+        policy.gate =
+            bn_transformer_prefill_qweight_gpu_buffer_policy(backend, gate);
+        policy.up =
+            bn_transformer_prefill_qweight_gpu_buffer_policy(backend, up);
+    }
+
+    policy.down =
+        bn_transformer_prefill_qweight_gpu_buffer_policy(backend, down);
+    if (!policy.down && backend)
+        policy.down = bn_backend_model_handle(
+            backend, layer, BN_BACKEND_HANDLE_FFN_DOWN_PREFILL);
+
+    policy.valid =
+        policy.gate && policy.down &&
+        (policy.uses_stacked_gateup || policy.up);
+    return policy;
+}
+
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     BnTransformerPrefillSequencePolicy policy = {0};
