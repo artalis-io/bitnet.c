@@ -1514,39 +1514,28 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
         return NULL;
     }
 
-    int half_rope = max_rope_dims / 2;
+    BnTransformerPrefillBufferShapePolicy buffer_shape;
+    if (!bn_transformer_prefill_buffer_shape_policy(
+            &buffer_shape, c, sequence_policy, n_tokens, dim, max_q_dim,
+            max_rope_dims)) {
+        SH_LOG_ERROR("Prefill buffer shape policy failed");
+        return NULL;
+    }
+
+    int half_rope = buffer_shape.half_rope;
     if (half_rope > BN_MAX_VLA_ELEMS) {
         SH_LOG_ERROR("RoPE dimensions too large for stack VLAs");
         return NULL;
     }
 
-    int kv_dim = c->kv_dim;
-    int hidden_dim = c->hidden_dim;
-    int q_buf_stride = (max_q_dim > dim ? max_q_dim * 2 : dim);
-    int xb2_stride = dim;
-    int hb_stride = hidden_dim;
-    int hb2_stride = hidden_dim;
-    if (sequence_policy.uses_hybrid_ssm) {
-        BnTransformerSSMShapePolicy ssm_shape;
-        if (bn_transformer_ssm_shape_policy(&ssm_shape, c)) {
-            if (ssm_shape.qkv_dim > q_buf_stride)
-                q_buf_stride = ssm_shape.qkv_dim;
-            if (ssm_shape.value_dim > xb2_stride)
-                xb2_stride = ssm_shape.value_dim;
-            if (ssm_shape.value_dim > hb_stride)
-                hb_stride = ssm_shape.value_dim;
-            if (ssm_shape.value_dim > hb2_stride)
-                hb2_stride = ssm_shape.value_dim;
-        }
-    }
+    int kv_dim = buffer_shape.kv_dim;
+    int hidden_dim = buffer_shape.hidden_dim;
+    int q_buf_stride = buffer_shape.q_buf_stride;
+    int xb2_stride = buffer_shape.xb2_stride;
+    int hb_stride = buffer_shape.hb_stride;
     size_t nt = (size_t)n_tokens;
 
-    size_t batch_floats = nt * dim
-                        + nt * (size_t)q_buf_stride
-                        + nt * kv_dim * 2
-                        + nt * (size_t)xb2_stride
-                        + nt * (size_t)hb_stride
-                        + nt * (size_t)hb2_stride;
+    size_t batch_floats = buffer_shape.batch_floats;
     size_t arena_size = act_elems * sizeof(float)
                       + batch_floats * sizeof(float)
                       + nt * half_rope * 2 * sizeof(float)

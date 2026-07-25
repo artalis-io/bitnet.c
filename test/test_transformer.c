@@ -4992,6 +4992,42 @@ static void test_block_planning(void) {
     assert(sequence_policy.uses_hybrid_ssm);
     assert(!sequence_policy.uses_large_dense_hybrid_ssm);
 
+    BnTransformerPrefillBufferShapePolicy buffer_shape;
+    BnConfig buffer_c = {0};
+    buffer_c.kv_dim = 8;
+    buffer_c.hidden_dim = 48;
+    BnTransformerPrefillSequencePolicy dense_buffer_sequence = {0};
+    assert(bn_transformer_prefill_buffer_shape_policy(
+        &buffer_shape, &buffer_c, dense_buffer_sequence, 3, 32, 64, 10));
+    assert(buffer_shape.kv_dim == 8);
+    assert(buffer_shape.hidden_dim == 48);
+    assert(buffer_shape.q_buf_stride == 128);
+    assert(buffer_shape.xb2_stride == 32);
+    assert(buffer_shape.hb_stride == 48);
+    assert(buffer_shape.hb2_stride == 48);
+    assert(buffer_shape.half_rope == 5);
+    assert(buffer_shape.batch_floats == 912);
+
+    BnTransformerPrefillSequencePolicy ssm_buffer_sequence = {0};
+    ssm_buffer_sequence.uses_hybrid_ssm = 1;
+    buffer_c.ssm_time_step_rank = 4;
+    buffer_c.ssm_state_size = 8;
+    buffer_c.ssm_inner_size = 96;
+    buffer_c.ssm_group_count = 2;
+    buffer_c.ssm_conv_kernel = 4;
+    assert(bn_transformer_prefill_buffer_shape_policy(
+        &buffer_shape, &buffer_c, ssm_buffer_sequence, 3, 32, 10, 10));
+    assert(buffer_shape.q_buf_stride == 128);
+    assert(buffer_shape.xb2_stride == 96);
+    assert(buffer_shape.hb_stride == 96);
+    assert(buffer_shape.hb2_stride == 96);
+    assert(buffer_shape.batch_floats == 1392);
+    buffer_c.ssm_time_step_rank = 0;
+    assert(!bn_transformer_prefill_buffer_shape_policy(
+        &buffer_shape, &buffer_c, ssm_buffer_sequence, 3, 32, 10, 10));
+    assert(!bn_transformer_prefill_buffer_shape_policy(
+        NULL, &buffer_c, dense_buffer_sequence, 3, 32, 10, 10));
+
     BnTransformerPrefillSequencePolicy decode_sequence = {0};
     BnTransformerPrefillDecodeFallbackPolicy decode_fallback =
         bn_transformer_prefill_decode_fallback_policy(

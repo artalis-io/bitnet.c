@@ -5,6 +5,7 @@
 #include "transformer_plan_internal.h"
 #include "../moe_internal.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -61,6 +62,73 @@ bn_transformer_prefill_sequence_policy(const BnConfig *c) {
     policy.uses_large_dense_hybrid_ssm =
         bn_transformer_prefill_uses_large_dense_hybrid_ssm(c);
     return policy;
+}
+
+static int prefill_add_mul_size(size_t *out, size_t a, int b) {
+    if (!out || b < 0)
+        return 0;
+    size_t sb = (size_t)b;
+    if (a != 0 && sb > (SIZE_MAX - *out) / a)
+        return 0;
+    *out += a * sb;
+    return 1;
+}
+
+int bn_transformer_prefill_buffer_shape_policy(
+    BnTransformerPrefillBufferShapePolicy *out,
+    const BnConfig *c,
+    BnTransformerPrefillSequencePolicy sequence_policy,
+    int n_tokens,
+    int dim,
+    int max_q_dim,
+    int max_rope_dims) {
+    if (!out || !c || n_tokens <= 0 || dim <= 0 || max_q_dim < 0 ||
+        max_rope_dims < 0 || c->kv_dim <= 0 || c->hidden_dim <= 0)
+        return 0;
+    if (max_q_dim > dim && max_q_dim > INT_MAX / 2)
+        return 0;
+    if (c->kv_dim > INT_MAX / 2)
+        return 0;
+
+    BnTransformerPrefillBufferShapePolicy policy = {0};
+    policy.kv_dim = c->kv_dim;
+    policy.hidden_dim = c->hidden_dim;
+    policy.q_buf_stride = max_q_dim > dim ? max_q_dim * 2 : dim;
+    policy.xb2_stride = dim;
+    policy.hb_stride = c->hidden_dim;
+    policy.hb2_stride = c->hidden_dim;
+    policy.half_rope = max_rope_dims / 2;
+
+    if (sequence_policy.uses_hybrid_ssm) {
+        BnTransformerSSMShapePolicy ssm_shape;
+        if (!bn_transformer_ssm_shape_policy(&ssm_shape, c))
+            return 0;
+        if (ssm_shape.qkv_dim > policy.q_buf_stride)
+            policy.q_buf_stride = ssm_shape.qkv_dim;
+        if (ssm_shape.value_dim > policy.xb2_stride)
+            policy.xb2_stride = ssm_shape.value_dim;
+        if (ssm_shape.value_dim > policy.hb_stride)
+            policy.hb_stride = ssm_shape.value_dim;
+        if (ssm_shape.value_dim > policy.hb2_stride)
+            policy.hb2_stride = ssm_shape.value_dim;
+    }
+
+    size_t nt = (size_t)n_tokens;
+    if (!prefill_add_mul_size(&policy.batch_floats, nt, dim) ||
+        !prefill_add_mul_size(&policy.batch_floats, nt,
+                              policy.q_buf_stride) ||
+        !prefill_add_mul_size(&policy.batch_floats, nt,
+                              policy.kv_dim * 2) ||
+        !prefill_add_mul_size(&policy.batch_floats, nt,
+                              policy.xb2_stride) ||
+        !prefill_add_mul_size(&policy.batch_floats, nt,
+                              policy.hb_stride) ||
+        !prefill_add_mul_size(&policy.batch_floats, nt,
+                              policy.hb2_stride))
+        return 0;
+
+    *out = policy;
+    return 1;
 }
 
 int bn_transformer_prefill_uses_hybrid_layer_layout(const BnConfig *c) {

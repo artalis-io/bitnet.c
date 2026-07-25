@@ -7,6 +7,7 @@
 #include "quant.h"
 #include "threadpool.h"
 #include "transformer_plan_internal.h"
+#include <stddef.h>
 #include <stdint.h>
 
 #ifndef BN_GPU_BACKEND_DECLARED
@@ -106,6 +107,17 @@ typedef struct {
     int uses_hybrid_ssm;
     int uses_large_dense_hybrid_ssm;
 } BnTransformerPrefillSequencePolicy;
+
+typedef struct {
+    int kv_dim;
+    int hidden_dim;
+    int q_buf_stride;
+    int xb2_stride;
+    int hb_stride;
+    int hb2_stride;
+    int half_rope;
+    size_t batch_floats;
+} BnTransformerPrefillBufferShapePolicy;
 
 typedef struct {
     int decode;
@@ -218,6 +230,14 @@ BnTransformerPrefillFloatKQuantFallbackPolicy
 bn_transformer_prefill_float_kquant_fallback_policy(const BnConfig *c);
 BnTransformerPrefillSequencePolicy
 bn_transformer_prefill_sequence_policy(const BnConfig *c);
+int bn_transformer_prefill_buffer_shape_policy(
+    BnTransformerPrefillBufferShapePolicy *out,
+    const BnConfig *c,
+    BnTransformerPrefillSequencePolicy sequence_policy,
+    int n_tokens,
+    int dim,
+    int max_q_dim,
+    int max_rope_dims);
 int bn_transformer_prefill_uses_hybrid_layer_layout(const BnConfig *c);
 int bn_transformer_prefill_uses_hybrid_ssm(const BnConfig *c);
 int bn_transformer_prefill_uses_large_dense_hybrid_ssm(const BnConfig *c);
