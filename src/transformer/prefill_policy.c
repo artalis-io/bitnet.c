@@ -435,18 +435,15 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
     policy.wv_rows = attn.wv_rows;
     policy.wv_type = attn.wv_type;
 
-    policy.router =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
-    policy.gate_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    policy.up_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    policy.down_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    BnTransformerGPUMoEPrefillFFNResources moe_resources =
+        bn_transformer_gpu_resolve_moe_prefill_ffn_resources(backend, layer);
+    policy.router = moe_resources.router;
+    policy.gate_all = moe_resources.gate_all;
+    policy.up_all = moe_resources.up_all;
+    policy.down_all = moe_resources.down_all;
+    policy.ffn_norm = moe_resources.ffn_norm;
     policy.attn_norm =
         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_ATTN_NORM);
-    policy.ffn_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
     policy.q_norm =
         bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_Q_NORM);
     policy.k_norm =
@@ -476,12 +473,8 @@ bn_transformer_prefill_moe_layer_gpu_resource_policy(
 
     policy.valid =
         attn.valid &&
-        policy.router &&
-        policy.gate_all &&
-        policy.up_all &&
-        policy.down_all &&
+        moe_resources.resident_valid &&
         policy.attn_norm &&
-        policy.ffn_norm &&
         (!lw->attn.q_bias || policy.q_bias) &&
         (!lw->attn.k_bias || policy.k_bias) &&
         (!lw->attn.v_bias || policy.v_bias);
@@ -498,16 +491,13 @@ bn_transformer_prefill_moe_ffn_gpu_resource_policy(
     if (!backend || !lw)
         return policy;
 
-    policy.router =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
-    policy.gate_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
-    policy.up_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
-    policy.down_all =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
-    policy.ffn_norm =
-        bn_backend_model_handle(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    BnTransformerGPUMoEPrefillFFNResources moe_resources =
+        bn_transformer_gpu_resolve_moe_prefill_ffn_resources(backend, layer);
+    policy.router = moe_resources.router;
+    policy.gate_all = moe_resources.gate_all;
+    policy.up_all = moe_resources.up_all;
+    policy.down_all = moe_resources.down_all;
+    policy.ffn_norm = moe_resources.ffn_norm;
 
     if (bn_transformer_gpu_moe_has_loaded_shared_expert(c, lw)) {
         BnTransformerGPUMoESharedFFNResources shared;
@@ -525,12 +515,7 @@ bn_transformer_prefill_moe_ffn_gpu_resource_policy(
         policy.shared_down_type = shared.down_type;
     }
 
-    policy.valid =
-        policy.router &&
-        policy.gate_all &&
-        policy.up_all &&
-        policy.down_all &&
-        policy.ffn_norm;
+    policy.valid = moe_resources.resident_valid;
     return policy;
 }
 

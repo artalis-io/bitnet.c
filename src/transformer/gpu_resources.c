@@ -356,3 +356,27 @@ bn_transformer_gpu_resolve_moe_decode_resources(
                                resources.up_all && resources.down_all;
     return resources;
 }
+
+BnTransformerGPUMoEPrefillFFNResources
+bn_transformer_gpu_resolve_moe_prefill_ffn_resources(
+    const BnBackendModel *backend,
+    int layer) {
+    BnTransformerGPUMoEPrefillFFNResources resources = {0};
+    if (!backend)
+        return resources;
+
+    resources.router =
+        backend_handle_or(backend, layer, BN_BACKEND_HANDLE_MOE_ROUTER);
+    resources.gate_all =
+        backend_handle_or(backend, layer, BN_BACKEND_HANDLE_MOE_GATE_ALL);
+    resources.up_all =
+        backend_handle_or(backend, layer, BN_BACKEND_HANDLE_MOE_UP_ALL);
+    resources.down_all =
+        backend_handle_or(backend, layer, BN_BACKEND_HANDLE_MOE_DOWN_ALL);
+    resources.ffn_norm =
+        backend_handle_or(backend, layer, BN_BACKEND_HANDLE_FFN_NORM);
+    resources.resident_valid = resources.router && resources.gate_all &&
+                               resources.up_all && resources.down_all &&
+                               resources.ffn_norm;
+    return resources;
+}

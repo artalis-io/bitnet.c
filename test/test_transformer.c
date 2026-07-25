@@ -1943,6 +1943,18 @@ static void test_gpu_policy_helpers(void) {
         bn_transformer_prefill_moe_layer_gpu_resource_policy(
             prefill_backend, &c, 3, &prefill_attn_lw,
             prefill_attn_resource_types);
+    BnTransformerGPUMoEPrefillFFNResources prefill_moe_ffn_resolved =
+        bn_transformer_gpu_resolve_moe_prefill_ffn_resources(prefill_backend,
+                                                             3);
+    assert(prefill_moe_ffn_resolved.resident_valid);
+    assert(prefill_moe_ffn_resolved.router == &prefill_moe_router_handle);
+    assert(prefill_moe_ffn_resolved.gate_all ==
+           &prefill_moe_gate_all_handle);
+    assert(prefill_moe_ffn_resolved.up_all == &prefill_moe_up_all_handle);
+    assert(prefill_moe_ffn_resolved.down_all ==
+           &prefill_moe_down_all_handle);
+    assert(prefill_moe_ffn_resolved.ffn_norm ==
+           &prefill_moe_ffn_norm_handle);
     assert(prefill_moe_resources.valid);
     assert(prefill_moe_resources.qk == &prefill_moe_qk_handle);
     assert(prefill_moe_resources.wv == &prefill_moe_wv_handle);
@@ -2018,6 +2030,10 @@ static void test_gpu_policy_helpers(void) {
     assert(bn_backend_model_register_handle(
                prefill_backend, 5, BN_BACKEND_HANDLE_QK_STACKED,
                &prefill_moe_qk_handle) == 0);
+    prefill_moe_ffn_resolved =
+        bn_transformer_gpu_resolve_moe_prefill_ffn_resources(prefill_backend,
+                                                             5);
+    assert(!prefill_moe_ffn_resolved.resident_valid);
     prefill_moe_resources =
         bn_transformer_prefill_moe_layer_gpu_resource_policy(
             prefill_backend, &c, 5, &prefill_attn_lw,

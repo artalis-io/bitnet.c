@@ -166,6 +166,15 @@ typedef struct {
 } BnTransformerGPUMoEDecodeResources;
 
 typedef struct {
+    void *router;
+    void *gate_all;
+    void *up_all;
+    void *down_all;
+    void *ffn_norm;
+    int resident_valid;
+} BnTransformerGPUMoEPrefillFFNResources;
+
+typedef struct {
     void *attn_norm;
     void *ffn_norm;
     void *q_norm;
@@ -1512,6 +1521,10 @@ int bn_transformer_gpu_resolve_moe_shared_ffn_resources(
     int allow_stacked_gateup);
 BnTransformerGPUMoEDecodeResources
 bn_transformer_gpu_resolve_moe_decode_resources(
+    const BnBackendModel *backend,
+    int layer);
+BnTransformerGPUMoEPrefillFFNResources
+bn_transformer_gpu_resolve_moe_prefill_ffn_resources(
     const BnBackendModel *backend,
     int layer);
 
