@@ -300,18 +300,18 @@ static int prefill_qk_stacked_gpu(const BnModel *m,
     void *qk_buf = bn_backend_model_handle(
         backend, layer, BN_BACKEND_HANDLE_QK_STACKED);
     if (!qk_buf) return -1;
-    int rows = lw->attn.wq.rows + lw->attn.wk.rows;
+    int rows = attn_types.q_rows + attn_types.k_rows;
     if (bn_transformer_gpu_prefill_quant_matmul_backend_run(
             gpu, q_tmp, qk_buf, X, rows, dim, n_tokens,
             attn_types.q_type) != 0)
         return -1;
     for (int t = n_tokens - 1; t >= 0; t--) {
         float *src = q_tmp + (size_t)t * rows;
-        memcpy(k_out + (size_t)t * lw->attn.wk.rows,
-               src + lw->attn.wq.rows,
-               (size_t)lw->attn.wk.rows * sizeof(float));
+        memcpy(k_out + (size_t)t * attn_types.k_rows,
+               src + attn_types.q_rows,
+               (size_t)attn_types.k_rows * sizeof(float));
         memmove(q_tmp + (size_t)t * q_stride, src,
-                (size_t)lw->attn.wq.rows * sizeof(float));
+                (size_t)attn_types.q_rows * sizeof(float));
     }
     return 0;
 }
@@ -345,7 +345,7 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
         backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
     if (!qk_buf || !wv_buf) return -1;
 
-    int qk_rows = lw->attn.wq.rows + lw->attn.wk.rows;
+    int qk_rows = attn_types.q_rows + attn_types.k_rows;
     BnGPUMatvecOp ops[2] = {
         {
             .out = q_tmp,
@@ -357,7 +357,7 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
         {
             .out = v_out,
             .W_buf = wv_buf,
-            .rows = lw->attn.wv.rows,
+            .rows = attn_types.v_rows,
             .cols = dim,
             .type = attn_types.v_type,
         },
@@ -368,11 +368,11 @@ static int prefill_qkv_stacked_batch_gpu(const BnModel *m,
 
     for (int t = n_tokens - 1; t >= 0; t--) {
         float *src = q_tmp + (size_t)t * qk_rows;
-        memcpy(k_out + (size_t)t * lw->attn.wk.rows,
-               src + lw->attn.wq.rows,
-               (size_t)lw->attn.wk.rows * sizeof(float));
+        memcpy(k_out + (size_t)t * attn_types.k_rows,
+               src + attn_types.q_rows,
+               (size_t)attn_types.k_rows * sizeof(float));
         memmove(q_tmp + (size_t)t * q_stride, src,
-                (size_t)lw->attn.wq.rows * sizeof(float));
+                (size_t)attn_types.q_rows * sizeof(float));
     }
     return 0;
 }
@@ -511,9 +511,9 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
             backend, layer, BN_BACKEND_HANDLE_WV_PREFILL);
         if (!wv_buf)
             wv_buf = prefill_qweight_backend_buf(backend, &lw->attn.wv);
-        qk_rows = lw->attn.wq.rows + lw->attn.wk.rows;
+        qk_rows = attn_types.q_rows + attn_types.k_rows;
         qk_type = attn_types.q_type;
-        wv_rows = lw->attn.wv.rows;
+        wv_rows = attn_types.v_rows;
         wv_type = attn_types.v_type;
     }
     void *wo_buf = prefill_backend_role_or_qweight(
@@ -560,7 +560,7 @@ static int prefill_dense_layer_gpu_batch(const BnModel *m,
         attn_norm_buf, ffn_norm_buf, q_norm_buf, k_norm_buf,
         q_bias_buf, k_bias_buf, v_bias_buf, X, K_out, V_out, n_tokens, dim,
         hidden_dim, n_heads, n_kv_heads, head_size, kv_mul, kv_dim, qk_rows,
-        qk_type, wv_rows, wv_type, lw->attn.wo.rows, lw->attn.wo.cols,
+        qk_type, wv_rows, wv_type, attn_types.out_rows, attn_types.out_cols,
         attn_types.out_type, ffn_types.gate_type, ffn_types.up_type,
         ffn_types.down_type, activation,
         qk_norm_per_head,
@@ -658,9 +658,9 @@ static int prefill_moe_layer_gpu_batch(const BnModel *m,
         X, K_out, V_out, n_tokens, dim, route_policy.expert_hidden_dim,
         route_policy.total_experts, route_policy.active_experts, n_heads,
         n_kv_heads, head_size, kv_mul, kv_dim,
-        lw->attn.wq.rows + lw->attn.wk.rows, attn_types.q_type,
-        lw->attn.wv.rows, attn_types.v_type, lw->attn.wo.rows,
-        lw->attn.wo.cols, attn_types.out_type,
+        attn_types.q_rows + attn_types.k_rows, attn_types.q_type,
+        attn_types.v_rows, attn_types.v_type, attn_types.out_rows,
+        attn_types.out_cols, attn_types.out_type,
         routed_types.gate_type, routed_types.up_type,
         routed_types.down_type, activation,
         shared.hidden_dim, shared.gate_type, shared.up_type,
@@ -1916,11 +1916,17 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     continue;
                 }
             }
-            int q_read_stride = lw->attn.wq.rows;
+            BnTransformerPrefillAttentionProjectionTypes attn_types;
+            if (!bn_transformer_prefill_resolve_attention_projection_types(
+                    &attn_types, lw)) {
+                sh_arena_free(pf_arena);
+                return NULL;
+            }
+            int q_read_stride = attn_types.q_rows;
             int attn_idx = plan.attn_idx;
             size_t loff = (size_t)attn_idx * c->seq_len * kv_dim;
             int q_gated = plan.q_gated;
-            int wo_cols_attn = lw->attn.wo.cols;
+            int wo_cols_attn = attn_types.out_cols;
             int used_fused_attn_wo = 0;
             int used_raw_prefill_attn_wo = 0;
             int used_attn_residual = 0;
@@ -1948,12 +1954,6 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     lw->norm.attn_sub_norm != NULL,
                     attn_plan.use_post_norm,
                     lw->norm.attn_post_norm != NULL);
-            BnTransformerPrefillAttentionProjectionTypes attn_types;
-            if (!bn_transformer_prefill_resolve_attention_projection_types(
-                    &attn_types, lw)) {
-                sh_arena_free(pf_arena);
-                return NULL;
-            }
             int attn_norm_ready = 0;
             if (!raw_attn_policy.fuses_input_norm) {
                 t_prof = prefill_profile_now(&prof);
@@ -1993,10 +1993,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         q_norm_buf, k_norm_buf, act, K_new,
                         V_new, n_tokens, dim, layer_n_heads,
                         layer_n_kv_heads, layer_head_size, layer_kv_mul,
-                        kv_dim, lw->attn.wq.rows + lw->attn.wk.rows,
-                        attn_types.q_type, lw->attn.wv.rows,
-                        attn_types.v_type, lw->attn.wo.rows,
-                        lw->attn.wo.cols, attn_types.out_type,
+                        kv_dim, attn_types.q_rows + attn_types.k_rows,
+                        attn_types.q_type, attn_types.v_rows,
+                        attn_types.v_type, attn_types.out_rows,
+                        attn_types.out_cols, attn_types.out_type,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
                         layer_rope_dims,
@@ -2021,10 +2021,10 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                         q_norm_buf, k_norm_buf, Xb, K_new, V_new,
                         n_tokens, dim, layer_n_heads, layer_n_kv_heads,
                         layer_head_size, layer_kv_mul, kv_dim,
-                        lw->attn.wq.rows + lw->attn.wk.rows,
-                        attn_types.q_type, lw->attn.wv.rows,
-                        attn_types.v_type, lw->attn.wo.rows,
-                        lw->attn.wo.cols, attn_types.out_type,
+                        attn_types.q_rows + attn_types.k_rows,
+                        attn_types.q_type, attn_types.v_rows,
+                        attn_types.v_type, attn_types.out_rows,
+                        attn_types.out_cols, attn_types.out_type,
                         plan.qk_norm_per_head,
                         norm_eps, pos0,
                         layer_rope_dims,
@@ -2167,7 +2167,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                     .qk_norm_per_head = plan.qk_norm_per_head,
                     .norm_eps = norm_eps,
                     .q_gated = q_gated,
-                    .wq_rows = lw->attn.wq.rows,
+                    .wq_rows = attn_types.q_rows,
                     .q_row_stride = q_read_stride,
                     .wo_cols = wo_cols_attn,
                 };
@@ -2201,7 +2201,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                             gpu, Xb2, attn_wo_buf, Q_buf, K_new, V_new,
                             n_tokens, layer_n_heads, layer_n_kv_heads,
                             layer_head_size, layer_kv_mul, kv_dim,
-                            lw->attn.wo.rows, lw->attn.wo.cols,
+                            attn_types.out_rows, attn_types.out_cols,
                             attn_types.out_type,
                             bn_transformer_attention_scale(c, layer_head_size)) == 0) {
                         used_gpu_attn = 1;
@@ -2309,7 +2309,7 @@ static float *prefill_internal(BnModel *m, BnSession *sess, const int *tokens,
                 }
 
             {
-                int wo_cols = lw->attn.wo.cols;
+                int wo_cols = attn_types.out_cols;
                 t_prof = prefill_profile_now(&prof);
                 if (!used_fused_attn_wo && lw->norm.attn_sub_norm)
                     for (int t = 0; t < n_tokens; t++)

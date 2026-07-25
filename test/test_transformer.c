@@ -5571,9 +5571,17 @@ static void test_block_planning(void) {
     BnLayerWeights prefill_lw;
     memset(&prefill_lw, 0, sizeof(prefill_lw));
     prefill_lw.attn.wq.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_lw.attn.wq.rows = 64;
+    prefill_lw.attn.wq.cols = 32;
     prefill_lw.attn.wk.type = BN_GGUF_TENSOR_Q5_K;
+    prefill_lw.attn.wk.rows = 16;
+    prefill_lw.attn.wk.cols = 32;
     prefill_lw.attn.wv.type = BN_GGUF_TENSOR_Q6_K;
+    prefill_lw.attn.wv.rows = 16;
+    prefill_lw.attn.wv.cols = 32;
     prefill_lw.attn.wo.type = BN_GGUF_TENSOR_Q4_K;
+    prefill_lw.attn.wo.rows = 32;
+    prefill_lw.attn.wo.cols = 64;
     prefill_lw.ffn.ffn_gate.type = BN_GGUF_TENSOR_Q4_K;
     prefill_lw.ffn.ffn_up.type = BN_GGUF_TENSOR_Q5_K;
     prefill_lw.ffn.ffn_down.type = BN_GGUF_TENSOR_Q6_K;
@@ -5586,9 +5594,17 @@ static void test_block_planning(void) {
     assert(bn_transformer_prefill_resolve_attention_projection_types(
         &prefill_attn_types, &prefill_lw));
     assert(prefill_attn_types.q_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_attn_types.q_rows == 64);
+    assert(prefill_attn_types.q_cols == 32);
     assert(prefill_attn_types.k_type == BN_GGUF_TENSOR_Q5_K);
+    assert(prefill_attn_types.k_rows == 16);
+    assert(prefill_attn_types.k_cols == 32);
     assert(prefill_attn_types.v_type == BN_GGUF_TENSOR_Q6_K);
+    assert(prefill_attn_types.v_rows == 16);
+    assert(prefill_attn_types.v_cols == 32);
     assert(prefill_attn_types.out_type == BN_GGUF_TENSOR_Q4_K);
+    assert(prefill_attn_types.out_rows == 32);
+    assert(prefill_attn_types.out_cols == 64);
     assert(!bn_transformer_prefill_resolve_attention_projection_types(
         NULL, &prefill_lw));
     assert(!bn_transformer_prefill_resolve_attention_projection_types(

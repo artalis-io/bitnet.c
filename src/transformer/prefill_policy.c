@@ -773,9 +773,17 @@ int bn_transformer_prefill_resolve_attention_projection_types(
         return 0;
     memset(out, 0, sizeof(*out));
     out->q_type = lw->attn.wq.type;
+    out->q_rows = lw->attn.wq.rows;
+    out->q_cols = lw->attn.wq.cols;
     out->k_type = lw->attn.wk.type;
+    out->k_rows = lw->attn.wk.rows;
+    out->k_cols = lw->attn.wk.cols;
     out->v_type = lw->attn.wv.type;
+    out->v_rows = lw->attn.wv.rows;
+    out->v_cols = lw->attn.wv.cols;
     out->out_type = lw->attn.wo.type;
+    out->out_rows = lw->attn.wo.rows;
+    out->out_cols = lw->attn.wo.cols;
     return 1;
 }
 

@@ -28,9 +28,17 @@ typedef struct {
 
 typedef struct {
     int q_type;
+    int q_rows;
+    int q_cols;
     int k_type;
+    int k_rows;
+    int k_cols;
     int v_type;
+    int v_rows;
+    int v_cols;
     int out_type;
+    int out_rows;
+    int out_cols;
 } BnTransformerPrefillAttentionProjectionTypes;
 
 typedef struct {
